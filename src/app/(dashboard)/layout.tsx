@@ -17,7 +17,7 @@ export default function AuthLayout({
             <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
             <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
                 <Header onMenuClick={() => setIsSidebarOpen(true)} />
-                <main className="flex-1 p-6 md:p-8 w-full max-w-[1600px] mx-auto overflow-x-hidden">
+                <main className="flex-1 p-6 md:p-8 w-full max-w-[1600px] mx-auto min-w-0">
                     {children}
                 </main>
             </div>
