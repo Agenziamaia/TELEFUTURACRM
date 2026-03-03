@@ -233,7 +233,7 @@ export default function Calendario() {
 
                     {/* Legend */}
                     <div className="mt-4 pt-4 border-t border-white/8 flex gap-5 text-xs text-slate-500">
-                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" />In entrata</span>
+                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" />Inbound</span>
                         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" />In uscita</span>
                     </div>
                 </div>
@@ -290,7 +290,7 @@ export default function Calendario() {
                                                 <span className={cn("ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium",
                                                     a.type === "incoming" ? "bg-blue-500/15 text-blue-400" : "bg-amber-500/15 text-amber-400"
                                                 )}>
-                                                    {a.type === "incoming" ? "In entrata" : "In uscita"}
+                                                    {a.type === "incoming" ? "Inbound" : "Outbound"}
                                                 </span>
                                             </div>
                                         </button>
@@ -319,7 +319,7 @@ export default function Calendario() {
                                 <span className={cn("px-3 py-1 rounded-full border text-xs font-medium",
                                     selectedAppointment.type === "incoming" ? "bg-blue-500/15 border-blue-500/30 text-blue-400" : "bg-amber-500/15 border-amber-500/30 text-amber-400"
                                 )}>
-                                    {selectedAppointment.type === "incoming" ? "🏪 In entrata — cliente viene in store" : "🚗 In uscita — agente va dal cliente"}
+                                    {selectedAppointment.type === "incoming" ? "🏪 Inbound — cliente viene in store" : "🚗 Outbound — agente va dal cliente"}
                                 </span>
                                 <span className={cn("px-2.5 py-1 rounded-full border text-xs font-medium", STATUS_COLORS[selectedAppointment.status])}>
                                     {STATUS_LABELS[selectedAppointment.status]}
@@ -376,7 +376,7 @@ export default function Calendario() {
                                             newAppt.type === t ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]"
                                         )}
                                     >
-                                        {t === "incoming" ? "🏪 In entrata" : "🚗 In uscita"}
+                                        {t === "incoming" ? "🏪 Inbound" : "🚗 Outbound"}
                                     </button>
                                 ))}
                             </div>
@@ -407,6 +407,12 @@ export default function Calendario() {
                                     <input type="text" className="glass-input w-full" placeholder="Via, Numero civico, Città" value={newAppt.customerAddress} onChange={e => setNewAppt(p => ({ ...p, customerAddress: e.target.value }))} required />
                                 </div>
                             )}
+
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Codice Fiscale / Partita IVA *</label>
+                                <input type="text" className="glass-input w-full font-mono uppercase" placeholder="es. RSSMRA80A01H501U" value={newAppt.cfPiva} onChange={e => setNewAppt(p => ({ ...p, cfPiva: e.target.value.toUpperCase() }))} required />
+                            </div>
+
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Nome cliente *</label>
