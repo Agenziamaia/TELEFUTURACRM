@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 
@@ -19,6 +19,7 @@ interface Appointment {
     customerAddress?: string;
     customerName: string;
     customerPhone: string;
+    cfPiva?: string;
     notes: string;
     status: AppointmentStatus;
 }
@@ -27,7 +28,7 @@ const MOCK_AGENTS = ["Luca Perotta", "Alessandro Sandri", "Marco Bianchi", "Giul
 const MOCK_STORES = ["Roma Centro (RM001)", "Roma Est (RM002)", "Milano Centrale (MI001)", "Milano Nord (MI002)", "Napoli Centro (NA001)"];
 
 const MOCK_APPOINTMENTS: Appointment[] = [
-    { id: 1, date: "2026-03-03", time: "10:00", type: "outgoing", agente: "Luca Perotta", customerAddress: "Via Roma 12, Roma", customerName: "Mario Rossi", customerPhone: "3331234567", notes: "Cliente interessato a Vodafone fibra", status: "scheduled" },
+    { id: 1, date: "2026-03-03", time: "10:00", type: "outgoing", agente: "Luca Perotta", customerAddress: "Via Roma 12, Roma", customerName: "Mario Rossi", customerPhone: "3331234567", cfPiva: "RSSMRA80A01H501U", notes: "Cliente interessato a Vodafone fibra", status: "scheduled" },
     { id: 2, date: "2026-03-03", time: "14:30", type: "incoming", agente: "Alessandro Sandri", store: "Roma Centro (RM001)", customerName: "Anna Verdi", customerPhone: "3457654321", notes: "Rinnovo contratto Wind3", status: "completed" },
     { id: 3, date: "2026-03-05", time: "09:00", type: "incoming", agente: "Marco Bianchi", store: "Milano Centrale (MI001)", customerName: "Giuseppe Ferrari", customerPhone: "3289876543", notes: "", status: "scheduled" },
     { id: 4, date: "2026-03-10", time: "11:00", type: "outgoing", agente: "Giulia Rossi", customerAddress: "Corso Buenos Aires 5, Milano", customerName: "Francesca Bruno", customerPhone: "3401122334", notes: "Nuovo cliente energia", status: "scheduled" },
@@ -82,6 +83,7 @@ export default function Calendario() {
         customerAddress: "",
         customerName: "",
         customerPhone: "",
+        cfPiva: "",
         notes: "",
     });
 
@@ -128,7 +130,7 @@ export default function Calendario() {
         };
         setAppointments(prev => [...prev, created]);
         setShowCreateModal(false);
-        setNewAppt({ time: "10:00", type: "incoming", agente: "", store: "", customerAddress: "", customerName: "", customerPhone: "", notes: "" });
+        setNewAppt({ time: "10:00", type: "incoming", agente: "", store: "", customerAddress: "", customerName: "", customerPhone: "", cfPiva: "", notes: "" });
     };
 
     const dateAppts = selectedDate ? apptsByDate(selectedDate) : [];
@@ -329,6 +331,7 @@ export default function Calendario() {
                                 <div className="flex items-center gap-2 text-slate-300"><Clock className="w-4 h-4 text-slate-500" />{selectedAppointment.date} alle {selectedAppointment.time}</div>
                                 <div className="flex items-center gap-2 text-slate-300"><User className="w-4 h-4 text-slate-500" />{selectedAppointment.customerName}</div>
                                 <div className="flex items-center gap-2 text-slate-300"><Phone className="w-4 h-4 text-slate-500" />{selectedAppointment.customerPhone}</div>
+                                {selectedAppointment.cfPiva && <div className="flex items-center gap-2 text-slate-300 font-mono"><Search className="w-4 h-4 text-slate-500" />{selectedAppointment.cfPiva}</div>}
                                 <div className="flex items-center gap-2 text-slate-300"><MapPin className="w-4 h-4 text-slate-500" />{selectedAppointment.store || selectedAppointment.customerAddress}</div>
                                 <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />Agente: {selectedAppointment.agente}</div>
                             </div>
