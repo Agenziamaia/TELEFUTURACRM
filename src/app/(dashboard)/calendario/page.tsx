@@ -6,7 +6,7 @@ import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 
 // Mock appointment data — will be replaced with Supabase queries
-type AppointmentType = "incoming" | "outgoing";
+type AppointmentType = "incoming" | "outgoing" | "self_generated";
 type AppointmentStatus = "scheduled" | "attivato" | "ko" | "in_gestione" | "da_richiamare" | "da_rifissare" | "annullato";
 
 interface Appointment {
@@ -143,7 +143,16 @@ export default function Calendario() {
     const dateAppts = selectedDate ? apptsByDate(selectedDate) : [];
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
-    const isCallCenter = user?.role === "admin"; // in mock: admin acts as call center operator
+    const isCallCenter = user?.role === "admin"; // admin = call center operator
+    const isAgent = user?.role !== "admin";
+
+    // When agent opens create modal, auto-preset to self_generated
+    const openCreateModal = () => {
+        if (isAgent) {
+            setNewAppt(p => ({ ...p, type: "self_generated" as AppointmentType, agente: user?.name ?? "" }));
+        }
+        setShowCreateModal(true);
+    };
 
     return (
         <div className="w-full">
@@ -154,9 +163,9 @@ export default function Calendario() {
                         {isCallCenter ? "Visualizzazione completa — tutti gli agenti" : `I tuoi appuntamenti — ${user?.name}`}
                     </p>
                 </div>
-                {isCallCenter && selectedDate && (
+                {selectedDate && (
                     <button
-                        onClick={() => setShowCreateModal(true)}
+                        onClick={openCreateModal}
                         className="primary-btn h-10 px-5 flex items-center gap-2"
                     >
                         <Plus className="w-4 h-4" />
@@ -226,7 +235,9 @@ export default function Calendario() {
                                             {dayAppts.slice(0, 3).map(a => (
                                                 <div key={a.id}
                                                     className={cn("w-1.5 h-1.5 rounded-full",
-                                                        a.type === "incoming" ? "bg-blue-400" : "bg-amber-400"
+                                                        a.type === "incoming" ? "bg-blue-400" :
+                                                            a.type === "self_generated" ? "bg-purple-400" :
+                                                                "bg-amber-400"
                                                     )}
                                                 />
                                             ))}
@@ -243,7 +254,8 @@ export default function Calendario() {
                     {/* Legend */}
                     <div className="mt-4 pt-4 border-t border-white/8 flex gap-5 text-xs text-slate-500">
                         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" />Inbound</span>
-                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" />In uscita</span>
+                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" />Outbound</span>
+                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-400" />Auto-Generato</span>
                     </div>
                 </div>
 
@@ -255,9 +267,9 @@ export default function Calendario() {
                                 <h4 className="font-semibold text-white text-base">
                                     {new Date(selectedDate + "T12:00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
                                 </h4>
-                                {isCallCenter && (
+                                {(isCallCenter || isAgent) && (
                                     <button
-                                        onClick={() => setShowCreateModal(true)}
+                                        onClick={openCreateModal}
                                         className="p-1.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 transition-colors"
                                     >
                                         <Plus className="w-4 h-4" />
@@ -394,30 +406,44 @@ export default function Calendario() {
                             <button onClick={() => setShowCreateModal(false)} className="text-slate-500 hover:text-slate-300"><X className="w-5 h-5" /></button>
                         </div>
                         <form onSubmit={handleCreateSubmit} className="space-y-4">
-                            <div className="flex gap-3">
-                                {(["incoming", "outgoing"] as const).map(t => (
-                                    <button key={t} type="button"
-                                        onClick={() => setNewAppt(p => ({ ...p, type: t }))}
-                                        className={cn("flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all",
-                                            newAppt.type === t ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]"
-                                        )}
-                                    >
-                                        {t === "incoming" ? "🏪 Inbound" : "🚗 Outbound"}
-                                    </button>
-                                ))}
-                            </div>
+                            {/* Type selection: admins choose all 3; agents are locked to Auto-Generato */}
+                            {isCallCenter ? (
+                                <div className="flex gap-3">
+                                    {(["incoming", "outgoing", "self_generated"] as const).map(t => (
+                                        <button key={t} type="button"
+                                            onClick={() => setNewAppt(p => ({ ...p, type: t }))}
+                                            className={cn("flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all",
+                                                newAppt.type === t ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]"
+                                            )}
+                                        >
+                                            {t === "incoming" ? "🏪 Inbound" : t === "outgoing" ? "🚗 Outbound" : "🟣 Auto-Generato"}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-purple-500/10 border border-purple-500/25 text-purple-300 text-sm">
+                                    🟣 Auto-Generato — appuntamento creato da te
+                                </div>
+                            )}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Orario *</label>
                                     <input type="time" className="glass-input w-full" value={newAppt.time} onChange={e => setNewAppt(p => ({ ...p, time: e.target.value }))} required />
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Agente *</label>
-                                    <select className="glass-input w-full" value={newAppt.agente} onChange={e => setNewAppt(p => ({ ...p, agente: e.target.value }))} required>
-                                        <option value="">Seleziona...</option>
-                                        {MOCK_AGENTS.map(a => <option key={a} value={a}>{a}</option>)}
-                                    </select>
-                                </div>
+                                {isCallCenter ? (
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Agente *</label>
+                                        <select className="glass-input w-full" value={newAppt.agente} onChange={e => setNewAppt(p => ({ ...p, agente: e.target.value }))} required>
+                                            <option value="">Seleziona...</option>
+                                            {MOCK_AGENTS.map(a => <option key={a} value={a}>{a}</option>)}
+                                        </select>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Agente</label>
+                                        <input className="glass-input w-full" value={newAppt.agente} readOnly />
+                                    </div>
+                                )}
                             </div>
                             {newAppt.type === "incoming" ? (
                                 <div>
@@ -427,12 +453,13 @@ export default function Calendario() {
                                         {MOCK_STORES.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </div>
-                            ) : (
+                            ) : newAppt.type === "outgoing" ? (
                                 <div>
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Indirizzo cliente *</label>
                                     <input type="text" className="glass-input w-full" placeholder="Via, Numero civico, Città" value={newAppt.customerAddress} onChange={e => setNewAppt(p => ({ ...p, customerAddress: e.target.value }))} required />
                                 </div>
-                            )}
+                            ) : null}
+
 
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Codice Fiscale / Partita IVA *</label>
