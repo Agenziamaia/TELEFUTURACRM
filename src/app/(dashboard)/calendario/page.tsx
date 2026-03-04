@@ -7,7 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 
 // Mock appointment data — will be replaced with Supabase queries
 type AppointmentType = "incoming" | "outgoing";
-type AppointmentStatus = "scheduled" | "completed" | "cancelled" | "rescheduled";
+type AppointmentStatus = "scheduled" | "attivato" | "ko" | "in_gestione" | "da_richiamare" | "da_rifissare" | "annullato";
 
 interface Appointment {
     id: number;
@@ -21,6 +21,7 @@ interface Appointment {
     customerPhone: string;
     cfPiva?: string;
     notes: string;
+    esitoNote?: string;
     status: AppointmentStatus;
 }
 
@@ -29,25 +30,31 @@ const MOCK_STORES = ["Roma Centro (RM001)", "Roma Est (RM002)", "Milano Centrale
 
 const MOCK_APPOINTMENTS: Appointment[] = [
     { id: 1, date: "2026-03-03", time: "10:00", type: "outgoing", agente: "Luca Perotta", customerAddress: "Via Roma 12, Roma", customerName: "Mario Rossi", customerPhone: "3331234567", cfPiva: "RSSMRA80A01H501U", notes: "Cliente interessato a Vodafone fibra", status: "scheduled" },
-    { id: 2, date: "2026-03-03", time: "14:30", type: "incoming", agente: "Alessandro Sandri", store: "Roma Centro (RM001)", customerName: "Anna Verdi", customerPhone: "3457654321", notes: "Rinnovo contratto Wind3", status: "completed" },
+    { id: 2, date: "2026-03-03", time: "14:30", type: "incoming", agente: "Alessandro Sandri", store: "Roma Centro (RM001)", customerName: "Anna Verdi", customerPhone: "3457654321", notes: "Rinnovo contratto Wind3", status: "attivato" },
     { id: 3, date: "2026-03-05", time: "09:00", type: "incoming", agente: "Marco Bianchi", store: "Milano Centrale (MI001)", customerName: "Giuseppe Ferrari", customerPhone: "3289876543", notes: "", status: "scheduled" },
     { id: 4, date: "2026-03-10", time: "11:00", type: "outgoing", agente: "Giulia Rossi", customerAddress: "Corso Buenos Aires 5, Milano", customerName: "Francesca Bruno", customerPhone: "3401122334", notes: "Nuovo cliente energia", status: "scheduled" },
-    { id: 5, date: "2026-03-10", time: "15:00", type: "incoming", agente: "Luca Perotta", store: "Roma Est (RM002)", customerName: "Carlo Neri", customerPhone: "3609988776", notes: "Assicurazione Generali", status: "rescheduled" },
+    { id: 5, date: "2026-03-10", time: "15:00", type: "incoming", agente: "Luca Perotta", store: "Roma Est (RM002)", customerName: "Carlo Neri", customerPhone: "3609988776", notes: "Assicurazione Generali", status: "da_richiamare" },
     { id: 6, date: "2026-03-17", time: "10:30", type: "outgoing", agente: "Venditore 1", customerAddress: "Via Napoli 88, Napoli", customerName: "Lucia Esposito", customerPhone: "3211234567", notes: "", status: "scheduled" },
 ];
 
 const STATUS_COLORS: Record<AppointmentStatus, string> = {
     scheduled: "bg-blue-500/20 text-blue-300 border-blue-500/30",
-    completed: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-    cancelled: "bg-rose-500/20 text-rose-300 border-rose-500/30",
-    rescheduled: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+    attivato: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+    ko: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+    in_gestione: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+    da_richiamare: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+    da_rifissare: "bg-amber-100/10 text-amber-200 border-amber-200/30",
+    annullato: "bg-orange-500/20 text-orange-300 border-orange-500/30",
 };
 
 const STATUS_LABELS: Record<AppointmentStatus, string> = {
     scheduled: "Programmato",
-    completed: "Completato",
-    cancelled: "Annullato",
-    rescheduled: "Riprogrammato",
+    attivato: "Attivato",
+    ko: "KO",
+    in_gestione: "In Gestione",
+    da_richiamare: "Da Richiamare",
+    da_rifissare: "Da Rifissare",
+    annullato: "Annullato",
 };
 
 const DAYS_IT = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
@@ -337,22 +344,38 @@ export default function Calendario() {
                             </div>
                             {selectedAppointment.notes && (
                                 <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-slate-400 text-xs">
-                                    <p className="font-medium text-slate-500 mb-1 uppercase tracking-wider text-[10px]">Note</p>
+                                    <p className="font-medium text-slate-500 mb-1 uppercase tracking-wider text-[10px]">Note appuntamento</p>
                                     {selectedAppointment.notes}
                                 </div>
                             )}
-                            <div className="flex gap-2 pt-2">
-                                {(["completed", "cancelled", "rescheduled"] as AppointmentStatus[]).map(s => (
-                                    <button key={s}
-                                        onClick={() => {
-                                            setAppointments(prev => prev.map(a => a.id === selectedAppointment.id ? { ...a, status: s } : a));
-                                            setSelectedAppointment({ ...selectedAppointment, status: s });
-                                        }}
-                                        className={cn("flex-1 py-1.5 text-xs rounded-lg border font-medium transition-all", STATUS_COLORS[s])}
-                                    >
-                                        {STATUS_LABELS[s]}
-                                    </button>
-                                ))}
+
+                            {/* Esito Appuntamento */}
+                            <div className="pt-1 space-y-2">
+                                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Esito Appuntamento</p>
+                                <select
+                                    className="glass-input w-full text-sm"
+                                    value={selectedAppointment.status}
+                                    onChange={e => {
+                                        const s = e.target.value as AppointmentStatus;
+                                        setAppointments(prev => prev.map(a => a.id === selectedAppointment.id ? { ...a, status: s } : a));
+                                        setSelectedAppointment({ ...selectedAppointment, status: s });
+                                    }}
+                                >
+                                    {(Object.keys(STATUS_LABELS) as AppointmentStatus[]).map(s => (
+                                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                                    ))}
+                                </select>
+                                <textarea
+                                    className="glass-input w-full resize-none text-xs"
+                                    rows={2}
+                                    placeholder="Note sull'esito dell'appuntamento..."
+                                    value={selectedAppointment.esitoNote ?? ""}
+                                    onChange={e => {
+                                        const v = e.target.value;
+                                        setAppointments(prev => prev.map(a => a.id === selectedAppointment.id ? { ...a, esitoNote: v } : a));
+                                        setSelectedAppointment({ ...selectedAppointment, esitoNote: v });
+                                    }}
+                                />
                             </div>
                         </div>
                     </div>
