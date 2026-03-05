@@ -73,12 +73,12 @@ async function syncSmartphones() {
             const models = data.map(item => item.modelValue).filter(Boolean);
 
             if (models.length > 0) {
-                // If it successfully fetched models, update our internal record.
-                // The API doesn't expose release dates natively in this endpoint, 
-                // so we will just take the first 50 latest ones (usually ordered by newest).
-                updatedData[brand] = models.slice(0, 50);
+                // The API seems to append newer phones to the end of the list.
+                // We reverse the array so the newest models are at the top,
+                // and keep up to 200 models per brand to be safe.
+                updatedData[brand] = models.reverse().slice(0, 200);
                 hasUpdates = true;
-                console.log(`✅ Successfully synced ${models.length} models for ${brand}`);
+                console.log(`✅ Successfully synced ${updatedData[brand].length} models for ${brand}`);
             } else {
                 console.warn(`⚠️ No models returned for ${brand}`);
             }
