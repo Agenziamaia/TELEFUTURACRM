@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
+import { DatePickerInput } from "@/components/DatePickerInput";
 
 // Mock appointment data — will be replaced with Supabase queries
 type AppointmentType = "incoming" | "outgoing" | "self_generated";
@@ -79,6 +80,7 @@ export default function Calendario() {
     const [showModal, setShowModal] = useState(false);
     const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showSearchDrawer, setShowSearchDrawer] = useState(false);
     const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS);
 
     // New appointment form state
@@ -93,6 +95,13 @@ export default function Calendario() {
         cfPiva: "",
         notes: "",
     });
+
+    // Search Filters State
+    const [searchQuery, setSearchQuery] = useState("");
+    const [searchCfPiva, setSearchCfPiva] = useState("");
+    const [searchPhone, setSearchPhone] = useState("");
+    const [searchAgent, setSearchAgent] = useState("");
+    // (Dates aren't fully wired yet in the generic mock)
 
     const prevMonth = () => {
         if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
@@ -142,9 +151,26 @@ export default function Calendario() {
 
     const dateAppts = selectedDate ? apptsByDate(selectedDate) : [];
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-
     const isCallCenter = user?.role === "admin"; // admin = call center operator
     const isAgent = user?.role !== "admin";
+
+    // Search result chronological list (includes RBAC store-based filtering implicitly from visibleAppointments)
+    const searchResults = visibleAppointments.filter(a => {
+        // Apply Name / Ragione Sociale (case-insensitive)
+        if (searchQuery && !a.customerName.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+        // Apply CF / PIVA
+        if (searchCfPiva && !(a.cfPiva && a.cfPiva.toLowerCase().includes(searchCfPiva.toLowerCase()))) return false;
+        // Apply Phone
+        if (searchPhone && !a.customerPhone.includes(searchPhone)) return false;
+        // Apply Agent (Admin only filter)
+        if (isCallCenter && searchAgent && searchAgent !== "Tutti gli agenti" && a.agente !== searchAgent) return false;
+        return true;
+    }).sort((a, b) => {
+        // Chronological sort: newest/future first for easy viewing
+        const dateA = new Date(`${a.date}T${a.time}`);
+        const dateB = new Date(`${b.date}T${b.time}`);
+        return dateB.getTime() - dateA.getTime();
+    });
 
     // When agent opens create modal, auto-preset to self_generated
     const openCreateModal = () => {
@@ -163,16 +189,166 @@ export default function Calendario() {
                         {isCallCenter ? "Visualizzazione completa — tutti gli agenti" : `I tuoi appuntamenti — ${user?.name}`}
                     </p>
                 </div>
-                {selectedDate && (
+                <div className="flex gap-3">
                     <button
-                        onClick={openCreateModal}
-                        className="primary-btn h-10 px-5 flex items-center gap-2"
+                        onClick={() => setShowSearchDrawer(!showSearchDrawer)}
+                        className={cn(
+                            "h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border",
+                            showSearchDrawer
+                                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/50 shadow-indigo-500/20"
+                                : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
+                        )}
                     >
-                        <Plus className="w-4 h-4" />
-                        Nuovo appuntamento
+                        <Search className="w-4 h-4" />
+                        Cerca appuntamenti
                     </button>
-                )}
+                    {selectedDate && (
+                        <button
+                            onClick={openCreateModal}
+                            className="primary-btn h-10 px-5 flex items-center gap-2"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Nuovo appuntamento
+                        </button>
+                    )}
+                </div>
             </div>
+
+            {/* Advanced Search Drawer */}
+            {showSearchDrawer && (
+                <div className="glass-card mb-6 p-6 animate-in slide-in-from-top-4 fade-in duration-200">
+                    <h3 className="text-lg font-medium text-white mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
+                        <Search className="w-5 h-5 text-indigo-400" />
+                        Filtri di ricerca
+                    </h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        {/* 1. Nome / Ragione Sociale */}
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-2">Nome o Ragione Sociale</label>
+                            <input
+                                type="text"
+                                placeholder="Es. Mario Rossi"
+                                className="glass-input w-full"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+
+                        {/* 2. CF / PIVA */}
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-2">Codice Fiscale / P.IVA</label>
+                            <input
+                                type="text"
+                                placeholder="Inserisci CF o P.IVA"
+                                className="glass-input w-full"
+                                value={searchCfPiva}
+                                onChange={(e) => setSearchCfPiva(e.target.value)}
+                            />
+                        </div>
+
+                        {/* 3. Cellulare */}
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-2">Numero di cellulare</label>
+                            <input
+                                type="number"
+                                placeholder="Es. 3331234567"
+                                className="glass-input w-full"
+                                value={searchPhone}
+                                onChange={(e) => setSearchPhone(e.target.value)}
+                            />
+                        </div>
+
+                        {/* 4. Agente (Admin Only) */}
+                        {isCallCenter ? (
+                            <div>
+                                <label className="block text-sm font-bold text-indigo-300 mb-2">Agente (Admin)</label>
+                                <select
+                                    className="glass-input w-full border-indigo-500/30 focus:border-indigo-500/50"
+                                    value={searchAgent}
+                                    onChange={(e) => setSearchAgent(e.target.value)}
+                                >
+                                    <option>Tutti gli agenti</option>
+                                    {MOCK_AGENTS.map(agent => (
+                                        <option key={agent} value={agent}>{agent}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        ) : (
+                            // Space preserver for layout on non-admin
+                            <div className="hidden lg:block"></div>
+                        )}
+
+                        {/* Date Ranges */}
+                        <div className="md:col-span-2 lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-white/5 mt-2">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Da data appuntamento</label>
+                                <DatePickerInput id="da_data_appuntamento" name="da_data_appuntamento" placeholder="Seleziona data" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">A data appuntamento</label>
+                                <DatePickerInput id="a_data_appuntamento" name="a_data_appuntamento" placeholder="Seleziona data" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex gap-3">
+                        <button className="primary-btn h-10 px-6 text-sm">Cerca</button>
+                        <button
+                            onClick={() => setShowSearchDrawer(false)}
+                            className="h-10 px-6 rounded-lg font-medium bg-white/5 text-slate-300 hover:bg-white/10 transition-colors text-sm"
+                        >
+                            Annulla
+                        </button>
+                    </div>
+
+                    {/* Temporary mockup of chronological results inside the drawer */}
+                    <div className="mt-8 pt-6 border-t border-white/10">
+                        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Risultati di ricerca</h4>
+                        <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                            {searchResults.map(appt => (
+                                <div key={appt.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors gap-4">
+                                    <div className="flex gap-4 items-center">
+                                        <div className="flex flex-col items-center justify-center bg-indigo-500/10 text-indigo-400 w-12 h-12 rounded-lg shrink-0">
+                                            <span className="text-lg font-bold leading-none">{appt.date.split('-')[2]}</span>
+                                            <span className="text-[10px] uppercase font-semibold">{MONTHS_IT[parseInt(appt.date.split('-')[1]) - 1].substring(0, 3)}</span>
+                                        </div>
+                                        <div>
+                                            <h5 className="text-white font-medium">{appt.customerName}</h5>
+                                            <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
+                                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {appt.time}</span>
+                                                <span className="flex items-center gap-1 text-slate-500"><User className="w-3 h-3" /> {appt.agente}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 sm:w-auto w-full justify-between sm:justify-end">
+                                        <span className={cn(
+                                            "text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border",
+                                            appt.type === "incoming" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
+                                                appt.type === "self_generated" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
+                                                    "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                        )}>
+                                            {appt.type}
+                                        </span>
+                                        <span className={cn(
+                                            "text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border",
+                                            STATUS_COLORS[appt.status]
+                                        )}>
+                                            {STATUS_LABELS[appt.status]}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                            {searchResults.length === 0 && (
+                                <div className="text-center py-8 text-slate-500 text-sm">
+                                    Nessun appuntamento trovato.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Calendar Grid */}
