@@ -5,6 +5,7 @@ import { Search, Save, Trash2, Paperclip, CheckSquare, MessageSquare, X } from "
 import { cn } from "@/utils";
 import { StatusDropdown, STATUS_OPTIONS } from "@/components/StatusDropdown";
 import { DatePickerInput } from "@/components/DatePickerInput";
+import { useAuth } from "@/context/AuthContext";
 
 // Mock data representing the complex admin view of PDAs
 const mockGestioneData = [
@@ -49,7 +50,10 @@ const mockGestioneData = [
 ];
 
 export default function GestionePda() {
+    const { user } = useAuth();
     const [selectedNote, setSelectedNote] = useState<{ id: number, text: string } | null>(null);
+
+    const isAdmin = user?.role === "admin";
 
     return (
         <div className="w-full">
@@ -61,15 +65,32 @@ export default function GestionePda() {
             {/* Advanced Filter Section Replica */}
             <div className="glass-card mb-6 p-6">
                 <h3 className="text-lg font-medium text-white mb-4 border-b border-white/10 pb-2">Ricerca avanzata</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {/* 1. Prodotto */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Categoria</label>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto</label>
                         <select className="glass-input w-full">
-                            <option>Tutte</option>
+                            <option>Tutti i prodotti</option>
+                            {/* To be replaced with actual product list */}
                             <option>ENERGIA</option>
                             <option>DIGITAL</option>
                         </select>
                     </div>
+
+                    {/* 2. Brand */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Brand</label>
+                        <select className="glass-input w-full">
+                            <option>Tutti i brand</option>
+                            <option>Fastweb</option>
+                            <option>WindTre</option>
+                            <option>S4 Energia</option>
+                            <option>Sky</option>
+                            <option>Dojo</option>
+                        </select>
+                    </div>
+
+                    {/* 3. Venditore */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Venditore</label>
                         <select className="glass-input w-full">
@@ -78,6 +99,8 @@ export default function GestionePda() {
                             <option>Luca Perotta</option>
                         </select>
                     </div>
+
+                    {/* 4. Stato */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Stato</label>
                         <select className="glass-input w-full">
@@ -87,6 +110,8 @@ export default function GestionePda() {
                             ))}
                         </select>
                     </div>
+
+                    {/* 5. Da data invio */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Da data invio</label>
                         <DatePickerInput
@@ -95,6 +120,8 @@ export default function GestionePda() {
                             placeholder="inserire data inizio"
                         />
                     </div>
+
+                    {/* 6. A data invio */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">A data invio</label>
                         <DatePickerInput
@@ -103,6 +130,19 @@ export default function GestionePda() {
                             placeholder="inserire data fine"
                         />
                     </div>
+
+                    {/* 7. Operatore Back Office (Admin only) */}
+                    {isAdmin && (
+                        <div>
+                            <label className="block text-sm font-medium text-slate-300 mb-2 text-indigo-300">Operatore Back Office</label>
+                            <select className="glass-input w-full border-indigo-500/30 focus:border-indigo-500/50">
+                                <option>Tutti gli operatori</option>
+                                <option>Alfonso Carluccini</option>
+                                <option>Alessandro Sandri</option>
+                                {/* Populate dynamically based on available BO operators */}
+                            </select>
+                        </div>
+                    )}
                 </div>
                 <div className="mt-6 flex gap-3">
                     <button className="primary-btn h-10 px-6">Ricerca pda</button>
