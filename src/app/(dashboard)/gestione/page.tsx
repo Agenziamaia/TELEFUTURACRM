@@ -1,6 +1,7 @@
 "use client";
 
-import { Search, Save, Trash2, Paperclip, CheckSquare } from "lucide-react";
+import { useState } from "react";
+import { Search, Save, Trash2, Paperclip, CheckSquare, MessageSquare, X } from "lucide-react";
 import { cn } from "@/utils";
 import { StatusDropdown, STATUS_OPTIONS } from "@/components/StatusDropdown";
 import { DatePickerInput } from "@/components/DatePickerInput";
@@ -23,7 +24,8 @@ const mockGestioneData = [
         tipologia: "FISSO",
         segmento: "Business",
         pod: "1",
-        pdr: "1"
+        pdr: "1",
+        note: "Il cliente ha richiesto di essere contattato solo la mattina. Verificare i documenti allegati prima di procedere."
     },
     {
         id: 10,
@@ -41,11 +43,14 @@ const mockGestioneData = [
         tipologia: "FISSO",
         segmento: "Business",
         pod: "1",
-        pdr: ""
+        pdr: "",
+        note: ""
     }
 ];
 
 export default function GestionePda() {
+    const [selectedNote, setSelectedNote] = useState<{ id: number, text: string } | null>(null);
+
     return (
         <div className="w-full">
             <div className="mb-8">
@@ -126,6 +131,7 @@ export default function GestionePda() {
                                 <th className="px-4 py-4 w-32 text-center">Azioni</th>
                                 <th className="px-4 py-4 w-48">Operatore BO</th>
                                 <th className="px-4 py-4 w-48">Stato</th>
+                                <th className="px-4 py-4 w-16 text-center">Note</th>
                                 <th className="px-4 py-4">Ragione Sociale</th>
                                 <th className="px-4 py-4">P. IVA</th>
                                 <th className="px-4 py-4">Referente</th>
@@ -159,6 +165,18 @@ export default function GestionePda() {
                                         {/* isAgent={false} since this is the Back Office (Gestione) page */}
                                         <StatusDropdown value={row.stato} isAgent={false} />
                                     </td>
+                                    <td className="px-2 py-3 text-center">
+                                        <button
+                                            onClick={() => setSelectedNote({ id: row.id, text: row.note || "" })}
+                                            className={cn(
+                                                "p-1.5 rounded transition-all",
+                                                row.note ? "bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30" : "bg-white/5 text-slate-500 hover:bg-white/10"
+                                            )}
+                                            title="Visualizza/Modifica Note"
+                                        >
+                                            <MessageSquare className="w-4 h-4" />
+                                        </button>
+                                    </td>
                                     <td className="px-2 py-3"><input type="text" className="glass-input w-full text-xs py-1.5 px-2 h-auto" defaultValue={row.societa} /></td>
                                     <td className="px-2 py-3"><input type="text" className="glass-input w-full text-xs py-1.5 px-2 h-auto" defaultValue={row.piva} /></td>
                                     <td className="px-2 py-3"><input type="text" className="glass-input w-full text-xs py-1.5 px-2 h-auto" defaultValue={row.referente} /></td>
@@ -179,6 +197,64 @@ export default function GestionePda() {
                     <span>Visualizzate da 1 a 2 di 2 totale</span>
                 </div>
             </div>
+
+            {/* Note Modal */}
+            {selectedNote && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="glass-card w-full max-w-lg shadow-2xl relative flex flex-col max-h-[90vh]">
+                        {/* Header */}
+                        <div className="flex items-center justify-between p-5 border-b border-white/10 bg-white/[0.02] rounded-t-xl shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-500/20 rounded-lg">
+                                    <MessageSquare className="w-5 h-5 text-indigo-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">Note Pratica</h3>
+                                    <p className="text-xs text-slate-400">ID Pratica: #{selectedNote.id}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setSelectedNote(null)}
+                                className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 overflow-y-auto">
+                            <label className="block text-sm font-medium text-slate-300 mb-2">Aggiungi o modifica nota</label>
+                            <textarea
+                                className="glass-input w-full min-h-[160px] resize-y text-sm leading-relaxed"
+                                placeholder="Scrivi una nota per questa pratica..."
+                                defaultValue={selectedNote.text}
+                            />
+                            <p className="text-xs text-slate-500 mt-2">
+                                Scrivi qualsiasi dettaglio importante che gli altri operatori di back office devono sapere per questa pratica. Le note lunghe possono essere lette tranquillamente qui.
+                            </p>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-5 border-t border-white/10 bg-black/20 flex justify-end gap-3 rounded-b-xl shrink-0 mt-auto">
+                            <button
+                                onClick={() => setSelectedNote(null)}
+                                className="px-5 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+                            >
+                                Annulla
+                            </button>
+                            <button
+                                onClick={() => {
+                                    // In a real implementation we would save to the DB here
+                                    setSelectedNote(null);
+                                }}
+                                className="primary-btn px-6 py-2 text-sm"
+                            >
+                                Salva Note
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
