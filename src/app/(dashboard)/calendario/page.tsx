@@ -195,8 +195,10 @@ export default function Calendario() {
         e.preventDefault();
         if (!selectedDate || !newTask.title || !newTask.assignedTo) return;
 
+        const nextId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
+
         const created: CalendarTask = {
-            id: Math.max(...tasks.map(t => t.id), 0) + 1,
+            id: nextId,
             title: newTask.title,
             date: selectedDate,
             time: newTask.time || undefined,
