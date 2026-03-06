@@ -71,9 +71,12 @@ export default function GestionePda() {
                         <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto</label>
                         <select className="glass-input w-full">
                             <option>Tutti i prodotti</option>
-                            {/* To be replaced with actual product list */}
-                            <option>ENERGIA</option>
-                            <option>DIGITAL</option>
+                            <option>Mobile</option>
+                            <option>Fisso</option>
+                            <option>Luce & Gas</option>
+                            <option>Assicurazioni</option>
+                            <option>Protecta</option>
+                            <option>POS</option>
                         </select>
                     </div>
 
