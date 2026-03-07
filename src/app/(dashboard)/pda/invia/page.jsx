@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { Search, ShoppingBag, User, Check, ChevronLeft, ChevronRight, Plus, Trash2, Archive, HelpCircle, Info, LayoutGrid, Clock, Calendar, ExternalLink, MoreVertical, ChevronUp, ChevronDown } from "lucide-react";
 
 // ── COSTANTI ──────────────────────────────────────────────────────────────────
 
@@ -123,39 +124,53 @@ const STEP_LABELS = ["Venditore", "Cliente + Anagrafica", "Brand", "Prodotti", "
 
 
 // ── CartItem ──────────────────────────────────────────────────────────────────
+// ── CartItem ──────────────────────────────────────────────────────────────────
 function CartItem({ it, ii, gi, total, expI, setExpI }) {
   const exp = expI[gi + "_" + ii];
-  const dets = it.details ? Object.entries(it.details).filter(([k, v]) => v && k !== "hasContract") : [];
+  const dets = it.details ? Object.entries(it.details).filter(([k, v]) => v && k !== "hasContract" && v !== "null") : [];
+
   return (
-    <div style={{ borderBottom: ii < total - 1 ? "1px solid #f0f0f0" : "none" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
-        <span style={{ fontSize: 14 }}>{it.macroIcon}</span>
-        <span style={{ fontSize: 12, fontWeight: 600, color: it.macroColor }}>{it.macro}</span>
-        <span style={{ color: "#ccc" }}>›</span>
-        <span style={{ fontSize: 12, color: "#333" }}>{it.sub}</span>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 10, color: "#bbb" }}>V.#{it.saleNum}</span>
-          <button onClick={() => setExpI(p => ({ ...p, [gi + "_" + ii]: !p[gi + "_" + ii] }))}
-            style={{ background: exp ? "#f0f7ff" : "#f8f9fa", border: exp ? "1px solid #2E75B6" : "1px solid #e0e0e0", borderRadius: 5, padding: "3px 10px", fontSize: 10, fontWeight: 600, cursor: "pointer", color: exp ? "#2E75B6" : "#888" }}>
-            {exp ? "▲ Chiudi" : "👁 Dettagli"}
-          </button>
+    <div className={`py-4 ${ii < total - 1 ? "border-b border-white/5" : ""}`}>
+      <div className="flex items-center gap-4">
+        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-lg border border-white/10 group-hover:scale-110 transition-transform">
+          {it.macroIcon}
         </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-white/5 border border-white/5" style={{ color: it.macroColor }}>
+              {it.macro}
+            </span>
+            <span className="text-slate-600 text-[10px]">#V-{it.saleNum}</span>
+          </div>
+          <h4 className="text-sm font-bold text-white truncate">{it.sub}</h4>
+        </div>
+        <button
+          onClick={() => setExpI(p => ({ ...p, [gi + "_" + ii]: !p[gi + "_" + ii] }))}
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${exp ? "bg-violet-500 text-white shadow-lg" : "bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5"}`}
+        >
+          {exp ? <ChevronUp className="w-3 h-3" /> : <Search className="w-3 h-3" />}
+          {exp ? "Chiudi" : "Dettagli"}
+        </button>
       </div>
+
       {exp && (
-        <div style={{ padding: "8px 12px 12px 32px" }}>
-          <div style={{ background: "#f8fafc", borderRadius: 8, padding: 12, border: "1px solid #e8edf2" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: it.macroColor, marginBottom: 8 }}>📋 {it.sub}</div>
-            {dets.length > 0
-              ? <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
-                {dets.map(([k, v]) => (
-                  <div key={k}>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: "#888", textTransform: "uppercase" }}>{k}</span>
-                    <div style={{ fontSize: 12, color: "#333", marginTop: 1 }}>{String(v)}</div>
+        <div className="mt-4 ml-14 animate-in slide-in-from-top-2 fade-in duration-200">
+          <div className="glass-panel p-4 bg-white/[0.02] border-white/5 relative overflow-hidden">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {dets.length > 0 ? (
+                dets.map(([k, v]) => (
+                  <div key={k} className="space-y-1">
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">{k}</span>
+                    <div className="text-xs text-slate-200 font-medium break-all">{String(v)}</div>
                   </div>
-                ))}
-              </div>
-              : <div style={{ fontSize: 12, color: "#999" }}>Nessun dettaglio aggiuntivo</div>
-            }
+                ))
+              ) : (
+                <div className="col-span-full py-4 text-center text-[10px] text-slate-500 uppercase font-black tracking-[0.2em]">Nessun dettaglio extra</div>
+              )}
+            </div>
+            <div className="absolute top-0 right-0 p-2 opacity-5 scale-150 rotate-12 pointer-events-none">
+              <LayoutGrid className="w-12 h-12" />
+            </div>
           </div>
         </div>
       )}
@@ -167,6 +182,7 @@ function CartItem({ it, ii, gi, total, expI, setExpI }) {
 export default function InviaPda() {
   const [step, setStep] = useState(1);
   const [venditore, setVenditore] = useState("");
+  const [negozio, setNegozio] = useState("");
 
   const [tipoCliente, setTipoCliente] = useState(null);
   const [lookupValue, setLookupValue] = useState("");
@@ -299,186 +315,67 @@ export default function InviaPda() {
   // ── Render campi MENU A COMPARSA ─────────────────────────────────────────────
   const renderCatFields = (categoria, catKey, si, sale) => {
     if (!sale.product) return null;
+    const color = CAT_COLORS[categoria] || "#2E75B6";
 
-    // LUCE & GAS
+    // Luce & Gas Special rendering
     if (categoria === "Luce & Gas") {
-      if (!sale.product) return null;
-      const allFields = CAT_FIELDS["Luce & Gas"];
-      const color = CAT_COLORS["Luce & Gas"];
-      // Fastweb vende solo energia (Luce) — usa sempre campi Luce
-      // W3: "Luce" o "Gas" espliciti — Gas aggiornato senza remi/matricola
-      const luceKeys = ["tipologiaC", "indirizzoF", "pod", "potenzaImp", "tensione", "destinazL", "consumoL", "residente"];
-      const gasKeys = ["tipologiaC", "indirizzoF", "pdr", "tipologiaUso", "destinazG", "consumoG", "fornitPrec"];
       const isLuce = brand === "fastweb" || sale.product === "Luce" || sale.product?.toUpperCase().includes("LUCE");
-      const sezKeys = isLuce ? luceKeys : gasKeys;
-      const visible = allFields.filter(f => sezKeys.includes(f.key));
+      const subKeys = isLuce ? ["tipologiaC", "indirizzoF", "pod", "potenzaImp", "tensione", "destinazL", "consumoL", "residente"] : ["tipologiaC", "indirizzoF", "pdr", "tipologiaUso", "destinazG", "consumoG", "fornitPrec"];
+      const fields = CAT_FIELDS["Luce & Gas"].filter(f => subKeys.includes(f.key));
       const ibanAna = tipoCliente === "business" ? anBusiness.iban : anConsumer.iban;
       const ibanLG = sale.fields?.ibanLG || "";
 
-      // ── FASTWEB: metodo pagamento + IBAN condizionale ──────────────────────
-      if (brand === "fastweb") {
-        const payMeth = sale.fields?.payMeth || "";
-        return (
-          <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 8, background: "white", border: `1px solid ${color}30`, borderLeft: `3px solid ${color}` }}>
-            {/* Metodo pagamento + IBAN */}
-            <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: "1px dashed #e0e0e0" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: color, marginBottom: 6 }}>
-                💳 Metodo di pagamento <span style={{ color: "#dc3545" }}>*</span>
-                <span style={{ fontSize: 10, fontWeight: 400, color: "#888", marginLeft: 6 }}>Richiesto da Fastweb</span>
-              </div>
-              <div style={{ display: "flex", gap: 8, marginBottom: payMeth === "IBAN" ? 10 : 0 }}>
-                {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
-                  const sel = payMeth === val;
-                  return <button key={val} onClick={() => setField(catKey, si, "payMeth", sel ? "" : val)}
-                    style={{
-                      flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
-                      border: sel ? `2px solid ${color}` : "2px solid #e0e0e0",
-                      background: sel ? color : "white", color: sel ? "white" : "#444"
-                    }}>{lbl}</button>;
-                })}
-              </div>
-              {payMeth === "IBAN" && (
-                <div style={{ marginTop: 8 }}>
-                  {ibanAna && (
-                    <button onClick={() => setField(catKey, si, "ibanLG", ibanAna)}
-                      style={{
-                        marginBottom: 8, padding: "6px 14px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                        border: `1px solid ${color}`, background: "white", color: color, display: "flex", alignItems: "center", gap: 6
-                      }}>
-                      📋 Copia da anagrafica {ibanLG === ibanAna && <span style={{ color: "#28a745" }}>✓</span>}
-                    </button>
-                  )}
-                  <input type="text" value={ibanLG}
-                    onChange={e => setField(catKey, si, "ibanLG", e.target.value)}
-                    placeholder="IT00 X000 0000 0000 0000 0000 000"
-                    style={{
-                      width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box",
-                      fontFamily: "monospace", letterSpacing: 1.2,
-                      border: ibanLG ? "2px solid #28a745" : "1px solid #d0d0d0",
-                      background: ibanLG ? "#f0fff0" : "white"
-                    }} />
-                  {!ibanAna && <div style={{ fontSize: 10, color: "#888", marginTop: 3 }}>Nessun IBAN in anagrafica — inseriscilo manualmente</div>}
-                </div>
-              )}
-            </div>
-            {/* Campi fornitura */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px 16px" }}>
-              {visible.map(f => (
-                <div key={f.key} style={f.span2 ? { gridColumn: "1 / -1" } : {}}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 3 }}>
-                    {f.label}{f.required && <span style={{ color: "#dc3545" }}> *</span>}
-                  </div>
-                  {f.type === "select" ? (
-                    <select value={sale.fields?.[f.key] || ""} onChange={e => setField(catKey, si, f.key, e.target.value)}
-                      style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12 }}>
-                      {f.opts.map(o => <option key={o} value={o}>{o || "— Seleziona —"}</option>)}
-                    </select>
-                  ) : (
-                    <input type="text" value={sale.fields?.[f.key] || ""} onChange={e => setField(catKey, si, f.key, e.target.value)}
-                      placeholder={f.ph}
-                      style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, boxSizing: "border-box" }} />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      }
-
-      // ── W3 (e altri): toggle Domiciliazione → IBAN condizionale ──────────────
-      const domicil = sale.fields?.domiciliazione || "";
       return (
-        <div style={{ marginTop: 12 }}>
-          {/* Domiciliazione */}
-          <div style={{ padding: "12px 14px", borderRadius: 8, background: "#f8f9fa", border: "1px solid #e0e0e0", marginBottom: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: color, marginBottom: 8 }}>🏦 Domiciliazione?</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: domicil === "Sì" ? 12 : 0 }}>
-              {["Sì", "No"].map(v => {
-                const sel = domicil === v;
-                return (
-                  <button key={v} onClick={() => setField(catKey, si, "domiciliazione", sel ? "" : v)}
-                    style={{
-                      flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all .15s",
-                      border: sel ? `2px solid ${color}` : "2px solid #e0e0e0",
-                      background: sel ? color : "white", color: sel ? "white" : "#555"
-                    }}>
-                    {v}
+        <div className="mt-4 p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-6">
+          {(brand === "fastweb" || (brand === "w3" && sale.fields?.domiciliazione === "Sì")) && (
+            <div className="pb-6 border-b border-white/5">
+              <Label text="Metodo di Pagamento dal Carrello / IBAN" required />
+              <div className="flex gap-3 mt-3">
+                <input
+                  type="text"
+                  value={ibanLG}
+                  onChange={e => setField(catKey, si, "ibanLG", e.target.value)}
+                  placeholder="IT00 X000 0000 0000 0000 0000 000"
+                  className="flex-1 glass-input text-xs font-mono py-2.5 px-4 rounded-xl"
+                />
+                {ibanAna && (
+                  <button onClick={() => setField(catKey, si, "ibanLG", ibanAna)} className="px-4 py-2 bg-emerald-500/10 text-emerald-400 rounded-xl text-[10px] font-bold uppercase transition-all hover:bg-emerald-500/20">
+                    📋 Copia Ana
                   </button>
-                );
-              })}
-            </div>
-            {domicil === "Sì" && (() => {
-              const payMeth = sale.fields?.payMeth || "";
-              return (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: color, marginBottom: 8 }}>💳 Metodo di pagamento <span style={{ color: "#dc3545" }}>*</span></div>
-                  <div style={{ display: "flex", gap: 8, marginBottom: payMeth === "IBAN" ? 10 : 0 }}>
-                    {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
-                      const sel = payMeth === val;
-                      return <button key={val} onClick={() => setField(catKey, si, "payMeth", sel ? "" : val)}
-                        style={{
-                          flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
-                          border: sel ? `2px solid ${color}` : "2px solid #e0e0e0",
-                          background: sel ? color : "white", color: sel ? "white" : "#444"
-                        }}>{lbl}</button>;
-                    })}
-                  </div>
-                  {payMeth === "IBAN" && (
-                    <div>
-                      {ibanAna && (
-                        <button onClick={() => setField(catKey, si, "ibanLG", ibanAna)}
-                          style={{
-                            marginBottom: 8, padding: "6px 14px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                            border: `1px solid ${color}`, background: "white", color: color, display: "flex", alignItems: "center", gap: 6
-                          }}>
-                          📋 Copia da anagrafica {ibanLG === ibanAna && <span style={{ color: "#28a745" }}>✓</span>}
-                        </button>
-                      )}
-                      <input type="text" value={ibanLG}
-                        onChange={e => setField(catKey, si, "ibanLG", e.target.value)}
-                        placeholder="IT00 X000 0000 0000 0000 0000 000"
-                        style={{
-                          width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box",
-                          fontFamily: "monospace", letterSpacing: 1.2,
-                          border: ibanLG ? "2px solid #28a745" : "1px solid #d0d0d0",
-                          background: ibanLG ? "#f0fff0" : "white"
-                        }} />
-                      {!ibanAna && <div style={{ fontSize: 10, color: "#888", marginTop: 3 }}>Nessun IBAN in anagrafica — inseriscilo manualmente</div>}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-          {/* Campi fornitura — visibili solo dopo aver risposto alla domiciliazione */}
-          {(domicil === "No" || (domicil === "Sì" && (sale.fields?.payMeth === "CC" || (sale.fields?.payMeth === "IBAN")))) && (
-            <div style={{ padding: "12px 14px", borderRadius: 8, background: "white", border: `1px solid ${color}30`, borderLeft: `3px solid ${color}` }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px 16px" }}>
-                {visible.map(f => (
-                  <div key={f.key} style={f.span2 ? { gridColumn: "1 / -1" } : {}}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 3 }}>
-                      {f.label}{f.required && <span style={{ color: "#dc3545" }}> *</span>}
-                    </div>
-                    {f.type === "select" ? (
-                      <select value={sale.fields?.[f.key] || ""} onChange={e => setField(catKey, si, f.key, e.target.value)}
-                        style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12 }}>
-                        {f.opts.map(o => <option key={o} value={o}>{o || "— Seleziona —"}</option>)}
-                      </select>
-                    ) : (
-                      <input type="text" value={sale.fields?.[f.key] || ""} onChange={e => setField(catKey, si, f.key, e.target.value)}
-                        placeholder={f.ph}
-                        style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, boxSizing: "border-box" }} />
-                    )}
-                  </div>
-                ))}
+                )}
               </div>
             </div>
           )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {fields.map(f => (
+              <div key={f.key} className={f.span2 ? 'md:col-span-2' : ''}>
+                <Label text={f.label} required={f.required} />
+                {f.type === "select" ? (
+                  <select
+                    value={sale.fields?.[f.key] || ""}
+                    onChange={e => setField(catKey, si, f.key, e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-sm text-slate-300 outline-none focus:border-violet-500/50"
+                  >
+                    {f.opts.map(o => <option key={o} value={o}>{o || "— Seleziona —"}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={sale.fields?.[f.key] || ""}
+                    onChange={e => setField(catKey, si, f.key, e.target.value)}
+                    placeholder={f.ph}
+                    className="w-full glass-input rounded-xl py-2.5 px-4 text-sm"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
 
-    // Dojo POS — campi custom, niente in CAT_FIELDS
+    // Dojo POS — custom fields, nothing in CAT_FIELDS
     if (brand === "dojo" && categoria === "POS") {
       const dc = "#6f42c1";
       const addr = sale.fields?.dojoAddr || "";
@@ -492,66 +389,51 @@ export default function InviaPda() {
         const canDec = value > min, canInc = value < max;
         const pctVal = pct(value, min, max);
         return (
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 6 }}>
-              {label} <span style={{ color: "#dc3545" }}>*</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="mb-4">
+            <Label text={label} required />
+            <div className="flex items-center gap-3 mt-2">
               <button onClick={() => setField(catKey, si, fieldKey, clamp(value - step, min, max, step).toFixed(decimals))}
                 disabled={!canDec}
-                style={{
-                  width: 34, height: 34, borderRadius: 8, border: `2px solid ${canDec ? dc : "#ddd"}`,
-                  background: canDec ? dc : "#f5f5f5", color: canDec ? "white" : "#bbb", fontSize: 20, fontWeight: 700,
-                  cursor: canDec ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-                }}>−</button>
-              <div style={{ flex: 1 }}>
-                <div style={{ textAlign: "center", marginBottom: 5 }}>
-                  <span style={{ fontSize: 20, fontWeight: 800, color: dc }}>{value.toFixed(decimals)}</span>
-                  <span style={{ fontSize: 12, color: "#888", marginLeft: 4 }}>{unit}</span>
+                className={`w-9 h-9 rounded-lg flex items-center justify-center text-xl font-bold transition-all ${canDec ? `bg-violet-500/10 text-violet-400 border border-violet-500/20` : "bg-white/5 text-slate-600 border border-white/10 cursor-not-allowed"}`}>
+                −
+              </button>
+              <div className="flex-1">
+                <div className="text-center mb-1">
+                  <span className="text-xl font-extrabold text-violet-400">{value.toFixed(decimals)}</span>
+                  <span className="text-xs text-slate-500 ml-1">{unit}</span>
                 </div>
-                <div style={{ height: 6, borderRadius: 3, background: "#e0e0e0", position: "relative" }}>
-                  <div style={{ height: 6, borderRadius: 3, background: dc, width: `${pctVal}%`, transition: "width .15s" }} />
-                  <div style={{
-                    position: "absolute", top: -4, left: `calc(${pctVal}% - 7px)`, width: 14, height: 14,
-                    borderRadius: "50%", background: dc, border: "2px solid white", boxShadow: `0 2px 6px ${dc}66`
-                  }} />
+                <div className="h-1.5 rounded-full bg-white/10 relative">
+                  <div className="h-1.5 rounded-full bg-violet-500 transition-all duration-150" style={{ width: `${pctVal}%` }} />
+                  <div className="absolute top-[-4px] w-3.5 h-3.5 rounded-full bg-violet-500 border-2 border-white/10 shadow-lg shadow-violet-500/30" style={{ left: `calc(${pctVal}% - 7px)` }} />
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3, fontSize: 9, color: "#aaa" }}>
+                <div className="flex justify-between mt-1 text-[9px] text-slate-600">
                   <span>{min.toFixed(decimals)} {unit}</span><span>{max.toFixed(decimals)} {unit}</span>
                 </div>
               </div>
               <button onClick={() => setField(catKey, si, fieldKey, clamp(value + step, min, max, step).toFixed(decimals))}
                 disabled={!canInc}
-                style={{
-                  width: 34, height: 34, borderRadius: 8, border: `2px solid ${canInc ? dc : "#ddd"}`,
-                  background: canInc ? dc : "#f5f5f5", color: canInc ? "white" : "#bbb", fontSize: 20, fontWeight: 700,
-                  cursor: canInc ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
-                }}>+</button>
+                className={`w-9 h-9 rounded-lg flex items-center justify-center text-xl font-bold transition-all ${canInc ? `bg-violet-500/10 text-violet-400 border border-violet-500/20` : "bg-white/5 text-slate-600 border border-white/10 cursor-not-allowed"}`}>
+                +
+              </button>
             </div>
           </div>
         );
       };
       return (
-        <div style={{ marginTop: 12, padding: "14px", borderRadius: 8, background: "white", border: `1px solid ${dc}30`, borderLeft: `3px solid ${dc}` }}>
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 5 }}>
-              📍 Indirizzo installazione <span style={{ color: "#dc3545" }}>*</span>
-            </div>
-            <input type="text" value={addr}
+        <div className="mt-4 p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-6">
+          <div>
+            <Label text="Indirizzo installazione" required />
+            <input type="text" className="glass-input mt-2" value={addr}
               onChange={e => setField(catKey, si, "dojoAddr", e.target.value)}
-              placeholder="es. Via Roma 1, 00100 Roma"
-              style={{
-                width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box",
-                border: addr ? `2px solid ${dc}` : "1px solid #d0d0d0", background: addr ? "#FAF5FF" : "white"
-              }} />
+              placeholder="es. Via Roma 1, 00100 Roma" />
           </div>
-          <Stepper label="💶 Costo mensile" value={cost} min={COST_MIN} max={COST_MAX} step={COST_STEP} fieldKey="dojoCost" unit="€/mese" decimals={2} />
-          <Stepper label="📊 Commissione transazioni" value={comm} min={COMM_MIN} max={COMM_MAX} step={COMM_STEP} fieldKey="dojoComm" unit="%" decimals={2} />
+          <Stepper label="Costo mensile" value={cost} min={COST_MIN} max={COST_MAX} step={COST_STEP} fieldKey="dojoCost" unit="€/mese" decimals={2} />
+          <Stepper label="Commissione transazioni" value={comm} min={COMM_MIN} max={COMM_MAX} step={COMM_STEP} fieldKey="dojoComm" unit="%" decimals={2} />
         </div>
       );
     }
 
-    // Categorie generiche
+    // Default rendering for other categories
     let fields = CAT_FIELDS[categoria];
     if (!fields || fields.length === 0) return null;
     // Mobile: rimuovi MNP e Donating se Portabilità = No
@@ -580,13 +462,13 @@ export default function InviaPda() {
       if (brand === "fastweb")
         fields = fields.filter(f => f.key !== "convergenza");
     }
-    const color = CAT_COLORS[categoria] || "#555";
-    const cols = fields.length >= 6 ? "1fr 1fr 1fr" : "1fr 1fr";
+
     const ibanAnaG = tipoCliente === "business" ? anBusiness.iban : anConsumer.iban;
     const ibanFW = sale.fields?.ibanFW || "";
     const ibanSky3P = sale.fields?.ibanSky3P || "";
+
     return (
-      <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 8, background: "white", border: `1px solid ${color}30`, borderLeft: `3px solid ${color}` }}>
+      <div className="mt-4 p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-6">
         {/* IBAN W3 Business FISSO — PayPicker + collassabile */}
         {brand === "w3" && tipoCliente === "business" && categoria === "Fisso" && (() => {
           const ibanBus = anBusiness.iban;
@@ -597,49 +479,36 @@ export default function InviaPda() {
           const coll = collapsedToggles[kIban] !== false;
           if (done && coll) return (
             <div onClick={() => expandToggle(kIban)}
-              style={{
-                marginBottom: 10, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 8px",
-                borderRadius: 20, background: "#edfaf1", border: "1px solid #b2dfca", cursor: "pointer", userSelect: "none"
-              }}>
-              <span style={{ fontSize: 11, color: "#444" }}>{payMeth === "CC" ? "💳 Carta di Credito" : "🏦 IBAN"}</span>
-              {payMeth === "IBAN" && <span style={{ fontSize: 10, color: "#28a745", fontFamily: "monospace", fontWeight: 700 }}>···{ibanW3B.slice(-4)}</span>}
-              <span style={{ fontSize: 10, color: "#28a745" }}>✎</span>
+              className="mb-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 cursor-pointer select-none">
+              <span className="text-xs text-slate-300">{payMeth === "CC" ? "💳 Carta di Credito" : "🏦 IBAN"}</span>
+              {payMeth === "IBAN" && <span className="text-[10px] text-emerald-400 font-mono font-bold">···{ibanW3B.slice(-4)}</span>}
+              <span className="text-[10px] text-emerald-400">✎</span>
             </div>
           );
           return (
-            <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: "1px dashed #e0e0e0" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#28a745", marginBottom: 8 }}>💳 Metodo di pagamento <span style={{ color: "#dc3545" }}>*</span></div>
-              <div style={{ display: "flex", gap: 8, marginBottom: payMeth === "IBAN" ? 10 : 0 }}>
+            <div className="pb-6 border-b border-white/5">
+              <Label text="Metodo di pagamento" required color="#28a745" />
+              <div className="flex gap-3 mt-3">
                 {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
                   const sel = payMeth === val;
                   return <button key={val} onClick={() => { setField(catKey, si, "payMeth", sel ? "" : val); if (val === "CC") collapseToggle(kIban); }}
-                    style={{
-                      flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
-                      border: sel ? "2px solid #28a745" : "2px solid #e0e0e0",
-                      background: sel ? "#28a745" : "white", color: sel ? "white" : "#444"
-                    }}>{lbl}</button>;
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sel ? "bg-emerald-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
+                    {lbl}
+                  </button>;
                 })}
               </div>
               {payMeth === "IBAN" && (
-                <div>
+                <div className="mt-4">
                   {ibanBus && (
                     <button onClick={() => { setField(catKey, si, "ibanW3B", ibanBus); collapseToggle(kIban); }}
-                      style={{
-                        marginBottom: 8, padding: "6px 14px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                        border: "1px solid #28a745", background: "white", color: "#28a745", display: "flex", alignItems: "center", gap: 6
-                      }}>
-                      📋 Copia da anagrafica {ibanW3B === ibanBus && <span style={{ color: "#28a745" }}>✓</span>}
+                      className="mb-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 transition-all hover:bg-emerald-500/20 flex items-center gap-2">
+                      📋 Copia da anagrafica {ibanW3B === ibanBus && <span className="text-emerald-400">✓</span>}
                     </button>
                   )}
-                  <input type="text" value={ibanW3B}
+                  <input type="text" className="glass-input text-xs font-mono" value={ibanW3B}
                     onChange={e => setField(catKey, si, "ibanW3B", e.target.value)}
-                    placeholder="IT00 X000 0000 0000 0000 0000 000"
-                    style={{
-                      width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box",
-                      fontFamily: "monospace", letterSpacing: 1.2,
-                      border: ibanW3B ? "2px solid #28a745" : "1px solid #d0d0d0", background: ibanW3B ? "#f0fff0" : "white"
-                    }} />
-                  {!ibanBus && <div style={{ fontSize: 10, color: "#888", marginTop: 3 }}>Nessun IBAN in anagrafica — inseriscilo manualmente</div>}
+                    placeholder="IT00 X000 0000 0000 0000 0000 000" />
+                  {!ibanBus && <p className="text-[10px] text-slate-500 mt-1">Nessun IBAN in anagrafica — inseriscilo manualmente</p>}
                 </div>
               )}
             </div>
@@ -653,49 +522,36 @@ export default function InviaPda() {
           const coll = collapsedToggles[kIban] !== false;
           if (done && coll) return (
             <div onClick={() => expandToggle(kIban)}
-              style={{
-                marginBottom: 10, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 8px",
-                borderRadius: 20, background: "#E8F4FF", border: "1px solid #9DCBF0", cursor: "pointer", userSelect: "none"
-              }}>
-              <span style={{ fontSize: 11, color: "#444" }}>{payMeth === "CC" ? "💳 Carta di Credito" : "🏦 IBAN"}</span>
-              {payMeth === "IBAN" && <span style={{ fontSize: 10, color: "#0072CE", fontFamily: "monospace", fontWeight: 700 }}>···{ibanSky3P.slice(-4)}</span>}
-              <span style={{ fontSize: 10, color: "#0072CE" }}>✎</span>
+              className="mb-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 cursor-pointer select-none">
+              <span className="text-xs text-slate-300">{payMeth === "CC" ? "💳 Carta di Credito" : "🏦 IBAN"}</span>
+              {payMeth === "IBAN" && <span className="text-[10px] text-sky-400 font-mono font-bold">···{ibanSky3P.slice(-4)}</span>}
+              <span className="text-[10px] text-sky-400">✎</span>
             </div>
           );
           return (
-            <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: "1px dashed #e0e0e0" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#0072CE", marginBottom: 8 }}>💳 Metodo di pagamento <span style={{ color: "#dc3545" }}>*</span></div>
-              <div style={{ display: "flex", gap: 8, marginBottom: payMeth === "IBAN" ? 10 : 0 }}>
+            <div className="pb-6 border-b border-white/5">
+              <Label text="Metodo di pagamento" required color="#0072CE" />
+              <div className="flex gap-3 mt-3">
                 {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
                   const sel = payMeth === val;
                   return <button key={val} onClick={() => { setField(catKey, si, "payMeth", sel ? "" : val); if (val === "CC") collapseToggle(kIban); }}
-                    style={{
-                      flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
-                      border: sel ? "2px solid #0072CE" : "2px solid #e0e0e0",
-                      background: sel ? "#0072CE" : "white", color: sel ? "white" : "#444"
-                    }}>{lbl}</button>;
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sel ? "bg-sky-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
+                    {lbl}
+                  </button>;
                 })}
               </div>
               {payMeth === "IBAN" && (
-                <div>
+                <div className="mt-4">
                   {ibanAnaG && (
                     <button onClick={() => { setField(catKey, si, "ibanSky3P", ibanAnaG); collapseToggle(kIban); }}
-                      style={{
-                        marginBottom: 8, padding: "6px 14px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                        border: "1px solid #0072CE", background: "white", color: "#0072CE", display: "flex", alignItems: "center", gap: 6
-                      }}>
-                      📋 Copia da anagrafica {ibanSky3P === ibanAnaG && <span style={{ color: "#28a745" }}>✓</span>}
+                      className="mb-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-sky-500/10 text-sky-400 border border-sky-500/20 transition-all hover:bg-sky-500/20 flex items-center gap-2">
+                      📋 Copia da anagrafica {ibanSky3P === ibanAnaG && <span className="text-emerald-400">✓</span>}
                     </button>
                   )}
-                  <input type="text" value={ibanSky3P}
+                  <input type="text" className="glass-input text-xs font-mono" value={ibanSky3P}
                     onChange={e => setField(catKey, si, "ibanSky3P", e.target.value)}
-                    placeholder="IT00 X000 0000 0000 0000 0000 000"
-                    style={{
-                      width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box",
-                      fontFamily: "monospace", letterSpacing: 1.2,
-                      border: ibanSky3P ? "2px solid #28a745" : "1px solid #d0d0d0", background: ibanSky3P ? "#f0fff0" : "white"
-                    }} />
-                  {!ibanAnaG && <div style={{ fontSize: 10, color: "#888", marginTop: 3 }}>Nessun IBAN in anagrafica — inseriscilo manualmente</div>}
+                    placeholder="IT00 X000 0000 0000 0000 0000 000" />
+                  {!ibanAnaG && <p className="text-[10px] text-slate-500 mt-1">Nessun IBAN in anagrafica — inseriscilo manualmente</p>}
                 </div>
               )}
             </div>
@@ -709,72 +565,60 @@ export default function InviaPda() {
           const coll = collapsedToggles[kIban] !== false;
           if (done && coll) return (
             <div onClick={() => expandToggle(kIban)}
-              style={{
-                marginBottom: 10, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 8px",
-                borderRadius: 20, background: "#edfaf4", border: "1px solid #99dbb4", cursor: "pointer", userSelect: "none"
-              }}>
-              <span style={{ fontSize: 11, color: "#444" }}>{payMeth === "CC" ? "💳 Carta di Credito" : "🏦 IBAN"}</span>
-              {payMeth === "IBAN" && <span style={{ fontSize: 10, color: "#00A651", fontFamily: "monospace", fontWeight: 700 }}>···{ibanFW.slice(-4)}</span>}
-              <span style={{ fontSize: 10, color: "#00A651" }}>✎</span>
+              className="mb-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 cursor-pointer select-none">
+              <span className="text-xs text-slate-300">{payMeth === "CC" ? "💳 Carta di Credito" : "🏦 IBAN"}</span>
+              {payMeth === "IBAN" && <span className="text-[10px] text-emerald-400 font-mono font-bold">···{ibanFW.slice(-4)}</span>}
+              <span className="text-[10px] text-emerald-400">✎</span>
             </div>
           );
           return (
-            <div style={{ marginBottom: 14, paddingBottom: 14, borderBottom: "1px dashed #e0e0e0" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#00A651", marginBottom: 8 }}>
-                💳 Metodo di pagamento <span style={{ color: "#dc3545" }}>*</span>
-                <span style={{ fontSize: 10, fontWeight: 400, color: "#888", marginLeft: 6 }}>Richiesto da Fastweb</span>
-              </div>
-              <div style={{ display: "flex", gap: 8, marginBottom: payMeth === "IBAN" ? 10 : 0 }}>
+            <div className="pb-6 border-b border-white/5">
+              <Label text="Metodo di pagamento" required color="#00A651" note="Richiesto da Fastweb" />
+              <div className="flex gap-3 mt-3">
                 {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
                   const sel = payMeth === val;
                   return <button key={val} onClick={() => { setField(catKey, si, "payMeth", sel ? "" : val); if (val === "CC") collapseToggle(kIban); }}
-                    style={{
-                      flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
-                      border: sel ? "2px solid #00A651" : "2px solid #e0e0e0",
-                      background: sel ? "#00A651" : "white", color: sel ? "white" : "#444"
-                    }}>{lbl}</button>;
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sel ? "bg-emerald-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
+                    {lbl}
+                  </button>;
                 })}
               </div>
               {payMeth === "IBAN" && (
-                <div>
+                <div className="mt-4">
                   {ibanAnaG && (
                     <button onClick={() => { setField(catKey, si, "ibanFW", ibanAnaG); collapseToggle(kIban); }}
-                      style={{
-                        marginBottom: 8, padding: "6px 14px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                        border: "1px solid #00A651", background: "white", color: "#00A651", display: "flex", alignItems: "center", gap: 6
-                      }}>
-                      📋 Copia da anagrafica {ibanFW === ibanAnaG && <span style={{ color: "#28a745" }}>✓</span>}
+                      className="mb-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 transition-all hover:bg-emerald-500/20 flex items-center gap-2">
+                      📋 Copia da anagrafica {ibanFW === ibanAnaG && <span className="text-emerald-400">✓</span>}
                     </button>
                   )}
-                  <input type="text" value={ibanFW}
+                  <input type="text" className="glass-input text-xs font-mono" value={ibanFW}
                     onChange={e => setField(catKey, si, "ibanFW", e.target.value)}
-                    placeholder="IT00 X000 0000 0000 0000 0000 000"
-                    style={{
-                      width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box",
-                      fontFamily: "monospace", letterSpacing: 1.2,
-                      border: ibanFW ? "2px solid #28a745" : "1px solid #d0d0d0", background: ibanFW ? "#f0fff0" : "white"
-                    }} />
-                  {!ibanAnaG && <div style={{ fontSize: 10, color: "#888", marginTop: 3 }}>Nessun IBAN in anagrafica — inseriscilo manualmente</div>}
+                    placeholder="IT00 X000 0000 0000 0000 0000 000" />
+                  {!ibanAnaG && <p className="text-[10px] text-slate-500 mt-1">Nessun IBAN in anagrafica — inseriscilo manualmente</p>}
                 </div>
               )}
             </div>
           );
         })()}
-        <div style={{ display: "grid", gridTemplateColumns: cols, gap: "10px 16px" }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {fields.map(f => (
-            <div key={f.key} style={f.span2 ? { gridColumn: "1 / -1" } : {}}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 3 }}>
-                {f.label}{f.required && <span style={{ color: "#dc3545" }}> *</span>}
-              </div>
+            <div key={f.key} className={f.span2 ? 'md:col-span-2' : ''}>
+              <Label text={f.label} required={f.required} />
               {f.type === "select" ? (
-                <select value={sale.fields?.[f.key] || ""} onChange={e => setField(catKey, si, f.key, e.target.value)}
-                  style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12 }}>
-                  {f.opts.map(o => <option key={o} value={o}>{o || "— Seleziona —"}</option>)}
-                </select>
+                <SearchableSelect
+                  options={f.opts.filter(Boolean)}
+                  value={sale.fields?.[f.key] || ""}
+                  onChange={v => setField(catKey, si, f.key, v)}
+                  placeholder="— Seleziona —"
+                />
               ) : (
-                <input type="text" value={sale.fields?.[f.key] || ""} onChange={e => setField(catKey, si, f.key, e.target.value)}
+                <input
+                  type="text"
+                  value={sale.fields?.[f.key] || ""}
+                  onChange={e => setField(catKey, si, f.key, e.target.value)}
                   placeholder={f.ph}
-                  style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, boxSizing: "border-box" }} />
+                  className="w-full glass-input rounded-xl py-2.5 px-4 text-sm"
+                />
               )}
             </div>
           ))}
@@ -791,20 +635,16 @@ export default function InviaPda() {
     const tech = sale.skyTech || "";
     const hasMult = pkt.includes("Multivision");
     return (
-      <div style={{ marginTop: 12 }}>
+      <div className="mt-4 space-y-6">
         {/* Pacchetti */}
-        <div style={{ padding: "12px 14px", borderRadius: 8, background: "white", border: `1px solid ${color}30`, borderLeft: `3px solid ${color}`, marginBottom: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>📺 Pacchetti TV</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5">
+          <Label text="Pacchetti TV" color={color} />
+          <div className="flex flex-wrap gap-3 mt-3">
             {SKY_PACCHETTI.map(p => {
               const sel = pkt.includes(p);
               return (
                 <button key={p} onClick={() => toggleSkyPkt(catKey, si, p)}
-                  style={{
-                    padding: "9px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s",
-                    border: sel ? `2px solid ${color}` : "2px solid #e0e0e0",
-                    background: sel ? color : "white", color: sel ? "white" : "#444"
-                  }}>
+                  className={`py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sel ? "bg-sky-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
                   {p}
                 </button>
               );
@@ -812,44 +652,33 @@ export default function InviaPda() {
           </div>
           {/* Decoder aggiuntivi se Multivision */}
           {hasMult && (
-            <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8, background: "#EBF3FB", border: `1px dashed ${color}` }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color, marginBottom: 8 }}>🔢 Quanti decoder aggiuntivi? (Multivision)</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="mt-4 p-4 rounded-xl bg-sky-500/10 border border-sky-500/20">
+              <Label text="Quanti decoder aggiuntivi? (Multivision)" color={color} />
+              <div className="flex items-center gap-3 mt-3">
                 {[1, 2, 3, 4, 5].map(n => (
                   <button key={n} onClick={() => setSkyDec(catKey, si, sale.skyDec === String(n) ? "" : String(n))}
-                    style={{
-                      width: 40, height: 40, borderRadius: 8,
-                      border: sale.skyDec === String(n) ? `2px solid ${color}` : "2px solid #e0e0e0",
-                      background: sale.skyDec === String(n) ? color : "white",
-                      color: sale.skyDec === String(n) ? "white" : "#444",
-                      fontSize: 15, fontWeight: 700, cursor: "pointer"
-                    }}>
+                    className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold transition-all ${sale.skyDec === String(n) ? "bg-sky-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
                     {n}
                   </button>
                 ))}
-                <span style={{ fontSize: 11, color: "#888" }}>decoder aggiuntivi</span>
+                <span className="text-sm text-slate-500">decoder aggiuntivi</span>
               </div>
             </div>
           )}
           {pkt.length > 0 && (
-            <div style={{ marginTop: 8, fontSize: 11, color, background: "#EBF3FB", padding: "5px 10px", borderRadius: 6 }}>
+            <div className="mt-4 text-sm text-sky-400 bg-sky-500/10 px-3 py-2 rounded-lg border border-sky-500/20">
               ✓ {pkt.join(" · ")}
-              {hasMult && sale.skyDec ? <span style={{ marginLeft: 6 }}>· <b>{sale.skyDec} decoder agg.</b></span> : null}
+              {hasMult && sale.skyDec ? <span className="ml-1">· <b className="font-bold">{sale.skyDec} decoder agg.</b></span> : null}
             </div>
           )}
         </div>
         {/* Tecnologia */}
-        <div style={{ padding: "12px 14px", borderRadius: 8, background: "white", border: `1px solid ${color}30`, borderLeft: `3px solid ${color}` }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>📡 Tecnologia</div>
-          <div style={{ display: "flex", gap: 8 }}>
+        <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5">
+          <Label text="Tecnologia" color={color} />
+          <div className="flex gap-3 mt-3">
             {SKY_TECNOLOGIA.map(t => (
               <button key={t} onClick={() => setSkyTech(catKey, si, tech === t ? "" : t)}
-                style={{
-                  flex: 1, padding: "12px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all .15s",
-                  border: tech === t ? `2px solid ${color}` : "2px solid #e0e0e0",
-                  background: tech === t ? color : "white", color: tech === t ? "white" : "#444",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8
-                }}>
+                className={`flex-1 py-3 px-4 rounded-xl text-base font-bold transition-all ${tech === t ? "bg-sky-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"} flex items-center justify-center gap-2`}>
                 {t === "Parabola" ? "📡" : "🌐"} {t}
               </button>
             ))}
@@ -857,13 +686,12 @@ export default function InviaPda() {
         </div>
         {/* Indirizzo installazione — visibile dopo aver selezionato la tecnologia */}
         {tech && (
-          <div style={{ padding: "12px 14px", borderRadius: 8, background: "white", border: `1px solid ${color}30`, borderLeft: `3px solid ${color}` }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>📍 Indirizzo installazione</div>
-            <input type="text"
+          <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5">
+            <Label text="Indirizzo installazione" color={color} />
+            <input type="text" className="glass-input mt-2"
               value={sale.fields?.indirizzoInstallazione || ""}
               onChange={e => setField(catKey, si, "indirizzoInstallazione", e.target.value)}
-              placeholder="es. Via Roma 1, 00100 Roma"
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, boxSizing: "border-box" }} />
+              placeholder="es. Via Roma 1, 00100 Roma" />
           </div>
         )}
       </div>
@@ -872,774 +700,701 @@ export default function InviaPda() {
 
   // ── Render categoria prodotti (uguale per tutti i brand) ──────────────────────
   const renderCategoria = (categoria, prodotti) => {
-    const catKey = `${brand}_${categoria}`;
-    const catSales = getSales(catKey);
-    const catColor = CAT_COLORS[categoria] || currentBrand?.color || "#555";
+    const catColor = CAT_COLORS[categoria] || "#2E75B6";
     const catIcon = CAT_ICONS[categoria] || "📦";
-    const filled = catSales.filter(s => s.product).length;
-    const hasF = (CAT_FIELDS[categoria] || []).length > 0 || categoria === "Luce & Gas" || (categoria === "POS" && brand === "dojo");
+    const catKey = brand + "_" + categoria;
+    const sales = getSales(catKey);
+    const hasF = !!CAT_FIELDS[categoria]?.length || categoria === "Luce & Gas" || (categoria === "POS" && brand === "dojo");
     const isSkyTV = categoria === "Abbonamenti SKY";
 
     return (
-      <div key={categoria} style={{ marginBottom: 16 }}>
-        {/* Intestazione categoria */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <span style={{ fontSize: 18 }}>{catIcon}</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: catColor, textTransform: "uppercase", letterSpacing: 0.5 }}>{categoria}</span>
-          {filled > 0 && <Tag c="#155724" bg="#d4edda">✓ {filled} vendita{filled === 1 ? "" : "e"}</Tag>}
+      <div key={categoria} className="glass-panel p-6 border-l-4" style={{ borderLeftColor: catColor }}>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">{catIcon}</span>
+            <h3 className="text-sm font-bold text-white uppercase tracking-widest">{categoria}</h3>
+          </div>
+          <button onClick={() => addSale(catKey)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-bold text-slate-400 uppercase rounded-lg transition-all">
+            <span>➕</span> Aggiungi {categoria}
+          </button>
         </div>
 
-        {catSales.map((sale, si) => (
-          <div key={si} style={{
-            padding: 14, borderRadius: 10, marginBottom: 8,
-            background: si === 0 ? "#fafbfc" : "#fff",
-            borderLeft: `4px solid ${catColor}`,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-            ...(si > 0 ? { border: `1px dashed ${catColor}`, borderLeft: `4px solid ${catColor}` } : {})
-          }}>
+        <div className="space-y-4">
+          {sales.map((sale, si) => (
+            <div key={si} className="relative p-5 rounded-2xl bg-white/[0.02] border border-white/5 group">
+              {sales.length > 1 && (
+                <button onClick={() => removeSale(catKey, si)} className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center bg-rose-500/10 text-rose-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all hover:bg-rose-500 hover:text-white text-xs">✕</button>
+              )}
 
-            {/* Header vendita */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: catColor, textTransform: "uppercase", letterSpacing: 0.3 }}>
-                Vendita #{si + 1}
-              </span>
-              <div style={{ display: "flex", gap: 6 }}>
-                {si === catSales.length - 1 && (
-                  <button onClick={() => addSale(catKey)}
-                    style={{ padding: "4px 14px", borderRadius: 6, border: `1px solid ${catColor}`, background: "white", color: catColor, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                    + Aggiungi vendita
-                  </button>
-                )}
-                {si > 0 && (
-                  <button onClick={() => removeSale(catKey, si)}
-                    style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #dc3545", background: "white", color: "#dc3545", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                    ✕ Rimuovi
-                  </button>
-                )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+                <div>
+                  <Label text={`Prodotto ${si + 1}`} required />
+                  <select
+                    value={sale.product}
+                    onChange={e => setProd(catKey, si, e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-sm text-slate-100 outline-none focus:border-violet-500/50"
+                  >
+                    <option value="">— Scegli Prodotto —</option>
+                    {prodotti.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
               </div>
-            </div>
 
-            {/* Riquadri prodotto */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {prodotti.map(p => {
-                const sel = sale.product === p;
-                return (
-                  <button key={p} onClick={() => setProd(catKey, si, sel ? "" : p)}
-                    style={{
-                      padding: "10px 18px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s",
-                      border: sel ? `2px solid ${catColor}` : "2px solid #e0e0e0",
-                      background: sel ? catColor : "white",
-                      color: sel ? "white" : "#444",
-                      boxShadow: sel ? `0 2px 6px ${catColor}44` : "none"
-                    }}>
-                    {p}
-                  </button>
-                );
-              })}
-            </div>
+              {/* ─── MOBILE: blocco toggle pre-campi ────────────────── */}
+              {sale.product && categoria === "Mobile" && (() => {
+                const gc = "#2E75B6";
+                const ibanAnaM = tipoCliente === "business" ? anBusiness.iban : anConsumer.iban;
+                const ibanMob = sale.fields?.ibanMob || "";
+                const port = sale.fields?.portMob || "";
+                const domMob = sale.fields?.domMob || "";
 
-            {/* ─── MOBILE: blocco toggle pre-campi ────────────────── */}
-            {sale.product && categoria === "Mobile" && (() => {
-              const gc = "#2E75B6";
-              const ibanAnaM = tipoCliente === "business" ? anBusiness.iban : anConsumer.iban;
-              const ibanMob = sale.fields?.ibanMob || "";
-              const port = sale.fields?.portMob || "";
-              const domMob = sale.fields?.domMob || "";
+                // Chip collassato riutilizzabile
+                const chip = (tkKey, label, answer, extra, onExpand) => {
+                  const collapsed = collapsedToggles[tkKey] !== false;
+                  const isDone = !!answer;
+                  if (isDone && collapsed) {
+                    return (
+                      <div key={tkKey} onClick={onExpand} className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 cursor-pointer select-none">
+                        <span className="text-xs text-slate-300">{label}</span>
+                        <span className={`text-[10px] font-bold ${answer === "Sì" ? "text-emerald-400 bg-emerald-500/10" : "text-rose-400 bg-rose-500/10"} px-2 py-0.5 rounded-full`}>{answer}</span>
+                        {extra && <span className="text-[10px] text-slate-500 font-mono">{extra}</span>}
+                        <span className="text-[10px] text-blue-400">✎</span>
+                      </div>
+                    );
+                  }
+                  return null; // render full block
+                };
 
-              // Chip collassato riutilizzabile
-              const chip = (tkKey, label, answer, extra, onExpand) => {
-                const collapsed = collapsedToggles[tkKey] !== false;
-                const isDone = !!answer;
-                if (isDone && collapsed) {
+                const fullBlock = (tkKey, label, cur, onSet, ibanField, ibanSetKey) => {
+                  const collapsed = collapsedToggles[tkKey] !== false;
+                  const payMethVal = sale.fields?.payMeth || "";
+                  const isDone = !!cur && (cur === "No" || !ibanSetKey || (cur === "Sì" && (payMethVal === "CC" || (payMethVal === "IBAN" && !!ibanField))));
+                  // auto-collapse when done
+                  if (isDone && collapsed) return null; // handled by chip above
+                  // const ibanSummary = ibanField ? "···" + ibanField.slice(-4) : null; // Not used here, but good for debugging
+
+                  // onSet wrapper that auto-collapses when complete
+                  const handleSet = (v) => {
+                    onSet(v);
+                    if (v === "No" || (!ibanSetKey && v)) collapseToggle(tkKey);
+                  };
+                  const handleIban = (v) => {
+                    setField(catKey, si, ibanSetKey, v);
+                  };
+
                   return (
-                    <div key={tkKey} onClick={onExpand} style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 8px", borderRadius: 20, background: "#EBF3FB", border: "1px solid #b8d4f0", cursor: "pointer", userSelect: "none" }}>
-                      <span style={{ fontSize: 11, color: "#555" }}>{label}</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: answer === "Sì" ? "#28a745" : "#dc3545", background: answer === "Sì" ? "#d4edda" : "#f8d7da", padding: "1px 7px", borderRadius: 10 }}>{answer}</span>
-                      {extra && <span style={{ fontSize: 10, color: "#666", fontFamily: "monospace" }}>{extra}</span>}
-                      <span style={{ fontSize: 10, color: "#2E75B6" }}>✎</span>
+                    <div className="mt-3 p-5 rounded-2xl bg-white/[0.03] border border-white/5">
+                      <Label text={label} color={gc} />
+                      <div className="flex gap-3 mt-3">
+                        {["Sì", "No"].map(v => {
+                          const s = cur === v;
+                          return <button key={v} onClick={() => handleSet(s ? "" : v)}
+                            className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${s ? "bg-blue-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
+                            {v}
+                          </button>;
+                        })}
+                      </div>
+                      {ibanSetKey && cur === "Sì" && (() => {
+                        const payMeth = sale.fields?.payMeth || "";
+                        // const payDone = payMeth === "CC" || (payMeth === "IBAN" && !!ibanField); // Not used here
+                        return (
+                          <div className="mt-4">
+                            <Label text="Metodo di pagamento" required color={gc} />
+                            <div className="flex gap-3 mt-3">
+                              {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
+                                const sel = payMeth === val;
+                                return <button key={val} onClick={() => { setField(catKey, si, "payMeth", sel ? "" : val); if (val === "CC") collapseToggle(tkKey); }}
+                                  className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sel ? "bg-blue-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
+                                  {lbl}
+                                </button>;
+                              })}
+                            </div>
+                            {payMeth === "IBAN" && (
+                              <div className="mt-4">
+                                {ibanAnaM && (
+                                  <button onClick={() => { setField(catKey, si, ibanSetKey, ibanAnaM); collapseToggle(tkKey); }}
+                                    className="mb-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20 transition-all hover:bg-blue-500/20 flex items-center gap-2">
+                                    📋 Copia da anagrafica {ibanField === ibanAnaM && <span className="text-emerald-400">✓</span>}
+                                  </button>
+                                )}
+                                <input type="text" className="glass-input text-xs font-mono" value={ibanField} onChange={e => handleIban(e.target.value)}
+                                  placeholder="IT00 X000 0000 0000 0000 0000 000" />
+                                {!ibanAnaM && <p className="text-[10px] text-slate-500 mt-1">Nessun IBAN in anagrafica — inseriscilo manualmente</p>}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                };
+
+                if (tipoCliente === "business") {
+                  const kIban = `${catKey}_${si}_ibanMob`;
+                  const payMeth = sale.fields?.payMeth || "";
+                  const ibanDone = payMeth === "CC" || (payMeth === "IBAN" && !!ibanMob);
+                  const ibanCollapsed = collapsedToggles[kIban] !== false;
+                  return (
+                    <div className="mt-4">
+                      {/* PayPicker block */}
+                      {ibanDone && ibanCollapsed
+                        ? <div onClick={() => expandToggle(kIban)} className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 cursor-pointer select-none">
+                          <span className="text-xs text-slate-300">{payMeth === "CC" ? "💳 Carta di Credito" : "🏦 IBAN"}</span>
+                          {payMeth === "IBAN" && <span className="text-[10px] text-blue-400 font-mono font-bold">···{ibanMob.slice(-4)}</span>}
+                          <span className="text-[10px] text-blue-400">✎</span>
+                        </div>
+                        : <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5">
+                          <Label text="Metodo di pagamento" required color={gc} />
+                          <div className="flex gap-3 mt-3">
+                            {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
+                              const sel = payMeth === val;
+                              return <button key={val} onClick={() => { setField(catKey, si, "payMeth", sel ? "" : val); if (val === "CC") collapseToggle(kIban); }}
+                                className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sel ? "bg-blue-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
+                                {lbl}
+                              </button>;
+                            })}
+                          </div>
+                          {payMeth === "IBAN" && (<div className="mt-4">
+                            {ibanAnaM && <button onClick={() => { setField(catKey, si, "ibanMob", ibanAnaM); collapseToggle(kIban); }}
+                              className="mb-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20 transition-all hover:bg-blue-500/20 flex items-center gap-2">
+                              📋 Copia da anagrafica {ibanMob === ibanAnaM && <span className="text-emerald-400">✓</span>}
+                            </button>}
+                            <input type="text" className="glass-input text-xs font-mono" value={ibanMob} onChange={e => setField(catKey, si, "ibanMob", e.target.value)}
+                              placeholder="IT00 X000 0000 0000 0000 0000 000" />
+                            {!ibanAnaM && <p className="text-[10px] text-slate-500 mt-1">Nessun IBAN in anagrafica</p>}
+                          </div>)}
+                        </div>
+                      }
+                      {/* Portabilità */}
+                      {chip(`${catKey}_${si}_portMob`, "📞 Portabilità", port, null, () => expandToggle(`${catKey}_${si}_portMob`))}
+                      {fullBlock(`${catKey}_${si}_portMob`, "📞 Portabilità?", port, v => setField(catKey, si, "portMob", v), null, null)}
                     </div>
                   );
                 }
-                return null; // render full block
-              };
-
-              const fullBlock = (tkKey, label, cur, onSet, ibanField, ibanSetKey) => {
-                const collapsed = collapsedToggles[tkKey] !== false;
-                const payMethVal = sale.fields?.payMeth || "";
-                const isDone = !!cur && (cur === "No" || !ibanSetKey || (cur === "Sì" && (payMethVal === "CC" || (payMethVal === "IBAN" && !!ibanField))));
-                // auto-collapse when done
-                if (isDone && collapsed) return null; // handled by chip above
-                const ibanSummary = ibanField ? "···" + ibanField.slice(-4) : null;
-
-                // onSet wrapper that auto-collapses when complete
-                const handleSet = (v) => {
-                  onSet(v);
-                  if (v === "No" || (!ibanSetKey && v)) collapseToggle(tkKey);
-                };
-                const handleIban = (v) => {
-                  setField(catKey, si, ibanSetKey, v);
-                };
-
-                return (
-                  <div style={{ marginTop: 10, padding: "12px 14px", borderRadius: 8, background: "#f8f9fa", border: "1px solid #cce0f5", borderLeft: `3px solid ${gc}` }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: gc, marginBottom: 8 }}>{label}</div>
-                    <div style={{ display: "flex", gap: 8, marginBottom: ibanSetKey && cur === "Sì" ? 10 : 0 }}>
-                      {["Sì", "No"].map(v => {
-                        const s = cur === v;
-                        return <button key={v} onClick={() => handleSet(s ? "" : v)}
-                          style={{
-                            flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
-                            border: s ? `2px solid ${gc}` : "2px solid #e0e0e0",
-                            background: s ? gc : "white", color: s ? "white" : "#555"
-                          }}>{v}</button>;
-                      })}
-                    </div>
-                    {ibanSetKey && cur === "Sì" && (() => {
-                      const payMeth = sale.fields?.payMeth || "";
-                      const payDone = payMeth === "CC" || (payMeth === "IBAN" && !!ibanField);
-                      return (
-                        <div style={{ marginTop: 8 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: gc, marginBottom: 8 }}>💳 Metodo di pagamento <span style={{ color: "#dc3545" }}>*</span></div>
-                          <div style={{ display: "flex", gap: 8, marginBottom: payMeth === "IBAN" ? 10 : 0 }}>
-                            {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
-                              const sel = payMeth === val;
-                              return <button key={val} onClick={() => { setField(catKey, si, "payMeth", sel ? "" : val); if (val === "CC") collapseToggle(tkKey); }}
-                                style={{
-                                  flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
-                                  border: sel ? `2px solid ${gc}` : "2px solid #e0e0e0",
-                                  background: sel ? gc : "white", color: sel ? "white" : "#444"
-                                }}>{lbl}</button>;
-                            })}
-                          </div>
-                          {payMeth === "IBAN" && (
-                            <div>
-                              {ibanAnaM && (
-                                <button onClick={() => { setField(catKey, si, ibanSetKey, ibanAnaM); collapseToggle(tkKey); }}
-                                  style={{
-                                    marginBottom: 8, padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                                    border: `1px solid ${gc}`, background: "white", color: gc, display: "flex", alignItems: "center", gap: 6
-                                  }}>
-                                  📋 Copia da anagrafica {ibanField === ibanAnaM && <span style={{ color: "#28a745" }}>✓</span>}
-                                </button>
-                              )}
-                              <input type="text" value={ibanField} onChange={e => handleIban(e.target.value)}
-                                placeholder="IT00 X000 0000 0000 0000 0000 000"
-                                style={{
-                                  width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box", fontFamily: "monospace", letterSpacing: 1.2,
-                                  border: ibanField ? "2px solid #28a745" : "1px solid #d0d0d0", background: ibanField ? "#f0fff0" : "white"
-                                }} />
-                              {!ibanAnaM && <div style={{ fontSize: 10, color: "#888", marginTop: 3 }}>Nessun IBAN in anagrafica — inseriscilo manualmente</div>}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                );
-              };
-
-              if (tipoCliente === "business") {
-                const kIban = `${catKey}_${si}_ibanMob`;
+                // Consumer
+                const kDom = `${catKey}_${si}_domMob`;
                 const kPort = `${catKey}_${si}_portMob`;
-                const payMeth = sale.fields?.payMeth || "";
-                const ibanDone = payMeth === "CC" || (payMeth === "IBAN" && !!ibanMob);
-                const ibanCollapsed = collapsedToggles[kIban] !== false;
+                const domPayMeth = sale.fields?.payMeth || "";
+                const domDone = !!domMob && (domMob === "No" || (domMob === "Sì" && (domPayMeth === "CC" || (domPayMeth === "IBAN" && !!ibanMob))));
+                const ibanSummary = ibanMob ? "···" + ibanMob.slice(-4) : null;
                 return (
-                  <div>
-                    {/* PayPicker block */}
-                    {ibanDone && ibanCollapsed
-                      ? <div onClick={() => expandToggle(kIban)} style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 8px", borderRadius: 20, background: "#EBF3FB", border: "1px solid #b8d4f0", cursor: "pointer", userSelect: "none" }}>
-                        <span style={{ fontSize: 11, color: "#555" }}>{payMeth === "CC" ? "💳 Carta di Credito" : "🏦 IBAN"}</span>
-                        {payMeth === "IBAN" && <span style={{ fontSize: 10, color: "#28a745", fontFamily: "monospace", fontWeight: 700 }}>···{ibanMob.slice(-4)}</span>}
-                        <span style={{ fontSize: 10, color: gc }}>✎</span>
-                      </div>
-                      : <div style={{ marginTop: 10, padding: "12px 14px", borderRadius: 8, background: "#f8f9fa", border: "1px solid #cce0f5", borderLeft: `3px solid ${gc}` }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: gc, marginBottom: 8 }}>💳 Metodo di pagamento <span style={{ color: "#dc3545", fontWeight: 400 }}>*</span></div>
-                        <div style={{ display: "flex", gap: 8, marginBottom: payMeth === "IBAN" ? 10 : 0 }}>
-                          {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
-                            const sel = payMeth === val;
-                            return <button key={val} onClick={() => { setField(catKey, si, "payMeth", sel ? "" : val); if (val === "CC") collapseToggle(kIban); }}
-                              style={{
-                                flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
-                                border: sel ? `2px solid ${gc}` : "2px solid #e0e0e0",
-                                background: sel ? gc : "white", color: sel ? "white" : "#444"
-                              }}>{lbl}</button>;
-                          })}
-                        </div>
-                        {payMeth === "IBAN" && (<>
-                          {ibanAnaM && <button onClick={() => { setField(catKey, si, "ibanMob", ibanAnaM); collapseToggle(kIban); }}
-                            style={{ marginBottom: 8, padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer", border: `1px solid ${gc}`, background: "white", color: gc, display: "flex", alignItems: "center", gap: 6 }}>
-                            📋 Copia da anagrafica {ibanMob === ibanAnaM && <span style={{ color: "#28a745" }}>✓</span>}
-                          </button>}
-                          <input type="text" value={ibanMob} onChange={e => setField(catKey, si, "ibanMob", e.target.value)}
-                            placeholder="IT00 X000 0000 0000 0000 0000 000"
-                            style={{
-                              width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box", fontFamily: "monospace", letterSpacing: 1.2,
-                              border: ibanMob ? "2px solid #28a745" : "1px solid #d0d0d0", background: ibanMob ? "#f0fff0" : "white"
-                            }} />
-                          {!ibanAnaM && <div style={{ fontSize: 10, color: "#888", marginTop: 3 }}>Nessun IBAN in anagrafica</div>}
-                        </>)}
-                      </div>
-                    }
-                    {/* Portabilità */}
-                    {chip(`${catKey}_${si}_portMob`, "📞 Portabilità", port, null, () => expandToggle(`${catKey}_${si}_portMob`))}
-                    {fullBlock(`${catKey}_${si}_portMob`, "📞 Portabilità?", port, v => setField(catKey, si, "portMob", v), null, null)}
-                  </div>
-                );
-              }
-              // Consumer
-              const kDom = `${catKey}_${si}_domMob`;
-              const kPort = `${catKey}_${si}_portMob`;
-              const domPayMeth = sale.fields?.payMeth || "";
-              const domDone = !!domMob && (domMob === "No" || (domMob === "Sì" && (domPayMeth === "CC" || (domPayMeth === "IBAN" && !!ibanMob))));
-              const ibanSummary = ibanMob ? "···" + ibanMob.slice(-4) : null;
-              return (
-                <div>
-                  {chip(kDom, "🏦 Domiciliazione", domMob, domMob === "Sì" && ibanSummary ? ibanSummary : null, () => expandToggle(kDom))}
-                  {fullBlock(kDom, "🏦 Domiciliazione?", domMob, v => setField(catKey, si, "domMob", v), ibanMob, "ibanMob")}
-                  {domMob && (
-                    <>
-                      {chip(kPort, "📞 Portabilità", port, null, () => expandToggle(kPort))}
-                      {fullBlock(kPort, "📞 Portabilità?", port, v => setField(catKey, si, "portMob", v), null, null)}
-                    </>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* ─── FISSO: blocco toggle pre-campi ─────────────────── */}
-            {sale.product && categoria === "Fisso" && (() => {
-              const gc = "#28a745";
-
-              // Chip pill: mostra risposta collassata, click → espandi
-              const Chip = ({ tkKey, label, answer, extra }) => (
-                <div onClick={() => expandToggle(tkKey)}
-                  style={{
-                    marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px 4px 8px",
-                    borderRadius: 20, background: "#edfaf1", border: "1px solid #b2dfca", cursor: "pointer", userSelect: "none"
-                  }}>
-                  <span style={{ fontSize: 11, color: "#444" }}>{label}</span>
-                  <span style={{
-                    fontSize: 11, fontWeight: 700,
-                    color: answer === "Sì" ? "#155724" : "#721c24",
-                    background: answer === "Sì" ? "#d4edda" : "#f8d7da",
-                    padding: "1px 8px", borderRadius: 10
-                  }}>{answer}</span>
-                  {extra && <span style={{ fontSize: 10, color: "#555", fontFamily: "monospace" }}>{extra}</span>}
-                  <span style={{ fontSize: 10, color: gc }}>✎</span>
-                </div>
-              );
-
-              // Blocco toggle pieno con opzionale IBAN interno
-              const TBlock = ({ tkKey, label, cur, onSet, ibanField, ibanSetKey, ibanAna }) => {
-                const collapsed = collapsedToggles[tkKey] !== false;
-                const isDone = !!cur && (cur === "No" || !ibanSetKey || (cur === "Sì" && !!ibanField));
-                if (isDone && collapsed) return null; // mostrato come chip sopra
-                const autoClose = (v) => {
-                  onSet(v);
-                  if (v === "No" || (!ibanSetKey && v)) collapseToggle(tkKey);
-                };
-                const handleIban = (v) => {
-                  setField(catKey, si, ibanSetKey, v);
-                };
-                return (
-                  <div style={{
-                    marginTop: 10, padding: "12px 14px", borderRadius: 8, background: "#f8f9fa",
-                    border: "1px solid #c3e6cb", borderLeft: `3px solid ${gc}`
-                  }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: gc, marginBottom: 8 }}>{label}</div>
-                    <div style={{ display: "flex", gap: 8, marginBottom: ibanSetKey && cur === "Sì" ? 10 : 0 }}>
-                      {["Sì", "No"].map(v => {
-                        const s = cur === v; return (
-                          <button key={v} onClick={() => autoClose(s ? "" : v)}
-                            style={{
-                              flex: 1, padding: "10px 12px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
-                              border: s ? `2px solid ${gc}` : "2px solid #e0e0e0",
-                              background: s ? gc : "white", color: s ? "white" : "#555"
-                            }}>{v}</button>
-                        );
-                      })}
-                    </div>
-                    {ibanSetKey && cur === "Sì" && (
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 6 }}>IBAN <span style={{ color: "#dc3545" }}>*</span></div>
-                        {ibanAna && (
-                          <button onClick={() => { setField(catKey, si, ibanSetKey, ibanAna); collapseToggle(tkKey); }}
-                            style={{
-                              marginBottom: 8, padding: "5px 12px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer",
-                              border: `1px solid ${gc}`, background: "white", color: gc, display: "flex", alignItems: "center", gap: 6
-                            }}>
-                            📋 Copia da anagrafica {ibanField === ibanAna && <span style={{ color: gc }}>✓</span>}
-                          </button>
-                        )}
-                        <input type="text" value={ibanField || ""} onChange={e => handleIban(e.target.value)}
-                          placeholder="IT00 X000 0000 0000 0000 0000 000"
-                          style={{
-                            width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box",
-                            fontFamily: "monospace", letterSpacing: 1.2,
-                            border: ibanField ? "2px solid #28a745" : "1px solid #d0d0d0",
-                            background: ibanField ? "#f0fff0" : "white"
-                          }} />
-                        {!ibanAna && <div style={{ fontSize: 10, color: "#888", marginTop: 3 }}>Nessun IBAN in anagrafica — inseriscilo manualmente</div>}
-                      </div>
+                  <div className="mt-4">
+                    {chip(kDom, "🏦 Domiciliazione", domMob, domMob === "Sì" && ibanSummary ? ibanSummary : null, () => expandToggle(kDom))}
+                    {fullBlock(kDom, "🏦 Domiciliazione?", domMob, v => setField(catKey, si, "domMob", v), ibanMob, "ibanMob")}
+                    {domMob && (
+                      <>
+                        {chip(kPort, "📞 Portabilità", port, null, () => expandToggle(kPort))}
+                        {fullBlock(kPort, "📞 Portabilità?", port, v => setField(catKey, si, "portMob", v), null, null)}
+                      </>
                     )}
                   </div>
                 );
-              };
+              })()}
 
-              // ── W3 / FASTWEB BUSINESS: Portabilità → Seconda linea → 2° Linea Port. ──
-              if ((brand === "w3" || brand === "fastweb") && tipoCliente === "business") {
-                const port1 = sale.fields?.portabilita || "";
-                const sec = sale.fields?.secondaLinea || "";
-                const port2 = sale.fields?.portabilita2 || "";
-                const k1 = `${catKey}_${si}_port1`, k2 = `${catKey}_${si}_sec`, k3 = `${catKey}_${si}_port2`;
-                return (
-                  <div>
-                    {port1 && collapsedToggles[k1] !== false && <Chip tkKey={k1} label="📞 Portabilità" answer={port1} />}
-                    <TBlock tkKey={k1} label="📞 Portabilità?" cur={port1} onSet={v => setField(catKey, si, "portabilita", v)} />
-                    {port1 && (<>
-                      {sec && collapsedToggles[k2] !== false && <Chip tkKey={k2} label="🔌 Seconda linea" answer={sec} />}
-                      <TBlock tkKey={k2} label="🔌 Seconda linea?" cur={sec} onSet={v => setField(catKey, si, "secondaLinea", v)} />
-                    </>)}
-                    {port1 && sec === "Sì" && (<>
-                      {port2 && collapsedToggles[k3] !== false && <Chip tkKey={k3} label="📞 2° Linea Port." answer={port2} />}
-                      <TBlock tkKey={k3} label="📞 2° Linea, Portabilità?" cur={port2} onSet={v => setField(catKey, si, "portabilita2", v)} />
-                    </>)}
+              {/* ─── FISSO: blocco toggle pre-campi ─────────────────── */}
+              {sale.product && categoria === "Fisso" && (() => {
+                const gc = "#28a745";
+
+                // Chip pill: mostra risposta collassata, click → espandi
+                const Chip = ({ tkKey, label, answer, extra }) => (
+                  <div onClick={() => expandToggle(tkKey)}
+                    className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 cursor-pointer select-none">
+                    <span className="text-xs text-slate-300">{label}</span>
+                    <span className={`text-[10px] font-bold ${answer === "Sì" ? "text-emerald-400 bg-emerald-500/10" : "text-rose-400 bg-rose-500/10"} px-2 py-0.5 rounded-full`}>{answer}</span>
+                    {extra && <span className="text-[10px] text-slate-500 font-mono">{extra}</span>}
+                    <span className="text-[10px] text-emerald-400">✎</span>
                   </div>
                 );
-              }
 
-              // ── W3 CONSUMER: Domiciliazione (IBAN) → Portabilità ─────────────────
-              if (brand === "w3" && tipoCliente !== "business") {
-                const domFisso = sale.fields?.domFisso || "";
-                const ibanFisso = sale.fields?.ibanFisso || "";
+                // Blocco toggle pieno con opzionale IBAN interno
+                const TBlock = ({ tkKey, label, cur, onSet, ibanField, ibanSetKey, ibanAna }) => {
+                  const collapsed = collapsedToggles[tkKey] !== false;
+                  const isDone = !!cur && (cur === "No" || !ibanSetKey || (cur === "Sì" && !!ibanField));
+                  if (isDone && collapsed) return null; // mostrato come chip sopra
+                  const autoClose = (v) => {
+                    onSet(v);
+                    if (v === "No" || (!ibanSetKey && v)) collapseToggle(tkKey);
+                  };
+                  const handleIban = (v) => {
+                    setField(catKey, si, ibanSetKey, v);
+                  };
+                  return (
+                    <div className="mt-3 p-5 rounded-2xl bg-white/[0.03] border border-white/5">
+                      <Label text={label} color={gc} />
+                      <div className="flex gap-3 mt-3">
+                        {["Sì", "No"].map(v => {
+                          const s = cur === v; return (
+                            <button key={v} onClick={() => autoClose(s ? "" : v)}
+                              className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${s ? "bg-emerald-500 text-white" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
+                              {v}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {ibanSetKey && cur === "Sì" && (
+                        <div className="mt-4">
+                          <Label text="IBAN" required />
+                          {ibanAna && (
+                            <button onClick={() => { setField(catKey, si, ibanSetKey, ibanAna); collapseToggle(tkKey); }}
+                              className="mb-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 transition-all hover:bg-emerald-500/20 flex items-center gap-2">
+                              📋 Copia da anagrafica {ibanField === ibanAna && <span className="text-emerald-400">✓</span>}
+                            </button>
+                          )}
+                          <input type="text" className="glass-input text-xs font-mono" value={ibanField || ""} onChange={e => handleIban(e.target.value)}
+                            placeholder="IT00 X000 0000 0000 0000 0000 000" />
+                          {!ibanAna && <p className="text-[10px] text-slate-500 mt-1">Nessun IBAN in anagrafica — inseriscilo manualmente</p>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                };
+
+                // ── W3 / FASTWEB BUSINESS: Portabilità → Seconda linea → 2° Linea Port. ──
+                if ((brand === "w3" || brand === "fastweb") && tipoCliente === "business") {
+                  const port1 = sale.fields?.portabilita || "";
+                  const sec = sale.fields?.secondaLinea || "";
+                  const port2 = sale.fields?.portabilita2 || "";
+                  const k1 = `${catKey}_${si}_port1`, k2 = `${catKey}_${si}_sec`, k3 = `${catKey}_${si}_port2`;
+                  return (
+                    <div className="mt-4">
+                      {port1 && collapsedToggles[k1] !== false && <Chip tkKey={k1} label="📞 Portabilità" answer={port1} />}
+                      <TBlock tkKey={k1} label="📞 Portabilità?" cur={port1} onSet={v => setField(catKey, si, "portabilita", v)} />
+                      {port1 && (<>
+                        {sec && collapsedToggles[k2] !== false && <Chip tkKey={k2} label="🔌 Seconda linea" answer={sec} />}
+                        <TBlock tkKey={k2} label="🔌 Seconda linea?" cur={sec} onSet={v => setField(catKey, si, "secondaLinea", v)} />
+                      </>)}
+                      {port1 && sec === "Sì" && (<>
+                        {port2 && collapsedToggles[k3] !== false && <Chip tkKey={k3} label="📞 2° Linea Port." answer={port2} />}
+                        <TBlock tkKey={k3} label="📞 2° Linea, Portabilità?" cur={port2} onSet={v => setField(catKey, si, "portabilita2", v)} />
+                      </>)}
+                    </div>
+                  );
+                }
+
+                // ── W3 CONSUMER: Domiciliazione (IBAN) → Portabilità ─────────────────
+                if (brand === "w3" && tipoCliente !== "business") {
+                  const domFisso = sale.fields?.domFisso || "";
+                  const ibanFisso = sale.fields?.ibanFisso || "";
+                  const port1 = sale.fields?.portabilita || "";
+                  const ibanAnaF = anConsumer.iban;
+                  const kDom = `${catKey}_${si}_domF`, kPort = `${catKey}_${si}_portF`;
+                  const domDone = !!domFisso && (domFisso === "No" || (domFisso === "Sì" && !!ibanFisso));
+                  return (
+                    <div className="mt-4">
+                      {domDone && collapsedToggles[kDom] !== false &&
+                        <Chip tkKey={kDom} label="🏦 Domiciliazione" answer={domFisso}
+                          extra={domFisso === "Sì" && ibanFisso ? "···" + ibanFisso.slice(-4) : null} />}
+                      <TBlock tkKey={kDom} label="🏦 Domiciliazione?" cur={domFisso}
+                        onSet={v => setField(catKey, si, "domFisso", v)}
+                        ibanField={ibanFisso} ibanSetKey="ibanFisso" ibanAna={ibanAnaF} />
+                      {domFisso && (<>
+                        {port1 && collapsedToggles[kPort] !== false && <Chip tkKey={kPort} label="📞 Portabilità" answer={port1} />}
+                        <TBlock tkKey={kPort} label="📞 Portabilità?" cur={port1} onSet={v => setField(catKey, si, "portabilita", v)} />
+                      </>)}
+                    </div>
+                  );
+                }
+
+                // ── TUTTI GLI ALTRI BRAND (Sky, Fastweb…): solo Portabilità ──────────
                 const port1 = sale.fields?.portabilita || "";
-                const ibanAnaF = anConsumer.iban;
-                const kDom = `${catKey}_${si}_domF`, kPort = `${catKey}_${si}_portF`;
-                const domDone = !!domFisso && (domFisso === "No" || (domFisso === "Sì" && !!ibanFisso));
+                const kPort = `${catKey}_${si}_portF`;
                 return (
-                  <div>
-                    {domDone && collapsedToggles[kDom] !== false &&
-                      <Chip tkKey={kDom} label="🏦 Domiciliazione" answer={domFisso}
-                        extra={domFisso === "Sì" && ibanFisso ? "···" + ibanFisso.slice(-4) : null} />}
-                    <TBlock tkKey={kDom} label="🏦 Domiciliazione?" cur={domFisso}
-                      onSet={v => setField(catKey, si, "domFisso", v)}
-                      ibanField={ibanFisso} ibanSetKey="ibanFisso" ibanAna={ibanAnaF} />
-                    {domFisso && (<>
-                      {port1 && collapsedToggles[kPort] !== false && <Chip tkKey={kPort} label="📞 Portabilità" answer={port1} />}
-                      <TBlock tkKey={kPort} label="📞 Portabilità?" cur={port1} onSet={v => setField(catKey, si, "portabilita", v)} />
-                    </>)}
+                  <div className="mt-4">
+                    {port1 && collapsedToggles[kPort] !== false && <Chip tkKey={kPort} label="📞 Portabilità" answer={port1} />}
+                    <TBlock tkKey={kPort} label="📞 Portabilità?" cur={port1} onSet={v => setField(catKey, si, "portabilita", v)} />
                   </div>
                 );
-              }
+              })()}
 
-              // ── TUTTI GLI ALTRI BRAND (Sky, Fastweb…): solo Portabilità ──────────
-              const port1 = sale.fields?.portabilita || "";
-              const kPort = `${catKey}_${si}_portF`;
-              return (
-                <div>
-                  {port1 && collapsedToggles[kPort] !== false && <Chip tkKey={kPort} label="📞 Portabilità" answer={port1} />}
-                  <TBlock tkKey={kPort} label="📞 Portabilità?" cur={port1} onSet={v => setField(catKey, si, "portabilita", v)} />
+              {/* Campi post-selezione — attendono i toggle obbligatori */}
+              {hasF
+                // Mobile gates
+                && !(categoria === "Mobile" && tipoCliente === "business" && sale.product && !sale.fields?.portMob)
+                && !(categoria === "Mobile" && tipoCliente !== "business" && sale.product && (!sale.fields?.domMob || !sale.fields?.portMob))
+                // Fisso gates
+                && !(categoria === "Fisso" && !sale.product)
+                && !((brand === "w3" || brand === "fastweb") && tipoCliente === "business" && categoria === "Fisso" && !sale.fields?.portabilita)
+                && !(brand === "w3" && tipoCliente !== "business" && categoria === "Fisso" && (!sale.fields?.domFisso || !sale.fields?.portabilita))
+                && !(brand !== "w3" && brand !== "fastweb" && categoria === "Fisso" && sale.product && !sale.fields?.portabilita)
+                && renderCatFields(categoria, catKey, si, sale)}
+              {isSkyTV && renderSkyTvFields(catKey, si, sale)}
+              {!hasF && !isSkyTV && sale.product && (
+                <div className="mt-4 bg-white/[0.03] rounded-lg p-3 text-sm" style={{ color: catColor, borderLeft: `2px solid ${catColor}` }}>
+                  ✓ Selezionato: <b className="font-bold">{sale.product}</b>
                 </div>
-              );
-            })()}
-
-            {/* Campi post-selezione — attendono i toggle obbligatori */}
-            {hasF
-              // Mobile gates
-              && !(categoria === "Mobile" && tipoCliente === "business" && sale.product && !sale.fields?.portMob)
-              && !(categoria === "Mobile" && tipoCliente !== "business" && sale.product && (!sale.fields?.domMob || !sale.fields?.portMob))
-              // Fisso gates
-              && !(categoria === "Fisso" && !sale.product)
-              && !((brand === "w3" || brand === "fastweb") && tipoCliente === "business" && categoria === "Fisso" && !sale.fields?.portabilita)
-              && !(brand === "w3" && tipoCliente !== "business" && categoria === "Fisso" && (!sale.fields?.domFisso || !sale.fields?.portabilita))
-              && !(brand !== "w3" && brand !== "fastweb" && categoria === "Fisso" && sale.product && !sale.fields?.portabilita)
-              && renderCatFields(categoria, catKey, si, sale)}
-            {isSkyTV && renderSkyTvFields(catKey, si, sale)}
-            {!hasF && !isSkyTV && sale.product && (
-              <div style={{ marginTop: 10, background: "white", borderRadius: 6, padding: "7px 12px", fontSize: 11, color: catColor, borderLeft: `2px solid ${catColor}` }}>
-                ✓ Selezionato: <b>{sale.product}</b>
-              </div>
-            )}
-          </div>
-        ))}
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     );
   };
 
-  // ════════════════════════════════════════════════════════════════════════════
-  // ── CART VIEW ──────────────────────────────────────────────────────────────
-  if (showCart) {
-    const curI = colItems();
-    const bObj = ALL_BRANDS.find(b => b.id === brand);
-    const allG = [...cart];
-    if (curI.length > 0 && bObj)
-      allG.push({ brandId: brand, brandLabel: bObj.label, brandColor: bObj.color, brandIcon: bObj.badge || bObj.label, items: curI, isCurrent: true });
-    const tp = allG.reduce((s, g) => s + g.items.length, 0);
-    const clienteLabel = tipoCliente === "privato"
-      ? (anConsumer.nome + " " + anConsumer.cognome).trim() || "—"
-      : anBusiness.ragioneSociale || "—";
-    return (
-      <div style={{ fontFamily: "Inter,-apple-system,sans-serif", background: "#f0f2f5", minHeight: "100vh", padding: 16, maxWidth: 960, margin: "0 auto" }}>
-        {toast && <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "#28a745", color: "#fff", padding: "12px 28px", borderRadius: 10, fontSize: 14, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,0,0,.2)", zIndex: 9999 }}>{toast}</div>}
-        {/* Cart header */}
-        <div style={{ background: "linear-gradient(135deg,#1a1a2e,#16213e,#0f3460)", borderRadius: 16, padding: "20px 24px", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ color: "#fff", fontWeight: 800, fontSize: 20, marginBottom: 4 }}>🛒 Carrello ordini</div>
-              <div style={{ color: "rgba(255,255,255,.6)", fontSize: 12 }}>{clienteLabel} · {lookupValue || "—"}</div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ background: "rgba(255,255,255,.15)", borderRadius: 10, padding: "8px 16px", textAlign: "center" }}>
-                <div style={{ color: "#fff", fontWeight: 800, fontSize: 20 }}>{allG.length}</div>
-                <div style={{ color: "rgba(255,255,255,.6)", fontSize: 10 }}>BRAND</div>
-              </div>
-              <div style={{ background: "rgba(255,255,255,.15)", borderRadius: 10, padding: "8px 16px", textAlign: "center" }}>
-                <div style={{ color: "#fff", fontWeight: 800, fontSize: 20 }}>{tp}</div>
-                <div style={{ color: "rgba(255,255,255,.6)", fontSize: 10 }}>PRODOTTI</div>
-              </div>
-            </div>
+
+  return (
+    <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-6 text-slate-300">
+      {/* TOAST */}
+      {toast && (
+        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "#28a745", color: "#fff", padding: "12px 28px", borderRadius: 10, fontSize: 14, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,0,0,.2)", zIndex: 9999 }}>
+          {toast}
+        </div>
+      )}
+
+      {/* HEADER DASHBOARD */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Inserimento Contratto</h1>
+          <p className="sr-only">v5.5</p>
+          <div className="flex items-center gap-2 text-sm text-slate-400 font-medium">
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/5 border border-white/10 uppercase tracking-wider text-[10px] font-bold text-slate-500">
+              Multi-Brand v5.5
+            </span>
+            {venditore && <span className="text-slate-500">/</span>}
+            {venditore && <span className="flex items-center gap-1 text-slate-300">👤 {venditore}</span>}
+            {tipoCliente && <span className="text-slate-500">/</span>}
+            {tipoCliente && (
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${tipoCliente === "privato" ? "bg-emerald-500/10 text-emerald-400" : "bg-violet-500/10 text-violet-400"}`}>
+                {tipoCliente === "privato" ? "Consumer" : "Business"}
+              </span>
+            )}
+            {currentBrand && <span className="text-slate-500">/</span>}
+            {currentBrand && <span className="text-slate-300">🏷 {currentBrand.label}</span>}
           </div>
         </div>
-        {/* Cart groups */}
-        {allG.length === 0
-          ? <div style={{ background: "#fff", borderRadius: 12, padding: 40, textAlign: "center", color: "#999" }}>
-            <div style={{ fontSize: 40 }}>🛒</div>
-            <div style={{ fontSize: 15, fontWeight: 600, marginTop: 10 }}>Carrello vuoto</div>
-          </div>
-          : allG.map((g, gi) => (
-            <div key={gi} style={{ background: "#fff", borderRadius: 12, marginBottom: 12, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,.06)" }}>
-              <div style={{ background: g.brandColor, padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{g.brandLabel}</span>
-                  <span style={{ background: "rgba(255,255,255,.25)", borderRadius: 12, padding: "2px 10px", color: "#fff", fontSize: 11, fontWeight: 600 }}>{g.items.length}</span>
-                  {g.isCurrent && <span style={{ background: "#FFD800", borderRadius: 12, padding: "2px 10px", color: "#333", fontSize: 10, fontWeight: 700 }}>IN CORSO</span>}
-                </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => g.isCurrent ? setShowCart(false) : editCG(gi)}
-                    style={{ background: "rgba(255,255,255,.25)", border: "none", borderRadius: 6, padding: "5px 14px", color: "#fff", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>
-                    ✏️ Modifica
-                  </button>
-                  {!g.isCurrent && (
-                    <button onClick={() => rmCG(gi)}
-                      style={{ background: "rgba(255,0,0,.25)", border: "none", borderRadius: 6, padding: "5px 14px", color: "#fff", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
-                      ✕ Rimuovi
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div style={{ padding: "6px 16px" }}>
-                {g.items.map((it, ii) => <CartItem key={ii} it={it} ii={ii} gi={gi} total={g.items.length} expI={expI} setExpI={setExpI} />)}
-              </div>
-            </div>
-          ))
-        }
-        {/* Cart action bar */}
-        <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-          <button onClick={() => setShowCart(false)}
-            style={{ padding: "11px 22px", borderRadius: 10, border: "1px solid #ddd", background: "#fff", color: "#666", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-            ← Torna al form
-          </button>
-          <button onClick={() => { addCart(); setShowCart(false); }}
-            style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid #6f42c1", background: "#F3EEFB", color: "#6f42c1", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            + Aggiungi altro brand
-          </button>
-          <button onClick={finalSubmit} disabled={tp === 0}
-            style={{ padding: "11px 36px", borderRadius: 10, border: "none", background: tp > 0 ? "linear-gradient(135deg,#28a745,#20c997)" : "#ccc", color: "#fff", fontSize: 14, fontWeight: 800, cursor: tp > 0 ? "pointer" : "not-allowed", marginLeft: "auto" }}>
-            📨 Invia tutto ({tp} prodotti)
+        <div className="flex items-center gap-3">
+          {brand && step === 4 && (
+            <button onClick={addCart}
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2">
+              <Plus className="w-4 h-4" /> 📦 Cambia brand
+            </button>
+          )}
+          <button onClick={reset} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2">
+            <ChevronLeft className="w-4 h-4" /> Ricomincia
           </button>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div style={{ fontFamily: "Inter,-apple-system,sans-serif", padding: 16, maxWidth: 960, margin: "0 auto" }}>
+      {showCart ? (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-white flex items-center gap-3">
+              <ShoppingBag className="w-6 h-6 text-violet-400" />
+              Carrello Prodotti ({tCI})
+            </h2>
+            <button onClick={() => setShowCart(false)} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-sm font-medium transition-all">
+              Torna al modulo
+            </button>
+          </div>
 
-      {/* TOAST */}
-      {toast && <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "#28a745", color: "#fff", padding: "12px 28px", borderRadius: 10, fontSize: 14, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,0,0,.2)", zIndex: 9999 }}>{toast}</div>}
-
-      {/* HEADER */}
-      <div style={{ background: "linear-gradient(135deg,#1B3A5C 0%,#2E75B6 100%)", borderRadius: 12, padding: "14px 20px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 36, height: 36, background: "rgba(255,255,255,0.2)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>📋</div>
-          <div>
-            <div style={{ color: "white", fontWeight: 700, fontSize: 16 }}>CRM — Inserimento Contratto</div>
-            <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              Multi-Brand · v5.5
-              {venditore && <Pill>👤 {venditore}</Pill>}
-              {tipoCliente && <Pill>{tipoCliente === "privato" ? "👤 Consumer" : "🏢 Business"}</Pill>}
-              {currentBrand && <Pill>🏷 {currentBrand.label}</Pill>}
-              {/* PROGRESS */}
-              <div style={{ display: "flex", gap: 3, marginBottom: 16 }}>
-                {STEP_LABELS.map((s, i) => {
-                  const n = i + 1, done = n < step, active = n === step;
-                  return (
-                    <div key={i} onClick={() => done && setStep(n)}
-                      style={{
-                        flex: 1, textAlign: "center", padding: "7px 4px", borderRadius: 6, fontSize: 9, fontWeight: 600,
-                        background: active ? "#2E75B6" : done ? "#28a745" : "#e9ecef",
-                        color: active || done ? "white" : "#aaa", cursor: done ? "pointer" : "default",
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-                      }}>
-                      {done ? "✓ " : ""}{s}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-6">
+              {[...cart, ...(colItems().length > 0 ? [{ brandId: brand, brandLabel: currentBrand?.label, brandColor: currentBrand?.color, items: colItems(), isCurrent: true }] : [])].map((group, gi) => (
+                <div key={gi} className="glass-panel overflow-hidden border-l-4" style={{ borderLeftColor: group.brandColor }}>
+                  <div className="p-4 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg">{group.brandIcon || "📦"}</span>
+                      <h3 className="font-bold text-white uppercase tracking-wider text-sm">{group.brandLabel}</h3>
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* CART BAR — visibile quando il carrello ha qualcosa */}
-              {cart.length > 0 && (
-                <div onClick={() => setShowCart(true)}
-                  style={{ background: "linear-gradient(90deg,#1a1a2e,#16213e)", borderRadius: 10, padding: "10px 16px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <span>🛒</span>
-                    <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>Carrello:</span>
-                    {cart.map((g, i) => (
-                      <span key={i} style={{ background: g.brandColor, color: "#fff", borderRadius: 6, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>
-                        {g.brandLabel} ({g.items.length})
-                      </span>
+                    {group.isCurrent && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full uppercase">In Corso</span>}
+                  </div>
+                  <div className="p-4 space-y-4">
+                    {group.items.map((it, ii) => (
+                      <CartItem key={ii} it={it} ii={ii} gi={gi} total={group.items.length} expI={expI} setExpI={setExpI} />
                     ))}
                   </div>
-                  <span style={{ color: "rgba(255,255,255,.5)", fontSize: 11 }}>Vedi → </span>
                 </div>
-              )}
+              ))}
+            </div>
+
+            <div className="space-y-6">
+              <div className="glass-panel p-6 sticky top-24">
+                <h3 className="text-sm font-bold text-slate-400 mb-6 uppercase tracking-widest">Resoconto</h3>
+                <div className="space-y-4 mb-8">
+                  <div className="flex justify-between text-sm py-2 border-b border-white/5">
+                    <span className="text-slate-500 font-bold uppercase text-[10px]">Totale Brand</span>
+                    <span className="text-white font-bold">{cart.length + (colItems().length > 0 ? 1 : 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm py-2 border-b border-white/5">
+                    <span className="text-slate-500 font-bold uppercase text-[10px]">Totale Prodotti</span>
+                    <span className="text-white font-bold">{tCI}</span>
+                  </div>
+                </div>
+                <button onClick={finalSubmit}
+                  className="w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-2xl font-bold shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all active:scale-[0.98] flex items-center justify-center gap-2 uppercase tracking-widest text-sm">
+                  <Check className="w-5 h-5" /> INVIA TUTTO
+                </button>
+                <p className="text-[10px] text-slate-500 text-center mt-4 uppercase font-bold tracking-tighter">I dati verranno salvati nel sistema centralizzato</p>
+              </div>
             </div>
           </div>
         </div>
+      ) : (
+        <div className="space-y-6">
+          {/* PROGRESS BAR */}
+          <div className="flex gap-2 mb-8">
+            {STEP_LABELS.map((s, i) => {
+              const n = i + 1, done = n < step, active = n === step;
+              return (
+                <div key={i} onClick={() => done && setStep(n)}
+                  className={`flex-1 h-1.5 rounded-full transition-all duration-300 ${active ? "bg-violet-500 shadow-[0_0_10px_rgba(139,92,246,0.3)]" : done ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]" : "bg-white/10"}`}
+                  title={s}
+                />
+              );
+            })}
+          </div>
 
-        {/* PROGRESS */}
-        <div style={{ display: "flex", gap: 3, marginBottom: 16 }}>
-          {STEP_LABELS.map((s, i) => {
-            const n = i + 1, done = n < step, active = n === step;
-            return (
-              <div key={i} onClick={() => done && setStep(n)}
-                style={{
-                  flex: 1, textAlign: "center", padding: "7px 4px", borderRadius: 6, fontSize: 9, fontWeight: 600,
-                  background: active ? "#2E75B6" : done ? "#28a745" : "#e9ecef",
-                  color: active || done ? "white" : "#aaa", cursor: done ? "pointer" : "default",
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
-                }}>
-                {done ? "✓ " : ""}{s}
+          <div className="space-y-6">
+            {/* CART BAR */}
+            {cart.length > 0 && (
+              <div onClick={() => setShowCart(true)}
+                className="glass-panel p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all group border-l-2 border-violet-500/50">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-400 group-hover:scale-110 transition-transform">
+                    <ShoppingBag className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-white">Carrello Prodotti</div>
+                    <div className="flex gap-2 mt-1">
+                      {cart.map((g, i) => (
+                        <span key={i} className="px-2 py-0.5 rounded bg-white/5 text-[10px] font-bold text-slate-400 border border-white/5 uppercase tracking-tighter">
+                          {g.brandLabel} ({g.items.length})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xs font-medium text-slate-500 group-hover:text-white transition-colors flex items-center gap-1 uppercase tracking-widest text-[10px]">Dettagli <ChevronRight className="w-3 h-3" /></span>
               </div>
-            );
-          })}
+            )}
+
+            {/* ══ STEP 1 ══ */}
+            {step === 1 && (
+              <StepCard title="Step 1 — Venditore" color="#e83e8c" icon="👤">
+                <div style={{ maxWidth: 360 }}>
+                  <Label text="Seleziona il tuo nome" required note="Pre-compilato dal login" />
+                  <SearchableSelect
+                    options={VENDITORI}
+                    value={venditore}
+                    onChange={setVenditore}
+                    placeholder="— Seleziona venditore —"
+                    icon={<User className="w-4 h-4 text-violet-400" />}
+                  />
+                </div>
+                <NavBar onNext={goNext} canNext={canProceed()} isFirst />
+              </StepCard>
+            )}
+
+            {/* ══ STEP 2 ══ */}
+            {step === 2 && (
+              <StepCard title="Step 2 — Tipo Cliente e Anagrafica" color="#6f42c1" icon="🧑‍💼">
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                  {[{ id: "privato", icon: "👤", label: "Consumer", desc: "Persona fisica" }, { id: "business", icon: "🏢", label: "Business", desc: "Azienda / P.IVA" }].map(o => (
+                    <button key={o.id}
+                      onClick={() => { setTipoCliente(o.id); setLookupDone(false); setClienteFound(false); setLookupValue(""); setBrand(null); setAllSales({}); }}
+                      className={`p-6 rounded-2xl text-center border-2 transition-all ${tipoCliente === o.id ? "bg-violet-500/10 border-violet-500 shadow-lg shadow-violet-500/20" : "bg-white/5 border-white/5 hover:bg-white/10"}`}>
+                      <div className="text-3xl mb-3">{o.icon}</div>
+                      <div className={`font-bold text-sm uppercase tracking-wide ${tipoCliente === o.id ? "text-violet-400" : "text-slate-300"}`}>{o.label}</div>
+                      <div className="text-[10px] text-slate-500 mt-1 uppercase font-bold">{o.desc}</div>
+                    </button>
+                  ))}
+                </div>
+
+                {tipoCliente && (
+                  <div className="bg-white/[0.03] rounded-2xl p-6 mb-8 border border-white/5">
+                    <Label text={tipoCliente === "privato" ? "Codice Fiscale" : "Partita IVA"} required note="Ricerca cliente esistente" />
+                    <div className="flex gap-3 mt-3">
+                      <input type="text" className="flex-1 glass-input font-mono tracking-widest uppercase" placeholder={tipoCliente === "privato" ? "RSSMRA80A..." : "1234567..."}
+                        value={lookupValue} onChange={e => setLookupValue(e.target.value)} />
+                      <button onClick={() => { setClienteFound(true); setLookupDone(true); }}
+                        className="px-6 py-2 bg-violet-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-violet-600/25 hover:bg-violet-500 transition-all flex items-center gap-2">
+                        <Search className="w-4 h-4" /> Cerca
+                      </button>
+                      <button onClick={() => { setClienteFound(false); setLookupDone(true); }}
+                        className="px-6 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-sm font-bold border border-white/10 transition-all flex items-center gap-2">
+                        <User className="w-4 h-4" /> Nuovo
+                      </button>
+                    </div>
+                    {clienteFound && <div className="mt-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-sm text-emerald-400 flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest"><Check className="w-4 h-4" /> Cliente trovato! Dati pre-compilati.</div>}
+                    {lookupDone && !clienteFound && <div className="mt-4 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-sm text-amber-400 flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest"><Info className="w-4 h-4" /> Nuovo cliente — compila manualmente.</div>}
+                  </div>
+                )}
+
+                {tipoCliente && lookupDone && (
+                  <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <SectionTitle>📝 Dati Anagrafici <Tag c="#6f42c1" bg="#F3EEFB">{tipoCliente === "privato" ? "Consumer" : "Business"}</Tag></SectionTitle>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {tipoCliente === "privato" ? (
+                        <>
+                          <AField label="Nome" required value={anConsumer.nome} onChange={v => setAnConsumer(p => ({ ...p, nome: v }))} pf={clienteFound} ph="es. Mario" />
+                          <AField label="Cognome" required value={anConsumer.cognome} onChange={v => setAnConsumer(p => ({ ...p, cognome: v }))} pf={clienteFound} ph="es. Rossi" />
+                          <AField label="Codice Fiscale" required value={anConsumer.cf} onChange={v => setAnConsumer(p => ({ ...p, cf: v }))} pf={clienteFound} ph="Rssmra80a01h501u" mono />
+                          <AField label="Email" value={anConsumer.email} onChange={v => setAnConsumer(p => ({ ...p, email: v }))} pf={clienteFound} ph="mario.rossi@email.com" />
+                          <AField label="Numero Fisso" value={anConsumer.numeroFisso} onChange={v => setAnConsumer(p => ({ ...p, numeroFisso: v }))} pf={clienteFound} ph="06 1234567" />
+                          <AField label="Recapito Cellulare" value={anConsumer.cellulare} onChange={v => setAnConsumer(p => ({ ...p, cellulare: v }))} pf={clienteFound} ph="333 1234567" />
+                          <AField label="IBAN" value={anConsumer.iban} onChange={v => setAnConsumer(p => ({ ...p, iban: v }))} pf={clienteFound} ph="It00..." mono span2 />
+                          <AField label="Domicilio" value={anConsumer.domicilio} onChange={v => setAnConsumer(p => ({ ...p, domicilio: v }))} pf={clienteFound} ph="Via, Numero, CAP, Città" span2 />
+                          <div className="col-span-full">
+                            <Label text="Note" />
+                            <textarea className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500/50 transition-colors"
+                              value={anConsumer.note} onChange={e => setAnConsumer(p => ({ ...p, note: e.target.value }))} placeholder="Note aggiuntive..." rows={3} />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <AField label="Ragione Sociale" required value={anBusiness.ragioneSociale} onChange={v => setAnBusiness(p => ({ ...p, ragioneSociale: v }))} pf={clienteFound} ph="Rossi S.r.l." />
+                          <AField label="Partita IVA" required value={anBusiness.piva} onChange={v => setAnBusiness(p => ({ ...p, piva: v }))} pf={clienteFound} ph="12345678901" mono />
+                          <AField label="Referente" required value={anBusiness.referente} onChange={v => setAnBusiness(p => ({ ...p, referente: v }))} pf={clienteFound} ph="Mario Rossi" />
+                          <AField label="Numero Fisso" value={anBusiness.numeroFisso} onChange={v => setAnBusiness(p => ({ ...p, numeroFisso: v }))} pf={clienteFound} ph="06 1234567" />
+                          <AField label="Numero Mobile" value={anBusiness.mobile} onChange={v => setAnBusiness(p => ({ ...p, mobile: v }))} pf={clienteFound} ph="333 1234567" />
+                          <AField label="Email" value={anBusiness.email} onChange={v => setAnBusiness(p => ({ ...p, email: v }))} pf={clienteFound} ph="info@rossi.it" />
+                          <AField label="Pec" value={anBusiness.pec} onChange={v => setAnBusiness(p => ({ ...p, pec: v }))} pf={clienteFound} ph="azienda@pec.it" />
+                          <AField label="Codice Univoco / SDI" value={anBusiness.codiceUnivoco} onChange={v => setAnBusiness(p => ({ ...p, codiceUnivoco: v }))} pf={clienteFound} ph="Abc1234" mono />
+                          <AField label="IBAN" value={anBusiness.iban} onChange={v => setAnBusiness(p => ({ ...p, iban: v }))} pf={clienteFound} ph="It00..." mono span2 />
+                          <AField label="Sede Legale" value={anBusiness.sedeLegale} onChange={v => setAnBusiness(p => ({ ...p, sedeLegale: v }))} pf={clienteFound} ph="Via, Numero, CAP, Città" span2 />
+                          <div className="col-span-full">
+                            <Label text="Note" />
+                            <textarea className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500/50 transition-colors"
+                              value={anBusiness.note} onChange={e => setAnBusiness(p => ({ ...p, note: e.target.value }))} placeholder="Note aggiuntive..." rows={3} />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <NavBar onBack={goBack} onNext={goNext} canNext={canProceed()} />
+              </StepCard>
+            )}
+
+            {/* ══ STEP 3 ══ */}
+            {step === 3 && (
+              <StepCard title="Step 3 — Seleziona Brand" color="#2E75B6" icon="🏷️">
+                {tipoCliente === "business" && (
+                  <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-3 text-sm text-violet-400 mb-6 flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest">
+                    <Info className="w-4 h-4" /> Modalità Business — tutti i brand inclusi
+                  </div>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {visibleBrands.map(b => (
+                    <button key={b.id} onClick={() => { setBrand(b.id); setAllSales({}); }}
+                      className={`p-6 rounded-2xl text-left border-2 transition-all ${brand === b.id ? "bg-white/10 border-white shadow-lg" : "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 shadow-sm"}`}
+                      style={brand === b.id ? { borderColor: b.color, backgroundColor: `${b.color}15` } : {}}>
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="font-bold text-lg text-white tracking-tight">{b.label}</span>
+                        <Pill>{b.badge}</Pill>
+                      </div>
+                      <div className="text-[10px] text-slate-500 mb-4 font-bold uppercase tracking-tight leading-relaxed line-clamp-2">{b.desc}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {b.onlyBusiness && <Tag c="#a78bfa" bg="#a78bfa10">🔒 Solo Business</Tag>}
+                        {brand === b.id && <Tag c="#10b981" bg="#10b98110">✓ Selezionato</Tag>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <NavBar onBack={goBack} onNext={goNext} canNext={canProceed()} />
+              </StepCard>
+            )}
+
+            {/* ══ STEP 4 ══ */}
+            {step === 4 && (
+              <StepCard title="Step 4 — Prodotti" color={currentBrand?.color || "#2E75B6"} icon="📂"
+                badge={`${currentBrand?.label} · ${tipoCliente === "business" ? "Business" : "Consumer"}`}>
+                {Object.keys(brandProdotti).length > 0
+                  ? <div className="space-y-6">
+                    {Object.entries(brandProdotti).map(([cat, prods]) => renderCategoria(cat, prods))}
+                  </div>
+                  : (
+                    <div className="text-center py-20 bg-white/[0.02] rounded-3xl border border-dashed border-white/10">
+                      <div className="text-4xl mb-4 opacity-40">🚧</div>
+                      <div className="text-sm font-bold text-slate-500 uppercase tracking-widest">Nessun prodotto disponibile per questa selezione</div>
+                    </div>
+                  )
+                }
+                <NavBar onBack={goBack} onNext={goNext} canNext />
+              </StepCard>
+            )}
+
+            {/* ══ STEP 5 ══ */}
+            {step === 5 && (
+              <StepCard title="Step 5 — Allegati" color="#17a2b8" icon="📎">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {[{ label: "Documento Identità", icon: "🪪" }, { label: "Contratti Firmati", icon: "📄" }, { label: "Altri Allegati", icon: "📁" }].map(a => (
+                    <div key={a.label} className="border-2 border-dashed border-white/10 rounded-2xl p-8 text-center bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20 transition-all group cursor-pointer border-collapse">
+                      <div className="text-4xl mb-4 group-hover:scale-110 transition-transform">{a.icon}</div>
+                      <div className="text-sm font-bold text-white mb-2 uppercase tracking-wide">{a.label}</div>
+                      <div className="text-[10px] text-slate-500 mb-6 uppercase">Trascina o clicca</div>
+                      <div className="inline-block px-4 py-2 bg-slate-800 text-white rounded-lg text-[10px] font-bold uppercase tracking-widest border border-white/5 transition-colors group-hover:bg-slate-700">Carica File</div>
+                    </div>
+                  ))}
+                </div>
+                <NavBar onBack={goBack} onNext={goNext} canNext />
+              </StepCard>
+            )}
+
+            {/* ══ STEP 6 ══ */}
+            {step === 6 && (
+              <StepCard title="Step 6 — Note / Promemoria" color="#e83e8c" icon="📝">
+                <NoteStep />
+                <div className="bg-white/[0.03] rounded-2xl p-6 mt-8 border border-white/5 shadow-inner">
+                  <div className="text-sm font-bold text-slate-300 mb-6 uppercase tracking-widest flex items-center gap-2">
+                    <Archive className="w-4 h-4 text-emerald-400" /> Attribuzione Vendita
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <Label text="Negozio" required note="Pre-compilato dal login" />
+                      <SearchableSelect
+                        options={NEGOZI}
+                        value={negozio}
+                        onChange={setNegozio}
+                        placeholder="— Seleziona negozio —"
+                        icon={<Archive className="w-4 h-4 text-emerald-400" />}
+                      />
+                    </div>
+                    <div>
+                      <Label text="Data Vendita" required />
+                      <input type="date" className="glass-input shadow-sm" defaultValue="2026-03-07" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-4 justify-between mt-12 pt-8 border-t border-white/10">
+                  <button onClick={goBack} className="px-8 py-3 rounded-2xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 text-sm font-bold uppercase tracking-widest transition-all">
+                    ← Indietro
+                  </button>
+                  <div className="flex gap-4">
+                    <button onClick={addCart}
+                      className="px-6 py-3 bg-violet-600/10 border border-violet-500/50 text-violet-400 rounded-2xl text-sm font-bold uppercase tracking-widest hover:bg-violet-600 hover:text-white transition-all">
+                      📦 Aggiungi e Prosegui
+                    </button>
+                    <button onClick={finalSubmit}
+                      className="px-10 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-2xl text-sm font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 transition-all flex items-center gap-2">
+                      <Check className="w-5 h-5" /> Invia Tutto
+                    </button>
+                  </div>
+                </div>
+              </StepCard>
+            )}
+          </div>
         </div>
+      )}
 
-        {/* ══ STEP 1 ══ */}
-        {step === 1 && (
-          <StepCard title="Step 1 — Venditore" color="#e83e8c" icon="👤">
-            <div style={{ maxWidth: 360 }}>
-              <Label text="Seleziona il tuo nome" required note="Pre-compilato dal login" />
-              <select value={venditore} onChange={e => setVenditore(e.target.value)}
-                style={{
-                  width: "100%", padding: "10px 12px", borderRadius: 8, fontSize: 13,
-                  border: venditore ? "2px solid #28a745" : "1px solid #d0d0d0", background: venditore ? "#f0fff0" : "white"
-                }}>
-                <option value="">— Seleziona venditore —</option>
-                {VENDITORI.map(v => <option key={v}>{v}</option>)}
-              </select>
-            </div>
-            <NavBar onNext={goNext} canNext={canProceed()} isFirst />
-          </StepCard>
-        )}
-
-        {/* ══ STEP 2 ══ */}
-        {step === 2 && (
-          <StepCard title="Step 2 — Tipo Cliente e Anagrafica" color="#6f42c1" icon="🧑‍💼">
-            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-              {[{ id: "privato", icon: "👤", label: "Consumer", desc: "Persona fisica" }, { id: "business", icon: "🏢", label: "Business", desc: "Azienda / P.IVA" }].map(o => (
-                <button key={o.id}
-                  onClick={() => { setTipoCliente(o.id); setLookupDone(false); setClienteFound(false); setLookupValue(""); setBrand(null); setAllSales({}); }}
-                  style={{
-                    flex: 1, padding: 12, borderRadius: 10,
-                    border: tipoCliente === o.id ? "2px solid #6f42c1" : "2px solid #e8e8e8",
-                    background: tipoCliente === o.id ? "#F3EEFB" : "white", cursor: "pointer", textAlign: "center"
-                  }}>
-                  <div style={{ fontSize: 22, marginBottom: 2 }}>{o.icon}</div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: tipoCliente === o.id ? "#6f42c1" : "#333" }}>{o.label}</div>
-                  <div style={{ fontSize: 10, color: "#999", marginTop: 1 }}>{o.desc}</div>
-                </button>
-              ))}
-            </div>
-            {tipoCliente && (
-              <div style={{ background: "#f8f9fa", borderRadius: 8, padding: 14, marginBottom: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 8 }}>
-                  {tipoCliente === "privato" ? "Codice Fiscale — ricerca cliente esistente" : "Partita IVA — ricerca cliente esistente"}
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input type="text" placeholder={tipoCliente === "privato" ? "Es. Rssmra80a01h501u" : "Es. 12345678901"}
-                    value={lookupValue} onChange={e => setLookupValue(e.target.value)}
-                    style={{ flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #d0d0d0", fontSize: 13, fontFamily: "monospace", letterSpacing: 1.5 }} />
-                  <button onClick={() => { setClienteFound(true); setLookupDone(true); }}
-                    style={{ padding: "10px 18px", borderRadius: 8, border: "none", background: "#6f42c1", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🔍 Cerca</button>
-                  <button onClick={() => { setClienteFound(false); setLookupDone(true); }}
-                    style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #ccc", background: "white", color: "#555", fontSize: 12, cursor: "pointer" }}>👤 Nuovo</button>
-                </div>
-                {clienteFound && <div style={{ marginTop: 8, background: "#d4edda", borderRadius: 6, padding: "8px 12px", fontSize: 12, color: "#155724" }}>✅ Cliente trovato! Dati pre-compilati.</div>}
-                {lookupDone && !clienteFound && <div style={{ marginTop: 8, background: "#fff3cd", borderRadius: 6, padding: "8px 12px", fontSize: 12, color: "#856404" }}>👤 Nuovo cliente — compila i dati manualmente.</div>}
-              </div>
-            )}
-            {tipoCliente === "privato" && lookupDone && (
-              <div>
-                <SectionTitle>📝 Dati Anagrafici <Tag c="#6f42c1" bg="#F3EEFB">Consumer</Tag></SectionTitle>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px" }}>
-                  <AField label="Nome" required value={anConsumer.nome} onChange={v => setAnConsumer(p => ({ ...p, nome: v }))} pf={clienteFound} ph="es. Mario" />
-                  <AField label="Cognome" required value={anConsumer.cognome} onChange={v => setAnConsumer(p => ({ ...p, cognome: v }))} pf={clienteFound} ph="es. Rossi" />
-                  <AField label="Codice Fiscale" required value={anConsumer.cf} onChange={v => setAnConsumer(p => ({ ...p, cf: v }))} pf={clienteFound} ph="Rssmra80a01h501u" mono />
-                  <AField label="Email" value={anConsumer.email} onChange={v => setAnConsumer(p => ({ ...p, email: v }))} pf={clienteFound} ph="mario.rossi@email.com" />
-                  <AField label="Numero Fisso" value={anConsumer.numeroFisso} onChange={v => setAnConsumer(p => ({ ...p, numeroFisso: v }))} pf={clienteFound} ph="06 1234567" />
-                  <AField label="Recapito Cellulare" value={anConsumer.cellulare} onChange={v => setAnConsumer(p => ({ ...p, cellulare: v }))} pf={clienteFound} ph="333 1234567" />
-                  <AField label="IBAN" value={anConsumer.iban} onChange={v => setAnConsumer(p => ({ ...p, iban: v }))} pf={clienteFound} ph="It00..." mono span2 />
-                  <AField label="Domicilio" value={anConsumer.domicilio} onChange={v => setAnConsumer(p => ({ ...p, domicilio: v }))} pf={clienteFound} ph="Via, Numero, CAP, Città" span2 />
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 3 }}>Note</div>
-                    <textarea value={anConsumer.note} onChange={e => setAnConsumer(p => ({ ...p, note: e.target.value }))} placeholder="Note..." rows={3}
-                      style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
-                  </div>
-                </div>
-              </div>
-            )}
-            {tipoCliente === "business" && lookupDone && (
-              <div>
-                <SectionTitle>📝 Dati Anagrafici <Tag c="#6f42c1" bg="#F3EEFB">Business</Tag></SectionTitle>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px" }}>
-                  <AField label="Ragione Sociale" required value={anBusiness.ragioneSociale} onChange={v => setAnBusiness(p => ({ ...p, ragioneSociale: v }))} pf={clienteFound} ph="Rossi S.r.l." />
-                  <AField label="Partita IVA" required value={anBusiness.piva} onChange={v => setAnBusiness(p => ({ ...p, piva: v }))} pf={clienteFound} ph="12345678901" mono />
-                  <AField label="Referente" required value={anBusiness.referente} onChange={v => setAnBusiness(p => ({ ...p, referente: v }))} pf={clienteFound} ph="Mario Rossi" />
-                  <AField label="Numero Fisso" value={anBusiness.numeroFisso} onChange={v => setAnBusiness(p => ({ ...p, numeroFisso: v }))} pf={clienteFound} ph="06 1234567" />
-                  <AField label="Numero Mobile" value={anBusiness.mobile} onChange={v => setAnBusiness(p => ({ ...p, mobile: v }))} pf={clienteFound} ph="333 1234567" />
-                  <AField label="Email" value={anBusiness.email} onChange={v => setAnBusiness(p => ({ ...p, email: v }))} pf={clienteFound} ph="info@rossi.it" />
-                  <AField label="Pec" value={anBusiness.pec} onChange={v => setAnBusiness(p => ({ ...p, pec: v }))} pf={clienteFound} ph="azienda@pec.it" />
-                  <AField label="Codice Univoco / SDI" value={anBusiness.codiceUnivoco} onChange={v => setAnBusiness(p => ({ ...p, codiceUnivoco: v }))} pf={clienteFound} ph="Abc1234" mono />
-                  <AField label="IBAN" value={anBusiness.iban} onChange={v => setAnBusiness(p => ({ ...p, iban: v }))} pf={clienteFound} ph="It00..." mono span2 />
-                  <AField label="Sede Legale" value={anBusiness.sedeLegale} onChange={v => setAnBusiness(p => ({ ...p, sedeLegale: v }))} pf={clienteFound} ph="Via, Numero, CAP, Città" span2 />
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 3 }}>Note</div>
-                    <textarea value={anBusiness.note} onChange={e => setAnBusiness(p => ({ ...p, note: e.target.value }))} placeholder="Note..." rows={3}
-                      style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
-                  </div>
-                </div>
-              </div>
-            )}
-            <NavBar onBack={goBack} onNext={goNext} canNext={canProceed()} />
-          </StepCard>
-        )}
-
-        {/* ══ STEP 3 ══ */}
-        {step === 3 && (
-          <StepCard title="Step 3 — Seleziona Brand" color="#2E75B6" icon="🏷️">
-            {tipoCliente === "business" && (
-              <div style={{ background: "#F3EEFB", borderRadius: 6, padding: "6px 12px", fontSize: 11, color: "#6f42c1", marginBottom: 12, fontWeight: 600 }}>
-                🏢 Modalità Business — tutti i brand disponibili incluso Dojo
-              </div>
-            )}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-              {visibleBrands.map(b => (
-                <button key={b.id} onClick={() => { setBrand(b.id); setAllSales({}); }}
-                  style={{
-                    padding: "14px 12px", borderRadius: 10, textAlign: "left",
-                    border: brand === b.id ? `2px solid ${b.color}` : "2px solid #e8e8e8",
-                    background: brand === b.id ? b.bg : "white", cursor: "pointer", transition: "all .15s"
-                  }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: brand === b.id ? b.color : "#333" }}>{b.label}</span>
-                    <span style={{ fontSize: 9, background: brand === b.id ? b.color : "#eee", color: brand === b.id ? "white" : "#999", padding: "2px 6px", borderRadius: 3, fontWeight: 700 }}>{b.badge}</span>
-                  </div>
-                  <div style={{ fontSize: 9, color: "#999", lineHeight: 1.5, marginBottom: 4 }}>{b.desc}</div>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    {b.onlyBusiness && <Tag c="#6f42c1" bg="#F3EEFB">🔒 Solo Business</Tag>}
-                    {brand === b.id && <Tag c="#155724" bg="#d4edda">✓ Selezionato</Tag>}
-                  </div>
-                </button>
-              ))}
-            </div>
-            <NavBar onBack={goBack} onNext={goNext} canNext={canProceed()} />
-          </StepCard>
-        )}
-
-        {/* ══ STEP 4 — PRODOTTI (identico per tutti i brand) ══ */}
-        {step === 4 && (
-          <StepCard title="Step 4 — Prodotti" color={currentBrand?.color || "#2E75B6"} icon="📂"
-            badge={`${currentBrand?.label} · ${tipoCliente === "business" ? "Business" : "Consumer"}`}>
-            {Object.keys(brandProdotti).length > 0
-              ? Object.entries(brandProdotti).map(([cat, prods]) => renderCategoria(cat, prods))
-              : (
-                <div style={{ textAlign: "center", padding: "40px 20px" }}>
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>🚧</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "#666" }}>Nessun prodotto configurato per questo profilo.</div>
-                </div>
-              )
-            }
-            <NavBar onBack={goBack} onNext={goNext} canNext />
-          </StepCard>
-        )}
-
-        {/* ══ STEP 5 ══ */}
-        {step === 5 && (
-          <StepCard title="Step 5 — Allegati" color="#17a2b8" icon="📎">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-              {[{ label: "Documento d'identità", icon: "🪪" }, { label: "Contratti", icon: "📄" }, { label: "Altro", icon: "📁" }].map(a => (
-                <div key={a.label} style={{ border: "2px dashed #ccc", borderRadius: 10, padding: "20px 12px", textAlign: "center", background: "#fafbfc", cursor: "pointer" }}>
-                  <div style={{ fontSize: 32, marginBottom: 6 }}>{a.icon}</div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#333", marginBottom: 4 }}>{a.label}</div>
-                  <div style={{ fontSize: 10, color: "#999", marginBottom: 10 }}>Trascina o clicca</div>
-                  <div style={{ display: "inline-block", padding: "6px 16px", borderRadius: 6, background: "#17a2b8", color: "white", fontSize: 11, fontWeight: 600 }}>Carica file</div>
-                </div>
-              ))}
-            </div>
-            <NavBar onBack={goBack} onNext={goNext} canNext />
-          </StepCard>
-        )}
-
-        {/* ══ STEP 6 ══ */}
-        {step === 6 && (
-          <StepCard title="Step 6 — Note / Promemoria" color="#e83e8c" icon="📝">
-            <NoteStep />
-            <div style={{ background: "#f8f9fa", borderRadius: 8, padding: 14, marginTop: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 10, textTransform: "uppercase" }}>🏪 Attribuzione vendita</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px" }}>
-                <div>
-                  <Label text="Negozio" required note="Pre-compilato dal login" />
-                  <select style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12 }}>
-                    <option value="">— Seleziona negozio —</option>
-                    {NEGOZI.map(n => <option key={n}>{n}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <Label text="Data Vendita" required note="Default: oggi" />
-                  <input type="date" defaultValue="2026-03-07"
-                    style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, boxSizing: "border-box" }} />
-                </div>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "space-between", marginTop: 16, paddingTop: 14, borderTop: "1px solid #f0f0f0", flexWrap: "wrap" }}>
-              <button onClick={goBack} style={{ padding: "9px 22px", borderRadius: 8, border: "1px solid #ccc", background: "white", color: "#555", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>← Torna indietro</button>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button onClick={addCart}
-                  style={{ padding: "9px 20px", borderRadius: 8, border: "2px solid #6f42c1", background: "#F3EEFB", color: "#6f42c1", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                  📦 Aggiungi e cambia brand
-                </button>
-                <button onClick={() => setShowCart(true)}
-                  style={{ padding: "9px 20px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#1a1a2e,#0f3460)", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                  🛒 Carrello{tCI > 0 ? " (" + tCI + ")" : ""}
-                </button>
-                <button onClick={finalSubmit}
-                  style={{ padding: "9px 28px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#28a745,#20c997)", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 2px 8px rgba(40,167,69,0.3)" }}>
-                  📨 Invia tutto
-                </button>
-              </div>
-            </div>
-          </StepCard>
-        )}
-
-        {/* FOOTER */}
-        <div style={{ background: "#EBF3FB", borderRadius: 10, padding: 12, border: "1px solid #BDD9F2", marginTop: 6 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#1B3A5C", marginBottom: 4 }}>V5.5 — STRUTTURA UNIFICATA TUTTI I BRAND · LUCE & GAS ACCORPATE · MENU A COMPARSA INTEGRATO</div>
-          <div style={{ fontSize: 10, color: "#2E75B6", lineHeight: 1.8 }}>
-            <div>• Tutti i brand usano la stessa struttura: riquadri prodotto → campi MENU A COMPARSA → più vendite per categoria</div>
-            <div>• W3: Mobile · Fisso · Luce &amp; Gas (accorpate, selezione 💡Luce / 🔥Gas) · Multi-Servizi</div>
-            <div>• Sky Abbonamenti: prodotto → Pacchetti TV → Multivision (decoder) → Tecnologia (Parabola/Fibra)</div>
+      {/* FOOTER TIPS */}
+      <div className="mt-12 bg-blue-500/5 border border-blue-500/10 rounded-2xl p-6 shadow-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <Info className="w-5 h-5 text-blue-400" />
+          <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">Guida Rapida Dashboard v5.5</h4>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="text-[10px] text-slate-500 leading-relaxed uppercase space-y-2">
+            <span className="text-white font-bold block mb-1">Brand Unificati</span>
+            Stessa struttura per tutti i brand: prodotti → dettagli → carrello.
+          </div>
+          <div className="text-[10px] text-slate-500 leading-relaxed uppercase space-y-2">
+            <span className="text-white font-bold block mb-1">Luce & Gas</span>
+            Accorpate in un unico menu: seleziona il servizio per visualizzare i campi specifici.
+          </div>
+          <div className="text-[10px] text-slate-500 leading-relaxed uppercase space-y-2">
+            <span className="text-white font-bold block mb-1">Carrello</span>
+            Puoi aggiungere prodotti da brand diversi e inviarli tutti con un singolo click.
           </div>
         </div>
       </div>
@@ -1647,32 +1402,39 @@ export default function InviaPda() {
   );
 }
 
+
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
 function StepCard({ title, color, icon, badge, children }) {
   return (
-    <div style={{ background: "white", borderRadius: 10, padding: 16, marginBottom: 10, boxShadow: "0 1px 3px rgba(0,0,0,0.06)", borderLeft: `4px solid ${color}` }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 14, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {icon} {title}
-        {badge && <span style={{ fontSize: 10, fontWeight: 400, color: "#999", background: "#f0f0f0", padding: "2px 8px", borderRadius: 4, textTransform: "none" }}>{badge}</span>}
+    <div className="glass-panel p-6 md:p-8 animate-in slide-in-from-top-2 fade-in duration-200" style={{ borderLeft: `4px solid ${color}` }}>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <span className="text-xl">{icon}</span>
+          <h2 className="text-lg font-bold text-white uppercase tracking-wide">{title}</h2>
+        </div>
+        {badge && (
+          <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase">
+            {badge}
+          </span>
+        )}
       </div>
-      {children}
+      <div>{children}</div>
     </div>
   );
 }
 
 function NavBar({ onBack, onNext, canNext, isFirst }) {
   return (
-    <div style={{ display: "flex", gap: 10, justifyContent: isFirst ? "flex-end" : "space-between", marginTop: 20, paddingTop: 14, borderTop: "1px solid #f0f0f0" }}>
-      {!isFirst && <button onClick={onBack} style={{ padding: "9px 22px", borderRadius: 8, border: "1px solid #ccc", background: "white", color: "#555", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>← Torna indietro</button>}
+    <div className={`flex gap-4 ${isFirst ? 'justify-end' : 'justify-between'} mt-8 pt-6 border-t border-white/10`}>
+      {!isFirst && (
+        <button onClick={onBack} className="px-6 py-2.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 text-sm font-medium transition-all">
+          ← Torna indietro
+        </button>
+      )}
       <button onClick={onNext} disabled={!canNext}
-        style={{
-          padding: "9px 26px", borderRadius: 8, border: "none",
-          background: canNext ? "linear-gradient(135deg,#1B3A5C,#2E75B6)" : "#ccc",
-          color: "white", fontSize: 13, fontWeight: 700, cursor: canNext ? "pointer" : "not-allowed",
-          boxShadow: canNext ? "0 2px 6px rgba(46,117,182,0.3)" : "none"
-        }}>
-        Vai avanti →
+        className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${canNext ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40' : 'bg-white/5 text-slate-500 cursor-not-allowed'}`}>
+        {onNext.name === 'finalSubmit' ? 'Invia Tutto ✓' : 'Vai avanti →'}
       </button>
     </div>
   );
@@ -1680,38 +1442,131 @@ function NavBar({ onBack, onNext, canNext, isFirst }) {
 
 function Label({ text, required, note }) {
   return (
-    <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 3 }}>
-      {text}{required && <span style={{ color: "#dc3545" }}> *</span>}
-      {note && <span style={{ fontSize: 10, fontWeight: 400, color: "#999", marginLeft: 6 }}>{note}</span>}
+    <div className="text-sm font-semibold text-slate-400 mb-2 flex items-center justify-between">
+      <span>
+        {text}
+        {required && <span className="text-rose-500 ml-1">*</span>}
+      </span>
+      {note && <span className="text-[10px] font-medium text-slate-600 uppercase italic">{note}</span>}
+    </div>
+  );
+}
+
+function SearchableSelect({ options, value, onChange, placeholder, icon }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between bg-black/40 border border-white/10 text-white rounded-xl py-2.5 px-4 outline-none focus:border-violet-500 transition-all text-sm shadow-inner"
+      >
+        <div className="flex items-center gap-2">
+          {icon && <span className="opacity-60">{icon}</span>}
+          <span className={value ? "text-white font-medium" : "text-slate-500"}>
+            {value || placeholder}
+          </span>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-[1000] mt-2 w-full bg-[#1a1d29] border border-white/10 rounded-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 shadow-2xl ring-1 ring-black/50">
+          <div className="p-2 border-b border-white/5 bg-white/[0.02]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
+              <input
+                type="text"
+                autoFocus
+                className="w-full bg-black/20 border border-white/5 rounded-lg py-2 pl-8 pr-3 text-xs text-white outline-none focus:border-violet-500/50 placeholder:text-slate-600 font-medium"
+                placeholder="Cerca..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="max-h-60 overflow-y-auto p-1.5 scrollbar-hide">
+            {filtered.length > 0 ? (
+              filtered.map((opt, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt);
+                    setOpen(false);
+                    setSearch("");
+                  }}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all duration-200 flex items-center justify-between group ${value === opt
+                      ? "bg-violet-500/20 text-violet-300 border border-violet-500/30"
+                      : "hover:bg-white/5 text-slate-400 hover:text-white"
+                    }`}
+                >
+                  <span className={value === opt ? "font-bold" : "font-medium"}>{opt}</span>
+                  {value === opt && <Check className="w-3 h-3 text-violet-400" />}
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-6 text-center text-[10px] text-slate-600 uppercase font-black tracking-[0.2em]">
+                Nessun risultato
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function SectionTitle({ children }) {
-  return <div style={{ fontSize: 11, fontWeight: 700, color: "#444", marginBottom: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>{children}</div>;
+  return (
+    <div className="flex items-center gap-2 text-sm font-bold text-slate-200 mt-6 mb-4 pb-2 border-b border-white/5">
+      {children}
+    </div>
+  );
 }
 
 function Tag({ c, bg, children }) {
-  return <span style={{ fontSize: 9, fontWeight: 700, color: c, background: bg, padding: "1px 6px", borderRadius: 4 }}>{children}</span>;
+  return (
+    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase" style={{ color: c, backgroundColor: bg }}>
+      {children}
+    </span>
+  );
 }
 
 function Pill({ children }) {
-  return <span style={{ background: "rgba(255,255,255,0.2)", padding: "2px 7px", borderRadius: 4 }}>{children}</span>;
+  return (
+    <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-xs font-medium text-slate-300">
+      {children}
+    </span>
+  );
 }
 
 function AField({ label, required, value, onChange, pf, ph, mono, span2 }) {
   return (
-    <div style={span2 ? { gridColumn: "1 / -1" } : {}}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 3 }}>
-        {label}{required && <span style={{ color: "#dc3545" }}> *</span>}
-      </div>
-      <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder={ph}
-        style={{
-          width: "100%", padding: "8px 10px", borderRadius: 6, fontSize: 12, boxSizing: "border-box",
-          fontFamily: mono ? "monospace" : "inherit", letterSpacing: mono ? 1.2 : 0,
-          border: pf && value ? "2px solid #28a745" : "1px solid #d0d0d0",
-          background: pf && value ? "#f0fff0" : "white"
-        }} />
+    <div className={`space-y-1.5 ${span2 ? 'col-span-full' : ''}`}>
+      <Label text={label} required={required} />
+      <input
+        type="text"
+        value={value || ""}
+        onChange={e => onChange(e.target.value)}
+        placeholder={ph}
+        className={`w-full glass-input text-sm rounded-xl py-2.5 px-4 outline-none transition-all ${mono ? 'font-monospace' : ''} ${pf && value ? 'border-emerald-500/50 bg-emerald-500/5' : ''}`}
+      />
     </div>
   );
 }
@@ -1719,43 +1574,55 @@ function AField({ label, required, value, onChange, pf, ph, mono, span2 }) {
 function NoteStep() {
   const [show, setShow] = useState(false);
   return (
-    <div>
-      <div style={{ textAlign: "center", marginBottom: show ? 16 : 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#333", marginBottom: 10 }}>Vuoi aggiungere una nota o fissare un promemoria?</div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-          <button onClick={() => setShow(true)} style={{ padding: "8px 28px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: show ? "2px solid #28a745" : "2px solid #e0e0e0", background: show ? "#d4edda" : "white", color: show ? "#155724" : "#666" }}>Sì</button>
-          <button onClick={() => setShow(false)} style={{ padding: "8px 28px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", border: !show ? "2px solid #dc3545" : "2px solid #e0e0e0", background: !show ? "#f8d7da" : "white", color: !show ? "#721c24" : "#666" }}>No</button>
+    <div className="space-y-6">
+      <div className="text-center py-4">
+        <h3 className="text-lg font-semibold text-white mb-4">Vuoi aggiungere una nota o fissare un promemoria?</h3>
+        <div className="flex gap-3 justify-center">
+          <button onClick={() => setShow(true)} className={`px-8 py-2 rounded-xl text-sm font-bold transition-all ${show ? 'bg-emerald-500 text-white shadow-lg' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5'}`}>Sì</button>
+          <button onClick={() => setShow(false)} className={`px-8 py-2 rounded-xl text-sm font-bold transition-all ${!show ? 'bg-rose-500 text-white shadow-lg' : 'bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5'}`}>No</button>
         </div>
       </div>
+
       {show && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 16 }}>
-          <div style={{ border: "1px solid #e0e0e0", borderRadius: 10, padding: 14, background: "#fafbfc" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 18 }}>📋</span>
-              <div><div style={{ fontSize: 13, fontWeight: 700 }}>Nota</div><div style={{ fontSize: 10, color: "#999" }}>Archiviata nella vendita</div></div>
+        <div className="grid md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="glass-panel p-5 bg-white/[0.02]">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400">📋</div>
+              <div>
+                <div className="text-sm font-bold text-white">Nota Interna</div>
+                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">Archiviata nella vendita</div>
+              </div>
             </div>
-            <textarea placeholder="Scrivi una nota..." rows={3}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
+            <textarea
+              rows={4}
+              placeholder="Inserisci dettagli aggiuntivi..."
+              className="w-full bg-black/20 border border-white/10 rounded-xl p-4 text-sm text-slate-300 placeholder-slate-600 focus:border-violet-500/50 transition-colors"
+            />
           </div>
-          <div style={{ border: "1px solid #e0e0e0", borderRadius: 10, padding: 14, background: "#fafbfc" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 18 }}>📅</span>
-              <div><div style={{ fontSize: 13, fontWeight: 700 }}>Promemoria</div><div style={{ fontSize: 10, color: "#999" }}>Fissa nel calendario</div></div>
+
+          <div className="glass-panel p-5 bg-white/[0.02]">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-400">📅</div>
+              <div>
+                <div className="text-sm font-bold text-white">Promemoria Calendario</div>
+                <div className="text-[10px] text-slate-500 uppercase font-bold tracking-tight">Fissa nel calendario</div>
+              </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-              <div><Label text="Data" /><input type="date" style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, boxSizing: "border-box" }} /></div>
-              <div><Label text="Ora" /><input type="time" style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, boxSizing: "border-box" }} /></div>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <div className="space-y-1.5">
+                <Label text="Data" />
+                <input type="date" className="w-full glass-input rounded-xl text-xs py-2 px-3" />
+              </div>
+              <div className="space-y-1.5">
+                <Label text="Ora" />
+                <input type="time" className="w-full glass-input rounded-xl text-xs py-2 px-3" />
+              </div>
             </div>
-            <div style={{ marginBottom: 8 }}>
+            <div className="space-y-1.5">
               <Label text="Negozio" />
-              <select style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, background: "#f0fff0" }}>
-                {["Magliana", "Donna", "Libia", "Collatina", "Mazzini", "San Paolo", "Garbatella", "Promontori", "Acilia", "Baleniere", "Castani", "Merulana", "Telefonico"].map(n => <option key={n}>{n}</option>)}
+              <select className="w-full bg-black/40 border border-white/10 rounded-xl text-xs py-2 px-3 text-slate-300">
+                {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
-            </div>
-            <div>
-              <Label text="Descrizione" />
-              <textarea placeholder="es. Ritiro documenti..." rows={2}
-                style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #d0d0d0", fontSize: 12, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
             </div>
           </div>
         </div>
