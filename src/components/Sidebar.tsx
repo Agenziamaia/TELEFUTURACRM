@@ -13,11 +13,13 @@ import {
     LogOut,
     Database,
     FilePlus,
-    CalendarDays
+    CalendarDays,
+    Users
 } from "lucide-react";
 
 const navigation = [
     { name: "Home", href: "/dashboard", icon: Home, roles: ["admin", "agente"] },
+    { name: "Clienti", href: "/clienti", icon: Users, roles: ["admin", "agente"] },
     { name: "Invia pda", href: "/pda/invia", icon: Send, roles: ["admin", "agente"] },
     { name: "Registra Contratto", href: "/registra-contratto", icon: FilePlus, roles: ["admin", "agente"] },
     { name: "Ricerca Contratto", href: "/ricerca-contratto", icon: Database, roles: ["admin", "agente"] },
