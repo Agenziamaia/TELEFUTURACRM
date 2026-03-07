@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin } from "lucide-react";
+import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 
 interface Cliente {
     id: string;
@@ -14,6 +14,14 @@ interface Cliente {
     cf_piva: string;
     indirizzo: string;
     citta: string;
+}
+
+interface Contratto {
+    id: string;
+    data: string;
+    brand: string;
+    categoria: string;
+    stato: string;
 }
 
 // Generiamo dati fittizi
@@ -39,6 +47,147 @@ const generateMockClienti = (): Cliente[] => {
 
 const mockClienti = generateMockClienti();
 
+const getMockContratti = (clienteId: string): Contratto[] => {
+    const brands = ["FASTWEB", "VODAFONE", "WIND3", "EDISON", "ENI"];
+    const cats = ["ENERGIA", "GAS", "MOBILE", "FISSO"];
+    const stati = ["Attivato", "In Lavorazione", "Sospeso", "Annullato"];
+
+    return Array.from({ length: 3 }, (_, i) => ({
+        id: `CTR_${clienteId.split('_')[1]}_${i}`,
+        data: `${10 + i}/03/2024`,
+        brand: brands[Math.floor(Math.random() * brands.length)],
+        categoria: cats[Math.floor(Math.random() * cats.length)],
+        stato: stati[Math.floor(Math.random() * stati.length)]
+    }));
+};
+
+function ClienteDetailModal({ cliente, onClose }: { cliente: Cliente; onClose: () => void }) {
+    const contratti = getMockContratti(cliente.id);
+
+    return (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="glass-panel w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border-white/10">
+                {/* MODAL HEADER */}
+                <div className="flex-none px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+                    <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${cliente.tipo === 'business' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'}`}>
+                            {cliente.tipo === 'business' ? <Building className="w-6 h-6" /> : <Users className="w-6 h-6" />}
+                        </div>
+                        <div>
+                            <h2 className="text-xl font-bold text-white uppercase tracking-tight">
+                                {cliente.tipo === 'business' ? cliente.ragioneSociale : `${cliente.nome} ${cliente.cognome}`}
+                            </h2>
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                    {cliente.id}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${cliente.tipo === 'business' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'}`}>
+                                    {cliente.tipo}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+
+                {/* MODAL BODY */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
+                    {/* INFO SECTIONS GRID */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* ANAGRAFICA */}
+                        <div className="space-y-4">
+                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                <FileText className="w-3 h-3" /> Anagrafica Cliente
+                            </h3>
+                            <div className="grid grid-cols-1 gap-3">
+                                <InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono />
+                                <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} />
+                                <InfoItem icon={<FileText className="w-4 h-4" />} label={cliente.tipo === 'business' ? 'Partita IVA' : 'Codice Fiscale'} value={cliente.cf_piva} mono />
+                                <InfoItem icon={<MapPin className="w-4 h-4" />} label="Indirizzo" value={`${cliente.indirizzo}, ${cliente.citta}`} />
+                            </div>
+                        </div>
+
+                        {/* STATISTICHE O NOTE (Placeholder) */}
+                        <div className="space-y-4">
+                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                <Clock className="w-3 h-3" /> Info Aggiuntive
+                            </h3>
+                            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 flex items-center justify-center text-center py-12">
+                                <div className="space-y-2">
+                                    <AlertTriangle className="w-6 h-6 text-slate-700 mx-auto" />
+                                    <p className="text-xs text-slate-500 max-w-[200px]">Nessuna nota aggiuntiva presente per questo cliente.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* CONTRATTI TABLE */}
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                <FileText className="w-3 h-3" /> Ultimi Contratti Registrati
+                            </h3>
+                            <span className="text-[10px] text-slate-500 italic">Prelevati da tracking PDA</span>
+                        </div>
+                        <div className="bg-white/[0.01] border border-white/5 rounded-2xl overflow-hidden">
+                            <table className="w-full text-left text-xs">
+                                <thead className="bg-white/[0.03] text-slate-500 uppercase">
+                                    <tr>
+                                        <th className="px-4 py-3 font-bold">Data</th>
+                                        <th className="px-4 py-3 font-bold">Brand</th>
+                                        <th className="px-4 py-3 font-bold">Categoria</th>
+                                        <th className="px-4 py-3 font-bold text-right">Stato</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {contratti.map((ctr: Contratto) => (
+                                        <tr key={ctr.id} className="hover:bg-white/[0.02] transition-colors">
+                                            <td className="px-4 py-3 text-slate-400 flex items-center gap-2">
+                                                <Calendar className="w-3 h-3 text-slate-600" /> {ctr.data}
+                                            </td>
+                                            <td className="px-4 py-3 text-white font-semibold">{ctr.brand}</td>
+                                            <td className="px-4 py-3 text-slate-400">{ctr.categoria}</td>
+                                            <td className="px-4 py-3 text-right">
+                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${ctr.stato === 'Attivato' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                                    ctr.stato === 'In Lavorazione' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+                                                        'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                                    }`}>
+                                                    {ctr.stato}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                {/* MODAL FOOTER */}
+                <div className="flex-none px-6 py-4 border-t border-white/10 bg-white/[0.02] flex justify-end">
+                    <button onClick={onClose} className="px-6 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-widest transition-all">
+                        Chiudi
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function InfoItem({ icon, label, value, mono }: { icon: any; label: string; value: string; mono?: boolean }) {
+    return (
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all group">
+            <div className="text-slate-500 group-hover:text-violet-400 transition-colors mt-0.5">{icon}</div>
+            <div>
+                <div className="text-[10px] text-slate-600 uppercase font-black tracking-widest">{label}</div>
+                <div className={`text-sm text-slate-200 ${mono ? 'font-mono' : 'font-semibold'}`}>{value}</div>
+            </div>
+        </div>
+    );
+}
+
 export default function ClientiPage() {
     const [quickSearch, setQuickSearch] = useState("");
     const [showFilters, setShowFilters] = useState(false);
@@ -55,6 +204,7 @@ export default function ClientiPage() {
     const [filterCellulare, setFilterCellulare] = useState("");
     const [filterEmail, setFilterEmail] = useState("");
     const [filterIdentifier, setFilterIdentifier] = useState(""); // CF o P.IVA
+    const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
 
     const resetFilters = () => {
         setFilterTipo("tutti");
@@ -284,11 +434,12 @@ export default function ClientiPage() {
                                                             }`}>
                                                             {cliente.tipo === 'business' ? <Building className="w-4 h-4" /> : <Users className="w-4 h-4" />}
                                                         </div>
-                                                        <div>
-                                                            <div className="font-medium text-white group-hover:text-violet-400 transition-colors">
+                                                        <div className="cursor-pointer" onClick={() => setSelectedCliente(cliente)}>
+                                                            <div className="font-medium text-white group-hover:text-violet-400 transition-colors flex items-center gap-1.5">
                                                                 {cliente.tipo === "business"
                                                                     ? cliente.ragioneSociale
                                                                     : `${cliente.nome} ${cliente.cognome}`}
+                                                                <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-violet-500" />
                                                             </div>
                                                             <div className="text-xs text-slate-500 capitalize flex items-center gap-1.5 mt-0.5">
                                                                 <span className={`w-1.5 h-1.5 rounded-full ${cliente.tipo === 'business' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
@@ -406,6 +557,14 @@ export default function ClientiPage() {
 
                 </div>
             </div>
+
+            {/* MODAL DETTAGLIO CLIENTE */}
+            {selectedCliente && (
+                <ClienteDetailModal
+                    cliente={selectedCliente}
+                    onClose={() => setSelectedCliente(null)}
+                />
+            )}
         </div>
     );
 }
