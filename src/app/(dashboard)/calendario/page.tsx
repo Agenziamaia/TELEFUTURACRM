@@ -125,6 +125,7 @@ export default function Calendario() {
     // New task form state
     const [newTask, setNewTask] = useState<Partial<CalendarTask>>({
         title: "",
+        date: "",
         time: "",
         status: "da_fare",
         notes: "",
@@ -212,14 +213,14 @@ export default function Calendario() {
 
     const handleCreateTaskSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedDate || !newTask.title || !newTask.assignedTo) return;
+        if (!newTask.date || !newTask.title || !newTask.assignedTo) return;
 
         const nextId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
 
         const created: CalendarTask = {
             id: nextId,
             title: newTask.title,
-            date: selectedDate,
+            date: newTask.date,
             time: newTask.time || undefined,
             status: "da_fare",
             notes: newTask.notes,
@@ -230,7 +231,7 @@ export default function Calendario() {
 
         setTasks(prev => [...prev, created]);
         setShowCreateTaskModal(false);
-        setNewTask({ title: "", time: "", status: "da_fare", notes: "", clientRef: "", assignedTo: user?.name || "" });
+        setNewTask({ title: "", date: "", time: "", status: "da_fare", notes: "", clientRef: "", assignedTo: user?.name || "" });
     };
 
     const dateAppts = selectedDate ? apptsByDate(selectedDate) : [];
@@ -263,6 +264,19 @@ export default function Calendario() {
         setShowCreateModal(true);
     };
 
+    const openCreateTaskModal = (initialDate?: string) => {
+        setNewTask({
+            title: "",
+            date: initialDate || todayStr,
+            time: "",
+            status: "da_fare",
+            notes: "",
+            clientRef: "",
+            assignedTo: user?.name || ""
+        });
+        setShowCreateTaskModal(true);
+    };
+
     return (
         <div className="w-full">
             <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -288,6 +302,13 @@ export default function Calendario() {
                     >
                         <Search className="w-4 h-4" />
                         Cerca appuntamenti
+                    </button>
+                    <button
+                        onClick={() => openCreateTaskModal()}
+                        className="h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-500/50 shadow-emerald-500/20"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Nuova Task
                     </button>
                     {selectedDate && (
                         <button
@@ -628,7 +649,7 @@ export default function Calendario() {
                                     Task
                                 </h4>
                                 <button
-                                    onClick={() => setShowCreateTaskModal(true)}
+                                    onClick={() => openCreateTaskModal(selectedDate || undefined)}
                                     className="p-1.5 px-3 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/30 transition-colors text-xs font-medium flex items-center gap-1.5"
                                 >
                                     <Plus className="w-3 h-3" />
@@ -887,13 +908,13 @@ export default function Calendario() {
             )}
 
             {/* Create Task Modal */}
-            {showCreateTaskModal && selectedDate && (
+            {showCreateTaskModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreateTaskModal(false)}>
                     <div className="glass-card p-6 w-full max-w-lg animate-in slide-in-from-bottom-4 zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4">
                             <div>
                                 <h3 className="text-lg font-bold text-emerald-400">Nuova Task</h3>
-                                <p className="text-sm text-slate-500">{new Date(selectedDate + "T12:00:00").toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}</p>
+                                <p className="text-sm text-slate-500">Compila i dettagli per registrare una nuova task a sistema.</p>
                             </div>
                             <button onClick={() => setShowCreateTaskModal(false)} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-5 h-5" /></button>
                         </div>
@@ -905,13 +926,18 @@ export default function Calendario() {
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
+                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Data *</label>
+                                    <input type="date" className="glass-input w-full" value={newTask.date || ""} onChange={e => setNewTask(p => ({ ...p, date: e.target.value }))} required />
+                                </div>
+                                <div>
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Orario (Opzionale)</label>
                                     <input type="time" className="glass-input w-full" value={newTask.time || ""} onChange={e => setNewTask(p => ({ ...p, time: e.target.value }))} />
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Riferimento Cliente</label>
-                                    <input type="text" className="glass-input w-full" placeholder="Nome, CF o Cellulare" value={newTask.clientRef || ""} onChange={e => setNewTask(p => ({ ...p, clientRef: e.target.value }))} />
-                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Riferimento Cliente</label>
+                                <input type="text" className="glass-input w-full" placeholder="Nome, CF o Cellulare" value={newTask.clientRef || ""} onChange={e => setNewTask(p => ({ ...p, clientRef: e.target.value }))} />
                             </div>
 
                             {isCallCenter ? (
