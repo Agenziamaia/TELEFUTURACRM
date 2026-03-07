@@ -137,6 +137,10 @@ export default function Calendario() {
     const [searchCfPiva, setSearchCfPiva] = useState("");
     const [searchPhone, setSearchPhone] = useState("");
     const [searchAgent, setSearchAgent] = useState("");
+
+    // Admin Grid Filters State
+    const [filterStore, setFilterStore] = useState("");
+    const [filterAgent, setFilterAgent] = useState("");
     // (Dates aren't fully wired yet in the generic mock)
 
     const prevMonth = () => {
@@ -154,9 +158,13 @@ export default function Calendario() {
     const isCallCenter = user?.role === "admin"; // admin = call center operator
     const isAgent = user?.role !== "admin";
 
-    // Role-based visibility filter
+    // Role-based visibility and Admin Grid Filter
     const visibleAppointments = appointments.filter(a => {
-        if (user?.role === "admin") return true;
+        if (user?.role === "admin") {
+            if (filterStore && filterStore !== "Tutti" && a.store !== filterStore) return false;
+            if (filterAgent && filterAgent !== "Tutti" && a.agente !== filterAgent) return false;
+            return true;
+        }
         // agente sees only own appointments
         return a.agente === user?.name;
     });
@@ -165,8 +173,16 @@ export default function Calendario() {
         visibleAppointments.filter(a => a.date === dateStr);
 
     const tasksByDate = (dateStr: string) => {
-        // Simple store scoping isn't strictly defined for tasks in mock, but we'll show all or assigned
-        return tasks.filter(t => t.date === dateStr && (isCallCenter || t.assignedTo === user?.name || t.createdBy === user?.name));
+        return tasks.filter(t => {
+            if (t.date !== dateStr) return false;
+            if (isCallCenter) {
+                // If filter logic applies to Tasks. 
+                // Note: Tasks don't explicitly have a `store`, but they have `assignedTo`.
+                if (filterAgent && filterAgent !== "Tutti" && t.assignedTo !== filterAgent) return false;
+                return true;
+            }
+            return t.assignedTo === user?.name || t.createdBy === user?.name;
+        });
     };
 
     const handleDayClick = (day: number) => {
@@ -253,7 +269,11 @@ export default function Calendario() {
                 <div>
                     <h2 className="text-3xl font-bold text-white mb-2">Calendario Appuntamenti</h2>
                     <p className="text-slate-400">
-                        {isCallCenter ? "Visualizzazione completa — tutti gli agenti" : `I tuoi appuntamenti — ${user?.name}`}
+                        {isCallCenter ? (
+                            (filterStore && filterStore !== "Tutti") || (filterAgent && filterAgent !== "Tutti")
+                                ? <span className="text-indigo-300 font-medium">Filtro attivo: {[filterStore && filterStore !== "Tutti" ? filterStore : null, filterAgent && filterAgent !== "Tutti" ? filterAgent : null].filter(Boolean).join(" · ")}</span>
+                                : "Visualizzazione completa — tutti gli agenti"
+                        ) : `I tuoi appuntamenti — ${user?.name}`}
                     </p>
                 </div>
                 <div className="flex gap-3">
@@ -280,6 +300,38 @@ export default function Calendario() {
                     )}
                 </div>
             </div>
+
+            {/* Admin Grid Filter Bar */}
+            {isCallCenter && (
+                <div className="mb-6 flex flex-col md:flex-row gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                    <div className="flex-1">
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Punto Vendita</label>
+                        <select
+                            className="glass-input w-full text-sm"
+                            value={filterStore}
+                            onChange={(e) => setFilterStore(e.target.value)}
+                        >
+                            <option value="Tutti">Tutti i punti vendita</option>
+                            {MOCK_STORES.map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="flex-1">
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Agente</label>
+                        <select
+                            className="glass-input w-full text-sm"
+                            value={filterAgent}
+                            onChange={(e) => setFilterAgent(e.target.value)}
+                        >
+                            <option value="Tutti">Tutti gli agenti</option>
+                            {MOCK_AGENTS.map((a) => (
+                                <option key={a} value={a}>{a}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+            )}
 
             {/* Advanced Search Drawer */}
             {showSearchDrawer && (
