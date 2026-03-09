@@ -41,7 +41,7 @@ const PRODOTTI = {
     },
     business: {
       "Mobile": ["Mobile Business", "Mobile Business Freedom", "Mobile Business Unlimited"],
-      "Fisso": ["Business Light", "Business", "Business Plus", "Business Pro"],
+      "Fisso": ["Business Light", "Business", "Business Plus", "Business Pro", "Fisso SME"],
       "Luce & Gas": ["Energy Flex", "Energy Fix"],
     },
   },
@@ -488,6 +488,138 @@ export default function InviaPda() {
           </div>
           <Stepper label="Costo mensile" value={cost} min={COST_MIN} max={COST_MAX} step={COST_STEP} fieldKey="dojoCost" unit="€/mese" decimals={2} />
           <Stepper label="Commissione transazioni" value={comm} min={COMM_MIN} max={COMM_MAX} step={COMM_STEP} fieldKey="dojoComm" unit="%" decimals={2} />
+        </div>
+      );
+    }
+
+    // ── FASTWEB BUSINESS FISSO SME — multi-line flow ────────────────
+    if (brand === "fastweb" && tipoCliente === "business" && sale.product === "Fisso SME") {
+      const smeColor = "#00A651";
+      const ibanAnaS = anBusiness.iban;
+      const numLinee = parseInt(sale.fields?.smeLinee || "2", 10);
+      const numPort = parseInt(sale.fields?.smePort || "0", 10);
+      const smeIban = sale.fields?.smeIban || "";
+      const smeAddr = sale.fields?.smeAddr || "";
+      const smePayM = sale.fields?.payMeth || "";
+
+      // Generic Stepper for SME
+      const SmeStep = ({ label, value, min, max, fieldKey }) => {
+        const canDec = value > min;
+        const canInc = value < max;
+        const pctVal = ((value - min) / (max - min)) * 100;
+        return (
+          <div className="mb-4">
+            <Label text={label} required color={smeColor} />
+            <div className="flex items-center gap-3 mt-2">
+              <button onClick={() => canDec && setField(catKey, si, fieldKey, String(value - 1))}
+                disabled={!canDec}
+                className={`w-9 h-9 rounded-lg flex items-center justify-center text-xl font-bold transition-all ${canDec ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-white/5 text-slate-600 border border-white/10 cursor-not-allowed"}`}>
+                −
+              </button>
+              <div className="flex-1">
+                <div className="text-center mb-1">
+                  <span className="text-xl font-extrabold text-emerald-400">{value}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/10 relative">
+                  <div className="h-1.5 rounded-full bg-emerald-500 transition-all duration-150" style={{ width: `${pctVal}%` }} />
+                  <div className="absolute top-[-4px] w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white/10 shadow-lg shadow-emerald-500/30" style={{ left: `calc(${pctVal}% - 7px)` }} />
+                </div>
+                <div className="flex justify-between mt-1 text-[9px] text-slate-600">
+                  <span>Min {min}</span><span>Max {max}</span>
+                </div>
+              </div>
+              <button onClick={() => canInc && setField(catKey, si, fieldKey, String(value + 1))}
+                disabled={!canInc}
+                className={`w-9 h-9 rounded-lg flex items-center justify-center text-xl font-bold transition-all ${canInc ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-white/5 text-slate-600 border border-white/10 cursor-not-allowed"}`}>
+                +
+              </button>
+            </div>
+          </div>
+        );
+      };
+
+      const lineeSet = !!sale.fields?.smeLinee;
+      const portSet = !!sale.fields?.smePort;
+      const payDone = smePayM === "CC" || (smePayM === "IBAN" && !!smeIban);
+
+      return (
+        <div className="mt-4 p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-6">
+          <SmeStep label="📊 Numero di linee totali" value={numLinee} min={2} max={8} fieldKey="smeLinee" />
+
+          {lineeSet && (
+            <div className="pt-4 border-t border-white/5 animate-in fade-in duration-200">
+              <SmeStep label="📞 Linee in portabilità" value={Math.min(numPort, numLinee)} min={0} max={numLinee} fieldKey="smePort" />
+            </div>
+          )}
+
+          {lineeSet && portSet && (
+            <div className="pt-4 border-t border-white/5 animate-in fade-in duration-200">
+              <Label text="💳 Metodo di pagamento *" color={smeColor} />
+              <div className="flex gap-3 mt-2">
+                {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => (
+                  <button key={val} onClick={() => setField(catKey, si, "payMeth", smePayM === val ? "" : val)}
+                    className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${smePayM === val ? "bg-emerald-500 text-white shadow-lg" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              {smePayM === "IBAN" && (
+                <div className="mt-4 flex gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <input type="text" value={smeIban} onChange={e => setField(catKey, si, "smeIban", e.target.value)}
+                    placeholder="IT00 X000 0000 0000 0000 0000 000"
+                    className="flex-1 glass-input text-xs font-mono py-2.5 px-4 rounded-xl focus:border-emerald-500/50" />
+                  {ibanAnaS && (
+                    <button onClick={() => setField(catKey, si, "smeIban", ibanAnaS)}
+                      className="px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-[10px] font-bold uppercase transition-all hover:bg-emerald-500/20 flex items-center gap-2">
+                      📋 Copia Ana
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {lineeSet && portSet && payDone && (
+            <div className="pt-4 border-t border-white/5 animate-in fade-in duration-200">
+              <Label text="📍 Indirizzo installazione" required />
+              <input type="text" value={smeAddr} onChange={e => setField(catKey, si, "smeAddr", e.target.value)}
+                placeholder="es. Via Roma 1, 00100 Roma"
+                className="glass-input mt-2" />
+            </div>
+          )}
+
+          {lineeSet && portSet && payDone && numPort > 0 && (
+            <div className="pt-4 animate-in fade-in duration-200">
+              <div className="text-[10px] font-black uppercase tracking-widest text-emerald-400 mb-4 px-2">
+                📞 Dati portabilità per {numPort} linee
+              </div>
+              <div className="space-y-4">
+                {Array.from({ length: numPort }, (_, li) => {
+                  const gnpKey = `smeGnp${li + 1}`;
+                  const migrKey = `smeMigr${li + 1}`;
+                  return (
+                    <div key={li} className="p-4 rounded-xl bg-black/20 border border-white/5 relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 p-3 text-[50px] font-black italic text-white/[0.02] leading-none pointer-events-none group-hover:scale-110 group-hover:rotate-12 transition-transform duration-500">
+                        {li + 1}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">
+                        <div>
+                          <Label text="N. Telefono (GNP)" />
+                          <input type="text" value={sale.fields?.[gnpKey] || ""} onChange={e => setField(catKey, si, gnpKey, e.target.value)}
+                            placeholder="es. 02 1234567" className="glass-input mt-2" />
+                        </div>
+                        <div>
+                          <Label text="Codice Migrazione" />
+                          <input type="text" value={sale.fields?.[migrKey] || ""} onChange={e => setField(catKey, si, migrKey, e.target.value)}
+                            placeholder="es. MIGR123456" className="glass-input mt-2" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       );
     }
