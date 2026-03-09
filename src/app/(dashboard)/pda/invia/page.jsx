@@ -89,6 +89,7 @@ const CAT_FIELDS = {
   "Luce & Gas": [
     { key: "tipologiaC", label: "Tipologia Contratto", type: "select", opts: ["", "Switch", "Switch Voltura", "Voltura", "Attivazione / Subentro", "Posa + Attivazione"], required: true },
     { key: "indirizzoF", label: "Indirizzo Fornitura", type: "text", ph: "es. Via Roma 1, 00100 Roma", required: true, span2: true },
+    { key: "fornitPrec", label: "Operatore di provenienza", type: "select", opts: [], fallbackOpts: "DONOR_LUCE_GAS" },
     // Luce
     { key: "pod", label: "POD", type: "text", ph: "It001exxxxxxxx" },
     { key: "potenzaImp", label: "Potenza Impegnata (kW)", type: "text", ph: "es. 3.0" },
@@ -101,7 +102,6 @@ const CAT_FIELDS = {
     { key: "tipologiaUso", label: "Tipologia d'uso Gas", type: "select", opts: ["", "Attività di servizio pubblico", "Autotrazione", "Commercio e servizi", "Condominio con uso domestico", "Domestico", "Industria", "Generazione elettrica"] },
     { key: "destinazG", label: "Destinazione d'uso Gas", type: "select", opts: ["", "C1 - Riscaldamento", "C2 - Cottura cibi / acqua sanitaria", "C3 - Riscaldamento + cottura", "C4 - Condizionamento", "C5 - Condizionamento + riscaldamento", "T1 - Uso tecnologico", "T2 - Uso tecnologico + riscaldamento"] },
     { key: "consumoG", label: "Consumo Annuo (Smc)", type: "text", ph: "es. 1400" },
-    { key: "fornitPrec", label: "Fornitore Precedente", type: "text", ph: "es. Enel / Eni Gas" },
   ],
   "Multi-servizi": [],
   "Abbonamenti SKY": [],
@@ -110,8 +110,8 @@ const CAT_FIELDS = {
 
 // Sezioni Luce & Gas: diviso visivamente
 const LUCE_GAS_SECTIONS = [
-  { title: "💡 Luce", keys: ["tipologiaC", "indirizzoF", "pod", "potenzaImp", "tensione", "destinazL", "consumoL", "residente"] },
-  { title: "🔥 Gas", keys: ["tipologiaC", "indirizzoF", "pdr", "tipologiaUso", "destinazG", "consumoG", "fornitPrec"] },
+  { title: "💡 Luce", keys: ["tipologiaC", "indirizzoF", "fornitPrec", "pod", "potenzaImp", "tensione", "destinazL", "consumoL", "residente"] },
+  { title: "🔥 Gas", keys: ["tipologiaC", "indirizzoF", "fornitPrec", "pdr", "tipologiaUso", "destinazG", "consumoG"] },
 ];
 
 // Sky
@@ -124,6 +124,7 @@ const CAT_COLORS = { "Mobile": "#2E75B6", "Fisso": "#28a745", "Luce & Gas": "#fd
 
 const DONOR_MOBILE = ["", "TIM", "Vodafone", "WindTre", "Iliad", "Fastweb Mobile", "PosteMobile", "ho. Mobile", "Kena Mobile", "Very Mobile", "CoopVoce", "Spusu", "Lyca Mobile", "1Mobile", "Tiscali Mobile", "Digi Mobil", "Noitel", "Optima Mobile", "Feder Mobile", "Rabona Mobile", "Elimobile", "BT Italia", "Segnoverde Mobile", "Uno Mobile", "Saily", "Visitel", "Ops! Mobile"];
 const DONOR_FISSO = ["", "TIM", "Vodafone", "WindTre", "Fastweb", "Iliad", "Tiscali", "Aruba", "PosteMobile", "Vianova", "Linkem", "Eolo", "BT Italia", "Retelit", "Unidata", "Uno Communications"];
+const DONOR_LUCE_GAS = ["", "Enel Energia", "Eni Plenitude", "A2A Energia", "Iren", "Hera Comm", "Edison", "Sorgenia", "E.ON", "Illumia", "Engie", "Optima", "Wekiwi", "Estra", "Axpo", "Iberdrola", "Acea Energia", "Servizio Elettrico Nazionale", "Altro"];
 
 const STEP_LABELS = ["Venditore", "Cliente + Anagrafica", "Brand", "Prodotti", "Allegati", "Note"];
 
@@ -325,7 +326,7 @@ export default function InviaPda() {
     // Luce & Gas Special rendering
     if (categoria === "Luce & Gas") {
       const isLuce = brand === "fastweb" || sale.product === "Luce" || sale.product?.toUpperCase().includes("LUCE");
-      const subKeys = isLuce ? ["tipologiaC", "indirizzoF", "pod", "potenzaImp", "tensione", "destinazL", "consumoL", "residente"] : ["tipologiaC", "indirizzoF", "pdr", "tipologiaUso", "destinazG", "consumoG", "fornitPrec"];
+      const subKeys = isLuce ? ["tipologiaC", "indirizzoF", "fornitPrec", "pod", "potenzaImp", "tensione", "destinazL", "consumoL", "residente"] : ["tipologiaC", "indirizzoF", "fornitPrec", "pdr", "tipologiaUso", "destinazG", "consumoG"];
       const fields = CAT_FIELDS["Luce & Gas"].filter(f => subKeys.includes(f.key));
       const ibanAna = tipoCliente === "business" ? anBusiness.iban : anConsumer.iban;
       const ibanLG = sale.fields?.ibanLG || "";
@@ -421,7 +422,7 @@ export default function InviaPda() {
                     onChange={e => setField(catKey, si, f.key, e.target.value)}
                     className="w-full bg-black/40 border border-white/10 rounded-xl py-2.5 px-4 text-sm text-slate-300 outline-none focus:border-violet-500/50"
                   >
-                    {(f.fallbackOpts === "DONOR_MOBILE" ? DONOR_MOBILE : f.fallbackOpts === "DONOR_FISSO" ? DONOR_FISSO : f.opts).map(o => <option key={o} value={o}>{o || "— Seleziona —"}</option>)}
+                    {(f.fallbackOpts === "DONOR_MOBILE" ? DONOR_MOBILE : f.fallbackOpts === "DONOR_FISSO" ? DONOR_FISSO : f.fallbackOpts === "DONOR_LUCE_GAS" ? DONOR_LUCE_GAS : f.opts).map(o => <option key={o} value={o}>{o || "— Seleziona —"}</option>)}
                   </select>
                 ) : (
                   <input
