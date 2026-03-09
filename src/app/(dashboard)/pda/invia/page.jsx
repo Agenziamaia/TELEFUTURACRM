@@ -330,7 +330,7 @@ export default function InviaPda() {
           {(brand === "w3" || brand === "energy") && (
             <div className="pb-6 border-b border-white/5 space-y-4">
               <div>
-                <Label text="🏦 Domiciliazione?" color="#fd7e14" />
+                <Label text="🏦 Domiciliazione?" color={color} />
                 <div className="flex gap-3 mt-2">
                   {["Sì", "No"].map(opt => (
                     <button
@@ -342,7 +342,7 @@ export default function InviaPda() {
                           setField(catKey, si, "ibanLG", "");
                         }
                       }}
-                      className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sale.fields?.domiciliazione === opt ? "bg-[#fd7e14] text-white shadow-lg" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}
+                      className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sale.fields?.domiciliazione === opt ? "bg-emerald-500 text-white shadow-lg" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}
                     >
                       {opt}
                     </button>
@@ -352,13 +352,13 @@ export default function InviaPda() {
 
               {sale.fields?.domiciliazione === "Sì" && (
                 <div className="pt-4 border-t border-white/5 animate-in fade-in duration-200">
-                  <Label text="💳 Metodo di pagamento *" color="#fd7e14" />
+                  <Label text="💳 Metodo di pagamento *" color={color} />
                   <div className="flex gap-3 mt-2">
                     {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => (
                       <button
                         key={val}
                         onClick={() => setField(catKey, si, "payMeth", sale.fields?.payMeth === val ? "" : val)}
-                        className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sale.fields?.payMeth === val ? "bg-[#fd7e14] text-white shadow-lg" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}
+                        className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sale.fields?.payMeth === val ? "bg-emerald-500 text-white shadow-lg" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}
                       >
                         {lbl}
                       </button>
@@ -372,10 +372,10 @@ export default function InviaPda() {
                         value={ibanLG}
                         onChange={e => setField(catKey, si, "ibanLG", e.target.value)}
                         placeholder="IT00 X000 0000 0000 0000 0000 000"
-                        className="flex-1 glass-input text-xs font-mono py-2.5 px-4 rounded-xl focus:border-[#fd7e14]/50"
+                        className="flex-1 glass-input text-xs font-mono py-2.5 px-4 rounded-xl focus:border-emerald-500/50"
                       />
                       {ibanAna && (
-                        <button onClick={() => setField(catKey, si, "ibanLG", ibanAna)} className="px-4 py-2 bg-[#fd7e14]/10 text-[#fd7e14] border border-[#fd7e14]/20 rounded-xl text-[10px] font-bold uppercase transition-all hover:bg-[#fd7e14]/20 flex items-center gap-2">
+                        <button onClick={() => setField(catKey, si, "ibanLG", ibanAna)} className="px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-[10px] font-bold uppercase transition-all hover:bg-emerald-500/20 flex items-center gap-2">
                           📋 Copia Ana
                         </button>
                       )}
