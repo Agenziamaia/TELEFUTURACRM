@@ -14,7 +14,8 @@ import {
     Database,
     FilePlus,
     CalendarDays,
-    Users
+    Users,
+    Smartphone
 } from "lucide-react";
 
 const navigation = [
@@ -24,6 +25,7 @@ const navigation = [
     { name: "Registra Contratto", href: "/registra-contratto", icon: FilePlus, roles: ["admin", "agente"] },
     { name: "Ricerca Contratto", href: "/ricerca-contratto", icon: Database, roles: ["admin", "agente"] },
     { name: "Gestione pda", href: "/gestione", icon: Database, roles: ["admin"] },
+    { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: ["admin"] },
     { name: "Tracking pda", href: "/pda/tracking", icon: Navigation, roles: ["admin", "agente"] },
     { name: "Calendario", href: "/calendario", icon: CalendarDays, roles: ["admin", "agente"] },
     { name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: ["admin", "agente"] },

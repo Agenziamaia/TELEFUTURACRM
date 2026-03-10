@@ -1,0 +1,85 @@
+GESTIONE USATI — Technical Specification
+Section: Gestione Usati Date: March 10, 2026 Attachment: GestioneUsati.jsx (UI prototype reference)
+
+1. Objective
+Remove the separate "Disponibilità Usati" slide and consolidate everything into a single "Gestione Usati" section. Remove the old sidebar menu item and redirect any dead routes.
+
+2. Page Layout
+The upper area (title, value boxes, filters, KPI cards, "Registra Usato" button) is sticky. Below it, the device table scrolls freely with no pagination (infinite scroll).
+
+3. Value Boxes (top-right header)
+Two boxes side by side:
+* "VALORE INVENTARIO" (left): SUM of sale_price for all devices WHERE status ≠ venduto AND ≠ ko. Shows device count.
+* "VALORE VETRINA" (right): SUM of sale_price for devices WHERE status = in_vendita only. Shows count.
+
+4. Filters
+All filters combine with AND logic.
+* "Negozio": multi-select with checkboxes, "Seleziona Tutti" / "Deseleziona Tutti" toggle. Respects role-based store scoping.
+* "Stato": multi-select with checkboxes, same component. Each option shows icon + label. All 9 statuses available.
+* "Filtra per Data": single dropdown to choose which date field the range applies to ("Data Registrazione", "Data Acquisto", "Data Messa in Vendita", "Data Vendita").
+* "DA" / "A": two date pickers for range (inclusive). Each works independently if the other is empty.
+* "Cerca": free text search on model name and IMEI.
+* "↺ Reset Filtri": clears all filters to defaults.
+
+5. KPI Cards
+Five clickable cards: "Totale", "Acquistato", "Arrivo in Negozio", "In Vendita", "Venduto".
+* Click → filters the table to that status.
+* Re-click on the same active card → removes the filter and shows all statuses.
+* "Totale" count excludes venduto and ko.
+* All counts reflect active filters (store, dates, search).
+
+6. Device Status Lifecycle
+#	Key	UI Label	Description
+1	acquistato	"Acquistato"	Auto-set on registration
+2	in_transito	"In Transito"	Shipped to administration
+3	ricevuto	"Ricevuto"	Administration confirms receipt
+4	in_lavorazione	"In Lavorazione"	Sent to technician for inspection/repair
+5	pronto	"Pronto"	Repaired/verified, ready to be assigned to a store
+6	invio_in_negozio	"Arrivo in Negozio"	Assigned to a point of sale and shipped
+7	in_vendita	"In Vendita"	In store showcase, ready to sell
+8	venduto	"Venduto"	Sold — end of lifecycle
+—	ko	"KO"	Unrepairable, to be disposed. Only settable by admin from "Ricevuto" or "In Lavorazione"
+Each status displays with an associated icon in table badges and filter options.
+
+7. Device Table
+Columns: #, "Modello", "IMEI", "Stato" (badge with icon), "Acquisto" (€), "Vendita" (€), "Negozio", "Data Reg." — all sortable. Clicking a row opens the device detail panel.
+
+8. Device Detail Panel
+Opens as a modal overlay on row click. Two-column layout.
+Left column — Status Timeline
+Vertical timeline showing all lifecycle steps. Completed and active steps are clickable: on click they expand to show date/time and operator name of that status change. Future steps are greyed out and not clickable.
+Action buttons below the timeline:
+* Advance to next status. When current status is "Pronto", a store selector dropdown ("Seleziona Negozio...") appears and is required before advancing to "Arrivo in Negozio".
+* "KO" — available only from "Ricevuto" or "In Lavorazione".
+Right column — Details, Spare Parts, Notes
+Device details: model, IMEI, purchase price, sale price, origin store, destination store, dates.
+Cost summary: total spare parts cost and calculated margin (sale_price − purchase_price − spare_parts_cost).
+Spare parts ("Ricambi"):
+* "Aggiungi" button adds a part from a catalog dropdown.
+* On add, technician flags whether the part is already in stock ("Presente in magazzino") or needs ordering.
+* Each part row: name (left), status dropdown (center), trash icon (right).
+* Status dropdown options: "In Magazzino", "Da Ordinare", "Ordinato", "Arrivato".
+* Each part has a cost input field (€).
+* When status = "Ordinato", an additional date picker appears for "Consegna prevista".
+* Flow: technician adds part → flags stock or to-order → administration sets "Ordinato" with cost and expected delivery → on arrival, set "Arrivato" → device can advance to "Pronto".
+Notes ("Note"): free-text textarea for technician/administration.
+"💾 Salva" button in the panel header persists all changes.
+
+9. Register Used Device ("+ Registra Usato")
+Button positioned above the KPI cards. Opens a 4-step wizard modal.
+Step 1 — "Venditore e Negozio": two required dropdowns (seller and store).
+Step 2 — "Anagrafica Cliente": select "CONSUMER" or "BUSINESS" → search existing customer by "Codice Fiscale" or "Cellulare" (consumer) / "Partita IVA" or "Cellulare" (business). If found, pre-fill fields and allow editing. If not found, empty form for new customer.
+* Consumer fields: "Nome", "Cognome", "Codice Fiscale"*, "Email", "Cellulare", "Domicilio"
+* Business fields: "Ragione Sociale", "Partita IVA", "Referente"*, "Cellulare", "Email", "PEC", "Codice Univoco / SDI", "Sede Legale"
+Step 3 — "Dettaglio Prodotto":
+* "Brand"* (dropdown) → "Modello"* (dependent on brand) → "Capacità"* (GB dropdown) → "Colore"* → "IMEI"* (15 digits) → "Prezzo Acquisto"* (€) → "Grado di Usura"* (A = "Come nuovo" / B = "Buono" / C = "Discreto" / D = "Usurato")
+Step 4 — "Allegati": two mandatory uploads:
+1. "Documento di Identità" (PDF/JPG/PNG)
+2. "Dichiarazione di Vendita" signed by customer (PDF/JPG/PNG)
+On submit, device is created with status "Acquistato" and the timestamp + operator recorded in status_history.
+
+
+
+
+
+
