@@ -647,7 +647,8 @@ export default function Calendario() {
                                 </h4>
                                 <button
                                     onClick={() => openCreateTaskModal(selectedDate)}
-                                    className="p-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                                    className="p-1.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/30 transition-colors"
+                                    title="Nuova Task"
                                 >
                                     <Plus className="w-4 h-4" />
                                 </button>
