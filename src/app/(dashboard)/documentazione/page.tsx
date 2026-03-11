@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { usePageBack } from "@/context/PageBackContext";
 import {
     Folder,
     FileText,
@@ -202,22 +201,24 @@ export default function DocumentazionePage() {
 
     const stateRef = useRef({ brandId, catId });
     stateRef.current = { brandId, catId };
-    const { setOnBack } = usePageBack();
+
     useEffect(() => {
-        setOnBack(() => {
+        const onBack = (e: Event) => {
             const { brandId: b, catId: c } = stateRef.current;
             if (c) {
                 setView((prev) => ({ ...prev, catId: null }));
-                return true;
+                e.preventDefault();
+                return;
             }
             if (b) {
                 setView((prev) => ({ ...prev, brandId: null, catId: null }));
-                return true;
+                e.preventDefault();
+                return;
             }
-            return false;
-        });
-        return () => setOnBack(null);
-    }, [setOnBack, setView]);
+        };
+        window.addEventListener("crm-back", onBack);
+        return () => window.removeEventListener("crm-back", onBack);
+    }, [setView]);
 
     return (
         <div className="flex flex-col h-[calc(100vh-theme(spacing.16))] lg:h-screen lg:pl-64 w-full overflow-hidden min-w-0 max-w-full">

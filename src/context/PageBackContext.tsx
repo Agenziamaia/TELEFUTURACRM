@@ -1,18 +1,22 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useRef, useCallback, ReactNode } from "react";
 
 type BackHandler = () => boolean;
 
 const PageBackContext = createContext<{
-  onBack: BackHandler | null;
+  getOnBack: () => BackHandler | null;
   setOnBack: (fn: BackHandler | null) => void;
-}>({ onBack: null, setOnBack: () => {} });
+}>({ getOnBack: () => null, setOnBack: () => {} });
 
 export function PageBackProvider({ children }: { children: ReactNode }) {
-  const [onBack, setOnBack] = useState<BackHandler | null>(null);
+  const handlerRef = useRef<BackHandler | null>(null);
+  const getOnBack = useCallback(() => handlerRef.current, []);
+  const setOnBack = useCallback((fn: BackHandler | null) => {
+    handlerRef.current = fn;
+  }, []);
   return (
-    <PageBackContext.Provider value={{ onBack, setOnBack }}>
+    <PageBackContext.Provider value={{ getOnBack, setOnBack }}>
       {children}
     </PageBackContext.Provider>
   );
