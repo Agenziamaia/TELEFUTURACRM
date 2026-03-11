@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { cn } from "@/utils";
+import { usePageView } from "@/lib/pageView";
 import { useAuth } from "@/context/AuthContext";
 import { RotateCcw, Download, Eye, ArrowLeft } from "lucide-react";
 
@@ -638,7 +639,9 @@ export default function ChiusuraNegozio() {
     const isAdmin = user?.role === "admin";
     const userStore = "Magliana";
     const [history] = useState<Chiusura[]>(MOCK_HISTORY);
-    const [overlay, setOverlay] = useState<"invio" | "fatture" | null>(null);
+    const [view, setView] = usePageView<{ overlay: "invio" | "fatture" | null }>("chiusura", { overlay: null });
+    const overlay = view.overlay;
+    const setOverlay = (v: "invio" | "fatture" | null) => setView((prev) => ({ ...prev, overlay: v }));
 
     return (
         <div className="-m-4 sm:-m-6 md:-m-8 bg-[#0d1117] text-white" style={{ overflowX: "hidden" }}>

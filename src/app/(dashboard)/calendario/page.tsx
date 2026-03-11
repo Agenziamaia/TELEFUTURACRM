@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar } from "lucide-react";
 import { cn } from "@/utils";
+import { usePageView } from "@/lib/pageView";
 import { useAuth } from "@/context/AuthContext";
 import { DatePickerInput } from "@/components/DatePickerInput";
 
@@ -95,9 +96,17 @@ function getFirstDayOfMonth(year: number, month: number) {
 export default function Calendario() {
     const { user } = useAuth();
     const today = new Date();
-    const [viewYear, setViewYear] = useState(today.getFullYear());
-    const [viewMonth, setViewMonth] = useState(today.getMonth());
-    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [view, setView] = usePageView<{ viewYear: number; viewMonth: number; selectedDate: string | null }>("calendario", {
+        viewYear: today.getFullYear(),
+        viewMonth: today.getMonth(),
+        selectedDate: null,
+    });
+    const viewYear = view.viewYear;
+    const setViewYear = (v: number) => setView((p) => ({ ...p, viewYear: v }));
+    const viewMonth = view.viewMonth;
+    const setViewMonth = (v: number) => setView((p) => ({ ...p, viewMonth: v }));
+    const selectedDate = view.selectedDate;
+    const setSelectedDate = (v: string | null) => setView((p) => ({ ...p, selectedDate: v }));
     const [showModal, setShowModal] = useState(false);
     const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -145,12 +154,12 @@ export default function Calendario() {
     // (Dates aren't fully wired yet in the generic mock)
 
     const prevMonth = () => {
-        if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
-        else setViewMonth(m => m - 1);
+        if (viewMonth === 0) { setViewYear(viewYear - 1); setViewMonth(11); }
+        else setViewMonth(viewMonth - 1);
     };
     const nextMonth = () => {
-        if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
-        else setViewMonth(m => m + 1);
+        if (viewMonth === 11) { setViewYear(viewYear + 1); setViewMonth(0); }
+        else setViewMonth(viewMonth + 1);
     };
 
     const daysInMonth = getDaysInMonth(viewYear, viewMonth);

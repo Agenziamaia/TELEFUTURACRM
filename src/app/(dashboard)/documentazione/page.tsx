@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { usePageBack } from "@/context/PageBackContext";
 import {
     Folder,
@@ -144,11 +144,50 @@ function getTotalDocs(brandId: string) {
     return total;
 }
 
-export default function DocumentazionePage() {
-    const [brandId, setBrandId] = useState<string | null>(null);
-    const [catId, setCatId] = useState<string | null>(null);
-    const [isAdmin, setIsAdmin] = useState(false);
+const DOC_VIEW_KEY = "crm-view-documentazione";
 
+function readDocViewFromStorage(): { brandId: string | null; catId: string | null } {
+    if (typeof window === "undefined") return { brandId: null, catId: null };
+    try {
+        const raw = sessionStorage.getItem(DOC_VIEW_KEY);
+        if (!raw) return { brandId: null, catId: null };
+        const parsed = JSON.parse(raw) as { brandId?: string | null; catId?: string | null };
+        const brandId = parsed.brandId && BRANDS.some((b) => b.id === parsed.brandId) ? parsed.brandId : null;
+        const catId = parsed.catId && CATEGORIES.some((c) => c.id === parsed.catId) ? parsed.catId : null;
+        return { brandId, catId };
+    } catch {
+        return { brandId: null, catId: null };
+    }
+}
+
+export default function DocumentazionePage() {
+    const [view, setView] = useState<{ brandId: string | null; catId: string | null }>({ brandId: null, catId: null });
+    const didRestore = useRef(false);
+    const skipNextSave = useRef(true);
+
+    useEffect(() => {
+        if (didRestore.current) return;
+        didRestore.current = true;
+        const stored = readDocViewFromStorage();
+        if (stored.brandId || stored.catId) setView(stored);
+    }, []);
+
+    useEffect(() => {
+        if (skipNextSave.current) {
+            skipNextSave.current = false;
+            return;
+        }
+        try {
+            sessionStorage.setItem(DOC_VIEW_KEY, JSON.stringify(view));
+        } catch {
+            // ignore
+        }
+    }, [view]);
+
+    const brandId = view.brandId && BRANDS.some((b) => b.id === view.brandId) ? view.brandId : null;
+    const catId = view.catId && CATEGORIES.some((c) => c.id === view.catId) ? view.catId : null;
+
+    const [isAdmin, setIsAdmin] = useState(false);
     const [previewDoc, setPreviewDoc] = useState<any>(null);
     const [fillDoc, setFillDoc] = useState<any>(null);
     const [showUpload, setShowUpload] = useState(false);
@@ -158,24 +197,27 @@ export default function DocumentazionePage() {
     const cat = catId ? getCat(catId) : null;
     const docs = brandId && catId ? getDocs(brandId, catId) : [];
 
-    const goHome = useCallback(() => { setBrandId(null); setCatId(null); }, []);
-    const goBrand = useCallback((id: string) => { setBrandId(id); setCatId(null); }, []);
+    const goHome = useCallback(() => setView({ brandId: null, catId: null }), [setView]);
+    const goBrand = useCallback((id: string) => setView((prev) => ({ ...prev, brandId: id, catId: null })), [setView]);
 
+    const stateRef = useRef({ brandId, catId });
+    stateRef.current = { brandId, catId };
     const { setOnBack } = usePageBack();
     useEffect(() => {
         setOnBack(() => {
-            if (catId) {
-                setCatId(null);
+            const { brandId: b, catId: c } = stateRef.current;
+            if (c) {
+                setView((prev) => ({ ...prev, catId: null }));
                 return true;
             }
-            if (brandId) {
-                setBrandId(null);
+            if (b) {
+                setView((prev) => ({ ...prev, brandId: null, catId: null }));
                 return true;
             }
             return false;
         });
         return () => setOnBack(null);
-    }, [brandId, catId, setOnBack]);
+    }, [setOnBack, setView]);
 
     return (
         <div className="flex flex-col h-[calc(100vh-theme(spacing.16))] lg:h-screen lg:pl-64 w-full overflow-hidden min-w-0 max-w-full">
@@ -227,7 +269,7 @@ export default function DocumentazionePage() {
                         <>
                             <ChevronRight className="w-4 h-4 text-slate-600" />
                             <button
-                                onClick={() => setCatId(null)}
+                                onClick={() => setView((prev) => ({ ...prev, catId: null }))}
                                 className={cn("hover:text-white transition-colors", !catId && "text-white font-semibold")}
                             >
                                 {brand.name}
@@ -294,7 +336,7 @@ export default function DocumentazionePage() {
                             return (
                                 <div
                                     key={c.id}
-                                    onClick={() => setCatId(c.id)}
+                                    onClick={() => setView((prev) => ({ ...prev, catId: c.id }))}
                                     className={cn(
                                         "glass-card p-6 cursor-pointer group hover:bg-white/[0.04] transition-all border border-white/10 hover:border-white/20 flex gap-4"
                                     )}

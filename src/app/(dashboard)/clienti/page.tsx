@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { usePageView } from "@/lib/pageView";
 
 interface Cliente {
     id: string;
@@ -188,35 +189,48 @@ function InfoItem({ icon, label, value, mono }: { icon: any; label: string; valu
     );
 }
 
+const defaultClientiView = {
+    quickSearch: "",
+    showFilters: false,
+    itemsPerPage: 25 as number,
+    currentPage: 1,
+    filterTipo: "tutti" as "tutti" | "consumer" | "business",
+    filterNome: "",
+    filterCognome: "",
+    filterRagione: "",
+    filterCellulare: "",
+    filterEmail: "",
+    filterIdentifier: "",
+};
+
 export default function ClientiPage() {
-    const [quickSearch, setQuickSearch] = useState("");
-    const [showFilters, setShowFilters] = useState(false);
+    const [view, setView] = usePageView<typeof defaultClientiView>("clienti", defaultClientiView);
+    const quickSearch = view.quickSearch;
+    const setQuickSearch = (v: string) => setView((p) => ({ ...p, quickSearch: v }));
+    const showFilters = view.showFilters;
+    const setShowFilters = (v: boolean) => setView((p) => ({ ...p, showFilters: v }));
+    const itemsPerPage = view.itemsPerPage;
+    const setItemsPerPage = (v: number) => setView((p) => ({ ...p, itemsPerPage: v }));
+    const currentPage = view.currentPage;
+    const setCurrentPage = (v: number) => setView((p) => ({ ...p, currentPage: v }));
+    const filterTipo = view.filterTipo;
+    const setFilterTipo = (v: "tutti" | "consumer" | "business") => setView((p) => ({ ...p, filterTipo: v }));
+    const filterNome = view.filterNome;
+    const setFilterNome = (v: string) => setView((p) => ({ ...p, filterNome: v }));
+    const filterCognome = view.filterCognome;
+    const setFilterCognome = (v: string) => setView((p) => ({ ...p, filterCognome: v }));
+    const filterRagione = view.filterRagione;
+    const setFilterRagione = (v: string) => setView((p) => ({ ...p, filterRagione: v }));
+    const filterCellulare = view.filterCellulare;
+    const setFilterCellulare = (v: string) => setView((p) => ({ ...p, filterCellulare: v }));
+    const filterEmail = view.filterEmail;
+    const setFilterEmail = (v: string) => setView((p) => ({ ...p, filterEmail: v }));
+    const filterIdentifier = view.filterIdentifier;
+    const setFilterIdentifier = (v: string) => setView((p) => ({ ...p, filterIdentifier: v }));
 
-    // Pagination state
-    const [itemsPerPage, setItemsPerPage] = useState<number>(25);
-    const [currentPage, setCurrentPage] = useState<number>(1);
-
-    // Advanced filters state
-    const [filterTipo, setFilterTipo] = useState<"tutti" | "consumer" | "business">("tutti");
-    const [filterNome, setFilterNome] = useState("");
-    const [filterCognome, setFilterCognome] = useState("");
-    const [filterRagione, setFilterRagione] = useState("");
-    const [filterCellulare, setFilterCellulare] = useState("");
-    const [filterEmail, setFilterEmail] = useState("");
-    const [filterIdentifier, setFilterIdentifier] = useState(""); // CF o P.IVA
     const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
 
-    const resetFilters = () => {
-        setFilterTipo("tutti");
-        setFilterNome("");
-        setFilterCognome("");
-        setFilterRagione("");
-        setFilterCellulare("");
-        setFilterEmail("");
-        setFilterIdentifier("");
-        setQuickSearch("");
-        setCurrentPage(1);
-    };
+    const resetFilters = () => setView((p) => ({ ...p, ...defaultClientiView }));
 
     const filteredData = useMemo(() => {
         return mockClienti.filter((c) => {
@@ -512,7 +526,7 @@ export default function ClientiPage() {
 
                                 <div className="flex gap-1">
                                     <button
-                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                                         disabled={currentPage === 1}
                                         className="px-3 py-1.5 rounded-lg border border-white/10 text-sm font-medium text-slate-300 hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     >
@@ -544,7 +558,7 @@ export default function ClientiPage() {
                                     </div>
 
                                     <button
-                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                                         disabled={currentPage === totalPages}
                                         className="px-3 py-1.5 rounded-lg border border-white/10 text-sm font-medium text-slate-300 hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                     >
