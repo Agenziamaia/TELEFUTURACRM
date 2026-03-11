@@ -1930,45 +1930,45 @@ export default function InviaPda() {
 
       {/* MODAL CF */}
       {showCF && tipoCliente === "privato" && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-[#1a1d29] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden relative max-h-[90vh] flex flex-col">
-            <div className="p-5 border-b border-white/5 flex items-center justify-between sticky top-0 bg-[#1a1d29]/95 backdrop-blur z-10 shrink-0">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in duration-200 overflow-y-auto">
+          <div className="bg-[#1a1d29] border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden relative my-auto max-h-[95vh] sm:max-h-[90vh] flex flex-col">
+            <div className="p-4 sm:p-5 border-b border-white/5 flex items-center justify-between sticky top-0 bg-[#1a1d29]/95 backdrop-blur z-10 shrink-0">
+              <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                 <span className="text-violet-400">🧮</span> Calcolo Codice Fiscale
               </h3>
-              <button onClick={() => setShowCF(false)} className="text-slate-400 hover:text-white transition-colors">✕</button>
+              <button type="button" onClick={() => setShowCF(false)} className="p-2 -m-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 touch-manipulation" aria-label="Chiudi">✕</button>
             </div>
 
-            <div className="p-6 space-y-5 overflow-y-auto min-h-0">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-1">
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto min-h-0">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
                   <Label text="Nome" required />
-                  <input type="text" value={cfD.nome} onChange={e => setCfD(p => ({ ...p, nome: e.target.value }))} className="w-full glass-input text-sm rounded-xl py-2 px-3 focus:border-violet-500/50" placeholder="Mario" />
+                  <input type="text" value={cfD.nome} onChange={e => setCfD(p => ({ ...p, nome: e.target.value }))} className="w-full glass-input text-sm rounded-xl py-2.5 sm:py-2 px-3 min-h-[44px] focus:border-violet-500/50" placeholder="Mario" />
                 </div>
-                <div className="col-span-1">
+                <div>
                   <Label text="Cognome" required />
-                  <input type="text" value={cfD.cognome} onChange={e => setCfD(p => ({ ...p, cognome: e.target.value }))} className="w-full glass-input text-sm rounded-xl py-2 px-3 focus:border-violet-500/50" placeholder="Rossi" />
+                  <input type="text" value={cfD.cognome} onChange={e => setCfD(p => ({ ...p, cognome: e.target.value }))} className="w-full glass-input text-sm rounded-xl py-2.5 sm:py-2 px-3 min-h-[44px] focus:border-violet-500/50" placeholder="Rossi" />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
                   <Label text="Sesso" required />
                   <div className="flex gap-2">
                     {["M", "F"].map(sx => (
-                      <button key={sx} onClick={() => setCfD(p => ({ ...p, sesso: sx }))} className={`flex-1 py-1.5 rounded-xl text-sm font-bold transition-all ${cfD.sesso === sx ? "bg-violet-500 text-white shadow-lg shadow-violet-500/20" : "bg-white/5 text-slate-400 border border-white/10"}`}>{sx === "M" ? "♂ M" : "♀ F"}</button>
+                      <button key={sx} type="button" onClick={() => setCfD(p => ({ ...p, sesso: sx }))} className={`flex-1 py-2.5 sm:py-1.5 rounded-xl text-sm font-bold transition-all min-h-[44px] touch-manipulation ${cfD.sesso === sx ? "bg-violet-500 text-white shadow-lg shadow-violet-500/20" : "bg-white/5 text-slate-400 border border-white/10"}`}>{sx === "M" ? "♂ M" : "♀ F"}</button>
                     ))}
                   </div>
                 </div>
-                <div className="col-span-1">
+                <div>
                   <Label text="Data di Nascita" required />
                   <div className="flex gap-2">
-                    <input type="text" value={cfD.giorno} onChange={e => setCfD(p => ({ ...p, giorno: e.target.value }))} placeholder="GG" maxLength={2} className="w-[50px] text-center glass-input rounded-xl text-sm py-2 px-1 focus:border-violet-500/50" />
-                    <select value={cfD.mese} onChange={e => setCfD(p => ({ ...p, mese: e.target.value }))} className="flex-1 min-w-0 glass-input rounded-xl text-sm py-2 px-1 text-slate-300 bg-[#1a1d29] focus:border-violet-500/50">
+                    <input type="text" value={cfD.giorno} onChange={e => setCfD(p => ({ ...p, giorno: e.target.value }))} placeholder="GG" maxLength={2} className="w-14 sm:w-12 text-center glass-input rounded-xl text-sm py-2.5 sm:py-2 min-h-[44px] focus:border-violet-500/50" />
+                    <select value={cfD.mese} onChange={e => setCfD(p => ({ ...p, mese: e.target.value }))} className="flex-1 min-w-0 glass-input rounded-xl text-sm py-2.5 sm:py-2 px-2 text-slate-300 bg-[#1a1d29] min-h-[44px] focus:border-violet-500/50">
                       <option value="">MM</option>
                       {["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"].map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
-                    <input type="text" value={cfD.anno} onChange={e => setCfD(p => ({ ...p, anno: e.target.value }))} placeholder="AAAA" maxLength={4} className="w-[60px] text-center glass-input rounded-xl text-sm py-2 px-1 focus:border-violet-500/50" />
+                    <input type="text" value={cfD.anno} onChange={e => setCfD(p => ({ ...p, anno: e.target.value }))} placeholder="AAAA" maxLength={4} className="w-16 sm:w-14 text-center glass-input rounded-xl text-sm py-2.5 sm:py-2 min-h-[44px] focus:border-violet-500/50" />
                   </div>
                 </div>
               </div>
@@ -1996,8 +1996,8 @@ export default function InviaPda() {
               </div>
             </div>
 
-            <div className="p-5 border-t border-white/5 bg-black/20 shrink-0">
-              <button onClick={doCF} className="w-full py-3 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl text-sm font-bold uppercase tracking-widest shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all flex items-center justify-center gap-2">
+            <div className="p-4 sm:p-5 border-t border-white/5 bg-black/20 shrink-0">
+              <button type="button" onClick={doCF} className="w-full py-3.5 sm:py-3 min-h-[48px] bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl text-sm font-bold uppercase tracking-widest shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all flex items-center justify-center gap-2 touch-manipulation">
                 🧮 Calcola Codice Fiscale
               </button>
             </div>
