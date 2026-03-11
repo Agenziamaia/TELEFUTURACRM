@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle } from "lucide-react";
 import { cn } from "@/utils";
 import { usePageView } from "@/lib/pageView";
 import { useAuth } from "@/context/AuthContext";
@@ -27,8 +27,16 @@ interface Appointment {
     status: AppointmentStatus;
 }
 
+// --- AGENDA BLOCKS (agent-only; blocks telephone team from booking) ---
+interface AgendaBlock {
+    id: number;
+    startDate: string; // YYYY-MM-DD
+    endDate: string;
+    note: string;
+}
+
 // --- TASKS MODULE ---
-type TaskStatus = "da_fare" | "fatta" | "sospesa";
+type TaskStatus = "da_fare" | "fatta" | "sospesa" | "abbandonata";
 
 interface CalendarTask {
     id: number;
@@ -37,9 +45,11 @@ interface CalendarTask {
     time?: string; // Optional time -> triggers bell
     status: TaskStatus;
     notes?: string;
+    outcomeNote?: string; // Final note when closing/updating task
     clientRef?: string; // CF or Name + Phone
     createdBy: string;
-    assignedTo: string;
+    assignedTo: string; // User name, or empty when assignedToStore is set
+    assignedToStore?: string; // When set, task is for entire store
 }
 
 const MOCK_AGENTS = ["Luca Perotta", "Alessandro Sandri", "Marco Bianchi", "Giulia Rossi", "Venditore 1"];
@@ -56,7 +66,7 @@ const MOCK_APPOINTMENTS: Appointment[] = [
 
 const MOCK_TASKS: CalendarTask[] = [
     { id: 1, title: "Richiamare per conferma contratto", date: "2026-03-03", time: "11:30", status: "da_fare", notes: "Controllare se ha inviato i documenti", clientRef: "Mario Rossi", createdBy: "Luca Perotta", assignedTo: "Luca Perotta" },
-    { id: 2, title: "Verifica attivazione linea", date: "2026-03-03", status: "fatta", notes: "Linea OK", clientRef: "Anna Verdi", createdBy: "Alessandro Sandri", assignedTo: "Alessandro Sandri" },
+    { id: 2, title: "Verifica attivazione linea", date: "2026-03-03", status: "fatta", notes: "Linea OK", outcomeNote: "Confermato con cliente.", clientRef: "Anna Verdi", createdBy: "Alessandro Sandri", assignedTo: "Alessandro Sandri" },
     { id: 3, title: "Sollecito pagamento", date: "2026-03-05", time: "16:00", status: "sospesa", clientRef: "Giuseppe Ferrari", createdBy: "Marco Bianchi", assignedTo: "Giulia Rossi" },
 ];
 
@@ -118,6 +128,16 @@ export default function Calendario() {
     const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
     const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
 
+    // Agenda blocks (agent-only); blocked dates prevent telephone team from booking
+    const [agendaBlocks, setAgendaBlocks] = useState<AgendaBlock[]>([]);
+    const [showBlockAgendaModal, setShowBlockAgendaModal] = useState(false);
+    const [blockAgendaForm, setBlockAgendaForm] = useState({
+        mode: "single" as "single" | "range",
+        startDate: "",
+        endDate: "",
+        note: "",
+    });
+
     // New appointment form state
     const [newAppt, setNewAppt] = useState({
         time: "10:00",
@@ -168,6 +188,9 @@ export default function Calendario() {
     const isCallCenter = user?.role === "admin"; // admin = call center operator
     const isAgent = user?.role !== "admin";
 
+    const isDateBlocked = (dateStr: string) =>
+        agendaBlocks.some(b => dateStr >= b.startDate && dateStr <= b.endDate);
+
     // Role-based visibility and Admin Grid Filter
     const visibleAppointments = appointments.filter(a => {
         if (user?.role === "admin") {
@@ -175,8 +198,10 @@ export default function Calendario() {
             if (filterAgent && filterAgent !== "Tutti" && a.agente !== filterAgent) return false;
             return true;
         }
-        // agente sees only own appointments
-        return a.agente === user?.name;
+        // Agent: own appointments, or inbound appointments for their store
+        if (a.agente === user?.name) return true;
+        if (a.type === "incoming" && a.store && user?.negozio && (a.store === user.negozio || a.store.includes(user.negozio) || user.negozio.includes(a.store))) return true;
+        return false;
     });
 
     const apptsByDate = (dateStr: string) =>
@@ -186,10 +211,13 @@ export default function Calendario() {
         return tasks.filter(t => {
             if (t.date !== dateStr) return false;
             if (isCallCenter) {
-                // If filter logic applies to Tasks. 
-                // Note: Tasks don't explicitly have a `store`, but they have `assignedTo`.
-                if (filterAgent && filterAgent !== "Tutti" && t.assignedTo !== filterAgent) return false;
+                if (filterAgent && filterAgent !== "Tutti" && !t.assignedToStore && t.assignedTo !== filterAgent) return false;
                 return true;
+            }
+            // Agent: visible if assigned to me, or assigned to my store
+            if (t.assignedToStore) {
+                const myStore = user?.negozio ?? "";
+                return myStore && (t.assignedToStore === myStore || myStore.includes(t.assignedToStore) || t.assignedToStore.includes(myStore));
             }
             return t.assignedTo === user?.name || t.createdBy === user?.name;
         });
@@ -206,12 +234,19 @@ export default function Calendario() {
     const handleCreateSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedDate) return;
+        if (isDateBlocked(selectedDate)) {
+            const block = agendaBlocks.find(b => selectedDate >= b.startDate && selectedDate <= b.endDate);
+            alert(`Questa data è bloccata in agenda. Motivo: ${block?.note ?? "—"}`);
+            return;
+        }
         const newId = Math.max(...appointments.map(a => a.id)) + 1;
         const created: Appointment = {
             id: newId,
             date: selectedDate,
             ...newAppt,
             status: "scheduled",
+            // Inbound: only store, no agent
+            agente: newAppt.type === "incoming" ? "" : newAppt.agente,
             store: newAppt.type === "incoming" ? newAppt.store : undefined,
             customerAddress: newAppt.type === "outgoing" ? newAppt.customerAddress : undefined,
         };
@@ -222,7 +257,8 @@ export default function Calendario() {
 
     const handleCreateTaskSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newTask.date || !newTask.title || !newTask.assignedTo) return;
+        const assignee = newTask.assignedToStore ? "" : (newTask.assignedTo ?? "");
+        if (!newTask.date || !newTask.title || (!newTask.assignedToStore && !assignee)) return;
 
         const nextId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
 
@@ -235,12 +271,13 @@ export default function Calendario() {
             notes: newTask.notes,
             clientRef: newTask.clientRef,
             createdBy: user?.name || "Sconosciuto",
-            assignedTo: newTask.assignedTo,
+            assignedTo: assignee,
+            assignedToStore: newTask.assignedToStore,
         };
 
         setTasks(prev => [...prev, created]);
         setShowCreateTaskModal(false);
-        setNewTask({ title: "", date: "", time: "", status: "da_fare", notes: "", clientRef: "", assignedTo: user?.name || "" });
+        setNewTask({ title: "", date: "", time: "", status: "da_fare", notes: "", clientRef: "", assignedTo: user?.name || "", assignedToStore: undefined });
     };
 
     const dateAppts = selectedDate ? apptsByDate(selectedDate) : [];
@@ -281,9 +318,29 @@ export default function Calendario() {
             status: "da_fare",
             notes: "",
             clientRef: "",
-            assignedTo: user?.name || ""
+            assignedTo: user?.name || "",
+            assignedToStore: undefined,
         });
         setShowCreateTaskModal(true);
+    };
+
+    const handleBlockAgendaSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const start = blockAgendaForm.startDate.trim();
+        const end = blockAgendaForm.mode === "range" ? (blockAgendaForm.endDate.trim() || start) : start;
+        const note = blockAgendaForm.note.trim();
+        if (!start || !note) {
+            alert("Inserire data e motivo obbligatori.");
+            return;
+        }
+        if (blockAgendaForm.mode === "range" && end < start) {
+            alert("La data fine deve essere uguale o successiva alla data inizio.");
+            return;
+        }
+        const nextId = agendaBlocks.length > 0 ? Math.max(...agendaBlocks.map(b => b.id)) + 1 : 1;
+        setAgendaBlocks(prev => [...prev, { id: nextId, startDate: start, endDate: end, note }]);
+        setShowBlockAgendaModal(false);
+        setBlockAgendaForm({ mode: "single", startDate: "", endDate: "", note: "" });
     };
 
     return (
@@ -326,6 +383,18 @@ export default function Calendario() {
                         <Plus className="w-4 h-4" />
                         Nuovo appuntamento
                     </button>
+                    {isAgent && (
+                        <button
+                            onClick={() => {
+                                setBlockAgendaForm({ mode: "single", startDate: selectedDate || "", endDate: selectedDate || "", note: "" });
+                                setShowBlockAgendaModal(true);
+                            }}
+                            className="h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"
+                        >
+                            <Lock className="w-4 h-4" />
+                            Blocca agenda
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -535,6 +604,7 @@ export default function Calendario() {
                             const dayTasks = tasksByDate(dateStr);
                             const isToday = dateStr === todayStr;
                             const isSelected = dateStr === selectedDate;
+                            const isBlocked = isDateBlocked(dateStr);
 
                             return (
                                 <button
@@ -542,18 +612,22 @@ export default function Calendario() {
                                     onClick={() => handleDayClick(day)}
                                     className={cn(
                                         "relative aspect-square rounded-xl flex flex-col items-center justify-start pt-2 pb-1 px-1 transition-all group",
-                                        isSelected ? "bg-indigo-500/25 border border-indigo-500/50" :
-                                            isToday ? "bg-white/[0.05] border border-white/15" :
-                                                "hover:bg-white/[0.04] border border-transparent"
+                                        isBlocked ? "bg-amber-500/15 border border-amber-500/30" :
+                                            isSelected ? "bg-indigo-500/25 border border-indigo-500/50" :
+                                                isToday ? "bg-white/[0.05] border border-white/15" :
+                                                    "hover:bg-white/[0.04] border border-transparent"
                                     )}
                                 >
                                     <span className={cn(
                                         "text-sm font-medium",
-                                        isToday ? "text-indigo-400 font-bold" :
-                                            isSelected ? "text-white" : "text-slate-300"
+                                        isToday && !isBlocked ? "text-indigo-400 font-bold" :
+                                            isSelected ? "text-white" : isBlocked ? "text-amber-200" : "text-slate-300"
                                     )}>
                                         {day}
                                     </span>
+                                    {isBlocked && (
+                                        <Lock className="w-3 h-3 text-amber-400 mt-0.5" />
+                                    )}
                                     {(dayAppts.length > 0 || dayTasks.length > 0) && (
                                         <div className="flex flex-wrap gap-0.5 mt-1 justify-center items-center">
                                             {dayAppts.slice(0, 3).map(a => (
@@ -584,6 +658,7 @@ export default function Calendario() {
                         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" />Outbound</span>
                         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-400" />Auto-Generato</span>
                         <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />Task</span>
+                        {agendaBlocks.length > 0 && <span className="flex items-center gap-1.5"><Lock className="w-3 h-3 text-amber-400" />Giorno bloccato</span>}
                     </div>
                 </div>
 
@@ -639,7 +714,7 @@ export default function Calendario() {
                                                 }
                                             </div>
                                             <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                                                <User className="w-3 h-3" /> {a.agente}
+                                                <User className="w-3 h-3" /> {a.type === "incoming" && a.store ? a.store : a.agente || "—"}
                                                 <span className={cn("ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium",
                                                     a.type === "incoming" ? "bg-blue-500/15 text-blue-400" : "bg-amber-500/15 text-amber-400"
                                                 )}>
@@ -678,12 +753,13 @@ export default function Calendario() {
                             ) : (
                                 <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1">
                                     {dateTasks.map(t => (
-                                        <div key={t.id} className={cn(
-                                            "w-full text-left p-3 rounded-xl border transition-all",
-                                            t.status === "fatta" ? "bg-emerald-500/5 border-emerald-500/10 opacity-70" :
-                                                t.status === "sospesa" ? "bg-amber-500/5 border-amber-500/10" :
+                                    <div key={t.id} className={cn(
+                                        "w-full text-left p-3 rounded-xl border transition-all",
+                                        t.status === "fatta" ? "bg-emerald-500/5 border-emerald-500/10 opacity-70" :
+                                            t.status === "sospesa" ? "bg-amber-500/5 border-amber-500/10" :
+                                                t.status === "abbandonata" ? "bg-rose-500/5 border-rose-500/10 opacity-80" :
                                                     "bg-white/[0.03] border-white/8"
-                                        )}>
+                                    )}>
                                             <div className="flex justify-between items-start mb-2 gap-2">
                                                 <div className="flex items-start gap-2 max-w-[70%]">
                                                     <div className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
@@ -708,22 +784,21 @@ export default function Calendario() {
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        const nextStatus: Record<TaskStatus, TaskStatus> = {
-                                                            "da_fare": "fatta",
-                                                            "fatta": "sospesa",
-                                                            "sospesa": "da_fare"
-                                                        };
-                                                        setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: nextStatus[t.status] } : task));
+                                                        const order: TaskStatus[] = ["da_fare", "fatta", "sospesa", "abbandonata"];
+                                                        const idx = order.indexOf(t.status);
+                                                        const nextStatus = order[(idx + 1) % order.length];
+                                                        setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: nextStatus } : task));
                                                     }}
                                                     className={cn(
                                                         "text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-full border transition-colors flex items-center gap-1 shrink-0",
                                                         t.status === "da_fare" ? "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10" :
                                                             t.status === "fatta" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20" :
-                                                                "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20"
+                                                                t.status === "sospesa" ? "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20" :
+                                                                    "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20"
                                                     )}
                                                 >
-                                                    {t.status === "da_fare" ? <Circle className="w-3 h-3" /> : t.status === "fatta" ? <CheckCircle2 className="w-3 h-3" /> : <PauseCircle className="w-3 h-3" />}
-                                                    {t.status.replace("_", " ")}
+                                                    {t.status === "da_fare" ? <Circle className="w-3 h-3" /> : t.status === "fatta" ? <CheckCircle2 className="w-3 h-3" /> : t.status === "sospesa" ? <PauseCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                                                    {t.status === "abbandonata" ? "Abbandonata" : t.status.replace("_", " ")}
                                                 </button>
                                             </div>
 
@@ -731,7 +806,7 @@ export default function Calendario() {
                                                 <div className="mt-3 pt-3 border-t border-white/5 space-y-2 text-xs animate-in slide-in-from-top-2">
                                                     <div className="flex justify-between text-slate-400">
                                                         <span><strong>Creato da:</strong> {t.createdBy}</span>
-                                                        <span><strong>Ass.:</strong> <span className={cn(t.assignedTo === user?.name ? "text-indigo-400 font-medium" : "")}>{t.assignedTo}</span></span>
+                                                        <span><strong>Ass.:</strong> {t.assignedToStore ? <span className="text-amber-400">Punto vendita — {t.assignedToStore}</span> : <span className={cn(t.assignedTo === user?.name ? "text-indigo-400 font-medium" : "")}>{t.assignedTo}</span>}</span>
                                                     </div>
                                                     {t.clientRef && (
                                                         <div className="text-slate-300 bg-white/5 p-2 rounded flex items-center gap-2">
@@ -744,6 +819,30 @@ export default function Calendario() {
                                                             "{t.notes}"
                                                         </div>
                                                     )}
+                                                    <div className="mt-3 space-y-1.5">
+                                                        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Esito / Stato</label>
+                                                        <select
+                                                            className="glass-input w-full text-xs py-1.5"
+                                                            value={t.status}
+                                                            onChange={e => {
+                                                                const s = e.target.value as TaskStatus;
+                                                                setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: s } : task));
+                                                            }}
+                                                        >
+                                                            <option value="da_fare">Da fare</option>
+                                                            <option value="fatta">Fatta</option>
+                                                            <option value="sospesa">Sospesa</option>
+                                                            <option value="abbandonata">Abbandonata</option>
+                                                        </select>
+                                                        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mt-2">Note esito (salvate con la task)</label>
+                                                        <textarea
+                                                            className="glass-input w-full resize-none text-xs py-2"
+                                                            rows={2}
+                                                            placeholder="Aggiungi una nota quando chiudi o aggiorni la task..."
+                                                            value={t.outcomeNote ?? ""}
+                                                            onChange={e => setTasks(prev => prev.map(task => task.id === t.id ? { ...task, outcomeNote: e.target.value } : task))}
+                                                        />
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
@@ -784,7 +883,7 @@ export default function Calendario() {
                                 <div className="flex items-center gap-2 text-slate-300"><Phone className="w-4 h-4 text-slate-500" />{selectedAppointment.customerPhone}</div>
                                 {selectedAppointment.cfPiva && <div className="flex items-center gap-2 text-slate-300 font-mono"><Search className="w-4 h-4 text-slate-500" />{selectedAppointment.cfPiva}</div>}
                                 <div className="flex items-center gap-2 text-slate-300"><MapPin className="w-4 h-4 text-slate-500" />{selectedAppointment.store || selectedAppointment.customerAddress}</div>
-                                <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />Agente: {selectedAppointment.agente}</div>
+                                <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />{selectedAppointment.type === "incoming" && selectedAppointment.store ? `Punto vendita: ${selectedAppointment.store}` : `Agente: ${selectedAppointment.agente || "—"}`}</div>
                             </div>
                             {selectedAppointment.notes && (
                                 <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-slate-400 text-xs">
@@ -837,13 +936,19 @@ export default function Calendario() {
                             </div>
                             <button onClick={() => setShowCreateModal(false)} className="text-slate-500 hover:text-slate-300"><X className="w-5 h-5" /></button>
                         </div>
+                        {isDateBlocked(selectedDate) && (
+                            <div className="mb-4 p-3 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-sm flex items-center gap-2">
+                                <Lock className="w-4 h-4 shrink-0" />
+                                <span>Questa data è bloccata in agenda. Il centralino non può prenotare appuntamenti in questo giorno.</span>
+                            </div>
+                        )}
                         <form onSubmit={handleCreateSubmit} className="space-y-4">
                             {/* Type selection: admins choose all 3; agents are locked to Auto-Generato */}
                             {isCallCenter ? (
                                 <div className="flex gap-3">
                                     {(["incoming", "outgoing", "self_generated"] as const).map(t => (
                                         <button key={t} type="button"
-                                            onClick={() => setNewAppt(p => ({ ...p, type: t }))}
+                                            onClick={() => setNewAppt(p => ({ ...p, type: t, agente: t === "incoming" ? "" : p.agente }))}
                                             className={cn("flex-1 py-2.5 rounded-xl border text-sm font-medium transition-all",
                                                 newAppt.type === t ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]"
                                             )}
@@ -862,35 +967,40 @@ export default function Calendario() {
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Orario *</label>
                                     <input type="time" className="glass-input w-full" value={newAppt.time} onChange={e => setNewAppt(p => ({ ...p, time: e.target.value }))} required />
                                 </div>
-                                {isCallCenter ? (
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Agente *</label>
-                                        <select className="glass-input w-full" value={newAppt.agente} onChange={e => setNewAppt(p => ({ ...p, agente: e.target.value }))} required>
-                                            <option value="">Seleziona...</option>
-                                            {MOCK_AGENTS.map(a => <option key={a} value={a}>{a}</option>)}
-                                        </select>
-                                    </div>
-                                ) : (
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Agente</label>
-                                        <input className="glass-input w-full" value={newAppt.agente} readOnly />
-                                    </div>
+                                {/* Inbound: only store, no agent. Outgoing/self_generated: agent required for admin */}
+                                {newAppt.type !== "incoming" && (
+                                    isCallCenter ? (
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Agente *</label>
+                                            <select className="glass-input w-full" value={newAppt.agente} onChange={e => setNewAppt(p => ({ ...p, agente: e.target.value }))} required>
+                                                <option value="">Seleziona...</option>
+                                                {MOCK_AGENTS.map(a => <option key={a} value={a}>{a}</option>)}
+                                            </select>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Agente</label>
+                                            <input className="glass-input w-full" value={newAppt.agente} readOnly />
+                                        </div>
+                                    )
                                 )}
                             </div>
-                            {newAppt.type === "incoming" ? (
+                            {newAppt.type === "incoming" && (
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Negozio destinazione *</label>
+                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Punto vendita *</label>
                                     <select className="glass-input w-full" value={newAppt.store} onChange={e => setNewAppt(p => ({ ...p, store: e.target.value }))} required>
-                                        <option value="">Seleziona negozio...</option>
+                                        <option value="">Seleziona punto vendita...</option>
                                         {MOCK_STORES.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
+                                    <p className="text-xs text-slate-500 mt-1">Per gli appuntamenti inbound si seleziona solo il punto vendita.</p>
                                 </div>
-                            ) : newAppt.type === "outgoing" ? (
+                            )}
+                            {newAppt.type === "outgoing" && (
                                 <div>
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Indirizzo cliente *</label>
                                     <input type="text" className="glass-input w-full" placeholder="Via, Numero civico, Città" value={newAppt.customerAddress} onChange={e => setNewAppt(p => ({ ...p, customerAddress: e.target.value }))} required />
                                 </div>
-                            ) : null}
+                            )}
 
 
                             <div>
@@ -954,23 +1064,37 @@ export default function Calendario() {
                                 <input type="text" className="glass-input w-full" placeholder="Nome, CF o Cellulare" value={newTask.clientRef || ""} onChange={e => setNewTask(p => ({ ...p, clientRef: e.target.value }))} />
                             </div>
 
-                            {isCallCenter ? (
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Assegna a *</label>
-                                    <select className="glass-input w-full" value={newTask.assignedTo} onChange={e => setNewTask(p => ({ ...p, assignedTo: e.target.value }))} required>
-                                        <option value="">Seleziona operatore...</option>
-                                        <option value={user?.name}>{user?.name} (Tu)</option>
-                                        <optgroup label="Altri">
-                                            {MOCK_AGENTS.filter(a => a !== user?.name).map(a => <option key={a} value={a}>{a}</option>)}
-                                        </optgroup>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Assegna a *</label>
+                                <div className="flex gap-3 mb-2">
+                                    <button type="button" onClick={() => setNewTask(p => ({ ...p, assignedToStore: undefined, assignedTo: p.assignedTo || user?.name || "" }))}
+                                        className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", !newTask.assignedToStore ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/5 border-white/10 text-slate-400")}>
+                                        Operatore
+                                    </button>
+                                    <button type="button" onClick={() => setNewTask(p => ({ ...p, assignedToStore: MOCK_STORES[0], assignedTo: "" }))}
+                                        className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", newTask.assignedToStore ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/5 border-white/10 text-slate-400")}>
+                                        Punto vendita
+                                    </button>
+                                </div>
+                                {newTask.assignedToStore ? (
+                                    <select className="glass-input w-full" value={newTask.assignedToStore} onChange={e => setNewTask(p => ({ ...p, assignedToStore: e.target.value }))} required>
+                                        {MOCK_STORES.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
-                                </div>
-                            ) : (
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Assegna a</label>
-                                    <input className="glass-input w-full text-slate-400 bg-white/5" value={newTask.assignedTo || user?.name || ""} readOnly />
-                                </div>
-                            )}
+                                ) : (
+                                    isCallCenter ? (
+                                        <select className="glass-input w-full" value={newTask.assignedTo} onChange={e => setNewTask(p => ({ ...p, assignedTo: e.target.value }))} required>
+                                            <option value="">Seleziona operatore...</option>
+                                            <option value={user?.name}>{user?.name} (Tu)</option>
+                                            <optgroup label="Altri">
+                                                {MOCK_AGENTS.filter(a => a !== user?.name).map(a => <option key={a} value={a}>{a}</option>)}
+                                            </optgroup>
+                                        </select>
+                                    ) : (
+                                        <input className="glass-input w-full text-slate-400 bg-white/5" value={newTask.assignedTo || user?.name || ""} readOnly />
+                                    )
+                                )}
+                                {newTask.assignedToStore && <p className="text-xs text-slate-500 mt-1">La task sarà visibile a tutti gli utenti del punto vendita.</p>}
+                            </div>
 
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Note</label>
@@ -980,6 +1104,54 @@ export default function Calendario() {
                             <div className="flex gap-3 pt-2">
                                 <button type="button" onClick={() => setShowCreateTaskModal(false)} className="flex-1 h-10 rounded-xl font-medium bg-white/5 text-slate-300 hover:bg-white/10 transition-colors text-sm">Annulla</button>
                                 <button type="submit" className="flex-1 h-10 rounded-xl font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-500/20 text-sm">Salva Task</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Block Agenda Modal (agents only) */}
+            {showBlockAgendaModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowBlockAgendaModal(false)}>
+                    <div className="glass-card p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <Lock className="w-5 h-5 text-amber-400" />
+                                Blocca agenda
+                            </h3>
+                            <button onClick={() => setShowBlockAgendaModal(false)} className="text-slate-500 hover:text-slate-300"><X className="w-5 h-5" /></button>
+                        </div>
+                        <p className="text-sm text-slate-400 mb-4">Le date bloccate impediscono al centralino di prenotare appuntamenti. Inserire sempre il motivo.</p>
+                        <form onSubmit={handleBlockAgendaSubmit} className="space-y-4">
+                            <div className="flex gap-3">
+                                <button type="button" onClick={() => setBlockAgendaForm(p => ({ ...p, mode: "single" }))}
+                                    className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", blockAgendaForm.mode === "single" ? "bg-amber-500/20 border-amber-500/50 text-amber-300" : "bg-white/5 border-white/10 text-slate-400")}>
+                                    Singolo giorno
+                                </button>
+                                <button type="button" onClick={() => setBlockAgendaForm(p => ({ ...p, mode: "range" }))}
+                                    className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", blockAgendaForm.mode === "range" ? "bg-amber-500/20 border-amber-500/50 text-amber-300" : "bg-white/5 border-white/10 text-slate-400")}>
+                                    Intervallo
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Data inizio *</label>
+                                    <input type="date" className="glass-input w-full" value={blockAgendaForm.startDate} onChange={e => setBlockAgendaForm(p => ({ ...p, startDate: e.target.value }))} required />
+                                </div>
+                                {blockAgendaForm.mode === "range" && (
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Data fine *</label>
+                                        <input type="date" className="glass-input w-full" value={blockAgendaForm.endDate} onChange={e => setBlockAgendaForm(p => ({ ...p, endDate: e.target.value }))} min={blockAgendaForm.startDate} required={blockAgendaForm.mode === "range"} />
+                                    </div>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Motivo / nota *</label>
+                                <textarea className="glass-input w-full resize-none" rows={3} placeholder="Es. Ferie, Formazione, Chiusura negozio..." value={blockAgendaForm.note} onChange={e => setBlockAgendaForm(p => ({ ...p, note: e.target.value }))} required />
+                            </div>
+                            <div className="flex gap-3 pt-1">
+                                <button type="button" onClick={() => setShowBlockAgendaModal(false)} className="flex-1 h-10 rounded-xl font-medium bg-white/5 text-slate-300 hover:bg-white/10 text-sm">Annulla</button>
+                                <button type="submit" className="flex-1 h-10 rounded-xl font-medium bg-amber-500 text-white hover:bg-amber-600 text-sm">Blocca agenda</button>
                             </div>
                         </form>
                     </div>
