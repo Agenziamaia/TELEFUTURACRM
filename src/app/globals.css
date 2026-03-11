@@ -44,6 +44,10 @@
     @apply -translate-y-1 shadow-xl border-border-glass-bright;
   }
 
+  .glass-panel {
+    @apply rounded-2xl border border-border-glass backdrop-blur-xl bg-bg-glass;
+  }
+
   .glass-input {
     @apply bg-slate-900/50 border border-border-glass text-text-main rounded-lg transition-all focus:bg-slate-900/80 focus:border-primary focus:ring-4 focus:ring-primary-glow outline-none px-4 py-2;
   }

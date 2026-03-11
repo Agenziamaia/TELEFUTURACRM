@@ -1,5 +1,6 @@
-﻿"use client";
+"use client";
 
+import Image from "next/image";
 import React, { useState, useCallback } from "react";
 import {
     Folder,
@@ -23,10 +24,46 @@ import { cn } from "@/utils";
 
 /* ─── BRAND CONFIG ─── */
 const BRANDS = [
-    { id: "windtre", name: "WindTre", color: "from-orange-500 to-orange-600", borderColor: "border-orange-500", text: "text-orange-500", bg: "bg-orange-500/10", icon: Wifi },
-    { id: "vodafone_fastweb", name: "Vodafone / Fastweb", color: "from-red-500 to-red-600", borderColor: "border-red-500", text: "text-red-500", bg: "bg-red-500/10", icon: Radio },
-    { id: "sky", name: "Sky", color: "from-sky-500 to-sky-600", borderColor: "border-sky-500", text: "text-sky-500", bg: "bg-sky-500/10", icon: Tv },
-    { id: "energia", name: "Energia", color: "from-emerald-500 to-emerald-600", borderColor: "border-emerald-500", text: "text-emerald-500", bg: "bg-emerald-500/10", icon: Zap },
+    {
+        id: "windtre",
+        name: "WindTre",
+        color: "from-orange-500 to-orange-600",
+        borderColor: "border-orange-500",
+        text: "text-orange-500",
+        bg: "bg-orange-500/10",
+        icon: Wifi,
+        logo: "/windtre.webp",
+    },
+    {
+        id: "vodafone_fastweb",
+        name: "Vodafone / Fastweb",
+        color: "from-red-500 to-red-600",
+        borderColor: "border-red-500",
+        text: "text-red-500",
+        bg: "bg-red-500/10",
+        icon: Radio,
+        logo: "/vodaphone - Copy.png",
+    },
+    {
+        id: "sky",
+        name: "Sky",
+        color: "from-sky-500 to-sky-600",
+        borderColor: "border-sky-500",
+        text: "text-sky-500",
+        bg: "bg-sky-500/10",
+        icon: Tv,
+        logo: "/sky.png",
+    },
+    {
+        id: "energia",
+        name: "Energia",
+        color: "from-emerald-500 to-emerald-600",
+        borderColor: "border-emerald-500",
+        text: "text-emerald-500",
+        bg: "bg-emerald-500/10",
+        icon: Zap,
+        logo: "/energy - Copy.png",
+    },
 ];
 
 const CATEGORIES = [
@@ -207,8 +244,18 @@ export default function DocumentazionePage() {
                                 <div className={cn("absolute top-0 left-0 right-0 h-1 bg-gradient-to-r", b.color)} />
 
                                 <div className="flex flex-col items-center justify-center text-center gap-4 py-4">
-                                    <div className={cn("p-4 rounded-full", b.bg)}>
-                                        <b.icon className={cn("w-10 h-10", b.text)} />
+                                    <div className={cn("w-20 h-20 rounded-xl overflow-hidden flex items-center justify-center", b.bg)}>
+                                        {b.logo ? (
+                                            <Image
+                                                src={b.logo}
+                                                alt={b.name}
+                                                width={80}
+                                                height={80}
+                                                className="w-full h-full object-cover rounded-xl"
+                                            />
+                                        ) : (
+                                            <b.icon className={cn("w-10 h-10", b.text)} />
+                                        )}
                                     </div>
                                     <div>
                                         <h3 className="text-xl font-bold text-white mb-1">{b.name}</h3>

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Search, ShoppingBag, User, Check, ChevronLeft, ChevronRight, Plus, Trash2, Archive, HelpCircle, Info, LayoutGrid, Clock, Calendar, ExternalLink, MoreVertical, ChevronUp, ChevronDown } from "lucide-react";
 import { calculateCF, _CNA, _PNA } from "@/lib/cf";
@@ -10,11 +11,56 @@ const VENDITORI = ["Alberto", "Alex", "Alin", "Asad", "Ben Aziza", "Cristhian", 
 const NEGOZI = ["Magliana", "Donna", "Libia", "Collatina", "Mazzini", "San Paolo", "Garbatella", "Promontori", "Acilia", "Baleniere", "Castani", "Merulana", "Telefonico"];
 
 const ALL_BRANDS = [
-  { id: "w3", label: "WindTre", badge: "W3", color: "#2E75B6", bg: "#EBF3FB", desc: "Mobile · Fisso · Luce&Gas · Multi-Servizi", onlyBusiness: false },
-  { id: "sky", label: "Sky", badge: "SKY", color: "#0072CE", bg: "#E6F2FB", desc: "Fisso · Abbonamenti TV", onlyBusiness: false },
-  { id: "fastweb", label: "Fastweb", badge: "FW", color: "#00A651", bg: "#E6F7EE", desc: "Mobile · Fisso · Luce&Gas", onlyBusiness: false },
-  { id: "energy", label: "Energy", badge: "NRG", color: "#fd7e14", bg: "#FFF3E6", desc: "Luce e Gas", onlyBusiness: false },
-  { id: "dojo", label: "Dojo", badge: "DJ", color: "#6f42c1", bg: "#F3EEFB", desc: "POS · Terminali di pagamento", onlyBusiness: true },
+  {
+    id: "w3",
+    label: "WindTre",
+    badge: "W3",
+    color: "#2E75B6",
+    bg: "#EBF3FB",
+    desc: "Mobile · Fisso · Luce&Gas · Multi-Servizi",
+    onlyBusiness: false,
+    logo: "/windtre.webp",
+  },
+  {
+    id: "sky",
+    label: "Sky",
+    badge: "SKY",
+    color: "#0072CE",
+    bg: "#E6F2FB",
+    desc: "Fisso · Abbonamenti TV",
+    onlyBusiness: false,
+    logo: "/sky.png",
+  },
+  {
+    id: "fastweb",
+    label: "Fastweb",
+    badge: "FW",
+    color: "#00A651",
+    bg: "#E6F7EE",
+    desc: "Mobile · Fisso · Luce&Gas",
+    onlyBusiness: false,
+    logo: "/fastweb.png",
+  },
+  {
+    id: "energy",
+    label: "Energy",
+    badge: "NRG",
+    color: "#fd7e14",
+    bg: "#FFF3E6",
+    desc: "Luce e Gas",
+    onlyBusiness: false,
+    logo: "/energy - Copy.png",
+  },
+  {
+    id: "dojo",
+    label: "Dojo",
+    badge: "DJ",
+    color: "#6f42c1",
+    bg: "#F3EEFB",
+    desc: "POS · Terminali di pagamento",
+    onlyBusiness: true,
+    logo: "/dojo - Copy.png",
+  },
 ];
 
 // ── PRODOTTI PER BRAND ────────────────────────────────────────────────────────
@@ -1790,14 +1836,32 @@ export default function InviaPda() {
                 )}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {visibleBrands.map(b => (
-                    <button key={b.id} onClick={() => { setBrand(b.id); setAllSales({}); }}
+                    <button
+                      key={b.id}
+                      onClick={() => { setBrand(b.id); setAllSales({}); }}
                       className={`p-6 rounded-2xl text-left border-2 transition-all ${brand === b.id ? "bg-white/10 border-white shadow-lg" : "bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 shadow-sm"}`}
-                      style={brand === b.id ? { borderColor: b.color, backgroundColor: `${b.color}15` } : {}}>
+                      style={brand === b.id ? { borderColor: b.color, backgroundColor: `${b.color}15` } : {}}
+                    >
                       <div className="flex items-center justify-between mb-4">
-                        <span className="font-bold text-lg text-white tracking-tight">{b.label}</span>
+                        <div className="flex items-center gap-3">
+                          {b.logo && (
+                            <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center shrink-0">
+                              <Image
+                                src={b.logo}
+                                alt={b.label}
+                                width={40}
+                                height={40}
+                                className="w-full h-full object-cover rounded-lg"
+                              />
+                            </div>
+                          )}
+                          <span className="font-bold text-lg text-white tracking-tight">{b.label}</span>
+                        </div>
                         <Pill>{b.badge}</Pill>
                       </div>
-                      <div className="text-[10px] text-slate-500 mb-4 font-bold uppercase tracking-tight leading-relaxed line-clamp-2">{b.desc}</div>
+                      <div className="text-[10px] text-slate-500 mb-4 font-bold uppercase tracking-tight leading-relaxed line-clamp-2">
+                        {b.desc}
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {b.onlyBusiness && <Tag c="#a78bfa" bg="#a78bfa10">🔒 Solo Business</Tag>}
                         {brand === b.id && <Tag c="#10b981" bg="#10b98110">✓ Selezionato</Tag>}

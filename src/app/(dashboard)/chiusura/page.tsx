@@ -564,7 +564,7 @@ function VistaGestione({ isAdmin, userStore, history }: { isAdmin: boolean; user
                     <table className="w-full border-collapse">
                         <thead>
                             <tr>
-                                {(isAdmin ? ["Data", "Ora", "Negozio", "Società", "Operatore", "", "", " W3", " VF", "", ""] : ["Data", "Ora", "Società", "", "", " W3", " VF", ""]).map((h, i) => (
+                                {(isAdmin ? ["Data", "Ora", "Negozio", "Società", "Operatore", "Cassa", "POS", "DDT W3", "DDT VF", "Fatture", ""] : ["Data", "Ora", "Società", "Cassa", "POS", "DDT W3", "DDT VF", "Fatture"]).map((h, i) => (
                                     <th key={i} className={thCls}>{h}</th>
                                 ))}
                             </tr>

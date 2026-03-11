@@ -906,92 +906,91 @@ export default function GestioneUsati() {
   const thCls = "px-4 py-3 text-left text-[11px] text-slate-500 uppercase font-semibold tracking-wide border-b border-white/5 bg-[#161b22] sticky top-0 cursor-pointer select-none hover:text-slate-300 transition-colors whitespace-nowrap";
 
   return (
-    <div className="-m-4 sm:-m-6 md:-m-8 bg-[#0d1117] text-white" style={{ fontFamily: "inherit", overflowX: "hidden" }}>
-      {/*  Sticky Header  */}
-      <div className="sticky top-0 z-30 bg-[#0d1117]/95 backdrop-blur-sm border-b border-white/5 overflow-x-hidden">
-        {/* Title row */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-4">
+    <div
+      className="-m-4 sm:-m-6 md:-m-8 bg-[#0d1117] text-white flex flex-col min-h-0 overflow-x-hidden"
+      style={{ fontFamily: "inherit", height: "calc(100vh - 4rem)" }}
+    >
+      {/*  Locked header: does not scroll; only the list below scrolls  */}
+      <div className="flex-shrink-0 bg-[#0d1117] border-b border-white/5 overflow-x-hidden shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+        {/* Title row — bigger */}
+        <div className="flex flex-wrap items-center justify-between gap-4 px-4 sm:px-6 py-5 sm:py-6">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white">📱 Gestione Usati</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Inventario e lifecycle dispositivi usati</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-white">📱 Gestione Usati</h1>
+            <p className="text-sm text-slate-500 mt-1">Inventario e lifecycle dispositivi usati</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Value Boxes — hidden on xs */}
-            <div className="hidden sm:flex gap-2">
-              <div className="px-3 py-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-right">
-                <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Inventario</div>
-                <div className="text-sm font-bold text-purple-300">{fmtEur(inventoryValue)}</div>
-                <div className="text-[10px] text-slate-600">{inCirculation.length} disp.</div>
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Value Boxes — bigger */}
+            <div className="hidden sm:flex gap-3">
+              <div className="px-4 py-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-right min-w-[120px]">
+                <div className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Inventario</div>
+                <div className="text-base font-bold text-purple-300">{fmtEur(inventoryValue)}</div>
+                <div className="text-xs text-slate-600">{inCirculation.length} disp.</div>
               </div>
-              <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-right">
-                <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Vetrina</div>
-                <div className="text-sm font-bold text-emerald-300">{fmtEur(vetrinaValue)}</div>
-                <div className="text-[10px] text-slate-600">{devices.filter(d => d.status === "in_vendita").length} disp.</div>
+              <div className="px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-right min-w-[120px]">
+                <div className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Vetrina</div>
+                <div className="text-base font-bold text-emerald-300">{fmtEur(vetrinaValue)}</div>
+                <div className="text-xs text-slate-600">{devices.filter(d => d.status === "in_vendita").length} disp.</div>
               </div>
             </div>
             <button onClick={() => setShowRegistra(true)}
-              className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 text-sm font-semibold hover:bg-purple-500/30 transition-all">
-              <Plus size={15} /> <span className="hidden xs:inline">Registra</span> Usato
+              className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 text-sm font-semibold hover:bg-purple-500/30 transition-all">
+              <Plus size={18} /> <span className="hidden xs:inline">Registra</span> Usato
             </button>
           </div>
         </div>
-        {/* Filters row — 2-col grid on mobile, flex row on desktop */}
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 px-4 sm:px-6 pb-3">
+        {/* Filters row — bigger controls */}
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 px-4 sm:px-6 pb-4">
           <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
           <MultiSelect label="Stato" options={STATUS_KEYS} selected={selectedStatuses} onChange={setSelectedStatuses}
             renderOpt={o => <span className="flex items-center gap-1.5">{statusMap[o as UsatoStatus]?.icon} {statusMap[o as UsatoStatus]?.label}</span>} />
-          {/* Date field selector */}
           <select value={dateField} onChange={e => setDateField(e.target.value)}
-            className="col-span-2 sm:col-span-1 w-full sm:w-auto px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all">
+            className="col-span-2 sm:col-span-1 w-full sm:w-auto px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all">
             {DATE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
           </select>
-          {/* Date range */}
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className="w-full sm:w-36 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 outline-none hover:bg-white/10 transition-all min-w-0" />
+            className="w-full sm:w-36 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 outline-none hover:bg-white/10 transition-all min-w-0" />
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className="w-full sm:w-36 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 outline-none hover:bg-white/10 transition-all min-w-0" />
-          {/* Stato Ricambi */}
+            className="w-full sm:w-36 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 outline-none hover:bg-white/10 transition-all min-w-0" />
           <MultiSelect label="Ricambi" options={RICAMBIO_STATE_KEYS} selected={ricambiFilter} onChange={setRicambiFilter}
             renderOpt={o => <span>{RICAMBIO_STATES.find(s => s.key === o)?.label || o}</span>} />
-          {/* Bonifici */}
           <select value={bonificoFilter} onChange={e => setBonificoFilter(e.target.value)}
-            className="w-full sm:w-auto px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all">
+            className="w-full sm:w-auto px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all">
             <option value="">Bonifici (Tutti)</option>
             <option value="da_effettuare">Da Effettuare</option>
             <option value="effettuato">Effettuato</option>
           </select>
-          <button onClick={resetFilters} className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 hover:bg-white/10 transition-all">
-            <RotateCcw size={13} /> Reset
+          <button onClick={resetFilters} className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 hover:bg-white/10 transition-all">
+            <RotateCcw size={14} /> Reset
           </button>
         </div>
-        {/* KPI Cards — 5-column grid, labels truncate cleanly */}
-        <div className="px-4 sm:px-6 pb-3">
-          <div className="grid grid-cols-5 gap-2">
+        {/* KPI Cards — bigger */}
+        <div className="px-4 sm:px-6 pb-4">
+          <div className="grid grid-cols-5 gap-3">
             {KPI_CARDS.map(k => (
               <button key={k.key} onClick={() => handleKpiClick(k.key)}
-                className={cn("px-2 py-2.5 rounded-xl border transition-all text-left overflow-hidden",
+                className={cn("px-3 py-3 rounded-xl border transition-all text-left overflow-hidden",
                   activeKpi === k.key ? `${k.bgClass} ${k.borderClass}` : "bg-white/[0.02] border-white/5 hover:border-white/10")}>
-                <div className="flex items-center gap-1 mb-1 min-w-0">
-                  <span className="text-sm flex-shrink-0">{k.icon}</span>
-                  <span className={cn("text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide truncate", activeKpi === k.key ? k.colorClass : "text-slate-500")}>{k.label}</span>
+                <div className="flex items-center gap-1.5 mb-1 min-w-0">
+                  <span className="text-base flex-shrink-0">{k.icon}</span>
+                  <span className={cn("text-[10px] sm:text-xs font-semibold uppercase tracking-wide truncate", activeKpi === k.key ? k.colorClass : "text-slate-500")}>{k.label}</span>
                 </div>
-                <div className={cn("text-lg sm:text-xl font-bold", activeKpi === k.key ? k.colorClass : "text-white")}>{kpiData[k.key] ?? 0}</div>
+                <div className={cn("text-xl sm:text-2xl font-bold", activeKpi === k.key ? k.colorClass : "text-white")}>{kpiData[k.key] ?? 0}</div>
               </button>
             ))}
           </div>
         </div>
-        {/* Search bar */}
-        <div className="px-4 sm:px-6 pb-4">
+        {/* Search bar — end of sticky area */}
+        <div className="px-4 sm:px-6 pb-5">
           <div className="relative w-full">
-            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
             <input value={searchText} onChange={e => setSearchText(e.target.value)} placeholder="Cerca Modello / IMEI..."
-              className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-sm text-slate-300 outline-none focus:border-white/20 transition-all" />
+              className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-base text-slate-300 outline-none focus:border-white/20 transition-all" />
           </div>
         </div>
       </div>
 
-      {/*  Device List — card on mobile, table on desktop  */}
-      <div className="px-3 sm:px-6 pb-8">
+      {/*  Device List — scrollable; header above stays fixed  */}
+      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-6 pb-8">
 
         {/* ── Mobile card list (< sm) ──────────────────── */}
         <div className="sm:hidden space-y-2">

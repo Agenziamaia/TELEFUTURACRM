@@ -1,14 +1,75 @@
-﻿"use client";
+"use client";
 
+import Image from "next/image";
 import { useState, useCallback } from "react";
 
 const BRANDS = [
-  { id: "windtre", label: "WindTre", short: "W3", color: "#FF6B00", gradient: "linear-gradient(135deg, #1B3A5C 0%, #2E75B6 100%)", icon: "📶", desc: "Mobile, Fisso, Luce & Gas, Assicurazioni, Protecta", ready: true },
-  { id: "sky", label: "Sky", short: "SKY", color: "#0072C6", gradient: "linear-gradient(135deg, #003366 0%, #0072C6 100%)", icon: "📺", desc: "TV, Fibra, Mobile, Glass, Pacchetti combinati", ready: true },
-  { id: "vodafone", label: "Vodafone", short: "VF", color: "#E60000", gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)", icon: "📱", desc: "Mobile, Fisso, Business", ready: false },
-  { id: "fastweb", label: "Fastweb", short: "FW", color: "#FFD800", gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)", icon: "⚡", desc: "Mobile, Fisso, Energy", ready: false },
-  { id: "iliad", label: "Iliad", short: "IL", color: "#C00028", gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)", icon: "📡", desc: "Mobile e Fisso (Fibra)", ready: false },
-  { id: "energy", label: "Energy", short: "EN", color: "#28a745", gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)", icon: "🔋", desc: "Forniture Luce e Gas (S4, Barton)", ready: false },
+  {
+    id: "windtre",
+    label: "WindTre",
+    short: "W3",
+    color: "#FF6B00",
+    gradient: "linear-gradient(135deg, #1B3A5C 0%, #2E75B6 100%)",
+    icon: "📶",
+    logo: "/windtre.webp",
+    desc: "Mobile, Fisso, Luce & Gas, Assicurazioni, Protecta",
+    ready: true,
+  },
+  {
+    id: "sky",
+    label: "Sky",
+    short: "SKY",
+    color: "#0072C6",
+    gradient: "linear-gradient(135deg, #003366 0%, #0072C6 100%)",
+    icon: "📺",
+    logo: "/sky.png",
+    desc: "TV, Fibra, Mobile, Glass, Pacchetti combinati",
+    ready: true,
+  },
+  {
+    id: "vodafone",
+    label: "Vodafone",
+    short: "VF",
+    color: "#E60000",
+    gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)",
+    icon: "📱",
+    logo: "/vodaphone - Copy.png",
+    desc: "Mobile, Fisso, Business",
+    ready: false,
+  },
+  {
+    id: "fastweb",
+    label: "Fastweb",
+    short: "FW",
+    color: "#FFD800",
+    gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)",
+    icon: "⚡",
+    logo: "/fastweb.png",
+    desc: "Mobile, Fisso, Energy",
+    ready: false,
+  },
+  {
+    id: "iliad",
+    label: "Iliad",
+    short: "IL",
+    color: "#C00028",
+    gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)",
+    icon: "📡",
+    logo: "/iliad.png",
+    desc: "Mobile e Fisso (Fibra)",
+    ready: false,
+  },
+  {
+    id: "energy",
+    label: "Energy",
+    short: "EN",
+    color: "#28a745",
+    gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)",
+    icon: "🔋",
+    logo: "/energy - Copy.png",
+    desc: "Forniture Luce e Gas (S4, Barton)",
+    ready: false,
+  },
 ];
 const codiciW3 = ["Magliana", "Libia", "San Paolo", "Mazzini", "Donna", "Promontori", "Collatina"];
 const venditori = ["Alberto", "Alex", "Alin", "Asad", "Ben Aziza", "Cristhian", "Cristi", "Damiano", "Daniel", "Daniele2", "Denise", "Dimitri", "Eloise", "Eros", "Fadel", "Federico", "Francesca", "Francesco", "George", "Giacomo", "Gian", "Giulia", "Giuseppe B.", "Ilaria", "Lorenzo", "Manu", "Marta", "Marta2", "Marta3", "Matteo", "Michele", "Riccardo", "Roberto", "Samantha", "Sheekell", "Tommaso", "Veronica"];
@@ -149,41 +210,43 @@ const SCd = ({ session, codici, val, onCh }: { session: string, codici: string[]
 const CartItem = ({ it, ii, gi, total, expI, setExpI }: { it: any, ii: number, gi: number, total: number, expI: any, setExpI: any }) => {
   const exp = expI[gi + "_" + ii];
   const dets = it.details ? Object.entries(it.details).filter(([k, v]) => v && k !== "hasContract") : [];
-  const content = (
-    <div style={{ borderBottom: ii < total - 1 ? "1px solid rgba(255, 255, 255, 0.05)" : "none" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0" }}>
-        <span style={{ fontSize: 14 }}>{it.macroIcon}</span>
-        <span style={{ fontSize: 12, fontWeight: 600, color: it.macroColor }}>{it.macro}</span>
-        <span style={{ color: "rgba(255, 255, 255, 0.2)" }}>›</span>
-        <span style={{ fontSize: 12, color: "#cbd5e1" }}>{it.sub}</span>
-        {it.details && it.details.hasContract && <span style={{ fontSize: 9, fontWeight: 600, color: "#fff", background: it.macroColor, padding: "1px 6px", borderRadius: 4 }}>CONTRATTO</span>}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 10, color: "#64748b" }}>V.#{it.saleNum}</span>
-          <button onClick={() => setExpI((p: Record<string, boolean>) => ({ ...p, [gi + "_" + ii]: !p[gi + "_" + ii] }))} style={{ background: exp ? "rgba(99, 102, 241, 0.15)" : "rgba(255, 255, 255, 0.05)", border: exp ? "1px solid #6366f1" : "1px solid rgba(255, 255, 255, 0.1)", borderRadius: 6, padding: "4px 12px", fontSize: 10, fontWeight: 600, cursor: "pointer", color: exp ? "#818cf8" : "#94a3b8", transition: "all 0.2s" }}>{exp ? "▲ Nascondi" : "👁 Mostra"}</button>
-        </div>
-      </div>
-      {exp && <div style={{ padding: "8px 0 16px 32px" }}>
-        <div style={{ background: "rgba(255, 255, 255, 0.03)", borderRadius: 12, padding: 16, border: "1px solid rgba(255, 255, 255, 0.08)", backdropFilter: "blur(10px)" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: it.macroColor, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-            <span>📋</span> {it.sub}
+  return (
+    <div className={ii < total - 1 ? "border-b border-white/5 py-4" : "py-4"}>
+      <div className="flex items-center gap-4">
+        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-lg border border-white/10">{it.macroIcon}</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-white/5 border border-white/5" style={{ color: it.macroColor }}>{it.macro}</span>
+            {it.details?.hasContract && <span className="text-[9px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: it.macroColor }}>CONTRATTO</span>}
+            <span className="text-slate-500 text-[10px]">#V-{it.saleNum}</span>
           </div>
-          {dets.length > 0 ? (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 20px" }}>
-              {dets.map(([k, v]) => (
-                <div key={k}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.025em" }}>{k}</div>
-                  <div style={{ fontSize: 12, color: "#cbd5e1", marginTop: 2 }}>{String(v)}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={{ fontSize: 12, color: "#64748b", fontStyle: "italic" }}>Nessun dettaglio — premi ✏️ Modifica</div>
-          )}
+          <h4 className="text-sm font-bold text-white truncate">{it.sub}</h4>
         </div>
-      </div>}
+        <button onClick={() => setExpI((p: Record<string, boolean>) => ({ ...p, [gi + "_" + ii]: !p[gi + "_" + ii] }))} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${exp ? "bg-violet-500 text-white shadow-lg" : "bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5"}`}>
+          {exp ? "▲ Nascondi" : "👁 Mostra"}
+        </button>
+      </div>
+      {exp && (
+        <div className="mt-4 ml-14">
+          <div className="glass-panel p-4 bg-white/[0.02] border-white/5">
+            <div className="text-[11px] font-bold mb-3 flex items-center gap-2" style={{ color: it.macroColor }}>📋 {it.sub}</div>
+            {dets.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {dets.map(([k, v]) => (
+                  <div key={k} className="space-y-0.5">
+                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">{k}</span>
+                    <div className="text-xs text-slate-200 font-medium break-all">{String(v)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-500 italic">Nessun dettaglio — premi ✏️ Modifica</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
-  return content;
 };
 
 // ── SubCard: renders one active product sub-section ──────────────────────
@@ -247,8 +310,8 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
   const bizDomLocked = sub.domLocked === true;
 
   const content = (
-    <div style={{ marginBottom: 12, padding: 16, background: "rgba(255, 255, 255, 0.02)", borderRadius: 12, border: "1px solid rgba(255, 255, 255, 0.08)", backdropFilter: "blur(10px)" }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: group.color, marginBottom: 6 }}>{sub.title}</div>
+    <div className="mb-4 p-4 rounded-xl bg-white/[0.03] border border-white/5 backdrop-blur-sm">
+      <div className="text-xs font-bold mb-1.5" style={{ color: group.color }}>{sub.title}</div>
 
       {/* MOBILE flow: Tipologia → MNP → EasyPay → Dropdown */}
       {sub.isMobile && (
@@ -269,11 +332,11 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
           )}
           {/* Security when Easy Pay = No (after Offerta Mobile) */}
           {mobDone && (sd.easyPay === "No" || sd.easyPay === false) && (
-            <div style={{ marginTop: 8, padding: 8, background: "#f8fafc", borderRadius: 6, border: "1px solid #e0e0e0" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "#555", marginBottom: 6 }}>Security</div>
-              <div style={{ display: "flex", gap: 6 }}>
+            <div className="mt-4 p-4 rounded-xl bg-white/[0.03] border border-white/5">
+              <div className="text-xs font-bold text-slate-400 mb-2">Security</div>
+              <div className="flex gap-2">
                 {["Security", "Security PRO"].map(s =>
-                  <button key={s} onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel[s] ? {} : { [s]: true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.securitySel[s] ? "2px solid #fd7e14" : "2px solid #e0e0e0", background: sd.securitySel[s] ? "#fff3e0" : "#fff", color: sd.securitySel[s] ? "#e8590c" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                  <button key={s} onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel[s] ? {} : { [s]: true })} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${sd.securitySel[s] ? "border-2 border-orange-500 bg-orange-500/15 text-orange-400" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
                     <span>{sd.securitySel[s] ? "◉" : "○"}</span>{s}
                   </button>
                 )}
@@ -285,11 +348,11 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
             <div style={{ marginTop: 8 }}>
               <MiniC label="TNP GA" val={sd.tnpGa} onCh={v => { uP(group.id, si, sub.id, "tnpGa", v); if (v === "No" || v === false) { uP(group.id, si, sub.id, "tnpTipo", ""); uP(group.id, si, sub.id, "tnpModello", ""); uP(group.id, si, sub.id, "tnpImei", ""); uP(group.id, si, sub.id, "tnpGaReload", null); uP(group.id, si, sub.id, "tnpGaReloadSel", {}) } }} opts={["Sì", "No"]} />
               {(sd.tnpGa === "Sì" || sd.tnpGa === true) && (
-                <div style={{ padding: 10, background: "#f0f7ff", borderRadius: 8, border: "1px solid #b8d4f0", marginTop: 4 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#2E75B6", marginBottom: 8, textTransform: "uppercase" }}>Dati TNP GA</div>
-                  <div style={{ display: "flex", gap: 6, marginBottom: sd.tnpTipo ? 8 : 0 }}>
+                <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 mt-2">
+                  <div className="text-[10px] font-bold text-blue-400 uppercase mb-2">Dati TNP GA</div>
+                  <div className="flex gap-2 flex-wrap mb-2">
                     {["Rata 5G", "Finanziamento > 600€", "Finanziamento < 600€"].map(opt =>
-                      <button key={opt} onClick={() => uP(group.id, si, sub.id, "tnpTipo", opt)} style={{ padding: "6px 14px", borderRadius: 6, border: sd.tnpTipo === opt ? "2px solid #2E75B6" : "2px solid #e0e0e0", background: sd.tnpTipo === opt ? "#2E75B6" : "#fff", color: sd.tnpTipo === opt ? "#fff" : "#555", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{opt}</button>
+                      <button key={opt} onClick={() => uP(group.id, si, sub.id, "tnpTipo", opt)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${sd.tnpTipo === opt ? "bg-blue-600 text-white border-2 border-blue-500" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>{opt}</button>
                     )}
                   </div>
                   {sd.tnpTipo && (
@@ -302,21 +365,21 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                   {sd.tnpTipo && sd.tnpTipo.startsWith("Finanziamento") && (
                     <div style={{ marginTop: 8 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: "#2E75B6", marginBottom: 6 }}>Quanti TNP hai finanziato?</div>
-                      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                      <div className="flex gap-2 mb-2">
                         {[1, 2, 3].map(n =>
-                          <button key={n} onClick={() => uP(group.id, si, sub.id, "tnpCount", sd.tnpCount === n ? null : n)} style={{ width: 40, height: 40, borderRadius: 8, border: sd.tnpCount === n ? "2px solid #2E75B6" : "2px solid #e0e0e0", background: sd.tnpCount === n ? "#2E75B6" : "#fff", color: sd.tnpCount === n ? "#fff" : "#555", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{n}</button>
+                          <button key={n} onClick={() => uP(group.id, si, sub.id, "tnpCount", sd.tnpCount === n ? null : n)} className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold transition-all ${sd.tnpCount === n ? "bg-blue-600 text-white border-2 border-blue-500" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>{n}</button>
                         )}
                       </div>
                       {sd.tnpCount && [...Array(sd.tnpCount)].map((_, idx) => (
-                        <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px", marginBottom: 8, padding: 8, background: "#fff", borderRadius: 6, border: "1px solid #e0e0e0" }}>
-                          <div style={{ gridColumn: "1/-1", fontSize: 10, fontWeight: 700, color: "#2E75B6", marginBottom: 2 }}>Terminale {sd.tnpCount > 1 ? idx + 1 : ""}</div>
+                        <div key={idx} className="grid grid-cols-2 gap-3 mb-2 p-3 rounded-xl bg-white/[0.05] border border-white/10">
+                          <div className="col-span-2 text-[10px] font-bold text-blue-400 mb-1">Terminale {sd.tnpCount > 1 ? idx + 1 : ""}</div>
                           <DD l="Modello Terminale" r v={(sd.tnpModelli && sd.tnpModelli[idx]) || ""} o={v => { const m = [...(sd.tnpModelli || [])]; m[idx] = v; uP(group.id, si, sub.id, "tnpModelli", m) }} vals={SMARTPHONES} />
                           <TF l="IMEI" r v={(sd.tnpImeis && sd.tnpImeis[idx]) || ""} o={v => { const im = [...(sd.tnpImeis || [])]; im[idx] = v; uP(group.id, si, sub.id, "tnpImeis", im) }} p="15 cifre" nt="Barcode 📷" />
                         </div>
                       ))}
                       {sd.tnpCount && (
-                        <div style={{ marginTop: 4, padding: 8, background: "#fff", borderRadius: 6, border: "1px solid #e0e0e0" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                        <div className="mt-2 p-3 rounded-xl bg-white/[0.05] border border-white/10">
+                          <div className="flex items-center gap-3 flex-wrap">
                             <YN val={sd.packAccessori} onCh={v => uP(group.id, si, sub.id, "packAccessori", v)} label="Pack Accessori?" />
                             {(sd.packAccessori === true) && (
                               <TF l="Quanti accessori?" v={sd.packAccessoriQta || ""} o={v => uP(group.id, si, sub.id, "packAccessoriQta", v)} p="es. 2" />
@@ -324,7 +387,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                           </div>
                           {(sd.packAccessori === true) && (
                             <div style={{ marginTop: 10 }}>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 6 }}>Importo Pack Accessori <span style={{ color: "#2E75B6", fontWeight: 700 }}>€{sd.packAccessoriVal || 29}</span></div>
+                              <div className="text-xs font-semibold text-slate-400 mb-1.5">Importo Pack Accessori <span className="text-blue-500 font-bold">€{sd.packAccessoriVal || 29}</span></div>
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                 <input type="range" min={29} max={240} value={sd.packAccessoriVal || 29} onChange={e => uP(group.id, si, sub.id, "packAccessoriVal", parseInt(e.target.value))} style={{ flex: 1, accentColor: "#2E75B6" }} />
                                 <input type="number" min={29} max={240} value={sd.packAccessoriVal || ""} onChange={e => uP(group.id, si, sub.id, "packAccessoriVal", e.target.value === "" ? "" : parseInt(e.target.value))} onBlur={e => { const raw = parseInt(e.target.value); if (!isNaN(raw)) uP(group.id, si, sub.id, "packAccessoriVal", Math.min(240, Math.max(29, raw))); else uP(group.id, si, sub.id, "packAccessoriVal", 29) }} style={{ width: 72, padding: "5px 8px", borderRadius: 6, border: "1px solid #b8d4f0", fontSize: 12, fontWeight: 600, textAlign: "center" }} placeholder="29-240" />
@@ -339,12 +402,12 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                   )}
                   {/* Reload inside TNP GA */}
                   {sd.tnpTipo && (
-                    <div style={{ marginTop: 10, padding: 8, background: "#fff", borderRadius: 6, border: "1px solid #e0e0e0" }}>
+                    <div className="mt-3 p-3 rounded-xl bg-white/[0.05] border border-white/10">
                       <YN val={sd.tnpGaReload} onCh={v => { uP(group.id, si, sub.id, "tnpGaReload", v); if (!v) uP(group.id, si, sub.id, "tnpGaReloadSel", {}) }} label="Reload?" />
                       {(sd.tnpGaReload === true) && (
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                        <div className="flex flex-wrap gap-2 mt-2">
                           {["Reload", "Reload Plus", "Reload Exchange"].map(rl =>
-                            <button key={rl} onClick={() => uP(group.id, si, sub.id, "tnpGaReloadSel", sd.tnpGaReloadSel[rl] ? {} : { [rl]: true })} style={{ padding: "5px 12px", borderRadius: 6, border: sd.tnpGaReloadSel[rl] ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.tnpGaReloadSel[rl] ? "#d4edda" : "#fff", color: sd.tnpGaReloadSel[rl] ? "#155724" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                            <button key={rl} onClick={() => uP(group.id, si, sub.id, "tnpGaReloadSel", sd.tnpGaReloadSel[rl] ? {} : { [rl]: true })} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${sd.tnpGaReloadSel[rl] ? "border-2 border-emerald-500 bg-emerald-500/15 text-emerald-400" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
                               <span>{sd.tnpGaReloadSel[rl] ? "◉" : "○"}</span>{rl}
                             </button>
                           )}
@@ -356,11 +419,11 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
               )}
               {/* Security for TNP GA = Sì: OUTSIDE blue box, before dati contratto */}
               {(sd.tnpGa === "Sì" || sd.tnpGa === true) && sd.tnpTipo && (
-                <div style={{ marginTop: 8, padding: 8, background: "#f8fafc", borderRadius: 6, border: "1px solid #e0e0e0" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#555", marginBottom: 6 }}>Security</div>
-                  <div style={{ display: "flex", gap: 6 }}>
+                <div className="mt-4 p-4 rounded-xl bg-white/[0.03] border border-white/5">
+                  <div className="text-xs font-bold text-slate-400 mb-2">Security</div>
+                  <div className="flex gap-2">
                     {["Security", "Security PRO"].map(s =>
-                      <button key={s} onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel[s] ? {} : { [s]: true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.securitySel[s] ? "2px solid #fd7e14" : "2px solid #e0e0e0", background: sd.securitySel[s] ? "#fff3e0" : "#fff", color: sd.securitySel[s] ? "#e8590c" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                      <button key={s} onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel[s] ? {} : { [s]: true })} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${sd.securitySel[s] ? "border-2 border-orange-500 bg-orange-500/15 text-orange-400" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
                         <span>{sd.securitySel[s] ? "◉" : "○"}</span>{s}
                       </button>
                     )}
@@ -374,11 +437,11 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
             <div style={{ marginTop: 6 }}>
               <YN val={sd.reloadForever} onCh={v => uP(group.id, si, sub.id, "reloadForever", v)} label="Reload Forever?" />
               {/* Security when TNP GA = No (after Reload Forever) */}
-              <div style={{ marginTop: 8, padding: 8, background: "#f8fafc", borderRadius: 6, border: "1px solid #e0e0e0" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#555", marginBottom: 6 }}>Security</div>
-                <div style={{ display: "flex", gap: 6 }}>
+              <div className="mt-4 p-4 rounded-xl bg-white/[0.03] border border-white/5">
+                <div className="text-xs font-bold text-slate-400 mb-2">Security</div>
+                <div className="flex gap-2">
                   {["Security", "Security PRO"].map(s =>
-                    <button key={s} onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel[s] ? {} : { [s]: true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.securitySel[s] ? "2px solid #fd7e14" : "2px solid #e0e0e0", background: sd.securitySel[s] ? "#fff3e0" : "#fff", color: sd.securitySel[s] ? "#e8590c" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                    <button key={s} onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel[s] ? {} : { [s]: true })} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${sd.securitySel[s] ? "border-2 border-orange-500 bg-orange-500/15 text-orange-400" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
                       <span>{sd.securitySel[s] ? "◉" : "○"}</span>{s}
                     </button>
                   )}
@@ -408,14 +471,14 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
               <MiniC label="TNP GA" val={sd.tnpGa} onCh={v => { uP(group.id, si, sub.id, "tnpGa", v); if (v === "No" || v === false) { uP(group.id, si, sub.id, "tnpTipo", ""); uP(group.id, si, sub.id, "tnpModello", ""); uP(group.id, si, sub.id, "tnpImei", ""); uP(group.id, si, sub.id, "tnpGaReload", null); uP(group.id, si, sub.id, "tnpGaReloadSel", {}) } }} opts={["Sì", "No"]} />
               {(sd.tnpGa === "Sì" || sd.tnpGa === true) && (
                 <div style={{ marginTop: 8 }}>
-                  <div style={{ padding: 8, background: "#f8fafc", borderRadius: 6, border: "1px solid #e0e0e0" }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#555", marginBottom: 6 }}>Security / Reload</div>
+                  <div style={{ padding: 8, background: "rgba(255,255,255,0.03)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", marginBottom: 6 }}>Security / Reload</div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel["Security"] ? {} : { "Security": true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.securitySel["Security"] ? "2px solid #fd7e14" : "2px solid #e0e0e0", background: sd.securitySel["Security"] ? "#fff3e0" : "#fff", color: sd.securitySel["Security"] ? "#e8590c" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                      <button onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel["Security"] ? {} : { "Security": true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.securitySel["Security"] ? "2px solid #fd7e14" : "1px solid rgba(255,255,255,0.1)", background: sd.securitySel["Security"] ? "rgba(253, 126, 20, 0.1)" : "rgba(255,255,255,0.03)", color: sd.securitySel["Security"] ? "#fd7e14" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                         <span>{sd.securitySel["Security"] ? "☑" : "☐"}</span>Security
                       </button>
                       {["Reload", "Reload EU"].map(rl =>
-                        <button key={rl} onClick={() => uP(group.id, si, sub.id, "tnpGaReloadSel", sd.tnpGaReloadSel[rl] ? {} : { [rl]: true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.tnpGaReloadSel[rl] ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.tnpGaReloadSel[rl] ? "#d4edda" : "#fff", color: sd.tnpGaReloadSel[rl] ? "#155724" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                        <button key={rl} onClick={() => uP(group.id, si, sub.id, "tnpGaReloadSel", sd.tnpGaReloadSel[rl] ? {} : { [rl]: true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.tnpGaReloadSel[rl] ? "2px solid #28a745" : "1px solid rgba(255,255,255,0.1)", background: sd.tnpGaReloadSel[rl] ? "rgba(40, 167, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.tnpGaReloadSel[rl] ? "#28a745" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                           <span>{sd.tnpGaReloadSel[rl] ? "◉" : "○"}</span>{rl}
                         </button>
                       )}
@@ -424,13 +487,13 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                 </div>
               )}
               {(sd.tnpGa === "No" || sd.tnpGa === false) && (
-                <div style={{ marginTop: 8, padding: 8, background: "#f8fafc", borderRadius: 6, border: "1px solid #e0e0e0" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#555", marginBottom: 6 }}>Security / Reload</div>
+                <div style={{ marginTop: 8, padding: 8, background: "rgba(255,255,255,0.03)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", marginBottom: 6 }}>Security / Reload</div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <button onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel["Security"] ? {} : { "Security": true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.securitySel["Security"] ? "2px solid #fd7e14" : "2px solid #e0e0e0", background: sd.securitySel["Security"] ? "#fff3e0" : "#fff", color: sd.securitySel["Security"] ? "#e8590c" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                    <button onClick={() => uP(group.id, si, sub.id, "securitySel", sd.securitySel["Security"] ? {} : { "Security": true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.securitySel["Security"] ? "2px solid #fd7e14" : "1px solid rgba(255,255,255,0.1)", background: sd.securitySel["Security"] ? "rgba(253, 126, 20, 0.1)" : "rgba(255,255,255,0.03)", color: sd.securitySel["Security"] ? "#fd7e14" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                       <span>{sd.securitySel["Security"] ? "◉" : "○"}</span>Security
                     </button>
-                    <button onClick={() => uP(group.id, si, sub.id, "tnpGaReloadSel", sd.tnpGaReloadSel["Reload Open"] ? {} : { "Reload Open": true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.tnpGaReloadSel["Reload Open"] ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.tnpGaReloadSel["Reload Open"] ? "#d4edda" : "#fff", color: sd.tnpGaReloadSel["Reload Open"] ? "#155724" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                    <button onClick={() => uP(group.id, si, sub.id, "tnpGaReloadSel", sd.tnpGaReloadSel["Reload Open"] ? {} : { "Reload Open": true })} style={{ padding: "5px 14px", borderRadius: 6, border: sd.tnpGaReloadSel["Reload Open"] ? "2px solid #28a745" : "1px solid rgba(255,255,255,0.1)", background: sd.tnpGaReloadSel["Reload Open"] ? "rgba(40, 167, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.tnpGaReloadSel["Reload Open"] ? "#28a745" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                       <span>{sd.tnpGaReloadSel["Reload Open"] ? "◉" : "○"}</span>Reload Open
                     </button>
                   </div>
@@ -450,7 +513,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
           </div>
           : <div style={{ display: "flex", gap: 8 }}>
             {["Kit Base", "Kit Plus"].map(k =>
-              <button key={k} onClick={() => uF(group.id, si, sub.id, "protectaKit", f.protectaKit === k ? "" : k)} style={{ padding: "8px 18px", borderRadius: 8, border: f.protectaKit === k ? "2px solid #6f42c1" : "2px solid #e0e0e0", background: f.protectaKit === k ? "#6f42c1" : "#fff", color: f.protectaKit === k ? "#fff" : "#555", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{k}</button>
+              <button key={k} onClick={() => uF(group.id, si, sub.id, "protectaKit", f.protectaKit === k ? "" : k)} style={{ padding: "8px 18px", borderRadius: 8, border: f.protectaKit === k ? "2px solid #6f42c1" : "1px solid rgba(255,255,255,0.1)", background: f.protectaKit === k ? "rgba(111, 66, 193, 0.2)" : "rgba(255,255,255,0.03)", color: f.protectaKit === k ? "#a855f7" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>{k}</button>
             )}
           </div>
       )}
@@ -459,7 +522,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
       {sub.isAssicBiz && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {["Protezione PRO Negozi - Affittuario", "Protezione PRO Negozi - Proprietario"].map(opt =>
-            <button key={opt} onClick={() => uF(group.id, si, sub.id, "assicBizSel", f.assicBizSel === opt ? "" : opt)} style={{ padding: "8px 16px", borderRadius: 8, border: f.assicBizSel === opt ? "2px solid #6f42c1" : "2px solid #e0e0e0", background: f.assicBizSel === opt ? "#6f42c1" : "#fff", color: f.assicBizSel === opt ? "#fff" : "#555", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            <button key={opt} onClick={() => uF(group.id, si, sub.id, "assicBizSel", f.assicBizSel === opt ? "" : opt)} style={{ padding: "8px 16px", borderRadius: 8, border: f.assicBizSel === opt ? "2px solid #6f42c1" : "1px solid rgba(255,255,255,0.1)", background: f.assicBizSel === opt ? "rgba(111, 66, 193, 0.2)" : "rgba(255,255,255,0.03)", color: f.assicBizSel === opt ? "#a855f7" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s" }}>
               <span style={{ fontSize: 14 }}>{f.assicBizSel === opt ? "◉" : "○"}</span>{opt}
             </button>
           )}
@@ -471,15 +534,15 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
         <div>
           {/* Three toggleable sub-options */}
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <button onClick={() => { const on = !sd.cbTnp; uP(group.id, si, sub.id, "cbTnp", on); if (on) { if (!sd.cbTnpCell) { const pre = sd.cbCambioCell || anaCel || ""; if (pre) uP(group.id, si, sub.id, "cbTnpCell", pre) }; if (!sd.cbTnpCC) { const pre = sd.cbCambioCC || (c.codice_contratto || ""); if (pre) uP(group.id, si, sub.id, "cbTnpCC", pre) } } }} style={{ padding: "8px 16px", borderRadius: 8, border: sd.cbTnp ? "2px solid #2E75B6" : "2px solid #e0e0e0", background: sd.cbTnp ? "#2E75B6" : "#fff", color: sd.cbTnp ? "#fff" : "#555", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>TNP CB</button>
-            <button onClick={() => { const on = !sd.cbCambio; uP(group.id, si, sub.id, "cbCambio", on); if (on) { if (!sd.cbCambioCell) { const pre = sd.cbTnpCell || anaCel || ""; if (pre) uP(group.id, si, sub.id, "cbCambioCell", pre) }; if (!sd.cbCambioCC) { const pre = sd.cbTnpCC || (c.codice_contratto || ""); if (pre) uP(group.id, si, sub.id, "cbCambioCC", pre) } } }} style={{ padding: "8px 16px", borderRadius: 8, border: sd.cbCambio ? "2px solid #6f42c1" : "2px solid #e0e0e0", background: sd.cbCambio ? "#6f42c1" : "#fff", color: sd.cbCambio ? "#fff" : "#555", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Cambio Offerta</button>
-            {!sub.isCBBiz && <button onClick={() => uP(group.id, si, sub.id, "cbRf", !sd.cbRf)} style={{ padding: "8px 16px", borderRadius: 8, border: sd.cbRf ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.cbRf ? "#28a745" : "#fff", color: sd.cbRf ? "#fff" : "#555", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Reload Forever</button>}
+            <button onClick={() => { const on = !sd.cbTnp; uP(group.id, si, sub.id, "cbTnp", on); if (on) { if (!sd.cbTnpCell) { const pre = sd.cbCambioCell || anaCel || ""; if (pre) uP(group.id, si, sub.id, "cbTnpCell", pre) }; if (!sd.cbTnpCC) { const pre = sd.cbCambioCC || (c.codice_contratto || ""); if (pre) uP(group.id, si, sub.id, "cbTnpCC", pre) } } }} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${sd.cbTnp ? "bg-blue-600 text-white border-2 border-blue-500" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>TNP CB</button>
+            <button onClick={() => { const on = !sd.cbCambio; uP(group.id, si, sub.id, "cbCambio", on); if (on) { if (!sd.cbCambioCell) { const pre = sd.cbTnpCell || anaCel || ""; if (pre) uP(group.id, si, sub.id, "cbCambioCell", pre) }; if (!sd.cbCambioCC) { const pre = sd.cbTnpCC || (c.codice_contratto || ""); if (pre) uP(group.id, si, sub.id, "cbCambioCC", pre) } } }} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${sd.cbCambio ? "bg-violet-600 text-white border-2 border-violet-500" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>Cambio Offerta</button>
+            {!sub.isCBBiz && <button onClick={() => uP(group.id, si, sub.id, "cbRf", !sd.cbRf)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${sd.cbRf ? "bg-emerald-600 text-white border-2 border-emerald-500" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>Reload Forever</button>}
           </div>
 
           {/* TNP CB section */}
           {sd.cbTnp && (
-            <div style={{ padding: 10, background: "#f0f7ff", borderRadius: 8, border: "1px solid #b8d4f0", marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#2E75B6", marginBottom: 8, textTransform: "uppercase" }}>Dati TNP CB</div>
+            <div style={{ padding: 10, background: "rgba(46, 117, 182, 0.05)", borderRadius: 8, border: "1px solid rgba(46, 117, 182, 0.2)", marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#60a5fa", marginBottom: 8, textTransform: "uppercase" }}>Dati TNP CB</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px 14px", marginBottom: 8 }}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbTnpCodIns || ""} onCh={v => uP(group.id, si, sub.id, "cbTnpCodIns", v)} />
                 <TF l="Cellulare" r v={sd.cbTnpCell || ""} o={v => { uP(group.id, si, sub.id, "cbTnpCell", v); if (sd.cbCambio) uP(group.id, si, sub.id, "cbCambioCell", v) }} p="3XXXXXXXXX" nt={sd.cbTnpCell === anaCel && anaCel ? "Da anagrafica" : ""} />
@@ -493,7 +556,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
               )}
               <div style={{ display: "flex", gap: 6, marginBottom: sd.cbTnpTipo ? 8 : 0 }}>
                 {!sub.isCBBiz && sub.cbTnpVals.map((opt: string) =>
-                  <button key={opt} onClick={() => uP(group.id, si, sub.id, "cbTnpTipo", opt)} style={{ padding: "6px 14px", borderRadius: 6, border: sd.cbTnpTipo === opt ? "2px solid #2E75B6" : "2px solid #e0e0e0", background: sd.cbTnpTipo === opt ? "#2E75B6" : "#fff", color: sd.cbTnpTipo === opt ? "#fff" : "#555", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{opt}</button>
+                  <button key={opt} onClick={() => uP(group.id, si, sub.id, "cbTnpTipo", opt)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${sd.cbTnpTipo === opt ? "bg-blue-600 text-white border-2 border-blue-500" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>{opt}</button>
                 )}
               </div>
               {!sub.isCBBiz && sd.cbTnpTipo && (
@@ -507,18 +570,18 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                       <div style={{ fontSize: 11, fontWeight: 700, color: "#2E75B6", marginBottom: 6 }}>Quanti TNP hai finanziato?</div>
                       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                         {[1, 2, 3].map(n =>
-                          <button key={n} onClick={() => uP(group.id, si, sub.id, "cbTnpCount", sd.cbTnpCount === n ? null : n)} style={{ width: 40, height: 40, borderRadius: 8, border: sd.cbTnpCount === n ? "2px solid #2E75B6" : "2px solid #e0e0e0", background: sd.cbTnpCount === n ? "#2E75B6" : "#fff", color: sd.cbTnpCount === n ? "#fff" : "#555", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{n}</button>
+                          <button key={n} onClick={() => uP(group.id, si, sub.id, "cbTnpCount", sd.cbTnpCount === n ? null : n)} className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold transition-all ${sd.cbTnpCount === n ? "bg-blue-600 text-white border-2 border-blue-500" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>{n}</button>
                         )}
                       </div>
                       {sd.cbTnpCount && [...Array(sd.cbTnpCount)].map((_, idx) => (
-                        <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px", marginBottom: 8, padding: 8, background: "#fff", borderRadius: 6, border: "1px solid #e0e0e0" }}>
-                          <div style={{ gridColumn: "1/-1", fontSize: 10, fontWeight: 700, color: "#2E75B6", marginBottom: 2 }}>Terminale {sd.cbTnpCount > 1 ? idx + 1 : ""}</div>
+                        <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px", marginBottom: 8, padding: 8, background: "rgba(255,255,255,0.02)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)" }}>
+                          <div style={{ gridColumn: "1/-1", fontSize: 10, fontWeight: 700, color: "#60a5fa", marginBottom: 2 }}>Terminale {sd.cbTnpCount > 1 ? idx + 1 : ""}</div>
                           <DD l="Modello Terminale" r v={(sd.cbTnpModelli && sd.cbTnpModelli[idx]) || ""} o={v => { const m = [...(sd.cbTnpModelli || [])]; m[idx] = v; uP(group.id, si, sub.id, "cbTnpModelli", m) }} vals={SMARTPHONES} />
                           <TF l="IMEI" r v={(sd.cbTnpImeis && sd.cbTnpImeis[idx]) || ""} o={v => { const im = [...(sd.cbTnpImeis || [])]; im[idx] = v; uP(group.id, si, sub.id, "cbTnpImeis", im) }} p="15 cifre" nt="Barcode 📷" />
                         </div>
                       ))}
                       {sd.cbTnpCount && (
-                        <div style={{ marginTop: 4, padding: 8, background: "#fff", borderRadius: 6, border: "1px solid #e0e0e0" }}>
+                        <div style={{ marginTop: 4, padding: 8, background: "rgba(255,255,255,0.02)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                             <YN val={sd.cbPackAccessori} onCh={v => uP(group.id, si, sub.id, "cbPackAccessori", v)} label="Pack Accessori?" />
                             {(sd.cbPackAccessori === true) && (
@@ -527,7 +590,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                           </div>
                           {(sd.cbPackAccessori === true) && (
                             <div style={{ marginTop: 10 }}>
-                              <div style={{ fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 6 }}>Importo Pack Accessori <span style={{ color: "#2E75B6", fontWeight: 700 }}>€{sd.cbPackAccessoriVal || 29}</span></div>
+                              <div className="text-xs font-semibold text-slate-400 mb-1.5">Importo Pack Accessori <span className="text-blue-500 font-bold">€{sd.cbPackAccessoriVal || 29}</span></div>
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                 <input type="range" min={29} max={240} value={sd.cbPackAccessoriVal || 29} onChange={e => uP(group.id, si, sub.id, "cbPackAccessoriVal", parseInt(e.target.value))} style={{ flex: 1, accentColor: "#2E75B6" }} />
                                 <input type="number" min={29} max={240} value={sd.cbPackAccessoriVal || ""} onChange={e => uP(group.id, si, sub.id, "cbPackAccessoriVal", e.target.value === "" ? "" : parseInt(e.target.value))} onBlur={e => { const raw = parseInt(e.target.value); if (!isNaN(raw)) uP(group.id, si, sub.id, "cbPackAccessoriVal", Math.min(240, Math.max(29, raw))); else uP(group.id, si, sub.id, "cbPackAccessoriVal", 29) }} style={{ width: 72, padding: "5px 8px", borderRadius: 6, border: "1px solid #b8d4f0", fontSize: 12, fontWeight: 600, textAlign: "center" }} placeholder="29-240" />
@@ -543,12 +606,12 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                 </div>
               )}
               {/* Reload inside TNP CB */}
-              <div style={{ marginTop: 8, padding: 8, background: "#fff", borderRadius: 6, border: "1px solid #e0e0e0" }}>
+              <div style={{ marginTop: 8, padding: 8, background: "rgba(255,255,255,0.02)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)" }}>
                 <YN val={sd.cbTnpReload} onCh={v => { uP(group.id, si, sub.id, "cbTnpReload", v); if (!v) uP(group.id, si, sub.id, "cbTnpReloadSel", {}) }} label="Reload?" />
                 {(sd.cbTnpReload === true) && (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
                     {(sub.isCBBiz ? ["Reload", "Reload EU"] : ["Reload", "Reload Plus", "Reload Exchange"]).map(rl =>
-                      <button key={rl} onClick={() => uP(group.id, si, sub.id, "cbTnpReloadSel", sd.cbTnpReloadSel[rl] ? {} : { [rl]: true })} style={{ padding: "5px 12px", borderRadius: 6, border: sd.cbTnpReloadSel[rl] ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.cbTnpReloadSel[rl] ? "#d4edda" : "#fff", color: sd.cbTnpReloadSel[rl] ? "#155724" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                      <button key={rl} onClick={() => uP(group.id, si, sub.id, "cbTnpReloadSel", sd.cbTnpReloadSel[rl] ? {} : { [rl]: true })} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${sd.cbTnpReloadSel[rl] ? "border-2 border-emerald-500 bg-emerald-500/15 text-emerald-400" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
                         <span>{sd.cbTnpReloadSel[rl] ? "◉" : "○"}</span>{rl}
                       </button>
                     )}
@@ -560,14 +623,14 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
 
           {/* Cambio Offerta section */}
           {sd.cbCambio && (
-            <div style={{ padding: 10, background: "#f5f0ff", borderRadius: 8, border: "1px solid #d4c5f0", marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#6f42c1", marginBottom: 8, textTransform: "uppercase" }}>Cambio Offerta</div>
+            <div style={{ padding: 10, background: "rgba(111, 66, 193, 0.05)", borderRadius: 8, border: "1px solid rgba(111, 66, 193, 0.2)", marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#a855f7", marginBottom: 8, textTransform: "uppercase" }}>Cambio Offerta</div>
               <div style={{ marginBottom: 8, maxWidth: 250 }}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbCambioCodIns || ""} onCh={v => uP(group.id, si, sub.id, "cbCambioCodIns", v)} />
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {sub.cbCambioVals.map((opt: string) =>
-                  <button key={opt} onClick={() => uP(group.id, si, sub.id, "cbCambioVal", sd.cbCambioVal === opt ? "" : opt)} style={{ padding: "6px 14px", borderRadius: 6, border: sd.cbCambioVal === opt ? "2px solid #6f42c1" : "2px solid #e0e0e0", background: sd.cbCambioVal === opt ? "#6f42c1" : "#fff", color: sd.cbCambioVal === opt ? "#fff" : "#555", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{opt}</button>
+                  <button key={opt} onClick={() => uP(group.id, si, sub.id, "cbCambioVal", sd.cbCambioVal === opt ? "" : opt)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${sd.cbCambioVal === opt ? "bg-violet-600 text-white border-2 border-violet-500" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>{opt}</button>
                 )}
               </div>
               {sd.cbCambioVal && (
@@ -590,12 +653,12 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {sub.cbAddonVals.map((opt: string) =>
-                  <button key={opt} onClick={() => { const cur = sd.cbAddonSel[opt]; uP(group.id, si, sub.id, "cbAddonSel", { ...sd.cbAddonSel, [opt]: !cur }) }} style={{ padding: "6px 14px", borderRadius: 6, border: sd.cbAddonSel[opt] ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.cbAddonSel[opt] ? "#d4edda" : "#fff", color: sd.cbAddonSel[opt] ? "#155724" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                  <button key={opt} onClick={() => { const cur = sd.cbAddonSel[opt]; uP(group.id, si, sub.id, "cbAddonSel", { ...sd.cbAddonSel, [opt]: !cur }) }} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${sd.cbAddonSel[opt] ? "border-2 border-emerald-500 bg-emerald-500/15 text-emerald-400" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
                     <span>{sd.cbAddonSel[opt] ? "☑" : "☐"}</span>{opt}
                   </button>
                 )}
                 {sub.isCBBiz && (!sd.cbTnp || (sd.cbTnp && sd.cbCambio && (sd.cbTnpReload === false || sd.cbTnpReload === null))) && (
-                  <button onClick={() => { const cur = sd.cbAddonSel["Reload Open"]; uP(group.id, si, sub.id, "cbAddonSel", { ...sd.cbAddonSel, "Reload Open": !cur }) }} style={{ padding: "6px 14px", borderRadius: 6, border: sd.cbAddonSel["Reload Open"] ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.cbAddonSel["Reload Open"] ? "#d4edda" : "#fff", color: sd.cbAddonSel["Reload Open"] ? "#155724" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                  <button onClick={() => { const cur = sd.cbAddonSel["Reload Open"]; uP(group.id, si, sub.id, "cbAddonSel", { ...sd.cbAddonSel, "Reload Open": !cur }) }} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${sd.cbAddonSel["Reload Open"] ? "border-2 border-emerald-500 bg-emerald-500/15 text-emerald-400" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"}`}>
                     <span>{sd.cbAddonSel["Reload Open"] ? "☑" : "☐"}</span>Reload Open
                   </button>
                 )}
@@ -603,8 +666,8 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
             </div>
           )}
           {!sub.isCBBiz && sd.cbRf && (
-            <div style={{ padding: 10, background: "#f0f7ff", borderRadius: 8, border: "1px solid #b8d4f0", marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#2E75B6", marginBottom: 8, textTransform: "uppercase" }}>Dati Reload Forever</div>
+            <div style={{ padding: 10, background: "rgba(46, 117, 182, 0.05)", borderRadius: 8, border: "1px solid rgba(46, 117, 182, 0.2)", marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#60a5fa", marginBottom: 8, textTransform: "uppercase" }}>Dati Reload Forever</div>
               <div style={{ marginBottom: 8, maxWidth: 250 }}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbRfCodIns || (sd.cbTnpCodIns || sd.cbCambioCodIns || "")} onCh={v => uP(group.id, si, sub.id, "cbRfCodIns", v)} />
               </div>
@@ -624,25 +687,25 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
 
       {/* Fisso: VoceCasaCB question (only FISSO CB) */}
       {sub.hasVoceCasaQ && (
-        <div style={{ marginBottom: 8 }}>
+        <div style={{ marginBottom: 8, padding: 10, background: "rgba(255,255,255,0.02)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)" }}>
           <YN val={sd.voceCasaCb} onCh={v => { uP(group.id, si, sub.id, "voceCasaCb", v); if (v === true || v === "Sì") uP(group.id, si, sub.id, "domiciliato", true) }} label="Trattasi di Voce Casa CB?" />
         </div>
       )}
 
       {/* Fisso: DOMICILIATO + CONVERGENTE */}
       {sub.isFisso && (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 12, fontWeight: 700, color: (isVCMode || bizDomLocked) ? "#999" : "#333", marginBottom: 6 }}>Domiciliato?</div><div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", padding: 12, background: "rgba(255,255,255,0.02)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)", marginBottom: 12 }}>
+          <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 12, fontWeight: 700, color: (isVCMode || bizDomLocked) ? "#64748b" : "#94a3b8", marginBottom: 6 }}>Domiciliato?</div><div style={{ display: "flex", gap: 8 }}>
             {(isVCMode || bizDomLocked) ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}><button disabled style={{ padding: "6px 20px", borderRadius: 6, border: "2px solid #28a745", background: "#d4edda", color: "#155724", fontSize: 12, fontWeight: 700, cursor: "not-allowed" }}>Sì</button><span style={{ fontSize: 10, color: "#999", fontStyle: "italic" }}>{isVCMode || sub.domLocked ? "Obbligatorio" : "Business"}</span></div>
+              <div className="flex items-center gap-2"><button disabled className="px-4 py-1.5 rounded-lg border-2 border-emerald-500 bg-emerald-500/15 text-emerald-400 text-xs font-bold cursor-not-allowed">Sì</button><span className="text-[10px] text-slate-500 italic">{isVCMode || sub.domLocked ? "Obbligatorio" : "Business"}</span></div>
             ) : (<>
-              <button onClick={() => uP(group.id, si, sub.id, "domiciliato", true)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.domiciliato === true ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.domiciliato === true ? "#d4edda" : "#fff", color: sd.domiciliato === true ? "#155724" : "#666", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Sì</button>
-              <button onClick={() => uP(group.id, si, sub.id, "domiciliato", false)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.domiciliato === false ? "2px solid #dc3545" : "2px solid #e0e0e0", background: sd.domiciliato === false ? "#f8d7da" : "#fff", color: sd.domiciliato === false ? "#721c24" : "#666", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>No</button>
+              <button onClick={() => uP(group.id, si, sub.id, "domiciliato", true)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.domiciliato === true ? "2px solid #28a745" : "1px solid rgba(255,255,255,0.1)", background: sd.domiciliato === true ? "rgba(40, 167, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.domiciliato === true ? "#28a745" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>Sì</button>
+              <button onClick={() => uP(group.id, si, sub.id, "domiciliato", false)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.domiciliato === false ? "2px solid #dc3545" : "1px solid rgba(255,255,255,0.1)", background: sd.domiciliato === false ? "rgba(220, 53, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.domiciliato === false ? "#dc3545" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>No</button>
             </>)}
           </div></div>
-          <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 12, fontWeight: 700, color: "#333", marginBottom: 6 }}>Convergente?</div><div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => uP(group.id, si, sub.id, "convergente", true)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.convergente === true ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.convergente === true ? "#d4edda" : "#fff", color: sd.convergente === true ? "#155724" : "#666", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Sì</button>
-            <button onClick={() => uP(group.id, si, sub.id, "convergente", false)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.convergente === false ? "2px solid #dc3545" : "2px solid #e0e0e0", background: sd.convergente === false ? "#f8d7da" : "#fff", color: sd.convergente === false ? "#721c24" : "#666", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>No</button>
+          <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", marginBottom: 6 }}>Convergente?</div><div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => uP(group.id, si, sub.id, "convergente", true)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.convergente === true ? "2px solid #28a745" : "1px solid rgba(255,255,255,0.1)", background: sd.convergente === true ? "rgba(40, 167, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.convergente === true ? "#28a745" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>Sì</button>
+            <button onClick={() => uP(group.id, si, sub.id, "convergente", false)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.convergente === false ? "2px solid #dc3545" : "1px solid rgba(255,255,255,0.1)", background: sd.convergente === false ? "rgba(220, 53, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.convergente === false ? "#dc3545" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>No</button>
           </div></div>
         </div>
       )}
@@ -656,8 +719,8 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
 
       {sub.has2LQ && <YN val={sd.secondaLinea} onCh={v => uP(group.id, si, sub.id, "secondaLinea", v)} label="C'è una seconda linea?" />}
       {sub.has2LQ && (sd.secondaLinea === true || sd.secondaLinea === "Sì") && (
-        <div style={{ padding: 10, background: "#f0f7ff", borderRadius: 8, border: "1px solid #b8d4f0", marginTop: 4 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#2E75B6", marginBottom: 8, textTransform: "uppercase" }}>2° Linea</div>
+        <div style={{ padding: 10, background: "rgba(46, 117, 182, 0.05)", borderRadius: 8, border: "1px solid rgba(46, 117, 182, 0.2)", marginTop: 4 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#60a5fa", marginBottom: 8, textTransform: "uppercase" }}>2° Linea</div>
           <MiniC label="GNP 2° Linea" val={sd.gnp2L} onCh={v => { uP(group.id, si, sub.id, "gnp2L", v); if (v === "No" || v === false) { uP(group.id, si, sub.id, "gnp2LBrand", ""); uP(group.id, si, sub.id, "gnp2LNum", "") } }} opts={["Sì", "No"]} />
           {(sd.gnp2L === "Sì" || sd.gnp2L === true) && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px", marginTop: 6 }}>
@@ -670,11 +733,11 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
 
       {/* Addon/Checklist checkboxes (hidden for Voce Casa) */}
       {sub.hasAddons && sub.addonList && !isVCMode && (
-        <div style={{ marginTop: 10, padding: 10, background: "#f8fafc", borderRadius: 8, border: "1px solid #e0e0e0" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 8 }}>{sub.isFisso ? "Add-on Fisso" : "Seleziona prodotti"}</div>
+        <div style={{ marginTop: 10, padding: 10, background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", marginBottom: 8 }}>{sub.isFisso ? "Add-on Fisso" : "Seleziona prodotti"}</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {sub.addonList.map((ad: string) =>
-              <button key={ad} onClick={() => toggleAddon(ad)} style={{ padding: "6px 14px", borderRadius: 6, border: sd.addons[ad] ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.addons[ad] ? "#d4edda" : "#fff", color: sd.addons[ad] ? "#155724" : "#555", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <button key={ad} onClick={() => toggleAddon(ad)} style={{ padding: "6px 14px", borderRadius: 6, border: sd.addons[ad] ? "2px solid #28a745" : "1px solid rgba(255,255,255,0.1)", background: sd.addons[ad] ? "rgba(40, 167, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.addons[ad] ? "#28a745" : "#94a3b8", fontSize: 11, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, transition: "all 0.2s" }}>
                 <span style={{ fontSize: 14 }}>{sd.addons[ad] ? "☑" : "☐"}</span>{ad}
               </button>
             )}
@@ -686,20 +749,20 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
 
       {/* LG Convergente */}
       {sub.hasConvLG && (
-        <div style={{ marginTop: 8, padding: 10, background: lgConvLocked ? "#f5f5f5" : "#f8fafc", borderRadius: 8, border: "1px solid #e0e0e0" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: lgConvLocked ? "#999" : "#333", marginBottom: 6 }}>Convergente?</div>
+        <div style={{ marginTop: 8, padding: 10, background: "rgba(255,255,255,0.02)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: lgConvLocked ? "#64748b" : "#94a3b8", marginBottom: 6 }}>Convergente?</div>
           {lgConvLocked ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}><button disabled style={{ padding: "6px 20px", borderRadius: 6, border: "2px solid #dc3545", background: "#f8d7da", color: "#721c24", fontSize: 12, fontWeight: 700, cursor: "not-allowed", opacity: .7 }}>No</button><span style={{ fontSize: 10, color: "#999", fontStyle: "italic" }}>Già selezionato altrove</span></div>
             : <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => uP(group.id, si, sub.id, "convergente", true)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.convergente === true ? "2px solid #28a745" : "2px solid #e0e0e0", background: sd.convergente === true ? "#d4edda" : "#fff", color: sd.convergente === true ? "#155724" : "#666", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Sì</button>
-              <button onClick={() => uP(group.id, si, sub.id, "convergente", false)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.convergente === false ? "2px solid #dc3545" : "2px solid #e0e0e0", background: sd.convergente === false ? "#f8d7da" : "#fff", color: sd.convergente === false ? "#721c24" : "#666", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>No</button>
+              <button onClick={() => uP(group.id, si, sub.id, "convergente", true)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.convergente === true ? "2px solid #28a745" : "1px solid rgba(255,255,255,0.1)", background: sd.convergente === true ? "rgba(40, 167, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.convergente === true ? "#28a745" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>Sì</button>
+              <button onClick={() => uP(group.id, si, sub.id, "convergente", false)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.convergente === false ? "2px solid #dc3545" : "1px solid rgba(255,255,255,0.1)", background: sd.convergente === false ? "rgba(220, 53, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.convergente === false ? "#dc3545" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>No</button>
             </div>}
         </div>
       )}
 
       {/* Contract data */}
       {sub.hasContract && (
-        <div style={{ borderTop: "1px solid " + group.color + "20", paddingTop: 8, marginTop: 8 }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: "#888", marginBottom: 6, textTransform: "uppercase" }}>Dati contratto</div>
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: 12, marginTop: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>Dati contratto</div>
           <div style={{ marginBottom: 8, maxWidth: 250 }}><SCd session={sessionCode} codici={codiciW3} val={sd.codiceOverride || ""} onCh={v => uP(group.id, si, sub.id, "codiceOverride", v)} /></div>
           {sub.ct === "ga" && <div style={{ display: "grid", gridTemplateColumns: showMnpF && !sub.isMobileBiz ? "1fr 1fr 1fr" : "1fr 1fr", gap: "8px 14px" }}>
             <TF l="Codice Contratto" r v={c.codice_contratto || ""} o={v => uC(group.id, si, sub.id, "codice_contratto", v)} p="es. 167942" />
@@ -862,69 +925,74 @@ export default function CRM() {
     if (curI.length > 0 && bObj) allG.push({ brandId: brand, brandLabel: bObj.label, brandIcon: bObj.icon, brandColor: bObj.color, items: curI, isCurrent: true });
     const tp = allG.reduce((s, g) => s + g.items.length, 0);
     const cartContent = (
-      <div style={{ fontFamily: "Inter,-apple-system,sans-serif", background: "transparent", minHeight: "100vh", padding: "16px 0", width: "100%" }}>
-        {toast && <div style={{ position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)", background: "rgba(34, 197, 94, 0.9)", backdropFilter: "blur(12px)", color: "#fff", padding: "14px 32px", borderRadius: 12, fontSize: 14, fontWeight: 700, boxShadow: "0 10px 40px rgba(0,0,0,.3)", zIndex: 9999, border: "1px solid rgba(255, 255, 255, 0.1)" }}>{toast}</div>}
-        <div style={{ background: "rgba(255, 255, 255, 0.03)", borderRadius: 16, padding: "28px 32px", marginBottom: 24, border: "1px solid rgba(255, 255, 255, 0.05)", backdropFilter: "blur(20px)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div className="w-full max-w-[1600px] mx-auto p-4 md:p-6 space-y-6 text-slate-300">
+        {toast && <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[9999] px-6 py-3 rounded-xl text-sm font-bold bg-emerald-500/90 text-white shadow-lg border border-white/10 backdrop-blur-sm">{toast}</div>}
+        <div className="glass-card p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <div style={{ color: "#fff", fontWeight: 800, fontSize: 24, marginBottom: 6 }}>🛒 Carrello</div>
-              <div style={{ color: "#94a3b8", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ background: "rgba(255, 255, 255, 0.05)", padding: "2px 8px", borderRadius: 6 }}>{tipoCliente === "privato" ? (ana.nome + " " + ana.cognome) : ana.ragioneSociale}</span>
-                <span style={{ color: "rgba(255, 255, 255, 0.1)" }}>•</span>
-                <span style={{ fontFamily: "monospace", letterSpacing: "0.05em" }}>{lookupValue}</span>
+              <h2 className="text-2xl font-extrabold text-white mb-1">🛒 Carrello</h2>
+              <div className="flex items-center gap-2 text-sm text-slate-400">
+                <span className="bg-white/5 px-2 py-0.5 rounded-md">{tipoCliente === "privato" ? (ana.nome + " " + ana.cognome) : ana.ragioneSociale}</span>
+                <span className="text-white/20">•</span>
+                <span className="font-mono tracking-wider">{lookupValue}</span>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 12 }}>
-              <div style={{ background: "rgba(255,255,255,.05)", borderRadius: 12, padding: "10px 20px", textAlign: "center", border: "1px solid rgba(255,255,255,.05)" }}><div style={{ color: "#fff", fontWeight: 800, fontSize: 24 }}>{allG.length}</div><div style={{ color: "#64748b", fontSize: 10, fontWeight: 700, letterSpacing: "0.05em" }}>BRAND</div></div>
-              <div style={{ background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2))", borderRadius: 12, padding: "10px 20px", textAlign: "center", border: "1px solid rgba(99, 102, 241, 0.2)" }}><div style={{ color: "#fff", fontWeight: 800, fontSize: 24 }}>{tp}</div><div style={{ color: "#818cf8", fontSize: 10, fontWeight: 700, letterSpacing: "0.05em" }}>PRODOTTI</div></div>
+            <div className="flex gap-3">
+              <div className="bg-white/5 rounded-xl py-2.5 px-5 text-center border border-white/5"><div className="text-2xl font-extrabold text-white">{allG.length}</div><div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">BRAND</div></div>
+              <div className="bg-violet-500/20 rounded-xl py-2.5 px-5 text-center border border-violet-500/20"><div className="text-2xl font-extrabold text-white">{tp}</div><div className="text-[10px] font-bold text-violet-400 uppercase tracking-wider">PRODOTTI</div></div>
             </div>
           </div>
         </div>
-        {allG.length === 0 ? <div style={{ background: "rgba(255, 255, 255, 0.02)", borderRadius: 16, padding: 60, textAlign: "center", border: "1px solid rgba(255, 255, 255, 0.05)" }}><div style={{ fontSize: 48, marginBottom: 16 }}>🛒</div><div style={{ fontSize: 16, fontWeight: 600, color: "#64748b" }}>Il tuo carrello è vuoto</div></div> :
+        {allG.length === 0 ? <div className="glass-card p-16 text-center"><div className="text-5xl mb-4">🛒</div><div className="text-base font-semibold text-slate-500">Il tuo carrello è vuoto</div></div> :
           allG.map((g, gi) => (
-            <div key={gi} style={{ background: "rgba(255, 255, 255, 0.02)", borderRadius: 16, marginBottom: 16, overflow: "hidden", border: "1px solid rgba(255, 255, 255, 0.05)", boxShadow: "0 4px 20px rgba(0,0,0,.2)" }}>
-              <div style={{ background: g.brandColor + "20", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid rgba(255, 255, 255, 0.05)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 24 }}>{g.brandIcon}</span><span style={{ color: g.brandColor, fontWeight: 800, fontSize: 16 }}>{g.brandLabel.toUpperCase()}</span><span style={{ background: g.brandColor, color: "#fff", borderRadius: 20, padding: "2px 12px", fontSize: 11, fontWeight: 800 }}>{g.items.length}</span>{g.isCurrent && <span style={{ background: "#f59e0b", borderRadius: 20, padding: "2px 12px", color: "#fff", fontSize: 10, fontWeight: 800, letterSpacing: "0.05em" }}>IN CORSO</span>}</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => g.isCurrent ? setShowCart(false) : editCG(gi)} style={{ background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "6px 16px", color: "#cbd5e1", fontSize: 11, cursor: "pointer", fontWeight: 700, transition: "all 0.2s" }}>✏️ Modifica</button>
-                  {!g.isCurrent && <button onClick={() => rmCG(gi)} style={{ background: "rgba(244, 63, 94, 0.1)", border: "1px solid rgba(244, 63, 94, 0.2)", borderRadius: 8, padding: "6px 16px", color: "#fb7185", fontSize: 11, cursor: "pointer", fontWeight: 700, transition: "all 0.2s" }}>✕ Rimuovi</button>}
+            <div key={gi} className="glass-panel overflow-hidden border-l-4" style={{ borderLeftColor: g.brandColor }}>
+              <div className="p-4 border-b border-white/5 flex items-center justify-between" style={{ background: g.brandColor + "20" }}>
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{g.brandIcon}</span>
+                  <span className="font-extrabold text-base uppercase" style={{ color: g.brandColor }}>{g.brandLabel}</span>
+                  <span className="px-3 py-0.5 rounded-full text-xs font-extrabold text-white" style={{ background: g.brandColor }}>{g.items.length}</span>
+                  {g.isCurrent && <span className="px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-amber-500 text-white">IN CORSO</span>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => g.isCurrent ? setShowCart(false) : editCG(gi)} className="px-4 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 transition-all">✏️ Modifica</button>
+                  {!g.isCurrent && <button onClick={() => rmCG(gi)} className="px-4 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold hover:bg-rose-500/20 transition-all">✕ Rimuovi</button>}
                 </div>
               </div>
-              <div style={{ padding: "8px 20px" }}>
+              <div className="p-5">
                 {g.items.map((it: any, ii: number) => (
                   <CartItem key={ii} it={it} ii={ii} gi={gi} total={g.items.length} expI={expI} setExpI={setExpI} />))}
               </div>
             </div>
           ))
         }
-        <div style={{ background: "rgba(255, 255, 255, 0.03)", borderRadius: 16, padding: 20, marginBottom: 16, borderLeft: "4px solid #06b6d4", borderTop: "1px solid rgba(255, 255, 255, 0.05)", borderRight: "1px solid rgba(255, 255, 255, 0.05)", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", marginTop: 20, backdropFilter: "blur(20px)" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#06b6d4", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>📎 Step 5 — Allegati</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+        <div className="glass-card p-5 mb-6 border-l-4 border-cyan-500 mt-6">
+          <div className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider mb-4">📎 Step 5 — Allegati</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[{ l: "Documento", i: "🪪" }, { l: "Contratti", i: "📄" }, { l: "Altro", i: "📁" }].map((a, i) => (
-              <div key={i} style={{ border: "2px dashed rgba(255, 255, 255, 0.1)", borderRadius: 12, padding: "20px 10px", textAlign: "center", cursor: "pointer", background: "rgba(255, 255, 255, 0.02)", transition: "all 0.2s" }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>{a.i}</div>
-                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: "#cbd5e1" }}>{a.l}</div>
-                <div style={{ display: "inline-block", padding: "6px 16px", borderRadius: 8, background: "#06b6d4", color: "#fff", fontSize: 11, fontWeight: 700, boxShadow: "0 4px 12px rgba(6, 182, 212, 0.3)" }}>Carica</div>
+              <div key={i} className="border-2 border-dashed border-white/10 rounded-xl p-5 text-center cursor-pointer bg-white/[0.02] hover:bg-white/[0.05] hover:border-cyan-500/30 transition-all">
+                <div className="text-3xl mb-2">{a.i}</div>
+                <div className="text-sm font-bold text-slate-300 mb-2">{a.l}</div>
+                <span className="inline-block px-4 py-1.5 rounded-lg bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-500/30">Carica</span>
               </div>
             ))}
           </div>
         </div>
-        <div style={{ background: "rgba(255, 255, 255, 0.03)", borderRadius: 16, padding: 20, marginBottom: 16, borderLeft: "4px solid #22c55e", borderTop: "1px solid rgba(255, 255, 255, 0.05)", borderRight: "1px solid rgba(255, 255, 255, 0.05)", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", backdropFilter: "blur(20px)" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#22c55e", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>🏪 Step 6 — Attribuzione</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px 20px" }}>
+        <div className="glass-card p-5 mb-6 border-l-4 border-emerald-500">
+          <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-4">🏪 Step 6 — Attribuzione</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <DD l="Venditore" r v={selVend} o={v => setSelVend(v)} vals={venditori} nt="Dal login — editabile" />
             <DD l="Negozio" r v={selNeg} o={v => setSelNeg(v)} vals={negozi} nt="Dal login — editabile" />
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 4 }}>Data <span style={{ color: "#f43f5e" }}>*</span></div>
-              <input type="date" defaultValue="2026-03-07" style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255, 255, 255, 0.1)", fontSize: 12, boxSizing: "border-box", background: "rgba(255, 255, 255, 0.05)", color: "#f8fafc", colorScheme: "dark", outline: "none" }} />
+              <div className="text-xs font-semibold text-slate-400 mb-1">Data <span className="text-rose-500">*</span></div>
+              <input type="date" defaultValue="2026-03-07" className="w-full glass-input py-2 px-3 text-sm rounded-xl" />
             </div>
           </div>
         </div>
         <NoteStep />
-        <div style={{ display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap", alignItems: "center" }}>
-          <button onClick={() => setShowCart(false)} style={{ padding: "12px 28px", borderRadius: 12, border: "1px solid rgba(255, 255, 255, 0.1)", background: "rgba(255, 255, 255, 0.05)", color: "#94a3b8", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>← Torna al form</button>
-          <button onClick={() => { if (brand && colItems().length > 0) addCart(); else { setBrand(null); setShowCart(false) } }} style={{ padding: "12px 28px", borderRadius: 12, border: "1px solid rgba(99, 102, 241, 0.3)", background: "rgba(99, 102, 241, 0.1)", color: "#818cf8", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>+ Aggiungi altro brand</button>
-          <button onClick={finalSubmit} disabled={tp === 0} style={{ padding: "14px 40px", borderRadius: 12, border: "none", background: tp > 0 ? "linear-gradient(135deg, #22c55e, #10b981)" : "rgba(255, 255, 255, 0.05)", color: tp > 0 ? "#fff" : "#475569", fontSize: 15, fontWeight: 800, cursor: tp > 0 ? "pointer" : "not-allowed", marginLeft: "auto", boxShadow: tp > 0 ? "0 10px 25px rgba(34, 197, 94, 0.4)" : "none", transition: "all 0.3s" }}>SALVA CONTRATTO ({tp})</button>
+        <div className="flex gap-3 mt-6 flex-wrap items-center">
+          <button onClick={() => setShowCart(false)} className="px-6 py-3 rounded-xl border border-white/10 bg-white/5 text-slate-400 text-sm font-bold hover:bg-white/10 transition-all">← Torna al form</button>
+          <button onClick={() => { if (brand && colItems().length > 0) addCart(); else { setBrand(null); setShowCart(false) } }} className="px-6 py-3 rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-300 text-sm font-bold hover:bg-violet-500/20 transition-all">+ Aggiungi altro brand</button>
+          <button onClick={finalSubmit} disabled={tp === 0} className={`ml-auto px-8 py-3.5 rounded-xl text-base font-extrabold transition-all ${tp > 0 ? "primary-btn bg-gradient-to-br from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 shadow-lg shadow-emerald-500/30" : "bg-white/5 text-slate-500 cursor-not-allowed"}`}>SALVA CONTRATTO ({tp})</button>
         </div>
       </div>
     );
@@ -933,57 +1001,118 @@ export default function CRM() {
 
   // ═══════════ FORM ═══════════
   const formContent = (
-    <div style={{ fontFamily: "Inter,-apple-system,sans-serif", background: "transparent", minHeight: "100vh", padding: "16px 0", width: "100%" }}>
-      {toast && <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "#28a745", color: "#fff", padding: "12px 28px", borderRadius: 10, fontSize: 14, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,0,0,.2)", zIndex: 9999 }}>{toast}</div>}
-      <div style={{ background: bG, borderRadius: 12, padding: "14px 20px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}><div style={{ width: 36, height: 36, background: "rgba(255,255,255,.2)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{bObj ? bObj.icon : "⚡"}</div><div><div style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>CRM - Inserimento Contratto</div><div style={{ color: "rgba(255,255,255,.7)", fontSize: 11 }}>{bObj ? bObj.label + " · v5" : "Seleziona brand"}{tipoCliente ? " · " + (tipoCliente === "privato" ? "Privato" : "Business") : ""}</div></div></div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={() => setShowCart(true)} style={{ background: tCI > 0 ? "rgba(255,255,255,.25)" : "rgba(255,255,255,.1)", border: "none", borderRadius: 8, padding: "6px 14px", color: "#fff", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>🛒{tCI > 0 && <span style={{ background: "#FFD800", color: "#333", borderRadius: 10, padding: "1px 7px", fontSize: 11, fontWeight: 800, marginLeft: 4 }}>{tCI}</span>}</button>
-          {brand && <button onClick={addCart} style={{ background: "rgba(255,255,255,.15)", border: "none", borderRadius: 6, padding: "6px 12px", color: "#fff", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>📦 Cambia</button>}
-          <button onClick={fullReset} style={{ background: "rgba(255,255,255,.1)", border: "none", borderRadius: 6, padding: "6px 12px", color: "rgba(255,255,255,.7)", fontSize: 11, cursor: "pointer" }}>⟲</button>
+    <div className="w-full max-w-[1600px] mx-auto p-4 md:p-6 space-y-6 text-slate-300">
+      {toast && <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[9999] px-6 py-3 rounded-xl text-sm font-bold bg-emerald-500/90 text-white shadow-lg border border-white/10 backdrop-blur-sm">{toast}</div>}
+      <div className="glass-card p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6" style={{ background: bG, border: "1px solid rgba(255,255,255,0.1)" }}>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-lg border border-white/10">{bObj ? bObj.icon : "⚡"}</div>
+          <div>
+            <h1 className="text-lg font-bold text-white">CRM - Inserimento Contratto</h1>
+            <p className="text-xs text-slate-400">{bObj ? bObj.label + " · v5" : "Seleziona brand"}{tipoCliente ? " · " + (tipoCliente === "privato" ? "Privato" : "Business") : ""}</p>
+          </div>
+        </div>
+        <div className="flex gap-2 items-center">
+          <button onClick={() => setShowCart(true)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2">🛒{tCI > 0 && <span className="bg-amber-400 text-slate-900 rounded-full px-1.5 py-0.5 text-xs font-bold">{tCI}</span>}</button>
+          {brand && <button onClick={addCart} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium transition-all">📦 Cambia</button>}
+          <button onClick={fullReset} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 transition-all" title="Ricomincia">⟲</button>
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 3, marginBottom: 16 }}>
-        {["Brand", "Tipo Cliente", "Anagrafica", "Prodotti", "Allegati", "Attribuzione", "Note"].map((st, i) => <div key={i} style={{ flex: 1, textAlign: "center", padding: "7px 2px", borderRadius: 6, fontSize: 9.5, fontWeight: 600, background: gSS(i) === "active" ? bC : gSS(i) === "done" ? "#28a745" : "#e9ecef", color: gSS(i) === "pending" ? "#aaa" : "#fff" }}>{gSS(i) === "done" ? "✓ " : ""}{st}</div>)}
+      <div className="flex gap-0.5 mb-6">
+        {["Brand", "Tipo Cliente", "Anagrafica", "Prodotti", "Allegati", "Attribuzione", "Note"].map((st, i) => {
+          const state = gSS(i);
+          return (
+            <div key={i} className={`flex-1 text-center py-1.5 px-0.5 rounded-md text-[9.5px] font-semibold ${state === "pending" ? "bg-white/5 text-slate-500" : state === "done" ? "bg-emerald-500/20 text-emerald-400" : "bg-violet-500/20 text-violet-300 border border-violet-500/30"}`}>
+              {state === "done" ? "✓ " : ""}{st}
+            </div>
+          );
+        })}
       </div>
 
-      {cart.length > 0 && <div onClick={() => setShowCart(true)} style={{ background: "linear-gradient(90deg,#1a1a2e,#16213e)", borderRadius: 10, padding: "10px 16px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}><div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}><span>🛒</span><span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>Carrello:</span>{cart.map((g, i) => <span key={i} style={{ background: g.brandColor, color: "#fff", borderRadius: 6, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>{g.brandIcon} {g.items.length}</span>)}</div><span style={{ color: "rgba(255,255,255,.5)", fontSize: 11 }}>Vedi →</span></div>}
+      {cart.length > 0 && <div onClick={() => setShowCart(true)} className="glass-card p-4 flex items-center justify-between cursor-pointer hover:border-white/15 transition-all mb-4"><div className="flex items-center gap-3 flex-wrap"><span>🛒</span><span className="text-sm font-semibold text-white">Carrello:</span>{cart.map((g, i) => <span key={i} className="px-2 py-0.5 rounded-md text-[10px] font-bold text-white" style={{ background: g.brandColor }}>{g.brandIcon} {g.items.length}</span>)}</div><span className="text-xs text-slate-400">Vedi →</span></div>}
 
-      {!brand ? <div style={{ background: "rgba(255, 255, 255, 0.02)", borderRadius: 16, padding: 24, marginBottom: 16, border: "1px solid rgba(255, 255, 255, 0.05)", backdropFilter: "blur(20px)" }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>Step 1 — Brand</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-          {BRANDS.map(b => <button key={b.id} onClick={() => { if (b.ready) { setBrand(b.id); setSales({}); setSkyS([{ selected: [] }]); setSesCode("") } }} style={{ padding: 20, borderRadius: 16, border: "1px solid rgba(255, 255, 255, 0.1)", background: "rgba(255, 255, 255, 0.03)", cursor: b.ready ? "pointer" : "default", textAlign: "center", opacity: b.ready ? 1 : .6, position: "relative", overflow: "hidden", transition: "all 0.2s" }}>
-            {!b.ready && <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(15, 23, 42, 0.8)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 2 }}><div style={{ fontSize: 24 }}>🔧</div><div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8" }}>Manutenzione</div></div>}
-            <div style={{ fontSize: 32, marginBottom: 8 }}>{b.icon}</div><div style={{ fontWeight: 800, fontSize: 16, color: b.color }}>{b.label}</div><div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>{b.desc}</div>
-          </button>)}
+      {!brand ? (
+        <div className="glass-card p-6 mb-6">
+          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-4">Step 1 — Brand</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {BRANDS.map(b => (
+              <button
+                key={b.id}
+                onClick={() => {
+                  if (b.ready) {
+                    setBrand(b.id);
+                    setSales({});
+                    setSkyS([{ selected: [] }]);
+                    setSesCode("");
+                  }
+                }}
+                className={`p-5 rounded-2xl border border-white/10 bg-white/[0.03] text-center relative overflow-hidden transition-all ${b.ready ? "cursor-pointer hover:bg-white/[0.06] hover:border-white/15" : "cursor-default opacity-60"}`}
+              >
+                {!b.ready && (
+                  <div className="absolute inset-0 bg-slate-900/80 flex flex-col items-center justify-center z-10">
+                    <div className="text-2xl">🔧</div>
+                    <div className="text-[10px] font-bold text-slate-400">Manutenzione</div>
+                  </div>
+                )}
+                <div className="mb-2 flex justify-center">
+                  {b.logo ? (
+                    <div className="w-14 h-14 rounded-xl overflow-hidden flex items-center justify-center">
+                      <Image
+                        src={b.logo}
+                        alt={b.label}
+                        width={56}
+                        height={56}
+                        className="w-full h-full object-cover rounded-xl"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-3xl">{b.icon}</span>
+                  )}
+                </div>
+                <div className="font-extrabold text-base" style={{ color: b.color }}>
+                  {b.label}
+                </div>
+                <div className="text-xs text-slate-500 mt-1">{b.desc}</div>
+              </button>
+            ))}
+          </div>
         </div>
-      </div> : <div style={{ background: "rgba(255, 255, 255, 0.03)", borderRadius: 12, padding: "14px 20px", marginBottom: 12, display: "flex", alignItems: "center", gap: 12, border: "1px solid rgba(34, 197, 94, 0.2)" }}><span style={{ fontSize: 12, fontWeight: 800, color: "#22c55e" }}>✓ 1</span><span style={{ fontSize: 14, fontWeight: 600, color: "#cbd5e1" }}>Brand selezionato: <span style={{ color: bObj?.color || "#94a3b8", fontWeight: 800 }}>{bObj?.icon || "⚡"} {bObj?.label || "Seleziona brand"}</span></span></div>}
+      ) : (
+        <div className="rounded-xl p-4 mb-4 flex items-center gap-3 border border-emerald-500/20 bg-emerald-500/5">
+          <span className="text-xs font-extrabold text-emerald-400">✓ 1</span>
+          <span className="text-sm font-semibold text-slate-200">
+            Brand selezionato:{" "}
+            <span className="font-extrabold" style={{ color: bObj?.color || "#94a3b8" }}>
+              {bObj?.label || "Seleziona brand"}
+            </span>
+          </span>
+        </div>
+      )}
 
       {brand && !showStep4 && (
-        <div style={{ background: "rgba(255, 255, 255, 0.02)", borderRadius: 16, padding: 24, marginBottom: 16, borderLeft: "4px solid #6366f1", borderTop: "1px solid rgba(255, 255, 255, 0.05)", borderRight: "1px solid rgba(255, 255, 255, 0.05)", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", backdropFilter: "blur(20px)" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#818cf8", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>Step 2 — Tipo Cliente</div>
-          <div style={{ display: "flex", gap: 16, marginBottom: tipoCliente ? 20 : 0 }}>
+        <div className="glass-card p-6 mb-6 border-l-4 border-violet-500">
+          <div className="text-[11px] font-bold text-violet-400 uppercase tracking-wider mb-4">Step 2 — Tipo Cliente</div>
+          <div className="flex gap-4 mb-5">
             {["privato", "business"].map(t => (
               <button key={t} onClick={() => { setTipoCliente(t); setShowAna(false); setClienteFound(false); setLookupValue(""); setSales({}); setSkyS([{ selected: [] }]); setShowStep4(false) }}
-                style={{ flex: 1, padding: 16, borderRadius: 12, border: tipoCliente === t ? "2px solid #6366f1" : "1px solid rgba(255, 255, 255, 0.1)", background: tipoCliente === t ? "rgba(99, 102, 241, 0.15)" : "rgba(255, 255, 255, 0.03)", cursor: "pointer", textAlign: "center", transition: "all 0.2s" }}>
-                <div style={{ fontSize: 24, marginBottom: 6 }}>{t === "privato" ? "👤" : "🏢"}</div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: tipoCliente === t ? "#818cf8" : "#94a3b8" }}>{t === "privato" ? "Privato" : "Business"}</div>
+                className={`flex-1 py-4 px-4 rounded-xl border text-center transition-all cursor-pointer ${tipoCliente === t ? "border-violet-500 bg-violet-500/15 text-violet-300" : "border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:border-white/15"}`}>
+                <div className="text-2xl mb-1.5">{t === "privato" ? "👤" : "🏢"}</div>
+                <div className="font-bold text-sm">{t === "privato" ? "Privato" : "Business"}</div>
               </button>
             ))}
           </div>
           {tipoCliente && (
-            <div style={{ background: "rgba(255, 255, 255, 0.02)", borderRadius: 12, padding: 20, position: "relative", border: "1px solid rgba(255, 255, 255, 0.05)" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#94a3b8", marginBottom: 10 }}>{tipoCliente === "privato" ? "Codice Fiscale" : "Partita IVA"}</div>
-              <div style={{ display: "flex", gap: 12 }}>
+            <div className="p-5 rounded-xl bg-white/[0.02] border border-white/5 relative">
+              <div className="text-sm font-semibold text-slate-400 mb-2">{tipoCliente === "privato" ? "Codice Fiscale" : "Partita IVA"}</div>
+              <div className="flex gap-3 flex-wrap">
                 <input placeholder={tipoCliente === "privato" ? "RSSMRA80A01H501Z" : "12345678901"} value={lookupValue} onChange={e => setLookupValue(e.target.value.toUpperCase())}
-                  style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "1px solid rgba(255, 255, 255, 0.1)", fontSize: 14, fontFamily: "monospace", letterSpacing: 1.5, background: "rgba(255, 255, 255, 0.05)", color: "#f8fafc", outline: "none" }} />
-                <button onClick={doLookup} style={{ padding: "0 24px", borderRadius: 10, border: "none", background: "#6366f1", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 12px rgba(99, 102, 241, 0.3)" }}>🔍 Cerca</button>
+                  className="flex-1 min-w-[200px] glass-input font-mono tracking-wider text-sm py-3 px-4 rounded-xl" />
+                <button onClick={doLookup} className="primary-btn px-6 py-2.5 text-sm font-bold flex items-center gap-2">🔍 Cerca</button>
                 {tipoCliente === "privato" && (
-                  <button onClick={() => setShowCF(!showCF)} style={{ padding: "0 16px", borderRadius: 10, border: showCF ? "2px solid #f97316" : "1px solid rgba(255, 255, 255, 0.1)", background: showCF ? "rgba(249, 115, 22, 0.15)" : "rgba(255, 255, 255, 0.05)", color: showCF ? "#fb923c" : "#94a3b8", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>🧮 Calcola</button>
+                  <button onClick={() => setShowCF(!showCF)} className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${showCF ? "border-2 border-orange-500 bg-orange-500/15 text-orange-400" : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>🧮 Calcola</button>
                 )}
               </div>
-              {clienteFound && <div style={{ marginTop: 12, background: "rgba(34, 197, 94, 0.15)", borderRadius: 8, padding: "10px 16px", fontSize: 13, color: "#4ade80", border: "1px solid rgba(34, 197, 94, 0.2)" }}>✅ Cliente identificato nel sistema</div>}
+              {clienteFound && <div className="mt-3 py-2.5 px-4 rounded-lg bg-emerald-500/15 text-emerald-400 text-sm border border-emerald-500/20">✅ Cliente identificato nel sistema</div>}
               {showCF && tipoCliente === "privato" && (
                 <div style={{ position: "absolute", bottom: "110%", left: 0, right: 0, background: "rgba(15, 23, 42, 0.95)", borderRadius: 16, padding: 24, backdropFilter: "blur(20px)", border: "2px solid #f97316", zIndex: 50, boxShadow: "0 20px 50px rgba(0,0,0,0.5)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><span style={{ fontSize: 15, fontWeight: 800, color: "#fb923c", letterSpacing: "0.05em" }}>🧮 CALCOLO CODICE FISCALE</span><button onClick={() => setShowCF(false)} style={{ background: "none", border: "none", fontSize: 18, color: "#64748b", cursor: "pointer" }}>✕</button></div>
