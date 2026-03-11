@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
+import { usePageBack } from "@/context/PageBackContext";
 import {
     Folder,
     FileText,
@@ -159,6 +160,22 @@ export default function DocumentazionePage() {
 
     const goHome = useCallback(() => { setBrandId(null); setCatId(null); }, []);
     const goBrand = useCallback((id: string) => { setBrandId(id); setCatId(null); }, []);
+
+    const { setOnBack } = usePageBack();
+    useEffect(() => {
+        setOnBack(() => () => {
+            if (catId) {
+                setCatId(null);
+                return true;
+            }
+            if (brandId) {
+                setBrandId(null);
+                return true;
+            }
+            return false;
+        });
+        return () => setOnBack(null);
+    }, [brandId, catId, setOnBack]);
 
     return (
         <div className="flex flex-col h-[calc(100vh-theme(spacing.16))] lg:h-screen lg:pl-64 w-full overflow-hidden min-w-0 max-w-full">

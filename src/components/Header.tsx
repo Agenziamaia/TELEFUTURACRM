@@ -3,11 +3,13 @@
 import { Search, Sun, Maximize, Bell, Menu, LogOut, ArrowLeft } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { usePageBack } from "@/context/PageBackContext";
 import { useRef, useEffect } from "react";
 
 export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     const router = useRouter();
     const pathname = usePathname();
+    const { onBack } = usePageBack();
     const { user, logout } = useAuth();
     const lastPathRef = useRef<string | null>(null);
     const previousPathRef = useRef<string | null>(null);
@@ -20,6 +22,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     }, [pathname]);
 
     const handleBack = () => {
+        if (onBack?.()) return;
         const target = previousPathRef.current;
         if (target && target !== pathname) {
             router.push(target);
