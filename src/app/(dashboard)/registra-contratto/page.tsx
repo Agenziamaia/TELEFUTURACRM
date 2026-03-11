@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { getDraft, saveDraft, clearDraft } from "@/lib/draft";
 
 const BRANDS = [
   {
@@ -281,7 +282,7 @@ const MiniC = ({ label, val, onCh, opts, locked, lockVal }: { label: string, val
   return content;
 };
 
-const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSales, anaCel }: { sub: any, rawSd: any, group: any, si: number, sessionCode: string, sale: any, uF: any, uC: any, uP: any, catSales: any, anaCel: string }) => {
+const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSales, anaCel, tipoCliente }: { sub: any, rawSd: any, group: any, si: number, sessionCode: string, sale: any, uF: any, uC: any, uP: any, catSales: any, anaCel: string, tipoCliente: string | null }) => {
   const _r = rawSd || {};
   const sd: any = { active: true, fields: _r.fields || {}, contract: _r.contract || {}, gnp: _r.gnp || false, gnpNum: _r.gnpNum || "", gnpOp: _r.gnpOp || "", secondaLinea: _r.secondaLinea || false, gnp2L: _r.gnp2L != null ? _r.gnp2L : null, gnp2LBrand: _r.gnp2LBrand || "", gnp2LNum: _r.gnp2LNum || "", domiciliazione: _r.domiciliazione || false, opProvenienza: _r.opProvenienza || "", codiceOverride: _r.codiceOverride || "", addons: _r.addons || {}, domiciliato: _r.domiciliato != null ? _r.domiciliato : null, convergente: _r.convergente != null ? _r.convergente : null, tipMob: _r.tipMob != null ? _r.tipMob : null, mnp: _r.mnp != null ? _r.mnp : null, easyPay: _r.easyPay != null ? _r.easyPay : null, tnpGa: _r.tnpGa != null ? _r.tnpGa : null, tnpTipo: _r.tnpTipo || "", tnpModello: _r.tnpModello || "", tnpImei: _r.tnpImei || "", tnpCount: _r.tnpCount || null, tnpModelli: _r.tnpModelli || [], tnpImeis: _r.tnpImeis || [], packAccessori: _r.packAccessori != null ? _r.packAccessori : null, packAccessoriVal: _r.packAccessoriVal || "", packAccessoriQta: _r.packAccessoriQta || "", cbTnp: _r.cbTnp || false, cbTnpTipo: _r.cbTnpTipo || "", cbTnpModello: _r.cbTnpModello || "", cbTnpImei: _r.cbTnpImei || "", cbTnpCount: _r.cbTnpCount || null, cbTnpModelli: _r.cbTnpModelli || [], cbTnpImeis: _r.cbTnpImeis || [], cbPackAccessori: _r.cbPackAccessori != null ? _r.cbPackAccessori : null, cbPackAccessoriVal: _r.cbPackAccessoriVal || "", cbPackAccessoriQta: _r.cbPackAccessoriQta || "", cbTnpCell: _r.cbTnpCell || "", cbTnpCC: _r.cbTnpCC || "", cbTnpCodIns: _r.cbTnpCodIns || "", cbTnpReload: _r.cbTnpReload != null ? _r.cbTnpReload : null, cbTnpReloadSel: _r.cbTnpReloadSel || {}, cbCambio: _r.cbCambio || false, cbCambioVal: _r.cbCambioVal || "", cbCambioCell: _r.cbCambioCell || "", cbCambioCC: _r.cbCambioCC || "", cbCambioCodIns: _r.cbCambioCodIns || "", cbAddonSel: _r.cbAddonSel || {}, rfModello: _r.rfModello || "", rfImei: _r.rfImei || "", cbRf: _r.cbRf || false, cbAddonCodIns: _r.cbAddonCodIns || "", cbRfCodIns: _r.cbRfCodIns || "", tnpGaReload: _r.tnpGaReload != null ? _r.tnpGaReload : null, tnpGaReloadSel: _r.tnpGaReloadSel || {}, reloadForever: _r.reloadForever != null ? _r.reloadForever : null, securitySel: _r.securitySel || {}, voceCasaCb: _r.voceCasaCb != null ? _r.voceCasaCb : null };
   const f = sd.fields;
@@ -692,11 +693,11 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
         </div>
       )}
 
-      {/* Fisso: DOMICILIATO + CONVERGENTE */}
+      {/* Fisso: DOMICILIATO + CONVERGENTE — lock only for business; consumer can always choose Sì/No */}
       {sub.isFisso && (
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", padding: 12, background: "rgba(255,255,255,0.02)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.05)", marginBottom: 12 }}>
-          <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 12, fontWeight: 700, color: (isVCMode || bizDomLocked) ? "#64748b" : "#94a3b8", marginBottom: 6 }}>Domiciliato?</div><div style={{ display: "flex", gap: 8 }}>
-            {(isVCMode || bizDomLocked) ? (
+          <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontSize: 12, fontWeight: 700, color: (isVCMode || bizDomLocked) && tipoCliente === "business" ? "#64748b" : "#94a3b8", marginBottom: 6 }}>Domiciliato?</div><div style={{ display: "flex", gap: 8 }}>
+            {(isVCMode || bizDomLocked) && tipoCliente === "business" ? (
               <div className="flex items-center gap-2"><button disabled className="px-4 py-1.5 rounded-lg border-2 border-emerald-500 bg-emerald-500/15 text-emerald-400 text-xs font-bold cursor-not-allowed">Sì</button><span className="text-[10px] text-slate-500 italic">{isVCMode || sub.domLocked ? "Obbligatorio" : "Business"}</span></div>
             ) : (<>
               <button onClick={() => uP(group.id, si, sub.id, "domiciliato", true)} style={{ padding: "6px 20px", borderRadius: 6, border: sd.domiciliato === true ? "2px solid #28a745" : "1px solid rgba(255,255,255,0.1)", background: sd.domiciliato === true ? "rgba(40, 167, 69, 0.1)" : "rgba(255,255,255,0.03)", color: sd.domiciliato === true ? "#28a745" : "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>Sì</button>
@@ -859,26 +860,34 @@ const NoteStep = () => {
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
 
+const DRAFT_KEY_REGISTRA = "registra-contratto";
+const defaultAna: Record<string, string> = { nome: "", cognome: "", cellulare: "", email: "", via: "", cap: "", citta: "", ragioneSociale: "", nomeRef: "", cognomeRef: "", recapito: "" };
+const defaultCfD = { nome: "", cognome: "", sesso: "M" as const, giorno: "", mese: "", anno: "", comune: "", estero: false, paese: "" };
+
 export default function CRM() {
-  const [brand, setBrand] = useState<string | null>(null);
+  const draftRef = useRef<ReturnType<typeof getDraft> | undefined>(undefined);
+  if (draftRef.current === undefined) draftRef.current = getDraft(DRAFT_KEY_REGISTRA);
+  const draft = draftRef.current;
+
+  const [brand, setBrand] = useState<string | null>(draft?.brand ?? null);
   const [showCart, setShowCart] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [expI, setExpI] = useState<Record<string, boolean>>({});
-  const [tipoCliente, setTipoCliente] = useState<string | null>(null);
-  const [lookupValue, setLookupValue] = useState("");
-  const [clienteFound, setClienteFound] = useState(false);
-  const [showAna, setShowAna] = useState(false);
-  const [ana, setAna] = useState<Record<string, string>>({ nome: "", cognome: "", cellulare: "", email: "", via: "", cap: "", citta: "", ragioneSociale: "", nomeRef: "", cognomeRef: "", recapito: "" });
-  const [sales, setSales] = useState<Record<string, any>>({});
-  const [sesCode, setSesCode] = useState("");
-  const [skyS, setSkyS] = useState<any[]>([{ selected: [] }]);
-  const [cart, setCart] = useState<any[]>([]);
+  const [tipoCliente, setTipoCliente] = useState<string | null>(draft?.tipoCliente ?? null);
+  const [lookupValue, setLookupValue] = useState((draft?.lookupValue as string) ?? "");
+  const [clienteFound, setClienteFound] = useState(!!draft?.clienteFound);
+  const [showAna, setShowAna] = useState(!!draft?.showAna);
+  const [ana, setAna] = useState<Record<string, string>>({ ...defaultAna, ...(draft?.ana as Record<string, string>) });
+  const [sales, setSales] = useState<Record<string, any>>((draft?.sales as Record<string, any>) ?? {});
+  const [sesCode, setSesCode] = useState((draft?.sesCode as string) ?? "");
+  const [skyS, setSkyS] = useState<any[]>((draft?.skyS as any[])?.length ? (draft.skyS as any[]) : [{ selected: [] }]);
+  const [cart, setCart] = useState<any[]>((draft?.cart as any[]) ?? []);
   const [showCF, setShowCF] = useState(false);
-  const [cfD, setCfD] = useState({ nome: "", cognome: "", sesso: "M", giorno: "", mese: "", anno: "", comune: "", estero: false, paese: "" });
-  const [selVend, setSelVend] = useState("Alberto");
-  const [selNeg, setSelNeg] = useState("Magliana");
+  const [cfD, setCfD] = useState({ ...defaultCfD, ...(draft?.cfD as object) });
+  const [selVend, setSelVend] = useState((draft?.selVend as string) ?? "Alberto");
+  const [selNeg, setSelNeg] = useState((draft?.selNeg as string) ?? "Magliana");
   const [confirmReset, setConfirmReset] = useState(false);
-  const [showStep4, setShowStep4] = useState(false);
+  const [showStep4, setShowStep4] = useState(!!draft?.showStep4);
 
   const bObj = brand ? BRANDS.find(b => b.id === brand) : null;
   const cats = brand === "windtre" ? getW3(tipoCliente) : [];
@@ -909,7 +918,17 @@ export default function CRM() {
   };
   const editCG = (idx: number) => { const g: any = cart[idx]; if (!g) return; setBrand(g.brandId); if (g.sv) { setSales(g.sv.sales || {}); setSesCode(g.sv.sesCode || ""); setSkyS(g.sv.skyS || [{ selected: [] }]) } setCart(p => p.filter((_, i) => i !== idx)); setShowCart(false); sT("✏️ Modifica " + g.brandLabel) };
   const rmCG = (idx: number) => setCart(p => p.filter((_, i) => i !== idx));
-  const fullReset = () => { setBrand(null); setTipoCliente(null); setLookupValue(""); setClienteFound(false); setShowAna(false); setSales({}); setSesCode(""); setSkyS([{ selected: [] }]); setCart([]); setShowCart(false); setExpI({}); setConfirmReset(false); setShowStep4(false); setAna({ nome: "", cognome: "", cellulare: "", email: "", via: "", cap: "", citta: "", ragioneSociale: "", nomeRef: "", cognomeRef: "", recapito: "" }) };
+  const fullReset = () => {
+    clearDraft(DRAFT_KEY_REGISTRA);
+    setBrand(null); setTipoCliente(null); setLookupValue(""); setClienteFound(false); setShowAna(false); setSales({}); setSesCode(""); setSkyS([{ selected: [] }]); setCart([]); setShowCart(false); setExpI({}); setConfirmReset(false); setShowStep4(false); setAna({ ...defaultAna });
+  };
+
+  useEffect(() => {
+    const payload = { brand, tipoCliente, lookupValue, clienteFound, showAna, ana, sales, sesCode, skyS, cart, cfD, selVend, selNeg, showStep4 };
+    const t = setTimeout(() => saveDraft(DRAFT_KEY_REGISTRA, payload), 800);
+    return () => clearTimeout(t);
+  }, [brand, tipoCliente, lookupValue, clienteFound, showAna, ana, sales, sesCode, skyS, cart, cfD, selVend, selNeg, showStep4]);
+
   const finalSubmit = () => { const cur = colItems(); const fc: any[] = [...cart]; if (cur.length > 0 && bObj) fc.push({ brandId: brand, brandLabel: bObj.label, brandIcon: bObj.icon, brandColor: bObj.color, items: cur, sv: { sales: JSON.parse(JSON.stringify(sales)), sesCode, skyS: JSON.parse(JSON.stringify(skyS)) } }); sT("🎉 Inviato! " + fc.length + " brand, " + fc.reduce((s, g) => s + (g.items?.length || 0), 0) + " prodotti"); setTimeout(fullReset, 2000) };
   const doLookup = () => { setClienteFound(true); setShowAna(true); setShowStep4(false); setAna({ nome: "Mario", cognome: "Rossi", cellulare: "333 1234567", email: "mario.rossi@email.com", via: "Via Roma 15", cap: "00100", citta: "Roma", ragioneSociale: "Rossi S.r.l.", nomeRef: "Mario", cognomeRef: "Rossi", recapito: "333 1234567" }) };
   const doCF = () => { const { nome, cognome, sesso, giorno, mese, anno, comune, estero, paese } = cfD; if (!nome || !cognome || !giorno || !mese || !anno) return; if (estero && !paese) return; if (!estero && !comune) return; const luogo = (estero ? paese : comune).toUpperCase(); const cc = estero ? (CO_EE[luogo] || "Z999") : (CO[luogo] || "Z999"); const cn = xC(cognome), vn = xV(cognome), sur = [...cn, ...vn, "X", "X", "X"].slice(0, 3).join(""); const cna = xC(nome); const nam = cna.length >= 4 ? [cna[0], cna[2], cna[3]].join("") : [...cna, ...xV(nome), "X", "X", "X"].slice(0, 3).join(""); const an = anno.slice(-2), me = MCF[mese] || "A"; let gi = parseInt(giorno); if (sesso === "F") gi += 40; const bd = an + me + (gi < 10 ? "0" + gi : String(gi)); const partial = sur + nam + bd + cc; let sm = 0; for (let i = 0; i < 15; i++) { const ch = partial[i]; sm += (i % 2 === 0) ? (DI[ch] || 0) : (PA[ch] || 0) } setLookupValue(partial + _R[sm % 26]); setShowCF(false); setShowAna(true); uA("nome", nome.charAt(0).toUpperCase() + nome.slice(1).toLowerCase()); uA("cognome", cognome.charAt(0).toUpperCase() + cognome.slice(1).toLowerCase()) };
@@ -1222,7 +1241,7 @@ export default function CRM() {
                     ))}
                   </div>
                   {group.subs.filter(sub => sale[sub.id] && sale[sub.id].active).map(sub =>
-                    <SubCard key={sub.id} sub={sub} rawSd={sale[sub.id] || {}} group={group} si={si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={ana.cellulare || ""} />
+                    <SubCard key={sub.id} sub={sub} rawSd={sale[sub.id] || {}} group={group} si={si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={ana.cellulare || ""} tipoCliente={tipoCliente} />
                   )}
                 </div>
               ))}

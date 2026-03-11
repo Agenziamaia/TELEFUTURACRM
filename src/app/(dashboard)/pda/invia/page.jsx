@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Search, ShoppingBag, User, Check, ChevronLeft, ChevronRight, Plus, Trash2, Archive, HelpCircle, Info, LayoutGrid, Clock, Calendar, ExternalLink, MoreVertical, ChevronUp, ChevronDown } from "lucide-react";
 import { calculateCF, _CNA, _PNA } from "@/lib/cf";
+import { getDraft, saveDraft, clearDraft } from "@/lib/draft";
 
 // ── COSTANTI ──────────────────────────────────────────────────────────────────
 
@@ -242,34 +243,40 @@ function CartItem({ it, ii, gi, total, expI, setExpI }) {
   );
 }
 
+const DRAFT_KEY_PDA = "pda-invia";
+
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function InviaPda() {
-  const [step, setStep] = useState(1);
-  const [venditore, setVenditore] = useState("");
-  const [negozio, setNegozio] = useState("");
+  const draftRef = useRef(undefined);
+  if (draftRef.current === undefined) draftRef.current = getDraft(DRAFT_KEY_PDA);
+  const draft = draftRef.current;
+
+  const [step, setStep] = useState(draft?.step ?? 1);
+  const [venditore, setVenditore] = useState(draft?.venditore ?? "");
+  const [negozio, setNegozio] = useState(draft?.negozio ?? "");
   const [confirmReset, setConfirmReset] = useState(false);
 
-  const [tipoCliente, setTipoCliente] = useState(null);
-  const [lookupValue, setLookupValue] = useState("");
-  const [clienteFound, setClienteFound] = useState(false);
-  const [lookupDone, setLookupDone] = useState(false);
-  const [anConsumer, setAnConsumer] = useState({ nome: "", cognome: "", cf: "", email: "", numeroFisso: "", cellulare: "", iban: "", domicilio: "", note: "" });
-  const [anBusiness, setAnBusiness] = useState({ ragioneSociale: "", piva: "", referente: "", numeroFisso: "", mobile: "", email: "", pec: "", codiceUnivoco: "", iban: "", sedeLegale: "", note: "" });
+  const [tipoCliente, setTipoCliente] = useState(draft?.tipoCliente ?? null);
+  const [lookupValue, setLookupValue] = useState(draft?.lookupValue ?? "");
+  const [clienteFound, setClienteFound] = useState(!!draft?.clienteFound);
+  const [lookupDone, setLookupDone] = useState(!!draft?.lookupDone);
+  const [anConsumer, setAnConsumer] = useState({ nome: "", cognome: "", cf: "", email: "", numeroFisso: "", cellulare: "", iban: "", domicilio: "", note: "", ...draft?.anConsumer });
+  const [anBusiness, setAnBusiness] = useState({ ragioneSociale: "", piva: "", referente: "", numeroFisso: "", mobile: "", email: "", pec: "", codiceUnivoco: "", iban: "", sedeLegale: "", note: "", ...draft?.anBusiness });
 
-  const [brand, setBrand] = useState(null);
+  const [brand, setBrand] = useState(draft?.brand ?? null);
 
   const [showCF, setShowCF] = useState(false);
-  const [cfD, setCfD] = useState({ nome: "", cognome: "", sesso: "M", giorno: "", mese: "", anno: "", comune: "", estero: false, paese: "" });
+  const [cfD, setCfD] = useState({ nome: "", cognome: "", sesso: "M", giorno: "", mese: "", anno: "", comune: "", estero: false, paese: "", ...draft?.cfD });
 
 
   // Carrello multi-brand
-  const [cart, setCart] = useState([]);
+  const [cart, setCart] = useState(Array.isArray(draft?.cart) ? draft.cart : []);
   const [showCart, setShowCart] = useState(false);
   const [expI, setExpI] = useState({});
   const [toast, setToast] = useState(null);
 
   // { [catKey]: [ { product:"", fields:{}, skyPkt:[], skyTech:"", skyDec:"", lucaGasSez:"" } ] }
-  const [allSales, setAllSales] = useState({});
+  const [allSales, setAllSales] = useState(draft?.allSales && typeof draft.allSales === "object" ? draft.allSales : {});
   const [collapsedToggles, setCollapsedToggles] = useState({});
 
   const getSales = (ck) => allSales[ck] || [{ product: "", fields: {}, skyPkt: [], skyTech: "", skyDec: "", lgSez: "" }];
@@ -363,6 +370,7 @@ export default function InviaPda() {
   const rmCG = (idx) => setCart(p => p.filter((_, i) => i !== idx));
 
   const fullReset = () => {
+    clearDraft(DRAFT_KEY_PDA);
     setStep(1); setVenditore("");
     setTipoCliente(null); setLookupValue(""); setClienteFound(false); setLookupDone(false);
     setAnConsumer({ nome: "", cognome: "", cf: "", email: "", numeroFisso: "", cellulare: "", iban: "", domicilio: "", note: "" });
@@ -370,6 +378,12 @@ export default function InviaPda() {
     setBrand(null); setAllSales({});
     setCart([]); setShowCart(false); setExpI({}); setConfirmReset(false);
   };
+
+  useEffect(() => {
+    const payload = { step, venditore, negozio, tipoCliente, lookupValue, clienteFound, lookupDone, anConsumer, anBusiness, brand, cfD, cart, allSales };
+    const t = setTimeout(() => saveDraft(DRAFT_KEY_PDA, payload), 800);
+    return () => clearTimeout(t);
+  }, [step, venditore, negozio, tipoCliente, lookupValue, clienteFound, lookupDone, anConsumer, anBusiness, brand, cfD, cart, allSales]);
 
   const finalSubmit = () => {
     const cur = colItems();

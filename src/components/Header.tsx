@@ -1,9 +1,11 @@
-﻿"use client";
+"use client";
 
-import { Search, Sun, Maximize, Bell, Menu, LogOut } from "lucide-react";
+import { Search, Sun, Maximize, Bell, Menu, LogOut, ArrowLeft } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
 export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
+    const router = useRouter();
     const { user, logout } = useAuth();
 
     // Compute initials from name (e.g., "Luca Perotta" -> "LP")
@@ -19,8 +21,16 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
         <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b border-white/5 bg-[#0f111a]/80 backdrop-blur-xl px-4 md:px-6">
             <div className="flex flex-1 gap-2 md:gap-4 items-center">
                 <button
+                    onClick={() => router.back()}
+                    className="flex items-center gap-2 p-2 -ml-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+                    title="Torna indietro"
+                >
+                    <ArrowLeft className="w-5 h-5" />
+                    <span className="hidden sm:inline text-sm font-medium">Indietro</span>
+                </button>
+                <button
                     onClick={onMenuClick}
-                    className="lg:hidden p-2 -ml-2 text-slate-400 hover:text-white transition-colors"
+                    className="lg:hidden p-2 text-slate-400 hover:text-white transition-colors"
                 >
                     <Menu className="w-6 h-6" />
                 </button>
