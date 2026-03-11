@@ -3,6 +3,12 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Search, ShoppingBag, User, Check, ChevronLeft, ChevronRight, Plus, Trash2, Archive, HelpCircle, Info, LayoutGrid, Clock, Calendar, ExternalLink, MoreVertical, ChevronUp, ChevronDown } from "lucide-react";
 import { calculateCF, _CNA, _PNA } from "@/lib/cf";
+import SMARTPHONES_DATA from "@/data/smartphones.json";
+
+// Flat sorted list: all phone models, grouped by brand for display
+const SMARTPHONES_FLAT = Object.entries(SMARTPHONES_DATA).flatMap(
+  ([brand, models]) => models.map(m => `${m}`)  // keep model names as-is
+);
 
 // ── COSTANTI ──────────────────────────────────────────────────────────────────
 
@@ -74,7 +80,7 @@ const CAT_FIELDS = {
     { key: "operatoreDon", label: "Operatore di provenienza", type: "select", opts: [], fallbackOpts: "DONOR_MOBILE", required: true },
     { key: "numeroMnp", label: "Numero Telefono MNP", type: "text", ph: "es. 3331234567" },
     { key: "serialeDon", label: "Seriale SIM Donating", type: "text", ph: "893910..." },
-    { key: "device", label: "Device", type: "text", ph: "es. Samsung S25" },
+    { key: "device", label: "Device", type: "select", opts: ["", ...SMARTPHONES_FLAT], ph: "es. Samsung S25" },
     { key: "serviziDig", label: "Servizi Digitali", type: "text", ph: "es. Disney+" },
   ],
   "Fisso": [
@@ -1097,8 +1103,14 @@ export default function InviaPda() {
                     </div>
                     <div>
                       <Label text="Modello Terminale" />
-                      <input type="text" value={cbTnpModello} onChange={e => setField(catKey, si, "cbBizTnpModello", e.target.value)}
-                        placeholder="es. iPhone 16" className="glass-input mt-2" />
+                      <div className="mt-2">
+                        <SearchableSelect
+                          options={SMARTPHONES_FLAT}
+                          value={cbTnpModello}
+                          onChange={v => setField(catKey, si, "cbBizTnpModello", v)}
+                          placeholder="— Seleziona modello —"
+                        />
+                      </div>
                     </div>
                     <div>
                       <Label text="IMEI" />
