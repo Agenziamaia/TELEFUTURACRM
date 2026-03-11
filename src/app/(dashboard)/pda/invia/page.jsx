@@ -425,7 +425,10 @@ export default function InviaPda() {
     if (categoria === "Luce & Gas") {
       const isLuce = brand === "fastweb" || sale.product === "Luce" || sale.product?.toUpperCase().includes("LUCE");
       const subKeys = isLuce ? ["tipologiaC", "indirizzoF", "fornitPrec", "pod", "potenzaImp", "tensione", "destinazL", "consumoL", "residente"] : ["tipologiaC", "indirizzoF", "fornitPrec", "pdr", "tipologiaUso", "destinazG", "consumoG"];
-      const fields = CAT_FIELDS["Luce & Gas"].filter(f => subKeys.includes(f.key));
+      let fields = CAT_FIELDS["Luce & Gas"].filter(f => subKeys.includes(f.key));
+      if (isLuce && tipoCliente === "business") {
+        fields = fields.filter(f => f.key !== "residente");
+      }
       const ibanAna = tipoCliente === "business" ? anBusiness.iban : anConsumer.iban;
       const ibanLG = sale.fields?.ibanLG || "";
 
@@ -513,7 +516,9 @@ export default function InviaPda() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {fields.map(f => {
               const baseOpts = f.fallbackOpts === "DONOR_MOBILE" ? DONOR_MOBILE : f.fallbackOpts === "DONOR_FISSO" ? DONOR_FISSO : f.fallbackOpts === "DONOR_LUCE_GAS" ? DONOR_LUCE_GAS : f.opts || [];
-              const opts = f.key === "tensione" && tipoCliente !== "business" ? baseOpts.filter(o => o !== "MT") : baseOpts;
+              let opts = baseOpts;
+              if (f.key === "tensione" && tipoCliente !== "business") opts = baseOpts.filter(o => o !== "MT");
+              else if (f.key === "destinazL" && tipoCliente === "business") opts = ["", "Altri usi"];
               return (
               <div key={f.key} className={f.span2 ? 'md:col-span-2' : ''}>
                 <Label text={f.label} required={f.required} />
