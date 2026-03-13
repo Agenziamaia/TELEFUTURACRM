@@ -1,8 +1,71 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, memo } from "react";
 import { getDraft, saveDraft, clearDraft } from "@/lib/draft";
+
+// ── MARGINALITÀ DATA ──
+const MARG_PRODUCTS = [
+  {
+    cat: "📦 Prodotti", items: [
+      { id: "plx", name: "PLX", price: null, fixedMargin: 8, hasQty: true, icon: "📦", type: "fixed" },
+      { id: "family_ontop", name: "Family+ On Top", price: null, fixedMargin: 10, icon: "👨‍👩‍👧", type: "fixed" },
+      { id: "cncp", name: "CN/CP", price: null, fixedMargin: 2, hasQty: true, icon: "💳", type: "fixed" },
+      { id: "new_cover", name: "New Cover", price: null, fixedMargin: 8, hasQty: true, icon: "🔲", type: "fixed" },
+      { id: "mem_pen", name: "Mem / Pen", price: null, fixedMargin: 11, icon: "💾", type: "fixed" },
+      { id: "salva_scontrino", name: "Salva Scontrino", price: null, fixedMargin: 3, icon: "🧾", type: "fixed" },
+      { id: "orologio", name: "Orologio Cash", price: null, fixedMargin: 25, icon: "⌚", type: "fixed" },
+      { id: "miband", name: "Mi Band 6", price: null, fixedMargin: 15, icon: "⌚", type: "fixed" },
+      { id: "powerbank", name: "PowerBank", price: null, fixedMargin: 8, icon: "🔋", type: "fixed" },
+    ]
+  },
+  {
+    cat: "🔧 Servizi", items: [
+      { id: "assistenza", name: "Assistenza Tecnico", price: null, pctMargin: 81.97, icon: "🔧", type: "pct" },
+      { id: "backup", name: "Backup", price: null, pctMargin: 81.97, icon: "💿", type: "pct" },
+      { id: "riparazione", name: "Riparazione", price: null, pctMargin: 24.59, needsModel: true, icon: "🔨", type: "pct" },
+      { id: "vendita_usato", name: "Vendita Usato", price: null, pctMargin: 13.00, needsModel: true, needsImei: true, icon: "♻️", type: "pct" },
+      { id: "chiusura", name: "Chiusura Sim/Fisso", price: null, pctMargin: 81.97, icon: "✂️", type: "pct" },
+      { id: "etelefono", name: "E.Telefono", price: null, pctMargin: 81.97, icon: "📞", type: "pct" },
+      { id: "accessori", name: "Accessori", price: null, pctMargin: 24.59, hasQty: true, icon: "🎧", type: "pct" },
+      { id: "extra_acc", name: "Extra Acc. Compass", price: null, pctMargin: 65.00, icon: "🧭", type: "pct" },
+      { id: "tel_senior", name: "Telefoni Senior", price: null, pctMargin: 12.30, needsModel: true, icon: "📱", type: "pct" },
+      { id: "earbuds", name: "Ear Buds", price: null, pctMargin: 40.98, icon: "🎵", type: "pct" },
+    ]
+  },
+  {
+    cat: "🛡️ Kasko", items: [
+      { id: "extra_kasko", name: "Extra Margine Kasko", price: null, pctMargin: 40.00, icon: "🛡️", type: "pct" },
+      { id: "plkasko", name: "PLKasko", price: null, pctMargin: 60.00, icon: "🏷️", type: "pct" },
+      { id: "kasko_sv", name: "Kasko SV", price: null, pctMargin: 60.00, icon: "🔖", type: "pct" },
+    ]
+  },
+  {
+    cat: "📶 SIM", items: [
+      { id: "sim1", name: "Sim 1€", price: 1, fixedMargin: -4, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim5", name: "Sim 5€", price: 5, fixedMargin: -7, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim_w3", name: "Sim Wind3", price: null, fixedMargin: -5, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim_fw", name: "Sim Fastweb", price: 0, fixedMargin: -23, linked: true, icon: "📶", type: "fixed" },
+      { id: "sost_fw", name: "Sost Fastweb", price: 0, fixedMargin: 0, linked: true, icon: "🔄", type: "fixed" },
+      { id: "sim_iliad", name: "Sim Iliad", price: 0, fixedMargin: -10, linked: true, icon: "📶", type: "fixed" },
+      { id: "sost_vod", name: "Sost Vodafone", price: 0, fixedMargin: -10, linked: true, icon: "🔄", type: "fixed" },
+      { id: "sost_w3", name: "Sost Wind3", price: 0, fixedMargin: -15, linked: true, icon: "🔄", type: "fixed" },
+      { id: "sim_very", name: "Sim Very", price: 0, fixedMargin: -7, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim_l", name: "Sim L", price: 0, fixedMargin: -15, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim_next", name: "Sim Next", price: 0, fixedMargin: -7, linked: true, icon: "📶", type: "fixed" },
+      { id: "subentro", name: "Subentro/Reale Util.", price: 0, fixedMargin: -10, linked: true, icon: "🔄", type: "fixed" },
+    ]
+  },
+];
+
+const calcMargLabel = (selProd: any, price: any, qty: any) => {
+  if (!selProd) return "";
+  const pVal = selProd.price !== null ? selProd.price : parseFloat(price) || 0;
+  const mVal = selProd.type === "fixed" ? (selProd.fixedMargin || 0) : selProd.type === "pct" ? (pVal * (selProd.pctMargin || 0) / 100) : 0;
+  const q = parseInt(qty) || 1;
+  const label = selProd.type === "pct" ? `${selProd.pctMargin}% di €${pVal.toFixed(2)} = €${mVal.toFixed(2)}` : `€${mVal.toFixed(2)}`;
+  return `${label}${q > 1 ? ` × ${q} = €${(mVal * q).toFixed(2)}` : ""}`;
+};
 
 const BRANDS = [
   {
@@ -856,6 +919,113 @@ const NoteStep = () => {
   return content;
 };
 
+// ── MARGINALITÀ POS OVERLAY ──
+const MargPOS = memo(({ show, onClose, venditore, negozio, onAdd }: any) => {
+  const [selCat, setSelCat] = useState(0);
+  const [selProd, setSelProd] = useState<any>(null);
+  const [price, setPrice] = useState("");
+  const [qty, setQty] = useState("1");
+  const [model, setModel] = useState("");
+  const [imei, setImei] = useState("");
+  if (!show) return null;
+  const handleAdd = () => {
+    if (!selProd) return;
+    const p = selProd;
+    const pVal = p.price !== null ? p.price : parseFloat(price) || 0;
+    const mVal = p.type === "fixed" ? (p.fixedMargin || 0) : p.type === "pct" ? (pVal * (p.pctMargin || 0) / 100) : 0;
+    onAdd({ product: p.name, productId: p.id, price: pVal, qty: parseInt(qty) || 1, margin: mVal, totalMargin: mVal * (parseInt(qty) || 1), model: model || null, imei: imei || null, venditore, negozio, date: new Date().toISOString().split("T")[0], linked: p.linked || false });
+    setSelProd(null); setPrice(""); setQty("1"); setModel(""); setImei("");
+  };
+  return (<div className="fixed inset-0 bg-slate-950/80 z-[2000] flex items-end justify-center backdrop-blur-sm p-4 sm:p-0">
+    <div className="bg-slate-900 rounded-t-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border-x border-t border-white/10 animate-in slide-in-from-bottom duration-300">
+      <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
+        <div>
+          <div className="text-lg font-bold text-white flex items-center gap-2">📦 Registra Prodotto</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{venditore || "—"} • {negozio || "—"} • {new Date().toLocaleDateString("it-IT")}</div>
+        </div>
+        <button onClick={onClose} className="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 text-slate-400 transition-all text-xl">✕</button>
+      </div>
+      <div className="flex gap-2 px-4 py-3 overflow-x-auto border-b border-white/10 no-scrollbar bg-black/20">
+        {MARG_PRODUCTS.map((cat, ci) => (<button key={ci} onClick={() => { setSelCat(ci); setSelProd(null) }} className={`px-5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${selCat === ci ? "bg-violet-500 text-white shadow-lg shadow-violet-500/25" : "bg-white/5 text-slate-400 hover:bg-white/10"}`}>{cat.cat}</button>))}
+      </div>
+      <div className="flex-1 overflow-y-auto p-6">
+        {!selProd ? (<div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          {MARG_PRODUCTS[selCat].items.map((p: any) => (<button key={p.id} onClick={() => { setSelProd(p); if (p.price !== null) setPrice(String(p.price)) }} className="p-4 rounded-2xl border border-white/5 bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/10 transition-all text-center flex flex-col items-center gap-3">
+            <span className="text-3xl">{p.icon}</span>
+            <span className="text-xs font-bold text-slate-200 leading-tight h-8 flex items-center">{p.name}</span>
+            {p.type === "fixed" && p.fixedMargin !== null && <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${p.fixedMargin >= 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}>€{p.fixedMargin}</span>}
+            {p.type === "pct" && p.pctMargin !== null && <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400">{p.pctMargin}%</span>}
+          </button>))}
+        </div>) : (<div>
+          <div className="flex items-center gap-4 mb-8">
+            <button onClick={() => setSelProd(null)} className="text-violet-400 hover:text-violet-300 font-bold text-sm h-10 px-4 rounded-xl bg-violet-500/10 transition-all flex items-center gap-2">← Indietro</button>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">{selProd.icon}</span>
+              <span className="text-xl font-black text-white">{selProd.name}</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
+            <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Prezzo € {selProd.price !== null && <span className="text-violet-400 normal-case tracking-normal">(fisso: €{selProd.price})</span>}</div>
+              <input value={price} onChange={e => setPrice(e.target.value)} type="number" step="0.01" disabled={selProd.price !== null && selProd.type === "fixed" && selProd.fixedMargin !== null} className="w-full glass-input py-4 px-5 rounded-2xl text-lg font-bold" />
+            </div>
+            {selProd.hasQty && <div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Quantità</div>
+              <input value={qty} onChange={e => setQty(e.target.value)} type="number" min="1" className="w-full glass-input py-4 px-5 rounded-2xl text-lg font-bold" />
+            </div>}
+          </div>
+          {selProd.needsModel && <div className="mb-6">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Modello</div>
+            <input value={model} onChange={e => setModel(e.target.value)} placeholder="es. iPhone 15..." className="w-full glass-input py-3 px-5 rounded-2xl" />
+          </div>}
+          {selProd.needsImei && <div className="mb-6">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">IMEI</div>
+            <input value={imei} onChange={e => setImei(e.target.value)} placeholder="15 cifre" className="w-full glass-input py-3 px-5 rounded-2xl font-mono tracking-widest" />
+          </div>}
+          <div className="p-5 bg-blue-500/10 rounded-2xl border border-blue-500/20 mb-8 flex justify-between items-center">
+            <span className="text-xs font-bold text-slate-400">MARGINE PREVISTO:</span>
+            <span className={`text-sm font-black ${selProd.type === "fixed" ? (selProd.fixedMargin >= 0 ? "text-emerald-400" : "text-rose-400") : "text-blue-400"}`}>{calcMargLabel(selProd, price, qty)}</span>
+          </div>
+          <button onClick={handleAdd} className="w-full py-5 rounded-2xl border-0 bg-gradient-to-br from-violet-500 to-violet-600 text-white text-lg font-black shadow-xl shadow-violet-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-3">
+            <span className="text-2xl">✅</span> REGISTRA {selProd.name.toUpperCase()}
+          </button>
+        </div>)}
+      </div>
+    </div>
+  </div>);
+});
+
+const MargList = memo(({ items, onRemove, show, onClose }: any) => {
+  if (!show) return null;
+  const total = items.reduce((s: any, i: any) => s + i.totalMargin, 0);
+  return (<div className="fixed inset-0 bg-slate-950/80 z-[2000] flex items-center justify-center backdrop-blur-sm p-4">
+    <div className="bg-slate-900 rounded-3xl w-full max-w-lg overflow-hidden flex flex-col shadow-2xl border border-white/10 animate-in zoom-in-95 duration-200">
+      <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
+        <span className="text-lg font-bold text-white flex items-center gap-2">📦 Prodotti in Marginalità ({items.length})</span>
+        <button onClick={onClose} className="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 text-slate-400 transition-all text-xl">✕</button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6 max-h-[60vh] space-y-3">
+        {items.length === 0 ? <div className="text-center py-12 text-slate-500 font-medium italic">Nessun prodotto registrato</div> : items.map((it: any, i: number) => (
+          <div key={i} className="flex justify-between items-center p-4 rounded-2xl border border-white/5 bg-white/[0.02]">
+            <div>
+              <div className="text-sm font-bold text-slate-200">{it.product} {it.qty > 1 && <span className="text-violet-400 px-1.5 py-0.5 rounded-md bg-violet-500/10 ml-1">×{it.qty}</span>}</div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{it.model || ""}</div>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className={`text-sm font-black ${it.totalMargin >= 0 ? "text-emerald-400" : "text-rose-400"}`}>€{it.totalMargin.toFixed(2)}</span>
+              <button onClick={() => onRemove(i)} className="w-8 h-8 rounded-lg flex items-center justify-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 transition-all">✕</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {items.length > 0 && <div className="mx-6 mb-6 p-5 bg-gradient-to-br from-violet-500/20 to-violet-600/10 rounded-2xl border border-violet-500/20 flex justify-between items-center">
+        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Totale margine</span>
+        <span className={`text-2xl font-black ${total >= 0 ? "text-emerald-400" : "text-rose-400"}`}>€{total.toFixed(2)}</span>
+      </div>}
+    </div>
+  </div>);
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
@@ -891,6 +1061,11 @@ export default function CRM() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [showStep4, setShowStep4] = useState(!!draft?.showStep4);
 
+  // Marginalità State
+  const [showMargPOS, setShowMargPOS] = useState(false);
+  const [showMargList, setShowMargList] = useState(false);
+  const [margItems, setMargItems] = useState<any[]>((draft?.margItems as any[]) ?? []);
+
   const bObj = brand ? BRANDS.find(b => b.id === brand) : null;
   const cats = brand === "windtre" ? getW3(tipoCliente) : [];
   const sT = (m: string | null) => { setToast(m); setTimeout(() => setToast(null), 3500) };
@@ -904,6 +1079,9 @@ export default function CRM() {
   const addSl = (catId: string) => setSales(p => ({ ...p, [catId]: [...(p[catId] || [{}]), {}] }));
   const rmSl = (catId: string, idx: number) => setSales(p => { const c = [...(p[catId] || [{}])]; c.splice(idx, 1); return { ...p, [catId]: c.length ? c : [{}] } });
   const togSky = (si: number, pr: string) => { setSkyS(p => { const n = [...p]; const c = [...(n[si].selected || [])]; const i = c.indexOf(pr); if (i >= 0) c.splice(i, 1); else c.push(pr); n[si] = { ...n[si], selected: c }; return n }) };
+
+  const addMargItem = (item: any) => { setMargItems(p => [...p, item]); setShowMargPOS(false); sT("✅ Prodotto aggiunto: " + item.product) };
+  const rmMargItem = (idx: number) => setMargItems(p => p.filter((_, i) => i !== idx));
 
   const colItems = useCallback(() => {
     const items: any[] = [];
@@ -922,16 +1100,16 @@ export default function CRM() {
   const rmCG = (idx: number) => setCart(p => p.filter((_, i) => i !== idx));
   const fullReset = () => {
     clearDraft(DRAFT_KEY_REGISTRA);
-    setBrand(null); setTipoCliente(null); setLookupValue(""); setClienteFound(false); setShowAna(false); setSales({}); setSesCode(""); setSkyS([{ selected: [] }]); setCart([]); setShowCart(false); setExpI({}); setConfirmReset(false); setShowStep4(false); setAna({ ...defaultAna });
+    setBrand(null); setTipoCliente(null); setLookupValue(""); setClienteFound(false); setShowAna(false); setSales({}); setSesCode(""); setSkyS([{ selected: [] }]); setCart([]); setMargItems([]); setShowCart(false); setExpI({}); setConfirmReset(false); setShowStep4(false); setAna({ ...defaultAna });
   };
 
   useEffect(() => {
-    const payload = { brand, tipoCliente, lookupValue, clienteFound, showAna, ana, sales, sesCode, skyS, cart, cfD, selVend, selNeg, showStep4 };
+    const payload = { brand, tipoCliente, lookupValue, clienteFound, showAna, ana, sales, sesCode, skyS, cart, cfD, selVend, selNeg, showStep4, margItems };
     const t = setTimeout(() => saveDraft(DRAFT_KEY_REGISTRA, payload), 800);
     return () => clearTimeout(t);
-  }, [brand, tipoCliente, lookupValue, clienteFound, showAna, ana, sales, sesCode, skyS, cart, cfD, selVend, selNeg, showStep4]);
+  }, [brand, tipoCliente, lookupValue, clienteFound, showAna, ana, sales, sesCode, skyS, cart, cfD, selVend, selNeg, showStep4, margItems]);
 
-  const finalSubmit = () => { const cur = colItems(); const fc: any[] = [...cart]; if (cur.length > 0 && bObj) fc.push({ brandId: brand, brandLabel: bObj.label, brandIcon: bObj.icon, brandColor: bObj.color, items: cur, sv: { sales: JSON.parse(JSON.stringify(sales)), sesCode, skyS: JSON.parse(JSON.stringify(skyS)) } }); sT("🎉 Inviato! " + fc.length + " brand, " + fc.reduce((s, g) => s + (g.items?.length || 0), 0) + " prodotti"); setTimeout(fullReset, 2000) };
+  const finalSubmit = () => { const cur = colItems(); const fc: any[] = [...cart]; if (cur.length > 0 && bObj) fc.push({ brandId: brand, brandLabel: bObj.label, brandIcon: bObj.icon, brandColor: bObj.color, items: cur, sv: { sales: JSON.parse(JSON.stringify(sales)), sesCode, skyS: JSON.parse(JSON.stringify(skyS)) } }); sT("🎉 Inviato! " + fc.length + " brand, " + fc.reduce((s, g) => s + (g.items?.length || 0), 0) + " prodotti" + (margItems.length ? " + " + margItems.length + " extra" : "")); setTimeout(fullReset, 2000) };
   const doLookup = () => { setClienteFound(true); setShowAna(true); setShowStep4(false); setAna({ nome: "Mario", cognome: "Rossi", cellulare: "333 1234567", email: "mario.rossi@email.com", via: "Via Roma 15", cap: "00100", citta: "Roma", ragioneSociale: "Rossi S.r.l.", nomeRef: "Mario", cognomeRef: "Rossi", recapito: "333 1234567" }) };
   const doCF = () => { const { nome, cognome, sesso, giorno, mese, anno, comune, estero, paese } = cfD; if (!nome || !cognome || !giorno || !mese || !anno) return; if (estero && !paese) return; if (!estero && !comune) return; const luogo = (estero ? paese : comune).toUpperCase(); const cc = estero ? (CO_EE[luogo] || "Z999") : (CO[luogo] || "Z999"); const cn = xC(cognome), vn = xV(cognome), sur = [...cn, ...vn, "X", "X", "X"].slice(0, 3).join(""); const cna = xC(nome); const nam = cna.length >= 4 ? [cna[0], cna[2], cna[3]].join("") : [...cna, ...xV(nome), "X", "X", "X"].slice(0, 3).join(""); const an = anno.slice(-2), me = MCF[mese] || "A"; let gi = parseInt(giorno); if (sesso === "F") gi += 40; const bd = an + me + (gi < 10 ? "0" + gi : String(gi)); const partial = sur + nam + bd + cc; let sm = 0; for (let i = 0; i < 15; i++) { const ch = partial[i]; sm += (i % 2 === 0) ? (DI[ch] || 0) : (PA[ch] || 0) } setLookupValue(partial + _R[sm % 26]); setShowCF(false); setShowAna(true); uA("nome", nome.charAt(0).toUpperCase() + nome.slice(1).toLowerCase()); uA("cognome", cognome.charAt(0).toUpperCase() + cognome.slice(1).toLowerCase()) };
 
@@ -1033,6 +1211,7 @@ export default function CRM() {
           </div>
         </div>
         <div className="flex gap-2 items-center">
+          <button onClick={() => setShowMargList(true)} className="px-4 py-2 bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 rounded-xl text-sm font-bold border border-violet-500/30 transition-all flex items-center gap-2">📦{margItems.length > 0 && <span className="bg-violet-400 text-slate-900 rounded-full px-1.5 py-0.5 text-[10px] font-black">{margItems.length}</span>}</button>
           <button onClick={() => setShowCart(true)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2">🛒{tCI > 0 && <span className="bg-amber-400 text-slate-900 rounded-full px-1.5 py-0.5 text-xs font-bold">{tCI}</span>}</button>
           {brand && <button onClick={addCart} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium transition-all">📦 Cambia</button>}
           <button onClick={fullReset} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 transition-all" title="Ricomincia">⟲</button>
@@ -1279,6 +1458,52 @@ export default function CRM() {
       )}
 
       {showAna && showStep4 && (
+        <div className="glass-card p-6 mb-6 border-l-4 border-violet-500 bg-violet-500/[0.02]">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <div className="text-[11px] font-bold text-violet-400 uppercase tracking-wider mb-1">📦 Prodotti & Marginalità</div>
+              <div className="text-xs text-slate-500 font-medium italic">Registra prodotti extra, accessori o servizi venduti</div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowMargPOS(true)} className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-black shadow-lg shadow-violet-600/30 transition-all flex items-center gap-2">
+                <span>➕</span> AGGIUNGI PRODOTTO
+              </button>
+              {margItems.length > 0 && (
+                <button onClick={() => setShowMargList(true)} className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold border border-white/10 transition-all">
+                  Lista ({margItems.length})
+                </button>
+              )}
+            </div>
+          </div>
+
+          {margItems.length === 0 ? (
+            <div className="py-8 border-2 border-dashed border-white/5 rounded-2xl text-center bg-black/20">
+              <div className="text-2xl mb-2 opacity-50">🛒</div>
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Nessun prodotto extra registrato</div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {margItems.map((it: any, i: number) => (
+                <div key={i} className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-between group">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{(MARG_PRODUCTS as any).flatMap((c: any) => c.items).find((p: any) => p.id === it.productId)?.icon || "📦"}</span>
+                    <div>
+                      <div className="text-sm font-bold text-slate-200">{it.product} {it.qty > 1 && <span className="text-violet-400 font-black ml-1">×{it.qty}</span>}</div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{it.model || "Prodotto Extra"}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-[11px] font-black ${it.totalMargin >= 0 ? "text-emerald-400" : "text-rose-400"}`}>€{it.totalMargin.toFixed(2)}</span>
+                    <button onClick={() => rmMargItem(i)} className="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 lg:opacity-0 group-hover:opacity-100 transition-all">✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showAna && showStep4 && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 32, marginTop: 16, gap: 16 }}>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <button onClick={() => setShowStep4(false)} style={{ padding: "12px 24px", borderRadius: 12, border: "1px solid rgba(255, 255, 255, 0.1)", background: "rgba(255, 255, 255, 0.05)", color: "#94a3b8", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>← Indietro</button>
@@ -1298,7 +1523,12 @@ export default function CRM() {
           </button>
         </div>
       )}
+
+      {/* MODALS */}
+      <MargPOS show={showMargPOS} onClose={() => setShowMargPOS(false)} onAdd={addMargItem} venditore={selVend} negozio={selNeg} />
+      <MargList show={showMargList} onClose={() => setShowMargList(false)} items={margItems} onRemove={rmMargItem} />
     </div>
   );
+
   return formContent;
 }
