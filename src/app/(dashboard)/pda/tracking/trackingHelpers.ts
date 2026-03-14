@@ -14,11 +14,37 @@ import {
   type TrackingRow,
 } from "./trackingConstants";
 
-// Working days (Mon–Sat) from dataStr (DD/MM/YYYY) to today
+// Working days (Mon–Sat) from date to today. Accepts DD/MM/YYYY or ISO YYYY-MM-DD.
+function parseRuleDate(dataStr: string): Date | null {
+  if (!dataStr || !dataStr.trim()) return null;
+  const s = dataStr.trim();
+  const slashParts = s.split("/");
+  const dashParts = s.split("-");
+  let day: number, month: number, year: number;
+  if (slashParts.length === 3) {
+    day = parseInt(slashParts[0], 10);
+    month = parseInt(slashParts[1], 10) - 1;
+    year = parseInt(slashParts[2], 10);
+  } else if (dashParts.length === 3 && dashParts[0].length === 4) {
+    year = parseInt(dashParts[0], 10);
+    month = parseInt(dashParts[1], 10) - 1;
+    day = parseInt(dashParts[2], 10);
+  } else if (s.includes("T")) {
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return null;
+    return d;
+  } else {
+    return null;
+  }
+  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+  const from = new Date(year, month, day);
+  if (isNaN(from.getTime())) return null;
+  return from;
+}
+
 export function giorniLavorativiDa(dataStrIta: string): number {
-  const parti = dataStrIta.split("/");
-  if (parti.length !== 3) return 0;
-  const from = new Date(parseInt(parti[2], 10), parseInt(parti[1], 10) - 1, parseInt(parti[0], 10));
+  const from = parseRuleDate(dataStrIta);
+  if (!from) return 0;
   const to = new Date();
   to.setHours(0, 0, 0, 0);
   from.setHours(0, 0, 0, 0);
@@ -32,6 +58,7 @@ export function giorniLavorativiDa(dataStrIta: string): number {
   return count;
 }
 
+/** ggAgg = working days since last storia event (DevSpec §5). Empty storia → 999. */
 export function giorniDaUltimoAggiornamento(storia: StoriaEvent[]): number {
   if (!storia || storia.length === 0) return 999;
   const ultimo = storia[storia.length - 1];
@@ -108,8 +135,11 @@ export function isAttenzioneRow(row: TrackingRow): boolean {
     if (row.statoNegozio === "nuovo" && gg >= 4) return true;
     if (ggAgg >= 10) return true;
   } else {
+    // Unknown / missing categoria: use MNP-like thresholds so KPIs show a distribution
     const statiCritici = ["contattare_cliente", "contattare_supporto", "doc_mancante", "ricaduta", "ko_reinserito"];
     if (statiCritici.includes(row.statoNegozio)) return true;
+    if (ggAgg >= 5) return true;
+    if (gg >= 5 && row.statoNegozio !== "attivato" && row.statoNegozio !== "re_inserita") return true;
   }
   return false;
 }
@@ -138,6 +168,9 @@ export function isDaLavorareRow(row: TrackingRow): boolean {
     if (row.statoNegozio === "wm_sospetta") return true;
     if (row.statoNegozio === "attesa_matricola" && ggAgg >= 5) return true;
     if (row.statoNegozio === "aperto_sparks" && ggAgg >= 3) return true;
+  } else {
+    // Unknown / missing categoria: MNP-like — ggAgg >= 2 → Da Lavorare
+    if (ggAgg >= 2) return true;
   }
   return false;
 }
@@ -162,7 +195,8 @@ export function isMalusRow(row: TrackingRow): boolean {
     const skyWarn = (row.statoNegozio === "nuovo" && gg >= 4) || ggAgg >= 10;
     return skyWarn && ggAgg >= 2;
   }
-  return false;
+  // Unknown / missing categoria: MNP-like — ggAgg >= 6 → Malus
+  return ggAgg >= 6;
 }
 
 export function calcolaMalus(row: TrackingRow): number {
@@ -178,7 +212,8 @@ export function calcolaMalus(row: TrackingRow): number {
     return totale;
   }
 
-  const soglia = MALUS_SOGLIE[row.categoria] ?? 0;
-  const importo = MALUS_IMPORTO[row.categoria] ?? 0;
+  // Unknown categoria: use MNP-like soglia/importo so Malus amount is shown
+  const soglia = MALUS_SOGLIE[row.categoria] ?? 6;
+  const importo = MALUS_IMPORTO[row.categoria] ?? 5;
   return Math.max(0, ggAgg - soglia + 1) * importo;
 }

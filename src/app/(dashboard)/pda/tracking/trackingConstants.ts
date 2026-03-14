@@ -32,6 +32,7 @@ export const STATI_NEGOZIO_FISSO = [
   { id: "in_corso", label: "In Corso", color: "#3b82f6", bg: "#172554" },
   { id: "attivato", label: "Completato", color: "#22c55e", bg: "#052e16" },
   { id: "ko", label: "KO Ripensamento", color: "#ef4444", bg: "#450a0a" },
+  { id: "ko_ripensamento", label: "KO Ripensamento", color: "#ef4444", bg: "#450a0a" },
   { id: "ko_tecnico", label: "KO Tecnico Definitivo", color: "#dc2626", bg: "#3f0a0a" },
   { id: "ko_reinserito", label: "KO Reinserito", color: "#f97316", bg: "#431407" },
   { id: "ricaduta", label: "Ricaduta", color: "#a78bfa", bg: "#2e1065" },

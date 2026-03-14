@@ -61,10 +61,14 @@ function mapContractToTrackingRow(
   const statoNegozio = (c.stato_negozio as string) || "nuovo";
   const statoAdmin = (c.stato_admin as string) || "da_verificare";
 
+  // Normalize categoria to lowercase so rules match (DB may store "MNP", "Fisso", "P.IVA", etc.)
+  const rawCat = ((c.categoria as string) ?? "").trim().toLowerCase();
+  const categoria = rawCat === "p.iva" ? "piva" : rawCat || "—";
+
   const d = dettagli || (c.dettagli as Record<string, unknown> | null) || {};
   return {
     id: (c.id as string) ?? "",
-    categoria: (c.categoria as string) ?? "—",
+    categoria,
     brand: (c.brand as string) ?? "—",
     negozio: (c.negozio as string) ?? "—",
     venditore: (c.venditore as string) ?? "—",
@@ -982,20 +986,55 @@ export default function TrackingPdaPage() {
   const [kpiFilter, setKpiFilter] = useState<string | null>(null);
   const [escludiConfermati, setEscludiConfermati] = useState(false);
   const [escludiCompletati, setEscludiCompletati] = useState(false);
+  const [showRegole, setShowRegole] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const { data, error } = await supabase
+      // Left join clients so contracts without a matching client still appear (avoids 0 rows).
+      const selectCols =
+        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
+      const { data: baseData, error: baseErr } = await supabase
         .from("contracts")
-        .select("id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, stato_negozio, stato_admin, storia, dettagli, clients!inner(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)")
+        .select(selectCols)
         .order("created_at", { ascending: false })
         .limit(500);
 
-      if (error) throw error;
-      setRawList((data as unknown as RawRow[]) ?? []);
+      if (baseErr) throw baseErr;
+
+      // Optional: fetch tracking columns (requires migration 022). If it fails, we still show contracts with defaults.
+      let trackingMap = new Map<string, { stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[] }>();
+      const { data: trackingData, error: trackingErr } = await supabase
+        .from("contracts")
+        .select("id, stato_negozio, stato_admin, storia")
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (!trackingErr && trackingData?.length) {
+        trackingMap = new Map(
+          (trackingData as { id: string; stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[] }[]).map((r) => [
+            r.id,
+            { stato_negozio: r.stato_negozio, stato_admin: r.stato_admin, storia: r.storia },
+          ])
+        );
+      }
+
+      const list = ((baseData ?? []) as unknown as RawRow[]).map((row) => {
+        const id = row.id as string;
+        const t = trackingMap.get(id);
+        return {
+          ...row,
+          stato_negozio: t?.stato_negozio ?? "nuovo",
+          stato_admin: t?.stato_admin ?? "da_verificare",
+          storia: Array.isArray(t?.storia) ? t.storia : [],
+        };
+      });
+      // Optional: use client's 41 sample data from Supabase (run migration 024_tracking_pda_sample_data.sql)
+      setRawList(list as RawRow[]);
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : String(err));
+      setRawList([]);
     } finally {
       setLoading(false);
     }
@@ -1131,10 +1170,88 @@ export default function TrackingPdaPage() {
   return (
     <div className="w-full">
       <div className="p-0">
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold text-white mb-1">Tracking PDA</h2>
-          <p className="text-slate-400 text-sm">Monitoraggio pratiche: esito negozio, esito admin, storico e malus</p>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-white mb-1">Tracking PDA</h2>
+            <p className="text-slate-400 text-sm">Monitoraggio pratiche: esito negozio, esito admin, storico e malus</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowRegole(true)}
+            className="px-4 py-2 rounded-lg border border-indigo-500 text-indigo-200 text-[13px] font-bold hover:bg-indigo-500/10 transition-colors"
+          >
+            📋 Regole
+          </button>
         </div>
+
+        {showRegole && (
+          <div
+            className="fixed inset-0 bg-black/60 z-[1100] flex items-center justify-center p-4"
+            onClick={() => setShowRegole(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Regole di Ingaggio"
+          >
+            <div
+              className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-[820px] max-h-[88vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between py-5 px-7 border-b border-slate-700">
+                <div>
+                  <div className="text-lg font-extrabold text-slate-100">📋 Regole di Ingaggio — Tracking PDA</div>
+                  <div className="text-xs text-slate-500 mt-0.5">Soglie temporali per evitare Da Lavorare, Warning e Malus</div>
+                </div>
+                <button type="button" onClick={() => setShowRegole(false)} className="bg-transparent border-none text-slate-500 text-xl cursor-pointer leading-none p-0">
+                  ✕
+                </button>
+              </div>
+              <div className="mx-7 mt-4 py-2.5 px-3.5 bg-slate-900 rounded-lg text-xs text-slate-400">
+                <strong className="text-slate-100">Come funziona: </strong>
+                tutti i giorni sono <strong className="text-slate-100">lavorativi (lun–sab)</strong>.
+                I filtri sono mutualmente esclusivi: 🔴 Malus &gt; ⚠️ Warning &gt; ⚡ Da Lavorare. Le pratiche completate non appaiono in nessun filtro.
+              </div>
+              <div className="p-5">
+                {[
+                  { cat: "MNP", color: "#38bdf8", dl: ["≥ 2 gg senza aggiornamento storico"], warn: ["≥ 5 gg senza aggiornamento storico", "Non completata (≠ Completato / Re-Inserita) da ≥ 5 gg"], malus: ["≥ 6 gg senza aggiornamento storico → €5/gg"] },
+                  { cat: "Fisso", color: "#818cf8", dl: ["≥ 5 gg senza aggiornamento storico"], warn: ["≥ 10 gg senza aggiornamento storico", "Non completata (≠ Completato) da ≥ 20 gg"], malus: ["≥ 15 gg senza aggiornamento storico → €10/gg"] },
+                  { cat: "Finanziamento", color: "#f59e0b", dl: ["≥ 2 gg senza aggiornamento storico"], warn: ["≥ 4 gg senza aggiornamento storico"], malus: ["≥ 6 gg senza aggiornamento storico → €10/gg"] },
+                  { cat: "P.IVA", color: "#a78bfa", dl: ["≥ 2 gg senza aggiornamento storico", "Sempre se stato = Cliente Irreperibile"], warn: ["≥ 4 gg senza aggiornamento storico", "Non completata da ≥ 10 gg", "Cliente Irreperibile non aggiornato da > 2 gg"], malus: ["Soglia non ancora definita (non attivo)"] },
+                  { cat: "Energia", color: "#22c55e", dl: ["≥ 5 gg senza aggiornamento storico"], warn: ["≥ 10 gg senza aggiornamento storico"], malus: ["≥ 15 gg senza aggiornamento storico → €10/gg"] },
+                  { cat: "Sky", color: "#6366f1", dl: ["Stato Nuovo da ≥ 2 gg dall'inserimento", "Sempre in stato WM Sospetta", "Attesa Matricola senza aggiornamento da ≥ 5 gg", "Aperto Sparks senza aggiornamento da ≥ 3 gg"], warn: ["Stato Nuovo da ≥ 4 gg dall'inserimento", "≥ 10 gg senza aggiornamento (qualsiasi stato)"], malus: ["Soddisfa Warning + ≥ 2 gg ulteriori senza aggiornamento → €5/gg"] },
+                ].map((r) => (
+                  <div key={r.cat} className="mb-4 rounded-xl border border-slate-700 overflow-hidden">
+                    <div className="flex items-center gap-2.5 py-2.5 px-4 bg-slate-900 border-b border-slate-700">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                      <div className="text-[13px] font-extrabold" style={{ color: r.color }}>{r.cat}</div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3">
+                      {[
+                        { label: "⚡ Da Lavorare", rules: r.dl, col: "#eab308", bg: "#1c1708" },
+                        { label: "⚠️ Warning", rules: r.warn, col: "#f97316", bg: "#1c0e05" },
+                        { label: "🔴 Malus", rules: r.malus, col: "#ef4444", bg: "#1c0505" },
+                      ].map((col, ci) => (
+                        <div key={ci} className="p-3 border-b sm:border-b-0 sm:border-r border-slate-700 last:border-r-0" style={{ background: col.bg }}>
+                          <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: col.col }}>{col.label}</div>
+                          {col.rules.map((rule, ri) => (
+                            <div key={ri} className="flex gap-1.5 mb-1 items-start">
+                              <span className="flex-shrink-0 mt-0.5 text-[10px]" style={{ color: col.col }}>•</span>
+                              <span className="text-[11px] text-slate-200 leading-snug">{rule}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="py-3.5 px-7 border-t border-slate-700 flex justify-end">
+                <button type="button" onClick={() => setShowRegole(false)} className="bg-indigo-600 border-none rounded-lg text-white text-[13px] font-bold py-2 px-5 cursor-pointer">
+                  Chiudi
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {loadError && (
           <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
