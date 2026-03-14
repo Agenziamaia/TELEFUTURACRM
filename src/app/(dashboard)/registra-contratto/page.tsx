@@ -10,53 +10,53 @@ import { supabase } from "@/lib/supabaseClient";
 // -- MARGINALITÀ DATA --
 const MARG_PRODUCTS = [
   {
-    cat: "?? Prodotti", items: [
-      { id: "plx", name: "PLX", price: null, fixedMargin: 8, hasQty: true, icon: "??", type: "fixed" },
-      { id: "family_ontop", name: "Family+ On Top", price: null, fixedMargin: 10, icon: "????????", type: "fixed" },
-      { id: "cncp", name: "CN/CP", price: null, fixedMargin: 2, hasQty: true, icon: "??", type: "fixed" },
-      { id: "new_cover", name: "New Cover", price: null, fixedMargin: 8, hasQty: true, icon: "??", type: "fixed" },
-      { id: "mem_pen", name: "Mem / Pen", price: null, fixedMargin: 11, icon: "??", type: "fixed" },
-      { id: "salva_scontrino", name: "Salva Scontrino", price: null, fixedMargin: 3, icon: "??", type: "fixed" },
-      { id: "orologio", name: "Orologio Cash", price: null, fixedMargin: 25, icon: "?", type: "fixed" },
-      { id: "miband", name: "Mi Band 6", price: null, fixedMargin: 15, icon: "?", type: "fixed" },
-      { id: "powerbank", name: "PowerBank", price: null, fixedMargin: 8, icon: "??", type: "fixed" },
+    cat: "📦 Prodotti", items: [
+      { id: "plx", name: "PLX", price: null, fixedMargin: 8, hasQty: true, icon: "📦", type: "fixed" },
+      { id: "family_ontop", name: "Family+ On Top", price: null, fixedMargin: 10, icon: "👨‍👩‍👧", type: "fixed" },
+      { id: "cncp", name: "CN/CP", price: null, fixedMargin: 2, hasQty: true, icon: "💳", type: "fixed" },
+      { id: "new_cover", name: "New Cover", price: null, fixedMargin: 8, hasQty: true, icon: "🔲", type: "fixed" },
+      { id: "mem_pen", name: "Mem / Pen", price: null, fixedMargin: 11, icon: "💾", type: "fixed" },
+      { id: "salva_scontrino", name: "Salva Scontrino", price: null, fixedMargin: 3, icon: "🧾", type: "fixed" },
+      { id: "orologio", name: "Orologio Cash", price: null, fixedMargin: 25, icon: "⌚", type: "fixed" },
+      { id: "miband", name: "Mi Band 6", price: null, fixedMargin: 15, icon: "⌚", type: "fixed" },
+      { id: "powerbank", name: "PowerBank", price: null, fixedMargin: 8, icon: "🔋", type: "fixed" },
     ]
   },
   {
-    cat: "?? Servizi", items: [
-      { id: "assistenza", name: "Assistenza Tecnico", price: null, pctMargin: 81.97, icon: "??", type: "pct" },
-      { id: "backup", name: "Backup", price: null, pctMargin: 81.97, icon: "??", type: "pct" },
-      { id: "riparazione", name: "Riparazione", price: null, pctMargin: 24.59, needsModel: true, icon: "??", type: "pct" },
-      { id: "vendita_usato", name: "Vendita Usato", price: null, pctMargin: 13.00, needsModel: true, needsImei: true, icon: "??", type: "pct" },
-      { id: "chiusura", name: "Chiusura Sim/Fisso", price: null, pctMargin: 81.97, icon: "??", type: "pct" },
-      { id: "etelefono", name: "E.Telefono", price: null, pctMargin: 81.97, icon: "??", type: "pct" },
-      { id: "accessori", name: "Accessori", price: null, pctMargin: 24.59, hasQty: true, icon: "??", type: "pct" },
-      { id: "extra_acc", name: "Extra Acc. Compass", price: null, pctMargin: 65.00, icon: "??", type: "pct" },
-      { id: "tel_senior", name: "Telefoni Senior", price: null, pctMargin: 12.30, needsModel: true, icon: "??", type: "pct" },
-      { id: "earbuds", name: "Ear Buds", price: null, pctMargin: 40.98, icon: "??", type: "pct" },
+    cat: "🔧 Servizi", items: [
+      { id: "assistenza", name: "Assistenza Tecnico", price: null, pctMargin: 81.97, icon: "🔧", type: "pct" },
+      { id: "backup", name: "Backup", price: null, pctMargin: 81.97, icon: "💿", type: "pct" },
+      { id: "riparazione", name: "Riparazione", price: null, pctMargin: 24.59, needsModel: true, icon: "🔨", type: "pct" },
+      { id: "vendita_usato", name: "Vendita Usato", price: null, pctMargin: 13.00, needsModel: true, needsImei: true, icon: "♻️", type: "pct" },
+      { id: "chiusura", name: "Chiusura Sim/Fisso", price: null, pctMargin: 81.97, icon: "✂️", type: "pct" },
+      { id: "etelefono", name: "E.Telefono", price: null, pctMargin: 81.97, icon: "📞", type: "pct" },
+      { id: "accessori", name: "Accessori", price: null, pctMargin: 24.59, hasQty: true, icon: "🎧", type: "pct" },
+      { id: "extra_acc", name: "Extra Acc. Compass", price: null, pctMargin: 65.00, icon: "🧭", type: "pct" },
+      { id: "tel_senior", name: "Telefoni Senior", price: null, pctMargin: 12.30, needsModel: true, icon: "📱", type: "pct" },
+      { id: "earbuds", name: "Ear Buds", price: null, pctMargin: 40.98, icon: "🎵", type: "pct" },
     ]
   },
   {
-    cat: "??? Kasko", items: [
-      { id: "extra_kasko", name: "Extra Margine Kasko", price: null, pctMargin: 40.00, icon: "???", type: "pct" },
-      { id: "plkasko", name: "PLKasko", price: null, pctMargin: 60.00, icon: "???", type: "pct" },
-      { id: "kasko_sv", name: "Kasko SV", price: null, pctMargin: 60.00, icon: "??", type: "pct" },
+    cat: "🛡️ Kasko", items: [
+      { id: "extra_kasko", name: "Extra Margine Kasko", price: null, pctMargin: 40.00, icon: "🛡️", type: "pct" },
+      { id: "plkasko", name: "PLKasko", price: null, pctMargin: 60.00, icon: "🏷️", type: "pct" },
+      { id: "kasko_sv", name: "Kasko SV", price: null, pctMargin: 60.00, icon: "🔖", type: "pct" },
     ]
   },
   {
-    cat: "?? SIM", items: [
-      { id: "sim1", name: "Sim 1€", price: 1, fixedMargin: -4, linked: true, icon: "??", type: "fixed" },
-      { id: "sim5", name: "Sim 5€", price: 5, fixedMargin: -7, linked: true, icon: "??", type: "fixed" },
-      { id: "sim_w3", name: "Sim Wind3", price: null, fixedMargin: -5, linked: true, icon: "??", type: "fixed" },
-      { id: "sim_fw", name: "Sim Fastweb", price: 0, fixedMargin: -23, linked: true, icon: "??", type: "fixed" },
-      { id: "sost_fw", name: "Sost Fastweb", price: 0, fixedMargin: 0, linked: true, icon: "??", type: "fixed" },
-      { id: "sim_iliad", name: "Sim Iliad", price: 0, fixedMargin: -10, linked: true, icon: "??", type: "fixed" },
-      { id: "sost_vod", name: "Sost Vodafone", price: 0, fixedMargin: -10, linked: true, icon: "??", type: "fixed" },
-      { id: "sost_w3", name: "Sost Wind3", price: 0, fixedMargin: -15, linked: true, icon: "??", type: "fixed" },
-      { id: "sim_very", name: "Sim Very", price: 0, fixedMargin: -7, linked: true, icon: "??", type: "fixed" },
-      { id: "sim_l", name: "Sim L", price: 0, fixedMargin: -15, linked: true, icon: "??", type: "fixed" },
-      { id: "sim_next", name: "Sim Next", price: 0, fixedMargin: -7, linked: true, icon: "??", type: "fixed" },
-      { id: "subentro", name: "Subentro/Reale Util.", price: 0, fixedMargin: -10, linked: true, icon: "??", type: "fixed" },
+    cat: "📶 SIM", items: [
+      { id: "sim1", name: "Sim 1€", price: 1, fixedMargin: -4, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim5", name: "Sim 5€", price: 5, fixedMargin: -7, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim_w3", name: "Sim Wind3", price: null, fixedMargin: -5, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim_fw", name: "Sim Fastweb", price: 0, fixedMargin: -23, linked: true, icon: "📶", type: "fixed" },
+      { id: "sost_fw", name: "Sost Fastweb", price: 0, fixedMargin: 0, linked: true, icon: "🔄", type: "fixed" },
+      { id: "sim_iliad", name: "Sim Iliad", price: 0, fixedMargin: -10, linked: true, icon: "📶", type: "fixed" },
+      { id: "sost_vod", name: "Sost Vodafone", price: 0, fixedMargin: -10, linked: true, icon: "🔄", type: "fixed" },
+      { id: "sost_w3", name: "Sost Wind3", price: 0, fixedMargin: -15, linked: true, icon: "🔄", type: "fixed" },
+      { id: "sim_very", name: "Sim Very", price: 0, fixedMargin: -7, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim_l", name: "Sim L", price: 0, fixedMargin: -15, linked: true, icon: "📶", type: "fixed" },
+      { id: "sim_next", name: "Sim Next", price: 0, fixedMargin: -7, linked: true, icon: "📶", type: "fixed" },
+      { id: "subentro", name: "Subentro/Reale Util.", price: 0, fixedMargin: -10, linked: true, icon: "🔄", type: "fixed" },
     ]
   },
 ];
@@ -77,7 +77,7 @@ const BRANDS = [
     short: "W3",
     color: "#FF6B00",
     gradient: "linear-gradient(135deg, #1B3A5C 0%, #2E75B6 100%)",
-    icon: "??",
+    icon: "📶",
     logo: "/windtre.webp",
     desc: "Mobile, Fisso, Luce & Gas, Assicurazioni, Protecta",
     ready: true,
@@ -88,7 +88,7 @@ const BRANDS = [
     short: "SKY",
     color: "#0072C6",
     gradient: "linear-gradient(135deg, #003366 0%, #0072C6 100%)",
-    icon: "??",
+    icon: "📺",
     logo: "/sky.png",
     desc: "TV, Fibra, Mobile, Glass, Pacchetti combinati",
     ready: true,
@@ -99,7 +99,7 @@ const BRANDS = [
     short: "VF",
     color: "#E60000",
     gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)",
-    icon: "??",
+    icon: "📱",
     logo: "/vodaphone - Copy.png",
     desc: "Mobile, Fisso, Business",
     ready: false,
@@ -110,7 +110,7 @@ const BRANDS = [
     short: "FW",
     color: "#FFD800",
     gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)",
-    icon: "?",
+    icon: "⚡",
     logo: "/fastweb.png",
     desc: "Mobile, Fisso, Energy",
     ready: false,
@@ -121,7 +121,7 @@ const BRANDS = [
     short: "IL",
     color: "#C00028",
     gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)",
-    icon: "??",
+    icon: "📡",
     logo: "/iliad.png",
     desc: "Mobile e Fisso (Fibra)",
     ready: false,
@@ -132,7 +132,7 @@ const BRANDS = [
     short: "EN",
     color: "#28a745",
     gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)",
-    icon: "??",
+    icon: "🔋",
     logo: "/energy - Copy.png",
     desc: "Forniture Luce e Gas (S4, Barton)",
     ready: false,
@@ -152,7 +152,7 @@ const getW3 = (tc: string | null) => {
   const biz = tc === "business";
   return [
     {
-      id: "mobile", title: "MOBILE", icon: "??", color: "#2E75B6", radio: true, subs: [
+      id: "mobile", title: "MOBILE", icon: "📱", color: "#2E75B6", radio: true, subs: [
         {
           id: "ga", title: "MOBILE", hasContract: true, ct: "ga",
           isMobile: !biz,
@@ -184,7 +184,7 @@ const getW3 = (tc: string | null) => {
       ]
     },
     {
-      id: "fisso", title: "FISSO", icon: "??", color: "#28a745", radio: true, subs: [
+      id: "fisso", title: "FISSO", icon: "🏠", color: "#28a745", radio: true, subs: [
         { id: "fisso_std", title: "FISSO", hasContract: true, ct: "fisso", isFisso: true, hasGnpQ: true, has2LQ: biz, hasAddons: true, addonList: biz ? ["Più Sicuri Ufficio", "FTTH", "DNS DINAMICO", "FritzBox"] : ["Netflix", "Home Protect", "FTTH", "Chiamate Illimitate", "CYC HOME"], fields: [] },
         { id: "fisso_cb", title: "FISSO CB", hasContract: true, ct: "fisso", isFisso: true, hasGnpQ: true, has2LQ: biz, hasVoceCasaQ: !biz, hasAddons: true, addonList: biz ? ["Più Sicuri Ufficio", "FTTH", "DNS DINAMICO", "FritzBox"] : ["Netflix", "Home Protect", "FTTH", "Chiamate Illimitate", "CYC HOME"], fields: [] },
         { id: "fwa_indoor", title: "FWA INDOOR 2P", hasContract: true, ct: "fisso", isFisso: true, hasGnpQ: true, has2LQ: biz, hasAddons: true, hasFwaImei: true, domLocked: true, addonList: biz ? ["Più Sicuri Ufficio", "FTTH", "DNS DINAMICO", "FritzBox"] : ["Netflix", "Home Protect", "FTTH", "Chiamate Illimitate", "CYC HOME"], fields: [] },
@@ -193,13 +193,13 @@ const getW3 = (tc: string | null) => {
       ]
     },
     {
-      id: "luce_gas", title: "LUCE E GAS", icon: "??", color: "#fd7e14", radio: true, subs: [
+      id: "luce_gas", title: "LUCE E GAS", icon: "💡", color: "#fd7e14", radio: true, subs: [
         { id: "luce", title: "Luce", hasContract: true, ct: "lg", hasDom: true, hasConvLG: true, fields: [] },
         { id: "gas", title: "Gas", hasContract: true, ct: "lg", hasDom: true, hasConvLG: true, fields: [] },
       ]
     },
     {
-      id: "multi", title: "MULTI-SERVIZI", icon: "???", color: "#6f42c1", radio: true, subs: [
+      id: "multi", title: "MULTI-SERVIZI", icon: "🛡️", color: "#6f42c1", radio: true, subs: [
         ...(!biz ? [{ id: "assicurazioni", title: "Assicurazioni", hasAddons: true, hasContract: true, ct: "multi", addonList: ["Casa Start", "Casa Plus", "Casa Full", "Sport", "Micio e Fido", "Viaggi", "Sport Famiglia", "Elettrodomestici"], fields: [] }] : []),
         ...(biz ? [{ id: "assicurazioni", title: "Assicurazioni", isAssicBiz: true, hasContract: true, ct: "multi", fields: [] }] : []),
         { id: "protecta", title: "Protecta", isProtecta: true, isBizProtecta: biz, hasContract: true, ct: "multi", fields: [] },
@@ -290,13 +290,13 @@ const CartItem = ({ it, ii, gi, total, expI, setExpI }: { it: any, ii: number, g
           <h4 className="text-sm font-bold text-white truncate">{it.sub}</h4>
         </div>
         <button onClick={() => setExpI((p: Record<string, boolean>) => ({ ...p, [gi + "_" + ii]: !p[gi + "_" + ii] }))} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${exp ? "bg-violet-500 text-white shadow-lg" : "bg-white/5 text-slate-400 hover:bg-white/10 border border-white/5"}`}>
-          {exp ? "? Nascondi" : "?? Mostra"}
+          {exp ? "🙈 Nascondi" : "👁️ Mostra"}
         </button>
       </div>
       {exp && (
         <div className="mt-4 ml-14">
           <div className="glass-panel p-4 bg-white/[0.02] border-white/5">
-            <div className="text-[11px] font-bold mb-3 flex items-center gap-2" style={{ color: it.macroColor }}>?? {it.sub}</div>
+            <div className="text-[11px] font-bold mb-3 flex items-center gap-2" style={{ color: it.macroColor }}>📋 {it.sub}</div>
             {dets.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {dets.map(([k, v]) => (
@@ -307,7 +307,7 @@ const CartItem = ({ it, ii, gi, total, expI, setExpI }: { it: any, ii: number, g
                 ))}
               </div>
             ) : (
-              <div className="text-xs text-slate-500 italic">Nessun dettaglio — premi ?? Modifica</div>
+              <div className="text-xs text-slate-500 italic">Nessun dettaglio — premi ✏️ Modifica</div>
             )}
           </div>
         </div>
@@ -425,7 +425,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                   {sd.tnpTipo && (
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px" }}>
                       {!sd.tnpTipo.startsWith("Finanziamento") && <DD l="Modello Terminale" r v={sd.tnpModello || ""} o={v => uP(group.id, si, sub.id, "tnpModello", v)} vals={SMARTPHONES} />}
-                      {!sd.tnpTipo.startsWith("Finanziamento") && <TF l="IMEI" r v={sd.tnpImei || ""} o={v => uP(group.id, si, sub.id, "tnpImei", v)} p="15 cifre" nt="Barcode ??" />}
+                      {!sd.tnpTipo.startsWith("Finanziamento") && <TF l="IMEI" r v={sd.tnpImei || ""} o={v => uP(group.id, si, sub.id, "tnpImei", v)} p="15 cifre" nt="Scansione barcode" />}
                     </div>
                   )}
                   {/* Quanti TNP finanziati — solo per Finanziamento */}
@@ -441,7 +441,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                         <div key={idx} className="grid grid-cols-2 gap-3 mb-2 p-3 rounded-xl bg-white/[0.05] border border-white/10">
                           <div className="col-span-2 text-[10px] font-bold text-blue-400 mb-1">Terminale {sd.tnpCount > 1 ? idx + 1 : ""}</div>
                           <DD l="Modello Terminale" r v={(sd.tnpModelli && sd.tnpModelli[idx]) || ""} o={v => { const m = [...(sd.tnpModelli || [])]; m[idx] = v; uP(group.id, si, sub.id, "tnpModelli", m) }} vals={SMARTPHONES} />
-                          <TF l="IMEI" r v={(sd.tnpImeis && sd.tnpImeis[idx]) || ""} o={v => { const im = [...(sd.tnpImeis || [])]; im[idx] = v; uP(group.id, si, sub.id, "tnpImeis", im) }} p="15 cifre" nt="Barcode ??" />
+                          <TF l="IMEI" r v={(sd.tnpImeis && sd.tnpImeis[idx]) || ""} o={v => { const im = [...(sd.tnpImeis || [])]; im[idx] = v; uP(group.id, si, sub.id, "tnpImeis", im) }} p="15 cifre" nt="Scansione barcode" />
                         </div>
                       ))}
                       {sd.tnpCount && (
@@ -618,7 +618,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
               {sub.isCBBiz && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px", marginBottom: 8 }}>
                   <DD l="Modello Terminale" r v={sd.cbTnpModello || ""} o={v => uP(group.id, si, sub.id, "cbTnpModello", v)} vals={SMARTPHONES} />
-                  <TF l="IMEI" r v={sd.cbTnpImei || ""} o={v => uP(group.id, si, sub.id, "cbTnpImei", v)} p="15 cifre" nt="Barcode ??" />
+                  <TF l="IMEI" r v={sd.cbTnpImei || ""} o={v => uP(group.id, si, sub.id, "cbTnpImei", v)} p="15 cifre" nt="Scansione barcode" />
                 </div>
               )}
               <div style={{ display: "flex", gap: 6, marginBottom: sd.cbTnpTipo ? 8 : 0 }}>
@@ -630,7 +630,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                 <div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px" }}>
                     {!sd.cbTnpTipo.startsWith("Finanziamento") && <DD l="Modello Terminale" r v={sd.cbTnpModello || ""} o={v => uP(group.id, si, sub.id, "cbTnpModello", v)} vals={SMARTPHONES} />}
-                    {!sd.cbTnpTipo.startsWith("Finanziamento") && <TF l="IMEI" r v={sd.cbTnpImei || ""} o={v => uP(group.id, si, sub.id, "cbTnpImei", v)} p="15 cifre" nt="Barcode ??" />}
+                    {!sd.cbTnpTipo.startsWith("Finanziamento") && <TF l="IMEI" r v={sd.cbTnpImei || ""} o={v => uP(group.id, si, sub.id, "cbTnpImei", v)} p="15 cifre" nt="Scansione barcode" />}
                   </div>
                   {sd.cbTnpTipo.startsWith("Finanziamento") && (
                     <div style={{ marginTop: 8 }}>
@@ -644,7 +644,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
                         <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px", marginBottom: 8, padding: 8, background: "rgba(255,255,255,0.02)", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)" }}>
                           <div style={{ gridColumn: "1/-1", fontSize: 10, fontWeight: 700, color: "#60a5fa", marginBottom: 2 }}>Terminale {sd.cbTnpCount > 1 ? idx + 1 : ""}</div>
                           <DD l="Modello Terminale" r v={(sd.cbTnpModelli && sd.cbTnpModelli[idx]) || ""} o={v => { const m = [...(sd.cbTnpModelli || [])]; m[idx] = v; uP(group.id, si, sub.id, "cbTnpModelli", m) }} vals={SMARTPHONES} />
-                          <TF l="IMEI" r v={(sd.cbTnpImeis && sd.cbTnpImeis[idx]) || ""} o={v => { const im = [...(sd.cbTnpImeis || [])]; im[idx] = v; uP(group.id, si, sub.id, "cbTnpImeis", im) }} p="15 cifre" nt="Barcode ??" />
+                          <TF l="IMEI" r v={(sd.cbTnpImeis && sd.cbTnpImeis[idx]) || ""} o={v => { const im = [...(sd.cbTnpImeis || [])]; im[idx] = v; uP(group.id, si, sub.id, "cbTnpImeis", im) }} p="15 cifre" nt="Scansione barcode" />
                         </div>
                       ))}
                       {sd.cbTnpCount && (
@@ -740,7 +740,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px" }}>
                 <DD l="Modello Terminale" r v={sd.rfModello || ""} o={v => uP(group.id, si, sub.id, "rfModello", v)} vals={SMARTPHONES} />
-                <TF l="IMEI" r v={sd.rfImei || ""} o={v => uP(group.id, si, sub.id, "rfImei", v)} p="15 cifre" nt="Barcode ??" />
+                <TF l="IMEI" r v={sd.rfImei || ""} o={v => uP(group.id, si, sub.id, "rfImei", v)} p="15 cifre" nt="Scansione barcode" />
               </div>
             </div>
           )}
@@ -837,31 +837,31 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
             {showMnpF && !sub.isMobileBiz && <TF l="N. Definitivo MNP" v={c.num_definitivo || ""} o={v => uC(group.id, si, sub.id, "num_definitivo", v)} p="Portare" />}
             {showMnpF && !sub.isMobileBiz && <DD l="Brand MNP" v={c.brand_mnp || ""} o={v => uC(group.id, si, sub.id, "brand_mnp", v)} vals={brandMNP} />}
             {showMnpF && sub.isMobileBiz && <TF l="N. Definitivo MNP" v={c.num_definitivo || ""} o={v => uC(group.id, si, sub.id, "num_definitivo", v)} p="Portare" />}
-            <TF l="ICCID" v={c.iccid || ""} o={v => uC(group.id, si, sub.id, "iccid", v)} p="893..." nt="Barcode ??" />
+            <TF l="ICCID" v={c.iccid || ""} o={v => uC(group.id, si, sub.id, "iccid", v)} p="893..." nt="Scansione barcode" />
             {sub.isMobileBiz && (sd.tnpGa === "Sì" || sd.tnpGa === true) && sd.tnpTipo && <DD l="Modello Terminale" r v={c.modello || ""} o={v => uC(group.id, si, sub.id, "modello", v)} vals={SMARTPHONES} />}
-            {sub.isMobileBiz && (sd.tnpGa === "Sì" || sd.tnpGa === true) && sd.tnpTipo && <TF l="IMEI" r v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Barcode ??" />}
+            {sub.isMobileBiz && (sd.tnpGa === "Sì" || sd.tnpGa === true) && sd.tnpTipo && <TF l="IMEI" r v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Scansione barcode" />}
           </div>}
           {sub.ct === "tnp_ga" && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px 14px" }}>
             <TF l="Codice Contratto" r v={gaOn ? (gaC.codice_contratto || "") : (c.codice_contratto || "")} o={v => uC(group.id, si, sub.id, "codice_contratto", v)} p={gaOn ? "? da Mobile GA" : "es. 167942"} dis={gaOn} nt={gaOn ? "Auto da Mobile GA" : ""} />
             <TF l="Modello Terminale" v={c.modello || ""} o={v => uC(group.id, si, sub.id, "modello", v)} p="Samsung S25" />
-            <TF l="IMEI" v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Barcode ??" />
+            <TF l="IMEI" v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Scansione barcode" />
           </div>}
           {sub.ct === "tnp_cb" && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px 14px" }}>
             <TF l="Codice Contratto" r v={c.codice_contratto || ""} o={v => uC(group.id, si, sub.id, "codice_contratto", v)} p="es. 167942" />
             <TF l="Modello Terminale" v={c.modello || ""} o={v => uC(group.id, si, sub.id, "modello", v)} p="iPhone 16" />
-            <TF l="IMEI" v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Barcode ??" />
+            <TF l="IMEI" v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Scansione barcode" />
           </div>}
           {sub.ct === "fisso" && !isVCMode && <div style={{ display: "grid", gridTemplateColumns: sub.hasFwaImei ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: "8px 14px" }}>
             <TF l="Codice Contratto" r v={c.codice_contratto || ""} o={v => uC(group.id, si, sub.id, "codice_contratto", v)} p="es. 167942" />
             <TF l="N. Fisso Provvisorio" v={c.num_fisso_prov || ""} o={v => uC(group.id, si, sub.id, "num_fisso_prov", v)} p="06XXXX" />
             <TF l="N. Fisso Definitivo" v={fissoDefVal} o={v => uC(group.id, si, sub.id, "num_fisso_def", v)} p="Portare" dis={fissoDefLocked} nt={fissoDefLocked ? "Auto da GNP" : ""} />
-            {sub.hasFwaImei && <TF l="IMEI" v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Barcode ??" />}
+            {sub.hasFwaImei && <TF l="IMEI" v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Scansione barcode" />}
           </div>}
           {sub.ct === "fisso" && isVCMode && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px 14px" }}>
             <TF l="Codice Contratto" r v={c.codice_contratto || ""} o={v => uC(group.id, si, sub.id, "codice_contratto", v)} p="es. 167942" />
             <TF l="N. Fisso Provvisorio" v={c.num_fisso_prov || ""} o={v => uC(group.id, si, sub.id, "num_fisso_prov", v)} p="06XXXX" />
             <TF l="N. Fisso Definitivo" v={fissoDefVal} o={v => uC(group.id, si, sub.id, "num_fisso_def", v)} p="Portare" dis={fissoDefLocked} nt={fissoDefLocked ? "Auto da GNP" : ""} />
-            <TF l="IMEI" v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Barcode ??" />
+            <TF l="IMEI" v={c.imei || ""} o={v => uC(group.id, si, sub.id, "imei", v)} p="15 cifre" nt="Scansione barcode" />
           </div>}
           {sub.ct === "lg" && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px 14px" }}>
             <DD l="Operatore provenienza" r v={sd.opProvenienza || ""} o={v => uP(group.id, si, sub.id, "opProvenienza", v)} vals={opProv} />
@@ -884,7 +884,7 @@ const SubCard = ({ sub, rawSd, group, si, sessionCode, sale, uF, uC, uP, catSale
 const NoteStep = ({ notes, setNotes, date, setDate, time, setTime, show, setShow }: any) => {
   const content = (
     <div style={{ background: "rgba(255, 255, 255, 0.03)", borderRadius: 16, padding: 20, marginBottom: 16, borderLeft: "4px solid #f43f5e", borderTop: "1px solid rgba(255, 255, 255, 0.05)", borderRight: "1px solid rgba(255, 255, 255, 0.05)", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", backdropFilter: "blur(20px)" }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "#f43f5e", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>?? Step 7 — Note / Promemoria</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "#f43f5e", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>📝 Step 7 — Note / Promemoria</div>
       <div style={{ textAlign: "center", marginBottom: show ? 20 : 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "#cbd5e1", marginBottom: 12 }}>Nota o promemoria?</div>
         <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
@@ -894,11 +894,11 @@ const NoteStep = ({ notes, setNotes, date, setDate, time, setTime, show, setShow
       </div>
       {show && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div style={{ border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: 12, padding: 16, background: "rgba(255, 255, 255, 0.02)" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#f8fafc" }}>?? Nota</div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#f8fafc" }}>📝 Nota</div>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Nota…" rows={4} style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(255, 255, 255, 0.1)", fontSize: 12, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box", background: "rgba(255, 255, 255, 0.05)", color: "#f8fafc", outline: "none" }} />
         </div>
         <div style={{ border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: 12, padding: 16, background: "rgba(255, 255, 255, 0.02)" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#f8fafc" }}>?? Promemoria</div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: "#f8fafc" }}>⏰ Promemoria</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 3 }}>Data</div>
@@ -941,7 +941,7 @@ const MargPOS = memo(({ show, onClose, venditore, negozio, onAdd }: any) => {
     <div className="bg-slate-900 rounded-t-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border-x border-t border-white/10 animate-in slide-in-from-bottom duration-300">
       <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
         <div>
-          <div className="text-lg font-bold text-white flex items-center gap-2">?? Registra Prodotto</div>
+          <div className="text-lg font-bold text-white flex items-center gap-2">✅ Registra Prodotto</div>
           <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{venditore || "—"} • {negozio || "—"} • {new Date().toLocaleDateString("it-IT")}</div>
         </div>
         <button onClick={onClose} className="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 text-slate-400 transition-all text-xl">?</button>
@@ -1002,7 +1002,7 @@ const MargList = memo(({ items, onRemove, show, onClose }: any) => {
   return (<div className="fixed inset-0 bg-slate-950/80 z-[2000] flex items-center justify-center backdrop-blur-sm p-4">
     <div className="bg-slate-900 rounded-3xl w-full max-w-lg overflow-hidden flex flex-col shadow-2xl border border-white/10 animate-in zoom-in-95 duration-200">
       <div className="px-6 py-4 border-b border-white/10 flex justify-between items-center bg-white/[0.02]">
-        <span className="text-lg font-bold text-white flex items-center gap-2">?? Prodotti in Marginalità ({items.length})</span>
+        <span className="text-lg font-bold text-white flex items-center gap-2">📦 Prodotti in Marginalità ({items.length})</span>
         <button onClick={onClose} className="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-white/10 text-slate-400 transition-all text-xl">?</button>
       </div>
       <div className="flex-1 overflow-y-auto p-6 max-h-[60vh] space-y-3">
@@ -1104,7 +1104,7 @@ export default function CRM() {
     const items: any[] = [];
     if (brand === "windtre") {
       getW3(tipoCliente).forEach(g => { (sales[g.id] || [{}]).forEach((sale: any, si: number) => { g.subs.forEach((sub: any) => { const d = sale[sub.id]; if (d && d.active) { const det: any = { ...(d.fields || {}), ...(d.contract || {}), hasContract: !!sub.hasContract }; if (d.tipMob) det["Tipologia"] = d.tipMob; if (d.mnp != null) det["MNP"] = d.mnp === true || d.mnp === "Sì" ? "Sì" : "No"; if (d.easyPay != null) det["EasyPay"] = d.easyPay === "Sì" || d.easyPay === true ? "Sì" : "No"; if (d.tnpGa === "Sì" || d.tnpGa === true) { det["TNP GA"] = "Sì"; if (d.tnpTipo) det["Tipo TNP"] = d.tnpTipo; if (d.tnpModello) det["Terminale"] = d.tnpModello; if (d.tnpImei) det["IMEI TNP"] = d.tnpImei; if (d.tnpTipo && d.tnpTipo.startsWith("Finanziamento")) det["Finanziamento"] = "Approvato" }; const gaRl = d.tnpGaReloadSel ? Object.keys(d.tnpGaReloadSel).filter(k => d.tnpGaReloadSel[k]) : []; if (gaRl.length) det["Reload GA"] = gaRl.join(", "); if (d.reloadForever) det["Reload Forever"] = "Sì"; const secK = d.securitySel ? Object.keys(d.securitySel).filter(k => d.securitySel[k]) : []; if (secK.length) det["Security"] = secK.join(", "); if (d.cbTnp) { det["TNP CB"] = "Sì"; if (d.cbTnpCodIns) det["Cod.Ins.CB"] = d.cbTnpCodIns; if (d.cbTnpCell) det["Cell.CB"] = d.cbTnpCell; if (d.cbTnpCC) det["CC.CB"] = d.cbTnpCC; if (d.cbTnpTipo) det["Tipo CB"] = d.cbTnpTipo; if (d.cbTnpModello) det["Term.CB"] = d.cbTnpModello; if (d.cbTnpImei) det["IMEI CB"] = d.cbTnpImei; if (d.cbTnpTipo && d.cbTnpTipo.startsWith("Finanziamento")) det["Fin.CB"] = "Approvato" }; const cbRl = d.cbTnpReloadSel ? Object.keys(d.cbTnpReloadSel).filter(k => d.cbTnpReloadSel[k]) : []; if (cbRl.length) det["Reload CB"] = cbRl.join(", "); if (d.cbCambio && d.cbCambioVal) { det["Cambio Off."] = d.cbCambioVal; if (d.cbCambioCodIns) det["Cod.Ins.Cambio"] = d.cbCambioCodIns; if (d.cbCambioCell) det["Cell.Cambio"] = d.cbCambioCell; if (d.cbCambioCC) det["CC.Cambio"] = d.cbCambioCC }; const cbAd = d.cbAddonSel ? Object.keys(d.cbAddonSel).filter(k => d.cbAddonSel[k]) : []; if (cbAd.length) det["Add-on CB"] = cbAd.join(", "); if (d.gnp) det.GNP = "Sì"; if (d.gnpNum) det["N.GNP"] = d.gnpNum; if (d.gnpOp) det["Op.GNP"] = d.gnpOp; if (d.secondaLinea) det["2°Linea"] = "Sì"; if (d.domiciliazione) det["Domic."] = "Sì"; if (d.opProvenienza) det["Op.Prov."] = d.opProvenienza; if (d.domiciliato != null) det["Domiciliato"] = d.domiciliato ? "Sì" : "No"; if (d.voceCasaCb === true || d.voceCasaCb === "Sì") det["Voce Casa CB"] = "Sì"; if (d.convergente != null) det["Convergente"] = d.convergente ? "Sì" : "No"; const adks = d.addons ? Object.keys(d.addons).filter(k => d.addons[k]) : []; if (adks.length) det["Add-on"] = adks.join(", "); items.push({ macro: g.title, macroColor: g.color, macroIcon: g.icon, sub: sub.title, saleNum: si + 1, details: det }) } }) }) });
-    } else if (brand === "sky") { skyS.forEach((s: any, si: number) => (s.selected || []).forEach((pr: string) => items.push({ macro: "SKY", macroColor: "#0072C6", macroIcon: "??", sub: pr, saleNum: si + 1, details: {} }))) }
+    } else if (brand === "sky") { skyS.forEach((s: any, si: number) => (s.selected || []).forEach((pr: string) => items.push({ macro: "SKY", macroColor: "#0072C6", macroIcon: "📋", sub: pr, saleNum: si + 1, details: {} }))) }
     return items;
   }, [brand, sales, skyS, tipoCliente]);
 
@@ -1113,7 +1113,7 @@ export default function CRM() {
     if (items.length > 0 && bObj) { const snap = { sales: JSON.parse(JSON.stringify(sales)), sesCode, skyS: JSON.parse(JSON.stringify(skyS)) }; setCart(p => [...p, { brandId: brand, brandLabel: bObj.label, brandIcon: bObj.icon, brandColor: bObj.color, items, sv: snap }]); sT("? " + items.length + " prodotti " + bObj.label) }
     setSales({}); setSesCode(""); setSkyS([{ selected: [] }]); setBrand(null);
   };
-  const editCG = (idx: number) => { const g: any = cart[idx]; if (!g) return; setBrand(g.brandId); if (g.sv) { setSales(g.sv.sales || {}); setSesCode(g.sv.sesCode || ""); setSkyS(g.sv.skyS || [{ selected: [] }]) } setCart(p => p.filter((_, i) => i !== idx)); setShowCart(false); sT("?? Modifica " + g.brandLabel) };
+  const editCG = (idx: number) => { const g: any = cart[idx]; if (!g) return; setBrand(g.brandId); if (g.sv) { setSales(g.sv.sales || {}); setSesCode(g.sv.sesCode || ""); setSkyS(g.sv.skyS || [{ selected: [] }]) } setCart(p => p.filter((_, i) => i !== idx)); setShowCart(false); sT("✏️ Modifica " + g.brandLabel) };
   const rmCG = (idx: number) => setCart(p => p.filter((_, i) => i !== idx));
 
   const handleDownloadPDF = async () => {
@@ -1169,7 +1169,7 @@ export default function CRM() {
     }
 
     if (fc.length === 0 && margItems.length === 0) {
-      sT("?? Nessun prodotto da salvare");
+      sT("⚠️ Nessun prodotto da salvare");
       return;
     }
 
@@ -1278,11 +1278,11 @@ export default function CRM() {
         }
       }
 
-      sT(`?? Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
+      sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
       setTimeout(fullReset, 2000);
     } catch (err: any) {
       console.error("Submit Error:", err);
-      sT("? Errore durante il salvataggio: " + (err.message || "Verifica connessione"));
+      sT("❌ Errore durante il salvataggio: " + (err.message || "Verifica connessione"));
     }
   };
   const doLookup = async () => {
@@ -1318,7 +1318,7 @@ export default function CRM() {
         setClienteFound(false);
         setShowAna(true);
         setShowStep4(false);
-        sT("?? Cliente non trovato, inserimento manuale");
+        sT("⚠️ Cliente non trovato, inserimento manuale");
       }
     } catch (err) {
       console.error("Lookup error:", err);
@@ -1343,7 +1343,7 @@ export default function CRM() {
         <div className="glass-card p-6 mb-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-extrabold text-white mb-1">?? Carrello</h2>
+              <h2 className="text-2xl font-extrabold text-white mb-1">🛒 Carrello</h2>
               <div className="flex items-center gap-2 text-sm text-slate-400">
                 <span className="bg-white/5 px-2 py-0.5 rounded-md">{tipoCliente === "privato" ? (ana.nome + " " + ana.cognome) : ana.ragioneSociale}</span>
                 <span className="text-white/20">•</span>
@@ -1356,7 +1356,7 @@ export default function CRM() {
             </div>
           </div>
         </div>
-        {allG.length === 0 ? <div className="glass-card p-16 text-center"><div className="text-5xl mb-4">??</div><div className="text-base font-semibold text-slate-500">Il tuo carrello è vuoto</div></div> :
+        {allG.length === 0 ? <div className="glass-card p-16 text-center"><div className="text-5xl mb-4">🛒</div><div className="text-base font-semibold text-slate-500">Il tuo carrello è vuoto</div></div> :
           allG.map((g, gi) => (
             <div key={gi} className="glass-panel overflow-hidden border-l-4" style={{ borderLeftColor: g.brandColor }}>
               <div className="p-4 border-b border-white/5 flex items-center justify-between" style={{ background: g.brandColor + "20" }}>
@@ -1367,7 +1367,7 @@ export default function CRM() {
                   {g.isCurrent && <span className="px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-amber-500 text-white">IN CORSO</span>}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => g.isCurrent ? setShowCart(false) : editCG(gi)} className="px-4 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 transition-all">?? Modifica</button>
+                  <button onClick={() => g.isCurrent ? setShowCart(false) : editCG(gi)} className="px-4 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 transition-all">✏️ Modifica</button>
                   {!g.isCurrent && <button onClick={() => rmCG(gi)} className="px-4 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold hover:bg-rose-500/20 transition-all">? Rimuovi</button>}
                 </div>
               </div>
@@ -1380,9 +1380,9 @@ export default function CRM() {
         }
         <div className="glass-card p-5 mb-6 border-l-4 border-cyan-500 mt-6 relative">
           {uploading && <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center rounded-xl"><div className="flex flex-col items-center gap-2"><div className="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div><span className="text-xs font-bold text-cyan-400">CARICAMENTO ALLEGATI...</span></div></div>}
-          <div className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider mb-4">?? Step 5 — Allegati</div>
+          <div className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider mb-4">📎 Step 5 — Allegati</div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[{ l: "Documento", i: "??", t: "identity" }, { l: "Contratti", i: "??", t: "contract" }, { l: "Altro", i: "??", t: "other" }].map((a, i) => (
+            {[{ l: "Documento", i: "🪪", t: "identity" }, { l: "Contratti", i: "📄", t: "contract" }, { l: "Altro", i: "📎", t: "other" }].map((a, i) => (
               <label key={i} className="border-2 border-dashed border-white/10 rounded-xl p-5 text-center cursor-pointer bg-white/[0.02] hover:bg-white/[0.05] hover:border-cyan-500/30 transition-all flex flex-col items-center">
                 <input type="file" multiple className="hidden" onChange={(e) => handleFileChange(e, a.t)} />
                 <div className="text-3xl mb-2">{a.i}</div>
@@ -1398,7 +1398,7 @@ export default function CRM() {
           </div>
         </div>
         <div className="glass-card p-5 mb-6 border-l-4 border-emerald-500">
-          <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-4">?? Step 6 — Attribuzione</div>
+          <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-4">👤 Step 6 — Attribuzione</div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <DD l="Venditore" r v={selVend} o={v => setSelVend(v)} vals={venditori} nt="Dal login — editabile" />
             <DD l="Negozio" r v={selNeg} o={v => setSelNeg(v)} vals={negozi} nt="Dal login — editabile" />
@@ -1425,17 +1425,17 @@ export default function CRM() {
       {toast && <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[9999] px-6 py-3 rounded-xl text-sm font-bold bg-emerald-500/90 text-white shadow-lg border border-white/10 backdrop-blur-sm">{toast}</div>}
       <div className="glass-card p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6" style={{ background: bG, border: "1px solid rgba(255,255,255,0.1)" }}>
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-lg border border-white/10">{bObj ? bObj.icon : "?"}</div>
+          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-lg border border-white/10">{bObj ? bObj.icon : "📋"}</div>
           <div>
             <h1 className="text-lg font-bold text-white">CRM - Inserimento Contratto</h1>
             <p className="text-xs text-slate-400">{bObj ? bObj.label + " · v5" : "Seleziona brand"}{tipoCliente ? " · " + (tipoCliente === "privato" ? "Privato" : "Business") : ""}</p>
           </div>
         </div>
         <div className="flex gap-2 items-center">
-          <button onClick={() => setShowMargList(true)} className="px-4 py-2 bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 rounded-xl text-sm font-bold border border-violet-500/30 transition-all flex items-center gap-2">??{margItems.length > 0 && <span className="bg-violet-400 text-slate-900 rounded-full px-1.5 py-0.5 text-[10px] font-black">{margItems.length}</span>}</button>
-          <button onClick={() => setShowCart(true)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2">??{tCI > 0 && <span className="bg-amber-400 text-slate-900 rounded-full px-1.5 py-0.5 text-xs font-bold">{tCI}</span>}</button>
-          {brand && <button onClick={addCart} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium transition-all">?? Cambia</button>}
-          <button onClick={fullReset} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 transition-all" title="Ricomincia">?</button>
+          <button onClick={() => setShowMargList(true)} className="px-4 py-2 bg-violet-500/20 hover:bg-violet-500/30 text-violet-300 rounded-xl text-sm font-bold border border-violet-500/30 transition-all flex items-center gap-2">📦{margItems.length > 0 && <span className="bg-violet-400 text-slate-900 rounded-full px-1.5 py-0.5 text-[10px] font-black">{margItems.length}</span>}</button>
+          <button onClick={() => setShowCart(true)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2">🛒{tCI > 0 && <span className="bg-amber-400 text-slate-900 rounded-full px-1.5 py-0.5 text-xs font-bold">{tCI}</span>}</button>
+          {brand && <button onClick={addCart} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-medium transition-all">🔄 Cambia</button>}
+          <button onClick={fullReset} className="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-slate-300 transition-all" title="Ricomincia">🔄</button>
         </div>
       </div>
 
@@ -1444,13 +1444,13 @@ export default function CRM() {
           const state = gSS(i);
           return (
             <div key={i} className={`flex-1 text-center py-1.5 px-0.5 rounded-md text-[9.5px] font-semibold ${state === "pending" ? "bg-white/5 text-slate-500" : state === "done" ? "bg-emerald-500/20 text-emerald-400" : "bg-violet-500/20 text-violet-300 border border-violet-500/30"}`}>
-              {state === "done" ? "? " : ""}{st}
+              {state === "done" ? "✓ " : ""}{st}
             </div>
           );
         })}
       </div>
 
-      {cart.length > 0 && <div onClick={() => setShowCart(true)} className="glass-card p-4 flex items-center justify-between cursor-pointer hover:border-white/15 transition-all mb-4"><div className="flex items-center gap-3 flex-wrap"><span>??</span><span className="text-sm font-semibold text-white">Carrello:</span>{cart.map((g, i) => <span key={i} className="px-2 py-0.5 rounded-md text-[10px] font-bold text-white" style={{ background: g.brandColor }}>{g.brandIcon} {g.items.length}</span>)}</div><span className="text-xs text-slate-400">Vedi ?</span></div>}
+      {cart.length > 0 && <div onClick={() => setShowCart(true)} className="glass-card p-4 flex items-center justify-between cursor-pointer hover:border-white/15 transition-all mb-4"><div className="flex items-center gap-3 flex-wrap"><span>🛒</span><span className="text-sm font-semibold text-white">Carrello:</span>{cart.map((g, i) => <span key={i} className="px-2 py-0.5 rounded-md text-[10px] font-bold text-white" style={{ background: g.brandColor }}>{g.brandIcon} {g.items.length}</span>)}</div><span className="text-xs text-slate-400">Vedi →</span></div>}
 
       {!brand ? (
         <div className="glass-card p-6 mb-6">
@@ -1471,7 +1471,7 @@ export default function CRM() {
               >
                 {!b.ready && (
                   <div className="absolute inset-0 bg-slate-900/80 flex flex-col items-center justify-center z-10">
-                    <div className="text-2xl">??</div>
+                    <div className="text-2xl">📋</div>
                     <div className="text-[10px] font-bold text-slate-400">Manutenzione</div>
                   </div>
                 )}
@@ -1500,7 +1500,7 @@ export default function CRM() {
         </div>
       ) : (
         <div className="rounded-xl p-4 mb-4 flex items-center gap-3 border border-emerald-500/20 bg-emerald-500/5">
-          <span className="text-xs font-extrabold text-emerald-400">? 1</span>
+          <span className="text-xs font-extrabold text-emerald-400">①</span>
           <span className="text-sm font-semibold text-slate-200">
             Brand selezionato:{" "}
             <span className="font-extrabold" style={{ color: bObj?.color || "#94a3b8" }}>
@@ -1517,7 +1517,7 @@ export default function CRM() {
             {["privato", "business"].map(t => (
               <button key={t} onClick={() => { setTipoCliente(t); setShowAna(false); setClienteFound(false); setLookupValue(""); setSales({}); setSkyS([{ selected: [] }]); setShowStep4(false) }}
                 className={`flex-1 py-4 px-4 rounded-xl border text-center transition-all cursor-pointer ${tipoCliente === t ? "border-violet-500 bg-violet-500/15 text-violet-300" : "border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06] hover:border-white/15"}`}>
-                <div className="text-2xl mb-1.5">{t === "privato" ? "??" : "??"}</div>
+                <div className="text-2xl mb-1.5">{t === "privato" ? "👤" : "🏢"}</div>
                 <div className="font-bold text-sm">{t === "privato" ? "Privato" : "Business"}</div>
               </button>
             ))}
@@ -1528,9 +1528,9 @@ export default function CRM() {
               <div className="flex gap-3 flex-wrap">
                 <input placeholder={tipoCliente === "privato" ? "RSSMRA80A01H501Z" : "12345678901"} value={lookupValue} onChange={e => setLookupValue(e.target.value.toUpperCase())}
                   className="flex-1 min-w-[200px] glass-input font-mono tracking-wider text-sm py-3 px-4 rounded-xl" />
-                <button onClick={doLookup} className="primary-btn px-6 py-2.5 text-sm font-bold flex items-center gap-2">?? Cerca</button>
+                <button onClick={doLookup} className="primary-btn px-6 py-2.5 text-sm font-bold flex items-center gap-2">🔍 Cerca</button>
                 {tipoCliente === "privato" && (
-                  <button onClick={() => setShowCF(!showCF)} className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${showCF ? "border-2 border-orange-500 bg-orange-500/15 text-orange-400" : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>?? Calcola</button>
+                  <button onClick={() => setShowCF(!showCF)} className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${showCF ? "border-2 border-orange-500 bg-orange-500/15 text-orange-400" : "border border-white/10 bg-white/5 text-slate-400 hover:bg-white/10"}`}>🧮 Calcola</button>
                 )}
               </div>
               {clienteFound && <div className="mt-3 py-2.5 px-4 rounded-lg bg-emerald-500/15 text-emerald-400 text-sm border border-emerald-500/20">? Cliente identificato nel sistema</div>}
@@ -1538,7 +1538,7 @@ export default function CRM() {
                 <div className="fixed inset-0 sm:absolute sm:bottom-[110%] sm:left-0 sm:right-0 z-50 flex items-center justify-center p-4 sm:p-0 sm:items-stretch sm:block bg-black/50 sm:bg-transparent backdrop-blur-sm sm:backdrop-blur-none">
                   <div className="w-full max-h-[90vh] sm:max-h-[75vh] overflow-y-auto rounded-2xl sm:rounded-xl bg-[#0f172a] border-2 border-orange-500 shadow-2xl p-4 sm:p-6 flex flex-col sm:static">
                     <div className="flex justify-between items-center mb-4 shrink-0">
-                      <span className="text-sm sm:text-base font-extrabold text-orange-400 tracking-wide">?? CALCOLO CODICE FISCALE</span>
+                      <span className="text-sm sm:text-base font-extrabold text-orange-400 tracking-wide">🧮 CALCOLO CODICE FISCALE</span>
                       <button type="button" onClick={() => setShowCF(false)} className="p-2 -m-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 touch-manipulation" aria-label="Chiudi">?</button>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-3 min-h-0">
@@ -1548,7 +1548,7 @@ export default function CRM() {
                       <div className="sm:col-span-1">
                         <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 4 }}>Luogo di nascita <span className="text-rose-400">*</span></div>
                         <div className="flex gap-2 mb-2">
-                          {[{ k: false, l: "???? Italia" }, { k: true, l: "?? Estero" }].map(({ k, l }) =>
+                          {[{ k: false, l: "🇮🇹 Italia" }, { k: true, l: "🌍 Estero" }].map(({ k, l }) =>
                             <button key={String(k)} type="button" onClick={() => setCfD(p => ({ ...p, estero: k, comune: "", paese: "" }))} className={`flex-1 py-2.5 sm:py-2 rounded-lg text-xs font-bold border-2 transition-all min-h-[44px] touch-manipulation ${cfD.estero === k ? "border-orange-500 bg-orange-500/20 text-orange-400" : "border-white/10 bg-white/5 text-slate-400"}`}>{l}</button>
                           )}
                         </div>
@@ -1558,7 +1558,7 @@ export default function CRM() {
                         }
                       </div>
                       <div className="sm:col-span-2"><div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 4 }}>Data di Nascita</div><div className="grid grid-cols-3 gap-2"><input value={cfD.giorno} onChange={e => setCfD(p => ({ ...p, giorno: e.target.value }))} placeholder="GG" maxLength={2} className="py-2.5 sm:py-2 rounded-lg border border-white/10 bg-white/5 text-slate-100 text-sm text-center outline-none focus:border-orange-500/50 min-h-[44px]" /><select value={cfD.mese} onChange={e => setCfD(p => ({ ...p, mese: e.target.value }))} className="py-2.5 sm:py-2 px-2 rounded-lg border border-white/10 bg-white/5 text-slate-100 text-sm outline-none focus:border-orange-500/50 min-h-[44px]"><option value="" className="bg-[#0f172a]">MM</option>{["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"].map(m => <option key={m} value={m} className="bg-[#0f172a]">{m}</option>)}</select><input value={cfD.anno} onChange={e => setCfD(p => ({ ...p, anno: e.target.value }))} placeholder="AAAA" maxLength={4} className="py-2.5 sm:py-2 rounded-lg border border-white/10 bg-white/5 text-slate-100 text-sm text-center outline-none focus:border-orange-500/50 min-h-[44px]" /></div></div>
-                      <div className="sm:col-span-2 flex sm:items-end"><button type="button" onClick={doCF} className="w-full py-3.5 sm:py-3 rounded-xl border-0 bg-gradient-to-br from-orange-500 to-orange-600 text-white text-sm font-extrabold cursor-pointer shadow-lg shadow-orange-500/30 min-h-[48px] touch-manipulation">?? CALCOLA ORA</button></div>
+                      <div className="sm:col-span-2 flex sm:items-end"><button type="button" onClick={doCF} className="w-full py-3.5 sm:py-3 rounded-xl border-0 bg-gradient-to-br from-orange-500 to-orange-600 text-white text-sm font-extrabold cursor-pointer shadow-lg shadow-orange-500/30 min-h-[48px] touch-manipulation">🧮 CALCOLA ORA</button></div>
                     </div>
                   </div>
                 </div>
@@ -1570,7 +1570,7 @@ export default function CRM() {
 
       {showAna && !showStep4 && (
         <div style={{ background: "rgba(255, 255, 255, 0.02)", borderRadius: 16, padding: 24, marginBottom: 16, borderLeft: "4px solid #0ea5e9", borderTop: "1px solid rgba(255, 255, 255, 0.05)", borderRight: "1px solid rgba(255, 255, 255, 0.05)", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", backdropFilter: "blur(20px)" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#38bdf8", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>?? Step 3 — Anagrafica</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#38bdf8", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>👤 Step 3 — Anagrafica</div>
           {tipoCliente === "privato" ? (
             <>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 24px" }}>
@@ -1612,7 +1612,7 @@ export default function CRM() {
 
       {showAna && showStep4 && brand === "windtre" && (
         <div style={{ background: "rgba(255, 255, 255, 0.02)", borderRadius: 16, padding: 24, marginBottom: 16, borderLeft: "4px solid #f97316", borderTop: "1px solid rgba(255, 255, 255, 0.05)", borderRight: "1px solid rgba(255, 255, 255, 0.05)", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", backdropFilter: "blur(20px)" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#fb923c", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>?? Step 4 — Prodotti e Contratto</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#fb923c", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>📦 Step 4 — Prodotti e Contratto</div>
           <div style={{ background: "rgba(249, 115, 22, 0.05)", borderRadius: 12, padding: 14, marginBottom: 20, display: "flex", alignItems: "center", gap: 12, border: "1px solid rgba(249, 115, 22, 0.15)", flexWrap: "wrap" }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: "#fb923c" }}>Codice inserimento:</span>
             <select value={sesCode} onChange={e => setSesCode(e.target.value)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255, 255, 255, 0.1)", fontSize: 13, fontWeight: 600, background: "rgba(255, 255, 255, 0.05)", color: "#f8fafc", minWidth: 160, outline: "none" }}>
@@ -1655,7 +1655,7 @@ export default function CRM() {
 
       {showAna && showStep4 && brand === "sky" && (
         <div style={{ background: "rgba(255, 255, 255, 0.02)", borderRadius: 16, padding: 24, marginBottom: 16, borderLeft: "4px solid #0072C6", borderTop: "1px solid rgba(255, 255, 255, 0.05)", borderRight: "1px solid rgba(255, 255, 255, 0.05)", borderBottom: "1px solid rgba(255, 255, 255, 0.05)", backdropFilter: "blur(20px)" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#38bdf8", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>?? Step 4 — Sky</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#38bdf8", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.05em" }}>📺 Step 4 — Sky</div>
           {skyS.map((sale, si) => (
             <div key={si} style={{ padding: 16, borderRadius: 12, marginBottom: 12, background: "rgba(255, 255, 255, 0.01)", borderLeft: "4px solid #0072C6", borderTop: "1px solid rgba(255, 255, 255, 0.03)", borderRight: "1px solid rgba(255, 255, 255, 0.03)", borderBottom: "1px solid rgba(255, 255, 255, 0.03)" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
@@ -1682,7 +1682,7 @@ export default function CRM() {
         <div className="glass-card p-6 mb-6 border-l-4 border-violet-500 bg-violet-500/[0.02]">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <div className="text-[11px] font-bold text-violet-400 uppercase tracking-wider mb-1">?? Prodotti & Marginalità</div>
+              <div className="text-[11px] font-bold text-violet-400 uppercase tracking-wider mb-1">📦 Prodotti & Marginalità</div>
               <div className="text-xs text-slate-500 font-medium italic">Registra prodotti extra, accessori o servizi venduti</div>
             </div>
             <div className="flex gap-3">
@@ -1699,7 +1699,7 @@ export default function CRM() {
 
           {margItems.length === 0 ? (
             <div className="py-8 border-2 border-dashed border-white/5 rounded-2xl text-center bg-black/20">
-              <div className="text-2xl mb-2 opacity-50">??</div>
+              <div className="text-2xl mb-2 opacity-50">📦</div>
               <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Nessun prodotto extra registrato</div>
             </div>
           ) : (
@@ -1707,7 +1707,7 @@ export default function CRM() {
               {margItems.map((it: any, i: number) => (
                 <div key={i} className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-between group">
                   <div className="flex items-center gap-3">
-                    <span className="text-xl">{(MARG_PRODUCTS as any).flatMap((c: any) => c.items).find((p: any) => p.id === it.productId)?.icon || "??"}</span>
+                    <span className="text-xl">{(MARG_PRODUCTS as any).flatMap((c: any) => c.items).find((p: any) => p.id === it.productId)?.icon || "📦"}</span>
                     <div>
                       <div className="text-sm font-bold text-slate-200">{it.product} {it.qty > 1 && <span className="text-violet-400 font-black ml-1">×{it.qty}</span>}</div>
                       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{it.model || "Prodotto Extra"}</div>
@@ -1735,7 +1735,7 @@ export default function CRM() {
                 <button onClick={() => setConfirmReset(false)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid rgba(255, 255, 255, 0.1)", background: "transparent", color: "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Annulla</button>
               </div>
             ) : (
-              <button onClick={() => setConfirmReset(true)} style={{ padding: "12px 24px", borderRadius: 12, border: "1px solid rgba(244, 63, 94, 0.3)", background: "transparent", color: "#fb7185", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>??? Reset form</button>
+              <button onClick={() => setConfirmReset(true)} style={{ padding: "12px 24px", borderRadius: 12, border: "1px solid rgba(244, 63, 94, 0.3)", background: "transparent", color: "#fb7185", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>🔄 Reset form</button>
             )}
             <button onClick={handleDownloadPDF} disabled={!ana.nome && cart.length === 0}
               style={{
@@ -1757,7 +1757,7 @@ export default function CRM() {
           </div>
           <button onClick={() => setShowCart(true)}
             style={{ padding: "14px 32px", borderRadius: 12, border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 10px 30px rgba(99, 102, 241, 0.4)" }}>
-            ?? RIEPILOGO CARRELLO {tCI > 0 && <span style={{ background: "#fbbf24", color: "#000", borderRadius: 20, padding: "2px 10px", fontSize: 13, fontWeight: 900 }}>{tCI}</span>}
+            🛒 RIEPILOGO CARRELLO {tCI > 0 && <span style={{ background: "#fbbf24", color: "#000", borderRadius: 20, padding: "2px 10px", fontSize: 13, fontWeight: 900 }}>{tCI}</span>}
           </button>
         </div>
       )}
