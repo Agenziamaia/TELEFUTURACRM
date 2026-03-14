@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video } from "lucide-react";
 import { cn } from "@/utils";
 import { usePageView } from "@/lib/pageView";
@@ -79,33 +79,9 @@ interface CalendarMeeting {
     createdBy: string;
 }
 
-const MOCK_AGENTS = ["Luca Perotta", "Alessandro Sandri", "Marco Bianchi", "Giulia Rossi", "Venditore 1"];
-const MOCK_STORES = ["Roma Centro (RM001)", "Roma Est (RM002)", "Milano Centrale (MI001)", "Milano Nord (MI002)", "Napoli Centro (NA001)"];
-
 const MEETING_BRANDS = ["Wind3", "Vodafone", "Tim", "Fastweb", "Corporate / Aziendale"];
 
-const MOCK_MEETING_USERS = [
-    { id: 1, name: "Luca Perotta", store: "Roma Centro (RM001)", brands: ["Wind3", "Vodafone"] },
-    { id: 2, name: "Alessandro Sandri", store: "Roma Est (RM002)", brands: ["Wind3"] },
-    { id: 3, name: "Marco Bianchi", store: "Milano Centrale (MI001)", brands: ["Tim", "Fastweb"] },
-    { id: 4, name: "Giulia Rossi", store: "Milano Nord (MI002)", brands: ["Vodafone"] },
-    { id: 5, name: "Venditore 1", store: "Napoli Centro (NA001)", brands: ["Wind3", "Tim"] },
-] satisfies { id: number; name: string; store: string; brands: string[] }[];
-
-const MOCK_APPOINTMENTS: Appointment[] = [
-    { id: 1, date: "2026-03-03", time: "10:00", type: "outgoing", agente: "Luca Perotta", customerAddress: "Via Roma 12, Roma", customerName: "Mario Rossi", customerPhone: "3331234567", cfPiva: "RSSMRA80A01H501U", notes: "Cliente interessato a Vodafone fibra", status: "scheduled" },
-    { id: 2, date: "2026-03-03", time: "14:30", type: "incoming", agente: "Alessandro Sandri", store: "Roma Centro (RM001)", customerName: "Anna Verdi", customerPhone: "3457654321", notes: "Rinnovo contratto Wind3", status: "attivato" },
-    { id: 3, date: "2026-03-05", time: "09:00", type: "incoming", agente: "Marco Bianchi", store: "Milano Centrale (MI001)", customerName: "Giuseppe Ferrari", customerPhone: "3289876543", notes: "", status: "scheduled" },
-    { id: 4, date: "2026-03-10", time: "11:00", type: "outgoing", agente: "Giulia Rossi", customerAddress: "Corso Buenos Aires 5, Milano", customerName: "Francesca Bruno", customerPhone: "3401122334", notes: "Nuovo cliente energia", status: "scheduled" },
-    { id: 5, date: "2026-03-10", time: "15:00", type: "incoming", agente: "Luca Perotta", store: "Roma Est (RM002)", customerName: "Carlo Neri", customerPhone: "3609988776", notes: "Assicurazione Generali", status: "da_richiamare" },
-    { id: 6, date: "2026-03-17", time: "10:30", type: "outgoing", agente: "Venditore 1", customerAddress: "Via Napoli 88, Napoli", customerName: "Lucia Esposito", customerPhone: "3211234567", notes: "", status: "scheduled" },
-];
-
-const MOCK_TASKS: CalendarTask[] = [
-    { id: 1, title: "Richiamare per conferma contratto", date: "2026-03-03", time: "11:30", status: "da_fare", notes: "Controllare se ha inviato i documenti", clientRef: "Mario Rossi", createdBy: "Luca Perotta", assignedTo: "Luca Perotta" },
-    { id: 2, title: "Verifica attivazione linea", date: "2026-03-03", status: "fatta", notes: "Linea OK", outcomeNote: "Confermato con cliente.", clientRef: "Anna Verdi", createdBy: "Alessandro Sandri", assignedTo: "Alessandro Sandri" },
-    { id: 3, title: "Sollecito pagamento", date: "2026-03-05", time: "16:00", status: "sospesa", clientRef: "Giuseppe Ferrari", createdBy: "Marco Bianchi", assignedTo: "Giulia Rossi" },
-];
+type MeetingUser = { id: number; name: string; store: string; brands: string[] };
 
 function mapAppointmentRow(r: Record<string, unknown>): Appointment {
     return {
@@ -281,20 +257,36 @@ export default function Calendario() {
 
     const [meetings, setMeetings] = useState<CalendarMeeting[]>([]);
 
+    const [calendarStores, setCalendarStores] = useState<{ id: number; name: string }[]>([]);
+    const [calendarOperators, setCalendarOperators] = useState<MeetingUser[]>([]);
+
+    const storeNames = useMemo(() => calendarStores.map(s => s.name).sort(), [calendarStores]);
+    const agents = useMemo(() => [...new Set(calendarOperators.map(o => o.name))].sort(), [calendarOperators]);
+    const meetingUsers = useMemo(() => calendarOperators, [calendarOperators]);
+
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            const [apptRes, taskRes, blockRes, meetRes] = await Promise.all([
+            const [apptRes, taskRes, blockRes, meetRes, storesRes, operatorsRes] = await Promise.all([
                 supabase.from("appointments").select("*").order("date"),
                 supabase.from("calendar_tasks").select("*").order("date"),
                 supabase.from("agenda_blocks").select("*"),
                 supabase.from("calendar_meetings").select("*").order("date"),
+                supabase.from("calendar_stores").select("id, name").order("name"),
+                supabase.from("calendar_operators").select("id, name, store, brands").order("name"),
             ]);
             if (cancelled) return;
             if (!apptRes.error) setAppointments((apptRes.data ?? []).map(mapAppointmentRow));
             if (!taskRes.error) setTasks((taskRes.data ?? []).map(mapTaskRow));
             if (!blockRes.error) setAgendaBlocks((blockRes.data ?? []).map(mapAgendaBlockRow));
             if (!meetRes.error) setMeetings((meetRes.data ?? []).map(mapMeetingRow));
+            if (!storesRes.error) setCalendarStores((storesRes.data ?? []).map((r: Record<string, unknown>) => ({ id: Number(r.id), name: r.name as string })));
+            if (!operatorsRes.error) setCalendarOperators((operatorsRes.data ?? []).map((r: Record<string, unknown>) => ({
+                id: Number(r.id),
+                name: r.name as string,
+                store: r.store as string,
+                brands: Array.isArray(r.brands) ? r.brands as string[] : [],
+            })));
         })();
         return () => { cancelled = true; };
     }, []);
@@ -488,7 +480,7 @@ export default function Calendario() {
         setNewMeeting(prev => {
             const autoRecipients: MeetingRecipient[] =
                 brand && brand !== "Corporate / Aziendale"
-                    ? MOCK_MEETING_USERS.filter(u => u.brands.includes(brand)).map(u => ({
+                    ? meetingUsers.filter(u => u.brands.includes(brand)).map(u => ({
                         id: u.id,
                         name: u.name,
                         store: u.store,
@@ -505,7 +497,7 @@ export default function Calendario() {
             if (exists) {
                 return { ...prev, recipients: prev.recipients.filter(r => r.id !== userId) };
             }
-            const src = MOCK_MEETING_USERS.find(u => u.id === userId);
+            const src = meetingUsers.find(u => u.id === userId);
             if (!src) return prev;
             return {
                 ...prev,
@@ -672,7 +664,7 @@ export default function Calendario() {
                             onChange={(e) => setFilterStore(e.target.value)}
                         >
                             <option value="Tutti">Tutti i punti vendita</option>
-                            {MOCK_STORES.map((s) => (
+                            {storeNames.map((s) => (
                                 <option key={s} value={s}>{s}</option>
                             ))}
                         </select>
@@ -685,7 +677,7 @@ export default function Calendario() {
                             onChange={(e) => setFilterAgent(e.target.value)}
                         >
                             <option value="Tutti">Tutti gli agenti</option>
-                            {MOCK_AGENTS.map((a) => (
+                            {agents.map((a) => (
                                 <option key={a} value={a}>{a}</option>
                             ))}
                         </select>
@@ -785,7 +777,7 @@ export default function Calendario() {
                                     onChange={(e) => setSearchAgent(e.target.value)}
                                 >
                                     <option>Tutti gli agenti</option>
-                                    {MOCK_AGENTS.map(agent => (
+                                    {agents.map(agent => (
                                         <option key={agent} value={agent}>{agent}</option>
                                     ))}
                                 </select>
@@ -1367,7 +1359,7 @@ export default function Calendario() {
                                             <label className="block text-xs font-medium text-slate-400 mb-1.5">Agente *</label>
                                             <select className="glass-input w-full" value={newAppt.agente} onChange={e => setNewAppt(p => ({ ...p, agente: e.target.value }))} required>
                                                 <option value="">Seleziona...</option>
-                                                {MOCK_AGENTS.map(a => <option key={a} value={a}>{a}</option>)}
+                                                {agents.map(a => <option key={a} value={a}>{a}</option>)}
                                             </select>
                                         </div>
                                     ) : (
@@ -1383,7 +1375,7 @@ export default function Calendario() {
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Punto vendita *</label>
                                     <select className="glass-input w-full" value={newAppt.store} onChange={e => setNewAppt(p => ({ ...p, store: e.target.value }))} required>
                                         <option value="">Seleziona punto vendita...</option>
-                                        {MOCK_STORES.map(s => <option key={s} value={s}>{s}</option>)}
+                                        {storeNames.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                     <p className="text-xs text-slate-500 mt-1">Per gli appuntamenti inbound si seleziona solo il punto vendita.</p>
                                 </div>
@@ -1464,14 +1456,14 @@ export default function Calendario() {
                                         className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", !newTask.assignedToStore ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/5 border-white/10 text-slate-400")}>
                                         Operatore
                                     </button>
-                                    <button type="button" onClick={() => setNewTask(p => ({ ...p, assignedToStore: MOCK_STORES[0], assignedTo: "" }))}
+                                    <button type="button" onClick={() => setNewTask(p => ({ ...p, assignedToStore: storeNames[0] ?? "", assignedTo: "" }))}
                                         className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", newTask.assignedToStore ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/5 border-white/10 text-slate-400")}>
                                         Punto vendita
                                     </button>
                                 </div>
                                 {newTask.assignedToStore ? (
                                     <select className="glass-input w-full" value={newTask.assignedToStore} onChange={e => setNewTask(p => ({ ...p, assignedToStore: e.target.value }))} required>
-                                        {MOCK_STORES.map(s => <option key={s} value={s}>{s}</option>)}
+                                        {storeNames.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 ) : (
                                     isCallCenter ? (
@@ -1479,7 +1471,7 @@ export default function Calendario() {
                                             <option value="">Seleziona operatore...</option>
                                             <option value={user?.name}>{user?.name} (Tu)</option>
                                             <optgroup label="Altri">
-                                                {MOCK_AGENTS.filter(a => a !== user?.name).map(a => <option key={a} value={a}>{a}</option>)}
+                                                {agents.filter(a => a !== user?.name).map(a => <option key={a} value={a}>{a}</option>)}
                                             </optgroup>
                                         </select>
                                     ) : (
@@ -1671,7 +1663,7 @@ export default function Calendario() {
                                             Operatori
                                         </p>
                                         <div className="space-y-1.5">
-                                            {MOCK_MEETING_USERS.map(u => {
+                                            {meetingUsers.map(u => {
                                                 const checked = !!newMeeting.recipients.find(r => r.id === u.id);
                                                 return (
                                                     <button
@@ -1709,12 +1701,12 @@ export default function Calendario() {
                                             Punti vendita (selezione rapida)
                                         </p>
                                         <div className="space-y-1.5">
-                                            {MOCK_STORES.map(store => (
+                                            {storeNames.map(store => (
                                                 <button
                                                     key={store}
                                                     type="button"
                                                     onClick={() => {
-                                                        const storeUsers = MOCK_MEETING_USERS.filter(u => u.store === store);
+                                                        const storeUsers = meetingUsers.filter(u => u.store === store);
                                                         storeUsers.forEach(u => {
                                                             handleToggleRecipient(u.id);
                                                         });
@@ -1723,7 +1715,7 @@ export default function Calendario() {
                                                 >
                                                     <span>{store}</span>
                                                     <span className="text-[10px] text-slate-500">
-                                                        {MOCK_MEETING_USERS.filter(u => u.store === store).length} operatori
+                                                        {meetingUsers.filter(u => u.store === store).length} operatori
                                                     </span>
                                                 </button>
                                             ))}
