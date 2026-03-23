@@ -40,6 +40,10 @@ function mapToGestioneRow(r: RawRow): GestioneRow {
     const inviato = (c.data_registrazione as string) || (c.data as string) || (c.created_at as string) || "";
     const inviatoFormatted = inviato ? (inviato.includes("T") ? new Date(inviato).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : inviato) : "—";
     const tipo = (client?.tipo as string) ?? "consumer";
+    const nomeCognome = `${(client?.nome as string) || ""} ${(client?.cognome as string) || ""}`.trim();
+    const ragioneSociale = (client?.ragione_sociale as string) ?? "—";
+    const clienteName = tipo === "business" && ragioneSociale !== "—" ? ragioneSociale : nomeCognome || "—";
+    
     return {
         id: (c.id as string) ?? "",
         brand: (c.brand as string) ?? "—",
@@ -48,7 +52,7 @@ function mapToGestioneRow(r: RawRow): GestioneRow {
         operatore: (c.operatore_bo as string) ?? "",
         stato: (c.stato as string) ?? "—",
         note: (c.note as string) ?? "",
-        societa: (client?.ragione_sociale as string) ?? "—",
+        societa: clienteName,
         piva: (client?.cf_piva as string) ?? "—",
         segmento: tipo === "business" ? "Business" : "Consumer",
     };
@@ -234,8 +238,8 @@ export default function GestionePda() {
                                 <th className="px-4 py-4 w-48">Operatore BO</th>
                                 <th className="px-4 py-4 w-48">Stato</th>
                                 <th className="px-4 py-4 w-16 text-center">Note</th>
-                                <th className="px-4 py-4">Ragione Sociale</th>
-                                <th className="px-4 py-4">P. IVA</th>
+                                <th className="px-4 py-4">Cliente (Nome / Ragione Sociale)</th>
+                                <th className="px-4 py-4">CF / P. IVA</th>
                                 <th className="px-4 py-4 w-32">Segmento</th>
                             </tr>
                         </thead>
