@@ -1,17 +1,19 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import Image from "next/image";
+import { User, Store, Eye, ShieldCheck, Phone, Headphones, Car, Target, TrendingUp, Calendar, Clock, AlertTriangle, CheckCircle2, XCircle, DollarSign, BarChart3, Users, ChevronDown, ChevronUp, Clipboard, FileWarning } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 
 const BRANDS = [
-  { id: "windtre", label: "WindTre", color: "#FF6B00", icon: "🌀" },
-  { id: "vodafone", label: "Vodafone", color: "#E60000", icon: "📶" },
-  { id: "sky", label: "Sky", color: "#0072C6", icon: "📡" },
-  { id: "fastweb", label: "Fastweb", color: "#FFD200", icon: "⚡" },
-  { id: "energia", label: "Energia", color: "#4CAF50", icon: "💡" },
+  { id: "windtre", label: "WindTre", color: "#c2702a", logo: "/windtre.webp" },
+  { id: "vodafone", label: "Vodafone", color: "#c45454", logo: "/vodaphone - Copy.png" },
+  { id: "sky", label: "Sky", color: "#5a9abf", logo: "/sky.png" },
+  { id: "fastweb", label: "Fastweb", color: "#bfa84a", logo: "/fastweb.png" },
+  { id: "energia", label: "Energia", color: "#6aaa6a", logo: "/energy - Copy.png" },
 ];
 
 const BRAND_CATS_AZ: Record<string, { id: string; label: string }[]> = {
@@ -227,7 +229,9 @@ function glMese(gl: number[]) { let c = 0; for (let d = 1; d <= 31; d++) { const
 function glPass(gl: number[], oggi: number) { let c = 0; for (let d = 1; d <= oggi; d++) { const dow = new Date(2026, 2, d).getDay(); if (dow !== 0 && gl.indexOf(dow) >= 0) c++; } return c; }
 function glRim(gl: number[], oggi: number) { return glMese(gl) - glPass(gl, oggi); }
 function proj(fatti: number, gp: number, gt: number) { return gp === 0 ? fatti : Math.round((fatti / gp) * gt); }
-function stCol(pct: number) { return pct >= 100 ? "#4CAF50" : pct >= 80 ? "#FFA726" : "#EF5350"; }
+function stCol(pct: number) { return pct >= 100 ? "#6aaa7a" : pct >= 80 ? "#c4a24a" : "#c46a6a"; }
+function stTw(pct: number) { return pct >= 100 ? "text-emerald-400" : pct >= 80 ? "text-amber-400" : "text-rose-400"; }
+function stBgTw(pct: number) { return pct >= 100 ? "bg-emerald-500" : pct >= 80 ? "bg-amber-500" : "bg-rose-500"; }
 function stLbl(pct: number) { return pct >= 100 ? "In linea" : pct >= 80 ? "A rischio" : "Sotto tono"; }
 function stEmoji(pct: number) { return pct >= 100 ? "✅" : pct >= 80 ? "⚠️" : "🔴"; }
 
@@ -290,17 +294,17 @@ function DualBar({ actual, projected, max, color, height }: { actual: number; pr
   const pctProj = max > 0 ? Math.min((projected / max) * 100, 100) : 0;
   return (
     <div className="w-full relative">
-      <div className="w-full overflow-hidden relative rounded-full" style={{ height: h, backgroundColor: "rgba(255,255,255,0.04)" }}>
-        <div className="absolute top-0 left-0 h-full rounded-full transition-all duration-1000" style={{ width: pctProj + "%", backgroundColor: color, opacity: 0.25 }} />
+      <div className="w-full overflow-hidden relative rounded-full bg-white/[0.04]" style={{ height: h }}>
+        <div className="absolute top-0 left-0 h-full rounded-full transition-all duration-1000 opacity-25" style={{ width: pctProj + "%", backgroundColor: color }} />
         <div className="absolute top-0 left-0 h-full rounded-full transition-all duration-1000" style={{ width: pctAct + "%", backgroundColor: color }} />
       </div>
-      <div className="flex gap-2.5 mt-1">
-        <div className="flex items-center gap-1">
-          <div className="rounded-sm" style={{ width: 8, height: 4, backgroundColor: color }} />
+      <div className="flex gap-3 mt-1.5">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-1 rounded-sm" style={{ backgroundColor: color }} />
           <span className="text-sm text-slate-500">attuale</span>
         </div>
-        <div className="flex items-center gap-1">
-          <div className="rounded-sm" style={{ width: 8, height: 4, backgroundColor: color, opacity: 0.3 }} />
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-1 rounded-sm opacity-30" style={{ backgroundColor: color }} />
           <span className="text-sm text-slate-500">proiezione</span>
         </div>
       </div>
@@ -308,25 +312,59 @@ function DualBar({ actual, projected, max, color, height }: { actual: number; pr
   );
 }
 
-function SectionTitle({ icon, text, extra }: { icon: string; text: string; extra?: React.ReactNode }) {
+function SectionTitle({ icon, text, extra }: { icon: React.ReactNode; text: string; extra?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between mb-4 pb-2.5 border-b border-white/[0.06]">
-      <div className="flex items-center gap-2">
-        <span className="text-base">{icon}</span>
-        <span className="text-base font-bold text-slate-200 uppercase tracking-wider">{text}</span>
+    <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/[0.06]">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">{icon}</div>
+        <h2 className="text-lg font-bold text-white uppercase tracking-wide">{text}</h2>
       </div>
       {extra || null}
     </div>
   );
 }
 
-function Card({ children, delay, style, className }: { children: React.ReactNode; delay?: number; style?: React.CSSProperties; className?: string }) {
+function Card({ children, delay, className, color }: { children: React.ReactNode; delay?: number; className?: string; color?: string }) {
   return (
     <div
-      className={`glass-card p-[18px_22px] animate-[fadeUp_0.5s_ease_both] ${className || ""}`}
-      style={{ animationDelay: (delay || 0) + "s", ...style }}
+      className={`glass-card p-6 relative overflow-hidden ${className || ""}`}
+      style={{ animation: `fadeUp 0.5s ease-out ${delay || 0}s both` }}
     >
+      {color && <div className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl" style={{ background: `linear-gradient(to right, ${color}, ${color}66)` }} />}
       {children}
+    </div>
+  );
+}
+
+function KpiCard({ label, value, sub, accent, delay }: { label: string; value: string | number; sub?: string; accent: string; delay?: number }) {
+  return (
+    <div
+      className="glass-card p-5 relative overflow-hidden border-l-4 flex-1 min-w-0"
+      style={{ borderLeftColor: accent, animation: `fadeUp 0.5s ease-out ${delay || 0}s both` }}
+    >
+      <div className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-2">{label}</div>
+      <div className="text-3xl font-extrabold font-mono" style={{ color: accent }}>{value}</div>
+      {sub && <div className="text-sm text-slate-500 mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+function PillToggle({ options, value, onChange }: { options: { id: string; label: string; icon?: string }[]; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex gap-1 p-1 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+      {options.map(o => (
+        <button
+          key={o.id}
+          onClick={() => onChange(o.id)}
+          className={`py-1.5 px-3.5 rounded-lg text-sm font-semibold transition-all cursor-pointer whitespace-nowrap ${
+            value === o.id
+              ? "bg-violet-500/15 text-violet-300 border border-violet-500/30 shadow-lg shadow-violet-500/10"
+              : "text-slate-500 hover:text-white border border-transparent hover:bg-white/5"
+          }`}
+        >
+          {o.icon && o.icon + " "}{o.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -337,27 +375,27 @@ function PratichePerse({ ko, nonPagate, label }: { ko: number; nonPagate: number
   return (
     <div
       onClick={() => setExp(p => !p)}
-      className="p-[10px_12px] rounded-lg cursor-pointer bg-rose-500/[0.06] border border-rose-500/[0.12]"
+      className="p-4 rounded-xl cursor-pointer bg-rose-500/[0.06] border border-rose-500/[0.12] transition-all hover:bg-rose-500/[0.1]"
     >
       <div className="flex items-center gap-3">
-        <span className="text-[22px]">🔴</span>
+        <span className="text-xl">🔴</span>
         <div className="flex-1">
-          <div className="text-sm font-semibold text-rose-500">{label || "Pratiche Perse — Ultimo Bimestre"}</div>
-          <div className="text-sm text-slate-500 mt-0.5">KO + non pagate · clicca per dettaglio</div>
+          <div className="text-sm font-semibold text-rose-400">{label || "Pratiche Perse -- Ultimo Bimestre"}</div>
+          <div className="text-sm text-slate-500 mt-0.5">KO + non pagate -- clicca per dettaglio</div>
         </div>
-        <span className="text-[22px] font-extrabold text-rose-500 font-mono">{tot}</span>
-        <span className="text-sm text-slate-600 ml-1.5">{exp ? "▲" : "▼"}</span>
+        <span className="text-2xl font-extrabold text-rose-400 font-mono">{tot}</span>
+        <span className="text-sm text-slate-600 ml-1">{exp ? "▲" : "▼"}</span>
       </div>
       {exp && (
-        <div className="mt-2.5 pt-2.5 border-t border-rose-500/10 flex gap-4">
-          <div className="flex-1 text-center p-2 rounded-md bg-rose-500/[0.06]">
-            <div className="text-xl font-extrabold text-rose-500 font-mono">{ko}</div>
-            <div className="text-sm text-rose-500">KO</div>
+        <div className="mt-3 pt-3 border-t border-rose-500/10 grid grid-cols-2 gap-3">
+          <div className="text-center p-3 rounded-xl bg-rose-500/[0.06]">
+            <div className="text-2xl font-extrabold text-rose-400 font-mono">{ko}</div>
+            <div className="text-sm font-semibold text-rose-400 mt-1">KO</div>
             <div className="text-sm text-slate-500 mt-0.5">Mai attivate</div>
           </div>
-          <div className="flex-1 text-center p-2 rounded-md bg-amber-500/[0.06]">
-            <div className="text-xl font-extrabold text-amber-500 font-mono">{nonPagate}</div>
-            <div className="text-sm text-amber-500">Non Pagate</div>
+          <div className="text-center p-3 rounded-xl bg-amber-500/[0.06]">
+            <div className="text-2xl font-extrabold text-amber-400 font-mono">{nonPagate}</div>
+            <div className="text-sm font-semibold text-amber-400 mt-1">Non Pagate</div>
             <div className="text-sm text-slate-500 mt-0.5">Attivate ma perse</div>
           </div>
         </div>
@@ -373,19 +411,42 @@ function BloccoA({ data, storeId }: { data: MockData; storeId: string | null }) 
   const gt = glMese(glA); const gp = glPass(glA, OGGI); const gr = glRim(glA, OGGI);
   const [collapsedAz, setCollapsedAz] = useState<string[]>([]);
 
+  // Compute totals for KPI row
+  let totalFattiAll = 0, totalTargetAll = 0;
+  BRANDS.forEach(b => {
+    const cats = BRAND_CATS_AZ[b.id] || [];
+    cats.forEach(c => {
+      totalTargetAll += (data.targetAzCat[b.id] && data.targetAzCat[b.id][c.id]) || 0;
+      SELLERS.forEach(se => { totalFattiAll += (data.produzioneAzCat[se.id] && data.produzioneAzCat[se.id][b.id] && data.produzioneAzCat[se.id][b.id][c.id]) || 0; });
+    });
+  });
+  const totalProjAll = proj(totalFattiAll, gp, gt);
+  const totalPctAll = totalTargetAll > 0 ? Math.round((totalProjAll / totalTargetAll) * 100) : 0;
+  const ritmoGlob = gr > 0 ? ((totalTargetAll - totalFattiAll) / gr).toFixed(1) : "0";
+
   return (
-    <div>
+    <div className="space-y-6">
       <SectionTitle
-        icon="🎯"
-        text="Target Aziendale — Marzo 2026"
+        icon={<Target className="w-5 h-5" />}
+        text="Target Aziendale -- Marzo 2026"
         extra={
-          <div className="flex gap-2">
-            <span className="text-sm text-slate-500 font-mono bg-white/[0.04] py-1 px-2.5 rounded-md">{gp} giorni lavorati</span>
-            <span className="text-sm text-slate-500 font-mono bg-white/[0.04] py-1 px-2.5 rounded-md">{gr} rimasti</span>
+          <div className="hidden sm:flex gap-2">
+            <span className="text-sm text-slate-400 font-mono bg-white/[0.04] py-1.5 px-3 rounded-lg border border-white/[0.06]">{gp} giorni lavorati</span>
+            <span className="text-sm text-slate-400 font-mono bg-white/[0.04] py-1.5 px-3 rounded-lg border border-white/[0.06]">{gr} rimasti</span>
           </div>
         }
       />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+
+      {/* KPI Summary Row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard label="Produzione Totale" value={totalFattiAll} sub={`su ${totalTargetAll} target`} accent="#8b5cf6" delay={0.05} />
+        <KpiCard label="Proiezione" value={totalPctAll + "%"} sub={`${totalProjAll} proiettati`} accent={stCol(totalPctAll)} delay={0.1} />
+        <KpiCard label="Giorni Rimasti" value={gr} sub={`su ${gt} totali`} accent="#3b82f6" delay={0.15} />
+        <KpiCard label="Ritmo Necessario" value={ritmoGlob + "/gg"} sub="per chiudere in target" accent="#c4a24a" delay={0.2} />
+      </div>
+
+      {/* Brand Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {BRANDS.map((b, idx) => {
           const cats = BRAND_CATS_AZ[b.id] || [];
           const isExp = collapsedAz.indexOf(b.id) < 0;
@@ -417,37 +478,52 @@ function BloccoA({ data, storeId }: { data: MockData; storeId: string | null }) 
           }
 
           return (
-            <Card key={b.id} delay={0.05 * idx}>
+            <Card key={b.id} delay={0.05 * idx + 0.25} color={b.color}>
+              {/* Brand Header */}
               <div
                 onClick={() => setCollapsedAz(prev => isExp ? [...prev, b.id] : prev.filter(x => x !== b.id))}
-                className="cursor-pointer flex items-center gap-2 mb-2.5"
+                className="cursor-pointer flex items-center gap-3 mb-4"
               >
-                <div className="w-[30px] h-[30px] rounded-lg flex items-center justify-center text-sm" style={{ backgroundColor: b.color + "20" }}>{b.icon}</div>
-                <span className="text-sm font-bold flex-1" style={{ color: b.color }}>{b.label}</span>
-                <span className="text-sm text-slate-600">{cats.length} cat. {isExp ? "▲" : "▼"}</span>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center overflow-hidden border" style={{ backgroundColor: b.color + "15", borderColor: b.color + "30" }}>
+                  <Image src={b.logo} alt={b.label} width={28} height={28} className="object-cover rounded-lg"/>
+                </div>
+                <span className="text-base font-bold flex-1" style={{ color: b.color }}>{b.label}</span>
+                <span className="text-sm text-slate-500">{isExp ? "▲" : "▼"}</span>
               </div>
-              <div className="text-center mb-2">
-                <div className="text-4xl font-extrabold font-mono leading-none" style={{ color: col }}><AnimNum target={avgCatPct} />%</div>
-                <div className="text-sm text-slate-500 mt-1">media {cats.length} categorie · {catInTarget}/{cats.length} in target</div>
+
+              {/* Main Percentage */}
+              <div className="text-center mb-4">
+                <div className="text-4xl font-extrabold font-mono leading-none" style={{ color: col }}>
+                  <AnimNum target={avgCatPct} />%
+                </div>
+                <div className="text-sm text-slate-500 mt-2">
+                  {catInTarget}/{cats.length} categorie in target
+                </div>
               </div>
+
+              {/* Progress Bar */}
               <DualBar actual={totFatti} projected={proiezione} max={totTarget} color={col} height={8} />
-              <div className="flex justify-between mt-1">
+              <div className="flex justify-between mt-2">
                 <span className="text-sm font-mono text-slate-300">{totFatti} fatti</span>
-                <span className="text-sm text-slate-600">→</span>
-                <span className="text-sm font-mono font-semibold" style={{ color: col }}>{proiezione} proj. / {totTarget}</span>
+                <span className="text-sm font-mono font-semibold" style={{ color: col }}>{proiezione}/{totTarget}</span>
               </div>
-              <div className="text-sm text-slate-600 mt-0.5">Ritmo: {ritmo}/gg</div>
+              <div className="text-sm text-slate-500 mt-1">Ritmo: {ritmo}/gg</div>
+
               {contribNeg !== null && (
-                <div className="text-sm mt-1 pt-1 border-t border-white/5" style={{ color: b.color }}>Il tuo negozio: {contribNeg}</div>
+                <div className="text-sm font-semibold mt-2 pt-2 border-t border-white/5" style={{ color: b.color }}>
+                  Il tuo negozio: {contribNeg}
+                </div>
               )}
+
+              {/* Category Breakdown */}
               {isExp && (
-                <div className="mt-2.5 pt-2.5 border-t border-white/[0.06] flex flex-col gap-1.5">
+                <div className="mt-4 pt-4 border-t border-white/[0.06] space-y-3">
                   {catData.map(cd => (
                     <div key={cd.cat.id}>
-                      <div className="flex items-center justify-between mb-0.5">
+                      <div className="flex items-center justify-between mb-1">
                         <span className="text-sm text-slate-400 font-semibold">{cd.cat.label}</span>
                         <div className="flex gap-2 items-center">
-                          <span className="text-sm font-mono text-slate-300">{cd.fatti} fatti</span>
+                          <span className="text-sm font-mono text-slate-300">{cd.fatti}</span>
                           <span className="text-sm text-slate-600">→</span>
                           <span className="text-sm font-mono font-bold" style={{ color: stCol(cd.pct) }}>{cd.proiezione}/{cd.target}</span>
                         </div>
@@ -487,18 +563,19 @@ function BloccoB({ data, storeId }: { data: MockData; storeId: string | null }) 
   }).sort((a, b) => a.pct - b.pct);
 
   return (
-    <div>
+    <div className="space-y-6">
       <SectionTitle
-        icon="🏪"
+        icon={<Store className="w-5 h-5" />}
         text={"Negozio " + store.name}
         extra={
-          <span className="text-sm text-slate-500 bg-white/[0.04] py-0.5 px-2 rounded">
-            {store.tipo.toUpperCase()} · {store.giorniLav.length === 6 ? "Lun-Sab" : "Lun-Ven"}
+          <span className="text-sm text-slate-400 bg-white/[0.04] py-1.5 px-3 rounded-lg border border-white/[0.06]">
+            {store.tipo.toUpperCase()} -- {store.giorniLav.length === 6 ? "Lun-Sab" : "Lun-Ven"}
           </span>
         }
       />
+
       {/* B1: Brand targets con sottocategorie */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2.5 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {BRANDS.map((b, idx) => {
           const cats = BRAND_CATS_NEG[b.id] || [];
           const isExp = collapsedNeg.indexOf(b.id) < 0;
@@ -514,26 +591,28 @@ function BloccoB({ data, storeId }: { data: MockData; storeId: string | null }) 
           const col = stCol(avgPct);
 
           return (
-            <Card key={b.id} delay={0.3 + idx * 0.04} style={{ padding: "12px 14px", borderLeft: "3px solid " + col }}>
+            <Card key={b.id} delay={0.3 + idx * 0.04} color={b.color}>
               <div
                 onClick={() => setCollapsedNeg(prev => isExp ? [...prev, b.id] : prev.filter(x => x !== b.id))}
-                className="cursor-pointer flex items-center gap-1.5 mb-1.5"
+                className="cursor-pointer flex items-center gap-3 mb-3"
               >
-                <span className="text-[13px]">{b.icon}</span>
-                <span className="text-sm font-bold flex-1" style={{ color: b.color }}>{b.label}</span>
-                <span className="text-sm text-slate-600">{isExp ? "▲" : "▼"}</span>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center overflow-hidden border" style={{ backgroundColor: b.color + "15", borderColor: b.color + "30" }}>
+                  <Image src={b.logo} alt={b.label} width={24} height={24} className="object-cover rounded-lg"/>
+                </div>
+                <span className="text-base font-bold flex-1" style={{ color: b.color }}>{b.label}</span>
+                <span className="text-sm text-slate-500">{isExp ? "▲" : "▼"}</span>
               </div>
-              <div className="flex items-baseline gap-1 mb-1">
-                <span className="text-xl font-extrabold font-mono" style={{ color: col }}>{avgPct}%</span>
-                <span className="text-sm text-slate-500">media {cats.length} categorie</span>
+              <div className="text-center mb-3">
+                <div className="text-3xl font-extrabold font-mono" style={{ color: col }}>{avgPct}%</div>
+                <div className="text-sm text-slate-500 mt-1">media {cats.length} categorie</div>
               </div>
-              <div className="text-sm font-semibold" style={{ color: col }}>{stLbl(avgPct)}</div>
+              <div className="text-sm font-bold text-center mb-2" style={{ color: col }}>{stLbl(avgPct)}</div>
               {isExp && (
-                <div className="mt-2 pt-2 border-t border-white/[0.06] flex flex-col gap-1.5">
+                <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-2">
                   {catData.map(cd => (
                     <div key={cd.cat.id}>
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-sm text-slate-400">{cd.cat.label}</span>
+                        <span className="text-sm text-slate-400 font-semibold">{cd.cat.label}</span>
                         <div className="flex gap-1.5 items-center">
                           <span className="text-sm font-mono text-slate-300">{cd.fatti}</span>
                           <span className="text-sm text-slate-600">→</span>
@@ -549,11 +628,13 @@ function BloccoB({ data, storeId }: { data: MockData; storeId: string | null }) 
           );
         })}
       </div>
+
       {/* B2 + B3 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Team Projection */}
         <Card delay={0.5}>
-          <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-3">Team · Proiezione Target</div>
-          <div className="flex flex-col gap-1.5">
+          <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">Team -- Proiezione Target</div>
+          <div className="space-y-1">
             {teamData.map(td => {
               const col = stCol(td.pct);
               const isE = teamExp === td.seller.id;
@@ -561,22 +642,23 @@ function BloccoB({ data, storeId }: { data: MockData; storeId: string | null }) 
                 <div key={td.seller.id}>
                   <div
                     onClick={() => setTeamExp(isE ? null : td.seller.id)}
-                    className="flex items-center gap-2 py-1.5 px-2 rounded-md cursor-pointer"
-                    style={{ backgroundColor: td.pct < 80 ? "rgba(239,83,80,0.06)" : "transparent" }}
+                    className={`flex items-center gap-2.5 py-2 px-3 rounded-xl cursor-pointer transition-all ${
+                      td.pct < 80 ? "bg-rose-500/[0.04] hover:bg-rose-500/[0.08]" : "hover:bg-white/[0.03]"
+                    }`}
                   >
-                    <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col }} />
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: col }} />
                     <span className="text-sm font-semibold text-slate-300 flex-1">{td.seller.name}</span>
                     <span className="text-sm font-mono text-slate-400">{td.fatti}</span>
                     <span className="text-sm text-slate-600">→</span>
                     <span className="text-sm font-mono font-semibold" style={{ color: col }}>{td.proj}/{td.target}</span>
-                    <span className="text-sm font-bold w-9 text-right" style={{ color: col }}>{td.pct}%</span>
+                    <span className="text-sm font-bold w-10 text-right" style={{ color: col }}>{td.pct}%</span>
                     <span className="text-sm text-slate-600 ml-1">{isE ? "▲" : "▼"}</span>
                   </div>
                   {isE && (
-                    <div className="py-2 px-2 pl-6">
-                      <div className="flex items-center gap-1.5 mb-2 py-1 px-2 rounded-md bg-white/[0.03]">
-                        <span className="text-sm text-slate-500">Target raggiunti:</span>
-                        <span className="text-[13px] font-extrabold font-mono text-white">
+                    <div className="py-3 px-3 pl-8">
+                      <div className="flex items-center gap-2 mb-3 py-2 px-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+                        <span className="text-sm text-slate-400">Target raggiunti:</span>
+                        <span className="text-sm font-extrabold font-mono text-white">
                           {BRANDS.filter(b => {
                             const f = (data.produzione[td.seller.id] && data.produzione[td.seller.id][b.id]) || 0;
                             const t = (data.targetPersonali[td.seller.id] && data.targetPersonali[td.seller.id][b.id]) || 1;
@@ -584,20 +666,20 @@ function BloccoB({ data, storeId }: { data: MockData; storeId: string | null }) 
                           }).length}/{BRANDS.length}
                         </span>
                       </div>
-                      <div>
+                      <div className="space-y-1">
                         {BRANDS.map(b => {
                           const f = (data.produzione[td.seller.id] && data.produzione[td.seller.id][b.id]) || 0;
                           const t = (data.targetPersonali[td.seller.id] && data.targetPersonali[td.seller.id][b.id]) || 0;
                           const p = proj(f, gp, gt); const pc = t > 0 ? Math.round((p / t) * 100) : 100;
                           const reached = pc >= 100;
                           return (
-                            <div key={b.id} className="flex items-center gap-2 py-1 border-b border-white/[0.03]">
-                              <span className="text-sm w-[22px] text-center">{b.icon}</span>
-                              <span className="text-sm font-semibold w-[60px]" style={{ color: b.color }}>{b.label}</span>
-                              <span className="text-sm font-mono text-slate-300 w-[30px] text-center">{f}</span>
+                            <div key={b.id} className="flex items-center gap-2.5 py-1.5 border-b border-white/[0.03]">
+                              <div className="w-5 h-5 rounded overflow-hidden shrink-0"><Image src={b.logo} alt={b.label} width={20} height={20} className="object-cover"/></div>
+                              <span className="text-sm font-semibold w-16" style={{ color: b.color }}>{b.label}</span>
+                              <span className="text-sm font-mono text-slate-300 w-8 text-center">{f}</span>
                               <span className="text-sm text-slate-600">→</span>
-                              <span className="text-sm font-mono font-bold w-[40px] text-center" style={{ color: stCol(pc) }}>{p}/{t}</span>
-                              <span className="text-sm w-[18px] text-center">{reached ? "✅" : pc >= 80 ? "⚠️" : "🔴"}</span>
+                              <span className="text-sm font-mono font-bold w-10 text-center" style={{ color: stCol(pc) }}>{p}/{t}</span>
+                              <span className="text-sm w-5 text-center">{reached ? "✅" : pc >= 80 ? "⚠️" : "🔴"}</span>
                             </div>
                           );
                         })}
@@ -609,18 +691,20 @@ function BloccoB({ data, storeId }: { data: MockData; storeId: string | null }) 
             })}
           </div>
         </Card>
+
+        {/* Monitoring */}
         <Card delay={0.55}>
-          <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-3.5">Monitoraggio Pratiche Negozio</div>
-          <div className="flex flex-col gap-2.5">
-            <div className="flex items-center gap-3 p-[10px_12px] rounded-lg cursor-pointer bg-amber-500/[0.06] border border-amber-500/[0.12]">
-              <span className="text-[22px]">📋</span>
+          <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">Monitoraggio Pratiche Negozio</div>
+          <div className="space-y-3">
+            <div className="flex items-center gap-4 p-4 rounded-xl bg-amber-500/[0.06] border border-amber-500/[0.12]">
+              <span className="text-xl">📋</span>
               <div className="flex-1">
-                <div className="text-sm font-semibold text-amber-500">Da Lavorare + Warning</div>
-                <div className="text-sm text-slate-500 mt-0.5">{totDaLav} da lavorare · {totWarn} in warning</div>
+                <div className="text-sm font-semibold text-amber-400">Da Lavorare + Warning</div>
+                <div className="text-sm text-slate-500 mt-0.5">{totDaLav} da lavorare -- {totWarn} in warning</div>
               </div>
-              <span className="text-[22px] font-extrabold text-amber-500 font-mono">{totDaLav + totWarn}</span>
+              <span className="text-2xl font-extrabold text-amber-400 font-mono">{totDaLav + totWarn}</span>
             </div>
-            <PratichePerse ko={totKo} nonPagate={totNP} label="Pratiche Perse — Ultimo Bimestre" />
+            <PratichePerse ko={totKo} nonPagate={totNP} label="Pratiche Perse -- Ultimo Bimestre" />
           </div>
         </Card>
       </div>
@@ -689,31 +773,38 @@ function BloccoC({ data, sellerId, outbound, hideMonitoraggio, hideAppuntamenti,
         .sort((a, b) => a.ora.localeCompare(b.ora)).slice(0, 5);
 
   return (
-    <div>
-      <SectionTitle icon="👤" text={"I Miei Dati — " + seller.name} />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        {/* C1 */}
-        <Card delay={0.6}>
-          <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-3">I Miei Target — Proiezione</div>
-          <div className="flex gap-3 mb-3.5">
-            {[{ n: inLinea, l: "In linea", c: "#4CAF50" }, { n: aRischio, l: "A rischio", c: "#FFA726" }, { n: sottoTono, l: "Sotto tono", c: "#EF5350" }].map(i => (
-              <div key={i.l} className="flex-1 text-center py-2.5 px-2 rounded-lg" style={{ backgroundColor: i.c + "12", border: "1px solid " + i.c + "25" }}>
-                <div className="text-2xl font-extrabold font-mono" style={{ color: i.c }}>{i.n}</div>
-                <div className="text-sm mt-0.5" style={{ color: i.c }}>{i.l}</div>
-              </div>
-            ))}
+    <div className="space-y-6">
+      <SectionTitle icon={<User className="w-5 h-5" />} text={"I Miei Dati -- " + seller.name} />
+
+      {/* Status Cards Row */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { n: inLinea, l: "In linea", tw: "emerald" },
+          { n: aRischio, l: "A rischio", tw: "amber" },
+          { n: sottoTono, l: "Sotto tono", tw: "rose" },
+        ].map(item => (
+          <div key={item.l} className={`glass-card p-5 text-center border-t-2 border-${item.tw}-500`}>
+            <div className={`text-3xl font-extrabold font-mono text-${item.tw}-400`}>{item.n}</div>
+            <div className={`text-sm font-semibold text-${item.tw}-400 mt-1`}>{item.l}</div>
           </div>
-          <div className="flex flex-col gap-1.5">
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* C1: Target Proiezione */}
+        <Card delay={0.6}>
+          <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">I Miei Target -- Proiezione</div>
+          <div className="space-y-3">
             {brandStatus.map(bs => {
               const col = stCol(bs.pct);
               return (
                 <div key={bs.brand.id}>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-sm w-5 text-center">{bs.brand.icon}</span>
-                    <span className="text-sm text-slate-400 w-[60px]">{bs.brand.label}</span>
-                    <span className="text-sm font-mono text-white w-[50px] text-center">{bs.fatti} fatti</span>
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <div className="w-5 h-5 rounded overflow-hidden shrink-0"><Image src={bs.brand.logo} alt={bs.brand.label} width={20} height={20} className="object-cover"/></div>
+                    <span className="text-sm text-slate-400 font-semibold w-16">{bs.brand.label}</span>
+                    <span className="text-sm font-mono text-white w-14 text-center">{bs.fatti} fatti</span>
                     <span className="text-sm text-slate-600">→</span>
-                    <span className="text-sm font-mono font-bold w-[55px] text-center" style={{ color: col }}>{bs.proiezione}/{bs.target}</span>
+                    <span className="text-sm font-mono font-bold w-14 text-center" style={{ color: col }}>{bs.proiezione}/{bs.target}</span>
                   </div>
                   <DualBar actual={bs.fatti} projected={bs.proiezione} max={bs.target} color={col} height={7} />
                 </div>
@@ -721,29 +812,28 @@ function BloccoC({ data, sellerId, outbound, hideMonitoraggio, hideAppuntamenti,
             })}
           </div>
           {confronti.length > 0 && (
-            <div>
+            <div className="mt-4">
               <button
                 onClick={() => setShowConf(p => !p)}
-                className="w-full mt-3 p-2 rounded-md cursor-pointer text-sm font-semibold transition-colors"
-                style={{
-                  background: showConf ? "rgba(255,167,38,0.1)" : "rgba(255,255,255,0.03)",
-                  border: "1px solid " + (showConf ? "rgba(255,167,38,0.2)" : "rgba(255,255,255,0.06)"),
-                  color: showConf ? "#FFA726" : "#888",
-                }}
+                className={`w-full p-3 rounded-xl cursor-pointer text-sm font-semibold transition-all border ${
+                  showConf
+                    ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                    : "bg-white/[0.03] border-white/[0.06] text-slate-500 hover:text-white hover:bg-white/[0.05]"
+                }`}
               >
                 {showConf ? "▲ Chiudi confronto" : "👀 Guarda chi sta facendo meglio di te"}
               </button>
               {showConf && (
-                <div className="mt-2.5 flex flex-col gap-1.5">
+                <div className="mt-3 space-y-2">
                   {confronti.map(c => (
-                    <div key={c.brand.id} className="p-2 px-2.5 rounded-md bg-white/[0.02] border border-white/[0.04]">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-sm">{c.brand.icon}</span>
+                    <div key={c.brand.id} className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <div className="w-5 h-5 rounded overflow-hidden shrink-0"><Image src={c.brand.logo} alt={c.brand.label} width={20} height={20} className="object-cover"/></div>
                         <span className="text-sm font-bold" style={{ color: c.brand.color }}>{c.brand.label}</span>
                         <span className="text-sm ml-auto font-semibold" style={{ color: stCol(c.myPct) }}>{stEmoji(c.myPct)} Tu: {c.myPct}%</span>
                       </div>
                       {c.meglio
-                        ? <div className="text-sm text-emerald-500">📈 <strong>{c.meglio.seller.name}</strong> ({(STORES.find(st => st.id === c.meglio!.seller.store) || {} as { name?: string }).name || getGroupLabel(getSellerGroup(c.meglio.seller))}) proietta {c.meglio.pct}%</div>
+                        ? <div className="text-sm text-emerald-400">📈 <strong>{c.meglio.seller.name}</strong> ({(STORES.find(st => st.id === c.meglio!.seller.store) || {} as { name?: string }).name || getGroupLabel(getSellerGroup(c.meglio.seller))}) proietta {c.meglio.pct}%</div>
                         : <div className="text-sm text-slate-500">Nessuno proietta meglio</div>
                       }
                     </div>
@@ -753,73 +843,59 @@ function BloccoC({ data, sellerId, outbound, hideMonitoraggio, hideAppuntamenti,
             </div>
           )}
         </Card>
+
         {/* C2: Classifica */}
         <Card delay={0.65}>
           {showAllClassifiche && (
-            <div className="flex gap-1 mb-2.5">
-              {(["pv", "cc", "ob"] as const).map(g => (
-                <button
-                  key={g}
-                  onClick={() => setClassGroup(g)}
-                  className="flex-1 py-1.5 px-1.5 rounded-md text-sm cursor-pointer font-semibold text-center transition-colors"
-                  style={{
-                    border: classGroup === g ? "1px solid rgba(66,165,245,0.4)" : "1px solid rgba(255,255,255,0.06)",
-                    background: classGroup === g ? "rgba(66,165,245,0.08)" : "transparent",
-                    color: classGroup === g ? "#42A5F5" : "#666",
-                  }}
-                >
-                  {g === "pv" ? "🏪 PV" : g === "cc" ? "📞 CC" : "🚗 OB"}
-                </button>
-              ))}
+            <div className="mb-4">
+              <PillToggle
+                options={[
+                  { id: "pv", label: "PV", icon: "" },
+                  { id: "cc", label: "CC", icon: "" },
+                  { id: "ob", label: "OB", icon: "" },
+                ]}
+                value={classGroup}
+                onChange={setClassGroup}
+              />
             </div>
           )}
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider">{getGroupLabel(classGroup)}</div>
-            <div className="flex gap-1">
-              {(["fatturato", "target"] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setClassMode(m)}
-                  className="py-0.5 px-2.5 rounded-md text-sm cursor-pointer font-semibold transition-colors"
-                  style={{
-                    border: classMode === m ? "1px solid rgba(66,165,245,0.4)" : "1px solid rgba(255,255,255,0.08)",
-                    background: classMode === m ? "rgba(66,165,245,0.1)" : "transparent",
-                    color: classMode === m ? "#42A5F5" : "#666",
-                  }}
-                >
-                  {m === "fatturato" ? "💰 Fatturato" : "🎯 % Target"}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider">{getGroupLabel(classGroup)}</div>
+            <PillToggle
+              options={[
+                { id: "fatturato", label: "Fatturato", icon: "" },
+                { id: "target", label: "% Target", icon: "" },
+              ]}
+              value={classMode}
+              onChange={setClassMode}
+            />
           </div>
           <div
-            className="text-center py-2.5 mb-3 rounded-lg"
-            style={{
-              backgroundColor: myRank <= 3 ? "rgba(76,175,80,0.06)" : "rgba(255,255,255,0.02)",
-              border: "1px solid " + (myRank <= 3 ? "rgba(76,175,80,0.12)" : "rgba(255,255,255,0.04)"),
-            }}
+            className={`text-center py-3 mb-4 rounded-xl border ${
+              myRank <= 3
+                ? "bg-emerald-500/[0.06] border-emerald-500/[0.12]"
+                : "bg-white/[0.02] border-white/[0.04]"
+            }`}
           >
-            <span className="text-sm text-slate-500">La tua posizione: </span>
-            <span className="text-lg font-extrabold font-mono" style={{ color: myRank <= 3 ? "#4CAF50" : "#FFA726" }}>{myRank}°</span>
-            <span className="text-sm text-slate-600"> su {classSorted.length}</span>
+            <span className="text-sm text-slate-400">La tua posizione: </span>
+            <span className="text-xl font-extrabold font-mono" style={{ color: myRank <= 3 ? "#6aaa7a" : "#c4a24a" }}>{myRank}°</span>
+            <span className="text-sm text-slate-500"> su {classSorted.length}</span>
           </div>
-          <div className="max-h-60 overflow-y-auto flex flex-col gap-1">
+          <div className="max-h-64 overflow-y-auto space-y-1">
             {classSorted.map((r, ri) => {
               const medals = ["🥇", "🥈", "🥉"];
               const isMe = r.seller.id === sellerId;
               return (
                 <div
                   key={r.seller.id}
-                  className="flex items-center gap-2 py-1.5 px-2 rounded-md"
-                  style={{
-                    backgroundColor: isMe ? "rgba(66,165,245,0.08)" : "transparent",
-                    border: isMe ? "1px solid rgba(66,165,245,0.15)" : "1px solid transparent",
-                  }}
+                  className={`flex items-center gap-2.5 py-2 px-3 rounded-xl transition-colors ${
+                    isMe ? "bg-blue-500/[0.08] border border-blue-500/[0.15]" : "hover:bg-white/[0.02]"
+                  }`}
                 >
-                  <span className="text-sm w-[22px] text-center">{ri < 3 ? medals[ri] : (ri + 1) + "."}</span>
-                  <span className="text-sm flex-1" style={{ fontWeight: isMe ? 700 : 500, color: isMe ? "#42A5F5" : "#ccc" }}>{r.seller.name}</span>
+                  <span className="text-sm w-6 text-center">{ri < 3 ? medals[ri] : (ri + 1) + "."}</span>
+                  <span className={`text-sm flex-1 ${isMe ? "font-bold text-blue-400" : "font-medium text-slate-300"}`}>{r.seller.name}</span>
                   <span className="text-sm text-slate-500">{r.store ? r.store.name : getGroupLabel(getSellerGroup(r.seller))}</span>
-                  <span className="text-sm font-bold font-mono w-[60px] text-right" style={{ color: isMe ? "#42A5F5" : "#aaa" }}>
+                  <span className={`text-sm font-bold font-mono w-16 text-right ${isMe ? "text-blue-400" : "text-slate-400"}`}>
                     {classMode === "fatturato" ? "€" + Math.round(r.fattProj / 1000) + "k" : r.avgPct + "%"}
                   </span>
                 </div>
@@ -828,42 +904,44 @@ function BloccoC({ data, sellerId, outbound, hideMonitoraggio, hideAppuntamenti,
           </div>
         </Card>
       </div>
+
       {/* C3 + C4 (condizionali) */}
       {(!hideMonitoraggio || !hideAppuntamenti) && (
-        <div className={`grid gap-3 grid-cols-1 ${hideMonitoraggio || hideAppuntamenti ? "" : "sm:grid-cols-2"}`}>
+        <div className={`grid gap-4 grid-cols-1 ${hideMonitoraggio || hideAppuntamenti ? "" : "lg:grid-cols-2"}`}>
           {!hideMonitoraggio && (
             <Card delay={0.7}>
-              <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-2.5">Monitoraggio Pratiche</div>
-              <div className="flex flex-col gap-2.5">
-                <div className="p-2.5 rounded-lg text-center cursor-pointer bg-amber-500/[0.06] border border-amber-500/[0.12]">
-                  <div className="text-[26px] font-extrabold text-amber-500 font-mono">{myCrit.warning + myCrit.daLavorare}</div>
-                  <div className="text-sm text-amber-500 mt-0.5">Da Lavorare + Warning</div>
-                  <div className="text-sm text-slate-500 mt-1">Vai al Tracking PDA →</div>
+              <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">Monitoraggio Pratiche</div>
+              <div className="space-y-3">
+                <div className="p-5 rounded-xl text-center bg-amber-500/[0.06] border border-amber-500/[0.12]">
+                  <div className="text-3xl font-extrabold text-amber-400 font-mono">{myCrit.warning + myCrit.daLavorare}</div>
+                  <div className="text-sm font-semibold text-amber-400 mt-1">Da Lavorare + Warning</div>
+                  <div className="text-sm text-slate-500 mt-2 cursor-pointer hover:text-violet-400 transition-colors">Vai al Tracking PDA →</div>
                 </div>
-                <PratichePerse ko={myCrit.koBimestre} nonPagate={myCrit.nonPagateBimestre} label="Le Mie Pratiche Perse — Ultimo Bimestre" />
+                <PratichePerse ko={myCrit.koBimestre} nonPagate={myCrit.nonPagateBimestre} label="Le Mie Pratiche Perse -- Ultimo Bimestre" />
               </div>
             </Card>
           )}
           {!hideAppuntamenti && (
             <Card delay={0.75}>
-              <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-2.5">
+              <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">
                 {outbound ? "I Miei Appuntamenti Oggi" : "Appuntamenti Negozio Oggi"}
               </div>
               {negAppts.length === 0 ? (
-                <div className="text-center py-5 text-slate-600 text-sm">Nessun appuntamento oggi</div>
+                <div className="text-center py-8 text-slate-600 text-sm">Nessun appuntamento oggi</div>
               ) : (
-                <div className="flex flex-col gap-1">
+                <div className="space-y-1.5">
                   {negAppts.map((a, ai) => (
-                    <div key={ai} className="flex items-center gap-2 py-1.5 px-2 rounded-md bg-white/[0.02]">
-                      <span className="text-sm font-bold text-blue-400 font-mono w-10">{a.ora}</span>
+                    <div key={ai} className="flex items-center gap-3 py-2.5 px-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
+                      <div className="w-1.5 h-8 rounded-full bg-blue-500/40" />
+                      <span className="text-sm font-bold text-blue-400 font-mono w-12">{a.ora}</span>
                       <span className="text-sm text-slate-300 flex-1">{a.cliente}</span>
                       {a.venditore && <span className="text-sm text-slate-500">{a.venditore}</span>}
-                      <span className="text-sm py-0.5 px-1.5 rounded bg-blue-500/10 text-blue-400 font-semibold">{a.tipo}</span>
+                      <span className="text-sm py-1 px-2.5 rounded-lg bg-blue-500/10 text-blue-400 font-semibold border border-blue-500/20">{a.tipo}</span>
                     </div>
                   ))}
                 </div>
               )}
-              <div className="text-sm text-blue-400 mt-2 cursor-pointer text-right">Vedi calendario →</div>
+              <div className="text-sm text-violet-400 mt-4 cursor-pointer text-right hover:text-violet-300 transition-colors">Vedi calendario →</div>
             </Card>
           )}
         </div>
@@ -903,50 +981,61 @@ function BloccoDE({ data }: { data: MockData }) {
   }).sort((a, b) => b.tot - a.tot);
 
   return (
-    <div>
-      <SectionTitle icon="🚨" text="Piste — Negozi Sotto Tono (Proiezione)" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-2.5 mb-5">
-        {piste.map((p, pi) => (
-          <Card key={p.brand.id} delay={0.8 + pi * 0.04} style={{ padding: "12px 14px" }}>
-            <div className="text-sm font-bold mb-2" style={{ color: p.brand.color }}>{p.brand.icon} {p.brand.label}</div>
-            {p.sottoTono.length === 0 ? (
-              <div className="text-sm text-emerald-500 font-semibold">✅ Tutti in linea</div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {p.sottoTono.slice(0, 3).map(n => (
-                  <div key={n.store.id} className="flex items-center gap-1.5">
-                    <span className="text-sm text-rose-500 flex-1">{n.store.name}</span>
-                    <span className="text-sm font-bold text-rose-500 font-mono">{n.pct}%</span>
-                  </div>
-                ))}
+    <div className="space-y-8">
+      {/* Piste */}
+      <div>
+        <SectionTitle icon={<AlertTriangle className="w-5 h-5" />} text="Piste -- Negozi Sotto Tono (Proiezione)" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {piste.map((p, pi) => (
+            <Card key={p.brand.id} delay={0.8 + pi * 0.04} color={p.brand.color}>
+              <div className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: p.brand.color }}>
+                <div className="w-5 h-5 rounded overflow-hidden shrink-0 inline-block"><Image src={p.brand.logo} alt={p.brand.label} width={20} height={20} className="object-cover"/></div> {p.brand.label}
               </div>
-            )}
-          </Card>
-        ))}
+              {p.sottoTono.length === 0 ? (
+                <div className="text-sm text-emerald-400 font-semibold flex items-center gap-2">✅ Tutti in linea</div>
+              ) : (
+                <div className="space-y-2">
+                  {p.sottoTono.slice(0, 3).map(n => (
+                    <div key={n.store.id} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-rose-500/[0.04]">
+                      <span className="text-sm text-rose-400 font-medium">{n.store.name}</span>
+                      <span className="text-sm font-bold text-rose-400 font-mono">{n.pct}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
       </div>
-      <SectionTitle icon="🗺️" text="Mappa Criticità — Ultimo Bimestre" />
-      <Card delay={1.0}>
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr>
-              {["Negozio", "Da Lavorare", "Warning", "Pratiche Perse", "Totale"].map(h => (
-                <th key={h} className="text-left py-2 px-2.5 text-slate-500 border-b border-white/[0.06] text-sm font-semibold uppercase">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {critMap.map(cm => (
-              <tr key={cm.store.id} className="border-b border-white/[0.03]">
-                <td className="py-2 px-2.5 font-semibold text-slate-300">{cm.store.name}</td>
-                <td className="py-2 px-2.5 font-mono" style={{ color: cm.daLav > 0 ? "#FFA726" : "#444" }}>{cm.daLav}</td>
-                <td className="py-2 px-2.5 font-mono" style={{ color: cm.warn > 0 ? "#FF7043" : "#444" }}>{cm.warn}</td>
-                <td className="py-2 px-2.5 font-mono" style={{ color: cm.perse > 0 ? "#EF5350" : "#444" }}>{cm.perse}</td>
-                <td className="py-2 px-2.5 font-mono font-bold" style={{ color: cm.tot > 5 ? "#EF5350" : cm.tot > 0 ? "#FFA726" : "#4CAF50" }}>{cm.tot}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+
+      {/* Mappa Criticita */}
+      <div>
+        <SectionTitle icon={<FileWarning className="w-5 h-5" />} text="Mappa Criticità -- Ultimo Bimestre" />
+        <Card delay={1.0}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm min-w-[500px]">
+              <thead>
+                <tr>
+                  {["Negozio", "Da Lavorare", "Warning", "Pratiche Perse", "Totale"].map(h => (
+                    <th key={h} className="text-left py-3 px-4 text-slate-400 border-b border-white/[0.08] text-sm font-semibold uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {critMap.map(cm => (
+                  <tr key={cm.store.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                    <td className="py-3 px-4 font-semibold text-slate-300">{cm.store.name}</td>
+                    <td className="py-3 px-4 font-mono" style={{ color: cm.daLav > 0 ? "#c4a24a" : "#334155" }}>{cm.daLav}</td>
+                    <td className="py-3 px-4 font-mono" style={{ color: cm.warn > 0 ? "#c4a24a" : "#334155" }}>{cm.warn}</td>
+                    <td className="py-3 px-4 font-mono" style={{ color: cm.perse > 0 ? "#c46a6a" : "#334155" }}>{cm.perse}</td>
+                    <td className="py-3 px-4 font-mono font-bold" style={{ color: cm.tot > 5 ? "#c46a6a" : cm.tot > 0 ? "#c4a24a" : "#6aaa7a" }}>{cm.tot}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -982,42 +1071,34 @@ function BloccoCAdmin({ data }: { data: MockData }) {
   }).sort((a, b) => b.tot - a.tot);
 
   return (
-    <div>
-      <SectionTitle icon="📊" text="Panoramica Operativa" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div className="space-y-6">
+      <SectionTitle icon={<BarChart3 className="w-5 h-5" />} text="Panoramica Operativa" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Appuntamenti globali */}
         <Card delay={0.7}>
-          <div className="flex items-center justify-between mb-3.5">
+          <div className="flex items-center justify-between mb-5">
             <div>
-              <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider">Appuntamenti Oggi</div>
-              <div className="text-xl font-extrabold text-blue-400 font-mono mt-1">{totAppt} totali</div>
+              <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider">Appuntamenti Oggi</div>
+              <div className="text-2xl font-extrabold text-blue-400 font-mono mt-1">{totAppt} totali</div>
             </div>
-            <div className="flex gap-1">
-              {(["negozi", "agenti"] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setApptView(m)}
-                  className="py-0.5 px-2.5 rounded-md text-sm cursor-pointer font-semibold transition-colors"
-                  style={{
-                    border: apptView === m ? "1px solid rgba(66,165,245,0.4)" : "1px solid rgba(255,255,255,0.08)",
-                    background: apptView === m ? "rgba(66,165,245,0.1)" : "transparent",
-                    color: apptView === m ? "#42A5F5" : "#666",
-                  }}
-                >
-                  {m === "negozi" ? "🏪 Punti Vendita" : "👤 Agenti"}
-                </button>
-              ))}
-            </div>
+            <PillToggle
+              options={[
+                { id: "negozi", label: "Punti Vendita", icon: "" },
+                { id: "agenti", label: "Agenti", icon: "" },
+              ]}
+              value={apptView}
+              onChange={(v) => setApptView(v as "negozi" | "agenti")}
+            />
           </div>
           {apptView === "negozi" ? (
-            <div className="flex flex-col gap-1">
+            <div className="space-y-1.5">
               {apptPerNegozio.map(a => (
-                <div key={a.store.id} className="flex items-center gap-2 py-1">
-                  <span className="text-sm text-slate-400 w-20 font-medium">{a.store.name}</span>
-                  <div className="flex-1 h-4 bg-white/[0.04] rounded overflow-hidden relative">
+                <div key={a.store.id} className="flex items-center gap-3 py-1.5">
+                  <span className="text-sm text-slate-400 w-24 font-medium">{a.store.name}</span>
+                  <div className="flex-1 h-5 bg-white/[0.04] rounded-lg overflow-hidden relative">
                     <div
-                      className="h-full rounded flex items-center justify-end pr-1.5 transition-all duration-700"
-                      style={{ width: (a.count / maxApptNeg * 100) + "%", backgroundColor: "rgba(66,165,245,0.4)" }}
+                      className="h-full rounded-lg flex items-center justify-end pr-2 transition-all duration-700"
+                      style={{ width: (a.count / maxApptNeg * 100) + "%", backgroundColor: "rgba(59,130,246,0.4)" }}
                     >
                       {a.count > 0 && <span className="text-sm text-white font-mono font-bold">{a.count}</span>}
                     </div>
@@ -1027,15 +1108,15 @@ function BloccoCAdmin({ data }: { data: MockData }) {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col gap-1">
+            <div className="space-y-1.5">
               {apptPerAgente.slice(0, 10).map(a => (
-                <div key={a.seller.id} className="flex items-center gap-2 py-1">
-                  <span className="text-sm text-slate-300 w-[90px] font-medium">{a.seller.name}</span>
-                  <span className="text-sm text-slate-500 w-[65px]">{a.store?.name}</span>
-                  <div className="flex-1 h-4 bg-white/[0.04] rounded overflow-hidden">
+                <div key={a.seller.id} className="flex items-center gap-3 py-1.5">
+                  <span className="text-sm text-slate-300 w-24 font-medium">{a.seller.name}</span>
+                  <span className="text-sm text-slate-500 w-20">{a.store?.name}</span>
+                  <div className="flex-1 h-5 bg-white/[0.04] rounded-lg overflow-hidden">
                     <div
-                      className="h-full rounded flex items-center justify-end pr-1.5 transition-all duration-700"
-                      style={{ width: (a.count / maxApptAg * 100) + "%", backgroundColor: "rgba(76,175,80,0.4)" }}
+                      className="h-full rounded-lg flex items-center justify-end pr-2 transition-all duration-700"
+                      style={{ width: (a.count / maxApptAg * 100) + "%", backgroundColor: "rgba(16,185,129,0.4)" }}
                     >
                       <span className="text-sm text-white font-mono font-bold">{a.count}</span>
                     </div>
@@ -1045,49 +1126,42 @@ function BloccoCAdmin({ data }: { data: MockData }) {
             </div>
           )}
         </Card>
+
         {/* Monitoraggio pratiche globale */}
         <Card delay={0.75}>
-          <div className="flex items-center justify-between mb-3.5">
-            <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider">Monitoraggio Pratiche — Tutti i Negozi</div>
-            <div className="flex gap-1">
-              {(["lavorare", "perse"] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setPratView(m)}
-                  className="py-0.5 px-2.5 rounded-md text-sm cursor-pointer font-semibold transition-colors"
-                  style={{
-                    border: pratView === m ? "1px solid " + (m === "lavorare" ? "rgba(255,167,38,0.4)" : "rgba(239,83,80,0.4)") : "1px solid rgba(255,255,255,0.08)",
-                    background: pratView === m ? (m === "lavorare" ? "rgba(255,167,38,0.1)" : "rgba(239,83,80,0.1)") : "transparent",
-                    color: pratView === m ? (m === "lavorare" ? "#FFA726" : "#EF5350") : "#666",
-                  }}
-                >
-                  {m === "lavorare" ? "📋 Da Lavorare + Warning" : "🔴 Pratiche Perse"}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center justify-between mb-5">
+            <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider">Monitoraggio Pratiche -- Tutti i Negozi</div>
+            <PillToggle
+              options={[
+                { id: "lavorare", label: "Da Lavorare", icon: "" },
+                { id: "perse", label: "Perse", icon: "" },
+              ]}
+              value={pratView}
+              onChange={(v) => setPratView(v as "lavorare" | "perse")}
+            />
           </div>
           {pratView === "lavorare" ? (
             <div>
-              <div className="flex flex-col gap-1">
+              <div className="space-y-1.5">
                 {pratichePerNeg.slice().sort((a, b) => (b.daLav + b.warn) - (a.daLav + a.warn)).map(p => {
                   const val = p.daLav + p.warn;
                   const maxVal = Math.max(1, ...pratichePerNeg.map(x => x.daLav + x.warn));
                   return (
-                    <div key={p.store.id} className="flex items-center gap-2 py-0.5">
-                      <span className="text-sm text-slate-400 w-20 font-medium">{p.store.name}</span>
-                      <div className="flex-1 flex gap-0.5 h-3.5">
-                        {p.daLav > 0 && <div className="rounded-sm transition-all duration-700" style={{ width: (p.daLav / maxVal * 100) + "%", backgroundColor: "#FFA726" }} />}
-                        {p.warn > 0 && <div className="rounded-sm transition-all duration-700" style={{ width: (p.warn / maxVal * 100) + "%", backgroundColor: "#FF7043" }} />}
+                    <div key={p.store.id} className="flex items-center gap-3 py-1">
+                      <span className="text-sm text-slate-400 w-24 font-medium">{p.store.name}</span>
+                      <div className="flex-1 flex gap-0.5 h-4">
+                        {p.daLav > 0 && <div className="rounded transition-all duration-700 bg-amber-500" style={{ width: (p.daLav / maxVal * 100) + "%" }} />}
+                        {p.warn > 0 && <div className="rounded transition-all duration-700 bg-orange-500" style={{ width: (p.warn / maxVal * 100) + "%" }} />}
                       </div>
-                      <span className="text-sm font-mono w-5 text-right font-bold" style={{ color: val > 3 ? "#FF7043" : val > 0 ? "#FFA726" : "#4CAF50" }}>{val}</span>
+                      <span className="text-sm font-mono w-6 text-right font-bold" style={{ color: val > 3 ? "#c4a24a" : val > 0 ? "#c4a24a" : "#6aaa7a" }}>{val}</span>
                     </div>
                   );
                 })}
               </div>
-              <div className="flex gap-3 mt-2.5 pt-2 border-t border-white/[0.04]">
-                {[{ c: "#FFA726", l: "Da Lavorare" }, { c: "#FF7043", l: "Warning" }].map(item => (
-                  <div key={item.l} className="flex items-center gap-1">
-                    <div className="w-2.5 h-1.5 rounded-sm" style={{ backgroundColor: item.c }} />
+              <div className="flex gap-4 mt-3 pt-3 border-t border-white/[0.04]">
+                {[{ c: "bg-amber-500", l: "Da Lavorare" }, { c: "bg-orange-500", l: "Warning" }].map(item => (
+                  <div key={item.l} className="flex items-center gap-1.5">
+                    <div className={`w-3 h-2 rounded-sm ${item.c}`} />
                     <span className="text-sm text-slate-500">{item.l}</span>
                   </div>
                 ))}
@@ -1095,23 +1169,23 @@ function BloccoCAdmin({ data }: { data: MockData }) {
             </div>
           ) : (
             <div>
-              <div className="flex flex-col gap-1">
+              <div className="space-y-1.5">
                 {pratichePerNeg.slice().sort((a, b) => b.perse - a.perse).map(p => {
                   const maxPerse = Math.max(1, ...pratichePerNeg.map(x => x.perse));
                   return (
-                    <div key={p.store.id} className="flex items-center gap-2 py-0.5">
-                      <span className="text-sm text-slate-400 w-20 font-medium">{p.store.name}</span>
-                      <div className="flex-1 h-3.5 bg-white/[0.04] rounded-sm overflow-hidden">
-                        <div className="h-full rounded-sm transition-all duration-700" style={{ width: (p.perse / maxPerse * 100) + "%", backgroundColor: "#EF5350" }} />
+                    <div key={p.store.id} className="flex items-center gap-3 py-1">
+                      <span className="text-sm text-slate-400 w-24 font-medium">{p.store.name}</span>
+                      <div className="flex-1 h-4 bg-white/[0.04] rounded overflow-hidden">
+                        <div className="h-full rounded transition-all duration-700 bg-rose-500" style={{ width: (p.perse / maxPerse * 100) + "%" }} />
                       </div>
-                      <span className="text-sm font-mono w-5 text-right font-bold" style={{ color: p.perse > 3 ? "#EF5350" : p.perse > 0 ? "#FF9800" : "#4CAF50" }}>{p.perse}</span>
+                      <span className="text-sm font-mono w-6 text-right font-bold" style={{ color: p.perse > 3 ? "#c46a6a" : p.perse > 0 ? "#c4a24a" : "#6aaa7a" }}>{p.perse}</span>
                     </div>
                   );
                 })}
               </div>
-              <div className="flex gap-3 mt-2.5 pt-2 border-t border-white/[0.04]">
-                <div className="flex items-center gap-1">
-                  <div className="w-2.5 h-1.5 rounded-sm bg-rose-500" />
+              <div className="flex gap-4 mt-3 pt-3 border-t border-white/[0.04]">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-2 rounded-sm bg-rose-500" />
                   <span className="text-sm text-slate-500">KO + Non Pagate (ultimo bimestre)</span>
                 </div>
               </div>
@@ -1176,10 +1250,10 @@ function BloccoOB({ data, sellerId, isDirector }: { data: MockData; sellerId: st
 
   const pratiche = { inviate: Math.round(puntiAttuali / 8), inLavorazione: Math.round(puntiAttuali / 15), inAttesa: 3, conProblema: 1 };
 
-  const mood = fattPct >= 100 ? { emoji: "🔥", msg: "Stai spaccando! Sopra target.", col: "#4CAF50" }
-    : fattPct >= 85 ? { emoji: "💪", msg: "Quasi! Mancano €" + fattGap.toLocaleString() + " — spingi!", col: "#FFA726" }
-    : fattPct >= 60 ? { emoji: "⚡", msg: "Sveglia! Servono €" + fattRitmo.toLocaleString() + "/gg per chiudere.", col: "#FF7043" }
-    : { emoji: "🚨", msg: "Allarme rosso. €" + fattRitmo.toLocaleString() + "/gg da oggi o non chiudi.", col: "#EF5350" };
+  const mood = fattPct >= 100 ? { emoji: "🔥", msg: "Stai spaccando! Sopra target.", col: "#6aaa7a" }
+    : fattPct >= 85 ? { emoji: "💪", msg: "Quasi! Mancano €" + fattGap.toLocaleString() + " -- spingi!", col: "#c4a24a" }
+    : fattPct >= 60 ? { emoji: "⚡", msg: "Sveglia! Servono €" + fattRitmo.toLocaleString() + "/gg per chiudere.", col: "#c4a24a" }
+    : { emoji: "🚨", msg: "Allarme rosso. €" + fattRitmo.toLocaleString() + "/gg da oggi o non chiudi.", col: "#c46a6a" };
 
   const obSellers = SELLER_GROUPS.ob || [];
   const [classMode, setClassMode] = useState("fatturato");
@@ -1204,237 +1278,232 @@ function BloccoOB({ data, sellerId, isDirector }: { data: MockData; sellerId: st
   }).sort((a, b) => b.puntiProj - a.puntiProj) : [];
 
   return (
-    <div>
-      <SectionTitle icon="🚗" text={isDirector ? "Outbound — Panoramica Team" : "I Miei Risultati"} />
+    <div className="space-y-6">
+      <SectionTitle icon={<Car className="w-5 h-5" />} text={isDirector ? "Outbound -- Panoramica Team" : "I Miei Risultati"} />
 
       {/* Director team */}
       {isDirector && (
-        <div className="mb-5">
-          <Card delay={0.1}>
-            <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-3.5">Team Agenti — Clicca per dettaglio</div>
-            <div className="flex flex-col gap-1">
-              {teamOB.map((td, ti) => {
-                const medals = ["🥇", "🥈", "🥉"];
-                const isMe = td.seller.id === sellerId;
-                const isE = dirExp === td.seller.id;
-                const tdTot = td.brands.reduce((s, bp) => s + bp.punti, 0) || 1;
-                return (
-                  <div key={td.seller.id}>
-                    <div
-                      onClick={() => setDirExp(isE ? null : td.seller.id)}
-                      className="flex items-center gap-2 py-2 px-2.5 rounded-lg cursor-pointer"
-                      style={{ backgroundColor: isE ? "rgba(255,255,255,0.03)" : isMe ? "rgba(66,165,245,0.06)" : ti % 2 === 0 ? "rgba(255,255,255,0.015)" : "transparent" }}
-                    >
-                      <span className="text-sm w-[22px]">{ti < 3 ? medals[ti] : (ti + 1) + "."}</span>
-                      <span className="text-sm flex-1" style={{ fontWeight: isMe ? 700 : 500, color: isMe ? "#42A5F5" : "#ccc" }}>{td.seller.name}</span>
-                      <div className="text-center w-[70px]">
-                        <div className="text-[13px] font-extrabold font-mono" style={{ color: td.soglia.pay >= 10 ? "#4CAF50" : td.soglia.pay >= 8 ? "#FFA726" : "#ccc" }}>{td.puntiProj} pt</div>
-                        <div className="text-sm text-slate-500">{td.soglia.label}</div>
-                      </div>
-                      <div className="text-right w-[65px]">
-                        <div className="text-sm font-bold text-blue-400 font-mono">€{Math.round(td.fattProj / 1000)}k</div>
-                        <div className="text-sm text-slate-500">fatt. proj.</div>
-                      </div>
-                      <span className="text-sm text-slate-600 ml-1">{isE ? "▲" : "▼"}</span>
+        <Card delay={0.1}>
+          <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">Team Agenti -- Clicca per dettaglio</div>
+          <div className="space-y-1">
+            {teamOB.map((td, ti) => {
+              const medals = ["🥇", "🥈", "🥉"];
+              const isMe = td.seller.id === sellerId;
+              const isE = dirExp === td.seller.id;
+              const tdTot = td.brands.reduce((s, bp) => s + bp.punti, 0) || 1;
+              return (
+                <div key={td.seller.id}>
+                  <div
+                    onClick={() => setDirExp(isE ? null : td.seller.id)}
+                    className={`flex items-center gap-3 py-3 px-4 rounded-xl cursor-pointer transition-all ${
+                      isE ? "bg-white/[0.04]" : isMe ? "bg-blue-500/[0.06]" : ti % 2 === 0 ? "bg-white/[0.015]" : ""
+                    } hover:bg-white/[0.06]`}
+                  >
+                    <span className="text-sm w-6">{ti < 3 ? medals[ti] : (ti + 1) + "."}</span>
+                    <span className={`text-sm flex-1 ${isMe ? "font-bold text-blue-400" : "font-medium text-slate-300"}`}>{td.seller.name}</span>
+                    <div className="text-center w-20">
+                      <div className="text-sm font-extrabold font-mono" style={{ color: td.soglia.pay >= 10 ? "#6aaa7a" : td.soglia.pay >= 8 ? "#c4a24a" : "#ccc" }}>{td.puntiProj} pt</div>
+                      <div className="text-sm text-slate-500">{td.soglia.label}</div>
                     </div>
-                    {isE && (
-                      <div className="py-2.5 px-2.5 sm:pl-10 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <div className="text-sm text-slate-500 font-semibold mb-1.5">PUNTI PER BRAND</div>
+                    <div className="text-right w-16">
+                      <div className="text-sm font-bold text-blue-400 font-mono">€{Math.round(td.fattProj / 1000)}k</div>
+                      <div className="text-sm text-slate-500">fatt.</div>
+                    </div>
+                    <span className="text-sm text-slate-600 ml-1">{isE ? "▲" : "▼"}</span>
+                  </div>
+                  {isE && (
+                    <div className="py-4 px-4 sm:pl-12 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-sm text-slate-400 font-semibold mb-2 uppercase tracking-wider">Punti per Brand</div>
+                        <div className="space-y-1">
                           {td.brands.filter(bp => bp.punti > 0).map(bp => (
-                            <div key={bp.brand.id} className="flex items-center gap-1.5 py-0.5">
-                              <span className="text-sm w-4">{bp.brand.icon}</span>
-                              <span className="text-sm w-[50px]" style={{ color: bp.brand.color }}>{bp.brand.label}</span>
-                              <div className="flex-1 h-2.5 bg-white/[0.04] rounded-sm overflow-hidden">
-                                <div className="h-full rounded-sm" style={{ width: Math.round(bp.punti / tdTot * 100) + "%", backgroundColor: bp.brand.color, opacity: 0.5 }} />
+                            <div key={bp.brand.id} className="flex items-center gap-2 py-1">
+                              <div className="w-5 h-5 rounded overflow-hidden shrink-0"><Image src={bp.brand.logo} alt={bp.brand.label} width={20} height={20} className="object-cover"/></div>
+                              <span className="text-sm w-14 font-semibold" style={{ color: bp.brand.color }}>{bp.brand.label}</span>
+                              <div className="flex-1 h-3 bg-white/[0.04] rounded overflow-hidden">
+                                <div className="h-full rounded opacity-50" style={{ width: Math.round(bp.punti / tdTot * 100) + "%", backgroundColor: bp.brand.color }} />
                               </div>
-                              <span className="text-sm font-mono text-slate-400 w-[35px] text-right">{bp.punti}pt</span>
+                              <span className="text-sm font-mono text-slate-400 w-10 text-right">{bp.punti}pt</span>
                             </div>
                           ))}
                         </div>
-                        <div>
-                          <div className="text-sm text-slate-500 font-semibold mb-1.5">CONSUMER vs BUSINESS</div>
+                      </div>
+                      <div>
+                        <div className="text-sm text-slate-400 font-semibold mb-2 uppercase tracking-wider">Consumer vs Business</div>
+                        <div className="space-y-1">
                           {td.brands.filter(bp => bp.punti > 0).map(bp => {
                             const totBP = bp.consumer + bp.business || 1;
                             return (
-                              <div key={bp.brand.id} className="flex items-center gap-1.5 py-0.5">
-                                <span className="text-sm w-4">{bp.brand.icon}</span>
-                                <div className="flex-1 h-2.5 flex rounded-sm overflow-hidden">
-                                  <div style={{ width: Math.round(bp.consumer / totBP * 100) + "%", backgroundColor: "#42A5F5" }} className="h-full" />
-                                  <div style={{ width: Math.round(bp.business / totBP * 100) + "%", backgroundColor: "#FF9800" }} className="h-full" />
+                              <div key={bp.brand.id} className="flex items-center gap-2 py-1">
+                                <div className="w-5 h-5 rounded overflow-hidden shrink-0"><Image src={bp.brand.logo} alt={bp.brand.label} width={20} height={20} className="object-cover"/></div>
+                                <div className="flex-1 h-3 flex rounded overflow-hidden">
+                                  <div className="h-full bg-blue-400" style={{ width: Math.round(bp.consumer / totBP * 100) + "%" }} />
+                                  <div className="h-full bg-amber-500" style={{ width: Math.round(bp.business / totBP * 100) + "%" }} />
                                 </div>
-                                <span className="text-sm text-blue-400 w-5 text-right">{bp.consumer}</span>
-                                <span className="text-sm text-amber-500 w-5 text-right">{bp.business}</span>
+                                <span className="text-sm text-blue-400 w-6 text-right font-mono">{bp.consumer}</span>
+                                <span className="text-sm text-amber-400 w-6 text-right font-mono">{bp.business}</span>
                               </div>
                             );
                           })}
-                          <div className="flex gap-2.5 mt-1.5">
-                            <div className="flex items-center gap-1"><div className="w-2 h-[5px] rounded-sm bg-blue-400" /><span className="text-sm text-slate-500">Consumer</span></div>
-                            <div className="flex items-center gap-1"><div className="w-2 h-[5px] rounded-sm bg-amber-500" /><span className="text-sm text-slate-500">Business</span></div>
-                          </div>
+                        </div>
+                        <div className="flex gap-4 mt-2">
+                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-1.5 rounded-sm bg-blue-400" /><span className="text-sm text-slate-500">Consumer</span></div>
+                          <div className="flex items-center gap-1.5"><div className="w-2.5 h-1.5 rounded-sm bg-amber-500" /><span className="text-sm text-slate-500">Business</span></div>
                         </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
       )}
 
       {/* ROW 1: Fatturato + Punti/Soglie */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-        <Card delay={0.2} style={{ borderLeft: "3px solid " + mood.col }}>
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider">Fatturato</div>
-            <span className="text-lg">{mood.emoji}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card delay={0.2} className="border-l-4" color={mood.col}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider">Fatturato</div>
+            <span className="text-xl">{mood.emoji}</span>
           </div>
-          <div className="py-2 px-2.5 rounded-md mb-2.5" style={{ backgroundColor: mood.col + "12", border: "1px solid " + mood.col + "25" }}>
+          <div className="p-3 rounded-xl mb-4" style={{ backgroundColor: mood.col + "12", border: "1px solid " + mood.col + "25" }}>
             <div className="text-sm font-bold" style={{ color: mood.col }}>{mood.msg}</div>
           </div>
-          <div className="flex gap-1.5 mb-2">
+          <div className="grid grid-cols-3 gap-2 mb-4">
             {[
-              { label: "TARGET", value: "€" + fattTarget.toLocaleString(), col: "#fff", bg: "rgba(255,255,255,0.03)" },
-              { label: "ATTUALE", value: "€" + fatturato.toLocaleString(), col: "#ccc", bg: "rgba(255,255,255,0.03)" },
-              { label: "PROIEZIONE", value: "€" + fattProj.toLocaleString(), col: mood.col, bg: mood.col + "10" },
+              { label: "TARGET", value: "€" + fattTarget.toLocaleString(), col: "#fff", bg: "bg-white/[0.03]" },
+              { label: "ATTUALE", value: "€" + fatturato.toLocaleString(), col: "#ccc", bg: "bg-white/[0.03]" },
+              { label: "PROIEZIONE", value: "€" + fattProj.toLocaleString(), col: mood.col, bg: "" },
             ].map(item => (
-              <div key={item.label} className="flex-1 p-1.5 rounded-md text-center" style={{ backgroundColor: item.bg }}>
-                <div className="text-sm uppercase mb-0.5" style={{ color: item.col === "#fff" ? "#666" : item.col }}>{item.label}</div>
-                <div className="text-base font-extrabold font-mono" style={{ color: item.col }}>{item.value}</div>
+              <div key={item.label} className={`p-3 rounded-xl text-center ${item.bg}`} style={!item.bg ? { backgroundColor: mood.col + "10" } : {}}>
+                <div className="text-sm font-semibold uppercase mb-1 text-slate-500">{item.label}</div>
+                <div className="text-lg font-extrabold font-mono" style={{ color: item.col }}>{item.value}</div>
               </div>
             ))}
           </div>
           <DualBar actual={fatturato} projected={fattProj} max={fattTarget} color={mood.col} height={10} />
-          <div className="flex justify-between mt-1.5">
+          <div className="flex justify-between mt-2">
             <span className="text-sm font-bold" style={{ color: mood.col }}>{fattPct}% del target</span>
             {fattGap > 0 && <span className="text-sm text-slate-500">Gap: €{fattGap.toLocaleString()}</span>}
           </div>
         </Card>
 
         <Card delay={0.25}>
-          <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-3">Punti &amp; Soglie</div>
-          <div className="flex gap-2 mb-2.5">
-            <div className="flex-1 p-2 rounded-md bg-white/[0.03] text-center">
-              <div className="text-sm text-slate-500 uppercase mb-0.5">ATTUALI</div>
-              <div className="text-xl font-extrabold text-white font-mono">{puntiAttuali}</div>
-              <div className="text-sm text-slate-500 mt-0.5">{sogliaAttuale.label} · €{sogliaAttuale.pay}/pt</div>
+          <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">Punti &amp; Soglie</div>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="p-4 rounded-xl bg-white/[0.03] text-center border border-white/[0.06]">
+              <div className="text-sm text-slate-500 uppercase font-semibold mb-1">Attuali</div>
+              <div className="text-2xl font-extrabold text-white font-mono">{puntiAttuali}</div>
+              <div className="text-sm text-slate-500 mt-1">{sogliaAttuale.label} -- €{sogliaAttuale.pay}/pt</div>
             </div>
             <div
-              className="flex-1 p-2 rounded-md text-center"
+              className="p-4 rounded-xl text-center border"
               style={{
-                backgroundColor: sogliaProj.pay >= 10 ? "rgba(76,175,80,0.08)" : "rgba(255,167,38,0.08)",
-                border: "1px solid " + (sogliaProj.pay >= 10 ? "rgba(76,175,80,0.15)" : "rgba(255,167,38,0.15)"),
+                backgroundColor: sogliaProj.pay >= 10 ? "rgba(16,185,129,0.08)" : "rgba(245,158,11,0.08)",
+                borderColor: sogliaProj.pay >= 10 ? "rgba(16,185,129,0.2)" : "rgba(245,158,11,0.2)",
               }}
             >
-              <div className="text-sm uppercase mb-0.5" style={{ color: sogliaProj.pay >= 10 ? "#4CAF50" : "#FFA726" }}>PROIEZIONE</div>
-              <div className="text-xl font-extrabold font-mono" style={{ color: sogliaProj.pay >= 10 ? "#4CAF50" : "#FFA726" }}>{puntiProj}</div>
-              <div className="text-sm font-semibold mt-0.5" style={{ color: sogliaProj.pay >= 10 ? "#4CAF50" : "#FFA726" }}>{sogliaProj.label} · €{sogliaProj.pay}/pt</div>
+              <div className="text-sm uppercase font-semibold mb-1" style={{ color: sogliaProj.pay >= 10 ? "#6aaa7a" : "#c4a24a" }}>Proiezione</div>
+              <div className="text-2xl font-extrabold font-mono" style={{ color: sogliaProj.pay >= 10 ? "#6aaa7a" : "#c4a24a" }}>{puntiProj}</div>
+              <div className="text-sm font-semibold mt-1" style={{ color: sogliaProj.pay >= 10 ? "#6aaa7a" : "#c4a24a" }}>{sogliaProj.label} -- €{sogliaProj.pay}/pt</div>
             </div>
           </div>
           {nextSoglia ? (
-            <div className="py-2 px-2.5 rounded-md bg-emerald-500/[0.06] border border-emerald-500/[0.12] mb-2.5">
-              <div className="text-sm font-bold text-emerald-500">🎯 Ti mancano {puntiToNext} pt per {nextSoglia.label}</div>
-              <div className="text-sm text-slate-500 mt-0.5">Saliresti a €{nextSoglia.pay}/pt retroattivo: </div>
-              <span className="text-sm font-extrabold text-emerald-500 font-mono">+€{Math.round(moneyShift).toLocaleString()} in più!</span>
+            <div className="p-3 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/[0.15] mb-4">
+              <div className="text-sm font-bold text-emerald-400">🎯 Ti mancano {puntiToNext} pt per {nextSoglia.label}</div>
+              <div className="text-sm text-slate-500 mt-1">
+                Saliresti a €{nextSoglia.pay}/pt retroattivo:{" "}
+                <span className="font-extrabold text-emerald-400 font-mono">+€{Math.round(moneyShift).toLocaleString()} in più!</span>
+              </div>
             </div>
           ) : (
-            <div className="p-1.5 px-2.5 rounded-md bg-emerald-500/[0.06] text-center mb-2.5">
-              <span className="text-sm text-emerald-500 font-bold">🏆 Soglia massima!</span>
+            <div className="p-3 rounded-xl bg-emerald-500/[0.06] text-center mb-4 border border-emerald-500/[0.15]">
+              <span className="text-sm text-emerald-400 font-bold">🏆 Soglia massima!</span>
             </div>
           )}
-          <div className="flex flex-col gap-0.5">
+          <div className="space-y-1">
             {SOGLIE.map((sg, si) => {
               const isActive = sogliaProj.label === sg.label;
               const isPast = puntiProj >= sg.max;
               return (
-                <div key={si} className="flex items-center gap-1.5 py-0.5 px-1.5 rounded" style={{ backgroundColor: isActive ? "rgba(76,175,80,0.08)" : "transparent" }}>
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: isPast ? "#4CAF50" : isActive ? "#FFA726" : "#333" }} />
-                  <span className="text-sm flex-1" style={{ color: isActive ? "#fff" : "#888", fontWeight: isActive ? 700 : 400 }}>
+                <div key={si} className={`flex items-center gap-2 py-1.5 px-3 rounded-lg ${isActive ? "bg-emerald-500/[0.08]" : ""}`}>
+                  <div className={`w-2.5 h-2.5 rounded-full ${isPast ? "bg-emerald-500" : isActive ? "bg-amber-500" : "bg-slate-700"}`} />
+                  <span className={`text-sm flex-1 ${isActive ? "text-white font-bold" : "text-slate-500"}`}>
                     {sg.label}: {sg.min}-{sg.max === 9999 ? "∞" : sg.max} pt
                   </span>
-                  <span className="text-sm font-mono" style={{ color: isActive ? "#4CAF50" : "#666", fontWeight: isActive ? 700 : 400 }}>€{sg.pay}/pt</span>
+                  <span className={`text-sm font-mono ${isActive ? "text-emerald-400 font-bold" : "text-slate-600"}`}>€{sg.pay}/pt</span>
                 </div>
               );
             })}
           </div>
-          <div className="mt-2 pt-2 border-t border-white/5 text-center">
+          <div className="mt-4 pt-4 border-t border-white/5 text-center">
             <span className="text-sm text-slate-500">Guadagno proj.: </span>
-            <span className="text-base font-extrabold text-emerald-500 font-mono">€{guadagnoProj.toLocaleString()}</span>
+            <span className="text-lg font-extrabold text-emerald-400 font-mono">€{guadagnoProj.toLocaleString()}</span>
           </div>
         </Card>
       </div>
 
       {/* ROW 2: Brand Breakdown + Classifica */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card delay={0.35}>
-          <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-3">Distribuzione Punti per Brand</div>
-          <div className="flex flex-col gap-1.5">
+          <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">Distribuzione Punti per Brand</div>
+          <div className="space-y-2">
             {brandPunti.map(bp => {
               const pct = Math.round((bp.punti / totBrandPunti) * 100);
               return (
-                <div key={bp.brand.id} className="flex items-center gap-2">
-                  <span className="text-[13px] w-5 text-center">{bp.brand.icon}</span>
-                  <span className="text-sm font-semibold w-[60px]" style={{ color: bp.brand.color }}>{bp.brand.label}</span>
-                  <div className="flex-1 h-3.5 bg-white/[0.04] rounded overflow-hidden">
-                    <div className="h-full rounded transition-all duration-700" style={{ width: pct + "%", backgroundColor: bp.brand.color, opacity: 0.6 }} />
+                <div key={bp.brand.id} className="flex items-center gap-2.5">
+                  <div className="w-5 h-5 rounded overflow-hidden shrink-0"><Image src={bp.brand.logo} alt={bp.brand.label} width={20} height={20} className="object-cover"/></div>
+                  <span className="text-sm font-semibold w-16" style={{ color: bp.brand.color }}>{bp.brand.label}</span>
+                  <div className="flex-1 h-4 bg-white/[0.04] rounded-lg overflow-hidden">
+                    <div className="h-full rounded-lg transition-all duration-700 opacity-60" style={{ width: pct + "%", backgroundColor: bp.brand.color }} />
                   </div>
-                  <span className="text-sm font-mono text-slate-300 w-10 text-right">{bp.punti} pt</span>
-                  <span className="text-sm text-slate-500 w-[30px] text-right">{pct}%</span>
+                  <span className="text-sm font-mono text-slate-300 w-12 text-right">{bp.punti} pt</span>
+                  <span className="text-sm text-slate-500 w-8 text-right">{pct}%</span>
                 </div>
               );
             })}
           </div>
         </Card>
         <Card delay={0.4}>
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider">Classifica Agenti</div>
-            <div className="flex gap-1">
-              {(["fatturato", "target"] as const).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setClassMode(m)}
-                  className="py-0.5 px-2 rounded-md text-sm cursor-pointer font-semibold transition-colors"
-                  style={{
-                    border: classMode === m ? "1px solid rgba(66,165,245,0.4)" : "1px solid rgba(255,255,255,0.08)",
-                    background: classMode === m ? "rgba(66,165,245,0.1)" : "transparent",
-                    color: classMode === m ? "#42A5F5" : "#666",
-                  }}
-                >
-                  {m === "fatturato" ? "💰 Fatt." : "🎯 % Tgt"}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider">Classifica Agenti</div>
+            <PillToggle
+              options={[
+                { id: "fatturato", label: "Fatt.", icon: "" },
+                { id: "target", label: "% Tgt", icon: "" },
+              ]}
+              value={classMode}
+              onChange={setClassMode}
+            />
           </div>
           {myRank > 0 && (
             <div
-              className="text-center py-1.5 mb-2 rounded-md"
-              style={{
-                backgroundColor: myRank <= 3 ? "rgba(76,175,80,0.06)" : "rgba(255,255,255,0.02)",
-                border: "1px solid " + (myRank <= 3 ? "rgba(76,175,80,0.12)" : "rgba(255,255,255,0.04)"),
-              }}
+              className={`text-center py-3 mb-4 rounded-xl border ${
+                myRank <= 3
+                  ? "bg-emerald-500/[0.06] border-emerald-500/[0.12]"
+                  : "bg-white/[0.02] border-white/[0.04]"
+              }`}
             >
-              <span className="text-sm text-slate-500">Tu: </span>
-              <span className="text-base font-extrabold font-mono" style={{ color: myRank <= 3 ? "#4CAF50" : "#FFA726" }}>{myRank}°</span>
+              <span className="text-sm text-slate-400">Tu: </span>
+              <span className="text-xl font-extrabold font-mono" style={{ color: myRank <= 3 ? "#6aaa7a" : "#c4a24a" }}>{myRank}°</span>
               <span className="text-sm text-slate-500"> su {classSorted.length}</span>
             </div>
           )}
-          <div className="max-h-[200px] overflow-y-auto flex flex-col gap-0.5">
+          <div className="max-h-56 overflow-y-auto space-y-1">
             {classSorted.map((r, ri) => {
               const medals = ["🥇", "🥈", "🥉"];
               const isMe = r.seller.id === sellerId;
               return (
                 <div
                   key={r.seller.id}
-                  className="flex items-center gap-1.5 py-1.5 px-2 rounded-md shrink-0"
-                  style={{
-                    backgroundColor: isMe ? "rgba(66,165,245,0.08)" : "transparent",
-                    border: isMe ? "1px solid rgba(66,165,245,0.15)" : "1px solid transparent",
-                  }}
+                  className={`flex items-center gap-2 py-2 px-3 rounded-xl shrink-0 transition-colors ${
+                    isMe ? "bg-blue-500/[0.08] border border-blue-500/[0.15]" : "hover:bg-white/[0.02]"
+                  }`}
                 >
-                  <span className="text-sm w-5 text-center">{ri < 3 ? medals[ri] : (ri + 1) + "."}</span>
-                  <span className="text-sm flex-1" style={{ fontWeight: isMe ? 700 : 500, color: isMe ? "#42A5F5" : "#ccc" }}>{r.seller.name}</span>
-                  <span className="text-sm font-bold font-mono w-[55px] text-right" style={{ color: isMe ? "#42A5F5" : "#aaa" }}>
+                  <span className="text-sm w-6 text-center">{ri < 3 ? medals[ri] : (ri + 1) + "."}</span>
+                  <span className={`text-sm flex-1 ${isMe ? "font-bold text-blue-400" : "font-medium text-slate-300"}`}>{r.seller.name}</span>
+                  <span className={`text-sm font-bold font-mono w-14 text-right ${isMe ? "text-blue-400" : "text-slate-400"}`}>
                     {classMode === "fatturato" ? "€" + Math.round(r.fattProj / 1000) + "k" : r.avgPct + "%"}
                   </span>
                 </div>
@@ -1446,22 +1515,22 @@ function BloccoOB({ data, sellerId, isDirector }: { data: MockData; sellerId: st
 
       {/* ROW 3: Gestione Pratiche */}
       <Card delay={0.5}>
-        <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-3">Gestione Pratiche</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">Gestione Pratiche</div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
-            { n: pratiche.inviate, label: "Inviate", col: "#42A5F5", icon: "📤" },
-            { n: pratiche.inLavorazione, label: "In Lavorazione", col: "#4CAF50", icon: "⚙️" },
-            { n: pratiche.inAttesa, label: "Attesa Inserimento", col: "#FFA726", icon: "⏳" },
-            { n: pratiche.conProblema, label: "Con Problema", col: "#EF5350", icon: "⚠️" },
+            { n: pratiche.inviate, label: "Inviate", col: "#3b82f6", icon: "📤" },
+            { n: pratiche.inLavorazione, label: "In Lavorazione", col: "#6aaa7a", icon: "⚙️" },
+            { n: pratiche.inAttesa, label: "Attesa Inserimento", col: "#c4a24a" },
+            { n: pratiche.conProblema, label: "Con Problema", col: "#c46a6a" },
           ].map(item => (
-            <div key={item.label} className="p-3 rounded-lg text-center cursor-pointer" style={{ backgroundColor: item.col + "08", border: "1px solid " + item.col + "15" }}>
-              <div className="text-sm mb-1">{item.icon}</div>
-              <div className="text-[22px] font-extrabold font-mono" style={{ color: item.col }}>{item.n}</div>
-              <div className="text-sm mt-0.5" style={{ color: item.col }}>{item.label}</div>
+            <div key={item.label} className="p-4 rounded-xl text-center cursor-pointer transition-all hover:scale-[1.02]" style={{ backgroundColor: item.col + "08", border: "1px solid " + item.col + "20" }}>
+              <div className="w-2 h-2 rounded-full mx-auto mb-2" style={{ backgroundColor: item.col }} />
+              <div className="text-2xl font-extrabold font-mono" style={{ color: item.col }}>{item.n}</div>
+              <div className="text-sm font-semibold mt-1" style={{ color: item.col }}>{item.label}</div>
             </div>
           ))}
         </div>
-        <div className="text-sm text-blue-400 mt-2.5 cursor-pointer text-right">Vai a Gestione PDA →</div>
+        <div className="text-sm text-violet-400 mt-4 cursor-pointer text-right hover:text-violet-300 transition-colors">Vai a Gestione PDA →</div>
       </Card>
     </div>
   );
@@ -1484,8 +1553,8 @@ function BloccoCCDir({ data, sellerId }: { data: MockData; sellerId: string }) {
 
   return (
     <Card delay={0.4}>
-      <div className="text-sm text-slate-500 font-semibold uppercase tracking-wider mb-3.5">Team Call Center — Proiezione</div>
-      <div className="flex flex-col gap-1.5">
+      <div className="text-sm text-slate-400 font-semibold uppercase tracking-wider mb-4">Team Call Center -- Proiezione</div>
+      <div className="space-y-1.5">
         {teamCC.map((td, ti) => {
           const col = stCol(td.pct);
           const isMe = td.seller.id === sellerId;
@@ -1493,16 +1562,17 @@ function BloccoCCDir({ data, sellerId }: { data: MockData; sellerId: string }) {
           return (
             <div
               key={td.seller.id}
-              className="flex items-center gap-2 py-2 px-2.5 rounded-lg"
-              style={{ backgroundColor: isMe ? "rgba(66,165,245,0.06)" : ti % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent" }}
+              className={`flex items-center gap-3 py-3 px-4 rounded-xl transition-colors ${
+                isMe ? "bg-blue-500/[0.06]" : ti % 2 === 0 ? "bg-white/[0.02]" : ""
+              }`}
             >
-              <span className="text-sm w-[22px]">{ti < 3 ? medals[ti] : (ti + 1) + "."}</span>
-              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col }} />
-              <span className="text-sm flex-1" style={{ fontWeight: isMe ? 700 : 500, color: isMe ? "#42A5F5" : "#ccc" }}>{td.seller.name}</span>
+              <span className="text-sm w-6">{ti < 3 ? medals[ti] : (ti + 1) + "."}</span>
+              <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: col }} />
+              <span className={`text-sm flex-1 ${isMe ? "font-bold text-blue-400" : "font-medium text-slate-300"}`}>{td.seller.name}</span>
               <span className="text-sm font-mono text-slate-400">{td.fatti}</span>
               <span className="text-sm text-slate-600">→</span>
               <span className="text-sm font-mono font-semibold" style={{ color: col }}>{td.proj}/{td.target}</span>
-              <span className="text-sm font-bold w-9 text-right" style={{ color: col }}>{td.pct}%</span>
+              <span className="text-sm font-bold w-10 text-right" style={{ color: col }}>{td.pct}%</span>
             </div>
           );
         })}
@@ -1515,15 +1585,25 @@ function BloccoCCDir({ data, sellerId }: { data: MockData; sellerId: string }) {
 // MAIN
 // ═══════════════════════════════════════════════════════════════
 
+const ROLE_ICONS: Record<string, React.ReactNode> = {
+  venditore: <User className="w-3.5 h-3.5" />,
+  store_manager: <Store className="w-3.5 h-3.5" />,
+  supervisore: <Eye className="w-3.5 h-3.5" />,
+  admin: <ShieldCheck className="w-3.5 h-3.5" />,
+  cc_operator: <Phone className="w-3.5 h-3.5" />,
+  cc_director: <Headphones className="w-3.5 h-3.5" />,
+  ob_agent: <Car className="w-3.5 h-3.5" />,
+  ob_director: <Car className="w-3.5 h-3.5" />,
+};
 const ROLES = [
-  { id: "venditore", label: "Venditore", sellerId: "s1", icon: "👤", area: "pv" },
-  { id: "store_manager", label: "Store Manager", sellerId: "s3", icon: "🏪", area: "pv" },
-  { id: "supervisore", label: "Supervisore", sellerId: "s7", icon: "👁️", area: "pv" },
-  { id: "admin", label: "Admin", sellerId: "s3", icon: "🔑", area: "admin" },
-  { id: "cc_operator", label: "Caller", sellerId: "cc1", icon: "📞", area: "cc" },
-  { id: "cc_director", label: "Dir. Call Center", sellerId: "cc5", icon: "📞", area: "cc" },
-  { id: "ob_agent", label: "Agente", sellerId: "ob1", icon: "🚗", area: "ob" },
-  { id: "ob_director", label: "Dir. Outbound", sellerId: "ob4", icon: "🚗", area: "ob" },
+  { id: "venditore", label: "Venditore", sellerId: "s1", area: "pv" },
+  { id: "store_manager", label: "Store Manager", sellerId: "s3", area: "pv" },
+  { id: "supervisore", label: "Supervisore", sellerId: "s7", area: "pv" },
+  { id: "admin", label: "Admin", sellerId: "s3", area: "admin" },
+  { id: "cc_operator", label: "Caller", sellerId: "cc1", area: "cc" },
+  { id: "cc_director", label: "Dir. Call Center", sellerId: "cc5", area: "cc" },
+  { id: "ob_agent", label: "Agente", sellerId: "ob1", area: "ob" },
+  { id: "ob_director", label: "Dir. Outbound", sellerId: "ob4", area: "ob" },
 ];
 
 export default function Dashboard() {
@@ -1546,65 +1626,79 @@ export default function Dashboard() {
 
   const areaLabel = isAdm ? "Amministrazione" : isCC ? "Call Center" : isOB ? "Outbound" : (STORES.find(st => st.id === (seller ? seller.store : "")) || {} as { name?: string }).name || "";
 
-  return (
-    <div className="w-full space-y-4 p-4 md:p-6">
-      {/* Keyframes for fadeUp animation */}
-      <style>{`@keyframes fadeUp { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform: translateY(0); } }`}</style>
+  const today = new Date();
+  const dateStr = today.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
-      {/* Header with Role Switcher */}
-      <div className="glass-panel py-3 px-4 md:py-4 md:px-6 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-[34px] h-[34px] rounded-lg bg-gradient-to-br from-red-600 to-orange-500 flex items-center justify-center text-base font-extrabold text-white font-mono shrink-0">T</div>
-          <div>
-            <div className="text-base font-extrabold text-white">Dashboard</div>
-            <div className="text-sm text-slate-500 font-mono">Telefutura CRM · Marzo 2026</div>
+  return (
+    <div className="w-full max-w-[1600px] mx-auto space-y-8 p-4 md:p-6 lg:p-8">
+      {/* Keyframes */}
+      <style>{`@keyframes fadeUp { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }`}</style>
+
+      {/* ═══ HERO HEADER ═══ */}
+      <div className="glass-panel px-6 py-7 md:px-8 md:py-8" style={{ animation: "fadeUp 0.5s ease-out both" }}>
+        {/* Top Row: Logo + Date + Role Badge */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-red-600 to-orange-500 flex items-center justify-center text-2xl font-extrabold text-white font-mono shadow-lg shadow-red-500/20 shrink-0">
+              T
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+                Buongiorno, {seller ? seller.name : ""}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                <span className="px-3 py-1 rounded-lg bg-violet-500/10 border border-violet-500/20 text-sm font-semibold text-violet-300 flex items-center gap-1.5">
+                  {ROLE_ICONS[role.id]} {role.label}
+                </span>
+                <span className="px-3 py-1 rounded-lg bg-white/5 border border-white/[0.06] text-sm font-semibold text-slate-400">
+                  {areaLabel}
+                </span>
+                <span className="text-sm text-slate-500 capitalize hidden sm:inline">
+                  {dateStr}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="flex gap-1 items-center overflow-x-auto pb-1 -mb-1">
-          <span className="text-sm text-slate-600 mr-1 shrink-0">DEMO:</span>
+
+        {/* Role Switcher */}
+        <div className="flex gap-2 items-center overflow-x-auto pb-1 -mb-1 scrollbar-hide">
+          <span className="text-sm font-bold text-slate-600 mr-1 shrink-0 uppercase tracking-widest">Vista:</span>
           {ROLES.map((r, i) => (
             <button
               key={r.id}
               onClick={() => setRi(i)}
-              className="py-1 px-2 rounded-md text-sm cursor-pointer font-semibold transition-colors shrink-0 whitespace-nowrap"
-              style={{
-                border: ri === i ? "1px solid rgba(230,0,0,0.4)" : "1px solid rgba(255,255,255,0.08)",
-                background: ri === i ? "rgba(230,0,0,0.1)" : "transparent",
-                color: ri === i ? "#ff4444" : "#777",
-              }}
+              className={`py-2 px-4 rounded-xl text-sm cursor-pointer font-semibold transition-all shrink-0 whitespace-nowrap ${
+                ri === i
+                  ? "bg-violet-500/15 text-violet-300 border border-violet-500/30 shadow-lg shadow-violet-500/10"
+                  : "text-slate-500 hover:text-white border border-transparent hover:bg-white/5"
+              }`}
             >
-              {r.icon} {r.label}
+              <span className="flex items-center gap-1.5">{ROLE_ICONS[r.id]} {r.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Greeting */}
-      <div className="text-xl font-bold text-white">
-        Buongiorno, {seller ? seller.name : ""}
-        <span className="text-sm text-slate-600 font-normal ml-2">· {areaLabel}</span>
-      </div>
-
-      {/* BLOCCO A — PV e CC vedono il target aziendale, OB no */}
+      {/* ═══ BLOCCO A — PV e CC vedono il target aziendale, OB no ═══ */}
       {(isPV || isCC || isAdm) && <BloccoA data={data} storeId={(isMgr || isSup) ? stB : null} />}
 
-      {/* BLOCCO D+E — Solo Admin */}
+      {/* ═══ BLOCCO D+E — Solo Admin ═══ */}
       {isAdm && <BloccoDE data={data} />}
 
-      {/* Supervisore: selettore negozio */}
+      {/* ═══ Supervisore: selettore negozio ═══ */}
       {isSup && (
-        <div className="flex items-center gap-2.5">
-          <span className="text-sm text-slate-500">Seleziona negozio:</span>
+        <div className="glass-panel p-5 flex flex-wrap items-center gap-3" style={{ animation: "fadeUp 0.5s ease-out 0.2s both" }}>
+          <span className="text-sm text-slate-400 font-semibold">Seleziona negozio:</span>
           {["centocelle", "cinecitta", "trastevere"].map(sid => (
             <button
               key={sid}
               onClick={() => setSupSt(sid)}
-              className="py-1.5 px-3.5 rounded-lg text-sm cursor-pointer font-semibold transition-colors"
-              style={{
-                border: supSt === sid ? "1px solid rgba(66,165,245,0.4)" : "1px solid rgba(255,255,255,0.08)",
-                background: supSt === sid ? "rgba(66,165,245,0.1)" : "transparent",
-                color: supSt === sid ? "#42A5F5" : "#888",
-              }}
+              className={`py-2 px-4 rounded-xl text-sm cursor-pointer font-semibold transition-all ${
+                supSt === sid
+                  ? "bg-blue-500/10 text-blue-400 border border-blue-500/30"
+                  : "text-slate-500 hover:text-white border border-white/[0.08] hover:bg-white/5"
+              }`}
             >
               {(STORES.find(s => s.id === sid) || {} as { name?: string }).name || sid}
             </button>
@@ -1612,14 +1706,14 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Admin: selettore negozio per Blocco B */}
+      {/* ═══ Admin: selettore negozio per Blocco B ═══ */}
       {isAdm && (
-        <div className="flex items-center gap-2.5">
-          <span className="text-sm text-slate-500">Dettaglio negozio:</span>
+        <div className="glass-panel p-5 flex items-center gap-3" style={{ animation: "fadeUp 0.5s ease-out 0.2s both" }}>
+          <span className="text-sm text-slate-400 font-semibold">Dettaglio negozio:</span>
           <select
             value={admSt}
             onChange={(e) => setAdmSt(e.target.value)}
-            className="glass-input text-sm py-1.5 px-2.5 rounded-md cursor-pointer"
+            className="glass-input text-sm py-2 px-4 rounded-xl cursor-pointer"
           >
             {STORES.map(st => (
               <option key={st.id} value={st.id}>{st.name}</option>
@@ -1628,16 +1722,16 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* BLOCCO B — Solo PV managers e admin */}
+      {/* ═══ BLOCCO B — Solo PV managers e admin ═══ */}
       {(isMgr || isSup || isAdm) && <BloccoB data={data} storeId={stB} />}
 
-      {/* BLOCCO C — differenziato per area */}
+      {/* ═══ BLOCCO C — differenziato per area ═══ */}
       {isAdm ? (
         <BloccoCAdmin data={data} />
       ) : isOB ? (
         <BloccoOB data={data} sellerId={role.sellerId} isDirector={isDirector} />
       ) : (
-        <div className="flex flex-col gap-6">
+        <div className="space-y-8">
           {role.id === "cc_director" && <BloccoCCDir data={data} sellerId={role.sellerId} />}
           <BloccoC
             data={data}
@@ -1650,10 +1744,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Footer */}
-      <div className="pt-3 border-t border-white/[0.04] text-sm text-slate-700 flex justify-between">
+      {/* ═══ Footer ═══ */}
+      <div className="pt-4 border-t border-white/[0.04] text-sm text-slate-600 flex flex-col sm:flex-row justify-between gap-2">
         <span>Telefutura SRL / Telefutura 2SRL</span>
-        <span className="font-mono">Dashboard v1.3</span>
+        <span className="font-mono text-slate-700">Dashboard v2.0</span>
       </div>
     </div>
   );
