@@ -176,7 +176,7 @@ const MargList=memo(({items,onRemove,show,onClose})=>{
 const BRANDS = [
   { id: "windtre", label: "WindTre", short: "W3", color: "#FF6B00", gradient: "linear-gradient(135deg, #1B3A5C 0%, #2E75B6 100%)", icon: "📶", logo: "/windtre.webp", desc: "Mobile, Fisso, Luce & Gas, Assicurazioni, Protecta", ready: true },
   { id: "sky", label: "Sky", short: "SKY", color: "#0072C6", gradient: "linear-gradient(135deg, #003366 0%, #0072C6 100%)", icon: "📺", logo: "/sky.png", desc: "TV, Fibra, Mobile, Glass, Pacchetti combinati", ready: true },
-  { id: "vodafone", label: "Vodafone", short: "VF", color: "#E60000", gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)", icon: "📱", logo: "/vodaphone - Copy.png", desc: "Mobile, Fisso, Luce & Gas, Assicurazioni, Protecta", ready: true },
+  { id: "vodafone", label: "Vodafone", short: "VF", color: "#E60000", gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)", icon: "📱", logo: "/vodaphone - Copy.png", desc: "Mobile, Fisso, Multi-Servizi", ready: true },
   { id: "fastweb", label: "Fastweb", short: "FW", color: "#CC9900", gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)", icon: "⚡", logo: "/fastweb.png", desc: "Mobile, Fisso, Energy", ready: true },
   { id: "iliad", label: "Iliad", short: "IL", color: "#C00028", gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)", icon: "📡", logo: "/iliad.png", desc: "Mobile e Fisso (Fibra)", ready: true },
   { id: "energy", label: "Energy", short: "EN", color: "#28a745", gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)", icon: "🔋", logo: "/energy - Copy.png", desc: "Forniture Luce e Gas (S4, Barton)", ready: true },
@@ -558,7 +558,7 @@ const RigaBundleAccessorio = ({riga, onUpd, modoRiga}) => {
           <div style={{flex:2}}>
             <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:2}}>Codice Bundle</div>
             <input value={riga.codice||""} onChange={e=>onUpd("codice",e.target.value)} placeholder="Codice..."
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/>
+              className="glass-input w-full text-sm rounded-lg py-2"/>
           </div>
           <div style={{flex:1}}>
             <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:2}}>Tipologia €</div>
@@ -575,12 +575,12 @@ const RigaBundleAccessorio = ({riga, onUpd, modoRiga}) => {
           <div style={{flex:2}}>
             <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:2}}>IMEI Accessorio</div>
             <input value={riga.imei2||""} onChange={e=>onUpd("imei2",e.target.value)} placeholder="IMEI..."
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",fontFamily:"monospace"}}/>
+              className="glass-input w-full text-sm rounded-lg py-2 font-mono"/>
           </div>
           <div style={{flex:1}}>
             <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:2}}>Valore €</div>
             <input value={riga.valore||""} onChange={e=>onUpd("valore",e.target.value)} placeholder="0.00"
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/>
+              className="glass-input w-full text-sm rounded-lg py-2"/>
           </div>
         </div>
       )}
@@ -817,7 +817,7 @@ const VFMobileGA = ({sd,uP}) => {
         <div>
           {/* MNP — bloccato a No per DV/DV+ */}
           {isDV?(
-            <div style={{marginBottom:12,padding:"8px 12px",background:"#fff3cd",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"#856404"}}>
+            <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(255,193,7,0.08)",border:"1px solid rgba(255,193,7,0.2)",borderRadius:8,fontSize:11,color:"#fbbf24"}}>
               MNP: <strong>No</strong> — non disponibile per {sd.vfOffer}
             </div>
           ):(
@@ -835,7 +835,7 @@ const VFMobileGA = ({sd,uP}) => {
             <div>
               {/* Domiciliata — solo Wallet per DV/DV+ */}
               {isDV?(
-                <div style={{marginBottom:12,padding:"8px 12px",background:"#fff3cd",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"#856404"}}>
+                <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(255,193,7,0.08)",border:"1px solid rgba(255,193,7,0.2)",borderRadius:8,fontSize:11,color:"#fbbf24"}}>
                   Domiciliata: <strong>Wallet</strong> — unica opzione per {sd.vfOffer}
                 </div>
               ):(
@@ -856,7 +856,7 @@ const VFMobileGA = ({sd,uP}) => {
                   {(sd.vfConvergenza||isDV)&&(
                     <div>
                       {isDV?(
-                        <div style={{marginBottom:12,padding:"8px 12px",background:"#fff3cd",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"#856404"}}>
+                        <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(255,193,7,0.08)",border:"1px solid rgba(255,193,7,0.2)",borderRadius:8,fontSize:11,color:"#fbbf24"}}>
                           TNP: <strong>non disponibile</strong> per {sd.vfOffer}
                         </div>
                       ):(
@@ -2474,42 +2474,86 @@ const finalSubmit = async () => {
   const formContent = (
     <div className="w-full max-w-[1600px] mx-auto p-4 md:p-6 space-y-4" style={{fontFamily:"Inter,-apple-system,sans-serif",minHeight:"100vh"}}>
       {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#28a745",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
-      <div className="glass-card mb-6 p-5 flex items-center justify-between" style={{background:bG}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:36,height:36,background:"rgba(255,255,255,.2)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>{bObj?<Image src={bObj.logo} alt={bObj.label} width={24} height={24} style={{objectFit:"contain"}}/>:<span style={{fontSize:18}}>⚡</span>}</div><div><div style={{color:"#fff",fontWeight:700,fontSize:16}}>CRM - Inserimento Contratto</div><div style={{color:"rgba(255,255,255,.7)",fontSize:11}}>{bObj?bObj.label+" · v5":"Seleziona brand"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div></div></div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>setShowMargSection(true)} title="Prodotti & Marginalità" style={{padding:"8px 16px",borderRadius:8,border:"1px solid rgba(255,255,255,.4)",background:"rgba(255,255,255,.15)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>📦 Prodotti&Marginalità{margItems.length>0&&<span style={{background:"#FFD800",color:"#f8fafc",borderRadius:8,padding:"1px 7px",fontSize:11,fontWeight:800}}>{margItems.length}</span>}</button><button onClick={()=>setShowCart(true)} style={{background:tCI>0?"rgba(255,255,255,.25)":"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.3)",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,cursor:"pointer",fontWeight:700,display:"flex",alignItems:"center",gap:6}}>🛒 Carrello{tCI>0&&<span style={{background:"#FFD800",color:"#f8fafc",borderRadius:10,padding:"1px 7px",fontSize:11,fontWeight:800}}>{tCI}</span>}</button>
-          {brand&&<button onClick={addCart} style={{background:"rgba(255,255,255,.15)",border:"1px solid rgba(255,255,255,.3)",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:13,cursor:"pointer",fontWeight:700}}>📦 Salva brand</button>}
-          <button onClick={fullReset} title="Reset tutto" style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.25)",borderRadius:8,padding:"8px 14px",color:"rgba(255,255,255,.85)",fontSize:13,cursor:"pointer",fontWeight:700}}>🔄 Reset</button>
+      <div className="mb-6 px-6 py-5 flex items-center justify-between rounded-2xl border border-white/10" style={{background:bObj?`linear-gradient(135deg, ${bObj.color}18, ${bObj.color}08)`:"rgba(255,255,255,0.04)"}}>
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl overflow-hidden flex items-center justify-center shrink-0" style={{background:bObj?`${bObj.color}20`:"rgba(255,255,255,0.05)"}}>
+            {bObj?<Image src={bObj.logo} alt={bObj.label} width={40} height={40} className="w-full h-full object-cover rounded-xl"/>:<span className="text-xl">📋</span>}
+          </div>
+          <div>
+            <div className="text-lg font-bold text-white tracking-tight">Inserimento Contratto</div>
+            <div className="flex items-center gap-2 mt-1">
+              {bObj&&<span className="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider" style={{background:`${bObj.color}20`,color:bObj.color}}>{bObj.label}</span>}
+              {tipoCliente&&<span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">{tipoCliente}</span>}
+              {!bObj&&<span className="text-xs text-slate-500">Seleziona brand</span>}
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2.5 items-center">
+          <button onClick={()=>setShowMargSection(true)} className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-slate-300 text-sm font-bold transition-all flex items-center gap-2">
+            📦 <span className="hidden sm:inline">Marginalità</span>{margItems.length>0&&<span className="px-2 py-0.5 rounded-md bg-violet-500/20 text-violet-300 text-xs font-bold">{margItems.length}</span>}
+          </button>
+          <button onClick={()=>setShowCart(true)} className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-slate-300 text-sm font-bold transition-all flex items-center gap-2">
+            🛒 <span className="hidden sm:inline">Carrello</span>{tCI>0&&<span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-xs font-bold">{tCI}</span>}
+          </button>
+          {brand&&<button onClick={addCart} className="px-4 py-2.5 rounded-xl bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/20 text-violet-300 text-sm font-bold transition-all flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4"/> <span className="hidden sm:inline">Salva brand</span>
+          </button>}
+          <button onClick={fullReset} className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-slate-400 transition-all" title="Reset">
+            <RotateCcw className="w-4 h-4"/>
+          </button>
         </div>
       </div>
 
       <div style={{display:"flex",gap:3,marginBottom:16}}>
-        {["Brand","Tipo Cliente","Anagrafica","Prodotti","Allegati","Attribuzione","Note"].map((st,i)=><div key={i} style={{flex:1,textAlign:"center",padding:"7px 2px",borderRadius:6,fontSize:9.5,fontWeight:600,background:gSS(i)==="active"?bC:gSS(i)==="done"?"rgba(40,167,69,0.8)":"rgba(255,255,255,0.04)",color:gSS(i)==="pending"?"#475569":"#fff",border:gSS(i)==="pending"?"1px solid rgba(255,255,255,0.06)":"none"}}>{gSS(i)==="done"?"✓ ":""}{st}</div>)}
+        {["Brand","Tipo Cliente","Anagrafica","Prodotti","Allegati","Attribuzione","Note"].map((st,i)=>{
+          const s=gSS(i);
+          return <div key={i} className="flex flex-col items-center gap-1.5" style={{flex:1}}>
+            <div className={`w-full h-1.5 rounded-full transition-all duration-500 ${s==="active"?"shadow-[0_0_12px_rgba(139,92,246,0.4)]":s==="done"?"shadow-[0_0_8px_rgba(16,185,129,0.3)]":""}`} style={{background:s==="active"?bC:s==="done"?"#10b981":"rgba(255,255,255,0.08)"}}/>
+            <span className={`text-[9px] font-bold uppercase tracking-wider transition-colors duration-300 ${s==="active"?"text-white":s==="done"?"text-emerald-400":"text-slate-600"}`}>{s==="done"?"✓ ":""}{st}</span>
+          </div>
+        })}
       </div>
 
       {(cart.length>0||margItems.length>0)&&<div onClick={()=>setShowCart(true)} style={{background:"linear-gradient(90deg,#1a1a2e,#16213e)",borderRadius:10,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>🛒</span><span style={{color:"#fff",fontSize:12,fontWeight:600}}>Carrello:</span>{cart.map((g,i)=><span key={i} style={{background:g.brandColor,color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>{g.brandIcon} {g.items.length}</span>)}{margItems.length>0&&<span style={{background:"#6f42c1",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>📦 {margItems.length}</span>}</div><span style={{color:"rgba(255,255,255,.5)",fontSize:11}}>Vedi →</span></div>}
 
-      {!brand?<div className="glass-card mb-6 p-6" style={{}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Step 1 — Brand</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:12}}>
-          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(b.ready){setBrand(b.id);setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:""}]);setSesCode("")}}} className="glass-panel" style={{padding:20,borderRadius:14,border:"2px solid rgba(255,255,255,0.06)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:b.ready?1:.5,position:"relative",overflow:"hidden",transition:"all 0.25s ease",display:"flex",flexDirection:"column",alignItems:"center",gap:6}} onMouseEnter={e=>{if(b.ready){e.currentTarget.style.border=`2px solid ${b.color}60`;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 8px 24px ${b.color}20`}}} onMouseLeave={e=>{e.currentTarget.style.border="2px solid rgba(255,255,255,0.06)";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none"}}>
-            {!b.ready&&<div style={{position:"absolute",inset:0,background:"rgba(15,17,26,0.85)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2,backdropFilter:"blur(2px)"}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
-            <div style={{width:56,height:56,borderRadius:14,background:`${b.color}15`,border:`1px solid ${b.color}30`,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:4}}><Image src={b.logo} alt={b.label} width={36} height={36} style={{objectFit:"contain"}}/></div>
-            <div style={{fontWeight:800,fontSize:15,color:b.color}}>{b.label}</div>
-            <div style={{fontSize:10,color:"#64748b",lineHeight:1.4}}>{b.desc}</div>
-          </button>)}
-        </div>
-        <div style={{marginTop:12}}>
-          <button onClick={()=>setShowMargPOS(true)} style={{width:"100%",padding:"14px 20px",borderRadius:12,border:"2px dashed #6f42c1",background:"rgba(255,255,255,0.04)",cursor:"pointer",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-            <span style={{fontSize:24}}>📦</span>
-            <div style={{textAlign:"left"}}>
-              <div style={{fontWeight:800,fontSize:14,color:"#6f42c1"}}>Prodotti & Marginalità</div>
-              <div style={{fontSize:11,color:"#9b59b6",marginTop:2}}>Registra vendite prodotti senza attivazione brand</div>
+      {!brand?<div className="mb-6 max-w-4xl mx-auto">
+        <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Step 1 — Seleziona Brand</div>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+          {BRANDS.map(b=>(
+            <div key={b.id} onClick={()=>{if(b.ready){setBrand(b.id);setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:""}]);setSesCode("")}}}
+              className={`glass-card p-5 cursor-pointer group hover:bg-white/[0.04] transition-all relative overflow-hidden border ${b.ready?"":"opacity-50 cursor-default"}`}
+              style={{borderColor:"rgba(255,255,255,0.08)"}}>
+              <div className="absolute top-0 left-0 right-0 h-1" style={{background:`linear-gradient(to right, ${b.color}, ${b.color}88)`}}/>
+              {!b.ready&&<div className="absolute inset-0 bg-[rgba(15,17,26,0.85)] flex flex-col items-center justify-center z-10 rounded-2xl backdrop-blur-sm"><span className="text-xl">🔧</span><span className="text-[10px] font-bold text-slate-500">Manutenzione</span></div>}
+              <div className="flex flex-col items-center justify-center text-center gap-3 py-2">
+                <div className="w-14 h-14 rounded-xl overflow-hidden flex items-center justify-center" style={{background:`${b.color}15`}}>
+                  <Image src={b.logo} alt={b.label} width={56} height={56} className="w-full h-full object-cover rounded-xl"/>
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">{b.label}</h3>
+                  <p className="text-[10px] font-semibold mt-0.5" style={{color:b.color}}>{b.desc}</p>
+                </div>
+              </div>
             </div>
-            {margItems.length>0&&<span style={{marginLeft:"auto",background:"#6f42c1",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
-          </button>
+          ))}
         </div>
-      </div>:<div className="glass-panel" style={{borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 1</span><div style={{width:24,height:24,borderRadius:6,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}><Image src={bObj.logo} alt={bObj.label} width={20} height={20} style={{objectFit:"contain"}}/></div><span style={{fontSize:13,fontWeight:600,color:"#f8fafc"}}>Brand: <span style={{color:bObj.color}}>{bObj.label}{tipoCliente==="business"?" Business":""}</span></span></div>}
+        <div className="mt-4">
+          <div onClick={()=>setShowMargPOS(true)}
+            className="glass-card p-4 cursor-pointer group hover:bg-white/[0.04] transition-all relative overflow-hidden border flex items-center gap-4" style={{borderColor:"rgba(255,255,255,0.08)"}}>
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-500 to-violet-600"/>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-violet-500/10 text-2xl shrink-0">📦</div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-white">Prodotti & Marginalità</h3>
+              <p className="text-[10px] font-semibold text-violet-400 mt-0.5">Registra vendite senza attivazione brand</p>
+            </div>
+            {margItems.length>0&&<span className="ml-auto px-2.5 py-0.5 rounded-lg bg-violet-500/20 border border-violet-500/20 text-xs font-bold text-violet-300 shrink-0">{margItems.length}</span>}
+          </div>
+        </div>
+      </div>:<div className="glass-panel p-4 mb-3 flex items-center gap-3">
+        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">✓ 1</span>
+        <div className="w-7 h-7 rounded-xl overflow-hidden flex items-center justify-center shrink-0"><Image src={bObj.logo} alt={bObj.label} width={28} height={28} className="w-full h-full object-cover rounded-xl"/></div>
+        <span className="font-bold text-sm text-white tracking-tight">Brand: <span style={{color:bObj.color}}>{bObj.label}{tipoCliente==="business"?" Business":""}</span></span>
+      </div>}
 
       {brand&&!showStep4&&<div className="glass-card mb-6 p-6 space-y-5">
         <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">

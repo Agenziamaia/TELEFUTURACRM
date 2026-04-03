@@ -129,8 +129,8 @@ const TIPO_PRODOTTO = [
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 const rnd = (f: string, t: string) => { const a = new Date(f).getTime(), b = new Date(t).getTime(); return new Date(a + Math.random() * (b - a)); };
-const fmtDate = (d: Date | null) => d ? d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
-const fmtDateTime = (d: Date | null) => d ? fmtDate(d) + " " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtDate = (d: Date | string | null) => { if (!d) return "—"; const dt = d instanceof Date ? d : new Date(d); return isNaN(dt.getTime()) ? "—" : dt.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }); };
+const fmtDateTime = (d: Date | string | null) => { if (!d) return "—"; const dt = d instanceof Date ? d : new Date(d); return isNaN(dt.getTime()) ? "—" : fmtDate(dt) + " " + dt.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }); };
 const fmtEur = (v: number) => v.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 const genIMEI = () => { let s = "35"; for (let i = 0; i < 13; i++) s += Math.floor(Math.random() * 10); return s; };
@@ -195,8 +195,8 @@ function rowToDevice(r: UsatiRow): Device {
     note_tecnico: r.note_tecnico || "",
     status_history: parseHistory(r.status_history),
     provenienza_subito: !!r.provenienza_subito,
-    extra_margine: r.extra_margine && typeof r.extra_margine === "object" ? (r.extra_margine as ExtraMargine) : null,
-    pagamento: r.pagamento && typeof r.pagamento === "object" ? (r.pagamento as Pagamento) : { metodo: "contanti", iban: "", bonifico_effettuato: null, bonifico_operatore: null, bonifico_date: null },
+    extra_margine: r.extra_margine && typeof r.extra_margine === "object" ? { ...(r.extra_margine as any), conferma_date: (r.extra_margine as any).conferma_date ? new Date((r.extra_margine as any).conferma_date) : null } as ExtraMargine : null,
+    pagamento: r.pagamento && typeof r.pagamento === "object" ? { ...(r.pagamento as any), bonifico_date: (r.pagamento as any).bonifico_date ? new Date((r.pagamento as any).bonifico_date) : null } as Pagamento : { metodo: "contanti", iban: "", bonifico_effettuato: null, bonifico_operatore: null, bonifico_date: null },
     grado_usura: r.grado_usura || "",
     allegato_documento: r.allegato_documento ?? null,
     allegato_dichiarazione: r.allegato_dichiarazione ?? null,

@@ -63,6 +63,19 @@
     padding: 8px;
   }
 
+  /* Catch-all: any input/select/textarea without glass-input gets dark styling */
+  input:not(.glass-input):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select:not(.glass-input),
+  textarea:not(.glass-input) {
+    background-color: rgba(15, 23, 42, 0.6);
+    color: #f8fafc;
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+  input:not(.glass-input):not([type="checkbox"]):not([type="radio"]):not([type="file"])::placeholder,
+  textarea:not(.glass-input)::placeholder {
+    color: #475569;
+  }
+
   .primary-btn {
     @apply bg-gradient-to-br from-primary to-purple-600 rounded-lg font-medium shadow-[0_4px_15px_var(--color-primary-glow)] transition-all hover:-translate-y-0.5 hover:shadow-[0_6px_20px_var(--color-primary-glow)] hover:from-primary-hover hover:to-purple-700 px-4 py-2 text-white;
   }
