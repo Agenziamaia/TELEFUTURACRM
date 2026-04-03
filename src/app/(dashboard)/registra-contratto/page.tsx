@@ -433,7 +433,7 @@ const FWMobile = ({sd, uP}) => {
             </div>
           )}
 
-          <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+          <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
             <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
               <DD l="Codice Inserimento" r v={sd.fwCodIns||""} o={v=>upv("fwCodIns",v)} vals={FW_CODICI_NEGOZIO}/>
@@ -466,7 +466,7 @@ const FWFisso = ({sd, uP}) => {
         </div>
       )}
       {sd.fwFGnp&&(
-        <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <DD l="Codice Inserimento" r v={sd.fwFCodIns||""} o={v=>upv("fwFCodIns",v)} vals={FW_CODICI_NEGOZIO}/>
@@ -489,7 +489,7 @@ const FWFisso = ({sd, uP}) => {
 const FWEnergia = ({sd, uP}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
       <TF l="POD" r v={sd.fwPod||""} o={v=>upv("fwPod",v)} p="IT001E..."/>
     </div>
@@ -889,7 +889,7 @@ const VFMobileGA = ({sd,uP}) => {
                       )}
                       {/* Dati Contratto */}
                       {(sd.vfTnp||isDV)&&(
-                        <div style={{marginTop:12,background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+                        <div style={{marginTop:12,background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
                           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                             {sd.vfMnp==="Sì"?(
@@ -968,7 +968,7 @@ const VFMobileGAFisso = ({sd,uP}) => {
                   </div>
 
                   {/* Dati Contratto */}
-                  <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+                  <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
                     <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                       <DD l="Codice Inserimento" r v={sd.vfFCodIns||""} o={v=>upv("vfFCodIns",v)} vals={VF_CODICI_NEGOZIO_FISSO}/>
@@ -1049,7 +1049,7 @@ const VFCB = ({sd, uP}) => {
               </div>
             </div>
             <DD l="Codice Inserimento" r v={sd.cbCodIns2||""} o={v=>upv("cbCodIns2",v)} vals={VF_CODICI_NEGOZIO}/>
-            <div style={{marginTop:12,background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:12}}>
+            <div style={{marginTop:12,background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:12}}>
               <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <TF l="Numero Provvisorio" r v={sd.dcCbNumProv||""} o={v=>upv("dcCbNumProv",v)} p="393XXXXXXX"/>
@@ -1156,7 +1156,7 @@ const VFBizMobile = ({sd,uP}) => {
                   </div>
                 </div>
               )}
-              <div style={{marginTop:8,background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+              <div style={{marginTop:8,background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
                 <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                   <DD l="Codice Inserimento" r v={sd.vfbCodIns||""} o={v=>upv("vfbCodIns",v)} vals={VF_CODICI_NEGOZIO}/>
@@ -1184,7 +1184,7 @@ const VFBizMobileCB = ({sd,uP}) => {
         </button>
       </div>
       {sd.vfbCbOn&&(
-        <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <DD l="Codice Inserimento" r v={sd.vfbCbCodIns||""} o={v=>upv("vfbCbCodIns",v)} vals={VF_CODICI_NEGOZIO}/>
         </div>
@@ -1222,7 +1222,7 @@ const VFBizFisso = ({sd,uP,isCombo}) => {
       )}
       {sd.vfbFGnp&&(
         <div>
-          <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+          <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
             <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
               <DD l="Codice Inserimento" r v={sd.vfbFCodIns||""} o={v=>upv("vfbFCodIns",v)} vals={VF_CODICI_NEGOZIO}/>
@@ -1292,7 +1292,7 @@ const ILMobile = ({sd, uP}) => {
             </div>
           )}
           {sd.ilMnp&&(
-            <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+            <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
               <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <DD l="Codice Inserimento" r v={sd.ilCodIns||""} o={v=>upv("ilCodIns",v)} vals={IL_CODICI_NEGOZIO}/>
@@ -1318,7 +1318,7 @@ const ILFisso = ({sd, uP}) => {
     <div>
       <RB label="GNP?" val={sd.ilFGnp} opts={["Sì","No"]} onCh={v=>{upv("ilFGnp",v);if(v==="No"){upv("ilFGnpBrand","");upv("ilFGnpNum","");}}}/>
       {sd.ilFGnp&&(
-        <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <DD l="Codice Inserimento" r v={sd.ilFCodIns||""} o={v=>upv("ilFCodIns",v)} vals={IL_CODICI_NEGOZIO}/>
@@ -1361,7 +1361,7 @@ const ENLuceGas = ({sd, uP, sub}) => {
   const upv=(k,v)=>uP(k,v);
   const isLuce = sub.enProd==="Luce"||sub.enProd==="LuceRID";
   const content = (
-    <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — {sub.enBrand} {sub.title}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <DD l="Codice Inserimento" r v={sd.enCodIns||""} o={v=>upv("enCodIns",v)} vals={EN_CODICI_NEGOZIO}/>
@@ -1435,8 +1435,8 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
           )}
           {mobDone&&(
             sub.mobOffers
-              ? <div style={{marginTop:6}}><DD l="Offerta Mobile" v={f.offerta||""} o={v=>uF(group.id,si,sub.id,"offerta",v)} vals={sub.mobOffers[sd.tipMob+"_"+sd.easyPay]||[]}/></div>
-              : sub.fields&&sub.fields.length>0&&<div style={{marginTop:6}}>{sub.fields.map(fl=><DD key={fl.key} l={fl.label} v={f[fl.key]||""} o={v=>uF(group.id,si,sub.id,fl.key,v)} vals={fl.values}/>)}</div>
+              ? <div style={{marginTop:6,maxWidth:"50%"}}><DD l="Offerta Mobile" v={f.offerta||""} o={v=>uF(group.id,si,sub.id,"offerta",v)} vals={sub.mobOffers[sd.tipMob+"_"+sd.easyPay]||[]}/></div>
+              : sub.fields&&sub.fields.length>0&&<div style={{marginTop:6,display:"grid",gridTemplateColumns:sub.fields.length>1?"1fr 1fr":"1fr",gap:"8px 14px"}}>{sub.fields.map(fl=><DD key={fl.key} l={fl.label} v={f[fl.key]||""} o={v=>uF(group.id,si,sub.id,fl.key,v)} vals={fl.values}/>)}</div>
           )}
           {/* Security when Easy Pay = No (after Offerta Mobile) */}
           {mobDone&&(sd.easyPay==="No"||sd.easyPay===false)&&(
@@ -1584,13 +1584,9 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {sub.isMobileBiz&&(
         <div>
           <MiniC label="MNP" val={sd.mnp} onCh={v=>{uP(group.id,si,sub.id,"mnp",v);if(v==="No"||v===false)uC(group.id,si,sub.id,"brand_mnp","")}} opts={["Sì","No"]}/>
-          {bizMnpDone&&(sd.mnp==="Sì"||sd.mnp===true)&&(
-            <div style={{marginTop:6}}>
-              <DD l="Brand MNP" r v={f.brandMnpBiz||""} o={v=>uF(group.id,si,sub.id,"brandMnpBiz",v)} vals={brandMNP}/>
-            </div>
-          )}
           {bizMnpDone&&(
-            <div style={{marginTop:6}}>
+            <div style={{marginTop:6,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
+              {(sd.mnp==="Sì"||sd.mnp===true)&&<DD l="Brand MNP" r v={f.brandMnpBiz||""} o={v=>uF(group.id,si,sub.id,"brandMnpBiz",v)} vals={brandMNP}/>}
               <DD l="Offerta Mobile" r v={f.offerta||""} o={v=>uF(group.id,si,sub.id,"offerta",v)} vals={(sub.bizOffers||[]).filter(o=>(sd.mnp==="Sì"||sd.mnp===true)?o!=="FWA Indoor PIVA":true)}/>
             </div>
           )}
@@ -1651,7 +1647,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 16px",borderRadius:8,background:"rgba(111,66,193,0.12)",border:"2px solid #6f42c1"}}>
           <span style={{fontSize:20}}>🛡️</span>
           <span style={{fontSize:13,fontWeight:700,color:"#6f42c1"}}>Verisure</span>
-          <span style={{marginLeft:"auto",fontSize:12,fontWeight:800,color:"#6f42c1",background:"#e0d4ff",borderRadius:6,padding:"3px 12px"}}>✅ VERISURE ATTIVO</span>
+          <span style={{marginLeft:"auto",fontSize:12,fontWeight:800,color:"#c084fc",background:"rgba(111,66,193,0.15)",borderRadius:6,padding:"3px 12px"}}>VERISURE ATTIVO</span>
         </div>
       )}
 
@@ -1659,7 +1655,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {sub.isVFFisso&&<VFMobileGAFisso sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)}/>}
       {sub.isVFFissoBiz&&<VFBizFisso sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} isCombo={!!sub.isCombinatoFissoBiz}/>}
       {sub.isVFSolDig&&(
-        <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:12}}>
+        <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <DD l="Codice Inserimento" r v={sd.vfSolDigCodIns||""} o={v=>uP(group.id,si,sub.id,"vfSolDigCodIns",v)} vals={VF_CODICI_NEGOZIO}/>
         </div>
@@ -1667,7 +1663,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Kasko Facile */}
       {sub.isKaskoFacile&&(
-        <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:12}}>
+        <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Kasko Facile</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="IMEI" r v={f.kfImei||""} o={v=>uF(group.id,si,sub.id,"kfImei",v)} p="15 cifre" nt="Barcode 📷"/>
@@ -1686,7 +1682,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Vodafone Care */}
       {sub.isVFCare&&(
-        <div style={{background:"#f0f8ff",border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:12}}>
+        <div style={{background:"rgba(0,114,198,0.05)",border:"1px solid rgba(0,114,198,0.2)",borderRadius:8,padding:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Vodafone Care</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="Numero di telefono" r v={f.vcTelefono||""} o={v=>uF(group.id,si,sub.id,"vcTelefono",v)} p="3XXXXXXXXX"/>
@@ -1925,8 +1921,8 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* LG Convergente */}
       {sub.hasConvLG&&(
-        <div style={{marginTop:8,padding:10,background:lgConvLocked?"#f5f5f5":"#f8fafc",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)"}}>
-          <div style={{fontSize:12,fontWeight:700,color:lgConvLocked?"#999":"#333",marginBottom:6}}>Convergente?</div>
+        <div style={{marginTop:8,padding:10,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}>
+          <div style={{fontSize:12,fontWeight:700,color:lgConvLocked?"#64748b":"#f8fafc",marginBottom:6}}>Convergente?</div>
           {lgConvLocked?<div style={{display:"flex",alignItems:"center",gap:8}}><button disabled style={{padding:"6px 20px",borderRadius:6,border:"2px solid #dc3545",background:"rgba(220,53,69,0.15)",color:"#f87171",fontSize:12,fontWeight:700,cursor:"not-allowed",opacity:.7}}>No</button><span style={{fontSize:10,color:"#64748b",fontStyle:"italic"}}>Già selezionato altrove</span></div>
           :<div style={{display:"flex",gap:8}}>
             <button onClick={()=>uP(group.id,si,sub.id,"convergente",true)} style={{padding:"6px 20px",borderRadius:6,border:sd.convergente===true?"2px solid #28a745":"1px solid rgba(255,255,255,0.12)",background:sd.convergente===true?"rgba(40,167,69,0.15)":"rgba(255,255,255,0.03)",color:sd.convergente===true?"#4ade80":"#94a3b8",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
@@ -1937,10 +1933,11 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Contract data */}
       {sub.hasContract&&!sub.isVFMobile&&!sub.isCBVF&&!sub.isVFFisso&&!sub.isVerisure&&!sub.isKaskoFacile&&!sub.isVFCare&&!sub.isVFBizMobile&&!sub.isCBVFBiz&&!sub.isVFFissoBiz&&!sub.isVFSolDig&&!sub.isFWMobile&&!sub.isFWFisso&&!sub.isFWEnergia&&!sub.isILMobile&&!sub.isILFisso&&!sub.isENLuceGas&&(
-        <div style={{borderTop:"1px solid "+group.color+"20",paddingTop:8,marginTop:8}}>
-          <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:6,textTransform:"uppercase"}}>Dati contratto</div>
-          <div style={{marginBottom:8,maxWidth:250}}><SCd session={sessionCode} codici={codiciW3} val={sd.codiceOverride||""} onCh={v=>uP(group.id,si,sub.id,"codiceOverride",v)}/></div>
-          {sub.ct==="ga"&&<div style={{display:"grid",gridTemplateColumns:showMnpF&&!sub.isMobileBiz?"1fr 1fr 1fr":"1fr 1fr",gap:"8px 14px"}}>
+        <div style={{borderTop:"1px solid "+group.color+"20",paddingTop:12,marginTop:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:group.color,marginBottom:10,textTransform:"uppercase"}}>📋 Dati contratto</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+            <SCd session={sessionCode} codici={codiciW3} val={sd.codiceOverride||""} onCh={v=>uP(group.id,si,sub.id,"codiceOverride",v)}/>
+          {sub.ct==="ga"&&<>
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942"/>
             <TF l="Numero Provvisorio" v={c.num_provvisorio||""} o={v=>uC(group.id,si,sub.id,"num_provvisorio",v)} p="393XXX"/>
             {showMnpF&&!sub.isMobileBiz&&<TF l="N. Definitivo MNP" v={c.num_definitivo||""} o={v=>uC(group.id,si,sub.id,"num_definitivo",v)} p="Portare"/>}
@@ -1949,38 +1946,37 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             <TF l="ICCID" v={c.iccid||""} o={v=>uC(group.id,si,sub.id,"iccid",v)} p="893..." nt="Barcode 📷"/>
             {sub.isMobileBiz&&(sd.tnpGa==="Sì"||sd.tnpGa===true)&&sd.tnpTipo&&<DD l="Modello Terminale" r v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SMARTPHONES}/>}
             {sub.isMobileBiz&&(sd.tnpGa==="Sì"||sd.tnpGa===true)&&sd.tnpTipo&&<TF l="IMEI" r v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>}
-          </div>}
-          {sub.ct==="tnp_ga"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
+          </>}
+          {sub.ct==="tnp_ga"&&<>
             <TF l="Codice Contratto" r v={gaOn?(gaC.codice_contratto||""):(c.codice_contratto||"")} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p={gaOn?"← da Mobile GA":"es. 167942"} dis={gaOn} nt={gaOn?"Auto da Mobile GA":""}/>
             <TF l="Modello Terminale" v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} p="Samsung S25"/>
             <TF l="IMEI" v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
-          </div>}
-          {sub.ct==="tnp_cb"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
+          </>}
+          {sub.ct==="tnp_cb"&&<>
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942"/>
             <TF l="Modello Terminale" v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} p="iPhone 16"/>
             <TF l="IMEI" v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
-          </div>}
-          {sub.ct==="fisso"&&!isVCMode&&<div style={{display:"grid",gridTemplateColumns:sub.hasFwaImei?"1fr 1fr 1fr":"1fr 1fr",gap:"8px 14px"}}>
+          </>}
+          {sub.ct==="fisso"&&!isVCMode&&<>
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942"/>
             <TF l="N. Fisso Provvisorio" v={c.num_fisso_prov||""} o={v=>uC(group.id,si,sub.id,"num_fisso_prov",v)} p="06XXXX"/>
             {sub.hasFwaImei&&<TF l="IMEI" v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>}
-          </div>}
-          {sub.ct==="fisso"&&isVCMode&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
+          </>}
+          {sub.ct==="fisso"&&isVCMode&&<>
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942"/>
             <TF l="N. Fisso Provvisorio" v={c.num_fisso_prov||""} o={v=>uC(group.id,si,sub.id,"num_fisso_prov",v)} p="06XXXX"/>
             <TF l="IMEI" v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
-          </div>}
-          {sub.ct==="lg"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
+          </>}
+          {sub.ct==="lg"&&<>
             <DD l="Operatore provenienza" r v={sd.opProvenienza||""} o={v=>uP(group.id,si,sub.id,"opProvenienza",v)} vals={opProv}/>
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942"/>
             {sub.id==="luce"&&<TF l="POD" v={c.pod||""} o={v=>uC(group.id,si,sub.id,"pod",v.toUpperCase().replace(/[^A-Z0-9]/g,""))} p="IT001E..." nt="Alfanumerico"/>}
             {sub.id==="gas"&&<TF l="PDR" v={c.pdr||""} o={v=>uC(group.id,si,sub.id,"pdr",v.replace(/[^A-Za-z0-9]/g,""))} p="Codice PDR" nt="Alfanumerico"/>}
-          </div>}
+          </>}
           {sub.ct==="multi"&&(sub.isAssicBiz||sub.id==="assicurazioni")&&(
-            <div style={{maxWidth:260}}>
-              <TF l="Numero Polizza" v={c.nPolizza||""} o={v=>uC(group.id,si,sub.id,"nPolizza",v)} p="es. 12345678"/>
-            </div>
+            <TF l="Numero Polizza" v={c.nPolizza||""} o={v=>uC(group.id,si,sub.id,"nPolizza",v)} p="es. 12345678"/>
           )}
+          </div>
         </div>
       )}
     </div>
