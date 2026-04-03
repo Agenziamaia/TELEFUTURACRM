@@ -424,7 +424,7 @@ const FWMobile = ({sd, uP}) => {
       {sd.fwOffer&&(
         <div>
           {hasMNP&&(
-            <div style={{background:"#f8f8f8",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase"}}>Portabilità (MNP)</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.fwMnpBrand||""} o={v=>upv("fwMnpBrand",v)} vals={FW_BRANDS_MNP}/>
@@ -458,7 +458,7 @@ const FWFisso = ({sd, uP}) => {
     <div>
       <RB label="GNP?" val={sd.fwFGnp} opts={["Sì","No"]} onCh={v=>{upv("fwFGnp",v);if(v==="No"){upv("fwFGnpBrand","");upv("fwFGnpNum","");}}}/>
       {sd.fwFGnp==="Sì"&&(
-        <div style={{background:"#f8f8f8",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+        <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:12,marginBottom:12}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
             <DD l="Operatore GNP" r v={sd.fwFGnpBrand||""} o={v=>upv("fwFGnpBrand",v)} vals={FW_GNP_BRANDS}/>
             <TF l="Numero Fisso GNP" r v={sd.fwFGnpNum||""} o={v=>upv("fwFGnpNum",v)} p="06XXXXXXXX"/>
@@ -542,7 +542,7 @@ const BUNDLE_VALORI = ["39.9","54.9","69.9","99.99"];
 
 const RigaBundleAccessorio = ({riga, onUpd, modoRiga}) => {
   const content = (
-    <div style={{marginBottom:10,padding:10,background:"#fafafa",borderRadius:8,border:"1px solid #f0e0e0"}}>
+    <div style={{marginBottom:10,padding:10,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)"}}>
       {modoRiga==="Entrambi"&&(
         <div style={{display:"flex",gap:6,marginBottom:8}}>
           {["Bundle","Accessorio"].map(t=>(
@@ -824,7 +824,7 @@ const VFMobileGA = ({sd,uP}) => {
             <RB label="MNP?" val={sd.vfMnp} opts={["Sì","No"]} onCh={v=>{upv("vfMnp",v);if(v==="No"){upv("vfMnpBrand","");upv("vfMnpNum","")}}}/>
           )}
           {!isDV&&sd.vfMnp==="Sì"&&(
-            <div style={{background:"#f8f8f8",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.vfMnpBrand||""} o={v=>upv("vfMnpBrand",v)} vals={VF_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.vfMnpNum||""} o={v=>upv("vfMnpNum",v)} p="3XXXXXXXXX"/>
@@ -847,7 +847,7 @@ const VFMobileGA = ({sd,uP}) => {
                     <div>
                       <RB label="Convergenza?" val={sd.vfConvergenza} opts={["Sì","No"]} onCh={v=>upv("vfConvergenza",v)}/>
                       {sd.vfConvergenza==="Sì"&&(
-                        <div style={{background:"#f8f8f8",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+                        <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:12,marginBottom:12}}>
                           <TF l="Numero Fisso Convergenza" v={sd.vfNumFisso||""} o={v=>upv("vfNumFisso",v)} p="06XXXXXXXX"/>
                         </div>
                       )}
@@ -1127,7 +1127,7 @@ const VFBizMobile = ({sd,uP}) => {
         <div>
           <RB label="MNP?" val={sd.vfbMnp} opts={["Sì","No"]} onCh={v=>{upv("vfbMnp",v);if(v==="No"){upv("vfbMnpBrand","");upv("vfbMnpNum","")}}}/>
           {sd.vfbMnp==="Sì"&&(
-            <div style={{background:"#f8f8f8",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.vfbMnpBrand||""} o={v=>upv("vfbMnpBrand",v)} vals={VF_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.vfbMnpNum||""} o={v=>upv("vfbMnpNum",v)} p="3XXXXXXXXX"/>
@@ -1202,7 +1202,7 @@ const VFBizFisso = ({sd,uP,isCombo}) => {
         <div>
           <RB label="MNP?" val={sd.vfbFMnp} opts={["Sì","No"]} onCh={v=>{upv("vfbFMnp",v);if(v==="No"){upv("vfbFMnpBrand","");upv("vfbFMnpNum","");}}}/>
           {sd.vfbFMnp==="Sì"&&(
-            <div style={{background:"#f8f8f8",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.vfbFMnpBrand||""} o={v=>upv("vfbFMnpBrand",v)} vals={VF_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.vfbFMnpNum||""} o={v=>upv("vfbFMnpNum",v)} p="3XXXXXXXXX"/>
@@ -1213,7 +1213,7 @@ const VFBizFisso = ({sd,uP,isCombo}) => {
       )}
       <RB label="GNP?" val={sd.vfbFGnp} opts={["Sì","No"]} onCh={v=>{upv("vfbFGnp",v);if(v==="No"){upv("vfbFGnpBrand","");upv("vfbFGnpNum","");}}}/>
       {sd.vfbFGnp==="Sì"&&(
-        <div style={{background:"#f8f8f8",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+        <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:12,marginBottom:12}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
             <DD l="Operatore GNP" r v={sd.vfbFGnpBrand||""} o={v=>upv("vfbFGnpBrand",v)} vals={VF_GNP_BRANDS}/>
             <TF l="Numero Fisso GNP" r v={sd.vfbFGnpNum||""} o={v=>upv("vfbFGnpNum",v)} p="06XXXXXXXX"/>
@@ -1284,7 +1284,7 @@ const ILMobile = ({sd, uP}) => {
         <div>
           <RB label="MNP?" val={sd.ilMnp} opts={["Sì","No"]} onCh={v=>{upv("ilMnp",v);if(v==="No"){upv("ilMnpBrand","");upv("ilMnpNum","");}}}/>
           {sd.ilMnp==="Sì"&&(
-            <div style={{background:"#f8f8f8",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.ilMnpBrand||""} o={v=>upv("ilMnpBrand",v)} vals={IL_GNP_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.ilMnpNum||""} o={v=>upv("ilMnpNum",v)} p="3XXXXXXXXX"/>
