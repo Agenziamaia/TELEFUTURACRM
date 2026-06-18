@@ -893,12 +893,12 @@ const YN = ({val,onCh,label}) => (
   </div>
 );
 
-const TF = ({l,r,v,o,p,pf,dis,nt}) => (
+const TF = ({l,r,v,o,p,pf,dis,nt,err}) => (
   <div className="space-y-1.5">
     <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{l} {r&&<span className="text-rose-400">*</span>}</label>
     <input value={v||""} onChange={e=>o&&o(e.target.value)} placeholder={p} disabled={dis} readOnly={dis}
-      className={`glass-input w-full text-sm rounded-xl py-3 ${dis?"border-cyan-500/30 bg-cyan-500/5 text-cyan-300 italic":pf?"border-emerald-500/30 bg-emerald-500/5 text-emerald-300":""}`} />
-    {nt&&<span className={`text-[10px] ${dis?"text-cyan-400":"text-slate-600"}`}>{nt}</span>}
+      className={`glass-input w-full text-sm rounded-xl py-3 ${err?"border-rose-500/60 bg-rose-500/10":dis?"border-cyan-500/30 bg-cyan-500/5 text-cyan-300 italic":pf?"border-emerald-500/30 bg-emerald-500/5 text-emerald-300":""}`} />
+    {err?<span className="text-[10px] text-rose-400 font-semibold">{err}</span>:nt&&<span className={`text-[10px] ${dis?"text-cyan-400":"text-slate-600"}`}>{nt}</span>}
   </div>
 );
 
@@ -2773,8 +2773,8 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
           {sub.ct==="lg"&&<>
             <DD l="Operatore provenienza" r v={sd.opProvenienza||""} o={v=>uP(group.id,si,sub.id,"opProvenienza",v)} vals={opProvNoW3}/>
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942"/>
-            {sub.id==="luce"&&<TF l="POD" r v={c.pod||""} o={v=>uC(group.id,si,sub.id,"pod",v.toUpperCase().replace(/[^A-Z0-9]/g,""))} p="IT001E..." nt="Alfanumerico"/>}
-            {sub.id==="gas"&&<TF l="PDR" r v={c.pdr||""} o={v=>uC(group.id,si,sub.id,"pdr",v.replace(/[^A-Za-z0-9]/g,""))} p="Codice PDR" nt="Alfanumerico"/>}
+            {sub.id==="luce"&&<TF l="POD" r v={c.pod||""} o={v=>uC(group.id,si,sub.id,"pod",v.toUpperCase().replace(/[^A-Z0-9]/g,""))} p="IT001E..." nt="Alfanumerico" err={dupCheck&&dupCheck("POD",c.pod)?"POD già inserito in questo contratto":""}/>}
+            {sub.id==="gas"&&<TF l="PDR" r v={c.pdr||""} o={v=>uC(group.id,si,sub.id,"pdr",v.replace(/[^A-Za-z0-9]/g,""))} p="Codice PDR" nt="Alfanumerico" err={dupCheck&&dupCheck("PDR",c.pdr)?"PDR già inserito in questo contratto":""}/>}
           </>}
           {sub.ct==="multi"&&(sub.isAssicBiz||sub.id==="assicurazioni")&&(
             <TF l="Numero Polizza" v={c.nPolizza||""} o={v=>uC(group.id,si,sub.id,"nPolizza",v)} p="es. 12345678"/>
@@ -3167,7 +3167,7 @@ const finalSubmit = async () => {
     const cartContent = (
       <div className="w-full max-w-[1600px] mx-auto p-4 md:p-6 space-y-4" style={{fontFamily:"Inter,-apple-system,sans-serif",minHeight:"100vh"}}>
         {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#28a745",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
-        <div style={{background:"linear-gradient(135deg,#1a1a2e,#16213e,#0f3460)",borderRadius:16,padding:"24px 28px",marginBottom:20}}>
+        <div style={{background:bG,borderRadius:16,padding:"24px 28px",marginBottom:20}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div><div style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"rgba(255,255,255,.6)",fontSize:13}}>{tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale} · {lookupValue}</div></div>
             <div style={{display:"flex",gap:8}}>
@@ -3541,7 +3541,8 @@ const finalSubmit = async () => {
           const btnSky=(label,active,onClick)=><button onClick={onClick} style={{padding:"10px 18px",borderRadius:8,cursor:"pointer",border:active?"2px solid "+SKY_COLOR:"1px solid rgba(255,255,255,0.12)",background:active?SKY_COLOR:"rgba(255,255,255,0.03)",color:active?"#fff":"#94a3b8",fontSize:13,fontWeight:600}}>{label}</button>;
           const ynSky=(val,onYes,onNo)=><div style={{display:"flex",gap:6}}>{[{v:"Sì",fn:onYes},{v:"No",fn:onNo}].map(({v,fn})=><button key={v} onClick={fn} style={{padding:"7px 22px",borderRadius:8,border:val===v?"2px solid "+SKY_COLOR:"1px solid rgba(255,255,255,0.12)",background:val===v?SKY_COLOR:"rgba(255,255,255,0.03)",color:val===v?"#fff":"#94a3b8",fontSize:12,fontWeight:700,cursor:"pointer"}}>{v}</button>)}</div>;
           const dBox=(children)=><div style={{marginTop:10,background:"rgba(0,114,198,0.1)",borderRadius:8,padding:12,border:"1px solid rgba(0,114,198,0.3)"}}><div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>{children}</div>;
-          return (<div key={si} style={{padding:12,borderRadius:8,marginBottom:8,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid #0072C6"}}>
+          const tvBd=skyBadgeFn(skyTv(sale));const fibBd=skyBadgeFn(skyFib(sale));const mobBd=skyBadgeFn(skyMob(sale));
+            return (<div key={si} style={{padding:12,borderRadius:8,marginBottom:8,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid #0072C6"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
               <span style={{fontSize:11,fontWeight:700,color:"#0072C6"}}>Vendita #{si+1}</span>
               <div style={{display:"flex",gap:6}}>
@@ -3552,7 +3553,7 @@ const finalSubmit = async () => {
 
             {/* ── MACRO 1: TV ─────────────────────────────────── */}
             <div style={{marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:6,textTransform:"uppercase",letterSpacing:.5}}>📺 TV</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div style={{fontSize:11,fontWeight:700,color:"#8892b0",textTransform:"uppercase",letterSpacing:.5}}>📺 TV</div>{tvBd&&<span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:5,background:tvBd.bg,color:tvBd.fg,whiteSpace:"nowrap"}}>{tvBd.l}</span>}</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {SKY_TV.map(pr=>btnSky(pr,sale.tvSel===pr,()=>togSky(si,pr)))}
               </div>
@@ -3564,7 +3565,7 @@ const finalSubmit = async () => {
 
             {/* ── MACRO 2: FIBRA ──────────────────────────────── */}
             <div style={{marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:6,textTransform:"uppercase",letterSpacing:.5}}>🌐 Fibra</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div style={{fontSize:11,fontWeight:700,color:"#8892b0",textTransform:"uppercase",letterSpacing:.5}}>🌐 Fibra</div>{fibBd&&<span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:5,background:fibBd.bg,color:fibBd.fg,whiteSpace:"nowrap"}}>{fibBd.l}</span>}</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {SKY_FIBRA.map(pr=>btnSky(pr,sale.fibraSel===pr,()=>togSky(si,pr)))}
               </div>
@@ -3587,7 +3588,7 @@ const finalSubmit = async () => {
 
             {/* ── MACRO 3: MOBILE ─────────────────────────────── */}
             <div>
-              <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:6,textTransform:"uppercase",letterSpacing:.5}}>📱 Mobile</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div style={{fontSize:11,fontWeight:700,color:"#8892b0",textTransform:"uppercase",letterSpacing:.5}}>📱 Mobile</div>{mobBd&&<span style={{fontSize:9,fontWeight:800,padding:"2px 7px",borderRadius:5,background:mobBd.bg,color:mobBd.fg,whiteSpace:"nowrap"}}>{mobBd.l}</span>}</div>
               <div style={{display:"flex",gap:6}}>
                 {btnSky("Sky Mobile",sale.mobileSel,()=>togSky(si,"Sky Mobile"))}
               </div>
