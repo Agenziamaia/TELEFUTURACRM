@@ -3796,7 +3796,7 @@ export default function CRM() {
       ═══════════════════════════════════════════════════════════════════ */}
       <style>{`@media(min-width:1600px){.crmSidebar{display:flex!important}.crmShell{margin-right:380px!important}}`}</style>
       {/* SIDEBAR CARRELLO LIVE (desktop) */}
-      <div className="crmSidebar" style={{display:"none",position:"fixed",top:16,right:16,width:344,maxHeight:"calc(100vh - 32px)",overflowY:"auto",flexDirection:"column",background:"rgba(255,255,255,0.02)",borderRadius:14,boxShadow:"0 8px 30px rgba(0,0,0,.12)",zIndex:50,border:"2px solid "+bC}}>
+      <div className="crmSidebar" style={{display:"none",position:"fixed",top:76,right:16,width:344,maxHeight:"calc(100vh - 92px)",overflowY:"auto",flexDirection:"column",background:"rgba(255,255,255,0.02)",borderRadius:14,boxShadow:"0 8px 30px rgba(0,0,0,.12)",zIndex:30,border:"2px solid "+bC}}>
         <div style={{background:bG,borderRadius:"14px 14px 0 0",padding:"16px 18px"}}>
           <div style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
           <div style={{color:"rgba(255,255,255,.6)",fontSize:11,marginTop:2}}>{(tipoCliente==="privato"?(ana.nome+" "+ana.cognome).trim():ana.ragioneSociale)||"In compilazione"}</div>
