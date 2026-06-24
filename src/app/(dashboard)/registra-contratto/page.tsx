@@ -3407,6 +3407,7 @@ export default function CRM() {
   const [margItems,setMargItems]=useState([]);
   const [uploading, setUploading] = useState(false);
   const [attachments, setAttachments] = useState([]);
+  const handleFileChange = (e, type) => { if (e.target.files && e.target.files.length) { const nf = Array.from(e.target.files).map(file => ({ file, name: file.name, type })); setAttachments(prev => [...prev, ...nf]); } e.target.value = ""; };
   const [draftLoaded,setDraftLoaded]=useState(false);
   const [showCart,setShowCart]=useState(false);
   const [toast,setToast]=useState(null);
@@ -3722,8 +3723,9 @@ export default function CRM() {
         {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #17a2b8",marginTop:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#17a2b8",marginBottom:14,textTransform:"uppercase"}}>📎 Step 5 — Allegati</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-            {[{l:"Documento",i:"🪪"},{l:"Contratti",i:"📄"},{l:"Altro",i:"📁"}].map((a,i)=><div key={i} style={{border:"2px dashed rgba(255,255,255,0.1)",borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-block",padding:"4px 12px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:600}}>Carica</div></div>)}
+            {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;return <label key={i} style={{display:"block",border:"2px dashed "+(cnt>0?"rgba(23,162,184,0.55)":"rgba(255,255,255,0.1)"),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:cnt>0?"rgba(23,162,184,0.08)":"rgba(255,255,255,0.03)"}}><input type="file" multiple accept="image/*,application/pdf" onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:700}}>Carica</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"#17a2b8",fontWeight:700}}>{cnt} file</div>}</label>;})}
           </div>
+          {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid rgba(255,255,255,0.05)":"none"}}><div style={{fontSize:11,color:"#f8fafc"}}>{file.name} <span style={{color:"#64748b",fontSize:10}}>· {file.type}</span></div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
         </div>}
         {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745"}}>
           <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Step 6 — Attribuzione</div>
