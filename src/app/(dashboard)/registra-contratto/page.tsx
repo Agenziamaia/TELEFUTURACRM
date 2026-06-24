@@ -862,7 +862,7 @@ const DD = ({l,r,v,o,vals,nt}) => {
         onBlur={()=>setTimeout(()=>setOpen(false),180)}
         style={{width:"100%",padding:"7px 10px",borderRadius:6,border:v?"2px solid #28a745":"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:v&&!open?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}}/>
       {open&&(
-        <div style={{position:"absolute",zIndex:200,left:0,right:0,top:"100%",marginTop:2,background:"rgba(255,255,255,0.02)",border:"1px solid #cfd8e3",borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,.15)",maxHeight:260,overflowY:"auto"}}>
+        <div style={{position:"absolute",zIndex:200,left:0,right:0,top:"100%",marginTop:2,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,boxShadow:"0 8px 24px rgba(0,0,0,.15)",maxHeight:260,overflowY:"auto"}}>
           {v&&<div onMouseDown={()=>{o&&o("");setOpen(false);}} style={{padding:"7px 10px",fontSize:11,color:"#dc3545",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>✕ Deseleziona</div>}
           {filtered.length===0&&<div style={{padding:"10px",fontSize:12,color:"#64748b"}}>Nessun risultato</div>}
           {Object.keys(byGroup).map(gk=>(
@@ -914,7 +914,7 @@ const CartItem = ({it,ii,gi,total,expI,setExpI}) => {
           <button onClick={()=>setExpI(p=>({...p,[gi+"_"+ii]:!p[gi+"_"+ii]}))} style={{background:exp?"rgba(0,114,198,0.10)":"rgba(255,255,255,0.03)",border:exp?"1px solid #2E75B6":"1px solid rgba(255,255,255,0.1)",borderRadius:5,padding:"3px 10px",fontSize:10,fontWeight:600,cursor:"pointer",color:exp?"#2E75B6":"#64748b"}}>{exp?"▲ Nascondi":"👁 Mostra"}</button>
         </div>
       </div>
-      {exp&&<div style={{padding:"8px 12px 12px 32px"}}><div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:12,border:"1px solid #e8edf2"}}><div style={{fontSize:11,fontWeight:700,color:it.macroColor,marginBottom:8}}>📋 {it.sub}</div>
+      {exp&&<div style={{padding:"8px 12px 12px 32px"}}><div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:12,border:"1px solid rgba(255,255,255,0.12)"}}><div style={{fontSize:11,fontWeight:700,color:it.macroColor,marginBottom:8}}>📋 {it.sub}</div>
         {dets.length>0?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 16px"}}>{dets.map(([k,v])=><div key={k}><span style={{fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase"}}>{k}</span><div style={{fontSize:12,color:"#f8fafc",marginTop:1}}>{String(v)}</div></div>)}</div>
         :<div style={{fontSize:12,color:"#64748b"}}>Nessun dettaglio — premi ✏️ Modifica</div>}
       </div></div>}
@@ -1544,7 +1544,7 @@ const VFMobileGAFisso = ({sd,uP,sc}) => {
               {/* Add-on Fisso — appare dopo GNP */}
               {sd.vfFGnp&&(
                 <div>
-                  <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid #e0e8f0",borderRadius:8,padding:12,marginBottom:12}}>
+                  <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12,marginBottom:12}}>
                     <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:8,textTransform:"uppercase"}}>Add-on Fisso</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                       {VF_ADDON_FISSO.map(a=>{
@@ -2300,7 +2300,7 @@ const TIMMobile = ({sd, uP, sc}) => {
           )}
           {sd.timMnp&&<RB label="TNP?" val={sd.timTnp} opts={["Sì","No"]} onCh={v=>{upv("timTnp",v);if(v==="No"){upv("timModello","");upv("timSpedizione",null);upv("timFinanziato",null);upv("timCodPratica","");upv("timImei","");}}}/>}
           {sd.timTnp==="Sì"&&(
-            <div style={{background:VF_LIGHT,border:"1px solid #cfe0ff",borderRadius:8,padding:14,marginBottom:12}}>
+            <div style={{background:VF_LIGHT,border:"1px solid rgba(0,114,198,0.3)",borderRadius:8,padding:14,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px",marginBottom:10}}>
                 <DD l="Modello terminale" r v={sd.timModello||""} o={v=>upv("timModello",v)} vals={TIM_SMARTPHONES_GROUPED}/>
               </div>
@@ -2315,7 +2315,7 @@ const TIMMobile = ({sd, uP, sc}) => {
           )}
           {sd.timTnp&&<RB label="Box TIM Vision?" val={sd.timVisionBox} opts={["Sì","No"]} onCh={v=>{upv("timVisionBox",v);if(v==="No"){upv("timVisionTaglia",null);upv("timVisionNumContr","");}}}/>}
           {sd.timVisionBox==="Sì"&&(
-            <div style={{background:"rgba(111,66,193,0.12)",border:"1px solid #d9c9f0",borderRadius:8,padding:14,marginBottom:12}}>
+            <div style={{background:"rgba(111,66,193,0.12)",border:"1px solid rgba(111,66,193,0.3)",borderRadius:8,padding:14,marginBottom:12}}>
               <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:8,textTransform:"uppercase"}}>TIM Vision <span style={{color:"#dc3545"}}>*</span></div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
                 {TIM_VISION_TAGLIE.map(t=>{const on=sd.timVisionTaglia===t;return <button key={t} onClick={()=>upv("timVisionTaglia",on?null:t)} style={{padding:"7px 16px",borderRadius:8,border:on?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:on?"#6f42c1":"rgba(255,255,255,0.04)",color:on?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{t}</button>;})}
@@ -2380,7 +2380,7 @@ const TIMFisso = ({sd, uP, sc}) => {
           )}
           {sd.timFGnp&&<RB label="TIM Vision?" val={sd.timFVision} opts={["Sì","No"]} onCh={v=>{upv("timFVision",v);if(v==="No"){upv("timFVisionTaglia",null);upv("timFVisionNumContr","");}}}/>}
           {sd.timFVision==="Sì"&&(
-            <div style={{background:"rgba(111,66,193,0.12)",border:"1px solid #d9c9f0",borderRadius:8,padding:14}}>
+            <div style={{background:"rgba(111,66,193,0.12)",border:"1px solid rgba(111,66,193,0.3)",borderRadius:8,padding:14}}>
               <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:8,textTransform:"uppercase"}}>TIM Vision <span style={{color:"#dc3545"}}>*</span></div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
                 {TIM_VISION_TAGLIE.map(t=>{const on=sd.timFVisionTaglia===t;return <button key={t} onClick={()=>upv("timFVisionTaglia",on?null:t)} style={{padding:"7px 16px",borderRadius:8,border:on?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:on?"#6f42c1":"rgba(255,255,255,0.04)",color:on?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{t}</button>;})}
@@ -3166,7 +3166,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
           {/* Cambio Offerta section */}
           {sd.cbCambio&&(
-            <div style={{padding:10,background:"#f5f0ff",borderRadius:8,border:"1px solid #d4c5f0",marginBottom:8}}>
+            <div style={{padding:10,background:"#f5f0ff",borderRadius:8,border:"1px solid rgba(111,66,193,0.3)",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,color:"#6f42c1",marginBottom:8,textTransform:"uppercase"}}>Cambio Offerta</div>
               <div style={{marginBottom:8,maxWidth:250}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbCambioCodIns||""} onCh={v=>uP(group.id,si,sub.id,"cbCambioCodIns",v)}/>
@@ -3189,7 +3189,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
           {/* Add-on section inside CB */}
           {sub.cbAddonVals&&sd.cbAddon&&(
-            <div style={{padding:10,background:"#f0faf0",borderRadius:8,border:"1px solid #c3e6c3",marginBottom:8}}>
+            <div style={{padding:10,background:"#f0faf0",borderRadius:8,border:"1px solid rgba(40,167,69,0.3)",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,color:"#28a745",marginBottom:8,textTransform:"uppercase"}}>{sub.isCBBiz?"Add-on / Security":"Add-on"}</div>
               <div style={{marginBottom:8,maxWidth:250}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbAddonCodIns||(sd.cbTnpCodIns||sd.cbCambioCodIns||"")} onCh={v=>uP(group.id,si,sub.id,"cbAddonCodIns",v)}/>
