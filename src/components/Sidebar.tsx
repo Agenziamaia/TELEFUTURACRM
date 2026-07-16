@@ -82,6 +82,7 @@ const navigation: (NavGroup | NavItem)[] = [
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: ["admin", "agente"] },
     { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: ["admin", "agente"] },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: ["admin", "agente"] },
+    { type: "link", name: "Amministrazione", href: "/amministrazione", icon: Shield, roles: ["admin"] },
 ];
 
 interface SidebarProps {

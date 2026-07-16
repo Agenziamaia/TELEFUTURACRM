@@ -79,6 +79,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (pathname === "/gestione" && user.role !== "admin") {
             router.push("/dashboard");
         }
+
+        // Amministrazione: solo admin
+        if (pathname.startsWith("/amministrazione") && user.role !== "admin") {
+            router.push("/dashboard");
+        }
     }, [user, pathname, router]);
 
     const login = (email: string) => {
