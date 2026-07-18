@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { ToastHost, dbError } from "./_views/toast";
+import { ToastHost, dbError, notify } from "./_views/toast";
+import { FixedStoreCosts, StoreAttachments } from "./_views/store-extra";
 import { TargetSection } from "./_views/target";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
@@ -1715,6 +1716,10 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
     const [loading, setLoading] = useState(true);
     const [itemTotals, setItemTotals] = useState({ a: 0, v: 0 });
     const onItemTotals = useCallback((a: number, v: number) => setItemTotals({ a, v }), []);
+    const [tab, setTab] = useState<"costi" | "collaboratori" | "allegati">("costi");
+    const [cat, setCat] = useState(store.store_category || "");
+    const [fixedTotals, setFixedTotals] = useState({ a: 0, v: 0 });
+    const onFixedTotals = useCallback((a: number, v: number) => setFixedTotals({ a, v }), []);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -1731,13 +1736,14 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
     }, [load]);
 
     const savePct = async () => {
-        await supabase.from("stores").update({ shared_percent: pct ? Number(pct) : 0 }).eq("id", store.id);
+        const { error } = await supabase.from("stores").update({ shared_percent: pct ? Number(pct) : 0 }).eq("id", store.id);
+        dbError("Salvataggio % ripartizione", error);
     };
 
-    // recap
+    // recap (le spese fisse contano nelle voci del negozio)
     const sum = (arr: (number | null)[]) => arr.reduce((a: number, b) => a + (Number(b) || 0), 0);
-    const itemsA = itemTotals.a;
-    const itemsV = itemTotals.v;
+    const itemsA = fixedTotals.a + itemTotals.a;
+    const itemsV = fixedTotals.v + itemTotals.v;
     const collabA = sum(collab.map((c) => c.company_cost));
     const collabV = sum(collab.map((c) => effVisibleCost(c, rules).value));
     const totSharedA = sum(shared.map((s) => s.amount_azienda));
@@ -1772,16 +1778,32 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
                     </div>
                 ) : (
                     <div className="p-5 space-y-5">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs text-slate-500">Categoria PV</span>
                             <select
-                                defaultValue={store.store_category || ""}
-                                onChange={(e) => supabase.from("stores").update({ store_category: e.target.value || null }).eq("id", store.id)}
+                                value={cat}
+                                onChange={async (e) => {
+                                    const v = e.target.value;
+                                    setCat(v);
+                                    const { error } = await supabase.from("stores").update({ store_category: v || null }).eq("id", store.id);
+                                    if (!dbError("Salvataggio categoria", error)) notify("Categoria salvata ✓", "ok");
+                                }}
                                 className="glass-input w-auto text-sm"
                             >
                                 <option value="">— non classificato —</option>
                                 {STORE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
+                            <div className="flex gap-1.5 ml-auto">
+                                {([["costi", "Costi"], ["collaboratori", "Collaboratori"], ["allegati", "Allegati"]] as const).map(([id, label]) => (
+                                    <button
+                                        key={id}
+                                        onClick={() => setTab(id)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${tab === id ? "bg-indigo-500/15 text-indigo-300" : "text-slate-400 hover:bg-white/5"}`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                         {/* Recap */}
                         <div className="grid grid-cols-2 gap-3">
@@ -1795,33 +1817,30 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
                             </div>
                         </div>
 
+                        {tab === "costi" && (
+                            <>
+                        {/* Spese fisse standard, sempre presenti */}
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Spese fisse</h4>
+                                <div className="flex gap-2 text-[10px] text-slate-500">
+                                    <span className="w-28 text-right">Azienda</span>
+                                    <span className="w-28 text-right">Visibile</span>
+                                </div>
+                            </div>
+                            <FixedStoreCosts storeId={store.id} onTotals={onFixedTotals} />
+                        </div>
+
                         {/* Voci di costo (per categoria) */}
                         <div>
                             <div className="flex items-center justify-between mb-2">
-                                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Voci di costo</h4>
+                                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Altre voci di costo</h4>
                                 <div className="flex gap-1 text-[10px] text-slate-500 pr-8">
                                     <span className="w-24 text-right">Azienda</span>
                                     <span className="w-24 text-right">Visibile</span>
                                 </div>
                             </div>
-                            <CategorizedCosts scope="store" table="store_cost_items" filter={{ store_id: store.id }} onTotals={onItemTotals} />
-                        </div>
-
-                        {/* Collaboratori */}
-                        <div>
-                            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                                Collaboratori del negozio · {money(collabA)} <span className="text-slate-600">/ {money(collabV)} visibile</span>
-                            </h4>
-                            <div className="space-y-1.5">
-                                {collab.map((c, i) => (
-                                    <div key={i} className="glass-card p-2.5 rounded-lg flex items-center gap-2 text-sm">
-                                        <span className="flex-1 text-slate-200 truncate">{c.full_name} <span className="text-xs text-slate-500">· {roleLabel(c.role)}</span></span>
-                                        <span className="w-24 text-right text-amber-300/80">{c.company_cost != null ? money(Number(c.company_cost)) : "—"}</span>
-                                        <span className="w-24 text-right text-slate-300">{(() => { const v = effVisibleCost(c, rules).value; return v != null ? money(v) : "—"; })()}</span>
-                                    </div>
-                                ))}
-                                {!collab.length && <p className="text-xs text-slate-600 px-1">Nessun collaboratore assegnato a questo negozio.</p>}
-                            </div>
+                            <CategorizedCosts scope="store" table="store_cost_items" filter={{ store_id: store.id }} onTotals={onItemTotals} excludeFixed />
                         </div>
 
                         {/* Costi condivisi — quota di questo negozio (% sul totale) */}
@@ -1840,6 +1859,30 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
                                 {!shared.length && <p className="text-[11px] text-slate-600">Nessun costo condiviso. Aggiungili dal tab &quot;Costi condivisi&quot;.</p>}
                             </div>
                         </div>
+                            </>
+                        )}
+
+                        {/* Collaboratori */}
+                        {tab === "collaboratori" && (
+                        <div>
+                            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                                Collaboratori del negozio · {money(collabA)} <span className="text-slate-600">/ {money(collabV)} visibile</span>
+                            </h4>
+                            <div className="space-y-1.5">
+                                {collab.map((c, i) => (
+                                    <div key={i} className="glass-card p-2.5 rounded-lg flex items-center gap-2 text-sm">
+                                        <span className="flex-1 text-slate-200 truncate">{c.full_name} <span className="text-xs text-slate-500">· {roleLabel(c.role)}</span></span>
+                                        <span className="w-24 text-right text-amber-300/80">{c.company_cost != null ? money(Number(c.company_cost)) : "—"}</span>
+                                        <span className="w-24 text-right text-slate-300">{(() => { const v = effVisibleCost(c, rules).value; return v != null ? money(v) : "—"; })()}</span>
+                                    </div>
+                                ))}
+                                {!collab.length && <p className="text-xs text-slate-600 px-1">Nessun collaboratore assegnato a questo negozio.</p>}
+                            </div>
+                        </div>
+                        )}
+
+                        {/* Allegati con nome */}
+                        {tab === "allegati" && <StoreAttachments storeId={store.id} />}
                     </div>
                 )}
             </div>
@@ -1874,7 +1917,7 @@ interface UserRef {
 
 // Costi divisi per categoria — riusabile per costi condivisi e costi negozio.
 // Una voce può essere collegata a un utente (Risorsa): prende il suo costo, aggiornato in automatico.
-function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideVisibile }: { scope: string; table: string; filter?: Record<string, string>; onTotals?: (a: number, v: number) => void; withResources?: boolean; hideVisibile?: boolean }) {
+function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideVisibile, excludeFixed }: { scope: string; table: string; filter?: Record<string, string>; onTotals?: (a: number, v: number) => void; withResources?: boolean; hideVisibile?: boolean; excludeFixed?: boolean }) {
     const [cats, setCats] = useState<Cat[]>([]);
     const [rows, setRows] = useState<CatCost[]>([]);
     const [users, setUsers] = useState<UserRef[]>([]);
@@ -1891,6 +1934,7 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
         setLoading(true);
         let q = supabase.from(table).select("id,label,amount_azienda,amount_visibile,category_id,user_id");
         if (filter) for (const [k, v] of Object.entries(filter)) q = q.eq(k, v);
+        if (excludeFixed) q = q.eq("is_fixed", false); // le spese fisse hanno la loro sezione dedicata
         const [c, r, u] = await Promise.all([
             supabase.from("cost_categories").select("id,name").eq("scope", scope).order("created_at"),
             q.order("created_at"),
