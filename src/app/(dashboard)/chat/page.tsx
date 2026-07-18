@@ -113,7 +113,7 @@ export default function ChatPage() {
   let lastDay = null;
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex overflow-hidden">
+    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex overflow-hidden">
       {/* ── LEFT: conversation list ─────────────────────────────── */}
       <aside className="w-full sm:w-80 lg:w-96 shrink-0 flex flex-col border-r border-white/5 bg-[#0f111a]/60">
         <div className="flex items-center justify-between px-4 h-14 border-b border-white/5">
