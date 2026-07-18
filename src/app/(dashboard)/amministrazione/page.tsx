@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { cn } from "@/utils";
+import { ToastHost, dbError } from "./_views/toast";
+import { TargetSection } from "./_views/target";
 import {
     ROLES,
     AREAS,
@@ -14,13 +16,11 @@ import {
     hoursType,
     CONTRACT_TYPES,
     contractNeedsExpiry,
-    getRole,
     roleLabel,
     gradesFor,
     gradeLabel,
     areaOf,
     areaLabel,
-    type Area,
 } from "@/lib/roles";
 import {
     Shield,
@@ -50,6 +50,7 @@ import {
     ChevronRight,
     ChevronDown,
     Trash2,
+    ArrowLeft,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -130,8 +131,29 @@ function genPassword(len = 12): string {
 /* ================================================================== */
 
 export default function AmministrazionePage() {
+    return (
+        <Suspense>
+            <AmministrazioneInner />
+        </Suspense>
+    );
+}
+
+// Sezioni del hub Amministrazione: ogni card apre la sua pagina piena (?sez=)
+const SEZIONI = [
+    { id: "utenti", label: "Utenti", icon: Users, desc: "Anagrafica completa: ruoli e gradi, negozi e brand, contratti, costi e allegati." },
+    { id: "negozi", label: "Negozi", icon: StoreIcon, desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
+    { id: "condivisi", label: "Costi condivisi", icon: Building2, desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
+    { id: "altri", label: "Altri costi", icon: Tag, desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
+    { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
+] as const;
+
+function AmministrazioneInner() {
     const { user } = useAuth();
-    const [tab, setTab] = useState<"utenti" | "negozi" | "condivisi" | "altri" | "target">("utenti");
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const sez = searchParams.get("sez");
+    const go = (s?: string) => router.push(s ? `/amministrazione?sez=${s}` : "/amministrazione");
+    const current = SEZIONI.find((s) => s.id === sez);
     const [users, setUsers] = useState<AppUser[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [loading, setLoading] = useState(true);
@@ -216,17 +238,34 @@ export default function AmministrazionePage() {
 
     return (
         <div className="space-y-6">
+            <ToastHost />
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
+                    {current && (
+                        <button
+                            onClick={() => go()}
+                            className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors mb-1"
+                        >
+                            <ArrowLeft className="w-3.5 h-3.5" /> Amministrazione
+                        </button>
+                    )}
                     <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                        <Shield className="w-6 h-6 text-indigo-400" /> Amministrazione
+                        {current ? (
+                            <>
+                                <current.icon className="w-6 h-6 text-indigo-400" /> {current.label}
+                            </>
+                        ) : (
+                            <>
+                                <Shield className="w-6 h-6 text-indigo-400" /> Amministrazione
+                            </>
+                        )}
                     </h1>
                     <p className="text-slate-400 text-sm mt-1">
-                        Gestione utenti, ruoli, negozi e attività della piattaforma.
+                        {current ? current.desc : "Il governo della piattaforma: scegli una sezione."}
                     </p>
                 </div>
-                {tab === "utenti" && !tableMissing && (
+                {sez === "utenti" && !tableMissing && (
                     <button
                         onClick={() => {
                             setEditing(null);
@@ -239,39 +278,35 @@ export default function AmministrazionePage() {
                 )}
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-2 border-b border-white/10">
-                {[
-                    { id: "utenti", label: "Utenti", icon: Users },
-                    { id: "negozi", label: "Negozi", icon: StoreIcon },
-                    { id: "condivisi", label: "Costi condivisi", icon: Building2 },
-                    { id: "altri", label: "Altri costi", icon: Tag },
-                    { id: "target", label: "Target", icon: ClipboardList },
-                ].map((t) => {
-                    const Icon = t.icon;
-                    return (
-                        <button
-                            key={t.id}
-                            onClick={() => setTab(t.id as "utenti" | "negozi" | "condivisi" | "altri" | "target")}
-                            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                                tab === t.id
-                                    ? "border-indigo-500 text-white"
-                                    : "border-transparent text-slate-400 hover:text-slate-200"
-                            }`}
-                        >
-                            <Icon className="w-4 h-4" /> {t.label}
-                        </button>
-                    );
-                })}
-            </div>
-
             {tableMissing && <TableMissingBanner />}
 
-            {loading ? (
+            {!current ? (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {SEZIONI.map((s) => {
+                        const Icon = s.icon;
+                        return (
+                            <button
+                                key={s.id}
+                                onClick={() => go(s.id)}
+                                className="glass-panel p-5 rounded-2xl text-left hover:bg-white/5 transition-colors group"
+                            >
+                                <div className="flex items-start justify-between">
+                                    <div className="w-10 h-10 rounded-xl bg-indigo-500/15 flex items-center justify-center mb-3">
+                                        <Icon className="w-5 h-5 text-indigo-300" />
+                                    </div>
+                                    <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-300 transition-colors" />
+                                </div>
+                                <p className="text-white font-semibold">{s.label}</p>
+                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">{s.desc}</p>
+                            </button>
+                        );
+                    })}
+                </div>
+            ) : loading ? (
                 <div className="flex items-center justify-center py-20 text-slate-400">
                     <Loader2 className="w-6 h-6 animate-spin" />
                 </div>
-            ) : tableMissing ? null : tab === "utenti" ? (
+            ) : tableMissing ? null : sez === "utenti" ? (
                 <>
                     {/* Filtri */}
                     <div className="glass-panel p-4 flex flex-wrap gap-3 items-center">
@@ -342,14 +377,14 @@ export default function AmministrazionePage() {
                         ))
                     )}
                 </>
-            ) : tab === "negozi" ? (
+            ) : sez === "negozi" ? (
                 <StoresView stores={stores} onRefresh={fetchAll} />
-            ) : tab === "condivisi" ? (
+            ) : sez === "condivisi" ? (
                 <SharedCostsView />
-            ) : tab === "altri" ? (
+            ) : sez === "altri" ? (
                 <AltriCostiView />
             ) : (
-                <TargetView />
+                <TargetSection />
             )}
 
             {showForm && (
@@ -1756,6 +1791,10 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
             q.order("created_at"),
             supabase.from("app_users").select("id,full_name,company_cost,costo_gara").eq("status", "attivo").order("full_name"),
         ]);
+        if (dbError("Caricamento voci", r.error)) {
+            setLoading(false);
+            return;
+        }
         let catList = (c.data as Cat[]) || [];
         if (withResources && !catList.some((x) => x.name.toLowerCase() === "risorse")) {
             await supabase.from("cost_categories").insert({ scope, name: "Risorse" });
@@ -1786,24 +1825,28 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
 
     const addCategory = async () => {
         if (!newCat.trim()) return;
-        await supabase.from("cost_categories").insert({ scope, name: newCat.trim() });
+        const { error } = await supabase.from("cost_categories").insert({ scope, name: newCat.trim() });
+        if (dbError("Creazione categoria", error)) return;
         setNewCat("");
         load();
     };
     const delCategory = async (id: string) => {
-        await supabase.from("cost_categories").delete().eq("id", id);
+        const { error } = await supabase.from("cost_categories").delete().eq("id", id);
+        if (dbError("Eliminazione categoria", error)) return;
         load();
     };
     const addRisorsa = async () => {
         const u = risUser ? userMap[risUser] : null;
         if (!u || !risorse) return;
-        await supabase.from(table).insert({ label: u.full_name, amount_azienda: 0, amount_visibile: 0, category_id: risorse.id, user_id: u.id, ...(filter || {}) });
+        const { error } = await supabase.from(table).insert({ label: u.full_name, amount_azienda: 0, amount_visibile: 0, category_id: risorse.id, user_id: u.id, ...(filter || {}) });
+        if (dbError("Aggiunta risorsa", error)) return;
         setRisUser("");
         load();
     };
     const addManualVoce = async (catId: string) => {
         if (!nl.trim()) return;
-        await supabase.from(table).insert({ label: nl.trim(), amount_azienda: nAz ? Number(nAz) : 0, amount_visibile: nVis ? Number(nVis) : 0, category_id: catId || null, user_id: null, ...(filter || {}) });
+        const { error } = await supabase.from(table).insert({ label: nl.trim(), amount_azienda: nAz ? Number(nAz) : 0, amount_visibile: nVis ? Number(nVis) : 0, category_id: catId || null, user_id: null, ...(filter || {}) });
+        if (dbError("Aggiunta voce", error)) return;
         setNl(""); setNAz(""); setNVis(""); setAddCat(null);
         load();
     };
@@ -1812,10 +1855,12 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
         setRows((p) => p.map((r) => (r.id === id ? { ...r, [field]: v } : r)));
     };
     const save = async (r: CatCost) => {
-        await supabase.from(table).update({ amount_azienda: r.amount_azienda || 0, amount_visibile: r.amount_visibile || 0 }).eq("id", r.id);
+        const { error } = await supabase.from(table).update({ amount_azienda: r.amount_azienda || 0, amount_visibile: r.amount_visibile || 0 }).eq("id", r.id);
+        dbError("Salvataggio importo", error);
     };
     const del = async (id: string) => {
-        await supabase.from(table).delete().eq("id", id);
+        const { error } = await supabase.from(table).delete().eq("id", id);
+        if (dbError("Eliminazione voce", error)) return;
         load();
     };
 
@@ -1936,151 +1981,6 @@ function AltriCostiView() {
                 <p className="text-xs text-slate-400 whitespace-nowrap">Totale: <span className="text-white font-semibold">{money(tot.a)}</span></p>
             </div>
             <CategorizedCosts scope="other" table="other_costs" onTotals={onT} withResources hideVisibile />
-        </div>
-    );
-}
-
-/* ================================================================== */
-/* Target (admin) — per soggetto e per metrica                         */
-/* ================================================================== */
-interface Gara { id: string; name: string; active: boolean }
-interface Metric { id: string; name: string }
-interface TStore { id: string; name: string; store_category: string | null }
-interface TUser { id: string; full_name: string; role: string }
-
-function TargetView() {
-    const [gare, setGare] = useState<Gara[]>([]);
-    const [garaId, setGaraId] = useState("");
-    const [metrics, setMetrics] = useState<Metric[]>([]);
-    const [stores, setStores] = useState<TStore[]>([]);
-    const [users, setUsers] = useState<TUser[]>([]);
-    const [targets, setTargets] = useState<Record<string, string>>({});
-    const [loading, setLoading] = useState(true);
-    const [view, setView] = useState<"soggetto" | "metrica">("soggetto");
-    const [subjType, setSubjType] = useState<"user" | "store" | "store_category">("user");
-    const [subjRef, setSubjRef] = useState("");
-    const [metricId, setMetricId] = useState("");
-
-    const loadBase = useCallback(async () => {
-        setLoading(true);
-        const [g, m, s, u] = await Promise.all([
-            supabase.from("gare").select("id,name,active").order("created_at", { ascending: false }),
-            supabase.from("target_metrics").select("id,name").order("sort_order"),
-            supabase.from("stores").select("id,name,store_category").order("name"),
-            supabase.from("app_users").select("id,full_name,role").eq("status", "attivo").order("full_name"),
-        ]);
-        const garas = (g.data as Gara[]) || [];
-        setGare(garas);
-        setMetrics((m.data as Metric[]) || []);
-        setStores((s.data as TStore[]) || []);
-        setUsers((u.data as TUser[]) || []);
-        setGaraId((prev) => prev || (garas.find((x) => x.active) || garas[0])?.id || "");
-        setLoading(false);
-    }, []);
-    useEffect(() => { loadBase(); }, [loadBase]);
-
-    const loadTargets = useCallback(async () => {
-        if (!garaId) return;
-        const { data } = await supabase.from("targets").select("subject_type,subject_ref,metric_id,kind,value").eq("gara_id", garaId);
-        const map: Record<string, string> = {};
-        for (const t of (data as { subject_type: string; subject_ref: string; metric_id: string; kind: string; value: number }[]) || [])
-            map[`${t.subject_type}|${t.subject_ref}|${t.metric_id}|${t.kind}`] = t.value != null ? String(t.value) : "";
-        setTargets(map);
-    }, [garaId]);
-    useEffect(() => { loadTargets(); }, [loadTargets]);
-
-    const keyOf = (st: string, sr: string, mid: string, kind: string) => `${st}|${sr}|${mid}|${kind}`;
-    const saveVal = async (st: string, sr: string, mid: string, kind: string) => {
-        const v = targets[keyOf(st, sr, mid, kind)];
-        await supabase.from("targets").upsert(
-            { gara_id: garaId, metric_id: mid, subject_type: st, subject_ref: sr, kind, value: v ? Number(v) : null },
-            { onConflict: "gara_id,metric_id,subject_type,subject_ref,kind" },
-        );
-    };
-    const cell = (st: string, sr: string, mid: string, kind: string) => {
-        const k = keyOf(st, sr, mid, kind);
-        return (
-            <input type="number" step="1" value={targets[k] ?? ""} onChange={(e) => setTargets((p) => ({ ...p, [k]: e.target.value }))} onBlur={() => saveVal(st, sr, mid, kind)} className={cn("glass-input w-16 py-1 text-sm text-center", kind === "paletto" && "!border-amber-500/30")} placeholder="—" />
-        );
-    };
-
-    if (loading) return <div className="flex justify-center py-16 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>;
-
-    const subjects =
-        subjType === "user" ? users.map((u) => ({ ref: u.id, label: u.full_name, sub: roleLabel(u.role) }))
-        : subjType === "store" ? stores.map((s) => ({ ref: s.id, label: s.name, sub: s.store_category || "" }))
-        : STORE_CATEGORIES.map((c) => ({ ref: c, label: c, sub: "" }));
-
-    return (
-        <div className="space-y-4">
-            <div className="glass-panel p-4 flex flex-wrap gap-3 items-center">
-                <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">Gara</span>
-                    <select className="glass-input w-auto text-sm" value={garaId} onChange={(e) => setGaraId(e.target.value)}>
-                        {gare.map((g) => <option key={g.id} value={g.id}>{g.name}{g.active ? " (attiva)" : ""}</option>)}
-                    </select>
-                </div>
-                <div className="flex gap-1 p-1 bg-white/5 rounded-lg ml-auto">
-                    <button onClick={() => setView("soggetto")} className={cn("px-3 py-1.5 rounded-md text-xs font-medium", view === "soggetto" ? "bg-indigo-500/25 text-indigo-200" : "text-slate-400")}>Per soggetto</button>
-                    <button onClick={() => setView("metrica")} className={cn("px-3 py-1.5 rounded-md text-xs font-medium", view === "metrica" ? "bg-indigo-500/25 text-indigo-200" : "text-slate-400")}>Per metrica</button>
-                </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-xs text-slate-500">Soggetto:</span>
-                {([["user", "Persone"], ["store", "Negozi"], ["store_category", "Categorie negozio"]] as const).map(([id, lbl]) => (
-                    <button key={id} onClick={() => { setSubjType(id); setSubjRef(""); }} className={cn("text-xs px-2.5 py-1.5 rounded-lg border", subjType === id ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200" : "bg-white/5 border-white/10 text-slate-400")}>{lbl}</button>
-                ))}
-                <span className="ml-auto text-[11px] text-slate-500">Colonne: <span className="text-slate-300">Target</span> · <span className="text-amber-400/80">Paletto (minimo gara)</span></span>
-            </div>
-
-            {view === "soggetto" ? (
-                <div className="space-y-3">
-                    <select className="glass-input w-full sm:w-80 text-sm" value={subjRef} onChange={(e) => setSubjRef(e.target.value)}>
-                        <option value="">— seleziona {subjType === "user" ? "persona" : subjType === "store" ? "negozio" : "categoria"} —</option>
-                        {subjects.map((s) => <option key={s.ref} value={s.ref}>{s.label}{s.sub ? ` · ${s.sub}` : ""}</option>)}
-                    </select>
-                    {subjRef && (
-                        <div className="glass-card rounded-xl overflow-hidden">
-                            <table className="w-full text-sm">
-                                <thead><tr className="text-[10px] text-slate-500 uppercase tracking-wider border-b border-white/5"><th className="text-left px-4 py-2">Metrica</th><th className="px-4 py-2 w-24">Target</th><th className="px-4 py-2 w-24">Paletto</th></tr></thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {metrics.map((m) => (
-                                        <tr key={m.id}>
-                                            <td className="px-4 py-2 text-slate-200">{m.name}</td>
-                                            <td className="px-4 py-2 text-center">{cell(subjType, subjRef, m.id, "target")}</td>
-                                            <td className="px-4 py-2 text-center">{cell(subjType, subjRef, m.id, "paletto")}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
-            ) : (
-                <div className="space-y-3">
-                    <select className="glass-input w-full sm:w-60 text-sm" value={metricId} onChange={(e) => setMetricId(e.target.value)}>
-                        <option value="">— seleziona metrica —</option>
-                        {metrics.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                    </select>
-                    {metricId && (
-                        <div className="glass-card rounded-xl overflow-hidden">
-                            <table className="w-full text-sm">
-                                <thead><tr className="text-[10px] text-slate-500 uppercase tracking-wider border-b border-white/5"><th className="text-left px-4 py-2">{subjType === "user" ? "Persona" : subjType === "store" ? "Negozio" : "Categoria"}</th><th className="px-4 py-2 w-24">Target</th><th className="px-4 py-2 w-24">Paletto</th></tr></thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {subjects.map((s) => (
-                                        <tr key={s.ref}>
-                                            <td className="px-4 py-2 text-slate-200">{s.label}{s.sub ? <span className="text-xs text-slate-500"> · {s.sub}</span> : null}</td>
-                                            <td className="px-4 py-2 text-center">{cell(subjType, s.ref, metricId, "target")}</td>
-                                            <td className="px-4 py-2 text-center">{cell(subjType, s.ref, metricId, "paletto")}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
-            )}
         </div>
     );
 }
