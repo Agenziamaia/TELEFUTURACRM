@@ -8,6 +8,7 @@ import {
   subscribeMessages, subscribeInbox,
 } from "@/lib/chat";
 import { roleLabel } from "@/lib/roles";
+import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare } from "lucide-react";
 
@@ -24,6 +25,7 @@ const isImg = (m) => (m || "").startsWith("image/");
 export default function ChatPage() {
   const { user } = useAuth();
   const meId = user?.id;
+  const { isOnline } = usePresence();
 
   const [inbox, setInbox] = useState([]);
   const [q, setQ] = useState("");
@@ -40,6 +42,11 @@ export default function ChatPage() {
   const reloadInbox = async () => { if (!meId) return; try { setInbox(await getInbox(meId)); } catch {} };
   useEffect(() => { reloadInbox(); }, [meId]);
   useEffect(() => { if (!meId) return; return subscribeInbox(reloadInbox); }, [meId]);
+  // apri una conversazione specifica se arrivi da un toast (/chat?c=<id>)
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("c");
+    if (c) setSelId(c);
+  }, []);
 
   const selConv = useMemo(() => inbox.find((c) => c.conversation_id === selId), [inbox, selId]);
 
@@ -79,9 +86,7 @@ export default function ChatPage() {
   };
 
   const title = selConv ? (selConv.type === "group" ? selConv.title : selConv.other_name) : "";
-  const subtitle = selConv
-    ? (selConv.type === "group" ? `${selConv.member_count} membri` : roleLabel(selConv.other_role || ""))
-    : "";
+  const dmOnline = selConv?.type === "dm" && isOnline(selConv.other_id);
 
   let lastDay = null;
 
@@ -111,8 +116,13 @@ export default function ChatPage() {
             return (
               <button key={c.conversation_id} onClick={() => setSelId(c.conversation_id)}
                 className={`w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left transition-colors ${active ? "bg-indigo-500/15" : "hover:bg-white/5"}`}>
-                <span className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold border ${c.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
-                  {c.type === "group" ? <Users className="w-5 h-5" /> : initials(name)}
+                <span className="relative shrink-0">
+                  <span className={`w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold border ${c.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
+                    {c.type === "group" ? <Users className="w-5 h-5" /> : initials(name)}
+                  </span>
+                  {c.type === "dm" && isOnline(c.other_id) && (
+                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-[#0f111a]" />
+                  )}
                 </span>
                 <span className="flex-1 min-w-0">
                   <span className="flex items-center justify-between gap-2">
@@ -140,12 +150,20 @@ export default function ChatPage() {
         ) : (
           <>
             <div className="flex items-center gap-3 px-5 h-14 border-b border-white/5 shrink-0">
-              <span className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border ${selConv.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
-                {selConv.type === "group" ? <Users className="w-4 h-4" /> : initials(title)}
+              <span className="relative shrink-0">
+                <span className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border ${selConv.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
+                  {selConv.type === "group" ? <Users className="w-4 h-4" /> : initials(title)}
+                </span>
+                {selConv.type === "dm" && dmOnline && (
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-[#0b0d14]" />
+                )}
               </span>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-white truncate">{title}</p>
-                <p className="text-xs text-slate-500 truncate">{subtitle}</p>
+                <p className="text-xs text-slate-500 truncate flex items-center gap-1.5">
+                  {selConv.type === "dm" && <span className={`w-2 h-2 rounded-full ${dmOnline ? "bg-green-500" : "bg-slate-600"}`} />}
+                  {selConv.type === "group" ? `${selConv.member_count} membri` : (dmOnline ? "Online" : roleLabel(selConv.other_role || ""))}
+                </p>
               </div>
             </div>
 
