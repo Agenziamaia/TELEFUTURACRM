@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -162,9 +163,9 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                 isOpen ? "translate-x-0" : "-translate-x-full"
             )}>
                 <div className="flex-none h-16 flex items-center justify-center border-b border-white/5">
-                    <div className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">T</div>
-                        Telefutura <span className="text-indigo-400">CRM</span>
+                    <div className="text-xl font-bold tracking-tight text-white flex items-center gap-2.5">
+                        <Image src="/logo-crm.png" alt="Telefutura" width={44} height={44} priority className="w-11 h-11 object-contain" />
+                        <span className="text-indigo-400">CRM</span>
                     </div>
                 </div>
                 <div className="flex-1 flex flex-col justify-between overflow-y-auto">
