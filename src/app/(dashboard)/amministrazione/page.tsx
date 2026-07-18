@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { ToastHost, dbError } from "./_views/toast";
 import { TargetSection } from "./_views/target";
+import { MoneyInput } from "./_views/money";
 import {
     ROLES,
     AREAS,
@@ -707,22 +708,18 @@ function UserForm({
                             </select>
                         </Field>
                         <Field label="Costo azienda (€) — solo admin">
-                            <input
-                                type="number"
-                                step="0.01"
-                                className="glass-input w-full"
-                                value={f.company_cost ?? ""}
-                                onChange={(e) => set("company_cost", e.target.value ? Number(e.target.value) : null)}
+                            <MoneyInput
+                                wrapClass="w-full"
+                                value={f.company_cost ?? null}
+                                onChange={(v) => set("company_cost", v)}
                                 placeholder="costo reale"
                             />
                         </Field>
                         <Field label="Costo visibile (€) — pubblico">
-                            <input
-                                type="number"
-                                step="0.01"
-                                className="glass-input w-full"
-                                value={f.costo_gara ?? ""}
-                                onChange={(e) => set("costo_gara", e.target.value ? Number(e.target.value) : null)}
+                            <MoneyInput
+                                wrapClass="w-full"
+                                value={f.costo_gara ?? null}
+                                onChange={(v) => set("costo_gara", v)}
                                 placeholder="costi/ricavi PV"
                             />
                         </Field>
@@ -1778,8 +1775,8 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
     const [risUser, setRisUser] = useState("");
     const [addCat, setAddCat] = useState<string | null>(null); // categoria che mostra il form "+ voce"
     const [nl, setNl] = useState("");
-    const [nAz, setNAz] = useState("");
-    const [nVis, setNVis] = useState("");
+    const [nAz, setNAz] = useState<number | null>(null);
+    const [nVis, setNVis] = useState<number | null>(null);
     const filterKey = JSON.stringify(filter || {});
 
     const load = useCallback(async () => {
@@ -1845,14 +1842,13 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
     };
     const addManualVoce = async (catId: string) => {
         if (!nl.trim()) return;
-        const { error } = await supabase.from(table).insert({ label: nl.trim(), amount_azienda: nAz ? Number(nAz) : 0, amount_visibile: nVis ? Number(nVis) : 0, category_id: catId || null, user_id: null, ...(filter || {}) });
+        const { error } = await supabase.from(table).insert({ label: nl.trim(), amount_azienda: nAz ?? 0, amount_visibile: nVis ?? 0, category_id: catId || null, user_id: null, ...(filter || {}) });
         if (dbError("Aggiunta voce", error)) return;
-        setNl(""); setNAz(""); setNVis(""); setAddCat(null);
+        setNl(""); setNAz(null); setNVis(null); setAddCat(null);
         load();
     };
-    const upd = (id: string, field: "amount_azienda" | "amount_visibile", value: string) => {
-        const v = value ? Number(value) : 0;
-        setRows((p) => p.map((r) => (r.id === id ? { ...r, [field]: v } : r)));
+    const upd = (id: string, field: "amount_azienda" | "amount_visibile", value: number | null) => {
+        setRows((p) => p.map((r) => (r.id === id ? { ...r, [field]: value ?? 0 } : r)));
     };
     const save = async (r: CatCost) => {
         const { error } = await supabase.from(table).update({ amount_azienda: r.amount_azienda || 0, amount_visibile: r.amount_visibile || 0 }).eq("id", r.id);
@@ -1872,8 +1868,8 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
     const manualRow = (r: CatCost) => (
         <div key={r.id} className="glass-card p-2.5 rounded-lg flex items-center gap-2">
             <span className="flex-1 text-sm text-slate-200 truncate">{r.label}</span>
-            <input type="number" step="0.01" value={r.amount_azienda ?? ""} onChange={(e) => upd(r.id, "amount_azienda", e.target.value)} onBlur={() => save(r)} className="glass-input w-24 py-1 text-sm text-right" title="Azienda" />
-            {!hideVisibile && <input type="number" step="0.01" value={r.amount_visibile ?? ""} onChange={(e) => upd(r.id, "amount_visibile", e.target.value)} onBlur={() => save(r)} className="glass-input w-24 py-1 text-sm text-right" title="Visibile" />}
+            <MoneyInput value={r.amount_azienda} onChange={(v) => upd(r.id, "amount_azienda", v)} onCommit={() => save(r)} wrapClass="w-28" className="py-1 text-sm" title="Azienda" />
+            {!hideVisibile && <MoneyInput value={r.amount_visibile} onChange={(v) => upd(r.id, "amount_visibile", v)} onCommit={() => save(r)} wrapClass="w-28" className="py-1 text-sm" title="Visibile" />}
             <button onClick={() => del(r.id)} className="text-slate-500 hover:text-rose-400 p-1"><Trash2 className="w-4 h-4" /></button>
         </div>
     );
@@ -1881,13 +1877,13 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
         addCat === catId ? (
             <div className="glass-card p-2.5 rounded-lg flex flex-wrap items-center gap-2">
                 <input value={nl} onChange={(e) => setNl(e.target.value)} placeholder="Oggetto del costo" className="glass-input flex-1 min-w-[120px] py-1 text-sm" autoFocus />
-                <input type="number" step="0.01" value={nAz} onChange={(e) => setNAz(e.target.value)} placeholder={hideVisibile ? "Importo" : "Azienda"} className="glass-input w-24 py-1 text-sm text-right" />
-                {!hideVisibile && <input type="number" step="0.01" value={nVis} onChange={(e) => setNVis(e.target.value)} placeholder="Visibile" className="glass-input w-24 py-1 text-sm text-right" />}
+                <MoneyInput value={nAz} onChange={setNAz} wrapClass="w-28" className="py-1 text-sm" placeholder={hideVisibile ? "Importo" : "Azienda"} />
+                {!hideVisibile && <MoneyInput value={nVis} onChange={setNVis} wrapClass="w-28" className="py-1 text-sm" placeholder="Visibile" />}
                 <button onClick={() => addManualVoce(catId)} className="primary-btn text-xs px-3">Aggiungi</button>
-                <button onClick={() => { setAddCat(null); setNl(""); setNAz(""); setNVis(""); }} className="text-xs text-slate-500 px-1">Annulla</button>
+                <button onClick={() => { setAddCat(null); setNl(""); setNAz(null); setNVis(null); }} className="text-xs text-slate-500 px-1">Annulla</button>
             </div>
         ) : (
-            <button onClick={() => { setAddCat(catId); setNl(""); setNAz(""); setNVis(""); }} className="text-xs text-indigo-300 hover:text-indigo-200 px-1">+ voce</button>
+            <button onClick={() => { setAddCat(catId); setNl(""); setNAz(null); setNVis(null); }} className="text-xs text-indigo-300 hover:text-indigo-200 px-1">+ voce</button>
         );
 
     const orphan = rows.filter((r) => !r.category_id);
