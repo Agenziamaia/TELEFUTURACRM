@@ -84,6 +84,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (pathname.startsWith("/amministrazione") && user.role !== "admin") {
             router.push("/dashboard");
         }
+
+        // Gare (soglie e commissioning operatori): solo admin
+        if (pathname.startsWith("/gare") && user.role !== "admin") {
+            router.push("/dashboard");
+        }
     }, [user, pathname, router]);
 
     const login = (email: string) => {

@@ -33,6 +33,7 @@ import {
     Building2,
     Tag,
     ClipboardList,
+    Trophy,
 } from "lucide-react";
 
 type NavLink = { name: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[] };
@@ -90,6 +91,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: ["admin", "agente"] },
     { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: ["admin", "agente"] },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: ["admin", "agente"] },
+    { type: "link", name: "Gare", href: "/gare", icon: Trophy, roles: ["admin"] },
     {
         type: "hub",
         name: "Amministrazione",
