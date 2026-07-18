@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -30,13 +30,19 @@ import {
     Store as StoreIcon,
     Users as UsersIcon,
     Phone,
+    Building2,
+    Tag,
+    ClipboardList,
 } from "lucide-react";
 
 type NavLink = { name: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[] };
 type NavGroup = { type: "group"; label: string; icon: React.ComponentType<{ className?: string }>; children: NavLink[] };
 type NavItem = { type: "link"; name: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[] };
+// Hub: la voce naviga alla pagina E esplode le sotto-sezioni (?sez=) sotto di sé
+type NavHubChild = { name: string; sez: string; icon: React.ComponentType<{ className?: string }> };
+type NavHub = { type: "hub"; name: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[]; children: NavHubChild[] };
 
-const navigation: (NavGroup | NavItem)[] = [
+const navigation: (NavGroup | NavItem | NavHub)[] = [
     { type: "link", name: "Home", href: "/dashboard", icon: Home, roles: ["admin", "agente"] },
     { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: ["admin", "agente"] },
     { type: "link", name: "Caller", href: "/caller", icon: Phone, roles: ["admin", "back_office", "supervisore"] },
@@ -84,7 +90,20 @@ const navigation: (NavGroup | NavItem)[] = [
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: ["admin", "agente"] },
     { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: ["admin", "agente"] },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: ["admin", "agente"] },
-    { type: "link", name: "Amministrazione", href: "/amministrazione", icon: Shield, roles: ["admin"] },
+    {
+        type: "hub",
+        name: "Amministrazione",
+        href: "/amministrazione",
+        icon: Shield,
+        roles: ["admin"],
+        children: [
+            { name: "Utenti", sez: "utenti", icon: UsersIcon },
+            { name: "Negozi", sez: "negozi", icon: StoreIcon },
+            { name: "Costi condivisi", sez: "condivisi", icon: Building2 },
+            { name: "Altri costi", sez: "altri", icon: Tag },
+            { name: "Target", sez: "target", icon: ClipboardList },
+        ],
+    },
 ];
 
 interface SidebarProps {
@@ -103,9 +122,19 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                 const hasActiveChild = item.children.some((c) => pathname === c.href);
                 initial[item.label] = hasActiveChild;
             }
+            if (item.type === "hub") initial[item.name] = pathname.startsWith(item.href);
         });
         return initial;
     });
+
+    // Entrando in una sezione hub (anche da altrove), la voce si esplode da sola
+    useEffect(() => {
+        navigation.forEach((item) => {
+            if (item.type === "hub" && pathname.startsWith(item.href)) {
+                setExpandedGroups((prev) => (prev[item.name] ? prev : { ...prev, [item.name]: true }));
+            }
+        });
+    }, [pathname]);
 
     const toggleGroup = (label: string) => {
         setExpandedGroups((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -114,7 +143,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     const visibleItems = useMemo(() => {
         if (!user) return [];
         return navigation.filter((item) => {
-            if (item.type === "link") return item.roles.includes(user.role);
+            if (item.type === "link" || item.type === "hub") return item.roles.includes(user.role);
             const children = item.children.filter((c) => c.roles.includes(user.role));
             return children.length > 0;
         });
@@ -156,6 +185,42 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                                         <item.icon className={cn("w-5 h-5", isActive ? "text-indigo-400" : "text-slate-500")} />
                                         {item.name}
                                     </Link>
+                                );
+                            }
+                            if (item.type === "hub") {
+                                const hub = item;
+                                const inHub = pathname.startsWith(hub.href);
+                                const isExpanded = expandedGroups[hub.name] ?? false;
+                                const HubIcon = hub.icon;
+                                return (
+                                    <div key={hub.name} className="space-y-0.5">
+                                        <div className="flex items-center gap-0.5">
+                                            <Link
+                                                href={hub.href}
+                                                onClick={() => {
+                                                    setIsOpen?.(false);
+                                                    setExpandedGroups((prev) => ({ ...prev, [hub.name]: true }));
+                                                }}
+                                                className={cn("nav-link flex-1", inHub ? "active" : "")}
+                                            >
+                                                <HubIcon className={cn("w-5 h-5", inHub ? "text-indigo-400" : "text-slate-500")} />
+                                                {hub.name}
+                                            </Link>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleGroup(hub.name)}
+                                                className="p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                                                aria-label={isExpanded ? "Chiudi sotto-menu" : "Apri sotto-menu"}
+                                            >
+                                                {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+                                        {isExpanded && (
+                                            <Suspense fallback={null}>
+                                                <HubSubnav hub={hub} onNavigate={() => setIsOpen?.(false)} />
+                                            </Suspense>
+                                        )}
+                                    </div>
                                 );
                             }
                             const group = item;
@@ -216,5 +281,36 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                 </div>
             </aside>
         </>
+    );
+}
+
+// Sotto-menu del hub: evidenzia la sezione attiva leggendo ?sez= (isolato in Suspense per useSearchParams)
+function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }) {
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const sez = pathname === hub.href ? searchParams.get("sez") : null;
+    return (
+        <div className="pl-4 ml-2 border-l border-white/10 space-y-0.5">
+            {hub.children.map((c) => {
+                const isActive = sez === c.sez;
+                const ChildIcon = c.icon;
+                return (
+                    <Link
+                        key={c.sez}
+                        href={`${hub.href}?sez=${c.sez}`}
+                        onClick={onNavigate}
+                        className={cn(
+                            "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                            isActive
+                                ? "bg-indigo-500/15 text-indigo-300"
+                                : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
+                        )}
+                    >
+                        <ChildIcon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500")} />
+                        {c.name}
+                    </Link>
+                );
+            })}
+        </div>
     );
 }
