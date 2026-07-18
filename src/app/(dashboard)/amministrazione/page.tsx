@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { ToastHost, dbError } from "./_views/toast";
 import { TargetSection } from "./_views/target";
 import { MoneyInput } from "./_views/money";
+import { RoleCostsModal, useRoleCosts, effVisibleCost } from "./_views/rolecosts";
 import {
     ROLES,
     AREAS,
@@ -53,6 +54,7 @@ import {
     ChevronDown,
     Trash2,
     ArrowLeft,
+    Euro,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -73,6 +75,7 @@ interface AppUser {
     contract_type: string | null;
     contract_end: string | null; // scadenza
     company_cost: number | null; // costo azienda (interno)
+    ral_annua: number | null; // RAL lorda annua: se presente, company_cost = RAL / 12
     costo_gara: number | null; // costo attribuito (schema costi/ricavi)
     iban: string | null;
     address: string | null; // residenza
@@ -111,6 +114,7 @@ const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[] } = {
     contract_type: "",
     contract_end: "",
     company_cost: null,
+    ral_annua: null,
     costo_gara: null,
     iban: "",
     address: "",
@@ -170,6 +174,7 @@ function AmministrazioneInner() {
     // modale utente
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<AppUser | null>(null);
+    const [showRoleCosts, setShowRoleCosts] = useState(false);
 
     // scheda attività
     const [detail, setDetail] = useState<AppUser | null>(null);
@@ -268,15 +273,23 @@ function AmministrazioneInner() {
                     </p>
                 </div>
                 {sez === "utenti" && !tableMissing && (
-                    <button
-                        onClick={() => {
-                            setEditing(null);
-                            setShowForm(true);
-                        }}
-                        className="primary-btn flex items-center gap-2 justify-center"
-                    >
-                        <UserPlus className="w-4 h-4" /> Nuovo Utente
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setShowRoleCosts(true)}
+                            className="px-4 rounded-xl bg-white/5 hover:bg-white/10 text-slate-200 text-sm border border-white/10 flex items-center gap-2 justify-center"
+                        >
+                            <Euro className="w-4 h-4 text-emerald-400" /> Costi ruoli
+                        </button>
+                        <button
+                            onClick={() => {
+                                setEditing(null);
+                                setShowForm(true);
+                            }}
+                            className="primary-btn flex items-center gap-2 justify-center"
+                        >
+                            <UserPlus className="w-4 h-4" /> Nuovo Utente
+                        </button>
+                    </div>
                 )}
             </div>
 
@@ -400,6 +413,8 @@ function AmministrazioneInner() {
                     }}
                 />
             )}
+
+            {showRoleCosts && <RoleCostsModal onClose={() => setShowRoleCosts(false)} />}
 
             {detail && (
                 <UserDetail
@@ -592,7 +607,13 @@ function UserForm({
             weekly_hours: f.weekly_hours ? Number(f.weekly_hours) : null,
             contract_type: f.contract_type?.trim() || null,
             contract_end: contractNeedsExpiry(f.contract_type) ? f.contract_end || null : null,
-            company_cost: f.company_cost || f.company_cost === 0 ? Number(f.company_cost) : null,
+            ral_annua: f.ral_annua || f.ral_annua === 0 ? Number(f.ral_annua) : null,
+            // se c'è la RAL, il costo azienda mensile si deriva da lei (RAL ÷ 12)
+            company_cost: f.ral_annua
+                ? Math.round((Number(f.ral_annua) / 12) * 100) / 100
+                : f.company_cost || f.company_cost === 0
+                  ? Number(f.company_cost)
+                  : null,
             costo_gara: f.costo_gara || f.costo_gara === 0 ? Number(f.costo_gara) : null,
             iban: f.iban?.trim() || null,
             address: f.address?.trim() || null,
@@ -742,13 +763,28 @@ function UserForm({
                                 ))}
                             </select>
                         </Field>
-                        <Field label="Costo azienda (€) — solo admin">
+                        <Field label="RAL annua (€) — lorda">
                             <MoneyInput
                                 wrapClass="w-full"
-                                value={f.company_cost ?? null}
-                                onChange={(v) => set("company_cost", v)}
-                                placeholder="costo reale"
+                                value={f.ral_annua ?? null}
+                                onChange={(v) => set("ral_annua", v)}
+                                placeholder="retribuzione annua lorda"
                             />
+                        </Field>
+                        <Field label="Costo azienda (€/mese) — solo admin">
+                            {f.ral_annua ? (
+                                <div className="glass-input w-full text-sm text-slate-300 flex items-center justify-between">
+                                    <span>{money(Math.round((Number(f.ral_annua) / 12) * 100) / 100)}</span>
+                                    <span className="text-[10px] text-slate-500">= RAL ÷ 12</span>
+                                </div>
+                            ) : (
+                                <MoneyInput
+                                    wrapClass="w-full"
+                                    value={f.company_cost ?? null}
+                                    onChange={(v) => set("company_cost", v)}
+                                    placeholder="costo reale"
+                                />
+                            )}
                         </Field>
                         <Field label="Costo visibile (€) — pubblico">
                             <MoneyInput
@@ -878,6 +914,7 @@ interface Activity {
 }
 
 function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; onEdit?: () => void }) {
+    const detailRules = useRoleCosts();
     const matchName = u.match_name || u.full_name;
     const area = areaOf(u.role);
     const [act, setAct] = useState<Activity | null>(null);
@@ -1093,8 +1130,9 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
                                     <DetailRow label="Ore" value={u.weekly_hours ? `${u.weekly_hours}h · ${hoursType(u.weekly_hours)}` : null} />
                                     <DetailRow label="Contratto" value={u.contract_type} />
                                     <DetailRow label="Scadenza" value={u.contract_end ? fmtDate(u.contract_end) : null} />
-                                    <DetailRow label="Costo azienda (solo admin)" value={u.company_cost != null ? `€ ${Number(u.company_cost).toLocaleString("it-IT")}` : null} />
-                                    <DetailRow label="Costo visibile" value={u.costo_gara != null ? `€ ${Number(u.costo_gara).toLocaleString("it-IT")}` : null} />
+                                    <DetailRow label="RAL annua (lorda)" value={u.ral_annua != null ? `€ ${Number(u.ral_annua).toLocaleString("it-IT")}` : null} />
+                                    <DetailRow label="Costo azienda (solo admin)" value={u.company_cost != null ? `€ ${Number(u.company_cost).toLocaleString("it-IT")}${u.ral_annua != null ? " · da RAL ÷ 12" : ""}` : null} />
+                                    <DetailRow label="Costo visibile" value={(() => { const e = effVisibleCost(u, detailRules); return e.value != null ? `€ ${e.value.toLocaleString("it-IT")}${e.fromRule ? " · da regola ruolo" : ""}` : null; })()} />
                                     <DetailRow label="Stato" value={u.status === "licenziato" ? "Licenziato" : "Attivo"} />
                                     <DetailRow label="Telefono" value={u.phone} />
                                     <DetailRow label="Residenza" value={u.address} full />
@@ -1516,13 +1554,14 @@ function StoresView({ stores, onRefresh }: { stores: Store[]; onRefresh: () => v
 /* ================================================================== */
 /* Scheda complessiva (negozio diviso) — sola lettura                  */
 /* ================================================================== */
-interface SubCollab { full_name: string; role: string; company_cost: number | null; costo_gara: number | null }
+interface SubCollab { full_name: string; role: string; grade: string | null; weekly_hours: number | null; company_cost: number | null; costo_gara: number | null }
 interface SubAgg { store: Store; items: CostItem[]; collab: SubCollab[]; pct: number; itemsA: number; itemsV: number; collabA: number; collabV: number; sharedA: number; sharedV: number; totA: number; totV: number }
 
 function StoreAggregate({ base, stores, onClose }: { base: string; stores: Store[]; onClose: () => void }) {
     const [loading, setLoading] = useState(true);
     const [subs, setSubs] = useState<SubAgg[]>([]);
     const [comb, setComb] = useState({ totA: 0, totV: 0, items: 0, itemsV: 0, collab: 0, collabV: 0, shared: 0, sharedV: 0 });
+    const rules = useRoleCosts();
 
     useEffect(() => {
         (async () => {
@@ -1535,7 +1574,7 @@ function StoreAggregate({ base, stores, onClose }: { base: string; stores: Store
             for (const s of stores) {
                 const [it, cl] = await Promise.all([
                     supabase.from("store_cost_items").select("id,label,amount_azienda,amount_visibile").eq("store_id", s.id).order("created_at"),
-                    supabase.from("app_users").select("full_name,role,company_cost,costo_gara,user_stores!inner(store_name)").eq("user_stores.store_name", s.name).eq("status", "attivo"),
+                    supabase.from("app_users").select("full_name,role,grade,weekly_hours,company_cost,costo_gara,user_stores!inner(store_name)").eq("user_stores.store_name", s.name).eq("status", "attivo"),
                 ]);
                 const items = (it.data as CostItem[]) || [];
                 const collab = (cl.data as SubCollab[]) || [];
@@ -1543,14 +1582,14 @@ function StoreAggregate({ base, stores, onClose }: { base: string; stores: Store
                 const itemsA = items.reduce((a, r) => a + num(r.amount_azienda), 0);
                 const itemsV = items.reduce((a, r) => a + num(r.amount_visibile), 0);
                 const collabA = collab.reduce((a, r) => a + num(r.company_cost), 0);
-                const collabV = collab.reduce((a, r) => a + num(r.costo_gara), 0);
+                const collabV = collab.reduce((a, r) => a + num(effVisibleCost(r, rules).value), 0);
                 const sharedA = totSharedA * pct / 100;
                 const sharedV = totSharedV * pct / 100;
                 built.push({ store: s, items, collab, pct, itemsA, itemsV, collabA, collabV, sharedA, sharedV, totA: itemsA + collabA + sharedA, totV: itemsV + collabV + sharedV });
             }
             const seen = new Set<string>();
             let cA = 0, cV = 0;
-            for (const su of built) for (const c of su.collab) if (!seen.has(c.full_name)) { seen.add(c.full_name); cA += num(c.company_cost); cV += num(c.costo_gara); }
+            for (const su of built) for (const c of su.collab) if (!seen.has(c.full_name)) { seen.add(c.full_name); cA += num(c.company_cost); cV += num(effVisibleCost(c, rules).value); }
             const iA = built.reduce((a, su) => a + su.itemsA, 0);
             const iV = built.reduce((a, su) => a + su.itemsV, 0);
             const pctSum = built.reduce((a, su) => a + su.pct, 0);
@@ -1560,7 +1599,8 @@ function StoreAggregate({ base, stores, onClose }: { base: string; stores: Store
             setSubs(built);
             setLoading(false);
         })();
-    }, [stores]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [stores, rules]);
 
     return (
         <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex justify-end">
@@ -1609,7 +1649,7 @@ function StoreAggregate({ base, stores, onClose }: { base: string; stores: Store
                                 <div>
                                     <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Collaboratori</p>
                                     {su.collab.length ? su.collab.map((c, i) => (
-                                        <div key={i} className="flex justify-between text-sm py-0.5"><span className="text-slate-300 truncate">{c.full_name} <span className="text-xs text-slate-500">· {roleLabel(c.role)}</span></span><span className="text-slate-400 whitespace-nowrap">{c.company_cost != null ? money(Number(c.company_cost)) : "—"} <span className="text-slate-600">/ {c.costo_gara != null ? money(Number(c.costo_gara)) : "—"}</span></span></div>
+                                        <div key={i} className="flex justify-between text-sm py-0.5"><span className="text-slate-300 truncate">{c.full_name} <span className="text-xs text-slate-500">· {roleLabel(c.role)}</span></span><span className="text-slate-400 whitespace-nowrap">{c.company_cost != null ? money(Number(c.company_cost)) : "—"} <span className="text-slate-600">/ {(() => { const v = effVisibleCost(c, rules).value; return v != null ? money(v) : "—"; })()}</span></span></div>
                                     )) : <p className="text-xs text-slate-600">nessuno</p>}
                                 </div>
                                 <div className="flex justify-between text-sm pt-2 border-t border-white/5">
@@ -1644,7 +1684,8 @@ interface SharedCost {
 const money = (n: number) => `€ ${n.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) {
-    const [collab, setCollab] = useState<{ full_name: string; role: string; company_cost: number | null; costo_gara: number | null }[]>([]);
+    const [collab, setCollab] = useState<SubCollab[]>([]);
+    const rules = useRoleCosts();
     const [shared, setShared] = useState<SharedCost[]>([]);
     const [pct, setPct] = useState<string>(store.shared_percent != null ? String(store.shared_percent) : "");
     const [loading, setLoading] = useState(true);
@@ -1654,7 +1695,7 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
     const load = useCallback(async () => {
         setLoading(true);
         const [cl, sh] = await Promise.all([
-            supabase.from("app_users").select("full_name,role,company_cost,costo_gara,user_stores!inner(store_name)").eq("user_stores.store_name", store.name).eq("status", "attivo"),
+            supabase.from("app_users").select("full_name,role,grade,weekly_hours,company_cost,costo_gara,user_stores!inner(store_name)").eq("user_stores.store_name", store.name).eq("status", "attivo"),
             supabase.from("shared_costs").select("id,label,amount_azienda,amount_visibile").order("created_at"),
         ]);
         setCollab((cl.data as typeof collab) || []);
@@ -1674,7 +1715,7 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
     const itemsA = itemTotals.a;
     const itemsV = itemTotals.v;
     const collabA = sum(collab.map((c) => c.company_cost));
-    const collabV = sum(collab.map((c) => c.costo_gara));
+    const collabV = sum(collab.map((c) => effVisibleCost(c, rules).value));
     const totSharedA = sum(shared.map((s) => s.amount_azienda));
     const totSharedV = sum(shared.map((s) => s.amount_visibile));
     const pctNum = Number(pct) || 0;
@@ -1752,7 +1793,7 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
                                     <div key={i} className="glass-card p-2.5 rounded-lg flex items-center gap-2 text-sm">
                                         <span className="flex-1 text-slate-200 truncate">{c.full_name} <span className="text-xs text-slate-500">· {roleLabel(c.role)}</span></span>
                                         <span className="w-24 text-right text-amber-300/80">{c.company_cost != null ? money(Number(c.company_cost)) : "—"}</span>
-                                        <span className="w-24 text-right text-slate-300">{c.costo_gara != null ? money(Number(c.costo_gara)) : "—"}</span>
+                                        <span className="w-24 text-right text-slate-300">{(() => { const v = effVisibleCost(c, rules).value; return v != null ? money(v) : "—"; })()}</span>
                                     </div>
                                 ))}
                                 {!collab.length && <p className="text-xs text-slate-600 px-1">Nessun collaboratore assegnato a questo negozio.</p>}
@@ -1800,6 +1841,9 @@ interface Cat {
 interface UserRef {
     id: string;
     full_name: string;
+    role: string | null;
+    grade: string | null;
+    weekly_hours: number | null;
     company_cost: number | null;
     costo_gara: number | null;
 }
@@ -1826,7 +1870,7 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
         const [c, r, u] = await Promise.all([
             supabase.from("cost_categories").select("id,name").eq("scope", scope).order("created_at"),
             q.order("created_at"),
-            supabase.from("app_users").select("id,full_name,company_cost,costo_gara").eq("status", "attivo").order("full_name"),
+            supabase.from("app_users").select("id,full_name,role,grade,weekly_hours,company_cost,costo_gara").eq("status", "attivo").order("full_name"),
         ]);
         if (dbError("Caricamento voci", r.error)) {
             setLoading(false);
@@ -1846,12 +1890,13 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
     }, [table, scope, filterKey, withResources]);
     useEffect(() => { load(); }, [load]);
 
+    const rules = useRoleCosts();
     const userMap = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users]);
     const rowCost = useCallback((r: CatCost) => {
         const u = r.user_id ? userMap[r.user_id] : null;
-        if (u) return { a: Number(u.company_cost) || 0, v: Number(u.costo_gara) || 0 };
+        if (u) return { a: Number(u.company_cost) || 0, v: effVisibleCost(u, rules).value || 0 };
         return { a: Number(r.amount_azienda) || 0, v: Number(r.amount_visibile) || 0 };
-    }, [userMap]);
+    }, [userMap, rules]);
 
     useEffect(() => {
         if (!onTotals) return;
@@ -1945,7 +1990,7 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
                             <div key={r.id} className="glass-card p-2.5 rounded-lg flex items-center gap-2">
                                 <span className="flex-1 text-sm text-slate-200 truncate">{u ? u.full_name : r.label}</span>
                                 <span className="w-24 text-right text-sm text-slate-400" title="Azienda">{money(Number(u?.company_cost) || 0)}</span>
-                                {!hideVisibile && <span className="w-24 text-right text-sm text-slate-400" title="Visibile">{money(Number(u?.costo_gara) || 0)}</span>}
+                                {!hideVisibile && <span className="w-24 text-right text-sm text-slate-400" title="Visibile">{money((u ? effVisibleCost(u, rules).value : 0) || 0)}</span>}
                                 <button onClick={() => del(r.id)} className="text-slate-500 hover:text-rose-400 p-1"><Trash2 className="w-4 h-4" /></button>
                             </div>
                         );
