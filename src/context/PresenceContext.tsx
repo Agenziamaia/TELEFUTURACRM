@@ -5,6 +5,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { touchLastSeen } from "@/lib/chat";
 
 interface PresenceCtx { onlineIds: Set<string>; isOnline: (id?: string | null) => boolean }
 const PresenceContext = createContext<PresenceCtx>({ onlineIds: new Set(), isOnline: () => false });
@@ -24,9 +25,13 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       .on("presence", { event: "join" }, sync)
       .on("presence", { event: "leave" }, sync)
       .subscribe(async (status) => {
-        if (status === "SUBSCRIBED") await channel.track({ online_at: new Date().toISOString() });
+        if (status === "SUBSCRIBED") {
+          await channel.track({ online_at: new Date().toISOString() });
+          touchLastSeen(user.id);
+        }
       });
-    return () => { supabase.removeChannel(channel); };
+    const interval = setInterval(() => touchLastSeen(user.id), 45000);
+    return () => { clearInterval(interval); supabase.removeChannel(channel); };
   }, [user?.id]);
 
   const isOnline = (id?: string | null) => !!id && onlineIds.has(id);

@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { markDelivered } from "@/lib/chat";
 import { useAuth } from "@/context/AuthContext";
 import { MessageSquare, X } from "lucide-react";
 
@@ -22,13 +23,15 @@ export function ChatToaster() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, async (payload) => {
         const m: any = payload.new;
         if (!m || m.sender_id === user.id) return;
-        // se sei gia' nella chat, niente toast (lo vedi live)
-        if (typeof window !== "undefined" && window.location.pathname.startsWith("/chat")) return;
         // sono un partecipante di questa conversazione?
         const { data: part } = await supabase
           .from("chat_participants").select("user_id")
           .eq("conversation_id", m.conversation_id).eq("user_id", user.id).maybeSingle();
         if (!part) return;
+        // consegnato: il mio client ha ricevuto il messaggio (anche fuori da /chat)
+        markDelivered(m.conversation_id, user.id);
+        // se sei gia' nella chat, niente toast (lo vedi live)
+        if (typeof window !== "undefined" && window.location.pathname.startsWith("/chat")) return;
         const [{ data: su }, { data: conv }] = await Promise.all([
           supabase.from("app_users").select("full_name").eq("id", m.sender_id).maybeSingle(),
           supabase.from("chat_conversations").select("type,title").eq("id", m.conversation_id).maybeSingle(),

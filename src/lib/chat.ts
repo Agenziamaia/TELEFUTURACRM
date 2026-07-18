@@ -31,6 +31,7 @@ export interface ChatMessage {
 }
 export interface Participant {
   user_id: string; is_admin: boolean; full_name: string; role: string; primary_store: string | null;
+  last_read_at: string | null; last_delivered_at: string | null; last_seen_at: string | null;
 }
 
 // Rubrica: tutti gli account attivi (escluso me), per DM e creazione gruppi.
@@ -67,7 +68,7 @@ export async function createGroup(meId: string, title: string, memberIds: string
 export async function getParticipants(convId: string): Promise<Participant[]> {
   const { data, error } = await supabase
     .from("chat_participants")
-    .select("user_id, is_admin, app_users(full_name, role, primary_store)")
+    .select("user_id, is_admin, last_read_at, last_delivered_at, app_users(full_name, role, primary_store, last_seen_at)")
     .eq("conversation_id", convId);
   if (error) throw error;
   return (data || []).map((p: any) => ({
@@ -76,7 +77,35 @@ export async function getParticipants(convId: string): Promise<Participant[]> {
     full_name: p.app_users?.full_name ?? "—",
     role: p.app_users?.role ?? "",
     primary_store: p.app_users?.primary_store ?? null,
+    last_read_at: p.last_read_at ?? null,
+    last_delivered_at: p.last_delivered_at ?? null,
+    last_seen_at: p.app_users?.last_seen_at ?? null,
   }));
+}
+
+// Segna i messaggi di una conversazione come "consegnati" a me (ricevuti dal mio client).
+export async function markDelivered(convId: string, meId: string): Promise<void> {
+  await supabase
+    .from("chat_participants")
+    .update({ last_delivered_at: new Date().toISOString() })
+    .eq("conversation_id", convId)
+    .eq("user_id", meId);
+}
+
+// Aggiorna il mio "ultimo accesso" (chiamato periodicamente mentre sono online).
+export async function touchLastSeen(meId: string): Promise<void> {
+  await supabase.from("app_users").update({ last_seen_at: new Date().toISOString() }).eq("id", meId);
+}
+
+// Realtime: cambi ai partecipanti di una conversazione (ricevute lette/consegnate).
+export function subscribeReceipts(convId: string, onChange: () => void) {
+  const channel = supabase
+    .channel(`chat_receipts_${convId}`)
+    .on("postgres_changes",
+      { event: "UPDATE", schema: "public", table: "chat_participants", filter: `conversation_id=eq.${convId}` },
+      () => onChange())
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
 }
 
 export async function listMessages(convId: string): Promise<ChatMessage[]> {

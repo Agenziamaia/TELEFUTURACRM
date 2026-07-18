@@ -5,12 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import {
   getInbox, listMessages, getParticipants, sendMessage, markRead,
-  subscribeMessages, subscribeInbox,
+  subscribeMessages, subscribeInbox, subscribeReceipts,
 } from "@/lib/chat";
 import { roleLabel } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck } from "lucide-react";
 
 const initials = (n = "") => n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 const fmtTime = (s) => new Date(s).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
@@ -21,6 +21,17 @@ function dayLabel(s) {
   return d.toLocaleDateString("it-IT");
 }
 const isImg = (m) => (m || "").startsWith("image/");
+function lastSeen(s) {
+  if (!s) return null;
+  const d = new Date(s), now = new Date();
+  const diff = (now.getTime() - d.getTime()) / 1000;
+  if (diff < 60) return "ultimo accesso poco fa";
+  if (diff < 3600) return `ultimo accesso ${Math.floor(diff / 60)} min fa`;
+  if (d.toDateString() === now.toDateString()) return `ultimo accesso alle ${fmtTime(s)}`;
+  const y = new Date(); y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return `ultimo accesso ieri ${fmtTime(s)}`;
+  return `ultimo accesso ${d.toLocaleDateString("it-IT")}`;
+}
 
 export default function ChatPage() {
   const { user } = useAuth();
@@ -58,9 +69,12 @@ export default function ChatPage() {
   };
   useEffect(() => {
     if (!selId) { setMessages([]); setParts([]); return; }
+    const loadParts = () => getParticipants(selId).then(setParts).catch(() => setParts([]));
     reloadMessages(selId);
-    getParticipants(selId).then(setParts).catch(() => setParts([]));
-    return subscribeMessages(selId, () => reloadMessages(selId));
+    loadParts();
+    const offMsg = subscribeMessages(selId, () => reloadMessages(selId));
+    const offRcpt = subscribeReceipts(selId, loadParts);
+    return () => { offMsg(); offRcpt(); };
   }, [selId]);
 
   useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [messages]);
@@ -87,6 +101,14 @@ export default function ChatPage() {
 
   const title = selConv ? (selConv.type === "group" ? selConv.title : selConv.other_name) : "";
   const dmOnline = selConv?.type === "dm" && isOnline(selConv.other_id);
+  const otherPart = selConv?.type === "dm" ? parts.find((p) => p.user_id !== meId) : null;
+  const receiptFor = (m) => {
+    if (!otherPart) return "sent";
+    const t = new Date(m.created_at).getTime();
+    if (otherPart.last_read_at && new Date(otherPart.last_read_at).getTime() >= t) return "seen";
+    if (otherPart.last_delivered_at && new Date(otherPart.last_delivered_at).getTime() >= t) return "delivered";
+    return "sent";
+  };
 
   let lastDay = null;
 
@@ -162,7 +184,9 @@ export default function ChatPage() {
                 <p className="text-sm font-semibold text-white truncate">{title}</p>
                 <p className="text-xs text-slate-500 truncate flex items-center gap-1.5">
                   {selConv.type === "dm" && <span className={`w-2 h-2 rounded-full ${dmOnline ? "bg-green-500" : "bg-slate-600"}`} />}
-                  {selConv.type === "group" ? `${selConv.member_count} membri` : (dmOnline ? "Online" : roleLabel(selConv.other_role || ""))}
+                  {selConv.type === "group"
+                    ? `${selConv.member_count} membri`
+                    : (dmOnline ? "Online" : (lastSeen(otherPart?.last_seen_at) || roleLabel(selConv.other_role || "")))}
                 </p>
               </div>
             </div>
@@ -187,7 +211,15 @@ export default function ChatPage() {
                           </div>
                         ))}
                         {m.body && <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>}
-                        <p className={`text-[10px] mt-0.5 ${mine ? "text-indigo-200/70" : "text-slate-500"} text-right`}>{fmtTime(m.created_at)}</p>
+                        <p className={`text-[10px] mt-0.5 flex items-center gap-1 justify-end ${mine ? "text-indigo-200/70" : "text-slate-500"}`}>
+                          {fmtTime(m.created_at)}
+                          {mine && selConv.type === "dm" && (() => {
+                            const r = receiptFor(m);
+                            if (r === "seen") return <CheckCheck className="w-3.5 h-3.5 text-sky-300" />;
+                            if (r === "delivered") return <CheckCheck className="w-3.5 h-3.5 text-indigo-200/70" />;
+                            return <Check className="w-3.5 h-3.5 text-indigo-200/70" />;
+                          })()}
+                        </p>
                       </div>
                     </div>
                   </div>
