@@ -164,7 +164,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
             )}>
                 <div className="flex-none h-16 flex items-center justify-center border-b border-white/5">
                     <div className="text-xl font-bold tracking-tight text-white flex items-center gap-2.5">
-                        <Image src="/logo-crm.png?v=2" alt="Telefutura" width={48} height={48} priority className="w-12 h-12 object-contain" />
+                        <Image src="/logo-crm.png" alt="Telefutura" width={48} height={48} priority className="w-12 h-12 object-contain" />
                         <span className="text-indigo-400">CRM</span>
                     </div>
                 </div>
