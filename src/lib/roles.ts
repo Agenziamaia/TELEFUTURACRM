@@ -39,8 +39,9 @@ export const AREAS: { id: Area; label: string }[] = [
 
 export const ROLES: RoleDef[] = [
     {
+        // id storico "venditore" (nel DB e nei riferimenti target); etichetta pubblica: Consulente
         id: "venditore",
-        label: "Venditore",
+        label: "Consulente",
         area: "pv",
         grades: [
             { id: "apprendista", label: "Apprendista" },
