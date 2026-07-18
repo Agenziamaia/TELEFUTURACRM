@@ -8,6 +8,8 @@ import {
     Loader2,
     Plus,
     Trash2,
+    Pencil,
+    Copy,
     Search,
     Save,
     RotateCcw,
@@ -80,8 +82,9 @@ export function TargetSection() {
     const [users, setUsers] = useState<TUser[]>([]);
     const [loading, setLoading] = useState(true);
     const [sub, setSub] = useState("personale");
-    const [showNewGara, setShowNewGara] = useState(false);
-    const [newGara, setNewGara] = useState("");
+    const [gAction, setGAction] = useState<null | "new" | "rename" | "dup" | "del">(null);
+    const [gName, setGName] = useState("");
+    const [gBusy, setGBusy] = useState(false);
 
     const loadBase = useCallback(async () => {
         setLoading(true);
@@ -108,15 +111,77 @@ export function TargetSection() {
     }, [loadBase]);
 
     const createGara = async () => {
-        const name = newGara.trim();
-        if (!name) return;
+        const name = gName.trim();
+        if (!name || gBusy) return;
+        setGBusy(true);
         const { data, error } = await supabase.from("gare").insert({ name, active: false }).select("id").single();
-        if (dbError("Creazione gara", error)) return;
-        notify(`Gara "${name}" creata`, "ok");
-        setNewGara("");
-        setShowNewGara(false);
-        await loadBase();
-        if (data?.id) setGaraId(data.id);
+        if (!dbError("Creazione gara", error)) {
+            notify(`Gara "${name}" creata`, "ok");
+            setGAction(null);
+            await loadBase();
+            if (data?.id) setGaraId(data.id);
+        }
+        setGBusy(false);
+    };
+
+    const renameGara = async () => {
+        const name = gName.trim();
+        if (!name || !garaId || gBusy) return;
+        setGBusy(true);
+        const { error } = await supabase.from("gare").update({ name }).eq("id", garaId);
+        if (!dbError("Rinomina gara", error)) {
+            notify("Gara rinominata ✓", "ok");
+            setGAction(null);
+            loadBase();
+        }
+        setGBusy(false);
+    };
+
+    // Duplica la gara CON tutto il contenuto: target, paletti e regole di sblocco
+    const duplicateGara = async () => {
+        const name = gName.trim();
+        if (!name || !garaId || gBusy) return;
+        setGBusy(true);
+        try {
+            const { data: g, error } = await supabase.from("gare").insert({ name, active: false }).select("id").single();
+            if (dbError("Duplicazione gara", error) || !g) return;
+            const { data: ts, error: e2 } = await supabase
+                .from("targets")
+                .select("metric_id,subject_type,subject_ref,kind,value")
+                .eq("gara_id", garaId);
+            if (dbError("Lettura target da copiare", e2)) return;
+            if (ts?.length) {
+                const { error: e3 } = await supabase.from("targets").insert(ts.map((t) => ({ ...t, gara_id: g.id })));
+                if (dbError("Copia target", e3)) return;
+            }
+            const { data: rs, error: e4 } = await supabase
+                .from("gara_unlock_rules")
+                .select("name,metric_ids,percent,sort_order")
+                .eq("gara_id", garaId);
+            if (!e4 && rs?.length) {
+                const { error: e5 } = await supabase.from("gara_unlock_rules").insert(rs.map((r) => ({ ...r, gara_id: g.id })));
+                if (dbError("Copia regole", e5)) return;
+            }
+            notify(`Gara "${name}" creata come copia ✓`, "ok");
+            setGAction(null);
+            await loadBase();
+            setGaraId(g.id);
+        } finally {
+            setGBusy(false);
+        }
+    };
+
+    const deleteGara = async () => {
+        if (!garaId || gBusy) return;
+        setGBusy(true);
+        const { error } = await supabase.from("gare").delete().eq("id", garaId);
+        if (!dbError("Eliminazione gara", error)) {
+            notify("Gara eliminata", "ok");
+            setGAction(null);
+            setGaraId("");
+            await loadBase();
+        }
+        setGBusy(false);
     };
 
     const subjectsFor = useCallback(
@@ -142,6 +207,7 @@ export function TargetSection() {
         );
 
     const active = SUBS.find((s) => s.id === sub)!;
+    const curGara = gare.find((g) => g.id === garaId);
 
     return (
         <div className="space-y-4">
@@ -157,30 +223,77 @@ export function TargetSection() {
                         </option>
                     ))}
                 </select>
-                {showNewGara ? (
-                    <div className="flex gap-2 items-center">
-                        <input
-                            value={newGara}
-                            onChange={(e) => setNewGara(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && createGara()}
-                            placeholder="Nome gara (es. Gara Agosto 2026)"
-                            className="glass-input w-56 py-1.5 text-sm"
-                            autoFocus
-                        />
-                        <button onClick={createGara} className="primary-btn text-xs px-3 py-1.5">
-                            Crea
+                {gAction === null ? (
+                    <>
+                        {garaId && (
+                            <div className="flex items-center gap-0.5">
+                                <button
+                                    onClick={() => { setGName(curGara?.name || ""); setGAction("rename"); }}
+                                    title="Rinomina gara"
+                                    className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/5"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => { setGName(`${curGara?.name || "Gara"} (copia)`); setGAction("dup"); }}
+                                    title="Duplica gara (con target, paletti e regole)"
+                                    className="p-1.5 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/5"
+                                >
+                                    <Copy className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => setGAction("del")}
+                                    title="Elimina gara"
+                                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-white/5"
+                                >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        )}
+                        <button
+                            onClick={() => { setGName(""); setGAction("new"); }}
+                            className="flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200"
+                        >
+                            <Plus className="w-3.5 h-3.5" /> Nuova gara
                         </button>
-                        <button onClick={() => setShowNewGara(false)} className="text-xs text-slate-500 px-1">
+                    </>
+                ) : gAction === "del" ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-rose-300">
+                            Eliminare «{curGara?.name}»? Via anche target, paletti e regole.
+                        </span>
+                        <button
+                            onClick={deleteGara}
+                            disabled={gBusy}
+                            className={cn("px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/15 text-rose-300 hover:bg-rose-500/25", gBusy && "opacity-40")}
+                        >
+                            {gBusy ? "…" : "Elimina"}
+                        </button>
+                        <button onClick={() => setGAction(null)} className="text-xs text-slate-500 px-1">
                             Annulla
                         </button>
                     </div>
                 ) : (
-                    <button
-                        onClick={() => setShowNewGara(true)}
-                        className="flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200"
-                    >
-                        <Plus className="w-3.5 h-3.5" /> Nuova gara
-                    </button>
+                    <div className="flex gap-2 items-center">
+                        <input
+                            value={gName}
+                            onChange={(e) => setGName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && (gAction === "new" ? createGara() : gAction === "rename" ? renameGara() : duplicateGara())}
+                            placeholder="Nome gara (es. Gara Agosto 2026)"
+                            className="glass-input w-56 py-1.5 text-sm"
+                            autoFocus
+                        />
+                        <button
+                            onClick={gAction === "new" ? createGara : gAction === "rename" ? renameGara : duplicateGara}
+                            disabled={gBusy}
+                            className={cn("primary-btn text-xs px-3 py-1.5", gBusy && "opacity-40")}
+                        >
+                            {gBusy ? "…" : gAction === "new" ? "Crea" : gAction === "rename" ? "Salva" : "Crea copia"}
+                        </button>
+                        <button onClick={() => setGAction(null)} className="text-xs text-slate-500 px-1">
+                            Annulla
+                        </button>
+                    </div>
                 )}
                 <span className="text-[11px] text-slate-600 ml-auto">
                     Target e paletti sono per gara: cambia gara per impostarne altri.
