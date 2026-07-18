@@ -8,11 +8,14 @@ export type RoleId =
     | "venditore"
     | "store_manager"
     | "supervisore"
+    | "direttore_commerciale"
+    | "tecnico"
     | "caller"
     | "direttore_cc"
     | "agente"
     | "direttore_ob"
     | "amministrativo"
+    | "direttore_generale"
     | "admin";
 
 export interface Grade {

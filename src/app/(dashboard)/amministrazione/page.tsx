@@ -1713,12 +1713,6 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
 /* ================================================================== */
 /* Costi condivisi (catalogo)                                          */
 /* ================================================================== */
-interface OtherCost {
-    id: string;
-    label: string;
-    amount: number | null;
-    user_id: string | null;
-}
 interface CatCost {
     id: string;
     label: string;
@@ -1740,7 +1734,7 @@ interface UserRef {
 
 // Costi divisi per categoria — riusabile per costi condivisi e costi negozio.
 // Una voce può essere collegata a un utente (Risorsa): prende il suo costo, aggiornato in automatico.
-function CategorizedCosts({ scope, table, filter, onTotals, withResources }: { scope: string; table: string; filter?: Record<string, string>; onTotals?: (a: number, v: number) => void; withResources?: boolean }) {
+function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideVisibile }: { scope: string; table: string; filter?: Record<string, string>; onTotals?: (a: number, v: number) => void; withResources?: boolean; hideVisibile?: boolean }) {
     const [cats, setCats] = useState<Cat[]>([]);
     const [rows, setRows] = useState<CatCost[]>([]);
     const [users, setUsers] = useState<UserRef[]>([]);
@@ -1834,7 +1828,7 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources }: { s
         <div key={r.id} className="glass-card p-2.5 rounded-lg flex items-center gap-2">
             <span className="flex-1 text-sm text-slate-200 truncate">{r.label}</span>
             <input type="number" step="0.01" value={r.amount_azienda ?? ""} onChange={(e) => upd(r.id, "amount_azienda", e.target.value)} onBlur={() => save(r)} className="glass-input w-24 py-1 text-sm text-right" title="Azienda" />
-            <input type="number" step="0.01" value={r.amount_visibile ?? ""} onChange={(e) => upd(r.id, "amount_visibile", e.target.value)} onBlur={() => save(r)} className="glass-input w-24 py-1 text-sm text-right" title="Visibile" />
+            {!hideVisibile && <input type="number" step="0.01" value={r.amount_visibile ?? ""} onChange={(e) => upd(r.id, "amount_visibile", e.target.value)} onBlur={() => save(r)} className="glass-input w-24 py-1 text-sm text-right" title="Visibile" />}
             <button onClick={() => del(r.id)} className="text-slate-500 hover:text-rose-400 p-1"><Trash2 className="w-4 h-4" /></button>
         </div>
     );
@@ -1842,8 +1836,8 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources }: { s
         addCat === catId ? (
             <div className="glass-card p-2.5 rounded-lg flex flex-wrap items-center gap-2">
                 <input value={nl} onChange={(e) => setNl(e.target.value)} placeholder="Oggetto del costo" className="glass-input flex-1 min-w-[120px] py-1 text-sm" autoFocus />
-                <input type="number" step="0.01" value={nAz} onChange={(e) => setNAz(e.target.value)} placeholder="Azienda" className="glass-input w-24 py-1 text-sm text-right" />
-                <input type="number" step="0.01" value={nVis} onChange={(e) => setNVis(e.target.value)} placeholder="Visibile" className="glass-input w-24 py-1 text-sm text-right" />
+                <input type="number" step="0.01" value={nAz} onChange={(e) => setNAz(e.target.value)} placeholder={hideVisibile ? "Importo" : "Azienda"} className="glass-input w-24 py-1 text-sm text-right" />
+                {!hideVisibile && <input type="number" step="0.01" value={nVis} onChange={(e) => setNVis(e.target.value)} placeholder="Visibile" className="glass-input w-24 py-1 text-sm text-right" />}
                 <button onClick={() => addManualVoce(catId)} className="primary-btn text-xs px-3">Aggiungi</button>
                 <button onClick={() => { setAddCat(null); setNl(""); setNAz(""); setNVis(""); }} className="text-xs text-slate-500 px-1">Annulla</button>
             </div>
@@ -1862,7 +1856,7 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources }: { s
                     <div className="flex items-center gap-2">
                         <Users className="w-3.5 h-3.5 text-indigo-400" />
                         <h5 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Risorse</h5>
-                        <span className="text-[10px] text-slate-600">categoria fissa · costo preso dall&apos;anagrafica (azienda + visibile)</span>
+                        <span className="text-[10px] text-slate-600">categoria fissa · costo preso dall&apos;anagrafica{!hideVisibile && " (azienda + visibile)"}</span>
                     </div>
                     {rows.filter((r) => r.category_id === risorse.id && r.user_id).map((r) => {
                         const u = userMap[r.user_id!];
@@ -1870,7 +1864,7 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources }: { s
                             <div key={r.id} className="glass-card p-2.5 rounded-lg flex items-center gap-2">
                                 <span className="flex-1 text-sm text-slate-200 truncate">{u ? u.full_name : r.label}</span>
                                 <span className="w-24 text-right text-sm text-slate-400" title="Azienda">{money(Number(u?.company_cost) || 0)}</span>
-                                <span className="w-24 text-right text-sm text-slate-400" title="Visibile">{money(Number(u?.costo_gara) || 0)}</span>
+                                {!hideVisibile && <span className="w-24 text-right text-sm text-slate-400" title="Visibile">{money(Number(u?.costo_gara) || 0)}</span>}
                                 <button onClick={() => del(r.id)} className="text-slate-500 hover:text-rose-400 p-1"><Trash2 className="w-4 h-4" /></button>
                             </div>
                         );
@@ -1931,91 +1925,17 @@ function SharedCostsView() {
 }
 
 function AltriCostiView() {
-    const [others, setOthers] = useState<OtherCost[]>([]);
-    const [users, setUsers] = useState<UserRef[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [newOther, setNewOther] = useState("");
-    const [nUser, setNUser] = useState("");
-
-    const load = useCallback(async () => {
-        setLoading(true);
-        const [o, u] = await Promise.all([
-            supabase.from("other_costs").select("id,label,amount,user_id").order("created_at"),
-            supabase.from("app_users").select("id,full_name,company_cost,costo_gara").eq("status", "attivo").order("full_name"),
-        ]);
-        setOthers((o.data as OtherCost[]) || []);
-        setUsers((u.data as UserRef[]) || []);
-        setLoading(false);
-    }, []);
-    useEffect(() => {
-        load();
-    }, [load]);
-
-    const userMap = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users]);
-    const amountOf = (r: OtherCost) => (r.user_id && userMap[r.user_id] ? Number(userMap[r.user_id].company_cost) || 0 : Number(r.amount) || 0);
-
-    const addOther = async () => {
-        const linked = nUser ? userMap[nUser] : null;
-        const label = linked ? linked.full_name : newOther.trim();
-        if (!label) return;
-        await supabase.from("other_costs").insert({ label, amount: 0, user_id: nUser || null });
-        setNewOther("");
-        setNUser("");
-        load();
-    };
-    const updOther = (id: string, value: string) => {
-        const v = value ? Number(value) : 0;
-        setOthers((p) => p.map((r) => (r.id === id ? { ...r, amount: v } : r)));
-    };
-    const saveOther = async (r: OtherCost) => {
-        await supabase.from("other_costs").update({ amount: r.amount || 0 }).eq("id", r.id);
-    };
-    const delOther = async (id: string) => {
-        await supabase.from("other_costs").delete().eq("id", id);
-        load();
-    };
-    const totOther = others.reduce((a, r) => a + amountOf(r), 0);
-
+    const [tot, setTot] = useState({ a: 0, v: 0 });
+    const onT = useCallback((a: number, v: number) => setTot({ a, v }), []);
     return (
         <div className="space-y-3">
             <div className="flex items-end justify-between">
                 <p className="text-xs text-slate-500 max-w-md">
-                    <span className="text-amber-400/80 font-semibold">Altri costi</span> — solo admin. Non ripartiti e <span className="text-slate-300">non visibili ai negozi</span>. Puoi collegare una <span className="text-slate-300">Risorsa</span> (utente) o inserire un costo manuale.
+                    <span className="text-amber-400/80 font-semibold">Altri costi</span> — solo admin. Non ripartiti e <span className="text-slate-300">non visibili ai negozi</span>, divisi per categoria. Le <span className="text-slate-300">Risorse</span> prendono il costo azienda dall&apos;anagrafica.
                 </p>
-                <p className="text-xs text-slate-400 whitespace-nowrap">Totale: <span className="text-white font-semibold">{money(totOther)}</span></p>
+                <p className="text-xs text-slate-400 whitespace-nowrap">Totale: <span className="text-white font-semibold">{money(tot.a)}</span></p>
             </div>
-            {loading ? (
-                <div className="flex justify-center py-10 text-slate-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
-            ) : (
-                <div className="space-y-1.5">
-                    {others.map((r) => {
-                        const u = r.user_id ? userMap[r.user_id] : null;
-                        return (
-                            <div key={r.id} className="glass-card p-2.5 rounded-lg flex items-center gap-2">
-                                {u && <Users className="w-3.5 h-3.5 text-indigo-400 shrink-0" />}
-                                <span className="flex-1 text-sm text-slate-200 truncate">{u ? u.full_name : r.label}{u && <span className="text-[10px] text-slate-500"> · da anagrafica</span>}</span>
-                                {u ? (
-                                    <span className="w-24 text-right text-sm text-slate-400">{money(Number(u.company_cost) || 0)}</span>
-                                ) : (
-                                    <input type="number" step="0.01" value={r.amount ?? ""} onChange={(e) => updOther(r.id, e.target.value)} onBlur={() => saveOther(r)} className="glass-input w-24 py-1 text-sm text-right" />
-                                )}
-                                <button onClick={() => delOther(r.id)} className="text-slate-500 hover:text-rose-400 p-1"><Trash2 className="w-4 h-4" /></button>
-                            </div>
-                        );
-                    })}
-                    {!others.length && <p className="text-xs text-slate-600 px-1">Nessun altro costo.</p>}
-                </div>
-            )}
-            <div className="flex flex-wrap gap-2 items-center">
-                <select value={nUser} onChange={(e) => setNUser(e.target.value)} className="glass-input w-auto text-sm">
-                    <option value="">Voce manuale</option>
-                    <optgroup label="Collega utente (Risorsa)">
-                        {users.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                    </optgroup>
-                </select>
-                {!nUser && <input value={newOther} onChange={(e) => setNewOther(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addOther()} placeholder="Nuovo altro costo (es. Consulenze)" className="glass-input flex-1 min-w-[140px] text-sm" />}
-                <button onClick={addOther} className="primary-btn text-sm px-3">Aggiungi</button>
-            </div>
+            <CategorizedCosts scope="other" table="other_costs" onTotals={onT} withResources hideVisibile />
         </div>
     );
 }
