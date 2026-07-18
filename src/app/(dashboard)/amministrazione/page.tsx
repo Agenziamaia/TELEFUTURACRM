@@ -245,7 +245,7 @@ function AmministrazioneInner() {
         return map;
     }, [filteredUsers]);
 
-    if (user && user.role !== "admin") {
+    if (user && user.role !== "admin" && user.role !== "dev") {
         return (
             <div className="glass-panel p-10 text-center max-w-lg mx-auto mt-10">
                 <Shield className="w-10 h-10 text-rose-400 mx-auto mb-4" />
@@ -1032,9 +1032,11 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
     const doResetPassword = async () => {
         const np = genPassword();
         setResetting(true);
-        const { error } = await supabase.from("app_users").update({ password: np }).eq("id", u.id);
+        // Hash lato DB (pgcrypto) + must_change_password=true: la password reale non viene
+        // mai salvata in chiaro. 'np' resta visibile all'admin solo ora, per comunicarla.
+        const { data, error } = await supabase.rpc("admin_set_password", { p_user_id: u.id, p_new: np });
         setResetting(false);
-        if (!error) {
+        if (!error && data === true) {
             setPw(np);
             setShowPw(true);
         }

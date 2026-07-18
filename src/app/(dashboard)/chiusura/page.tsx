@@ -743,7 +743,7 @@ function VistaGestione({ isAdmin, userStore, history }: { isAdmin: boolean; user
 //  Main Page 
 export default function ChiusuraNegozio() {
     const { user } = useAuth();
-    const isAdmin = user?.role === "admin";
+    const isAdmin = user?.role === "admin" || user?.role === "dev";
     const userStore = user?.negozio || "Magliana";
     const [history, setHistory] = useState<Chiusura[]>([]);
     const [loading, setLoading] = useState(true);

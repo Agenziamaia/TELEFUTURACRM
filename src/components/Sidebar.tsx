@@ -5,12 +5,14 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
+import { getInbox, subscribeInbox } from "@/lib/chat";
 import {
     Home,
     Send,
     Navigation,
     FolderOpen,
     MessageSquare,
+    MessagesSquare,
     LogOut,
     Database,
     FilePlus,
@@ -43,17 +45,27 @@ type NavItem = { type: "link"; name: string; href: string; icon: React.Component
 type NavHubChild = { name: string; sez: string; icon?: React.ComponentType<{ className?: string }>; color?: string };
 type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: React.ComponentType<{ className?: string }>; roles: string[]; children: NavHubChild[] };
 
+// Gruppi di ruoli reali (roles.ts). "*" = tutti gli account autenticati.
+const EVERYONE = ["*"];
+const ADMINS = ["admin", "dev", "direttore_generale"];
+const MANAGERS = ["admin", "dev", "direttore_generale", "store_manager", "direttore_commerciale", "amministrativo", "direttore_cc", "direttore_ob"];
+const CALLCENTER = ["admin", "dev", "direttore_generale", "caller", "back_office_caller", "direttore_cc"];
+
+// Un elemento e' visibile se e' aperto a tutti ("*") o se include il ruolo reale dell'utente.
+const canSee = (roles: string[], role?: string | null) =>
+    roles.includes("*") || (!!role && roles.includes(role));
+
 const navigation: (NavGroup | NavItem | NavHub)[] = [
-    { type: "link", name: "Home", href: "/dashboard", icon: Home, roles: ["admin", "agente"] },
-    { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: ["admin", "agente"] },
-    { type: "link", name: "Caller", href: "/caller", icon: Phone, roles: ["admin", "back_office", "supervisore"] },
+    { type: "link", name: "Home", href: "/dashboard", icon: Home, roles: EVERYONE },
+    { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: EVERYONE },
+    { type: "link", name: "Caller", href: "/caller", icon: Phone, roles: CALLCENTER },
     {
         type: "group",
         label: "Agenti",
         icon: UserCog,
         children: [
-            { name: "Invia pda", href: "/pda/invia", icon: Send, roles: ["admin", "agente"] },
-            { name: "Gestione pda", href: "/gestione", icon: Database, roles: ["admin"] },
+            { name: "Invia pda", href: "/pda/invia", icon: Send, roles: EVERYONE },
+            { name: "Gestione pda", href: "/gestione", icon: Database, roles: ADMINS },
         ],
     },
     {
@@ -61,9 +73,9 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         label: "Contratti",
         icon: FileText,
         children: [
-            { name: "Registra Contratto", href: "/registra-contratto", icon: FilePlus, roles: ["admin", "agente"] },
-            { name: "Ricerca Contratto", href: "/ricerca-contratto", icon: Database, roles: ["admin", "agente"] },
-            { name: "Tracking pda", href: "/pda/tracking", icon: Navigation, roles: ["admin", "agente"] },
+            { name: "Registra Contratto", href: "/registra-contratto", icon: FilePlus, roles: EVERYONE },
+            { name: "Ricerca Contratto", href: "/ricerca-contratto", icon: Database, roles: EVERYONE },
+            { name: "Tracking pda", href: "/pda/tracking", icon: Navigation, roles: EVERYONE },
         ],
     },
     {
@@ -71,10 +83,10 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         label: "Collaboratori",
         icon: UsersIcon,
         children: [
-            { name: "Badge", href: "/collaboratori?tab=badge", icon: Clock, roles: ["admin", "store_manager", "back_office", "supervisore", "agente"] },
-            { name: "Ferie", href: "/collaboratori?tab=ferie", icon: CalendarDays, roles: ["admin", "store_manager", "back_office", "supervisore", "agente"] },
-            { name: "Malattia", href: "/collaboratori?tab=malattia", icon: Shield, roles: ["admin", "store_manager", "back_office", "supervisore"] },
-            { name: "Ritardi", href: "/collaboratori?tab=ritardi", icon: Clock3, roles: ["admin", "store_manager", "back_office", "supervisore", "agente"] },
+            { name: "Badge", href: "/collaboratori?tab=badge", icon: Clock, roles: EVERYONE },
+            { name: "Ferie", href: "/collaboratori?tab=ferie", icon: CalendarDays, roles: EVERYONE },
+            { name: "Malattia", href: "/collaboratori?tab=malattia", icon: Shield, roles: MANAGERS },
+            { name: "Ritardi", href: "/collaboratori?tab=ritardi", icon: Clock3, roles: EVERYONE },
         ],
     },
     {
@@ -82,22 +94,23 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         label: "Negozio",
         icon: StoreIcon,
         children: [
-            { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: ["admin"] },
-            { name: "Ordine Merce", href: "/ordine-merce", icon: Package, roles: ["admin", "store_manager", "back_office"] },
-            { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: ["admin", "agente"] },
-            { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "store_manager"] },
+            { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: ADMINS },
+            { name: "Ordine Merce", href: "/ordine-merce", icon: Package, roles: MANAGERS },
+            { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: EVERYONE },
+            { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
         ],
     },
-    { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: ["admin", "agente"] },
-    { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: ["admin", "agente"] },
-    { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: ["admin", "agente"] },
+    { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: EVERYONE },
+    { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
+    { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
+    { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
     {
         type: "hub",
         name: "Gare",
         href: "/gare",
         param: "brand",
         icon: Trophy,
-        roles: ["admin"],
+        roles: ADMINS,
         children: [
             { name: "WindTre", sez: "w3", color: "#FF6B00" },
             { name: "Vodafone Store", sez: "vs", color: "#E60000" },
@@ -114,7 +127,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         name: "Amministrazione",
         href: "/amministrazione",
         icon: Shield,
-        roles: ["admin"],
+        roles: ADMINS,
         children: [
             { name: "Utenti", sez: "utenti", icon: UsersIcon },
             { name: "Negozi", sez: "negozi", icon: StoreIcon },
@@ -133,6 +146,19 @@ interface SidebarProps {
 export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     const pathname = usePathname();
     const { user, logout } = useAuth();
+
+    // Totale messaggi chat non letti -> badge sulla voce "Chat"
+    const [chatUnread, setChatUnread] = useState(0);
+    useEffect(() => {
+        if (!user?.id) { setChatUnread(0); return; }
+        let alive = true;
+        const load = () => getInbox(user.id)
+            .then((rows) => { if (alive) setChatUnread(rows.reduce((s, r) => s + (r.unread || 0), 0)); })
+            .catch(() => {});
+        load();
+        const off = subscribeInbox(load);
+        return () => { alive = false; off(); };
+    }, [user?.id]);
 
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
         const initial: Record<string, boolean> = {};
@@ -162,8 +188,8 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     const visibleItems = useMemo(() => {
         if (!user) return [];
         return navigation.filter((item) => {
-            if (item.type === "link" || item.type === "hub") return item.roles.includes(user.role);
-            const children = item.children.filter((c) => c.roles.includes(user.role));
+            if (item.type === "link" || item.type === "hub") return canSee(item.roles, user.role);
+            const children = item.children.filter((c) => canSee(c.roles, user.role));
             return children.length > 0;
         });
     }, [user]);
@@ -205,6 +231,11 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                                     >
                                         <item.icon className={cn("w-5 h-5", isActive ? "text-indigo-400" : "text-slate-500")} />
                                         {item.name}
+                                        {item.href === "/chat" && chatUnread > 0 && (
+                                            <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">
+                                                {chatUnread > 99 ? "99+" : chatUnread}
+                                            </span>
+                                        )}
                                     </Link>
                                 );
                             }
@@ -246,7 +277,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                             }
                             const group = item;
                             const isExpanded = expandedGroups[group.label] ?? false;
-                            const visibleChildren = group.children.filter((c) => user && c.roles.includes(user.role));
+                            const visibleChildren = group.children.filter((c) => canSee(c.roles, user?.role));
                             const Icon = group.icon;
                             return (
                                 <div key={group.label} className="space-y-0.5">

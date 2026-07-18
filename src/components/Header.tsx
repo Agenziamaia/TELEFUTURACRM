@@ -3,6 +3,7 @@
 import { Search, Sun, Maximize, Bell, Menu, LogOut, ArrowLeft } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { roleLabel } from "@/lib/roles";
 import { useRef, useEffect } from "react";
 
 const CRM_BACK_EVENT = "crm-back";
@@ -96,7 +97,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                 <div className="flex items-center gap-3 pl-4 border-l border-white/10 cursor-pointer">
                     <div className="hidden text-right md:block">
                         <p className="text-sm font-medium text-white leading-none">{user?.name || "Ospite"}</p>
-                        <p className="text-xs text-slate-400 mt-1 capitalize">{user?.role || "Nessun Ruolo"}</p>
+                        <p className="text-xs text-slate-400 mt-1">{user?.role ? roleLabel(user.role) : "Nessun Ruolo"}</p>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border-2 border-indigo-500/40 flex items-center justify-center overflow-hidden">
                         {user?.name ? getInitials(user.name) : 'A'}

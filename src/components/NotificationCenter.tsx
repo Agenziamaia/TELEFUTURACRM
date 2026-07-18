@@ -37,7 +37,7 @@ export function NotificationCenter() {
                     // Only notify if status changed
                     if (newOrder.status !== oldOrder.status) {
                         // Check visibility: Admin sees everything, Store Manager sees their store
-                        const isAdmin = user.role === "admin" || user.role === "back_office";
+                        const isAdmin = user.role === "admin" || user.role === "dev" || user.role === "back_office_caller";
                         const isMyStore = user.negozio && newOrder.store.toLowerCase().includes(user.negozio.toLowerCase().split(" ").pop()?.toLowerCase() || "");
 
                         // Heuristic for matching: user.negozio is "Store Roma Termini", newOrder.store is "roma_centro"

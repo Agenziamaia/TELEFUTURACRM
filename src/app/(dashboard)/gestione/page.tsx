@@ -76,7 +76,7 @@ export default function GestionePda() {
     const [aDataInvio, setADataInvio] = useState("");
     const [tableSearch, setTableSearch] = useState("");
 
-    const isAdmin = user?.role === "admin";
+    const isAdmin = user?.role === "admin" || user?.role === "dev";
 
     const fetchList = useCallback(async () => {
         const { data, error } = await supabase

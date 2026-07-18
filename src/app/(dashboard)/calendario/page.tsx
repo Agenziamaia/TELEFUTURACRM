@@ -320,16 +320,16 @@ export default function Calendario() {
     const daysInMonth = getDaysInMonth(viewYear, viewMonth);
     const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
 
-    const isCallCenter = user?.role === "admin"; // admin = call center operator
-    const isAgent = user?.role !== "admin";
-    const canCreateMeeting = ["admin", "store_manager", "supervisore", "back_office"].includes(user?.role || "");
+    const isCallCenter = user?.role === "admin" || user?.role === "dev"; // admin/dev = call center operator
+    const isAgent = user?.role !== "admin" && user?.role !== "dev";
+    const canCreateMeeting = ["admin", "dev", "store_manager", "supervisore", "back_office"].includes(user?.role || "");
 
     const isDateBlocked = (dateStr: string) =>
         agendaBlocks.some(b => dateStr >= b.startDate && dateStr <= b.endDate);
 
     // Role-based visibility and Admin Grid Filter
     const visibleAppointments = appointments.filter(a => {
-        if (user?.role === "admin") {
+        if (user?.role === "admin" || user?.role === "dev") {
             if (filterStore && filterStore !== "Tutti" && a.store !== filterStore) return false;
             if (filterAgent && filterAgent !== "Tutti" && a.agente !== filterAgent) return false;
             if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;

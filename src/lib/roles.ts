@@ -17,7 +17,8 @@ export type RoleId =
     | "direttore_ob"
     | "amministrativo"
     | "direttore_generale"
-    | "admin";
+    | "admin"
+    | "dev";
 
 export interface Grade {
     id: string;
@@ -111,16 +112,18 @@ export const ROLES: RoleDef[] = [
     },
     { id: "direttore_generale", label: "Direttore Generale", area: "sede", grades: [] },
     { id: "admin", label: "Admin", area: "sede", grades: [] },
+    // Ruolo tecnico (sviluppatore): stessi permessi di admin
+    { id: "dev", label: "Dev", area: "sede", grades: [] },
 ];
 
 // Ruoli con visibilità su TUTTI i negozi
 export function seesAllStores(role: string | null | undefined): boolean {
-    return role === "admin" || role === "direttore_generale" || role === "amministrativo";
+    return role === "admin" || role === "dev" || role === "direttore_generale" || role === "amministrativo";
 }
 
 // Ruoli "amministrativi o superiori" (es. approvazione modifiche profilo)
 export function isAdminOrAbove(role: string | null | undefined): boolean {
-    return role === "amministrativo" || role === "direttore_generale" || role === "admin";
+    return role === "amministrativo" || role === "direttore_generale" || role === "admin" || role === "dev";
 }
 
 // Il badge (timbratura) è riservato al call center; i ruoli di negozio non lo usano.

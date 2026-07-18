@@ -430,7 +430,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [editingItemIdx, setEditingItemIdx] = useState(null);
   const [editForm, setEditForm] = useState({ name: "", qty: 1 });
 
-  const isAdmin = role === "admin" || role === "back_office";
+  const isAdmin = role === "admin" || role === "dev" || role === "back_office";
   const isStoreManager = role === "store_manager";
 
   /* ─── Filter logic ─── */
