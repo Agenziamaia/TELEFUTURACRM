@@ -400,7 +400,17 @@ function AmministrazioneInner() {
                 />
             )}
 
-            {detail && <UserDetail u={detail} onClose={() => setDetail(null)} />}
+            {detail && (
+                <UserDetail
+                    u={detail}
+                    onClose={() => setDetail(null)}
+                    onEdit={() => {
+                        setEditing(detail);
+                        setShowForm(true);
+                        setDetail(null);
+                    }}
+                />
+            )}
         </div>
     );
 }
@@ -842,7 +852,7 @@ interface Activity {
     appointments: { id: string; date: string; status: string; customer_name: string; store: string }[];
 }
 
-function UserDetail({ u, onClose }: { u: AppUser; onClose: () => void }) {
+function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; onEdit?: () => void }) {
     const matchName = u.match_name || u.full_name;
     const area = areaOf(u.role);
     const [act, setAct] = useState<Activity | null>(null);
@@ -939,9 +949,16 @@ function UserDetail({ u, onClose }: { u: AppUser; onClose: () => void }) {
                                 </p>
                             </div>
                         </div>
-                        <button onClick={onClose} className="text-slate-400 hover:text-white p-1">
-                            <X className="w-5 h-5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                            {onEdit && (
+                                <button onClick={onEdit} title="Modifica utente" className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/5">
+                                    <Pencil className="w-4 h-4" />
+                                </button>
+                            )}
+                            <button onClick={onClose} className="text-slate-400 hover:text-white p-1">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
                     </div>
                     {/* associazioni */}
                     <div className="flex flex-wrap gap-2 mt-3">

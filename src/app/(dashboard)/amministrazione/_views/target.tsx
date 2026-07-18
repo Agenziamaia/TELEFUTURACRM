@@ -365,6 +365,10 @@ function TargetEditor({
     const [search, setSearch] = useState("");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    // selezione multipla: valore comune applicato a tutti i soggetti spuntati
+    const [checked, setChecked] = useState<Record<string, boolean>>({});
+    const multiRefs = useMemo(() => Object.keys(checked).filter((k) => checked[k]), [checked]);
+    const multi = multiRefs.length > 0;
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -395,13 +399,63 @@ function TargetEditor({
         setEdit({ ...(saved[ref] || {}) });
     };
 
+    const toggleCheck = (ref: string) => {
+        const next = { ...checked, [ref]: !checked[ref] };
+        const count = Object.values(next).filter(Boolean).length;
+        if (multiRefs.length === 0 && count > 0) setEdit({}); // entra in modalità multipla: si parte puliti
+        if (multiRefs.length > 0 && count === 0) setEdit(sel ? { ...(saved[sel] || {}) } : {}); // torna alla singola
+        setChecked(next);
+    };
+    const selectAllFiltered = (subjectRefs: string[]) => {
+        if (multiRefs.length === 0) setEdit({});
+        setChecked(Object.fromEntries(subjectRefs.map((r) => [r, true])));
+    };
+    const clearChecks = () => {
+        setChecked({});
+        setEdit(sel ? { ...(saved[sel] || {}) } : {});
+    };
+
     const dirty = useMemo(() => {
+        if (multi) return metrics.some((m) => (edit[m.id] || "").trim());
         if (!sel) return false;
         const base = saved[sel] || {};
         return metrics.some((m) => (edit[m.id] || "") !== (base[m.id] || ""));
-    }, [edit, saved, sel, metrics]);
+    }, [edit, saved, sel, metrics, multi]);
+
+    // Salvataggio multiplo: applica i campi COMPILATI a tutti i selezionati (i vuoti non vengono toccati)
+    const saveMulti = async () => {
+        if (saving) return;
+        const vals = metrics.filter((m) => (edit[m.id] || "").trim());
+        if (!vals.length) return;
+        setSaving(true);
+        const ups = multiRefs.flatMap((ref) =>
+            vals.map((m) => ({
+                gara_id: garaId,
+                metric_id: m.id,
+                subject_type: subjectType,
+                subject_ref: ref,
+                kind,
+                value: Number((edit[m.id] || "").trim()),
+            })),
+        );
+        const { error } = await supabase.from("targets").upsert(ups, { onConflict: "gara_id,metric_id,subject_type,subject_ref,kind" });
+        if (!dbError("Salvataggio multiplo", error)) {
+            const next = { ...saved };
+            for (const ref of multiRefs) {
+                const cur = { ...(next[ref] || {}) };
+                for (const m of vals) cur[m.id] = (edit[m.id] || "").trim();
+                next[ref] = cur;
+            }
+            setSaved(next);
+            notify(`Salvato su ${multiRefs.length} soggetti ✓`, "ok");
+            setChecked({});
+            setEdit(sel ? { ...(next[sel] || {}) } : {});
+        }
+        setSaving(false);
+    };
 
     const save = async () => {
+        if (multi) return saveMulti();
         if (!sel || saving) return;
         setSaving(true);
         const base = saved[sel] || {};
@@ -458,28 +512,51 @@ function TargetEditor({
                         onChange={(e) => setSearch(e.target.value)}
                     />
                 </div>
+                <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] text-slate-500">
+                        {multi ? `${multiRefs.length} selezionati` : "Spunta più soggetti per un valore comune"}
+                    </span>
+                    <span className="flex gap-2 shrink-0">
+                        <button onClick={() => selectAllFiltered(filtered.map((s) => s.ref))} className="text-[10px] text-indigo-300 hover:text-indigo-200">
+                            Tutti
+                        </button>
+                        {multi && (
+                            <button onClick={clearChecks} className="text-[10px] text-slate-400 hover:text-slate-200">
+                                Nessuno
+                            </button>
+                        )}
+                    </span>
+                </div>
                 <div className="space-y-1 max-h-[55vh] overflow-y-auto pr-1">
                     {filtered.map((s) => {
                         const n = Object.keys(saved[s.ref] || {}).length;
+                        const on = multi ? !!checked[s.ref] : sel === s.ref;
                         return (
-                            <button
+                            <div
                                 key={s.ref}
-                                onClick={() => pick(s.ref)}
                                 className={cn(
-                                    "w-full text-left px-3 py-2 rounded-lg flex items-center gap-2 transition-colors",
-                                    sel === s.ref ? "bg-indigo-500/15 text-white" : "text-slate-300 hover:bg-white/5",
+                                    "w-full px-2 py-1.5 rounded-lg flex items-center gap-2 transition-colors",
+                                    on ? "bg-indigo-500/15" : "hover:bg-white/5",
                                 )}
                             >
-                                <span className="flex-1 min-w-0">
-                                    <span className="block text-sm truncate">{s.label}</span>
-                                    {s.sub && <span className="block text-[10px] text-slate-500 truncate">{s.sub}</span>}
-                                </span>
-                                {n > 0 && (
-                                    <span className="flex items-center gap-1 text-[10px] text-emerald-400 shrink-0">
-                                        <Check className="w-3 h-3" /> {n}
+                                <input
+                                    type="checkbox"
+                                    checked={!!checked[s.ref]}
+                                    onChange={() => toggleCheck(s.ref)}
+                                    className="accent-indigo-500 w-3.5 h-3.5 shrink-0 cursor-pointer"
+                                />
+                                <button onClick={() => (multi ? toggleCheck(s.ref) : pick(s.ref))} className="flex-1 min-w-0 text-left flex items-center gap-2">
+                                    <span className="flex-1 min-w-0">
+                                        <span className={cn("block text-sm truncate", on ? "text-white" : "text-slate-300")}>{s.label}</span>
+                                        {s.sub && <span className="block text-[10px] text-slate-500 truncate">{s.sub}</span>}
                                     </span>
-                                )}
-                            </button>
+                                    {n > 0 && (
+                                        <span className="flex items-center gap-1 text-[10px] text-emerald-400 shrink-0">
+                                            <Check className="w-3 h-3" /> {n}
+                                        </span>
+                                    )}
+                                </button>
+                            </div>
                         );
                     })}
                     {!filtered.length && <p className="text-xs text-slate-600 px-2 py-3">Nessun soggetto.</p>}
@@ -492,14 +569,21 @@ function TargetEditor({
                     <div className="flex justify-center py-10 text-slate-400">
                         <Loader2 className="w-5 h-5 animate-spin" />
                     </div>
-                ) : !selSubject ? (
+                ) : !selSubject && !multi ? (
                     <p className="text-sm text-slate-500 py-8 text-center">{hint}</p>
                 ) : (
                     <>
                         <div className="flex items-center justify-between gap-2">
-                            <h4 className="text-white font-semibold truncate">{selSubject.label}</h4>
+                            <h4 className="text-white font-semibold truncate">
+                                {multi ? `Valore comune → ${multiRefs.length} soggetti` : selSubject!.label}
+                            </h4>
                             {dirty && <span className="text-[10px] text-amber-400 whitespace-nowrap">● modifiche non salvate</span>}
                         </div>
+                        {multi && (
+                            <p className="text-[11px] text-slate-500">
+                                I campi compilati vengono applicati a tutti i selezionati; quelli vuoti non vengono toccati.
+                            </p>
+                        )}
                         <div className="space-y-1.5">
                             {metrics.map((m) => (
                                 <div key={m.id} className="glass-card p-2.5 rounded-lg flex items-center gap-2">
@@ -525,11 +609,12 @@ function TargetEditor({
                                     (!dirty || saving) && "opacity-40 cursor-not-allowed",
                                 )}
                             >
-                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salva {label.toLowerCase()}
+                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}{" "}
+                                {multi ? `Salva su ${multiRefs.length} soggetti` : `Salva ${label.toLowerCase()}`}
                             </button>
                             {dirty && (
                                 <button
-                                    onClick={() => setEdit({ ...(saved[sel] || {}) })}
+                                    onClick={() => setEdit(multi ? {} : { ...(saved[sel] || {}) })}
                                     className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 px-2"
                                 >
                                     <RotateCcw className="w-3.5 h-3.5" /> Annulla modifiche
