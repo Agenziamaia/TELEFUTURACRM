@@ -11,6 +11,7 @@ export type RoleId =
     | "direttore_commerciale"
     | "tecnico"
     | "caller"
+    | "back_office_caller"
     | "direttore_cc"
     | "agente"
     | "direttore_ob"
@@ -70,6 +71,7 @@ export const ROLES: RoleDef[] = [
             { id: "caller_senior", label: "Caller Senior" },
         ],
     },
+    { id: "back_office_caller", label: "Back Office / Caller", area: "cc", grades: [] },
     {
         id: "direttore_cc",
         label: "Direzione Call Center",
@@ -105,7 +107,6 @@ export const ROLES: RoleDef[] = [
         grades: [
             { id: "amministrazione", label: "Amministrazione" },
             { id: "back_office", label: "Back Office" },
-            { id: "back_office_caller", label: "Back Office / Caller" },
         ],
     },
     { id: "direttore_generale", label: "Direttore Generale", area: "sede", grades: [] },
