@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -164,7 +163,9 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
             )}>
                 <div className="flex-none h-16 flex items-center justify-center border-b border-white/5">
                     <div className="text-xl font-bold tracking-tight text-white flex items-center gap-2.5">
-                        <Image src="/logo-crm.png" alt="Telefutura" width={48} height={48} priority className="w-12 h-12 object-contain" />
+                        {/* file statico diretto: niente ottimizzatore Next per un logo da 5KB */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src="/logo-crm.png" alt="Telefutura" width={48} height={48} className="w-12 h-12 object-contain" />
                         <span className="text-indigo-400">CRM</span>
                     </div>
                 </div>
