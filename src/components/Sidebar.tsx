@@ -39,9 +39,9 @@ import {
 type NavLink = { name: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[] };
 type NavGroup = { type: "group"; label: string; icon: React.ComponentType<{ className?: string }>; children: NavLink[] };
 type NavItem = { type: "link"; name: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[] };
-// Hub: la voce naviga alla pagina E esplode le sotto-sezioni (?sez=) sotto di sé
-type NavHubChild = { name: string; sez: string; icon: React.ComponentType<{ className?: string }> };
-type NavHub = { type: "hub"; name: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[]; children: NavHubChild[] };
+// Hub: la voce naviga alla pagina E esplode le sotto-sezioni (?param=) sotto di sé
+type NavHubChild = { name: string; sez: string; icon?: React.ComponentType<{ className?: string }>; color?: string };
+type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: React.ComponentType<{ className?: string }>; roles: string[]; children: NavHubChild[] };
 
 const navigation: (NavGroup | NavItem | NavHub)[] = [
     { type: "link", name: "Home", href: "/dashboard", icon: Home, roles: ["admin", "agente"] },
@@ -91,7 +91,24 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: ["admin", "agente"] },
     { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: ["admin", "agente"] },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: ["admin", "agente"] },
-    { type: "link", name: "Gare", href: "/gare", icon: Trophy, roles: ["admin"] },
+    {
+        type: "hub",
+        name: "Gare",
+        href: "/gare",
+        param: "brand",
+        icon: Trophy,
+        roles: ["admin"],
+        children: [
+            { name: "WindTre", sez: "w3", color: "#FF6B00" },
+            { name: "Vodafone Store", sez: "vs", color: "#E60000" },
+            { name: "Vodafone VND", sez: "vnd", color: "#ff6666" },
+            { name: "Fastweb", sez: "fastweb", color: "#FFD800" },
+            { name: "Sky", sez: "sky", color: "#0072C6" },
+            { name: "S4 Energy", sez: "s4", color: "#28a745" },
+            { name: "TIM", sez: "tim", color: "#0050FF" },
+            { name: "Dojo", sez: "dojo", color: "#14b8a6" },
+        ],
+    },
     {
         type: "hub",
         name: "Amministrazione",
@@ -292,7 +309,8 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }) {
     const pathname = usePathname();
     const searchParams = useSearchParams();
-    const sez = pathname === hub.href ? searchParams.get("sez") : null;
+    const param = hub.param || "sez";
+    const sez = pathname === hub.href ? searchParams.get(param) : null;
     return (
         <div className="pl-4 ml-2 border-l border-white/10 space-y-0.5">
             {hub.children.map((c) => {
@@ -301,7 +319,7 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                 return (
                     <Link
                         key={c.sez}
-                        href={`${hub.href}?sez=${c.sez}`}
+                        href={`${hub.href}?${param}=${c.sez}`}
                         onClick={onNavigate}
                         className={cn(
                             "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
@@ -310,7 +328,14 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                                 : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
                         )}
                     >
-                        <ChildIcon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500")} />
+                        {ChildIcon ? (
+                            <ChildIcon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500")} />
+                        ) : (
+                            <span
+                                className={cn("w-2.5 h-2.5 rounded-full shrink-0", !isActive && "opacity-60")}
+                                style={{ backgroundColor: c.color || "#64748b" }}
+                            />
+                        )}
                         {c.name}
                     </Link>
                 );

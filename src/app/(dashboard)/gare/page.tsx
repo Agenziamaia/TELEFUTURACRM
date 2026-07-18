@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
+import Image from "next/image";
 import {
     Trophy,
     ArrowLeft,
@@ -14,7 +15,6 @@ import {
     Trash2,
     Loader2,
     Copy,
-    Flag,
 } from "lucide-react";
 import { ToastHost, notify, dbError } from "../amministrazione/_views/toast";
 import { MoneyInput } from "../amministrazione/_views/money";
@@ -23,15 +23,16 @@ import { addMonths, monthLabel, currentMonthKey } from "../amministrazione/_view
 /* GARE — soglie degli operatori e commissioning collegato, per brand e per mese.
    Ogni brand è una sotto-sezione; le condizioni cambiano mese su mese e lo storico resta consultabile. */
 
+// Loghi e colori come in Registra Contratto (stessa rappresentazione)
 const GARE_BRANDS = [
-    { id: "w3", label: "Wind3", desc: "Soglie e commissioning dei franchising Wind3.", color: "#ff6600", text: "#ffa366" },
-    { id: "vs", label: "Vodafone Store", desc: "Soglie e commissioning dei Vodafone Store.", color: "#e60000", text: "#ff6666" },
-    { id: "vnd", label: "Vodafone VND", desc: "Target Vodafone dei negozi multi brand (gestione VND).", color: "#b91c1c", text: "#fca5a5" },
-    { id: "fastweb", label: "Fastweb", desc: "Target Fastweb dei multi brand (nessun franchising).", color: "#ffd400", text: "#ffe066" },
-    { id: "sky", label: "Sky", desc: "Soglie e commissioning Sky.", color: "#0072c9", text: "#66b5ff" },
-    { id: "s4", label: "S4 Energy", desc: "Soglie e commissioning energia S4.", color: "#16a34a", text: "#4ade80" },
-    { id: "tim", label: "Tim", desc: "Soglie e commissioning Tim.", color: "#004691", text: "#6fa8ff" },
-    { id: "dojo", label: "Dojo", desc: "Soglie e commissioning POS Dojo.", color: "#14b8a6", text: "#5eead4" },
+    { id: "w3", label: "WindTre", desc: "Soglie e commissioning dei franchising Wind3.", color: "#FF6B00", logo: "/windtre.png" },
+    { id: "vs", label: "Vodafone Store", desc: "Soglie e commissioning dei Vodafone Store.", color: "#E60000", logo: "/vodaphone - Copy.png" },
+    { id: "vnd", label: "Vodafone VND", desc: "Target Vodafone dei negozi multi brand (gestione VND).", color: "#E60000", logo: "/vodaphone - Copy.png" },
+    { id: "fastweb", label: "Fastweb", desc: "Target Fastweb dei multi brand (nessun franchising).", color: "#CC9900", logo: "/fastweb.png" },
+    { id: "sky", label: "Sky", desc: "Soglie e commissioning Sky.", color: "#0072C6", logo: "/sky.png" },
+    { id: "s4", label: "S4 Energy", desc: "Soglie e commissioning energia S4.", color: "#28a745", logo: "/energy - Copy.png" },
+    { id: "tim", label: "TIM", desc: "Soglie e commissioning Tim.", color: "#0050FF", logo: "/tim-logo.png" },
+    { id: "dojo", label: "Dojo", desc: "Soglie e commissioning POS Dojo.", color: "#14b8a6", logo: "/dojo - Copy.png" },
 ] as const;
 
 interface Soglia {
@@ -69,14 +70,12 @@ function GareInner() {
                         <ArrowLeft className="w-3.5 h-3.5" /> Gare
                     </button>
                 )}
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-white flex items-center gap-3">
                     {brand ? (
                         <>
-                            <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${brand.color}25` }}>
-                                <Flag className="w-4 h-4" style={{ color: brand.text }} />
-                            </span>
+                            <Image src={brand.logo} alt={brand.label} width={140} height={40} className="h-9 w-auto object-contain" />
                             <span>
-                                Gare · <span style={{ color: brand.text }}>{brand.label}</span>
+                                Gare · <span style={{ color: brand.color }}>{brand.label}</span>
                             </span>
                         </>
                     ) : (
@@ -96,18 +95,15 @@ function GareInner() {
                         <button
                             key={b.id}
                             onClick={() => go(b.id)}
-                            className="glass-panel p-5 rounded-2xl text-left hover:bg-white/5 transition-colors group"
+                            className="p-4 rounded-xl border-2 border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] transition-colors text-center"
                         >
-                            <div className="flex items-start justify-between">
-                                <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ backgroundColor: `${b.color}20` }}>
-                                    <Flag className="w-5 h-5" style={{ color: b.text }} />
-                                </div>
-                                <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-300 transition-colors" />
+                            <div className="flex items-center justify-center h-14 mb-3">
+                                <Image src={b.logo} alt={b.label} width={180} height={56} className="h-14 w-auto max-w-[85%] object-contain" />
                             </div>
-                            <p className="font-semibold" style={{ color: b.text }}>
+                            <p className="font-extrabold text-[15px]" style={{ color: b.color }}>
                                 {b.label}
                             </p>
-                            <p className="text-xs text-slate-500 mt-1 leading-relaxed">{b.desc}</p>
+                            <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">{b.desc}</p>
                         </button>
                     ))}
                 </div>
@@ -129,7 +125,7 @@ function GareInner() {
                         <span className="text-[11px] text-slate-600 ml-auto hidden sm:block">Le condizioni cambiano mese su mese: naviga per vedere o correggere.</span>
                     </div>
 
-                    <SoglieView key={`${brand.id}|${month}`} brand={brand.id} month={month} accent={brand.text} />
+                    <SoglieView key={`${brand.id}|${month}`} brand={brand.id} month={month} accent={brand.color} />
                 </>
             )}
         </div>
