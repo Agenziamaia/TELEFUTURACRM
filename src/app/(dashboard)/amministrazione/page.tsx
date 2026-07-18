@@ -9,6 +9,7 @@ import { FixedStoreCosts, StoreAttachments } from "./_views/store-extra";
 import { TargetSection } from "./_views/target";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
+import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
 import {
     ROLES,
     AREAS,
@@ -177,6 +178,13 @@ function AmministrazioneInner() {
     const [editing, setEditing] = useState<AppUser | null>(null);
     const [showRoleCosts, setShowRoleCosts] = useState(false);
     const costRules = useRoleCosts();
+
+    // mese di riferimento del sistema costi (ogni mese è una "corsa")
+    const [month, setMonth] = useState(currentMonthKey());
+    const { months, reload: reloadMonths } = useCostMonths();
+    const latestMonth = months[months.length - 1] || month;
+    const monthReady = months.includes(month);
+    const livePeople = month === latestMonth; // solo il mese attivo legge i costi persone dall'anagrafica
 
     // scheda attività
     const [detail, setDetail] = useState<AppUser | null>(null);
@@ -396,11 +404,32 @@ function AmministrazioneInner() {
                     )}
                 </>
             ) : sez === "negozi" ? (
-                <StoresView stores={stores} onRefresh={fetchAll} />
+                <>
+                    <MonthBar month={month} setMonth={setMonth} months={months} />
+                    {!monthReady ? (
+                        <MonthInitBanner month={month} months={months} rules={costRules} onDone={reloadMonths} />
+                    ) : (
+                        <StoresView stores={stores} onRefresh={fetchAll} month={month} livePeople={livePeople} />
+                    )}
+                </>
             ) : sez === "condivisi" ? (
-                <SharedCostsView />
+                <>
+                    <MonthBar month={month} setMonth={setMonth} months={months} />
+                    {!monthReady ? (
+                        <MonthInitBanner month={month} months={months} rules={costRules} onDone={reloadMonths} />
+                    ) : (
+                        <SharedCostsView month={month} livePeople={livePeople} />
+                    )}
+                </>
             ) : sez === "altri" ? (
-                <AltriCostiView />
+                <>
+                    <MonthBar month={month} setMonth={setMonth} months={months} />
+                    {!monthReady ? (
+                        <MonthInitBanner month={month} months={months} rules={costRules} onDone={reloadMonths} />
+                    ) : (
+                        <AltriCostiView month={month} livePeople={livePeople} />
+                    )}
+                </>
             ) : (
                 <TargetSection />
             )}
@@ -1446,7 +1475,7 @@ function baseName(name: string): string {
     return name.replace(/ (W3|Multi|VS)$/, "");
 }
 
-function StoresView({ stores, onRefresh }: { stores: Store[]; onRefresh: () => void }) {
+function StoresView({ stores, onRefresh, month, livePeople }: { stores: Store[]; onRefresh: () => void; month: string; livePeople: boolean }) {
     const [detail, setDetail] = useState<Store | null>(null);
     const [aggregate, setAggregate] = useState<{ base: string; stores: Store[] } | null>(null);
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -1552,8 +1581,8 @@ function StoresView({ stores, onRefresh }: { stores: Store[]; onRefresh: () => v
                     );
                 })}
             </div>
-            {detail && <StoreDetail store={detail} onClose={() => { setDetail(null); onRefresh(); }} />}
-            {aggregate && <StoreAggregate base={aggregate.base} stores={aggregate.stores} onClose={() => setAggregate(null)} />}
+            {detail && <StoreDetail store={detail} onClose={() => { setDetail(null); onRefresh(); }} month={month} livePeople={livePeople} />}
+            {aggregate && <StoreAggregate base={aggregate.base} stores={aggregate.stores} onClose={() => setAggregate(null)} month={month} livePeople={livePeople} />}
             {newOpen && (
                 <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="glass-panel w-full max-w-sm p-6">
@@ -1582,7 +1611,7 @@ function StoresView({ stores, onRefresh }: { stores: Store[]; onRefresh: () => v
 interface SubCollab { full_name: string; role: string; grade: string | null; weekly_hours: number | null; company_cost: number | null; costo_gara: number | null }
 interface SubAgg { store: Store; items: CostItem[]; collab: SubCollab[]; pct: number; itemsA: number; itemsV: number; collabA: number; collabV: number; sharedA: number; sharedV: number; totA: number; totV: number }
 
-function StoreAggregate({ base, stores, onClose }: { base: string; stores: Store[]; onClose: () => void }) {
+function StoreAggregate({ base, stores, onClose, month, livePeople }: { base: string; stores: Store[]; onClose: () => void; month: string; livePeople: boolean }) {
     const [loading, setLoading] = useState(true);
     const [subs, setSubs] = useState<SubAgg[]>([]);
     const [comb, setComb] = useState({ totA: 0, totV: 0, items: 0, itemsV: 0, collab: 0, collabV: 0, shared: 0, sharedV: 0 });
@@ -1592,17 +1621,27 @@ function StoreAggregate({ base, stores, onClose }: { base: string; stores: Store
         (async () => {
             setLoading(true);
             const num = (x: unknown) => Number(x) || 0;
-            const sh = await supabase.from("shared_costs").select("amount_azienda,amount_visibile");
+            const sh = await supabase.from("shared_costs").select("amount_azienda,amount_visibile").eq("month", month);
             const totSharedA = ((sh.data as { amount_azienda: number }[]) || []).reduce((a, r) => a + num(r.amount_azienda), 0);
             const totSharedV = ((sh.data as { amount_visibile: number }[]) || []).reduce((a, r) => a + num(r.amount_visibile), 0);
+            // mesi chiusi: costi delle persone dallo snapshot congelato
+            let snapAll: { full_name: string; role: string; company_cost: number | null; visible_cost: number | null; store_names: string[] }[] = [];
+            if (!livePeople) {
+                const sn = await supabase.from("user_month_costs").select("full_name,role,company_cost,visible_cost,store_names").eq("month", month);
+                snapAll = (sn.data as typeof snapAll) || [];
+            }
             const built: SubAgg[] = [];
             for (const s of stores) {
                 const [it, cl] = await Promise.all([
-                    supabase.from("store_cost_items").select("id,label,amount_azienda,amount_visibile").eq("store_id", s.id).order("created_at"),
+                    supabase.from("store_cost_items").select("id,label,amount_azienda,amount_visibile").eq("store_id", s.id).eq("month", month).order("created_at"),
                     supabase.from("app_users").select("full_name,role,grade,weekly_hours,company_cost,costo_gara,user_stores!inner(store_name)").eq("user_stores.store_name", s.name).eq("status", "attivo"),
                 ]);
                 const items = (it.data as CostItem[]) || [];
-                const collab = (cl.data as SubCollab[]) || [];
+                const collab: SubCollab[] = livePeople
+                    ? ((cl.data as SubCollab[]) || [])
+                    : snapAll
+                          .filter((r) => (r.store_names || []).includes(s.name))
+                          .map((r) => ({ full_name: r.full_name, role: r.role, grade: null, weekly_hours: null, company_cost: r.company_cost, costo_gara: r.visible_cost }));
                 const pct = num(s.shared_percent);
                 const itemsA = items.reduce((a, r) => a + num(r.amount_azienda), 0);
                 const itemsV = items.reduce((a, r) => a + num(r.amount_visibile), 0);
@@ -1625,7 +1664,7 @@ function StoreAggregate({ base, stores, onClose }: { base: string; stores: Store
             setLoading(false);
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [stores, rules]);
+    }, [stores, rules, month, livePeople]);
 
     return (
         <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex justify-end">
@@ -1708,7 +1747,7 @@ interface SharedCost {
 }
 const money = (n: number) => `€ ${n.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) {
+function StoreDetail({ store, onClose, month, livePeople }: { store: Store; onClose: () => void; month: string; livePeople: boolean }) {
     const [collab, setCollab] = useState<SubCollab[]>([]);
     const rules = useRoleCosts();
     const [shared, setShared] = useState<SharedCost[]>([]);
@@ -1723,14 +1762,28 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
 
     const load = useCallback(async () => {
         setLoading(true);
-        const [cl, sh] = await Promise.all([
-            supabase.from("app_users").select("full_name,role,grade,weekly_hours,company_cost,costo_gara,user_stores!inner(store_name)").eq("user_stores.store_name", store.name).eq("status", "attivo"),
-            supabase.from("shared_costs").select("id,label,amount_azienda,amount_visibile").order("created_at"),
-        ]);
-        setCollab((cl.data as typeof collab) || []);
-        setShared((sh.data as SharedCost[]) || []);
+        const shQ = supabase.from("shared_costs").select("id,label,amount_azienda,amount_visibile").eq("month", month).order("created_at");
+        if (livePeople) {
+            const [cl, sh] = await Promise.all([
+                supabase.from("app_users").select("full_name,role,grade,weekly_hours,company_cost,costo_gara,user_stores!inner(store_name)").eq("user_stores.store_name", store.name).eq("status", "attivo"),
+                shQ,
+            ]);
+            setCollab((cl.data as typeof collab) || []);
+            setShared((sh.data as SharedCost[]) || []);
+        } else {
+            // mese chiuso: costi delle persone dallo snapshot congelato
+            const [cl, sh] = await Promise.all([
+                supabase.from("user_month_costs").select("full_name,role,company_cost,visible_cost,store_names").eq("month", month),
+                shQ,
+            ]);
+            const snap = ((cl.data as { full_name: string; role: string; company_cost: number | null; visible_cost: number | null; store_names: string[] }[]) || [])
+                .filter((r) => (r.store_names || []).includes(store.name))
+                .map((r) => ({ full_name: r.full_name, role: r.role, grade: null, weekly_hours: null, company_cost: r.company_cost, costo_gara: r.visible_cost }));
+            setCollab(snap);
+            setShared((sh.data as SharedCost[]) || []);
+        }
         setLoading(false);
-    }, [store.name]);
+    }, [store.name, month, livePeople]);
     useEffect(() => {
         load();
     }, [load]);
@@ -1828,7 +1881,7 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
                                     <span className="w-28 text-right">Visibile</span>
                                 </div>
                             </div>
-                            <FixedStoreCosts storeId={store.id} onTotals={onFixedTotals} />
+                            <FixedStoreCosts storeId={store.id} month={month} onTotals={onFixedTotals} />
                         </div>
 
                         {/* Voci di costo (per categoria) */}
@@ -1840,7 +1893,7 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
                                     <span className="w-24 text-right">Visibile</span>
                                 </div>
                             </div>
-                            <CategorizedCosts scope="store" table="store_cost_items" filter={{ store_id: store.id }} onTotals={onItemTotals} excludeFixed />
+                            <CategorizedCosts scope="store" table="store_cost_items" filter={{ store_id: store.id }} onTotals={onItemTotals} excludeFixed month={month} livePeople={livePeople} />
                         </div>
 
                         {/* Costi condivisi — quota di questo negozio (% sul totale) */}
@@ -1868,6 +1921,11 @@ function StoreDetail({ store, onClose }: { store: Store; onClose: () => void }) 
                             <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
                                 Collaboratori del negozio · {money(collabA)} <span className="text-slate-600">/ {money(collabV)} visibile</span>
                             </h4>
+                            {!livePeople && (
+                                <p className="text-[11px] text-amber-400/70 mb-2">
+                                    Costi delle persone congelati allo snapshot di {monthLabel(month)}.
+                                </p>
+                            )}
                             <div className="space-y-1.5">
                                 {collab.map((c, i) => (
                                     <div key={i} className="glass-card p-2.5 rounded-lg flex items-center gap-2 text-sm">
@@ -1917,7 +1975,7 @@ interface UserRef {
 
 // Costi divisi per categoria — riusabile per costi condivisi e costi negozio.
 // Una voce può essere collegata a un utente (Risorsa): prende il suo costo, aggiornato in automatico.
-function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideVisibile, excludeFixed }: { scope: string; table: string; filter?: Record<string, string>; onTotals?: (a: number, v: number) => void; withResources?: boolean; hideVisibile?: boolean; excludeFixed?: boolean }) {
+function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideVisibile, excludeFixed, month, livePeople = true }: { scope: string; table: string; filter?: Record<string, string>; onTotals?: (a: number, v: number) => void; withResources?: boolean; hideVisibile?: boolean; excludeFixed?: boolean; month: string; livePeople?: boolean }) {
     const [cats, setCats] = useState<Cat[]>([]);
     const [rows, setRows] = useState<CatCost[]>([]);
     const [users, setUsers] = useState<UserRef[]>([]);
@@ -1932,7 +1990,7 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
 
     const load = useCallback(async () => {
         setLoading(true);
-        let q = supabase.from(table).select("id,label,amount_azienda,amount_visibile,category_id,user_id");
+        let q = supabase.from(table).select("id,label,amount_azienda,amount_visibile,category_id,user_id").eq("month", month);
         if (filter) for (const [k, v] of Object.entries(filter)) q = q.eq(k, v);
         if (excludeFixed) q = q.eq("is_fixed", false); // le spese fisse hanno la loro sezione dedicata
         const [c, r, u] = await Promise.all([
@@ -1955,16 +2013,18 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
         setUsers((u.data as UserRef[]) || []);
         setLoading(false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [table, scope, filterKey, withResources]);
+    }, [table, scope, filterKey, withResources, month]);
     useEffect(() => { load(); }, [load]);
 
     const rules = useRoleCosts();
     const userMap = useMemo(() => Object.fromEntries(users.map((u) => [u.id, u])), [users]);
+    // Mese attivo: le voci-Risorsa leggono i costi vivi dall'anagrafica.
+    // Mesi passati: valgono gli importi congelati sulla riga.
     const rowCost = useCallback((r: CatCost) => {
-        const u = r.user_id ? userMap[r.user_id] : null;
+        const u = r.user_id && livePeople ? userMap[r.user_id] : null;
         if (u) return { a: Number(u.company_cost) || 0, v: effVisibleCost(u, rules).value || 0 };
         return { a: Number(r.amount_azienda) || 0, v: Number(r.amount_visibile) || 0 };
-    }, [userMap, rules]);
+    }, [userMap, rules, livePeople]);
 
     useEffect(() => {
         if (!onTotals) return;
@@ -1988,14 +2048,14 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
     const addRisorsa = async () => {
         const u = risUser ? userMap[risUser] : null;
         if (!u || !risorse) return;
-        const { error } = await supabase.from(table).insert({ label: u.full_name, amount_azienda: 0, amount_visibile: 0, category_id: risorse.id, user_id: u.id, ...(filter || {}) });
+        const { error } = await supabase.from(table).insert({ label: u.full_name, amount_azienda: 0, amount_visibile: 0, category_id: risorse.id, user_id: u.id, month, ...(filter || {}) });
         if (dbError("Aggiunta risorsa", error)) return;
         setRisUser("");
         load();
     };
     const addManualVoce = async (catId: string) => {
         if (!nl.trim()) return;
-        const { error } = await supabase.from(table).insert({ label: nl.trim(), amount_azienda: nAz ?? 0, amount_visibile: nVis ?? 0, category_id: catId || null, user_id: null, ...(filter || {}) });
+        const { error } = await supabase.from(table).insert({ label: nl.trim(), amount_azienda: nAz ?? 0, amount_visibile: nVis ?? 0, category_id: catId || null, user_id: null, month, ...(filter || {}) });
         if (dbError("Aggiunta voce", error)) return;
         setNl(""); setNAz(null); setNVis(null); setAddCat(null);
         load();
@@ -2057,8 +2117,8 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
                         return (
                             <div key={r.id} className="glass-card p-2.5 rounded-lg flex items-center gap-2">
                                 <span className="flex-1 text-sm text-slate-200 truncate">{u ? u.full_name : r.label}</span>
-                                <span className="w-24 text-right text-sm text-slate-400" title="Azienda">{money(Number(u?.company_cost) || 0)}</span>
-                                {!hideVisibile && <span className="w-24 text-right text-sm text-slate-400" title="Visibile">{money((u ? effVisibleCost(u, rules).value : 0) || 0)}</span>}
+                                <span className="w-24 text-right text-sm text-slate-400" title="Azienda">{money(livePeople ? Number(u?.company_cost) || 0 : Number(r.amount_azienda) || 0)}</span>
+                                {!hideVisibile && <span className="w-24 text-right text-sm text-slate-400" title="Visibile">{money(livePeople ? (u ? effVisibleCost(u, rules).value : 0) || 0 : Number(r.amount_visibile) || 0)}</span>}
                                 <button onClick={() => del(r.id)} className="text-slate-500 hover:text-rose-400 p-1"><Trash2 className="w-4 h-4" /></button>
                             </div>
                         );
@@ -2102,7 +2162,7 @@ function CategorizedCosts({ scope, table, filter, onTotals, withResources, hideV
     );
 }
 
-function SharedCostsView() {
+function SharedCostsView({ month, livePeople }: { month: string; livePeople: boolean }) {
     const [tot, setTot] = useState({ a: 0, v: 0 });
     const onT = useCallback((a: number, v: number) => setTot({ a, v }), []);
     return (
@@ -2113,12 +2173,12 @@ function SharedCostsView() {
                 </p>
                 <p className="text-xs text-slate-400 whitespace-nowrap">Totale: <span className="text-white font-semibold">{money(tot.a)}</span> <span className="text-slate-600">/ {money(tot.v)} visibile</span></p>
             </div>
-            <CategorizedCosts scope="shared" table="shared_costs" onTotals={onT} withResources />
+            <CategorizedCosts scope="shared" table="shared_costs" onTotals={onT} withResources month={month} livePeople={livePeople} />
         </div>
     );
 }
 
-function AltriCostiView() {
+function AltriCostiView({ month, livePeople }: { month: string; livePeople: boolean }) {
     const [tot, setTot] = useState({ a: 0, v: 0 });
     const onT = useCallback((a: number, v: number) => setTot({ a, v }), []);
     return (
@@ -2129,7 +2189,7 @@ function AltriCostiView() {
                 </p>
                 <p className="text-xs text-slate-400 whitespace-nowrap">Totale: <span className="text-white font-semibold">{money(tot.a)}</span></p>
             </div>
-            <CategorizedCosts scope="other" table="other_costs" onTotals={onT} withResources hideVisibile />
+            <CategorizedCosts scope="other" table="other_costs" onTotals={onT} withResources hideVisibile month={month} livePeople={livePeople} />
         </div>
     );
 }

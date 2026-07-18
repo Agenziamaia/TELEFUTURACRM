@@ -18,7 +18,7 @@ interface FixedItem {
     amount_visibile: number | null;
 }
 
-export function FixedStoreCosts({ storeId, onTotals }: { storeId: string; onTotals?: (a: number, v: number) => void }) {
+export function FixedStoreCosts({ storeId, month, onTotals }: { storeId: string; month: string; onTotals?: (a: number, v: number) => void }) {
     const [rows, setRows] = useState<FixedItem[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -28,23 +28,25 @@ export function FixedStoreCosts({ storeId, onTotals }: { storeId: string; onTota
             .from("store_cost_items")
             .select("id,label,amount_azienda,amount_visibile")
             .eq("store_id", storeId)
+            .eq("month", month)
             .eq("is_fixed", true);
         if (dbError("Caricamento spese fisse", error)) {
             setLoading(false);
             return;
         }
         let list = (data as FixedItem[]) || [];
-        // auto-riparazione: se a un negozio (es. creato dopo) mancano voci fisse, le creo
+        // auto-riparazione: se al negozio mancano voci fisse per questo mese, le creo
         const missing = FIXED_VOCI.filter((l) => !list.some((r) => r.label === l));
         if (missing.length) {
             const { error: e2 } = await supabase
                 .from("store_cost_items")
-                .insert(missing.map((label) => ({ store_id: storeId, label, amount_azienda: 0, amount_visibile: 0, is_fixed: true })));
+                .insert(missing.map((label) => ({ store_id: storeId, label, amount_azienda: 0, amount_visibile: 0, is_fixed: true, month })));
             if (!e2) {
                 const again = await supabase
                     .from("store_cost_items")
                     .select("id,label,amount_azienda,amount_visibile")
                     .eq("store_id", storeId)
+                    .eq("month", month)
                     .eq("is_fixed", true);
                 list = (again.data as FixedItem[]) || list;
             }
@@ -52,7 +54,7 @@ export function FixedStoreCosts({ storeId, onTotals }: { storeId: string; onTota
         list.sort((a, b) => FIXED_VOCI.indexOf(a.label) - FIXED_VOCI.indexOf(b.label));
         setRows(list);
         setLoading(false);
-    }, [storeId]);
+    }, [storeId, month]);
     useEffect(() => {
         load();
     }, [load]);
