@@ -88,6 +88,7 @@ interface AppUser {
     password: string | null;
     user_stores?: { store_name: string }[];
     user_brands?: { brand: string }[];
+    user_store_visibility?: { store_name: string }[];
 }
 
 interface Store {
@@ -101,7 +102,7 @@ interface Store {
     store_category: string | null;
 }
 
-const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[] } = {
+const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[]; visibility: string[] } = {
     full_name: "",
     match_name: "",
     email: "",
@@ -126,6 +127,7 @@ const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[] } = {
     note: "",
     stores: [],
     brands: [],
+    visibility: [],
 };
 
 // Genera una password robusta (evita caratteri ambigui). Usa crypto del browser.
@@ -196,7 +198,7 @@ function AmministrazioneInner() {
         setLoading(true);
         const { data: u, error: uErr } = await supabase
             .from("app_users")
-            .select("*, user_stores(store_name), user_brands(brand)")
+            .select("*, user_stores(store_name), user_brands(brand), user_store_visibility(store_name)")
             .order("full_name");
         if (isTableMissing(uErr)) {
             setTableMissing(true);
@@ -514,6 +516,7 @@ function UserCard({ u, rules, onOpen, onEdit }: { u: AppUser; rules: RoleCostRul
         .toUpperCase()
         .slice(0, 2);
     const negozi = (u.user_stores || []).map((s) => s.store_name);
+    const visibilita = (u.user_store_visibility || []).map((s) => s.store_name);
     const brands = (u.user_brands || []).map((b) => b.brand).sort((a, b) => BRANDS.indexOf(a) - BRANDS.indexOf(b));
     return (
         <div className="glass-card p-4 rounded-xl group cursor-pointer" onClick={onOpen}>
@@ -558,6 +561,18 @@ function UserCard({ u, rules, onOpen, onEdit }: { u: AppUser; rules: RoleCostRul
                         ))}
                         {negozi.length > 3 && (
                             <span className="text-[10px] px-1.5 py-0.5 text-slate-500">+{negozi.length - 3}</span>
+                        )}
+                        {visibilita.slice(0, 3).map((n) => (
+                            <span
+                                key={`v-${n}`}
+                                className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-emerald-500/30 text-emerald-300/80 flex items-center gap-1"
+                                title="Visibilità (nessun costo)"
+                            >
+                                <Eye className="w-2.5 h-2.5" /> {n}
+                            </span>
+                        ))}
+                        {visibilita.length > 3 && (
+                            <span className="text-[10px] px-1.5 py-0.5 text-emerald-500/60">+{visibilita.length - 3}</span>
                         )}
                     </div>
                     {brands.length > 0 && (
@@ -604,6 +619,7 @@ function UserForm({
             ...editing,
             stores: (editing.user_stores || []).map((s) => s.store_name),
             brands: (editing.user_brands || []).map((b) => b.brand),
+            visibility: (editing.user_store_visibility || []).map((s) => s.store_name),
         } as typeof EMPTY_USER & AppUser;
     });
     const [saving, setSaving] = useState(false);
@@ -613,7 +629,7 @@ function UserForm({
 
     const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
 
-    const toggleIn = (key: "stores" | "brands", val: string) =>
+    const toggleIn = (key: "stores" | "brands" | "visibility", val: string) =>
         setF((p) => {
             const arr = (p[key] as string[]) || [];
             return { ...p, [key]: arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val] };
@@ -684,11 +700,15 @@ function UserForm({
         // riscrivi associazioni
         await supabase.from("user_stores").delete().eq("user_id", userId);
         await supabase.from("user_brands").delete().eq("user_id", userId);
+        await supabase.from("user_store_visibility").delete().eq("user_id", userId);
         const st = (f.stores as string[]) || [];
         const br = (f.brands as string[]) || [];
+        const vis = (f.visibility as string[]) || [];
         if (st.length)
             await supabase.from("user_stores").insert(st.map((store_name) => ({ user_id: userId, store_name })));
         if (br.length) await supabase.from("user_brands").insert(br.map((brand) => ({ user_id: userId, brand })));
+        if (vis.length)
+            await supabase.from("user_store_visibility").insert(vis.map((store_name) => ({ user_id: userId, store_name })));
 
         setSaving(false);
         onSaved();
@@ -872,8 +892,9 @@ function UserForm({
                         </Field>
                     )}
 
-                    {/* Negozi */}
-                    <Field label="Negozi associati">
+                    {/* Negozi: dove CADE il costo della persona */}
+                    <Field label="Negozi (attribuzione costo)">
+                        <p className="text-[10px] text-slate-500 mb-1.5">Il costo della persona pesa su questi punti vendita.</p>
                         <div className="flex flex-wrap gap-2">
                             {stores.map((s) => {
                                 const on = (f.stores as string[]).includes(s.name);
@@ -894,6 +915,33 @@ function UserForm({
                                 );
                             })}
                             {stores.length === 0 && <span className="text-xs text-slate-500">Nessun negozio in anagrafica.</span>}
+                        </div>
+                    </Field>
+
+                    {/* Visibilità: cosa deve VEDERE, senza impatto sui costi */}
+                    <Field label="Visibilità negozi (nessun costo)">
+                        <p className="text-[10px] text-slate-500 mb-1.5">
+                            La persona vede target, avanzamenti e problemi di questi punti vendita; il suo costo NON pesa su di loro.
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                            {stores.map((s) => {
+                                const on = (f.visibility as string[]).includes(s.name);
+                                return (
+                                    <button
+                                        key={s.id}
+                                        type="button"
+                                        onClick={() => toggleIn("visibility", s.name)}
+                                        className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
+                                            on
+                                                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200"
+                                                : "bg-white/5 border-white/10 text-slate-400 hover:text-slate-200"
+                                        }`}
+                                    >
+                                        {on && <Eye className="w-3 h-3 inline mr-1" />}
+                                        {s.name}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </Field>
 
@@ -1027,6 +1075,7 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
     }, [matchName, area]);
 
     const negozi = (u.user_stores || []).map((s) => s.store_name);
+    const visibilita = (u.user_store_visibility || []).map((s) => s.store_name);
     const brands = (u.user_brands || []).map((b) => b.brand);
 
     const kpis = act
@@ -1084,6 +1133,11 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
                         {negozi.map((n) => (
                             <span key={n} className="text-xs px-2 py-1 rounded bg-white/5 border border-white/10 text-slate-300 flex items-center gap-1">
                                 <Building2 className="w-3 h-3" /> {n}
+                            </span>
+                        ))}
+                        {visibilita.map((n) => (
+                            <span key={`v-${n}`} className="text-xs px-2 py-1 rounded border border-dashed border-emerald-500/30 text-emerald-300/80 flex items-center gap-1" title="Visibilità (nessun costo)">
+                                <Eye className="w-3 h-3" /> {n}
                             </span>
                         ))}
                         {brands.map((b) => (
