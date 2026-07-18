@@ -41,6 +41,8 @@ interface TUser {
     id: string;
     full_name: string;
     role: string;
+    user_stores?: { store_name: string }[];
+    user_brands?: { brand: string }[];
 }
 interface UnlockRule {
     id: string;
@@ -52,6 +54,10 @@ interface Subject {
     ref: string;
     label: string;
     sub: string;
+    // metadati per i filtri (solo personale)
+    stores?: string[];
+    brands?: string[];
+    role?: string;
 }
 
 type SubjectType = "user" | "role_grade" | "store" | "store_category";
@@ -92,7 +98,7 @@ export function TargetSection() {
             supabase.from("gare").select("id,name,active").order("created_at", { ascending: false }),
             supabase.from("target_metrics").select("id,name").order("sort_order"),
             supabase.from("stores").select("id,name").order("name"),
-            supabase.from("app_users").select("id,full_name,role").eq("status", "attivo").order("full_name"),
+            supabase.from("app_users").select("id,full_name,role,user_stores(store_name),user_brands(brand)").eq("status", "attivo").order("full_name"),
         ]);
         if (dbError("Caricamento gare", g.error) || dbError("Caricamento metriche", m.error)) {
             setLoading(false);
@@ -186,7 +192,15 @@ export function TargetSection() {
 
     const subjectsFor = useCallback(
         (type: SubjectType): Subject[] => {
-            if (type === "user") return users.map((u) => ({ ref: u.id, label: u.full_name, sub: roleLabel(u.role) }));
+            if (type === "user")
+                return users.map((u) => ({
+                    ref: u.id,
+                    label: u.full_name,
+                    sub: roleLabel(u.role),
+                    stores: (u.user_stores || []).map((s) => s.store_name),
+                    brands: (u.user_brands || []).map((b) => b.brand),
+                    role: u.role,
+                }));
             if (type === "role_grade")
                 return ROLES.flatMap((r) =>
                     r.grades.length
@@ -495,7 +509,26 @@ function TargetEditor({
         setSaving(false);
     };
 
-    const filtered = subjects.filter((s) => !search || s.label.toLowerCase().includes(search.toLowerCase()));
+    // filtri (attivi solo per il personale): negozio, brand associato, categoria (ruolo)
+    const [fStore, setFStore] = useState("");
+    const [fBrand, setFBrand] = useState("");
+    const [fRole, setFRole] = useState("");
+    const storeOptions = useMemo(() => Array.from(new Set(subjects.flatMap((s) => s.stores || []))).sort(), [subjects]);
+    const brandOptions = useMemo(() => Array.from(new Set(subjects.flatMap((s) => s.brands || []))).sort(), [subjects]);
+    const roleOptions = useMemo(() => ROLES.filter((r) => subjects.some((s) => s.role === r.id)), [subjects]);
+    // cambiando filtro si svuota la selezione multipla (mai soggetti selezionati ma nascosti)
+    const changeFilter = (setter: (v: string) => void) => (v: string) => {
+        if (multi) clearChecks();
+        setter(v);
+    };
+
+    const filtered = subjects.filter(
+        (s) =>
+            (!search || s.label.toLowerCase().includes(search.toLowerCase())) &&
+            (!fStore || (s.stores || []).includes(fStore)) &&
+            (!fBrand || (s.brands || []).includes(fBrand)) &&
+            (!fRole || s.role === fRole),
+    );
     const selSubject = subjects.find((s) => s.ref === sel);
     const label = kind === "paletto" ? "Paletto (minimo di gara)" : "Target";
 
@@ -503,6 +536,36 @@ function TargetEditor({
         <div className="grid gap-4 lg:grid-cols-[300px,1fr] items-start">
             {/* Soggetti */}
             <div className="glass-panel p-3 space-y-2">
+                {subjectType === "user" && (
+                    <div className="space-y-1.5">
+                        <select className="glass-input w-full py-1.5 text-xs" value={fStore} onChange={(e) => changeFilter(setFStore)(e.target.value)}>
+                            <option value="">Tutti i negozi</option>
+                            {storeOptions.map((n) => (
+                                <option key={n} value={n}>
+                                    {n}
+                                </option>
+                            ))}
+                        </select>
+                        <div className="grid grid-cols-2 gap-1.5">
+                            <select className="glass-input w-full py-1.5 text-xs" value={fBrand} onChange={(e) => changeFilter(setFBrand)(e.target.value)}>
+                                <option value="">Tutti i brand</option>
+                                {brandOptions.map((b) => (
+                                    <option key={b} value={b}>
+                                        {b}
+                                    </option>
+                                ))}
+                            </select>
+                            <select className="glass-input w-full py-1.5 text-xs" value={fRole} onChange={(e) => changeFilter(setFRole)(e.target.value)}>
+                                <option value="">Tutte le categorie</option>
+                                {roleOptions.map((r) => (
+                                    <option key={r.id} value={r.id}>
+                                        {r.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                )}
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                     <input
@@ -514,7 +577,7 @@ function TargetEditor({
                 </div>
                 <div className="flex items-center justify-between px-1">
                     <span className="text-[10px] text-slate-500">
-                        {multi ? `${multiRefs.length} selezionati` : "Spunta più soggetti per un valore comune"}
+                        {multi ? `${multiRefs.length} selezionati` : `${filtered.length} soggetti · spunta per valore comune`}
                     </span>
                     <span className="flex gap-2 shrink-0">
                         <button onClick={() => selectAllFiltered(filtered.map((s) => s.ref))} className="text-[10px] text-indigo-300 hover:text-indigo-200">
