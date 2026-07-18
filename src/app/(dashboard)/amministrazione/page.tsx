@@ -22,6 +22,7 @@ import {
     gradeLabel,
     areaOf,
     areaLabel,
+    BRAND_COLORS,
 } from "@/lib/roles";
 import {
     Shield,
@@ -441,6 +442,22 @@ function TableMissingBanner() {
 /* ================================================================== */
 /* Card utente                                                         */
 /* ================================================================== */
+// Chip brand col colore originale dell'operatore
+function BrandChip({ brand, md }: { brand: string; md?: boolean }) {
+    const c = BRAND_COLORS[brand];
+    const cls = md
+        ? "text-xs px-2 py-1 rounded flex items-center gap-1 border font-medium"
+        : "text-[10px] px-1.5 py-0.5 rounded border font-medium";
+    if (!c)
+        return <span className={`${cls} bg-violet-500/10 border-violet-500/20 text-violet-300`}>{brand}</span>;
+    return (
+        <span className={cls} style={{ backgroundColor: `${c.color}20`, borderColor: `${c.color}55`, color: c.text }}>
+            {md && <Tag className="w-3 h-3" />}
+            {brand}
+        </span>
+    );
+}
+
 function UserCard({ u, onOpen, onEdit }: { u: AppUser; onOpen: () => void; onEdit: () => void }) {
     const initials = u.full_name
         .split(" ")
@@ -449,6 +466,7 @@ function UserCard({ u, onOpen, onEdit }: { u: AppUser; onOpen: () => void; onEdi
         .toUpperCase()
         .slice(0, 2);
     const negozi = (u.user_stores || []).map((s) => s.store_name);
+    const brands = (u.user_brands || []).map((b) => b.brand).sort((a, b) => BRANDS.indexOf(a) - BRANDS.indexOf(b));
     return (
         <div className="glass-card p-4 rounded-xl group cursor-pointer" onClick={onOpen}>
             <div className="flex items-start gap-3">
@@ -488,6 +506,13 @@ function UserCard({ u, onOpen, onEdit }: { u: AppUser; onOpen: () => void; onEdi
                             <span className="text-[10px] px-1.5 py-0.5 text-slate-500">+{negozi.length - 3}</span>
                         )}
                     </div>
+                    {brands.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                            {brands.map((b) => (
+                                <BrandChip key={b} brand={b} />
+                            ))}
+                        </div>
+                    )}
                 </div>
                 <button
                     onClick={(e) => {
@@ -971,9 +996,7 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
                             </span>
                         ))}
                         {brands.map((b) => (
-                            <span key={b} className="text-xs px-2 py-1 rounded bg-violet-500/10 border border-violet-500/20 text-violet-300 flex items-center gap-1">
-                                <Tag className="w-3 h-3" /> {b}
-                            </span>
+                            <BrandChip key={b} brand={b} md />
                         ))}
                     </div>
                     {/* subtabs */}

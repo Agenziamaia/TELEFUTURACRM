@@ -177,6 +177,17 @@ export const BRANDS: string[] = [
     "Energia",
 ];
 
+// Colori originali dei brand per le chip UI: color = base (sfondo/bordo), text = variante leggibile su tema scuro
+export const BRAND_COLORS: Record<string, { color: string; text: string }> = {
+    WindTre: { color: "#ff6600", text: "#ffa366" },
+    Vodafone: { color: "#e60000", text: "#ff6666" },
+    Fastweb: { color: "#ffd400", text: "#ffe066" },
+    Sky: { color: "#0072c9", text: "#66b5ff" },
+    Tim: { color: "#004691", text: "#6fa8ff" },
+    Iliad: { color: "#ff0032", text: "#ff667f" },
+    Energia: { color: "#16a34a", text: "#4ade80" },
+};
+
 export function getRole(id: string): RoleDef | undefined {
     return ROLES.find((r) => r.id === id);
 }
