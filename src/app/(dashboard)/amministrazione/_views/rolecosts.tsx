@@ -63,9 +63,12 @@ interface ComboRow {
 }
 
 export function RoleCostsModal({ onClose }: { onClose: () => void }) {
+    // L'area Outbound è esclusa: agenti a P.IVA e direzione hanno costi DINAMICI legati
+    // alla produzione (solo costo azienda: agenti = fatturato, direttore = 20% del fatturato agenti).
+    // Non impattano i negozi, quindi niente costo visibile.
     const combos: ComboRow[] = useMemo(
         () =>
-            ROLES.flatMap((r) =>
+            ROLES.filter((r) => r.area !== "ob").flatMap((r) =>
                 r.grades.length
                     ? r.grades.map((g) => ({ role: r.id, grade: g.id, label: `${r.label} — ${g.label}`, area: r.area }))
                     : [{ role: r.id, grade: "", label: r.label, area: r.area }],
@@ -162,6 +165,8 @@ export function RoleCostsModal({ onClose }: { onClose: () => void }) {
                         Il valore <span className="text-slate-300">€/mese</span> si applica com&apos;è; il valore{" "}
                         <span className="text-slate-300">€/ora</span> diventa mensile con le ore settimanali della persona (× 52 ÷ 12).
                         Il costo impostato sulla <span className="text-slate-300">singola persona</span> vince sempre sulla regola.
+                        L&apos;<span className="text-slate-300">Outbound</span> non è in tabella: agenti a P.IVA e direzione hanno
+                        costi dinamici legati alla produzione (solo costo azienda, nessun costo visibile).
                     </p>
                     {loading ? (
                         <div className="flex justify-center py-10 text-slate-400">
