@@ -7,7 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { ToastHost, dbError } from "./_views/toast";
 import { TargetSection } from "./_views/target";
 import { MoneyInput } from "./_views/money";
-import { RoleCostsModal, useRoleCosts, effVisibleCost } from "./_views/rolecosts";
+import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import {
     ROLES,
     AREAS,
@@ -175,6 +175,7 @@ function AmministrazioneInner() {
     const [showForm, setShowForm] = useState(false);
     const [editing, setEditing] = useState<AppUser | null>(null);
     const [showRoleCosts, setShowRoleCosts] = useState(false);
+    const costRules = useRoleCosts();
 
     // scheda attività
     const [detail, setDetail] = useState<AppUser | null>(null);
@@ -380,6 +381,7 @@ function AmministrazioneInner() {
                                         <UserCard
                                             key={u.id}
                                             u={u}
+                                            rules={costRules}
                                             onOpen={() => setDetail(u)}
                                             onEdit={() => {
                                                 setEditing(u);
@@ -473,7 +475,8 @@ function BrandChip({ brand, md }: { brand: string; md?: boolean }) {
     );
 }
 
-function UserCard({ u, onOpen, onEdit }: { u: AppUser; onOpen: () => void; onEdit: () => void }) {
+function UserCard({ u, rules, onOpen, onEdit }: { u: AppUser; rules: RoleCostRule[]; onOpen: () => void; onEdit: () => void }) {
+    const eff = effVisibleCost(u, rules);
     const initials = u.full_name
         .split(" ")
         .map((n) => n[0])
@@ -500,6 +503,12 @@ function UserCard({ u, onOpen, onEdit }: { u: AppUser; onOpen: () => void; onEdi
                     <p className="text-xs text-indigo-300 mt-0.5">
                         {roleLabel(u.role)}
                         {u.grade ? ` · ${gradeLabel(u.role, u.grade)}` : ""}
+                        {eff.value != null && (
+                            <span className="text-emerald-300/90">
+                                {" "}· € {eff.value.toLocaleString("it-IT")}
+                                {eff.fromRule ? "" : <span className="text-amber-400/80" title="Costo personale: vince sulla regola"> ●</span>}
+                            </span>
+                        )}
                     </p>
                     {(u.company || u.weekly_hours) && (
                         <p className="text-[11px] text-slate-500 mt-0.5">
@@ -558,6 +567,7 @@ function UserForm({
     onClose: () => void;
     onSaved: () => void;
 }) {
+    const formRules = useRoleCosts();
     const [f, setF] = useState(() => {
         if (!editing) return { ...EMPTY_USER };
         return {
@@ -791,8 +801,22 @@ function UserForm({
                                 wrapClass="w-full"
                                 value={f.costo_gara ?? null}
                                 onChange={(v) => set("costo_gara", v)}
-                                placeholder="costi/ricavi PV"
+                                placeholder="vuoto = usa la regola del ruolo"
                             />
+                            {f.costo_gara == null &&
+                                (() => {
+                                    const e = effVisibleCost(
+                                        { role: f.role, grade: f.grade, weekly_hours: f.weekly_hours ? Number(f.weekly_hours) : null, costo_gara: null },
+                                        formRules,
+                                    );
+                                    return (
+                                        <p className="text-[10px] text-slate-500 mt-1">
+                                            {e.value != null
+                                                ? `Eredita dalla regola del ruolo: € ${e.value.toLocaleString("it-IT")}`
+                                                : "Nessuna regola per questo ruolo/grado (o mancano le ore settimanali)."}
+                                        </p>
+                                    );
+                                })()}
                         </Field>
                         {contractNeedsExpiry(f.contract_type) && (
                             <Field label="Scadenza contratto">
