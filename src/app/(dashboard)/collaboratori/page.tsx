@@ -7,7 +7,7 @@ import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 
-type TabId = "badge" | "ferie" | "malattia";
+type TabId = "badge" | "ferie" | "malattia" | "ritardi";
 
 function CollaboratoriPageContent() {
     const { user } = useAuth();
@@ -20,6 +20,7 @@ function CollaboratoriPageContent() {
         badge: { label: "Badge", icon: Clock, desc: "Gestione presenze e timbrature in tempo reale" },
         ferie: { label: "Ferie", icon: CalendarDays, desc: "Pianificazione, richieste e approvazione ferie" },
         malattia: { label: "Malattia", icon: Shield, desc: "Registro e monitoraggio assenze per malattia" },
+        ritardi: { label: "Ritardi", icon: Clock3, desc: "Segnalazione e monitoraggio ritardi (staff di negozio)" },
     };
 
     const currentSection = sectionInfo[tab] || sectionInfo.badge;
@@ -54,6 +55,7 @@ function CollaboratoriPageContent() {
                         <p className="text-slate-500 max-w-md mx-auto mt-2">Questa sezione è accessibile solo agli amministratori e ai responsabili.</p>
                     </div>
                 )}
+                {tab === "ritardi" && <RitardiSection />}
             </div>
         </div>
     );
@@ -942,6 +944,182 @@ function MalattiaSection() {
                                 >
                                     {saving ? "Salvataggio..." : "Conferma Registrazione"}
                                 </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+type RitardoRow = { id: string; employee_name: string; store: string; date: string; minutes: number | null; reason: string | null; reported_by: string | null };
+
+function RitardiSection() {
+    const { user } = useAuth();
+    const reportAll = ["admin", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
+    const isStoreMgr = user?.role === "store_manager";
+    const canReportOthers = reportAll || isStoreMgr;
+
+    const [rows, setRows] = useState<RitardoRow[]>([]);
+    const [showNewModal, setShowNewModal] = useState(false);
+    const [filterPerson, setFilterPerson] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    const [mode, setMode] = useState<"self" | "other">("self");
+    const [newEmployee, setNewEmployee] = useState("");
+    const [newStore, setNewStore] = useState("");
+    const [newReason, setNewReason] = useState("");
+
+    const fetchRows = useCallback(async () => {
+        const { data } = await supabase.from("ritardi").select("*").order("date", { ascending: false });
+        setRows((data ?? []) as RitardoRow[]);
+    }, []);
+    useEffect(() => {
+        fetchRows();
+    }, [fetchRows]);
+
+    // visibilità: direzione+ vede tutto; store manager il proprio negozio; gli altri solo i propri
+    const scoped = rows.filter((r) => {
+        if (reportAll) return true;
+        if (isStoreMgr && user?.negozio) return (r.store || "").toLowerCase().includes(user.negozio.toLowerCase()) || user.negozio.toLowerCase().includes((r.store || "").toLowerCase());
+        return r.employee_name === user?.name;
+    });
+    const filtered = scoped.filter((r) => r.employee_name.toLowerCase().includes(filterPerson.toLowerCase()));
+    const uniquePeople = new Set(filtered.map((r) => r.employee_name)).size;
+
+    const openModal = () => {
+        setMode("self");
+        setNewEmployee("");
+        setNewStore(user?.negozio || "");
+        setNewReason("");
+        setShowNewModal(true);
+    };
+
+    const handleCreate = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const isOther = canReportOthers && mode === "other";
+        const emp = (isOther ? newEmployee : user?.name || "").trim();
+        const store = (isOther ? newStore : user?.negozio || "").trim();
+        if (!emp) return;
+        setSaving(true);
+        const today = new Date().toISOString().slice(0, 10);
+        await supabase.from("ritardi").insert({
+            employee_name: emp,
+            store: store || "",
+            date: today,
+            reason: newReason.trim() || null,
+            reported_by: user?.name || null,
+        });
+        await fetchRows();
+        setShowNewModal(false);
+        setSaving(false);
+    };
+
+    const formatDate = (d: string) => new Date(d).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+    return (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-2 gap-4 max-w-lg">
+                <div className="glass-panel p-5 border-l-4 border-l-amber-500">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Ritardi</p>
+                    <p className="text-2xl font-black text-white">{filtered.length}</p>
+                </div>
+                <div className="glass-panel p-5 border-l-4 border-l-slate-400">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Collaboratori Coinvolti</p>
+                    <p className="text-2xl font-black text-white">{uniquePeople}</p>
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-1">
+                    <div className="space-y-0.5">
+                        <h3 className="text-lg font-bold text-white uppercase tracking-tight">Registro Ritardi</h3>
+                        <p className="text-xs text-slate-500">
+                            {reportAll ? "Vista completa" : isStoreMgr ? "Ritardi del tuo punto vendita" : "I tuoi ritardi — puoi autodenunciarti"}
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                        {(reportAll || isStoreMgr) && (
+                            <input type="text" placeholder="Collaboratore..." value={filterPerson} onChange={(e) => setFilterPerson(e.target.value)} className="glass-input !h-9 px-3 text-xs w-full sm:w-32" />
+                        )}
+                        <button onClick={openModal} className="h-9 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition-colors flex items-center gap-2">
+                            <Clock3 className="w-3.5 h-3.5" />
+                            Segnala ritardo
+                        </button>
+                    </div>
+                </div>
+
+                <div className="glass-card overflow-hidden">
+                    <div className="overflow-x-auto custom-scrollbar">
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-white/[0.02] border-b border-white/5">
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Collaboratore</th>
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Negozio</th>
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data</th>
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Motivo</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {filtered.map((r) => (
+                                    <tr key={r.id} className="hover:bg-white/[0.01] transition-colors group">
+                                        <td className="px-5 py-4">
+                                            <p className="text-sm font-bold text-white group-hover:text-amber-400 transition-colors">{r.employee_name}</p>
+                                            {r.reported_by && r.reported_by !== r.employee_name && <p className="text-[10px] text-slate-600">segnalato da {r.reported_by}</p>}
+                                        </td>
+                                        <td className="px-5 py-4"><p className="text-[10px] text-slate-500 uppercase tracking-wider">{r.store || "—"}</p></td>
+                                        <td className="px-5 py-4 text-xs text-slate-400">{formatDate(r.date)}</td>
+                                        <td className="px-5 py-4 text-xs text-slate-400">{r.reason || "—"}</td>
+                                    </tr>
+                                ))}
+                                {filtered.length === 0 && (
+                                    <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-500 text-sm italic">Nessun ritardo registrato</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            {showNewModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowNewModal(false)}>
+                    <div className="glass-card w-full max-w-md p-6 overflow-hidden relative" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2"><Clock3 className="w-5 h-5 text-amber-500" />Segnala ritardo</h3>
+                            <button onClick={() => setShowNewModal(false)} className="p-1 hover:bg-white/5 rounded-lg transition-colors"><X className="w-5 h-5 text-slate-500" /></button>
+                        </div>
+                        <form onSubmit={handleCreate} className="space-y-4">
+                            {canReportOthers && (
+                                <div className="flex gap-2 p-1 bg-white/5 rounded-xl">
+                                    <button type="button" onClick={() => setMode("self")} className={cn("flex-1 h-9 rounded-lg text-xs font-bold transition-colors", mode === "self" ? "bg-amber-500 text-white" : "text-slate-400 hover:text-white")}>Per me stesso</button>
+                                    <button type="button" onClick={() => setMode("other")} className={cn("flex-1 h-9 rounded-lg text-xs font-bold transition-colors", mode === "other" ? "bg-amber-500 text-white" : "text-slate-400 hover:text-white")}>Per un collaboratore</button>
+                                </div>
+                            )}
+                            {!canReportOthers || mode === "self" ? (
+                                <p className="text-xs text-slate-400 bg-white/5 rounded-lg p-3">
+                                    Segnali il tuo ritardo di <b className="text-white">oggi</b>. Nome, negozio e data sono automatici.
+                                </p>
+                            ) : (
+                                <>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
+                                        <input type="text" required placeholder="Nome e Cognome" value={newEmployee} onChange={(e) => setNewEmployee(e.target.value)} className="glass-input !h-10 text-xs w-full" />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Punto Vendita</label>
+                                        <input type="text" placeholder="Nome Negozio" value={newStore} onChange={(e) => setNewStore(e.target.value)} readOnly={!reportAll} className={cn("glass-input !h-10 text-xs w-full", !reportAll && "opacity-70")} />
+                                        {isStoreMgr && !reportAll && <p className="text-[10px] text-slate-600 ml-1">Solo collaboratori del tuo punto vendita.</p>}
+                                    </div>
+                                </>
+                            )}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Motivo (opzionale)</label>
+                                <input type="text" placeholder="Es. traffico, imprevisto…" value={newReason} onChange={(e) => setNewReason(e.target.value)} className="glass-input !h-10 text-xs w-full" />
+                            </div>
+                            <div className="pt-2 flex gap-3">
+                                <button type="button" onClick={() => setShowNewModal(false)} className="flex-1 h-11 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs transition-all border border-white/5">Annulla</button>
+                                <button type="submit" disabled={saving} className="flex-[2] h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition-all shadow-lg shadow-amber-500/25 disabled:opacity-50">{saving ? "Salvataggio..." : "Conferma"}</button>
                             </div>
                         </form>
                     </div>

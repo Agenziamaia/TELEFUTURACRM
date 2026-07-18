@@ -54,7 +54,8 @@ export const ROLES: RoleDef[] = [
             { id: "store_manager_senior", label: "Store Manager Senior" },
         ],
     },
-    { id: "supervisore", label: "Supervisore", area: "pv", grades: [] },
+    { id: "direttore_commerciale", label: "Direttore Commerciale", area: "pv", grades: [] },
+    { id: "tecnico", label: "Tecnico", area: "pv", grades: [] },
     {
         id: "caller",
         label: "Caller",
@@ -100,10 +101,68 @@ export const ROLES: RoleDef[] = [
         grades: [
             { id: "amministrazione", label: "Amministrazione" },
             { id: "back_office", label: "Back Office" },
+            { id: "back_office_caller", label: "Back Office / Caller" },
         ],
     },
+    { id: "direttore_generale", label: "Direttore Generale", area: "sede", grades: [] },
     { id: "admin", label: "Admin", area: "sede", grades: [] },
 ];
+
+// Ruoli con visibilità su TUTTI i negozi
+export function seesAllStores(role: string | null | undefined): boolean {
+    return role === "admin" || role === "direttore_generale" || role === "amministrativo";
+}
+
+// Ruoli "amministrativi o superiori" (es. approvazione modifiche profilo)
+export function isAdminOrAbove(role: string | null | undefined): boolean {
+    return role === "amministrativo" || role === "direttore_generale" || role === "admin";
+}
+
+// Il badge (timbratura) è riservato al call center; i ruoli di negozio non lo usano.
+export function canUseBadge(role: string | null | undefined): boolean {
+    return areaOf(role || "") === "cc";
+}
+
+// Categorie di punto vendita (per target e classificazione)
+export const STORE_CATEGORIES: string[] = [
+    "Franchising W3",
+    "Multi Brand Puri",
+    "Fr W3 + Multi Brand",
+    "Vodafone Store",
+    "VS + Multibrand",
+];
+
+// Società di assunzione del collaboratore
+export const EMPLOYMENT_COMPANIES: string[] = [
+    "Telefutura SRL",
+    "Telefutura 2 SRL",
+    "APS",
+    "Partita IVA",
+];
+
+// Ore settimanali contrattuali
+export const WEEKLY_HOURS: number[] = [20, 24, 30, 36, 40];
+
+export function hoursType(h: number | null | undefined): string {
+    if (!h) return "";
+    return h >= 36 ? "Full time" : "Part time";
+}
+
+// Tipo di contratto
+export const CONTRACT_TYPES: string[] = [
+    "Indeterminato",
+    "Determinato",
+    "Apprendistato",
+    "Tirocinio",
+    "Collaborazione",
+    "Partita IVA",
+    "Compenso Amministratore",
+];
+
+// Il contratto ha una scadenza (determinato / apprendistato / tirocinio)
+export function contractNeedsExpiry(t: string | null | undefined): boolean {
+    return t === "Determinato" || t === "Apprendistato" || t === "Tirocinio";
+}
 
 export const BRANDS: string[] = [
     "WindTre",

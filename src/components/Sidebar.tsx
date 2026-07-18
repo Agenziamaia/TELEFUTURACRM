@@ -16,6 +16,7 @@ import {
     FilePlus,
     CalendarDays,
     Clock,
+    Clock3,
     Users,
     Smartphone,
     Store,
@@ -66,6 +67,7 @@ const navigation: (NavGroup | NavItem)[] = [
             { name: "Badge", href: "/collaboratori?tab=badge", icon: Clock, roles: ["admin", "store_manager", "back_office", "supervisore", "agente"] },
             { name: "Ferie", href: "/collaboratori?tab=ferie", icon: CalendarDays, roles: ["admin", "store_manager", "back_office", "supervisore", "agente"] },
             { name: "Malattia", href: "/collaboratori?tab=malattia", icon: Shield, roles: ["admin", "store_manager", "back_office", "supervisore"] },
+            { name: "Ritardi", href: "/collaboratori?tab=ritardi", icon: Clock3, roles: ["admin", "store_manager", "back_office", "supervisore", "agente"] },
         ],
     },
     {
