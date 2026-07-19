@@ -143,6 +143,38 @@ export async function listMessages(convId: string): Promise<ChatMessage[]> {
   }));
 }
 
+/**
+ * Token inline di un tag dentro il testo del messaggio: `@[tipo:id|etichetta]`.
+ * Permette di scrivere "ho sentito @Mario Rossi per @CTR_0001" con il tag nel punto giusto.
+ */
+export const REF_TOKEN_RE = /@\[(cliente|contratto|appuntamento):([^\]|]+)\|([^\]]+)\]/g;
+export const refToken = (r: ChatRef) => `@[${r.type}:${r.id}|${r.label}]`;
+
+/** Spezza il corpo del messaggio in testo semplice + tag, mantenendo l'ordine. */
+export function splitBody(body: string): Array<{ text: string } | { ref: ChatRef }> {
+  const out: Array<{ text: string } | { ref: ChatRef }> = [];
+  let last = 0;
+  const re = new RegExp(REF_TOKEN_RE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body)) !== null) {
+    if (m.index > last) out.push({ text: body.slice(last, m.index) });
+    out.push({ ref: { type: m[1] as RefKind, id: m[2], label: m[3] } });
+    last = m.index + m[0].length;
+  }
+  if (last < body.length) out.push({ text: body.slice(last) });
+  return out;
+}
+
+/** Ricerca su tutti e tre i tipi insieme (usata dall'autocomplete con "@"). */
+export async function searchAllEntities(q: string): Promise<ChatRef[]> {
+  const [a, b, c] = await Promise.all([
+    searchEntities("cliente", q).catch(() => []),
+    searchEntities("contratto", q).catch(() => []),
+    searchEntities("appuntamento", q).catch(() => []),
+  ]);
+  return [...a.slice(0, 6), ...b.slice(0, 6), ...c.slice(0, 4)];
+}
+
 /** Ricerca record del CRM da taggare in chat (cliente / contratto / appuntamento). */
 export async function searchEntities(kind: RefKind, q: string): Promise<ChatRef[]> {
   const s = q.trim();

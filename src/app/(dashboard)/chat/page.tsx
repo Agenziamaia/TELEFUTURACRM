@@ -7,6 +7,7 @@ import Link from "next/link";
 import {
   getInbox, listMessages, getParticipants, sendMessage, markRead,
   subscribeMessages, subscribeInbox, subscribeReceipts, refHref,
+  splitBody, refToken, searchAllEntities,
 } from "@/lib/chat";
 import { roleLabel } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
@@ -56,6 +57,8 @@ export default function ChatPage() {
   const [files, setFiles] = useState([]);
   const [refs, setRefs] = useState([]);          // record CRM taggati nel messaggio in corso
   const [showTag, setShowTag] = useState(false);
+  const [mention, setMention] = useState(null);  // autocomplete "@": { start, query }
+  const [mentionRows, setMentionRows] = useState([]);
   const [showNew, setShowNew] = useState(false);
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
@@ -102,6 +105,32 @@ export default function ChatPage() {
 
   // La FileList e' "live": e.target.value="" la svuota prima che React esegua
   // l'updater. Va copiata SUBITO in un array, altrimenti gli allegati spariscono.
+  // ── autocomplete "@" ──────────────────────────────────────────────
+  // Rileva "@parola" appena prima del cursore e propone i record del CRM.
+  const onTextChange = (e) => {
+    const v = e.target.value;
+    setText(v);
+    const caret = e.target.selectionStart ?? v.length;
+    const m = /@([^\s@\[\]]{0,40})$/.exec(v.slice(0, caret));
+    setMention(m ? { start: caret - m[0].length, query: m[1] } : null);
+  };
+  useEffect(() => {
+    if (!mention || mention.query.length < 2) { setMentionRows([]); return; }
+    const t = setTimeout(() => {
+      searchAllEntities(mention.query).then(setMentionRows).catch(() => setMentionRows([]));
+    }, 220);
+    return () => clearTimeout(t);
+  }, [mention?.query]);
+
+  const pickMention = (r) => {
+    if (!mention) return;
+    const before = text.slice(0, mention.start);
+    const after = text.slice(mention.start + 1 + mention.query.length);
+    setText(`${before}${refToken(r)} ${after}`);
+    setRefs((p) => (p.some((x) => x.type === r.type && x.id === r.id) ? p : [...p, r]));
+    setMention(null); setMentionRows([]);
+  };
+
   const addFiles = (list) => {
     const arr = Array.from(list || []);
     if (arr.length) setFiles((p) => [...p, ...arr]);
@@ -110,7 +139,11 @@ export default function ChatPage() {
     if (!selId || !meId || sending) return;
     if (!text.trim() && files.length === 0 && refs.length === 0) return;
     setSending(true);
-    try { await sendMessage(selId, meId, text.trim(), files, refs); setText(""); setFiles([]); setRefs([]); await reloadMessages(selId); }
+    try {
+      await sendMessage(selId, meId, text.trim(), files, refs);
+      setText(""); setFiles([]); setRefs([]); setMention(null); setMentionRows([]);
+      await reloadMessages(selId);
+    }
     catch (e) { console.error("chat send failed", e); alert("Invio non riuscito: " + (e?.message || e)); }
     finally { setSending(false); }
   };
@@ -226,10 +259,27 @@ export default function ChatPage() {
                               : <a href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-black/20 hover:bg-black/30 text-xs"><FileText className="w-4 h-4 shrink-0" /><span className="truncate max-w-[180px]">{a.name || "file"}</span></a>}
                           </div>
                         ))}
-                        {m.body && <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>}
-                        {(m.refs || []).length > 0 && (
+                        {m.body && (
+                          <p className="text-sm whitespace-pre-wrap break-words">
+                            {splitBody(m.body).map((part, i) => {
+                              if (part.text !== undefined) return <span key={i}>{part.text}</span>;
+                              const r = part.ref;
+                              const ui = REF_UI[r.type] || REF_UI.cliente;
+                              const RIcon = ui.Icon;
+                              return (
+                                <Link key={i} href={refHref(r)} title={`Apri ${r.type}`}
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md border align-baseline text-[12px] transition-colors ${ui.cls}`}>
+                                  <RIcon className="w-3 h-3 shrink-0" />
+                                  {r.label.split(" · ")[0]}
+                                </Link>
+                              );
+                            })}
+                          </p>
+                        )}
+                        {/* solo i tag NON gia' presenti inline nel testo (evita doppioni) */}
+                        {(m.refs || []).filter((r) => !(m.body || "").includes(`@[${r.type}:${r.id}|`)).length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-1.5">
-                            {m.refs.map((r, i) => {
+                            {(m.refs || []).filter((r) => !(m.body || "").includes(`@[${r.type}:${r.id}|`)).map((r, i) => {
                               const ui = REF_UI[r.type] || REF_UI.cliente;
                               const RIcon = ui.Icon;
                               return (
@@ -259,7 +309,31 @@ export default function ChatPage() {
             </div>
 
             {/* composer */}
-            <div className="border-t border-white/5 px-4 py-3 shrink-0">
+            <div className="relative border-t border-white/5 px-4 py-3 shrink-0">
+              {mention && mentionRows.length > 0 && (
+                <div className="absolute bottom-full left-4 right-4 mb-2 max-h-64 overflow-y-auto rounded-xl border border-white/10 bg-[#161a26] shadow-2xl z-20">
+                  <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5">
+                    Tagga un record — invio per il primo
+                  </p>
+                  {mentionRows.map((r) => {
+                    const ui = REF_UI[r.type] || REF_UI.cliente;
+                    const RIcon = ui.Icon;
+                    return (
+                      <button type="button" key={`${r.type}-${r.id}`}
+                        onMouseDown={(e) => { e.preventDefault(); pickMention(r); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-white/5">
+                        <span className={`w-7 h-7 shrink-0 rounded-lg border flex items-center justify-center ${ui.cls}`}>
+                          <RIcon className="w-3.5 h-3.5" />
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm text-white truncate">{r.label}</span>
+                          <span className="block text-[10px] text-slate-500">{r.type}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {files.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
                   {files.map((f, i) => (
@@ -295,9 +369,16 @@ export default function ChatPage() {
                   <Tag className="w-5 h-5" />
                 </button>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-                <textarea value={text} onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
-                  rows={1} placeholder="Scrivi un messaggio…" className="glass-input flex-1 resize-none max-h-32 py-2.5" />
+                <textarea value={text} onChange={onTextChange}
+                  onKeyDown={(e) => {
+                    if (mention && mentionRows.length > 0) {
+                      if (e.key === "Enter") { e.preventDefault(); pickMention(mentionRows[0]); return; }
+                      if (e.key === "Escape") { e.preventDefault(); setMention(null); setMentionRows([]); return; }
+                    }
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
+                  }}
+                  rows={1} placeholder="Scrivi un messaggio…  (@ per taggare cliente, contratto o appuntamento)"
+                  className="glass-input flex-1 resize-none max-h-32 py-2.5" />
                 <button onClick={onSend} disabled={sending || (!text.trim() && files.length === 0 && refs.length === 0)}
                   className="p-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed">
                   <Send className="w-5 h-5" />
