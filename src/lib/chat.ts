@@ -278,12 +278,13 @@ export async function sendMessage(
   }
 }
 
+/**
+ * Segna letto usando l'orologio del SERVER (RPC), non quello del browser:
+ * con clock skew il segnalibro poteva restare indietro rispetto ai messaggi
+ * e il badge dei non letti non si azzerava mai.
+ */
 export async function markRead(convId: string, meId: string): Promise<void> {
-  await supabase
-    .from("chat_participants")
-    .update({ last_read_at: new Date().toISOString() })
-    .eq("conversation_id", convId)
-    .eq("user_id", meId);
+  await supabase.rpc("chat_mark_read", { p_conversation: convId, p_user: meId });
 }
 
 // Realtime: nuovi messaggi in UNA conversazione (per la finestra aperta).
@@ -303,6 +304,9 @@ export function subscribeInbox(onChange: () => void) {
     .channel("chat_inbox_watch")
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, () => onChange())
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_participants" }, () => onChange())
+    // UPDATE = qualcuno ha letto (last_read_at): serve per azzerare subito il badge,
+    // altrimenti il contatore in sidebar resta fermo finche' non arriva un nuovo messaggio.
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chat_participants" }, () => onChange())
     .subscribe();
   return () => { supabase.removeChannel(channel); };
 }

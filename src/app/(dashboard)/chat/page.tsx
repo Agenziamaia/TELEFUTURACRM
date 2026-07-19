@@ -63,6 +63,8 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
   const fileRef = useRef(null);
+  const [dragOver, setDragOver] = useState(false);
+  const dragDepth = useRef(0);   // dragenter/leave scattano anche sui figli: conta la profondita'
 
   const reloadInbox = async () => { if (!meId) return; try { setInbox(await getInbox(meId)); } catch {} };
   useEffect(() => { reloadInbox(); }, [meId]);
@@ -137,6 +139,27 @@ export default function ChatPage() {
   const addFiles = (list) => {
     const arr = Array.from(list || []);
     if (arr.length) setFiles((p) => [...p, ...arr]);
+  };
+
+  // ── drag & drop + incolla (qualsiasi tipo di file) ────────────────
+  const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+  const onDragEnter = (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth.current++; setDragOver(true); };
+  const onDragOver = (e) => { if (hasFiles(e)) e.preventDefault(); };
+  const onDragLeave = (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragOver(false);
+  };
+  const onDrop = (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth.current = 0; setDragOver(false);
+    addFiles(e.dataTransfer?.files);
+  };
+  const onPaste = (e) => {
+    const f = Array.from(e.clipboardData?.files || []);
+    if (f.length) { e.preventDefault(); addFiles(e.clipboardData.files); }
   };
   const onSend = async () => {
     if (!selId || !meId || sending) return;
@@ -215,7 +238,20 @@ export default function ChatPage() {
       </aside>
 
       {/* ── RIGHT: thread ───────────────────────────────────────── */}
-      <section className="hidden sm:flex flex-1 flex-col bg-[#0b0d14]">
+      <section className="hidden sm:flex flex-1 flex-col bg-[#0b0d14] relative"
+        onDragEnter={selConv ? onDragEnter : undefined}
+        onDragOver={selConv ? onDragOver : undefined}
+        onDragLeave={selConv ? onDragLeave : undefined}
+        onDrop={selConv ? onDrop : undefined}>
+
+        {dragOver && selConv && (
+          <div className="absolute inset-3 z-30 rounded-2xl border-2 border-dashed border-indigo-400 bg-indigo-500/10 backdrop-blur-sm flex flex-col items-center justify-center pointer-events-none">
+            <Paperclip className="w-10 h-10 text-indigo-300 mb-2" />
+            <p className="text-indigo-100 font-semibold">Rilascia qui i file</p>
+            <p className="text-indigo-200/70 text-xs mt-0.5">Qualsiasi tipo di file, fino a 50 MB</p>
+          </div>
+        )}
+
         {!selConv ? (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
             <MessageSquare className="w-12 h-12 mb-3 opacity-40" />
@@ -374,7 +410,7 @@ export default function ChatPage() {
                   <Tag className="w-5 h-5" />
                 </button>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-                <textarea value={text} onChange={onTextChange}
+                <textarea value={text} onChange={onTextChange} onPaste={onPaste}
                   onKeyDown={(e) => {
                     if (mention && mentionRows.length > 0) {
                       if (e.key === "Enter") { e.preventDefault(); pickMention(mentionRows[0]); return; }
