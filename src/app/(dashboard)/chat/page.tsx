@@ -89,13 +89,18 @@ export default function ChatPage() {
     return inbox.filter((c) => (c.title || c.other_name || "").toLowerCase().includes(s));
   }, [inbox, q]);
 
-  const addFiles = (list) => setFiles((p) => [...p, ...Array.from(list || [])]);
+  // La FileList e' "live": e.target.value="" la svuota prima che React esegua
+  // l'updater. Va copiata SUBITO in un array, altrimenti gli allegati spariscono.
+  const addFiles = (list) => {
+    const arr = Array.from(list || []);
+    if (arr.length) setFiles((p) => [...p, ...arr]);
+  };
   const onSend = async () => {
     if (!selId || !meId || sending) return;
     if (!text.trim() && files.length === 0) return;
     setSending(true);
     try { await sendMessage(selId, meId, text.trim(), files); setText(""); setFiles([]); await reloadMessages(selId); }
-    catch { alert("Invio non riuscito"); }
+    catch (e) { console.error("chat send failed", e); alert("Invio non riuscito: " + (e?.message || e)); }
     finally { setSending(false); }
   };
 
