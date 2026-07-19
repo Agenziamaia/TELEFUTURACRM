@@ -13,6 +13,7 @@ import {
     FolderOpen,
     MessageSquare,
     MessagesSquare,
+    Sparkles,
     LogOut,
     Database,
     FilePlus,
@@ -104,6 +105,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
     { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
     { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
+    { type: "link", name: "Assistente AI", href: "/assistente", icon: Sparkles, roles: EVERYONE },
     {
         type: "hub",
         name: "Gare",
