@@ -243,7 +243,7 @@ export default function ChatPage() {
                 <button onClick={() => fileRef.current?.click()} className="p-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Allega">
                   <Paperclip className="w-5 h-5" />
                 </button>
-                <input ref={fileRef} type="file" multiple accept="image/*,application/pdf" className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+                <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
                 <textarea value={text} onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
                   rows={1} placeholder="Scrivi un messaggio…" className="glass-input flex-1 resize-none max-h-32 py-2.5" />
