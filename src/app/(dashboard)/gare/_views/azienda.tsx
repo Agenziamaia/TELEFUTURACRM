@@ -64,7 +64,7 @@ export function AziendaTab({ brand, month }: { brand: string; month: string }) {
         const [p, s, v, r, n, st, pp] = await Promise.all([
             supabase.from("gare_azienda_piste").select("id,gara,codice,nome,descrizione,sort_order").eq("brand", brand).eq("month", month).order("sort_order").order("created_at"),
             supabase.from("gare_azienda_soglie").select("id,pista,scope,cluster,store_name,tier,soglia_valore,soglia_um,reward_tipo,reward_valore,reward_um,reward_descr,girata_ai_ragazzi,note").eq("brand", brand).eq("month", month).order("cluster").order("tier"),
-            supabase.from("gare_azienda_voci").select("id,pista,nome,tipo,valore,um,condizione,scope,girata_ai_ragazzi,note").eq("brand", brand).eq("month", month).order("sort_order").order("created_at"),
+            supabase.from("gare_azienda_voci").select("id,pista,nome,tipo,valore,um,condizione,scope,girata_ai_ragazzi,note,tier,sort_order").eq("brand", brand).eq("month", month).order("sort_order").order("created_at"),
             supabase.from("gare_azienda_regole").select("id,pista,tipo,condizione,effetto,valore,um,bersaglio,scope,girata_ai_ragazzi,note").eq("brand", brand).eq("month", month).order("sort_order").order("created_at"),
             supabase.from("gare_azienda_negozi").select("id,gara,store_name,cluster,note").eq("brand", brand).eq("month", month).order("store_name"),
             supabase.from("stores").select("name,company").eq("active", true).order("name"),
@@ -323,7 +323,8 @@ function PistaCard({ pista, soglie, voci, regole, open, onToggle, storeOptions, 
                         className="glass-input w-full py-1.5 text-xs text-slate-400"
                     />
                     <SoglieBlock pista={pista} soglie={soglie} storeOptions={storeOptions} brand={brand} month={month} onChange={onChange} />
-                    <VociBlock pista={pista} voci={voci} brand={brand} month={month} onChange={onChange} />
+                    <RemunerazioneBlock pista={pista} celle={voci.filter((v) => v.tier != null)} maxTierSoglie={Math.max(0, ...soglie.map((s) => s.tier))} brand={brand} month={month} onChange={onChange} />
+                    <VociBlock pista={pista} voci={voci.filter((v) => v.tier == null)} brand={brand} month={month} onChange={onChange} />
                     <RegoleBlock pista={pista} regole={regole} brand={brand} month={month} onChange={onChange} />
                 </div>
             )}
@@ -484,6 +485,135 @@ function SoglieAdvanced({ soglie, storeOptions, pista, brand, month, onChange }:
     );
 }
 
+/* ---------------- Remunerazione per soglia: la tabella della lettera ---------------- */
+function RemunerazioneBlock({ pista, celle, maxTierSoglie, brand, month, onChange }: {
+    pista: Pista; celle: VoceAz[]; maxTierSoglie: number; brand: string; month: string; onChange: () => void;
+}) {
+    const groups = useMemo(() => {
+        const m = new Map<string, { nome: string; um: string | null; cond: string | null; so: number; cells: Map<number, VoceAz> }>();
+        for (const c of celle) {
+            if (!m.has(c.nome)) m.set(c.nome, { nome: c.nome, um: c.um, cond: c.condizione, so: c.sort_order, cells: new Map() });
+            m.get(c.nome)!.cells.set(c.tier!, c);
+        }
+        return Array.from(m.values()).sort((a, b) => a.so - b.so || a.nome.localeCompare(b.nome));
+    }, [celle]);
+    const maxTier = Math.max(maxTierSoglie, ...celle.map((c) => c.tier || 0), 0);
+
+    const grpFilter = (nome: string) =>
+        supabase.from("gare_azienda_voci").delete().eq("brand", brand).eq("month", month).eq("pista", pista.codice).eq("nome", nome).not("tier", "is", null);
+
+    const saveCell = async (v: VoceAz, val: number | null) => {
+        if (val == null) {
+            const { error } = await supabase.from("gare_azienda_voci").delete().eq("id", v.id);
+            if (!dbError("Eliminazione cella", error)) onChange();
+            return;
+        }
+        const { error } = await supabase.from("gare_azienda_voci").update({ valore: val }).eq("id", v.id);
+        dbError("Salvataggio valore", error);
+    };
+    const createCell = async (g: { nome: string; um: string | null; cond: string | null; so: number }, tier: number, val: number) => {
+        const { error } = await supabase.from("gare_azienda_voci").insert({
+            brand, month, pista: pista.codice, nome: g.nome, tier, valore: val,
+            tipo: g.um === "eur" ? "gettone" : "moltiplicatore", um: g.um || "x", condizione: g.cond, sort_order: g.so,
+        });
+        if (!dbError("Creazione cella", error)) onChange();
+    };
+    const renameRow = async (oldNome: string, newNome: string) => {
+        if (!newNome.trim() || newNome === oldNome) return;
+        const { error } = await supabase.from("gare_azienda_voci").update({ nome: newNome.trim() })
+            .eq("brand", brand).eq("month", month).eq("pista", pista.codice).eq("nome", oldNome).not("tier", "is", null);
+        if (!dbError("Rinomina componente", error)) onChange();
+    };
+    const delRow = async (nome: string) => {
+        const { error } = await grpFilter(nome);
+        if (!dbError("Eliminazione componente", error)) onChange();
+    };
+    const addRow = async () => {
+        const { error } = await supabase.from("gare_azienda_voci").insert({
+            brand, month, pista: pista.codice, nome: "Nuova componente", tier: 1, valore: 0, tipo: "moltiplicatore", um: "x",
+            sort_order: groups.length,
+        });
+        if (!dbError("Creazione componente", error)) onChange();
+    };
+
+    if (!celle.length)
+        return (
+            <button onClick={addRow} className="text-[11px] text-slate-600 hover:text-indigo-300 flex items-center gap-1">
+                <Plus className="w-3 h-3" /> tabella remunerazione per soglia
+            </button>
+        );
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center justify-between">
+                <h5 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Remunerazione per soglia <span className="normal-case text-slate-600 font-normal">· × = moltiplicatore del canone · € = importo secco</span>
+                </h5>
+                <button onClick={addRow} className="text-xs text-indigo-300 hover:text-indigo-200 flex items-center gap-1"><Plus className="w-3 h-3" /> componente</button>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm border-separate" style={{ borderSpacing: "0 4px" }}>
+                    <thead>
+                        <tr className="text-[10px] uppercase tracking-wider text-slate-600">
+                            <th className="text-left font-medium pl-2">Componente</th>
+                            {Array.from({ length: maxTier }, (_, i) => (
+                                <th key={i} className="text-center font-medium px-1">{i + 1}ª soglia</th>
+                            ))}
+                            <th />
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {groups.map((g) => (
+                            <tr key={g.nome}>
+                                <td className="pl-2 pr-3 py-1 rounded-l-lg bg-white/[0.03]">
+                                    <div className="flex items-center gap-1.5">
+                                        <input
+                                            defaultValue={g.nome}
+                                            onBlur={(e) => renameRow(g.nome, e.target.value)}
+                                            className="bg-transparent text-[13px] text-slate-200 font-medium outline-none w-full min-w-[120px]"
+                                        />
+                                        <span className={cn("text-[9px] px-1 rounded border shrink-0", g.um === "eur" ? "text-emerald-300 border-emerald-500/25" : "text-violet-300 border-violet-500/25")}>
+                                            {g.um === "eur" ? "€" : "×"}
+                                        </span>
+                                    </div>
+                                    {g.cond && <span className="block text-[10px] text-slate-500 truncate max-w-[230px]" title={g.cond}>{g.cond}</span>}
+                                </td>
+                                {Array.from({ length: maxTier }, (_, i) => {
+                                    const v = g.cells.get(i + 1);
+                                    return (
+                                        <td key={i} className="text-center px-1 py-1 bg-white/[0.03]">
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                defaultValue={v?.valore ?? ""}
+                                                placeholder="—"
+                                                onBlur={(e) => {
+                                                    const raw = e.target.value;
+                                                    const num = raw === "" ? null : Number(raw);
+                                                    if (v) {
+                                                        if (num !== Number(v.valore)) saveCell(v, num);
+                                                    } else if (num != null) {
+                                                        createCell(g, i + 1, num);
+                                                    }
+                                                }}
+                                                className="glass-input w-16 py-1 text-sm text-center font-semibold"
+                                            />
+                                            {v?.note && <span className="block text-[9px] text-slate-600 truncate max-w-[80px] mx-auto" title={v.note}>{v.note}</span>}
+                                        </td>
+                                    );
+                                })}
+                                <td className="pl-1 rounded-r-lg bg-white/[0.03]">
+                                    <button onClick={() => delRow(g.nome)} className="text-slate-600 hover:text-rose-400 p-1" title="Elimina componente"><Trash2 className="w-3.5 h-3.5" /></button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
+
 /* ---------------- Voci: read-first ---------------- */
 function VociBlock({ pista, voci, brand, month, onChange }: {
     pista: Pista; voci: VoceAz[]; brand: string; month: string; onChange: () => void;
@@ -501,7 +631,7 @@ function VociBlock({ pista, voci, brand, month, onChange }: {
     return (
         <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-                <h5 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Compensi e punteggi</h5>
+                <h5 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Compensi on top e punteggi</h5>
                 <button onClick={add} className="text-xs text-indigo-300 hover:text-indigo-200 flex items-center gap-1"><Plus className="w-3 h-3" /> voce</button>
             </div>
             {voci.map((v) => (

@@ -37,6 +37,10 @@ export interface VoceAz {
     scope: string;
     girata_ai_ragazzi: boolean;
     note: string | null;
+    // tier valorizzato = cella della tabella "remunerazione per soglia" (componente × soglia);
+    // tier NULL = compenso on top (gettone secco, punteggio, bonus)
+    tier: number | null;
+    sort_order: number;
 }
 export interface RegolaAz {
     id: string;
