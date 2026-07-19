@@ -4,6 +4,7 @@
 
 export interface Pista {
     id: string;
+    gara: string;
     codice: string;
     nome: string;
     descrizione: string | null;
@@ -52,10 +53,20 @@ export interface RegolaAz {
 }
 export interface NegozioAz {
     id: string;
+    gara: string;
     store_name: string;
     cluster: string | null;
     note: string | null;
 }
+
+// DIVISIONI di gara dentro un brand: lettere diverse dallo stesso operatore.
+// I brand assenti hanno una sola gara ('principale', selettore nascosto).
+export const BRAND_DIVISIONI: Record<string, { id: string; label: string; sub: string }[]> = {
+    w3: [
+        { id: "franchising", label: "Franchising", sub: "5 pdv · Telefutura SRL" },
+        { id: "multibrand", label: "Multibrand", sub: "Top Dealer & Dealer · 3 pdv" },
+    ],
+};
 export interface SogliaRag {
     id: string;
     tier: number;
