@@ -3,14 +3,23 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import Link from "next/link";
 import {
   getInbox, listMessages, getParticipants, sendMessage, markRead,
-  subscribeMessages, subscribeInbox, subscribeReceipts,
+  subscribeMessages, subscribeInbox, subscribeReceipts, refHref,
 } from "@/lib/chat";
 import { roleLabel } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck } from "lucide-react";
+import { TagPicker } from "./_components/TagPicker";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays } from "lucide-react";
+
+// icona + colore per tipo di tag
+const REF_UI = {
+  cliente: { Icon: User, cls: "bg-emerald-500/15 text-emerald-200 border-emerald-500/30 hover:bg-emerald-500/25" },
+  contratto: { Icon: FileText, cls: "bg-sky-500/15 text-sky-200 border-sky-500/30 hover:bg-sky-500/25" },
+  appuntamento: { Icon: CalendarDays, cls: "bg-amber-500/15 text-amber-200 border-amber-500/30 hover:bg-amber-500/25" },
+};
 
 const initials = (n = "") => n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 const fmtTime = (s) => new Date(s).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
@@ -45,6 +54,8 @@ export default function ChatPage() {
   const [parts, setParts] = useState([]);
   const [text, setText] = useState("");
   const [files, setFiles] = useState([]);
+  const [refs, setRefs] = useState([]);          // record CRM taggati nel messaggio in corso
+  const [showTag, setShowTag] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
@@ -97,9 +108,9 @@ export default function ChatPage() {
   };
   const onSend = async () => {
     if (!selId || !meId || sending) return;
-    if (!text.trim() && files.length === 0) return;
+    if (!text.trim() && files.length === 0 && refs.length === 0) return;
     setSending(true);
-    try { await sendMessage(selId, meId, text.trim(), files); setText(""); setFiles([]); await reloadMessages(selId); }
+    try { await sendMessage(selId, meId, text.trim(), files, refs); setText(""); setFiles([]); setRefs([]); await reloadMessages(selId); }
     catch (e) { console.error("chat send failed", e); alert("Invio non riuscito: " + (e?.message || e)); }
     finally { setSending(false); }
   };
@@ -216,6 +227,21 @@ export default function ChatPage() {
                           </div>
                         ))}
                         {m.body && <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>}
+                        {(m.refs || []).length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {m.refs.map((r, i) => {
+                              const ui = REF_UI[r.type] || REF_UI.cliente;
+                              const RIcon = ui.Icon;
+                              return (
+                                <Link key={i} href={refHref(r)} title={`Apri ${r.type}`}
+                                  className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] transition-colors ${ui.cls}`}>
+                                  <RIcon className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate max-w-[190px]">{r.label}</span>
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        )}
                         <p className={`text-[10px] mt-0.5 flex items-center gap-1 justify-end ${mine ? "text-indigo-200/70" : "text-slate-500"}`}>
                           {fmtTime(m.created_at)}
                           {mine && selConv.type === "dm" && (() => {
@@ -244,15 +270,35 @@ export default function ChatPage() {
                   ))}
                 </div>
               )}
+              {refs.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {refs.map((r, i) => {
+                    const ui = REF_UI[r.type] || REF_UI.cliente;
+                    const RIcon = ui.Icon;
+                    return (
+                      <span key={i} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] ${ui.cls}`}>
+                        <RIcon className="w-3.5 h-3.5" />
+                        <span className="truncate max-w-[160px]">{r.label}</span>
+                        <button onClick={() => setRefs((p) => p.filter((_, j) => j !== i))} className="opacity-70 hover:opacity-100">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
               <div className="flex items-end gap-2">
                 <button onClick={() => fileRef.current?.click()} className="p-2.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5" title="Allega">
                   <Paperclip className="w-5 h-5" />
+                </button>
+                <button onClick={() => setShowTag(true)} className="p-2.5 rounded-lg text-slate-400 hover:text-indigo-300 hover:bg-white/5" title="Tagga cliente, contratto o appuntamento">
+                  <Tag className="w-5 h-5" />
                 </button>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
                 <textarea value={text} onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
                   rows={1} placeholder="Scrivi un messaggio…" className="glass-input flex-1 resize-none max-h-32 py-2.5" />
-                <button onClick={onSend} disabled={sending || (!text.trim() && files.length === 0)}
+                <button onClick={onSend} disabled={sending || (!text.trim() && files.length === 0 && refs.length === 0)}
                   className="p-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed">
                   <Send className="w-5 h-5" />
                 </button>
@@ -261,6 +307,14 @@ export default function ChatPage() {
           </>
         )}
       </section>
+
+      {showTag && (
+        <TagPicker onClose={() => setShowTag(false)}
+          onPick={(r) => {
+            setRefs((p) => (p.some((x) => x.type === r.type && x.id === r.id) ? p : [...p, r]));
+            setShowTag(false);
+          }} />
+      )}
 
       {showNew && meId && (
         <NewChatModal meId={meId} onClose={() => setShowNew(false)}

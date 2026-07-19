@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
@@ -466,6 +466,16 @@ export default function ClientiPage() {
     const [clientToEdit, setClientToEdit] = useState<Cliente | null>(null);
 
     const [clientList, setClientList] = useState<Cliente[]>([]);
+
+    // Deep link dai tag in chat: /clienti?id=<id> apre subito la scheda del cliente
+    const deepLinked = useRef(false);
+    useEffect(() => {
+        if (deepLinked.current || clientList.length === 0) return;
+        const id = new URLSearchParams(window.location.search).get("id");
+        if (!id) return;
+        const hit = clientList.find((c: any) => String(c.id) === id);
+        if (hit) { setSelectedCliente(hit); deepLinked.current = true; }
+    }, [clientList]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
 

@@ -25,9 +25,20 @@ export interface InboxItem {
 export interface ChatAttachment {
   id: string; url: string; name: string | null; mime: string | null; size_bytes: number | null;
 }
+/** Riferimento a un record del CRM allegato a un messaggio (tag cliccabile). */
+export type RefKind = "cliente" | "contratto" | "appuntamento";
+export interface ChatRef { type: RefKind; id: string; label: string }
+
+/** Dove porta il tag quando ci clicchi. */
+export function refHref(r: ChatRef): string {
+  if (r.type === "cliente") return `/clienti?id=${encodeURIComponent(r.id)}`;
+  if (r.type === "contratto") return `/ricerca-contratto?id=${encodeURIComponent(r.id)}`;
+  return `/calendario?appuntamento=${encodeURIComponent(r.id)}`;
+}
+
 export interface ChatMessage {
   id: string; sender_id: string | null; body: string | null; created_at: string;
-  edited_at: string | null; attachments: ChatAttachment[];
+  edited_at: string | null; attachments: ChatAttachment[]; refs: ChatRef[];
 }
 export interface Participant {
   user_id: string; is_admin: boolean; full_name: string; role: string; primary_store: string | null;
@@ -120,7 +131,7 @@ export function subscribeReceipts(convId: string, onChange: () => void) {
 export async function listMessages(convId: string): Promise<ChatMessage[]> {
   const { data, error } = await supabase
     .from("chat_messages")
-    .select("id, sender_id, body, created_at, edited_at, chat_attachments(id, url, name, mime, size_bytes)")
+    .select("id, sender_id, body, created_at, edited_at, refs, chat_attachments(id, url, name, mime, size_bytes)")
     .eq("conversation_id", convId)
     .is("deleted_at", null)
     .order("created_at", { ascending: true });
@@ -128,6 +139,54 @@ export async function listMessages(convId: string): Promise<ChatMessage[]> {
   return (data || []).map((m: any) => ({
     id: m.id, sender_id: m.sender_id, body: m.body, created_at: m.created_at,
     edited_at: m.edited_at, attachments: m.chat_attachments || [],
+    refs: Array.isArray(m.refs) ? m.refs : [],
+  }));
+}
+
+/** Ricerca record del CRM da taggare in chat (cliente / contratto / appuntamento). */
+export async function searchEntities(kind: RefKind, q: string): Promise<ChatRef[]> {
+  const s = q.trim();
+  if (!s) return [];
+  const like = `%${s}%`;
+
+  if (kind === "cliente") {
+    const { data } = await supabase
+      .from("clients")
+      .select("id, nome, cognome, ragione_sociale, cf_piva, citta")
+      .or(`nome.ilike.${like},cognome.ilike.${like},ragione_sociale.ilike.${like},cf_piva.ilike.${like}`)
+      .limit(15);
+    return (data || []).map((c: any) => ({
+      type: "cliente" as const,
+      id: c.id,
+      label: [c.ragione_sociale || [c.nome, c.cognome].filter(Boolean).join(" "), c.cf_piva]
+        .filter(Boolean).join(" · ") || c.id,
+    }));
+  }
+
+  if (kind === "contratto") {
+    const { data } = await supabase
+      .from("contracts")
+      .select("id, brand, prodotto, categoria, stato, negozio, data_registrazione")
+      .or(`brand.ilike.${like},prodotto.ilike.${like},negozio.ilike.${like},stato.ilike.${like},codice_attivazione.ilike.${like}`)
+      .order("data_registrazione", { ascending: false })
+      .limit(15);
+    return (data || []).map((c: any) => ({
+      type: "contratto" as const,
+      id: String(c.id),
+      label: [c.brand, c.prodotto || c.categoria, c.stato, c.negozio].filter(Boolean).join(" · "),
+    }));
+  }
+
+  const { data } = await supabase
+    .from("appointments")
+    .select("id, date, time, customer_name, agente, store, status")
+    .or(`customer_name.ilike.${like},agente.ilike.${like},store.ilike.${like},notes.ilike.${like}`)
+    .order("date", { ascending: false })
+    .limit(15);
+  return (data || []).map((a: any) => ({
+    type: "appuntamento" as const,
+    id: String(a.id),
+    label: [a.date, a.time, a.customer_name, a.store].filter(Boolean).join(" · "),
   }));
 }
 
@@ -135,7 +194,7 @@ const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
 
 // Invia un messaggio: carica gli allegati sul bucket, inserisce il messaggio e gli allegati.
 export async function sendMessage(
-  convId: string, meId: string, body: string, files: File[] = []
+  convId: string, meId: string, body: string, files: File[] = [], refs: ChatRef[] = []
 ): Promise<void> {
   const uploaded: { url: string; name: string; mime: string; size: number }[] = [];
   for (const f of files) {
@@ -147,7 +206,7 @@ export async function sendMessage(
   }
   const { data: msg, error } = await supabase
     .from("chat_messages")
-    .insert({ conversation_id: convId, sender_id: meId, body: body || null })
+    .insert({ conversation_id: convId, sender_id: meId, body: body || null, refs })
     .select("id")
     .single();
   if (error) throw error;

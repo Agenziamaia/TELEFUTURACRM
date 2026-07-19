@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video } from "lucide-react";
 import { cn } from "@/utils";
 import { usePageView } from "@/lib/pageView";
@@ -190,6 +190,21 @@ export default function Calendario() {
     const [showMeetingDetailModal, setShowMeetingDetailModal] = useState(false);
     const [showSearchDrawer, setShowSearchDrawer] = useState(false);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
+
+    // Deep link dai tag in chat: /calendario?appuntamento=<id> apre l'appuntamento
+    const deepLinked = useRef(false);
+    useEffect(() => {
+        if (deepLinked.current || appointments.length === 0) return;
+        const id = new URLSearchParams(window.location.search).get("appuntamento");
+        if (!id) return;
+        const hit = appointments.find((a: any) => String(a.id) === id);
+        if (hit) {
+            setSelectedAppointment(hit);
+            if ((hit as any).date) setSelectedDate((hit as any).date);
+            setShowModal(true);
+            deepLinked.current = true;
+        }
+    }, [appointments]);
 
     // Tasks State
     const [tasks, setTasks] = useState<CalendarTask[]>([]);

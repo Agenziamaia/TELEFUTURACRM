@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, Eye, Edit, Trash2, X } from "lucide-react";
 import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
@@ -65,6 +65,16 @@ export default function RicercaContratto() {
 
     const [selectedContract, setSelectedContract] = useState<ContrattoRow | null>(null);
     const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
+
+    // Deep link dai tag in chat: /ricerca-contratto?id=<id> apre il dettaglio del contratto
+    const deepLinked = useRef(false);
+    useEffect(() => {
+        if (deepLinked.current || contractList.length === 0) return;
+        const id = new URLSearchParams(window.location.search).get("id");
+        if (!id) return;
+        const hit = contractList.find((c: any) => String(c.id) === id);
+        if (hit) { setSelectedContract(hit); setDetailMode("view"); deepLinked.current = true; }
+    }, [contractList]);
     const [editStato, setEditStato] = useState("");
     const [saving, setSaving] = useState(false);
 
