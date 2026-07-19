@@ -11,7 +11,7 @@ import { notify, dbError } from "../../amministrazione/_views/toast";
 import { addMonths, monthLabel } from "../../amministrazione/_views/months";
 import {
     type Pista, type SogliaAz, type VoceAz, type RegolaAz, type NegozioAz,
-    BRAND_DIVISIONI, CLUSTER_SUGGERITI, UM_SOGLIA, REWARD_TIPI_AZ, VOCE_TIPI, REGOLA_TIPI, eur,
+    BRAND_DIVISIONI, DIVISIONE_PREFIX, CLUSTER_SUGGERITI, UM_SOGLIA, REWARD_TIPI_AZ, VOCE_TIPI, REGOLA_TIPI, eur,
 } from "./shared";
 
 /* Tab AZIENDA — redesign "read-first": si legge come una lettera di gara pulita,
@@ -98,7 +98,7 @@ export function AziendaTab({ brand, month }: { brand: string; month: string }) {
     const addPista = async () => {
         const nome = nPista.trim();
         if (!nome) return;
-        const codice = (div === "principale" || div === "franchising" ? "" : "mb_") + slug(nome);
+        const codice = (DIVISIONE_PREFIX[div] ?? `${div.slice(0, 4)}_`) + slug(nome);
         const { error } = await supabase.from("gare_azienda_piste").insert({ brand, month, gara: div, codice, nome, sort_order: piste.length });
         if (!dbError("Creazione pista", error)) {
             setNPista("");

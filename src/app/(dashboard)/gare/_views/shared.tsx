@@ -64,8 +64,17 @@ export interface NegozioAz {
 export const BRAND_DIVISIONI: Record<string, { id: string; label: string; sub: string }[]> = {
     w3: [
         { id: "franchising", label: "Franchising", sub: "5 pdv · Telefutura SRL" },
-        { id: "multibrand", label: "Multibrand", sub: "Top Dealer & Dealer · 3 pdv" },
+        { id: "multibrand", label: "Multibrand", sub: "Donna Olimpia · Top Dealer · Telefutura SRL" },
+        { id: "multibrand_t2", label: "Multibrand T2", sub: "Promontori + Garbatella · Dealer · target di gruppo · Telefutura 2 SRL" },
     ],
+};
+
+// Prefisso dei codici pista per divisione (evita collisioni tra lettere dello stesso brand)
+export const DIVISIONE_PREFIX: Record<string, string> = {
+    principale: "",
+    franchising: "",
+    multibrand: "mb_",
+    multibrand_t2: "mb2_",
 };
 export interface SogliaRag {
     id: string;
