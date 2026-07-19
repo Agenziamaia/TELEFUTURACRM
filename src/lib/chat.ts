@@ -165,6 +165,34 @@ export function splitBody(body: string): Array<{ text: string } | { ref: ChatRef
   return out;
 }
 
+/** Etichette coerenti fra ricerca e suggerimenti. */
+const clientLabel = (c: any) =>
+  [c.ragione_sociale || [c.nome, c.cognome].filter(Boolean).join(" "), c.cf_piva].filter(Boolean).join(" · ") || c.id;
+const contractLabel = (c: any) =>
+  [c.brand, c.prodotto || c.categoria, c.stato, c.negozio].filter(Boolean).join(" · ");
+const apptLabel = (a: any) =>
+  [a.date, a.time, a.customer_name, a.store].filter(Boolean).join(" · ");
+
+/**
+ * Suggerimenti mostrati appena si digita "@", senza ancora aver scritto nulla:
+ * i record piu' recenti, cosi' il caso comune ("l'ultimo contratto") e' a un tasto.
+ */
+export async function recentEntities(): Promise<ChatRef[]> {
+  const [cl, ct, ap] = await Promise.all([
+    supabase.from("clients").select("id, nome, cognome, ragione_sociale, cf_piva")
+      .order("created_at", { ascending: false }).limit(5).then((r) => r.data || [], () => []),
+    supabase.from("contracts").select("id, brand, prodotto, categoria, stato, negozio")
+      .order("data_registrazione", { ascending: false }).limit(5).then((r) => r.data || [], () => []),
+    supabase.from("appointments").select("id, date, time, customer_name, store")
+      .order("date", { ascending: false }).limit(4).then((r) => r.data || [], () => []),
+  ]);
+  return [
+    ...cl.map((c: any) => ({ type: "cliente" as const, id: c.id, label: clientLabel(c) })),
+    ...ct.map((c: any) => ({ type: "contratto" as const, id: String(c.id), label: contractLabel(c) })),
+    ...ap.map((a: any) => ({ type: "appuntamento" as const, id: String(a.id), label: apptLabel(a) })),
+  ];
+}
+
 /** Ricerca su tutti e tre i tipi insieme (usata dall'autocomplete con "@"). */
 export async function searchAllEntities(q: string): Promise<ChatRef[]> {
   const [a, b, c] = await Promise.all([

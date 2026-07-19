@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
   getInbox, listMessages, getParticipants, sendMessage, markRead,
   subscribeMessages, subscribeInbox, subscribeReceipts, refHref,
-  splitBody, refToken, searchAllEntities,
+  splitBody, refToken, searchAllEntities, recentEntities,
 } from "@/lib/chat";
 import { roleLabel } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
@@ -115,12 +115,15 @@ export default function ChatPage() {
     setMention(m ? { start: caret - m[0].length, query: m[1] } : null);
   };
   useEffect(() => {
-    if (!mention || mention.query.length < 2) { setMentionRows([]); return; }
+    if (!mention) { setMentionRows([]); return; }
+    const q = mention.query;
     const t = setTimeout(() => {
-      searchAllEntities(mention.query).then(setMentionRows).catch(() => setMentionRows([]));
-    }, 220);
+      // "@" da solo -> suggerimenti recenti; da 1 carattere in poi -> ricerca
+      const p = q.length === 0 ? recentEntities() : searchAllEntities(q);
+      p.then(setMentionRows).catch(() => setMentionRows([]));
+    }, q.length === 0 ? 0 : 200);
     return () => clearTimeout(t);
-  }, [mention?.query]);
+  }, [mention?.query, mention !== null]);
 
   const pickMention = (r) => {
     if (!mention) return;
@@ -313,7 +316,9 @@ export default function ChatPage() {
               {mention && mentionRows.length > 0 && (
                 <div className="absolute bottom-full left-4 right-4 mb-2 max-h-64 overflow-y-auto rounded-xl border border-white/10 bg-[#161a26] shadow-2xl z-20">
                   <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5">
-                    Tagga un record — invio per il primo
+                    {mention.query
+                      ? "Risultati — Invio per il primo"
+                      : "Recenti — continua a scrivere per cercare"}
                   </p>
                   {mentionRows.map((r) => {
                     const ui = REF_UI[r.type] || REF_UI.cliente;
