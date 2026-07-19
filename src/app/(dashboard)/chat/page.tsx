@@ -264,7 +264,8 @@ export default function ChatPage() {
 
       {showNew && meId && (
         <NewChatModal meId={meId} onClose={() => setShowNew(false)}
-          onCreated={(cid) => { setShowNew(false); reloadInbox(); setSelId(cid); }} />
+          onCreated={(cid) => { setShowNew(false); reloadInbox(); setSelId(cid); }}
+          onBroadcastDone={() => { setShowNew(false); reloadInbox(); }} />
       )}
     </div>
   );

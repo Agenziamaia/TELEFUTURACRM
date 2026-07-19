@@ -65,6 +65,15 @@ export async function createGroup(meId: string, title: string, memberIds: string
   return data as string;
 }
 
+// Invia lo stesso messaggio a piu' persone come CHAT PRIVATE INDIVIDUALI (non un gruppo).
+export async function broadcast(meId: string, memberIds: string[], body: string): Promise<number> {
+  const { data, error } = await supabase.rpc("chat_broadcast", {
+    p_me: meId, p_members: memberIds, p_body: body,
+  });
+  if (error) throw error;
+  return (data as number) ?? 0;
+}
+
 export async function getParticipants(convId: string): Promise<Participant[]> {
   const { data, error } = await supabase
     .from("chat_participants")
