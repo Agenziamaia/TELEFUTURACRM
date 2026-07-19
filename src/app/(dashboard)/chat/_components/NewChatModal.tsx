@@ -58,6 +58,17 @@ export function NewChatModal({ meId, onClose, onCreated, onBroadcastDone }: {
     setSelected((p) => { const n = { ...p }; users.forEach((u) => (n[u.id] = true)); return n; });
   const clearAll = () => setSelected({});
 
+  /** Un tag e' "attivo" quando tutti i suoi membri sono selezionati. */
+  const isTagOn = (users: DirUser[]) => users.length > 0 && users.every((u) => selected[u.id]);
+  /** Click sul tag: seleziona tutti; se erano gia' tutti selezionati, li deseleziona. */
+  const toggleMany = (users: DirUser[]) =>
+    setSelected((p) => {
+      const all = users.length > 0 && users.every((u) => p[u.id]);
+      const n = { ...p };
+      users.forEach((u) => { if (all) delete n[u.id]; else n[u.id] = true; });
+      return n;
+    });
+
   const startDM = async (otherId: string) => {
     if (busy) return; setBusy(true);
     try { onCreated(await getOrCreateDM(meId, otherId)); } finally { setBusy(false); }
@@ -115,26 +126,43 @@ export function NewChatModal({ meId, onClose, onCreated, onBroadcastDone }: {
           <div className="px-5 pt-3">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                <Store className="w-3.5 h-3.5" /> Seleziona un tag
+                <Store className="w-3.5 h-3.5" /> Seleziona un tag (negozio o area)
               </span>
               {selectedIds.length > 0 && (
-                <button onClick={clearAll} className="text-[11px] text-slate-400 hover:text-white">deseleziona tutto</button>
+                <button type="button" onClick={clearAll} className="text-[11px] text-slate-400 hover:text-white">deseleziona tutto</button>
               )}
             </div>
             <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-              {areas.map((a) => (
-                <button key={a.id} onClick={() => addMany(dir.filter((u) => (areaOf(u.role) || "sede") === a.id))}
-                  className="px-2 py-1 rounded-lg text-[11px] bg-purple-500/15 text-purple-200 border border-purple-500/25 hover:bg-purple-500/25">
-                  {areaLabel(a.id as any)} · {a.count}
-                </button>
-              ))}
-              {stores.map((s) => (
-                <button key={s.name} onClick={() => addMany(dir.filter((u) => u.primary_store === s.name))}
-                  className="px-2 py-1 rounded-lg text-[11px] bg-indigo-500/15 text-indigo-200 border border-indigo-500/25 hover:bg-indigo-500/25">
-                  {s.name} · {s.count}
-                </button>
-              ))}
+              {areas.map((a) => {
+                const members = dir.filter((u) => (areaOf(u.role) || "sede") === a.id);
+                const on = isTagOn(members);
+                return (
+                  <button type="button" key={a.id} onClick={() => toggleMany(members)}
+                    className={`px-2 py-1 rounded-lg text-[11px] border transition-colors flex items-center gap-1 ${on
+                      ? "bg-purple-500 text-white border-purple-400"
+                      : "bg-purple-500/15 text-purple-200 border-purple-500/25 hover:bg-purple-500/30"}`}>
+                    {on && <Check className="w-3 h-3" />}{areaLabel(a.id as any)} · {a.count}
+                  </button>
+                );
+              })}
+              {stores.map((s) => {
+                const members = dir.filter((u) => u.primary_store === s.name);
+                const on = isTagOn(members);
+                return (
+                  <button type="button" key={s.name} onClick={() => toggleMany(members)}
+                    className={`px-2 py-1 rounded-lg text-[11px] border transition-colors flex items-center gap-1 ${on
+                      ? "bg-indigo-500 text-white border-indigo-400"
+                      : "bg-indigo-500/15 text-indigo-200 border-indigo-500/25 hover:bg-indigo-500/30"}`}>
+                    {on && <Check className="w-3 h-3" />}{s.name} · {s.count}
+                  </button>
+                );
+              })}
             </div>
+            <p className={`text-xs mt-2 ${selectedIds.length ? "text-indigo-300 font-semibold" : "text-slate-500"}`}>
+              {selectedIds.length
+                ? `${selectedIds.length} destinatar${selectedIds.length === 1 ? "io" : "i"} selezionat${selectedIds.length === 1 ? "o" : "i"}`
+                : "Nessun destinatario selezionato — tocca un tag qui sopra."}
+            </p>
           </div>
         )}
 
@@ -197,7 +225,13 @@ export function NewChatModal({ meId, onClose, onCreated, onBroadcastDone }: {
           <div className="px-5 py-3 border-t border-white/10">
             <button onClick={sendBroadcast} disabled={busy || !bcBody.trim() || selectedIds.length === 0}
               className="primary-btn w-full disabled:opacity-40 disabled:cursor-not-allowed">
-              {busy ? "Invio…" : `Invia a ${selectedIds.length} person${selectedIds.length === 1 ? "a" : "e"}`}
+              {busy
+                ? "Invio…"
+                : selectedIds.length === 0
+                  ? "Seleziona i destinatari"
+                  : !bcBody.trim()
+                    ? "Scrivi il messaggio"
+                    : `Invia a ${selectedIds.length} person${selectedIds.length === 1 ? "a" : "e"}`}
             </button>
           </div>
         )}
