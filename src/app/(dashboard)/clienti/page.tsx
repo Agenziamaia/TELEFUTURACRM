@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink } from "lucide-react";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
 
 interface Cliente {
     id: string;
@@ -59,6 +60,24 @@ function mapRowToContratto(row: Record<string, unknown>): Contratto {
 }
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
+    const router = useRouter();
+    const [docs, setDocs] = useState<{ id: number; file_url: string; file_name: string; contract_id: string }[]>([]);
+
+    // Documenti caricati: allegati dei contratti (PDA) di questo cliente.
+    useEffect(() => {
+        const ids = contratti.map((c) => c.id);
+        if (ids.length === 0) { setDocs([]); return; }
+        (async () => {
+            const { data } = await supabase
+                .from("contract_attachments")
+                .select("id, file_url, file_name, contract_id")
+                .in("contract_id", ids);
+            setDocs((data ?? []) as any);
+        })();
+    }, [contratti]);
+
+    // Click su una vendita -> apre il dettaglio in Ricerca Contratto (deep link ?id=).
+    const openContract = (id: string) => { onClose(); router.push(`/ricerca-contratto?id=${encodeURIComponent(id)}`); };
 
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -138,19 +157,26 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/5">
+                                    {contratti.length === 0 && (
+                                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-600">Nessun contratto per questo cliente.</td></tr>
+                                    )}
                                     {contratti.map((ctr: Contratto) => (
-                                        <tr key={ctr.id} className="hover:bg-white/[0.02] transition-colors">
+                                        <tr key={ctr.id} onClick={() => openContract(ctr.id)}
+                                            className="hover:bg-indigo-500/5 cursor-pointer transition-colors group" title="Apri in Ricerca Contratto">
                                             <td className="px-4 py-3 text-slate-400 flex items-center gap-2">
                                                 <Calendar className="w-3 h-3 text-slate-600" /> {ctr.data}
                                             </td>
                                             <td className="px-4 py-3 text-white font-semibold">{ctr.brand}</td>
                                             <td className="px-4 py-3 text-slate-400">{ctr.categoria}</td>
                                             <td className="px-4 py-3 text-right">
-                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${ctr.stato === 'Attivato' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                                                    ctr.stato === 'In Lavorazione' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
-                                                        'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                                                    }`}>
-                                                    {ctr.stato}
+                                                <span className="inline-flex items-center gap-1.5">
+                                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${ctr.stato === 'Attivato' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                                                        ctr.stato === 'In Lavorazione' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+                                                            'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                                        }`}>
+                                                        {ctr.stato}
+                                                    </span>
+                                                    <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-indigo-400 transition-colors" />
                                                 </span>
                                             </td>
                                         </tr>
@@ -158,6 +184,29 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+
+                    {/* DOCUMENTI / PDA CARICATI */}
+                    <div className="space-y-4">
+                        <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                            <Paperclip className="w-3 h-3" /> Documenti e PDA caricati
+                        </h3>
+                        {docs.length === 0 ? (
+                            <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-6 text-center text-xs text-slate-600">
+                                Nessun documento caricato per i contratti di questo cliente.
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {docs.map((d) => (
+                                    <a key={d.id} href={d.file_url} target="_blank" rel="noreferrer"
+                                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group">
+                                        <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
+                                        <span className="text-xs text-slate-300 truncate flex-1">{d.file_name || "documento"}</span>
+                                        <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
+                                    </a>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 

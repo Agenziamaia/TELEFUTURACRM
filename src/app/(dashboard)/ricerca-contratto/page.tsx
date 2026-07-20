@@ -52,7 +52,9 @@ export default function RicercaContratto() {
     const [filterVenditore, setFilterVenditore] = useState("");
     const [filterCodice, setFilterCodice] = useState("");
     const [filterBrand, setFilterBrand] = useState("");
-    const [filterProdotto, setFilterProdotto] = useState("");
+    // Filtro prodotto multiplo (richiesta Luca #7): piu' prodotti dello stesso brand insieme.
+    const [filterProdotti, setFilterProdotti] = useState<string[]>([]);
+    const [prodPick, setProdPick] = useState("");
     const [filterNegozio, setFilterNegozio] = useState("");
     const [filterCodiceAttivazione, setFilterCodiceAttivazione] = useState("");
     const [filterCliente, setFilterCliente] = useState("");
@@ -124,7 +126,7 @@ export default function RicercaContratto() {
             if (filterNegozio && filterNegozio !== "Tutti") query = query.eq("negozio", filterNegozio);
             if (filterCodice) query = query.ilike("id", `%${filterCodice}%`);
             if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
-            if (filterProdotto && filterProdotto !== "") query = query.ilike("prodotto", `%${filterProdotto}%`);
+            if (filterProdotti.length > 0) query = query.or(filterProdotti.map(p => `prodotto.ilike.%${p.replace(/[,]/g, "")}%`).join(","));
             if (filterCodiceAttivazione) query = query.ilike("codice_attivazione", `%${filterCodiceAttivazione}%`);
             if (filterCellulare) query = query.ilike("clients.cellulare", `%${filterCellulare}%`);
 
@@ -165,7 +167,7 @@ export default function RicercaContratto() {
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotto, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, filterTableSearch]);
+    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, filterTableSearch]);
 
     const visibleData = contractList;
 
@@ -247,13 +249,29 @@ export default function RicercaContratto() {
                         </select>
                     </div>
 
-                    {/* 5. Prodotto */}
+                    {/* 5. Prodotto (multiplo, con tasto +) */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto</label>
-                        <select className="glass-input w-full" value={filterProdotto} onChange={e => setFilterProdotto(e.target.value)}>
-                            <option value="">Tutti i prodotti</option>
-                            {uniqueProdotti.map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
+                        <div className="flex gap-2">
+                            <select className="glass-input w-full" value={prodPick} onChange={e => setProdPick(e.target.value)}>
+                                <option value="">{filterProdotti.length ? "Aggiungi prodotto…" : "Tutti i prodotti"}</option>
+                                {uniqueProdotti.filter(p => !filterProdotti.includes(p)).map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                            <button type="button" title="Aggiungi prodotto al filtro"
+                                onClick={() => { if (prodPick) { setFilterProdotti(prev => prev.includes(prodPick) ? prev : [...prev, prodPick]); setProdPick(""); } }}
+                                disabled={!prodPick}
+                                className="shrink-0 w-10 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+                        </div>
+                        {filterProdotti.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                {filterProdotti.map(p => (
+                                    <span key={p} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-indigo-500/15 text-indigo-200 border border-indigo-500/30">
+                                        {p}
+                                        <button type="button" onClick={() => setFilterProdotti(prev => prev.filter(x => x !== p))} className="opacity-70 hover:opacity-100">✕</button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* 6. Negozio di attivazione */}
@@ -311,7 +329,7 @@ export default function RicercaContratto() {
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotto(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setFilterTableSearch(""); setDaDataAttivazione(""); setADataAttivazione(""); setDaDataRegistrazione(""); setADataRegistrazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setFilterTableSearch(""); setDaDataAttivazione(""); setADataAttivazione(""); setDaDataRegistrazione(""); setADataRegistrazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportCsv}>
                         Scarica CSV
                     </button>
