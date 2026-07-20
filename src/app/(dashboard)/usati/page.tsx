@@ -659,11 +659,27 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const [allegDich, setAllegDich] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const doSearch = () => {
-    if (!searchValue.trim()) return;
+  // Ricerca cliente REALE sulla tabella clients. Prima inventava un cliente
+  // ("Mario Rossi", CF e IBAN fittizi) e lo dava per trovato: quei dati finti
+  // finivano poi salvati sulla pratica.
+  const doSearch = async () => {
+    const v = searchValue.trim();
+    if (!v) return;
+    const like = `%${v}%`;
+    const { data } = await supabase.from("clients").select("*")
+      .or(`cf_piva.ilike.${like},nome.ilike.${like},cognome.ilike.${like},ragione_sociale.ilike.${like},cellulare.ilike.${like}`)
+      .limit(1);
+    const c = data && data[0];
+    if (!c) { setClienteFound(false); return; }
     setClienteFound(true);
-    if (tipoCliente === "consumer") setAna({ ...ana, nome: "Mario", cognome: "Rossi", cf: "RSSMRA80A01H501U", email: "mario.rossi@email.com", cellulare: "333 1234567", domicilio: "Via Roma 15, 00100 Roma", iban: "IT60X0542811101000000123456", piva: "", ragioneSociale: "", referente: "", pec: "", sdi: "", sedeLegale: "" });
-    else setAna({ ...ana, ragioneSociale: "Rossi S.r.l.", piva: "12345678901", referente: "Mario Rossi", cellulare: "333 1234567", email: "info@rossi.it", pec: "azienda@pec.it", sdi: "Abc1234", sedeLegale: "Via Roma 15, 00100 Roma", iban: "IT60X0542811101000000654321", nome: "", cognome: "", cf: "", domicilio: "" });
+    setAna({
+      ...ana,
+      nome: c.nome || "", cognome: c.cognome || "", cf: c.cf_piva || "",
+      email: c.email || "", cellulare: c.cellulare || "",
+      domicilio: [c.indirizzo, c.citta].filter(Boolean).join(", "),
+      ragioneSociale: c.ragione_sociale || "", piva: c.ragione_sociale ? (c.cf_piva || "") : "",
+      referente: "", pec: "", sdi: "", sedeLegale: "", iban: "",
+    });
   };
 
   const canNext = () => {

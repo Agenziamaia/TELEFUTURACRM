@@ -88,15 +88,23 @@ const calcMargLabel=(selProd,price,qty)=>{
   const label=selProd.type==="pct"?`${selProd.pctMargin}% di €${pVal.toFixed(2)} = €${mVal.toFixed(2)}`:`€${mVal.toFixed(2)}`;
   return`${label}${q>1?` × ${q} = €${(mVal*q).toFixed(2)}`:""}`;
 };
-// ── DATABASE USATI MAGAZZINO (mock: IMEI -> Modello) ──
-const USED_WAREHOUSE={
-  "353915110000017":"iPhone 13 128GB Mezzanotte",
-  "356938035643809":"iPhone 12 64GB Nero",
-  "353915110000033":"iPhone 14 Pro 256GB Viola",
-  "490154203237518":"Samsung Galaxy S22 128GB",
-  "359217081234567":"Xiaomi Redmi Note 11 64GB",
-  "353915110000099":"iPhone 11 64GB Bianco",
-};
+// ── MAGAZZINO USATI (reale: tabella "usati") ──
+// Era una mappa hardcoded di 6 IMEI inventati: la ricerca per IMEI non guardava
+// il magazzino vero, quindi un usato realmente a magazzino risultava "non presente".
+let USED_WAREHOUSE={};
+let usedWarehouseLoaded=false;
+async function loadUsedWarehouse(){
+  if(usedWarehouseLoaded)return USED_WAREHOUSE;
+  usedWarehouseLoaded=true;
+  try{
+    const {data}=await supabase.from("usati").select("imei, model");
+    const m={};
+    (data||[]).forEach(r=>{const d=String(r.imei||"").replace(/\D/g,"");if(d)m[d]=r.model||"";});
+    USED_WAREHOUSE=m;
+  }catch{usedWarehouseLoaded=false;}
+  return USED_WAREHOUSE;
+}
+if(typeof window!=="undefined")loadUsedWarehouse();
 const lookupUsato=(imei)=>{const d=String(imei||"").replace(/\D/g,"");return d.length===15?(USED_WAREHOUSE[d]||""):"";};
 const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
   const [selCat,setSelCat]=useState(0);
@@ -235,7 +243,26 @@ const BRANDS = [
 const codiciW3 = ["Magliana","Libia","San Paolo","Mazzini","Donna","Promontori","Collatina"];
 const SKY_CODICI_NEGOZIO = ["Acilia","Donna","Magliana","Garbatella","Promontori","Collatina"];
 const venditori = ["Alberto","Alex","Alin","Asad","Ben Aziza","Cristhian","Cristi","Damiano","Daniel","Daniele2","Denise","Dimitri","Eloise","Eros","Fadel","Federico","Francesca","Francesco","George","Giacomo","Gian","Giulia","Giuseppe B.","Ilaria","Lorenzo","Ludmilla","Manu","Marta","Marta2","Marta3","Matteo","Michele","Roberto","Samantha","Sheekell","Tommaso","Veronica"];
-const negozi = ["Magliana","Donna","Libia","Collatina","Mazzini","San Paolo","Garbatella","Promontori","Acilia","Baleniere","Castani","Merulana","Telefonico"];
+// Negozi dal DB. L'array viene riempito IN PLACE perche' EN_CODICI_NEGOZIO punta
+// allo stesso riferimento. Prima era hardcoded e conteneva ancora "Telefonico".
+const negozi=[];
+const _negoziSubs=new Set();
+let _negoziLoaded=false;
+async function loadNegozi(){
+  if(_negoziLoaded)return;_negoziLoaded=true;
+  try{
+    const {data}=await supabase.from("stores").select("name").order("name");
+    const names=(data||[]).map(r=>r.name).filter(Boolean);
+    negozi.length=0;negozi.push(...names);
+    _negoziSubs.forEach(fn=>fn());
+  }catch{_negoziLoaded=false;}
+}
+if(typeof window!=="undefined")loadNegozi();
+function useNegozi(){
+  const [,bump]=useState(0);
+  useEffect(()=>{const fn=()=>bump(v=>v+1);_negoziSubs.add(fn);loadNegozi();return()=>{_negoziSubs.delete(fn);};},[]);
+  return negozi;
+}
 const opProv = ["Enel Energia","Eni Plenitude","A2A Energia","Edison Energia","Iren Mercato","Hera Comm","Sorgenia","Acea Energia","Engie","E.ON","Illumia","Wekiwi","Pulsee","Octopus Energy","Green Network","Dolomiti Energia","Axpo","NeN","Tate","WindTre Luce e Gas","Fastweb Energia","S4 Energy","Barton Energy","Altro"];
 const opProvNoW3 = opProv.filter(o=>o!=="WindTre Luce e Gas");
 const brandMNP = ["TIM","Vodafone","WindTre","Iliad","Sky Mobile","Fastweb Mobile","PosteMobile","ho. Mobile","Kena Mobile","Very Mobile","CoopVoce","Spusu","Lyca Mobile","1Mobile","Tiscali Mobile","Digi Mobil","Noitel","Optima Mobile","Feder Mobile","Rabona Mobile","Elimobile","BT Italia","Segnoverde Mobile","Uno Mobile","Saily","Visitel","Ops! Mobile"];

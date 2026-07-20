@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
 import { useStores, useSellers } from "@/lib/org";
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -37,7 +38,6 @@ const RICHIAMO_STATI = ["Da richiamare", "Appuntamento telefonico"];
 const APPUNTAMENTO_STATI = ["1° Appuntamento", "2° Appuntamento", "3° Appuntamento", "1° DTS", "2° DTS", "3° DTS"];
 
 // NEGOZI/AGENTI/VENDITORI ora dal DB: le liste erano nomi e citta di fantasia
-const CALLERS = ["Mario Rossi", "Anna Colombo", "Giuseppe Esposito", "Francesca Romano"];
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
 const ANNI = ["2024", "2025", "2026"];
 
@@ -298,12 +298,20 @@ export default function CallerPage() {
     const NEGOZI = useStores();
     const VENDITORI = useSellers();
     const AGENTI = VENDITORI;
+    const CALLERS = VENDITORI;   // anche i caller sono utenti reali (app_users)
     const [view, setView] = usePageView<typeof defaultCallerView>("caller", defaultCallerView);
 
-    // TODO: replace with real session role from auth context
-    // For now we expose a role switcher (visible in dev / staging)
-    const [currentRole, setCurrentRole] = useState<Role>("caller");
-    const currentCaller = "Mario Rossi"; // TODO: pull from session
+    // Utente e ruolo REALI dalla sessione. Prima erano fissi ("Mario Rossi" +
+    // ruolo "caller"): le chiamate venivano filtrate e soprattutto ATTRIBUITE
+    // nello storico a una persona inesistente.
+    const { user } = useAuth();
+    const currentCaller = user?.name || "";
+    const roleFromSession: Role =
+        ["admin", "dev", "direttore_generale"].includes(user?.role || "") ? "admin"
+      : ["direttore_cc", "direttore_ob", "direttore_commerciale", "store_manager", "amministrativo"].includes(user?.role || "") ? "direttore"
+      : "caller";
+    const [currentRole, setCurrentRole] = useState<Role>(roleFromSession);
+    useEffect(() => { setCurrentRole(roleFromSession); }, [roleFromSession]);
     const isDirector = currentRole === "direttore" || currentRole === "admin";
 
     /* ── Data state ── */

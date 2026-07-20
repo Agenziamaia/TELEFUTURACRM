@@ -9,7 +9,7 @@ import { DatePickerInput } from "@/components/DatePickerInput";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 
-// Mock appointment data — will be replaced with Supabase queries
+// Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto)
 type AppointmentType = "incoming" | "outgoing" | "self_generated";
 type AppointmentStatus = "scheduled" | "attivato" | "ko" | "in_gestione" | "da_richiamare" | "da_rifissare" | "annullato";
 
