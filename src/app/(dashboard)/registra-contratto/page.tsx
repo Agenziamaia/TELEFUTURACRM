@@ -3442,6 +3442,8 @@ export default function CRM() {
   const [tipoCliente,setTipoCliente]=useState(null);
   const [lookupValue,setLookupValue]=useState("");
   const [clienteFound,setClienteFound]=useState(false);
+  const [lookupDone,setLookupDone]=useState(false);
+  const [lookupBusy,setLookupBusy]=useState(false);
   const [showAna,setShowAna]=useState(false);
   const [ana,setAna]=useState({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:""});
   const [sales,setSales]=useState({});
@@ -3521,7 +3523,7 @@ export default function CRM() {
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
   const rmCG=idx=>setCart(p=>p.filter((_,i)=>i!==idx));
-  const fullReset=()=>{setBrand(null);setTipoCliente(null);setLookupValue("");setClienteFound(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:""})};
+  const fullReset=()=>{setBrand(null);setTipoCliente(null);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:""})};
   // ── Auto-save every state change ──
   useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,selVend,selNeg,lookupValue,margItems});
   
@@ -3689,7 +3691,34 @@ export default function CRM() {
       sT("❌ Errore durante il salvataggio: " + (err.message || "Verifica connessione"));
     }
   };
-  const doLookup=()=>{setClienteFound(true);setShowAna(true);setShowStep4(false);setAna({nome:"Mario",cognome:"Rossi",cellulare:"3331234567",email:"mario.rossi@email.com",via:"Via Roma 15",cap:"00100",citta:"Roma",iban:"IT60 X054 2811 1010 0000 0123 456",ragioneSociale:"Rossi S.r.l.",nomeRef:"Mario",cognomeRef:"Rossi",recapito:"3331234567"})};
+  // Ricerca REALE del cliente. Prima questa funzione non interrogava nulla:
+  // dichiarava "Trovato!" e riempiva l'anagrafica con un cliente inventato
+  // (Mario Rossi / Rossi S.r.l. / IBAN fittizio), qualunque CF si digitasse.
+  const doLookup=async()=>{
+    const v=(lookupValue||"").trim();
+    if(!v||lookupBusy)return;
+    setLookupBusy(true);
+    try{
+      const {data}=await supabase.from("clients").select("*").ilike("cf_piva",v).limit(1);
+      const c=data&&data[0];
+      setLookupDone(true);
+      setShowAna(true);setShowStep4(false);
+      if(!c){
+        setClienteFound(false);
+        setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:""});
+        return;
+      }
+      setClienteFound(true);
+      setAna({
+        nome:c.nome||"",cognome:c.cognome||"",cellulare:c.cellulare||"",email:c.email||"",
+        via:c.indirizzo||"",cap:c.cap||"",citta:c.citta||"",iban:"",
+        ragioneSociale:c.ragione_sociale||"",nomeRef:c.nome_ref||"",cognomeRef:c.cognome_ref||"",
+        recapito:c.cellulare||"",
+      });
+      if(c.tipo==="business"&&tipoCliente!=="business")setTipoCliente("business");
+      if(c.tipo==="consumer"&&tipoCliente!=="privato")setTipoCliente("privato");
+    }finally{setLookupBusy(false);}
+  };
 
 
   const tCI=cart.reduce((s,g)=>s+g.items.length,0)+colItems().length+margItems.length;
@@ -3900,7 +3929,7 @@ export default function CRM() {
             <input placeholder={tipoCliente==="privato"?"RSSMRA80A01H501Z":"12345678901"} value={lookupValue} onChange={e=>setLookupValue(e.target.value.toUpperCase())} style={{flex:1,padding:"10px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontFamily:"monospace",letterSpacing:1.2}}/>
             <button onClick={doLookup} style={{padding:"10px 18px",borderRadius:8,border:"none",background:"#6f42c1",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔍 Cerca</button>
           </div>
-          {clienteFound&&<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#28a745"}}>✅ Trovato!</div>}
+          {lookupDone&&(clienteFound?<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#28a745"}}>✅ Cliente trovato in anagrafica</div>:<div style={{marginTop:10,background:"rgba(245,158,11,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#f59e0b"}}>⚠ Cliente non presente in anagrafica — compila i dati a mano</div>)}
         </div>}
       </div>}
 
