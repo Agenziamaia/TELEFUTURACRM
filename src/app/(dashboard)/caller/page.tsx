@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
+import { useStores, useSellers } from "@/lib/org";
 
 /* ─────────────────────────────────────────────────────────────────────
    CONSTANTS
@@ -35,9 +36,7 @@ const NR_STATI = ["Cold NR1", "Cold NR2", "Cold NR3", "Hot NR1", "Hot NR2", "Hot
 const RICHIAMO_STATI = ["Da richiamare", "Appuntamento telefonico"];
 const APPUNTAMENTO_STATI = ["1° Appuntamento", "2° Appuntamento", "3° Appuntamento", "1° DTS", "2° DTS", "3° DTS"];
 
-const NEGOZI = ["Roma Tuscolana", "Roma Tiburtina", "Roma Prati", "Roma EUR", "Guidonia", "Tivoli"];
-const AGENTI = ["Marco Bianchi", "Luca Verdi", "Sara Neri", "Paolo Russo"];
-const VENDITORI = ["Mario Rossi", "Anna Colombo", "Giuseppe Esposito", "Francesca Romano", "Alessandro Ferrari", "Giulia Costa", "Marco Bianchi", "Luca Verdi", "Sara Neri", "Paolo Russo"];
+// NEGOZI/AGENTI/VENDITORI ora dal DB: le liste erano nomi e citta di fantasia
 const CALLERS = ["Mario Rossi", "Anna Colombo", "Giuseppe Esposito", "Francesca Romano"];
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
 const ANNI = ["2024", "2025", "2026"];
@@ -296,6 +295,9 @@ const defaultCallerView = {
    ───────────────────────────────────────────────────────────────────── */
 
 export default function CallerPage() {
+    const NEGOZI = useStores();
+    const VENDITORI = useSellers();
+    const AGENTI = VENDITORI;
     const [view, setView] = usePageView<typeof defaultCallerView>("caller", defaultCallerView);
 
     // TODO: replace with real session role from auth context

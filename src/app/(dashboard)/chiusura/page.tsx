@@ -6,6 +6,7 @@ import { usePageView } from "@/lib/pageView";
 import { useAuth } from "@/context/AuthContext";
 import { RotateCcw, Download, Eye, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useStores } from "@/lib/org";
 
 //  Types ─
 type DocKey = "cassa" | "pos" | "ddt_w3" | "ddt_vf" | "fatture";
@@ -24,7 +25,8 @@ interface Fattura {
 }
 
 //  Constants ─
-const NEGOZI = ["Magliana", "Donna", "Libia", "Collatina", "Mazzini", "San Paolo", "Garbatella", "Promontori", "Acilia", "Baleniere", "Castani", "Merulana", "Telefonico"];
+// NEGOZI ora arriva dal DB (useStores), non piu' hardcoded: la vecchia lista era
+// disallineata dai negozi reali e conteneva ancora "Telefonico" (rimosso in migration 033).
 const SOCIETA = ["Telefutura", "Telefutura 2SRL"];
 const SOC_COLORS: Record<string, { text: string; bg: string; border: string }> = {
     "Telefutura": { text: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/30" },
@@ -374,6 +376,7 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
 
 //  VistaFatture 
 function VistaFatture({ onClose, history, onToggleEmessa }: { onClose: () => void; history: Chiusura[]; onToggleEmessa?: (attachmentId: number, emessa: boolean) => void | Promise<void> }) {
+    const NEGOZI = useStores();
     const fatture = useMemo(() => buildFatture(history), [history]);
     const [tab, setTab] = useState<"da_emettere" | "emesse">("da_emettere");
     const [fStore, setFStore] = useState("");
@@ -540,6 +543,7 @@ function VistaFatture({ onClose, history, onToggleEmessa }: { onClose: () => voi
 
 //  VistaGestione 
 function VistaGestione({ isAdmin, userStore, history }: { isAdmin: boolean; userStore: string; history: Chiusura[] }) {
+    const NEGOZI = useStores();
     const [fStore, setFStore] = useState("");
     const [fSoc, setFSoc] = useState("");
     const [fDateA, setFDateA] = useState("");

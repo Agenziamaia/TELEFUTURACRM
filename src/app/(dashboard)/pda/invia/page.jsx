@@ -8,11 +8,12 @@ import { calculateCF, _CNA, _PNA } from "@/lib/cf";
 import { getDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { useStores, useSellers } from "@/lib/org";
 
 // ── COSTANTI ──────────────────────────────────────────────────────────────────
 
-const VENDITORI = ["Alberto", "Alex", "Alin", "Asad", "Ben Aziza", "Cristhian", "Cristi", "Damiano", "Daniel", "Daniele2", "Denise", "Dimitri", "Eloise", "Eros", "Fadel", "Federico", "Francesca", "Francesco", "George", "Giacomo", "Gian", "Giulia", "Giuseppe B.", "Ilaria", "Lorenzo", "Manu", "Marta", "Marta2", "Marta3", "Matteo", "Michele", "Riccardo", "Roberto", "Samantha", "Sheekell", "Tommaso", "Veronica"];
-const NEGOZI = ["Magliana", "Donna", "Libia", "Collatina", "Mazzini", "San Paolo", "Garbatella", "Promontori", "Acilia", "Baleniere", "Castani", "Merulana", "Telefonico"];
+// VENDITORI e NEGOZI ora arrivano dal DB (useSellers/useStores): le liste hardcoded
+// erano nomi di fantasia/parziali e includevano "Telefonico", negozio rimosso in 033.
 
 const ALL_BRANDS = [
   {
@@ -252,6 +253,8 @@ const DRAFT_KEY_PDA = "pda-invia";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function InviaPda() {
+  const NEGOZI = useStores();
+  const VENDITORI = useSellers();
   const draftRef = useRef(undefined);
   if (draftRef.current === undefined) draftRef.current = getDraft(DRAFT_KEY_PDA);
   const draft = draftRef.current;
@@ -2419,6 +2422,7 @@ function AField({ label, required, value, onChange, pf, ph, mono, span2, actionL
 }
 
 function NoteStep() {
+  const NEGOZI = useStores();
   const [show, setShow] = useState(false);
   return (
     <div className="space-y-6">

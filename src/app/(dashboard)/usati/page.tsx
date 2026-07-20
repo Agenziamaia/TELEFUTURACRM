@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   Smartphone, Tablet, Laptop, Watch,
   Calendar, Search, User, Building2, CalendarDays,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
+import { useStores, useSellers } from "@/lib/org";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UsatoStatus =
@@ -84,7 +85,7 @@ const KPI_CARDS = [
   { key: "venduto", label: "Venduto", icon: "💸", colorClass: "text-rose-400", bgClass: "bg-rose-500/10", borderClass: "border-rose-500/30" },
 ];
 
-const NEGOZI = ["Magliana", "Donna", "Libia", "Collatina", "Mazzini", "San Paolo", "Garbatella", "Promontori", "Acilia", "Baleniere", "Castani", "Merulana", "Telefonico"];
+// NEGOZI dal DB (useStores)
 const DATE_FIELDS = [
   { key: "created_at", label: "Data Registrazione" },
   { key: "purchase_date", label: "Data Acquisto" },
@@ -98,7 +99,7 @@ const RICAMBIO_STATES: { key: RicambioState; label: string; colorClass: string }
   { key: "ordinato", label: "Ordinato", colorClass: "text-blue-400" },
   { key: "arrivato", label: "Arrivato", colorClass: "text-emerald-400" },
 ];
-const VENDITORI = ["Alberto", "Alex", "Alin", "Asad", "Ben Aziza", "Cristhian", "Cristi", "Damiano", "Daniel", "Daniele", "Denise", "Dimitri", "Eloise", "Eros", "Fadel", "Federico", "Francesca", "Francesco", "George", "Giacomo", "Gian", "Giulia", "Giuseppe B.", "Ilaria", "Lorenzo", "Manu", "Marta", "Matteo", "Michele", "Riccardo", "Roberto", "Samantha", "Sheekell", "Tommaso", "Veronica"];
+// VENDITORI dal DB (useSellers)
 const OPERATORI = ["Alberto", "Francesca", "Daniele", "Giulia", "Michele", "Marta", "Federico", "Eloise", "Riccardo", "Lorenzo"];
 const PHONE_BRANDS_MODELS: Record<string, string[]> = {
   Apple: ["iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 16", "iPhone 15 Pro Max", "iPhone 15 Pro", "iPhone 15", "iPhone 14 Pro", "iPhone 14", "iPhone 13", "iPhone SE"],
@@ -375,6 +376,7 @@ function RicambioRow({ r, idx, onUpdate, onRemove }: { r: Ricambio; idx: number;
 
 //  DevicePanel 
 function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () => void; onSave: (d: Device) => void }) {
+  const NEGOZI = useStores();
   const [dev, setDev] = useState<Device>(() => ({ ...device, ricambi: device.ricambi.map(r => ({ ...r })), extra_margine: device.extra_margine ? { ...device.extra_margine } : null, pagamento: { ...device.pagamento } }));
   const [newRicambio, setNewRicambio] = useState("");
   const [newRicambioInMag, setNewRicambioInMag] = useState(false);
@@ -454,7 +456,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                   <select value={targetStore} onChange={e => setTargetStore(e.target.value)}
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
                     <option value="">Seleziona Negozio...</option>
-                    {NEGOZI.filter(n => n !== "Telefonico").map(n => <option key={n} value={n}>{n}</option>)}
+                    {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
                 )}
                 {next && <button onClick={advanceStatus} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/30 transition-all">
@@ -632,6 +634,8 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
 
 //  RegistraUsatoPanel -
 function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: (d: any) => void }) {
+  const NEGOZI = useStores();
+  const VENDITORI = useSellers();
   const [step, setStep] = useState(1);
   const [venditore, setVenditore] = useState("");
   const [negozio, setNegozio] = useState("");
@@ -980,10 +984,14 @@ function AnaFields({ tipoCliente, ana, setAna, inp, lbl }: any) {
 
 //  Main Page -
 export default function GestioneUsati() {
+  const NEGOZI = useStores();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedStores, setSelectedStores] = useState<string[]>([...NEGOZI]);
+  const [selectedStores, setSelectedStores] = useState<string[]>([]);
+  // i negozi arrivano in modo asincrono: alla prima load seleziona tutto
+  const storesInit = useRef(false);
+  useEffect(() => { if (!storesInit.current && NEGOZI.length) { storesInit.current = true; setSelectedStores([...NEGOZI]); } }, [NEGOZI]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([...STATUS_KEYS]);
   const [dateField, setDateField] = useState("created_at");
   const [dateFrom, setDateFrom] = useState("");
