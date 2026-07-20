@@ -129,12 +129,10 @@ const TIPO_PRODOTTO = [
 ];
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
-const rnd = (f: string, t: string) => { const a = new Date(f).getTime(), b = new Date(t).getTime(); return new Date(a + Math.random() * (b - a)); };
 const fmtDate = (d: Date | string | null) => { if (!d) return "—"; const dt = d instanceof Date ? d : new Date(d); return isNaN(dt.getTime()) ? "—" : dt.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }); };
 const fmtDateTime = (d: Date | string | null) => { if (!d) return "—"; const dt = d instanceof Date ? d : new Date(d); return isNaN(dt.getTime()) ? "—" : fmtDate(dt) + " " + dt.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }); };
 const fmtEur = (v: number) => v.toLocaleString("it-IT", { style: "currency", currency: "EUR" });
 const isoDate = (d: Date) => d.toISOString().slice(0, 10);
-const genIMEI = () => { let s = "35"; for (let i = 0; i < 13; i++) s += Math.floor(Math.random() * 10); return s; };
 
 // ─── Data layer ──────────────────────────────────────────────────────────────
 const BRANDS_FLAT = Object.entries(PHONE_BRANDS_MODELS).flatMap(([b, ms]) => ms.map(m => `${b} ${m}`));
