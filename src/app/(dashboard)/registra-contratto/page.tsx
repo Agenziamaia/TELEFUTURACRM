@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
 const ReqCtx = createContext(null);
 const SubKeyCtx = createContext(null);
 let _FUID = 0;
@@ -901,6 +902,13 @@ const DD = ({l,r,v,o,vals,nt}) => {
         </div>
       )}
       {nt&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{nt}</div>}
+      {/* Se e' selezionato "Altro", compare un campo per inserire il modello non in lista.
+          Il valore viene salvato come "Altro: <modello>" cosi' il campo resta visibile. */}
+      {typeof v==="string"&&(v==="Altro"||v.startsWith("Altro:"))&&(
+        <input autoFocus value={v.replace(/^Altro:?\s*/,"")} placeholder="Inserisci il modello non in lista…"
+          onChange={e=>{const t=e.target.value;o&&o(t?("Altro: "+t):"Altro");}}
+          style={{width:"100%",marginTop:6,padding:"7px 10px",borderRadius:6,fontSize:12,boxSizing:"border-box",border:"1px solid rgba(111,66,193,0.5)",background:"rgba(111,66,193,0.10)",color:"#f8fafc"}}/>
+      )}
     </div>
   );
   return content;
@@ -3394,7 +3402,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
   return content;
 };
 
-const NoteStep = () => {
+const NoteStep = ({store}) => {
   const [show,setShow]=useState(false);
   const content = (
     <div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #e83e8c"}}>
@@ -3410,7 +3418,8 @@ const NoteStep = () => {
         <div style={{border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
         <div style={{border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Promemoria</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data</div><input type="date" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Ora</div><input type="time" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div></div>
-          <div style={{marginTop:8}}><DD l="Negozio" vals={negozi}/></div>
+          {/* Negozio non selezionabile: fisso al negozio del login (richiesta Luca, Step 7). */}
+          <div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Negozio</div><input value={store||"—"} readOnly tabIndex={-1} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.03)",color:"#8892b0",cursor:"not-allowed"}}/></div>
           <div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Descrizione</div><textarea placeholder="Dettagli…" rows={2} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
         </div>
       </div>}
@@ -3450,8 +3459,17 @@ export default function CRM() {
   const [sesCode,setSesCode]=useState("");
   const [cart,setCart]=useState([]);
 
-  const [selVend,setSelVend]=useState("Alberto");
-  const [selNeg,setSelNeg]=useState("Magliana");
+  // Venditore e Negozio: precompilati dal login (prima erano fissi "Alberto"/"Magliana").
+  const { user } = useAuth();
+  const [selVend,setSelVend]=useState("");
+  const [selNeg,setSelNeg]=useState("");
+  const _loginPrefill=useRef(false);
+  useEffect(()=>{
+    if(_loginPrefill.current||!user)return;
+    _loginPrefill.current=true;
+    setSelVend(p=>p||user.name||"");
+    setSelNeg(p=>p||user.negozio||"");
+  },[user]);
   const [confirmReset,setConfirmReset]=useState(false);
   const [showStep4,setShowStep4]=useState(false);
   const [vfQtyModal,setVfQtyModal]=useState(null);
@@ -3787,7 +3805,7 @@ export default function CRM() {
           <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Step 6 — Attribuzione</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
-            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data <span style={{color:"#dc3545"}}>*</span></div><input type="date" defaultValue="2026-03-07" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
+            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data <span style={{color:"#dc3545"}}>*</span></div><input type="date" defaultValue={new Date().toISOString().split("T")[0]} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
         {onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745",marginTop:12}}>
@@ -3798,7 +3816,7 @@ export default function CRM() {
             <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Giorno <span style={{color:"#dc3545"}}>*</span></div><input type="date" defaultValue="2026-03-07" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
-        {!onlyMarg&&<NoteStep/>}
+        {!onlyMarg&&<NoteStep store={selNeg}/>}
         <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
           <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
           {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}

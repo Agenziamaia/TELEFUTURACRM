@@ -954,7 +954,7 @@ function MalattiaSection() {
     );
 }
 
-type RitardoRow = { id: string; employee_name: string; store: string; date: string; minutes: number | null; reason: string | null; reported_by: string | null };
+type RitardoRow = { id: string; employee_name: string; store: string; date: string; minutes: number | null; reason: string | null; reported_by: string | null; tipo: string | null };
 
 function RitardiSection() {
     const { user } = useAuth();
@@ -969,8 +969,11 @@ function RitardiSection() {
 
     const [mode, setMode] = useState<"self" | "other">("self");
     const [newEmployee, setNewEmployee] = useState("");
-    const [newStore, setNewStore] = useState("");
     const [newReason, setNewReason] = useState("");
+    const [newTipo, setNewTipo] = useState<"pre" | "post">("pre");
+    // Collaboratori del negozio del login (per il dropdown "Per un collaboratore").
+    // La direzione (reportAll) senza negozio vede tutti gli attivi.
+    const [storeStaff, setStoreStaff] = useState<{ name: string; store: string }[]>([]);
 
     const fetchRows = useCallback(async () => {
         const { data } = await supabase.from("ritardi").select("*").order("date", { ascending: false });
@@ -979,6 +982,14 @@ function RitardiSection() {
     useEffect(() => {
         fetchRows();
     }, [fetchRows]);
+    useEffect(() => {
+        (async () => {
+            let q = supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name");
+            if (!reportAll && user?.negozio) q = q.ilike("primary_store", `${user.negozio.split(" ")[0]}%`);
+            const { data } = await q;
+            setStoreStaff((data ?? []).map((u: any) => ({ name: u.full_name, store: u.primary_store || "" })));
+        })();
+    }, [reportAll, user?.negozio]);
 
     // visibilità: direzione+ vede tutto; store manager il proprio negozio; gli altri solo i propri
     const scoped = rows.filter((r) => {
@@ -992,8 +1003,8 @@ function RitardiSection() {
     const openModal = () => {
         setMode("self");
         setNewEmployee("");
-        setNewStore(user?.negozio || "");
         setNewReason("");
+        setNewTipo("pre");
         setShowNewModal(true);
     };
 
@@ -1001,7 +1012,8 @@ function RitardiSection() {
         e.preventDefault();
         const isOther = canReportOthers && mode === "other";
         const emp = (isOther ? newEmployee : user?.name || "").trim();
-        const store = (isOther ? newStore : user?.negozio || "").trim();
+        // Il negozio non viene chiesto: deriva dal collaboratore scelto (o dal login).
+        const store = (isOther ? (storeStaff.find((s) => s.name === newEmployee)?.store || "") : user?.negozio || "").trim();
         if (!emp) return;
         setSaving(true);
         const today = new Date().toISOString().slice(0, 10);
@@ -1010,6 +1022,7 @@ function RitardiSection() {
             store: store || "",
             date: today,
             reason: newReason.trim() || null,
+            tipo: newTipo,
             reported_by: user?.name || null,
         });
         await fetchRows();
@@ -1058,6 +1071,7 @@ function RitardiSection() {
                                 <tr className="bg-white/[0.02] border-b border-white/5">
                                     <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Collaboratore</th>
                                     <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Negozio</th>
+                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tipo</th>
                                     <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data</th>
                                     <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Motivo</th>
                                 </tr>
@@ -1070,6 +1084,7 @@ function RitardiSection() {
                                             {r.reported_by && r.reported_by !== r.employee_name && <p className="text-[10px] text-slate-600">segnalato da {r.reported_by}</p>}
                                         </td>
                                         <td className="px-5 py-4"><p className="text-[10px] text-slate-500 uppercase tracking-wider">{r.store || "—"}</p></td>
+                                        <td className="px-5 py-4">{r.tipo ? <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/25">{r.tipo === "pre" ? "Pre" : "Post"}</span> : <span className="text-[10px] text-slate-600">—</span>}</td>
                                         <td className="px-5 py-4 text-xs text-slate-400">{formatDate(r.date)}</td>
                                         <td className="px-5 py-4 text-xs text-slate-400">{r.reason || "—"}</td>
                                     </tr>
@@ -1102,18 +1117,27 @@ function RitardiSection() {
                                     Segnali il tuo ritardo di <b className="text-white">oggi</b>. Nome, negozio e data sono automatici.
                                 </p>
                             ) : (
-                                <>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
-                                        <input type="text" required placeholder="Nome e Cognome" value={newEmployee} onChange={(e) => setNewEmployee(e.target.value)} className="glass-input !h-10 text-xs w-full" />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Punto Vendita</label>
-                                        <input type="text" placeholder="Nome Negozio" value={newStore} onChange={(e) => setNewStore(e.target.value)} readOnly={!reportAll} className={cn("glass-input !h-10 text-xs w-full", !reportAll && "opacity-70")} />
-                                        {isStoreMgr && !reportAll && <p className="text-[10px] text-slate-600 ml-1">Solo collaboratori del tuo punto vendita.</p>}
-                                    </div>
-                                </>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
+                                    {/* Dropdown dei collaboratori del negozio del login (niente campo negozio: deriva dal collaboratore). */}
+                                    <select required value={newEmployee} onChange={(e) => setNewEmployee(e.target.value)} className="glass-input !h-10 text-xs w-full">
+                                        <option value="">— Seleziona collaboratore —</option>
+                                        {storeStaff.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+                                    </select>
+                                    {isStoreMgr && !reportAll && <p className="text-[10px] text-slate-600 ml-1">Collaboratori del tuo punto vendita.</p>}
+                                </div>
                             )}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Tipo ritardo</label>
+                                <div className="flex gap-2">
+                                    {([["pre", "Pre apertura"], ["post", "Post apertura"]] as const).map(([val, lab]) => (
+                                        <button type="button" key={val} onClick={() => setNewTipo(val)}
+                                            className={cn("flex-1 h-10 rounded-lg text-xs font-bold transition-colors border", newTipo === val ? "bg-amber-500 text-white border-amber-500" : "bg-white/5 text-slate-400 border-white/10 hover:text-white")}>
+                                            {lab}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Motivo (opzionale)</label>
                                 <input type="text" placeholder="Es. traffico, imprevisto…" value={newReason} onChange={(e) => setNewReason(e.target.value)} className="glass-input !h-10 text-xs w-full" />
