@@ -7,13 +7,13 @@ import Link from "next/link";
 import {
   getInbox, listMessages, getParticipants, sendMessage, markRead,
   subscribeMessages, subscribeInbox, subscribeReceipts, refHref,
-  splitBody, refToken, searchAllEntities, recentEntities,
+  splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
 } from "@/lib/chat";
-import { roleLabel } from "@/lib/roles";
+import { roleLabel, seesAllStores } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2 } from "lucide-react";
 
 // icona + colore per tipo di tag
 const REF_UI = {
@@ -46,6 +46,14 @@ function lastSeen(s) {
 export default function ChatPage() {
   const { user } = useAuth();
   const meId = user?.id;
+  const isAdmin = !!user && (seesAllStores(user.role) || user.role === "dev");
+
+  const onDeleteConversation = async () => {
+    if (!selId || !isAdmin) return;
+    if (!window.confirm("Eliminare definitivamente questa conversazione per tutti? L'azione non è reversibile.")) return;
+    try { await deleteConversation(selId); setSelId(null); await reloadInbox(); }
+    catch (e) { alert("Eliminazione non riuscita: " + (e?.message || e)); }
+  };
   const { isOnline } = usePresence();
 
   const [inbox, setInbox] = useState([]);
@@ -268,7 +276,7 @@ export default function ChatPage() {
                   <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-[#0b0d14]" />
                 )}
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-white truncate">{title}</p>
                 <p className="text-xs text-slate-500 truncate flex items-center gap-1.5">
                   {selConv.type === "dm" && <span className={`w-2 h-2 rounded-full ${dmOnline ? "bg-green-500" : "bg-slate-600"}`} />}
@@ -277,6 +285,12 @@ export default function ChatPage() {
                     : (dmOnline ? "Online" : (lastSeen(otherPart?.last_seen_at) || roleLabel(selConv.other_role || "")))}
                 </p>
               </div>
+              {isAdmin && (
+                <button onClick={onDeleteConversation} title="Elimina conversazione (admin)"
+                  className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors shrink-0">
+                  <Trash2 className="w-4.5 h-4.5" />
+                </button>
+              )}
             </div>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-1">

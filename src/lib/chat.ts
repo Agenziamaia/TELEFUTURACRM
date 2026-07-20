@@ -287,6 +287,12 @@ export async function markRead(convId: string, meId: string): Promise<void> {
   await supabase.rpc("chat_mark_read", { p_conversation: convId, p_user: meId });
 }
 
+/** Elimina un'intera conversazione (solo admin). Cascade su participants/messages/attachments. */
+export async function deleteConversation(convId: string): Promise<void> {
+  const { error } = await supabase.from("chat_conversations").delete().eq("id", convId);
+  if (error) throw error;
+}
+
 // Realtime: nuovi messaggi in UNA conversazione (per la finestra aperta).
 export function subscribeMessages(convId: string, onInsert: (m: any) => void) {
   const channel = supabase

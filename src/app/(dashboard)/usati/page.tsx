@@ -13,6 +13,7 @@ import {
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores, useSellers } from "@/lib/org";
+import { useAuth } from "@/context/AuthContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UsatoStatus =
@@ -102,15 +103,16 @@ const RICAMBIO_STATES: { key: RicambioState; label: string; colorClass: string }
 // VENDITORI dal DB (useSellers)
 const OPERATORI = ["Alberto", "Francesca", "Daniele", "Giulia", "Michele", "Marta", "Federico", "Eloise", "Riccardo", "Lorenzo"];
 const PHONE_BRANDS_MODELS: Record<string, string[]> = {
-  Apple: ["iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 16", "iPhone 15 Pro Max", "iPhone 15 Pro", "iPhone 15", "iPhone 14 Pro", "iPhone 14", "iPhone 13", "iPhone SE"],
-  Samsung: ["Galaxy S24 Ultra", "Galaxy S24+", "Galaxy S24", "Galaxy S23", "Galaxy Z Fold5", "Galaxy Z Flip5", "Galaxy A54", "Galaxy A34", "Galaxy A15"],
-  Xiaomi: ["14 Ultra", "14", "13T Pro", "13T", "Redmi Note 13 Pro", "Redmi Note 13", "Redmi 13C"],
-  OPPO: ["Find X7", "Reno 11 Pro", "Reno 11", "A79", "A58"],
-  Huawei: ["P60 Pro", "P60", "Nova 12", "Nova 11"],
-  Google: ["Pixel 8 Pro", "Pixel 8", "Pixel 7a"],
-  OnePlus: ["12", "Nord 3", "Nord CE3"],
-  Motorola: ["Edge 40 Pro", "Edge 40", "Moto G84"],
-  Nothing: ["Phone 2", "Phone 1"],
+  Apple: ["iPhone 17 Pro Max", "iPhone 17 Pro", "iPhone 17", "iPhone Air", "iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 16 Plus", "iPhone 16", "iPhone 16e", "iPhone 15 Pro Max", "iPhone 15 Pro", "iPhone 15 Plus", "iPhone 15", "iPhone 14 Pro Max", "iPhone 14 Pro", "iPhone 14", "iPhone 13", "iPhone SE (2022)"],
+  Samsung: ["Galaxy S25 Ultra", "Galaxy S25+", "Galaxy S25", "Galaxy S25 Edge", "Galaxy Z Fold7", "Galaxy Z Flip7", "Galaxy S24 Ultra", "Galaxy S24+", "Galaxy S24", "Galaxy Z Fold6", "Galaxy Z Flip6", "Galaxy A56", "Galaxy A36", "Galaxy A26", "Galaxy A16"],
+  Xiaomi: ["15 Ultra", "15", "14T Pro", "14T", "13T Pro", "Redmi Note 14 Pro+", "Redmi Note 14 Pro", "Redmi Note 14", "Redmi 14C"],
+  OPPO: ["Find X8 Pro", "Find X8", "Reno 13 Pro", "Reno 13", "A80", "A60"],
+  Huawei: ["Pura 70 Pro", "Pura 70", "P60 Pro", "Nova 13", "Nova 12"],
+  Google: ["Pixel 9 Pro XL", "Pixel 9 Pro", "Pixel 9", "Pixel 9a", "Pixel 8 Pro", "Pixel 8a"],
+  OnePlus: ["13", "13R", "Nord 4", "Nord CE4"],
+  Motorola: ["Edge 50 Ultra", "Edge 50 Pro", "Edge 50", "Moto G85"],
+  Nothing: ["Phone 3", "Phone 2a", "Phone 2"],
+  Altro: ["Altro modello"],
 };
 const CAPACITA_OPTIONS = ["32 GB", "64 GB", "128 GB", "256 GB", "512 GB", "1 TB"];
 const COLORI_OPTIONS = ["Nero", "Bianco", "Blu", "Rosso", "Verde", "Oro", "Argento", "Viola", "Rosa", "Grigio", "Titanio", "Altro"];
@@ -120,6 +122,7 @@ const GRADI_USURA = [
   { key: "B", label: "Grado B — Buono", desc: "Lievi segni di usura" },
   { key: "C", label: "Grado C — Discreto", desc: "Segni evidenti ma funzionante" },
   { key: "D", label: "Grado D — Usurato", desc: "Segni importanti, possibili difetti estetici" },
+  { key: "ricambi", label: "Acquistato per ricambi", desc: "Non ricondizionabile — usato solo per pezzi di ricambio" },
 ];
 const TIPO_PRODOTTO = [
   { key: "smartphone", label: "Smartphone", Icon: Smartphone },
@@ -375,6 +378,8 @@ function RicambioRow({ r, idx, onUpdate, onRemove }: { r: Ricambio; idx: number;
 //  DevicePanel 
 function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () => void; onSave: (d: Device) => void }) {
   const NEGOZI = useStores();
+  const { user } = useAuth();
+  const operatore = user?.name || "Operatore";
   const [dev, setDev] = useState<Device>(() => ({ ...device, ricambi: device.ricambi.map(r => ({ ...r })), extra_margine: device.extra_margine ? { ...device.extra_margine } : null, pagamento: { ...device.pagamento } }));
   const [newRicambio, setNewRicambio] = useState("");
   const [newRicambioInMag, setNewRicambioInMag] = useState(false);
@@ -405,14 +410,18 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   const advanceStatus = () => {
     if (needsStore && !targetStore) return;
     setDev(p => {
-      const u: Device = { ...p, status: next!, note_tecnico: noteTecnico };
+      // Registra data+ora e operatore del cambio stato (prima non veniva salvato,
+      // quindi la cronologia in ciascun usato restava vuota dopo l'acquisto).
+      const u: Device = { ...p, status: next!, note_tecnico: noteTecnico,
+        status_history: { ...p.status_history, [next!]: { date: new Date(), operatore } } };
       if (needsStore) u.target_store = targetStore;
       if (next === "in_vendita") u.listed_date = new Date();
       if (next === "venduto") u.sold_date = new Date();
       return u;
     });
   };
-  const setKO = () => setDev(p => ({ ...p, status: "ko", note_tecnico: noteTecnico }));
+  const setKO = () => setDev(p => ({ ...p, status: "ko", note_tecnico: noteTecnico,
+    status_history: { ...p.status_history, ko: { date: new Date(), operatore } } }));
   const handleSave = () => { const u: Device = { ...dev, note_tecnico: noteTecnico, sale_price: editSalePrice ? (parseFloat(salePriceVal) || 0) : 0 }; onSave(u); onClose(); };
 
   const confirmExtraMargine = () => setDev(p => ({ ...p, extra_margine: { ...p.extra_margine!, confermato: true, conferma_operatore: "Admin", conferma_date: new Date() } }));
