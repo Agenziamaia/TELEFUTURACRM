@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
 import {
   CATEGORIE,
   ALL_BRANDS,
@@ -593,10 +594,18 @@ function Drawer({
   row,
   onClose,
   onUpdate,
+  members = [],
+  canDelegate = false,
+  onDelegate,
+  delegatoNome = null,
 }: {
   row: TrackingRow;
   onClose: () => void;
   onUpdate: (updated: TrackingRow) => void;
+  members?: { id: string; full_name: string }[];
+  canDelegate?: boolean;
+  onDelegate?: (rowId: string, toId: string | null) => void;
+  delegatoNome?: string | null;
 }) {
   const [notaNegozio, setNotaNegozio] = useState("");
   const [notaAdmin, setNotaAdmin] = useState("");
@@ -896,6 +905,24 @@ function Drawer({
             >
               Salva verifica amministrazione
             </button>
+
+            {/* Delega verifica (richiesta Luca #6): assegna la pratica a un collaboratore. */}
+            {canDelegate && (
+              <div className="mt-4 pt-4 border-t border-slate-700">
+                <div className={labelStyle + " mb-2"}>Delega verifica a</div>
+                {row.delegated_to && (
+                  <div className="mb-2 text-[12px] text-emerald-400">Attualmente delegata a <b>{delegatoNome || "collaboratore"}</b></div>
+                )}
+                <div className="flex gap-2">
+                  <select value={row.delegated_to || ""} onChange={(e) => onDelegate?.(row.id, e.target.value || null)}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-[13px] p-2 outline-none">
+                    <option value="">— Nessuna delega —</option>
+                    {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                  </select>
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-500">Il delegato e lo store manager vedranno questa pratica (filtro “Delegate a me”).</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -973,6 +1000,16 @@ function Drawer({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TrackingPdaPage() {
+  const { user } = useAuth();
+  const canDelegate = ["store_manager", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
+  const [members, setMembers] = useState<{ id: string; full_name: string }[]>([]);
+  const [onlyMine, setOnlyMine] = useState(false); // "delegate a me"
+  useEffect(() => {
+    supabase.from("app_users").select("id, full_name").eq("active", true).order("full_name")
+      .then(({ data }) => setMembers((data ?? []) as any));
+  }, []);
+  const memberName = useCallback((id?: string | null) => members.find((m) => m.id === id)?.full_name || null, [members]);
+
   const [rawList, setRawList] = useState<RawRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -994,7 +1031,7 @@ export default function TrackingPdaPage() {
     try {
       // Left join clients so contracts without a matching client still appear (avoids 0 rows).
       const selectCols =
-        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
+        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
       const { data: baseData, error: baseErr } = await supabase
         .from("contracts")
         .select(selectCols)
@@ -1028,6 +1065,8 @@ export default function TrackingPdaPage() {
           stato_negozio: t?.stato_negozio ?? "nuovo",
           stato_admin: t?.stato_admin ?? "da_verificare",
           storia: Array.isArray(t?.storia) ? t.storia : [],
+          delegated_to: (row as RawRow).delegated_to ?? null,
+          delegated_by: (row as RawRow).delegated_by ?? null,
         };
       });
       // Optional: use client's 41 sample data from Supabase (run migration 024_tracking_pda_sample_data.sql)
@@ -1059,6 +1098,7 @@ export default function TrackingPdaPage() {
     return data.filter((row) => {
       if (escludiConfermati && statiConfermato.includes(row.statoAdmin)) return false;
       if (escludiCompletati && statiCompletatiNegozio.includes(row.statoNegozio)) return false;
+      if (onlyMine && row.delegated_to !== user?.id) return false; // "delegate a me"
       if (kpiFilter !== null) {
         if (kpiFilter === "__attenzione__") {
           if (!isAttenzioneRow(row) || isMalusRow(row)) return false;
@@ -1104,7 +1144,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati]);
+  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id]);
 
   const filteredPerKpi = useMemo(() => {
     return data.filter((row) => {
@@ -1144,6 +1184,21 @@ export default function TrackingPdaPage() {
     });
   }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, escludiConfermati, escludiCompletati]);
 
+  // Delega la verifica di una pratica a un collaboratore (o rimuove la delega).
+  const handleDelegate = useCallback(async (rowId: string, toId: string | null) => {
+    const target = rawList.find((r) => (r.id as string) === rowId);
+    const oggi = new Date().toLocaleDateString("it-IT");
+    const storia = Array.isArray((target as any)?.storia) ? [...(target as any).storia] : [];
+    storia.push({ data: oggi, tipo: "delega",
+      testo: toId ? `Verifica delegata a ${memberName(toId) || "collaboratore"}` : "Delega verifica rimossa",
+      utente: user?.name || "—", ruolo: "admin" });
+    const { error } = await supabase.from("contracts")
+      .update({ delegated_to: toId, delegated_by: toId ? (user?.id ?? null) : null, storia }).eq("id", rowId);
+    if (error) { setLoadError(error.message); return; }
+    setRawList((prev) => prev.map((r) => (r.id as string) === rowId ? { ...r, delegated_to: toId, delegated_by: toId ? user?.id : null, storia } : r));
+    setSelected((s) => s && s.id === rowId ? { ...s, delegated_to: toId, delegated_by: toId ? (user?.id ?? null) : null, storia } : s);
+  }, [rawList, memberName, user]);
+
   const handleUpdate = useCallback(
     async (updated: TrackingRow) => {
       const payload = {
@@ -1175,13 +1230,23 @@ export default function TrackingPdaPage() {
             <h2 className="text-2xl font-bold text-white mb-1">Tracking PDA</h2>
             <p className="text-slate-400 text-sm">Monitoraggio pratiche: esito negozio, esito admin, storico e malus</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowRegole(true)}
-            className="px-4 py-2 rounded-lg border border-indigo-500 text-indigo-200 text-[13px] font-bold hover:bg-indigo-500/10 transition-colors"
-          >
-            📋 Regole
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Filtro "Delegate a me" (richiesta Luca #6) */}
+            <button
+              type="button"
+              onClick={() => setOnlyMine((v) => !v)}
+              className={"px-4 py-2 rounded-lg border text-[13px] font-bold transition-colors " + (onlyMine ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-300 hover:bg-white/5")}
+            >
+              👤 Delegate a me
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRegole(true)}
+              className="px-4 py-2 rounded-lg border border-indigo-500 text-indigo-200 text-[13px] font-bold hover:bg-indigo-500/10 transition-colors"
+            >
+              📋 Regole
+            </button>
+          </div>
         </div>
 
         {showRegole && (
@@ -1291,7 +1356,8 @@ export default function TrackingPdaPage() {
         )}
 
         {selected && (
-          <Drawer row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate} />
+          <Drawer row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate}
+            members={members} canDelegate={canDelegate} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)} />
         )}
       </div>
     </div>

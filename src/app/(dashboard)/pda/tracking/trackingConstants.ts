@@ -157,6 +157,10 @@ export type TrackingRow = {
   storia: StoriaEvent[];
   cf: string;
   indirizzo: string;
+  // Delega verifica (Tracking PDA): a chi e' delegata la pratica.
+  delegated_to?: string | null;
+  delegated_by?: string | null;
+  delegatoNome?: string | null;
   // optional category-specific
   gnp?: boolean;
   numFissoProvvisorio?: string | null;

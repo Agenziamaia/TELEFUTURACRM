@@ -20,6 +20,7 @@ interface ContrattoRow {
     data_registrazione: string;
     data_attivazione: string;
     stato: string;
+    storia: any[];
 }
 
 function mapContractToRow(c: Record<string, unknown>, client?: Record<string, unknown> | null): ContrattoRow {
@@ -39,6 +40,7 @@ function mapContractToRow(c: Record<string, unknown>, client?: Record<string, un
         data_registrazione: (c.data_registrazione as string) ?? (c.data as string) ?? "—",
         data_attivazione: (c.data_attivazione as string) ?? (c.data as string) ?? "—",
         stato: (c.stato as string) ?? "—",
+        storia: Array.isArray(c.storia) ? (c.storia as any[]) : [],
     };
 }
 
@@ -98,6 +100,8 @@ export default function RicercaContratto() {
     // non vedevano NESSUN contratto.
     const isGlobalView = seesAllStores(user?.role);
     const wholeStore = seesWholeStore(user?.role);
+    // Modifica contratto riservata allo Store Manager (+ superuser) — richiesta Luca #5.
+    const canEditContract = ["store_manager", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     const lockedStore = !isGlobalView ? user?.negozio : null;
     const lockedVenditore = (!isGlobalView && !wholeStore) ? user?.name : null;
 
@@ -387,7 +391,9 @@ export default function RicercaContratto() {
                                         <td className="px-4 py-3">
                                             <div className="flex gap-1 justify-center">
                                                 <button onClick={() => { setSelectedContract(row); setDetailMode("view"); }} className="p-1.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors" title="Visualizza Dettaglio"><Eye className="w-4 h-4" /></button>
-                                                <button onClick={() => { setSelectedContract(row); setDetailMode("edit"); setEditStato(row.stato); }} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Modifica"><Edit className="w-4 h-4" /></button>
+                                                {canEditContract && (
+                                                    <button onClick={() => { setSelectedContract(row); setDetailMode("edit"); setEditStato(row.stato); }} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Modifica"><Edit className="w-4 h-4" /></button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -469,10 +475,13 @@ export default function RicercaContratto() {
                                         disabled={saving || editStato === selectedContract.stato}
                                         onClick={async () => {
                                             setSaving(true);
-                                            const { error } = await supabase.from("contracts").update({ stato: editStato }).eq("id", selectedContract.id);
+                                            // Storico modifiche: registra chi/quando/da->a (richiesta Luca #5).
+                                            const entry = { at: new Date().toISOString(), user: user?.name || "—", campo: "Stato", da: selectedContract.stato, a: editStato };
+                                            const newStoria = [...(selectedContract.storia || []), entry];
+                                            const { error } = await supabase.from("contracts").update({ stato: editStato, storia: newStoria }).eq("id", selectedContract.id);
                                             if (!error) {
-                                                setContractList(prev => prev.map(r => r.id === selectedContract.id ? { ...r, stato: editStato } : r));
-                                                setSelectedContract(prev => prev ? { ...prev, stato: editStato } : null);
+                                                setContractList(prev => prev.map(r => r.id === selectedContract.id ? { ...r, stato: editStato, storia: newStoria } : r));
+                                                setSelectedContract(prev => prev ? { ...prev, stato: editStato, storia: newStoria } : null);
                                             }
                                             setSaving(false);
                                         }}
@@ -480,6 +489,25 @@ export default function RicercaContratto() {
                                     >
                                         {saving ? "Salvataggio..." : "Salva modifiche"}
                                     </button>
+                                </div>
+                            )}
+
+                            {/* Storico modifiche (richiesta Luca #5) */}
+                            {(selectedContract.storia?.length || 0) > 0 && (
+                                <div className="mt-6 pt-4 border-t border-white/10">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Storico modifiche</h4>
+                                    <div className="space-y-2">
+                                        {[...selectedContract.storia].reverse().map((h: any, i: number) => (
+                                            <div key={i} className="flex items-start gap-2 text-xs">
+                                                <span className="text-slate-600 shrink-0">{h.at ? new Date(h.at).toLocaleString("it-IT") : "—"}</span>
+                                                <span className="text-slate-300">
+                                                    <b className="text-white">{h.user || "—"}</b>
+                                                    {h.campo ? ` · ${h.campo}` : ""}
+                                                    {h.da || h.a ? `: ${h.da || "—"} → ${h.a || "—"}` : ""}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>
