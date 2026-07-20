@@ -507,7 +507,10 @@ export default function InviaPda() {
 
       // 2. Prepare Contract Rows
       const contractRows = [];
-      const dateStr = new Date().toLocaleDateString("it-IT");
+      // ISO (YYYY-MM-DD) come in registra-contratto: le colonne data* sono TEXT, quindi
+      // il DB ordina/filtra alfabeticamente. Scrivere "21/03/2026" rompeva l'ordinamento
+      // cronologico e i filtri per data. La formattazione all'italiana va fatta a video.
+      const dateStr = new Date().toISOString().split("T")[0];
 
       fc.forEach(group => {
         group.items.forEach(item => {
