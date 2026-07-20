@@ -6,6 +6,7 @@ import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
+import { seesAllStores, seesWholeStore } from "@/lib/roles";
 
 interface ContrattoRow {
     id: string;
@@ -90,9 +91,13 @@ export default function RicercaContratto() {
     const [uniqueNegozi, setUniqueNegozi] = useState<string[]>([]);
 
     // RBAC: Store-Based Visibility Logic
-    const isGlobalView = ["admin", "supervisore", "back_office"].includes(user?.role || "");
+    // Ruoli reali (roles.ts): la vecchia lista era ancora quella del mock, quindi
+    // dev/direttore_generale/amministrativo finivano filtrati sul proprio nome e
+    // non vedevano NESSUN contratto.
+    const isGlobalView = seesAllStores(user?.role);
+    const wholeStore = seesWholeStore(user?.role);
     const lockedStore = !isGlobalView ? user?.negozio : null;
-    const lockedVenditore = !isGlobalView ? user?.name : null;
+    const lockedVenditore = (!isGlobalView && !wholeStore) ? user?.name : null;
 
     useEffect(() => {
         const fetchFilters = async () => {
@@ -133,7 +138,10 @@ export default function RicercaContratto() {
 
             // RBAC
             if (!isGlobalView) {
-                if (lockedStore) query = query.eq("negozio", lockedStore);
+                // I contratti storici non usano il nome esatto del negozio ("Magliana" vs
+                // "Magliana Multi"): con un match esatto lo staff non vedrebbe nulla.
+                // Confronto sulla radice del nome.
+                if (lockedStore) query = query.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
                 if (lockedVenditore) query = query.eq("venditore", lockedVenditore);
             }
 

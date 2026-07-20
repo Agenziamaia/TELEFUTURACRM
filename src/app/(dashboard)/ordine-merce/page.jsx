@@ -3,7 +3,8 @@
 import { useAuth } from "@/context/AuthContext";
 import OrdineMerceContent, { STORES } from "./OrdineMerceContent";
 
-const ALLOWED_ROLES = ["admin", "store_manager", "back_office"];
+// ruoli reali: prima "dev"/"direttore_generale" restavano fuori dalla pagina
+const ALLOWED_ROLES = ["admin", "dev", "direttore_generale", "amministrativo", "store_manager", "direttore_commerciale", "back_office_caller", "back_office"];
 
 function resolveStoreId(negozio) {
   if (!negozio) return STORES[0]?.id ?? "roma_centro";

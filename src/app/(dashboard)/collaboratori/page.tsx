@@ -6,6 +6,7 @@ import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, His
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
+import { seesAllStores, seesWholeStore } from "@/lib/roles";
 
 type TabId = "badge" | "ferie" | "malattia" | "ritardi";
 
@@ -14,7 +15,7 @@ function CollaboratoriPageContent() {
     const searchParams = useSearchParams();
     const tab = (searchParams.get("tab") as TabId) || "badge";
 
-    const isAdminLike = user && ["admin", "store_manager", "back_office", "supervisore"].includes(user.role);
+    const isAdminLike = !!user && (seesAllStores(user.role) || seesWholeStore(user.role));
 
     const sectionInfo = {
         badge: { label: "Badge", icon: Clock, desc: "Gestione presenze e timbrature in tempo reale" },

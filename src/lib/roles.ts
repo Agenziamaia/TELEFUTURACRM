@@ -121,6 +121,19 @@ export function seesAllStores(role: string | null | undefined): boolean {
     return role === "admin" || role === "dev" || role === "direttore_generale" || role === "amministrativo";
 }
 
+/**
+ * Ruoli che vedono TUTTO il proprio negozio (non solo le proprie pratiche):
+ * responsabili e direzioni di area. Chi non rientra ne' qui ne' in seesAllStores
+ * vede solo cio' che ha fatto in prima persona.
+ * NB: "supervisore"/"back_office" sono nomi del vecchio mock, tenuti per retrocompatibilita'.
+ */
+export function seesWholeStore(role: string | null | undefined): boolean {
+    return [
+        "store_manager", "direttore_commerciale", "direttore_cc", "direttore_ob",
+        "back_office_caller", "supervisore", "back_office",
+    ].includes(role || "");
+}
+
 // Ruoli "amministrativi o superiori" (es. approvazione modifiche profilo)
 export function isAdminOrAbove(role: string | null | undefined): boolean {
     return role === "amministrativo" || role === "direttore_generale" || role === "admin" || role === "dev";

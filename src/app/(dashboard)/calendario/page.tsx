@@ -7,6 +7,7 @@ import { usePageView } from "@/lib/pageView";
 import { useAuth } from "@/context/AuthContext";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { supabase } from "@/lib/supabaseClient";
+import { seesAllStores, seesWholeStore } from "@/lib/roles";
 
 // Mock appointment data — will be replaced with Supabase queries
 type AppointmentType = "incoming" | "outgoing" | "self_generated";
@@ -337,7 +338,7 @@ export default function Calendario() {
 
     const isCallCenter = user?.role === "admin" || user?.role === "dev"; // admin/dev = call center operator
     const isAgent = user?.role !== "admin" && user?.role !== "dev";
-    const canCreateMeeting = ["admin", "dev", "store_manager", "supervisore", "back_office"].includes(user?.role || "");
+    const canCreateMeeting = seesAllStores(user?.role) || seesWholeStore(user?.role);
 
     const isDateBlocked = (dateStr: string) =>
         agendaBlocks.some(b => dateStr >= b.startDate && dateStr <= b.endDate);
