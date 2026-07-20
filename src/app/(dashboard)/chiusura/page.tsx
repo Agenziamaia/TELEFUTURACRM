@@ -234,7 +234,14 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
         if (err) { setValidErr(err); return; }
         setSending(true);
         setValidErr(null);
-        const store = user?.negozio || "Magliana";
+        // Niente fallback su un negozio reale: 5 utenti non hanno primary_store e
+        // le loro chiusure finivano attribuite a "Magliana" senza che nessuno lo sapesse.
+        const store = user?.negozio || "";
+        if (!store) {
+            setValidErr("Nessun negozio associato al tuo account: chiedi all'amministrazione di assegnartelo.");
+            setSending(false);
+            return;
+        }
         const userName = user?.name || "Operatore";
         const sanitize = (s: string) => s.replace(/[^a-zA-Z0-9._-]/g, "_");
         try {
@@ -315,7 +322,7 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
                 <div className="flex gap-3 flex-wrap">
                     {[
                         ["Data", new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" })],
-                        ["Negozio", user?.negozio || "Magliana"],
+                        ["Negozio", user?.negozio || "—"],
                         ["Operatore", user?.name || "Operatore"]
                     ].map(([l, v]) => (
                         <div key={l} className="flex-1 min-w-28 bg-white/[0.03] border border-white/5 rounded-xl px-3 py-2.5">
@@ -748,7 +755,7 @@ function VistaGestione({ isAdmin, userStore, history }: { isAdmin: boolean; user
 export default function ChiusuraNegozio() {
     const { user } = useAuth();
     const isAdmin = user?.role === "admin" || user?.role === "dev";
-    const userStore = user?.negozio || "Magliana";
+    const userStore = user?.negozio || "";
     const [history, setHistory] = useState<Chiusura[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);

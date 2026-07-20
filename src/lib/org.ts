@@ -43,6 +43,28 @@ export function useStores(): string[] {
   return v;
 }
 
+export interface StoreRec { id: string; name: string; code: string | null }
+let storeRecsCache: StoreRec[] | null = null;
+let storeRecsPromise: Promise<StoreRec[]> | null = null;
+
+/** Negozi con id/nome/codice (per le pagine che ne hanno bisogno, es. password vault). */
+export function useStoreRecords(): StoreRec[] {
+  const [v, setV] = useState<StoreRec[]>(storeRecsCache || []);
+  useEffect(() => {
+    let ok = true;
+    if (!storeRecsPromise) {
+      storeRecsPromise = (async () => {
+        const { data } = await supabase.from("stores").select("id, name, code").order("name");
+        storeRecsCache = (data || []).map((r: any) => ({ id: String(r.id), name: r.name, code: r.code ?? null }));
+        return storeRecsCache;
+      })();
+    }
+    storeRecsPromise.then((s) => ok && setV(s)).catch(() => {});
+    return () => { ok = false; };
+  }, []);
+  return v;
+}
+
 /** Nomi dei collaboratori attivi (tabella app_users). */
 export function useSellers(): string[] {
   const [v, setV] = useState<string[]>(sellersCache || []);

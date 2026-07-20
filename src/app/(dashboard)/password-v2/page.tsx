@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { LockKeyhole, Wifi, Radio, Tv, Zap, Leaf, ArrowLeft, RotateCcw, Eye, EyeOff, Copy, Key, ShieldCheck, Info, Loader2 } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
+import { useStoreRecords } from "@/lib/org";
 
 type BrandId = "windtre" | "vodafone" | "sky" | "fastweb" | "energia";
 
@@ -43,14 +44,8 @@ const CATEGORIES: Record<BrandId, { id: string; name: string }[]> = {
     ],
 };
 
-const STORES = [
-    { id: "roma-termini", name: "Roma Termini", code: "RT001" },
-    { id: "milano-centrale", name: "Milano Centrale", code: "MC002" },
-    { id: "napoli-toledo", name: "Napoli Toledo", code: "NT003" },
-    { id: "firenze-duomo", name: "Firenze Duomo", code: "FD004" },
-    { id: "torino-centro", name: "Torino Centro", code: "TC005" },
-    { id: "tutti", name: "Tutti (Accesso Globale)", code: "ALL" },
-];
+// I negozi arrivano dal DB (useStoreRecords): erano inventati (Roma Termini,
+// Milano Centrale, Napoli Toledo...) e non corrispondevano ad alcun punto vendita.
 
 type Credential = {
     id: number;
@@ -65,6 +60,8 @@ type Credential = {
 
 export default function PasswordV2Page() {
     const { user } = useAuth();
+    const storeRecs = useStoreRecords();
+    const STORES = [...storeRecs, { id: "tutti", name: "Tutti (Accesso Globale)", code: "ALL" }];
     const [brand, setBrand] = useState<BrandId | null>(null);
     const [category, setCategory] = useState<string | null>(null);
     const [store, setStore] = useState<string | null>(null);
