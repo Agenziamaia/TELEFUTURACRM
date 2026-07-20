@@ -8,6 +8,7 @@ import {
     Download,
     Edit,
     Trash2,
+    Archive,
     Eye,
     Plus,
     ChevronRight,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
 
 /* ─── BRAND CONFIG ─── */
 const BRANDS = [
@@ -114,7 +116,7 @@ function readDocViewFromStorage(): { brandId: string | null; catId: string | nul
     }
 }
 
-type DocEntry = { id: number; name: string; type: string; size: string; date: string; fillable: boolean; file_path?: string | null };
+type DocEntry = { id: number; name: string; type: string; size: string; date: string; fillable: boolean; file_path?: string | null; archived?: boolean };
 
 function formatBytes(bytes: number): string {
     if (bytes < 1024) return bytes + " B";
@@ -132,10 +134,10 @@ export default function DocumentazionePage() {
     const [view, setView] = useState<{ brandId: string | null; catId: string | null }>({ brandId: null, catId: null });
     const didRestore = useRef(false);
     const skipNextSave = useRef(true);
-    const [docList, setDocList] = useState<{ id: number; brand_id: string; category_id: string; name: string; type: string; size: string | null; date: string | null; fillable: boolean; file_path?: string | null }[]>([]);
+    const [docList, setDocList] = useState<{ id: number; brand_id: string; category_id: string; name: string; type: string; size: string | null; date: string | null; fillable: boolean; file_path?: string | null; archived?: boolean }[]>([]);
 
     const fetchDocs = useCallback(async () => {
-        const { data, error } = await supabase.from("documentation").select("id, brand_id, category_id, name, type, size, date, fillable, file_path").order("brand_id").order("category_id");
+        const { data, error } = await supabase.from("documentation").select("id, brand_id, category_id, name, type, size, date, fillable, file_path, archived").order("brand_id").order("category_id");
         if (!error && data) setDocList(data as typeof docList);
     }, []);
 
@@ -156,6 +158,7 @@ export default function DocumentazionePage() {
                 date: d.date ?? "",
                 fillable: d.fillable,
                 file_path: d.file_path ?? undefined,
+                archived: !!d.archived,
             });
         });
         return m;
@@ -195,7 +198,12 @@ export default function DocumentazionePage() {
     const brandId = view.brandId && BRANDS.some((b) => b.id === view.brandId) ? view.brandId : null;
     const catId = view.catId && CATEGORIES.some((c) => c.id === view.catId) ? view.catId : null;
 
+    // Solo Direttore Commerciale (e superuser) puo' modificare i file (richiesta Luca #14).
+    const { user } = useAuth();
+    const canEdit = ["direttore_commerciale", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     const [isAdmin, setIsAdmin] = useState(false);
+    const [showArchived, setShowArchived] = useState(false);
+    useEffect(() => { if (!canEdit && isAdmin) setIsAdmin(false); }, [canEdit, isAdmin]);
     const [previewDoc, setPreviewDoc] = useState<DocEntry | null>(null);
     const [fillDoc, setFillDoc] = useState<DocEntry | null>(null);
     const [showUpload, setShowUpload] = useState(false);
@@ -212,7 +220,15 @@ export default function DocumentazionePage() {
 
     const brand = brandId ? getBrand(brandId) : null;
     const cat = catId ? getCat(catId) : null;
-    const docs = brandId && catId ? getDocs(brandId, catId) : [];
+    const allDocs = brandId && catId ? getDocs(brandId, catId) : [];
+    // I documenti archiviati (OLD) sono nascosti finche' non si sceglie di mostrarli.
+    const docs = showArchived ? allDocs : allDocs.filter((d) => !d.archived);
+    const archivedCount = allDocs.filter((d) => d.archived).length;
+
+    const toggleArchive = async (doc: DocEntry) => {
+        await supabase.from("documentation").update({ archived: !doc.archived }).eq("id", doc.id);
+        fetchDocs();
+    };
 
     const goHome = useCallback(() => setView({ brandId: null, catId: null }), [setView]);
     const goBrand = useCallback((id: string) => setView((prev) => ({ ...prev, brandId: id, catId: null })), [setView]);
@@ -254,17 +270,29 @@ export default function DocumentazionePage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <button
-                            onClick={() => setIsAdmin(!isAdmin)}
-                            className={cn(
-                                "px-4 py-2 rounded-xl text-sm font-semibold transition-all border",
-                                isAdmin
-                                    ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-400"
-                                    : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
-                            )}
-                        >
-                            {isAdmin ? "Modalità Admin" : "Modalità Utente"}
-                        </button>
+                        {brandId && catId && archivedCount > 0 && (
+                            <button
+                                onClick={() => setShowArchived((v) => !v)}
+                                className={cn("px-3 py-2 rounded-xl text-xs font-semibold transition-all border flex items-center gap-1.5",
+                                    showArchived ? "bg-amber-500/20 border-amber-500/40 text-amber-400" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10")}
+                            >
+                                <Archive className="w-3.5 h-3.5" /> {showArchived ? "Nascondi OLD" : `OLD (${archivedCount})`}
+                            </button>
+                        )}
+                        {/* Modifica riservata al Direttore Commerciale (richiesta Luca #14). */}
+                        {canEdit && (
+                            <button
+                                onClick={() => setIsAdmin(!isAdmin)}
+                                className={cn(
+                                    "px-4 py-2 rounded-xl text-sm font-semibold transition-all border",
+                                    isAdmin
+                                        ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-400"
+                                        : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                                )}
+                            >
+                                {isAdmin ? "Modalità Admin" : "Modalità Utente"}
+                            </button>
+                        )}
                         {brandId && (
                             <button
                                 onClick={goHome}
@@ -431,6 +459,7 @@ export default function DocumentazionePage() {
                                                     <div className="flex items-center gap-3">
                                                         <FileText className="w-5 h-5 text-slate-500" />
                                                         <span className="font-semibold text-white">{doc.name}</span>
+                                                        {doc.archived && <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/25">OLD</span>}
                                                         {doc.fillable && (
                                                             <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
                                                                 COMPILABILE
@@ -479,6 +508,13 @@ export default function DocumentazionePage() {
                                                                     title="Rinomina"
                                                                 >
                                                                     <Edit className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => toggleArchive(doc)}
+                                                                    className={cn("p-1.5 rounded-lg transition-colors", doc.archived ? "text-amber-400 hover:bg-amber-500/20" : "text-slate-400 hover:bg-amber-500/20 hover:text-amber-400")}
+                                                                    title={doc.archived ? "Ripristina (togli da OLD)" : "Archivia come OLD (non aggiornato)"}
+                                                                >
+                                                                    <Archive className="w-4 h-4" />
                                                                 </button>
                                                                 <button
                                                                     onClick={() => setAdminAct({ doc, action: "delete" })}

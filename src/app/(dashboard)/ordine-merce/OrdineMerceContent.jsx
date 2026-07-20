@@ -1,6 +1,10 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+
+// Il carrello viene salvato in locale: cosi' si possono aggiungere articoli e
+// chiudere/ricaricare la pagina SENZA inviare l'ordine, e riprenderlo piu' tardi.
+const CART_STORAGE_KEY = "ordine-merce-cart-v1";
 import { supabase } from "@/lib/supabaseClient";
 
 /* ═══════════════════════════════════════════════════
@@ -424,6 +428,22 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [inkPending, setInkPending] = useState(null); // which ink item is being configured
   const [cart, setCart] = useState([]); // [{name, qty, cat, brand?, sub?, subCat?}]
   const [orderNote, setOrderNote] = useState("");
+  // Carica il carrello salvato al primo mount; salvalo ad ogni modifica.
+  const cartLoaded = useRef(false);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CART_STORAGE_KEY);
+      if (raw) { const d = JSON.parse(raw); if (Array.isArray(d?.cart)) setCart(d.cart); if (typeof d?.note === "string") setOrderNote(d.note); }
+    } catch { /* ignore */ }
+    cartLoaded.current = true;
+  }, []);
+  useEffect(() => {
+    if (!cartLoaded.current) return;
+    try {
+      if (cart.length === 0 && !orderNote) localStorage.removeItem(CART_STORAGE_KEY);
+      else localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ cart, note: orderNote }));
+    } catch { /* ignore */ }
+  }, [cart, orderNote]);
   const [createStep, setCreateStep] = useState(0); // 0=build, 1=review
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
@@ -490,16 +510,19 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
     return cart.find(c => cartKey(c) === key);
   };
 
-  /* ─── Reset create ─── */
-  const resetCreate = () => {
+  /* ─── Chiudi il pannello MANTENENDO il carrello (non invia) ─── */
+  const closeCreate = () => {
     setShowCreate(false); setActiveSection(null); setActiveBrand(null);
     setActiveBrandSub(null); setActiveBrandChannel(null); setActivePhoneBrand(null); setPhoneSelecting(null); setPhoneSearch("");
     setActiveAccSub(null); setUsatiCat(null); setUsatiOs(null); setUsatiFascia(null);
     setUsatiSpecific(false); setUsatiSpecBrand(""); setUsatiSpecModel(""); setUsatiSpecGb("");
     setActiveProdCat(null); setCoverBrand(null); setCoverModel(null); setCoverSearch("");
     setActiveExtraCat(null); setItemSearch(""); setInkPending(null); setInkModel("");
-    setCart([]); setOrderNote(""); setCreateStep(0);
+    setCreateStep(0);
+    // NB: cart e orderNote restano (salvati in locale) finche' non si invia o svuota.
   };
+  /* ─── Reset completo: svuota anche il carrello (dopo invio o "svuota") ─── */
+  const resetCreate = () => { closeCreate(); setCart([]); setOrderNote(""); };
 
   /* ─── Submit ─── */
   const [submitting, setSubmitting] = useState(false);
@@ -695,7 +718,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
     const cartCount = cart.reduce((a, c) => a + c.qty, 0);
 
     return (
-      <div style={s.modal} onClick={e => { if (e.target === e.currentTarget) resetCreate(); }}>
+      <div style={s.modal} onClick={e => { if (e.target === e.currentTarget) closeCreate(); }}>
         <div style={s.modalBox}>
           <div style={s.modalHead}>
             <div>
@@ -712,7 +735,10 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                   Riepilogo ({cartCount}) →
                 </button>
               )}
-              <button onClick={resetCreate} style={{ ...s.btn, padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`, color: C.textSec }}>✕</button>
+              {cart.length > 0 && (
+                <button onClick={() => { if (window.confirm("Svuotare il carrello?")) resetCreate(); }} title="Svuota carrello" style={{ ...s.btn, padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`, color: C.danger }}>Svuota</button>
+              )}
+              <button onClick={closeCreate} title="Chiudi (il carrello resta salvato)" style={{ ...s.btn, padding: "6px 12px", background: "transparent", border: `1px solid ${C.border}`, color: C.textSec }}>✕</button>
             </div>
           </div>
           <div style={s.modalBody}>
@@ -1621,8 +1647,8 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
             </div>
           )}
           {isStoreManager && (
-            <button style={{ ...s.btn, background: C.primary, color: "#fff" }} onClick={() => setShowCreate(true)}>
-              + Crea Ordine
+            <button style={{ ...s.btn, background: C.primary, color: "#fff", position: "relative" }} onClick={() => setShowCreate(true)}>
+              {cart.length > 0 ? `Riprendi carrello (${cart.reduce((a, c) => a + c.qty, 0)})` : "+ Crea Ordine"}
             </button>
           )}
         </div>
