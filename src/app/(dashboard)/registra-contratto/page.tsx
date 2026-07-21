@@ -263,7 +263,31 @@ const BRANDS = [
 ];
 const codiciW3 = ["Magliana","Libia","San Paolo","Mazzini","Donna","Promontori","Collatina"];
 const SKY_CODICI_NEGOZIO = ["Acilia","Donna","Magliana","Garbatella","Promontori","Collatina"];
-const venditori = ["Alberto","Alex","Alin","Asad","Ben Aziza","Cristhian","Cristi","Damiano","Daniel","Daniele2","Denise","Dimitri","Eloise","Eros","Fadel","Federico","Francesca","Francesco","George","Giacomo","Gian","Giulia","Giuseppe B.","Ilaria","Lorenzo","Ludmilla","Manu","Marta","Marta2","Marta3","Matteo","Michele","Roberto","Samantha","Sheekell","Tommaso","Veronica"];
+// Venditori dal DB (app_users attivi), stesso schema di `negozi`: l'array viene
+// riempito IN PLACE perche' i componenti ne tengono il riferimento.
+// Prima era una lista fissa di 37 soprannomi ("Alberto", "Ben Aziza", "Daniele2",
+// "Marta2", "Sheekell"...) che non corrispondevano a nessun account: e' il motivo
+// per cui in contracts.venditore sono finiti nomi inesistenti. Richiesta Francesco:
+// "Tutti i nomi presenti nel menu a tendina Venditore devono corrispondere agli
+// username delle credenziali di accesso."
+const venditori=[];
+const _vendSubs=new Set();
+let _vendLoaded=false;
+async function loadVenditori(){
+  if(_vendLoaded)return;_vendLoaded=true;
+  try{
+    const {data}=await supabase.from("app_users").select("full_name").eq("active",true).order("full_name");
+    const names=(data||[]).map(r=>r.full_name).filter(Boolean);
+    venditori.length=0;venditori.push(...names);
+    _vendSubs.forEach(fn=>fn());
+  }catch{_vendLoaded=false;}
+}
+if(typeof window!=="undefined")loadVenditori();
+function useVenditori(){
+  const [,bump]=useState(0);
+  useEffect(()=>{const fn=()=>bump(v=>v+1);_vendSubs.add(fn);loadVenditori();return()=>{_vendSubs.delete(fn);};},[]);
+  return venditori;
+}
 // Negozi dal DB. L'array viene riempito IN PLACE perche' EN_CODICI_NEGOZIO punta
 // allo stesso riferimento. Prima era hardcoded e conteneva ancora "Telefonico".
 const negozi=[];
@@ -736,7 +760,8 @@ const WT_SMARTPHONES_GROUPED = [
     "TCL WebPocket. 4G+ (TCL)",
     "ALCATEL Internet Key Alcatel IK41",
     "EZVIZ Lampadina Ezviz LB1",
-    "EZVIZ C6N"
+    "EZVIZ C6N",
+    "Altro"
   ]}
 ];
 const SMARTPHONES = WT_SMARTPHONES_GROUPED;
@@ -798,7 +823,7 @@ const getVF = (tc) => {
         isVFBizMobile: biz,
         vfBizOffers: biz ? ["MOBILE SMART","MOBILE COMFORT","MOBILE EXTRA","DATI SMART","DATI COMFORT","RED DATA NOW"] : null,
         vfBizOffersTablet: biz ? ["DATI SMART","DATI COMFORT","RED DATA NOW"] : null,
-        vfOffers: !biz ? ["MOBILE START","MOBILE PRO","MOBILE POWER","MOBILE ULTRA","MOBILE START UNDER 18","C'ALL POWER EDITION","C'ALL MAX","C'ALL POWER PRO","DOLCE VITA","DOLCE VITA+"] : null,
+        vfOffers: !biz ? ["MOBILE START","MOBILE PRO","MOBILE POWER","MOBILE ULTRA","MOBILE START UNDER 18","C'ALL POWER EDITION","C'ALL MAX","C'ALL POWER PRO","DOLCE VITA","DOLCE VITA+","DATI"] : null,
         fields: []
       },
       ...(!biz?[{ id:"cb", title:"CB", isCBVF:true, fields:[]}]:[]),
@@ -1028,6 +1053,9 @@ const FWMobile = ({sd, uP, sc, biz}) => {
   const offerList = biz ? FW_MOBILE_BIZ_OFFERS : FW_MOBILE_OFFERS;
   const content = (
     <div>
+      {/* DATI (richiesta Francesco): SIM dati pura. Selezionata l'offerta si va
+          dritti al box "Dati Contratto" — niente MNP, domiciliazione,
+          convergenza, TNP o Security, che per una SIM dati non hanno senso. */}
       <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {offerList.map(offer=>{
@@ -1147,7 +1175,7 @@ const FWEnergia = ({sd, uP, sc, subTitle, dupCheck}) => {
 };
 
 
-const VF_MOBILE_OFFERS=["MOBILE START","MOBILE PRO","MOBILE POWER","MOBILE ULTRA","MOBILE START UNDER 18","C'ALL POWER EDITION","C'ALL MAX","C'ALL POWER PRO","DOLCE VITA","DOLCE VITA+"];
+const VF_MOBILE_OFFERS=["MOBILE START","MOBILE PRO","MOBILE POWER","MOBILE ULTRA","MOBILE START UNDER 18","C'ALL POWER EDITION","C'ALL MAX","C'ALL POWER PRO","DOLCE VITA","DOLCE VITA+","DATI"];
 const emTnpSlot=()=>({tipo:null,tnpCount:null,tnpItems:[],compassTipo:null,compassItems:[]});
 
 const MiniC = ({label,val,opts,onCh,locked,lockVal}) => {
@@ -1431,6 +1459,7 @@ const TnpSlot = ({slot, idx, total, isWallet, upSlot, onAddSlot, onRemoveSlot}) 
 const VFMobileGA = ({sd,uP,sc}) => {
   const upv=(k,v)=>uP(k,v);
   const isDV=sd.vfOffer==="DOLCE VITA"||sd.vfOffer==="DOLCE VITA+";
+  const isDati=sd.vfOffer==="DATI";
 
   const updTnpSlot=(slotIdx,updater)=>{
     uP("vfTnpList",prev=>{const list=[...(prev||[])];list[slotIdx]=updater(list[slotIdx]||emTnpSlot());return list;});
@@ -1465,14 +1494,14 @@ const VFMobileGA = ({sd,uP,sc}) => {
       {sd.vfOffer&&(
         <div>
           {/* MNP — bloccato a No per DV/DV+ */}
-          {isDV?(
+          {isDati?null:isDV?(
             <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(245,158,11,0.14)",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"#f59e0b"}}>
               MNP: <strong>No</strong> — non disponibile per {sd.vfOffer}
             </div>
           ):(
             <RB label="MNP?" val={sd.vfMnp} opts={["Sì","No"]} onCh={v=>{upv("vfMnp",v);if(v==="No"){upv("vfMnpBrand","");upv("vfMnpNum","")}}}/>
           )}
-          {!isDV&&sd.vfMnp==="Sì"&&(
+          {!isDV&&!isDati&&sd.vfMnp==="Sì"&&(
             <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.vfMnpBrand||""} o={v=>upv("vfMnpBrand",v)} vals={VF_BRANDS}/>
@@ -1480,19 +1509,19 @@ const VFMobileGA = ({sd,uP,sc}) => {
               </div>
             </div>
           )}
-          {(sd.vfMnp||isDV)&&(
+          {(sd.vfMnp||isDV||isDati)&&(
             <div>
               {/* Domiciliata — solo Wallet per DV/DV+ */}
-              {isDV?(
+              {isDati?null:isDV?(
                 <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(245,158,11,0.14)",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"#f59e0b"}}>
                   Domiciliata: <strong>Wallet</strong> — unica opzione per {sd.vfOffer}
                 </div>
               ):(
                 <RB label="Domiciliata?" val={sd.vfDomicilio} opts={["Smart","Wallet"]} onCh={v=>{upv("vfDomicilio",v);upv("vfTnpList",[]);upv("vfTnp",null);upv("vfConvergenza",null)}}/>
               )}
-              {(sd.vfDomicilio||isDV)&&(
+              {(sd.vfDomicilio||isDV||isDati)&&(
                 <div>
-                  {!isDV&&(
+                  {!isDV&&!isDati&&(
                     <div>
                       <RB label="Convergenza?" val={sd.vfConvergenza} opts={["Sì","No"]} onCh={v=>upv("vfConvergenza",v)}/>
                       {sd.vfConvergenza==="Sì"&&(
@@ -1502,16 +1531,16 @@ const VFMobileGA = ({sd,uP,sc}) => {
                       )}
                     </div>
                   )}
-                  {(sd.vfConvergenza||isDV)&&(
+                  {(sd.vfConvergenza||isDV||isDati)&&(
                     <div>
-                      {isDV?(
+                      {isDati?null:isDV?(
                         <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(245,158,11,0.14)",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"#f59e0b"}}>
                           TNP: <strong>non disponibile</strong> per {sd.vfOffer}
                         </div>
                       ):(
                         <RB label="TNP?" val={sd.vfTnp} opts={["Sì","No"]} onCh={v=>{upv("vfTnp",v);if(v==="Sì"){upv("vfTnpList",[emTnpSlot()])}else{upv("vfTnpList",[])}}}/>
                       )}
-                      {!isDV&&sd.vfTnp==="Sì"&&(
+                      {!isDV&&!isDati&&sd.vfTnp==="Sì"&&(
                         <div>
                           {(sd.vfTnpList||[emTnpSlot()]).map((slot,idx)=>(
                             <TnpSlot key={idx} slot={slot} idx={idx} total={(sd.vfTnpList||[emTnpSlot()]).length}
@@ -1523,7 +1552,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
                         </div>
                       )}
                       {/* Security */}
-                      {sd.vfTnp&&!isDV&&sd.vfOffer!=="MOBILE START UNDER 18"&&(
+                      {sd.vfTnp&&!isDV&&!isDati&&sd.vfOffer!=="MOBILE START UNDER 18"&&(
                         <div style={{marginTop:12,background:VF_LIGHT,border:"1px solid "+VF_BORDER,borderRadius:8,padding:14}}>
                           <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:6,textTransform:"uppercase"}}>Security</div>
                           <div style={{display:"flex",gap:8}}>
@@ -1537,7 +1566,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
                         </div>
                       )}
                       {/* Dati Contratto */}
-                      {(sd.vfTnp||isDV)&&(
+                      {(sd.vfTnp||isDV||isDati)&&(
                         <div style={{marginTop:12,background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
                           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
@@ -2661,6 +2690,8 @@ const subComplete=(sub,d)=>{
   if(sub.isVFMobile){
     if(!F("vfOffer"))return false;
     const dv=d.vfOffer==="DOLCE VITA"||d.vfOffer==="DOLCE VITA+";
+    // DATI: SIM dati, si valida solo il box Dati Contratto (Numero, ICCID, Codice).
+    if(d.vfOffer==="DATI"){return F("dcNum")&&F("dcIccid")&&F("dcCodIns");}
     if(!dv){if(d.vfMnp==null)return false;if(d.vfMnp==="Sì"&&!(F("vfMnpBrand")&&F("vfMnpNum")))return false;if(d.vfDomicilio==null)return false;if(d.vfConvergenza==null)return false;if(d.vfConvergenza==="Sì"&&!F("vfNumFisso"))return false;if(d.vfTnp==null)return false;if(d.vfSecurity==null)return false;}
     if(d.vfTnp==="Sì"){if(!_vfTnpListOk(d.vfTnpList))return false;}
     if(d.vfMnp==="Sì"){if(!F("dcNumProv"))return false;}else{if(!F("dcNum"))return false;}
@@ -3459,6 +3490,12 @@ const NoteStep = ({store}) => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function CRM() {
+  // Sottoscrizione alle liste caricate dal DB: senza queste, `venditori` e
+  // `negozi` si riempiono dopo il primo render e il menu a tendina resta vuoto
+  // finche' qualcos'altro non provoca un aggiornamento. useNegozi() esisteva
+  // gia' ma non era mai stata chiamata da nessuno.
+  useVenditori();
+  useNegozi();
   const [brand,setBrand]=useState(null);
   const [showMargPOS,setShowMargPOS]=useState(false);
   const [margEditItem,setMargEditItem]=useState(null);
@@ -3474,7 +3511,24 @@ export default function CRM() {
   const [dataVendita,setDataVendita]=useState(()=>new Date().toISOString().split("T")[0]);
   const [uploading, setUploading] = useState(false);
   const [attachments, setAttachments] = useState([]);
-  const handleFileChange = (e, type) => { if (e.target.files && e.target.files.length) { const nf = Array.from(e.target.files).map(file => ({ file, name: file.name, type })); setAttachments(prev => [...prev, ...nf]); } e.target.value = ""; };
+  // NB: materializzare SUBITO la FileList. Se si costruisce l'array dentro
+  // l'updater di setState, quando l'updater viene eseguito l'input e' gia' stato
+  // svuotato (e.target.value="") e la FileList risulta vuota.
+  const addFiles = (fileList, type) => {
+    const nf = Array.from(fileList || []).map(file => ({ file, name: file.name, type }));
+    if (nf.length) setAttachments(prev => [...prev, ...nf]);
+    return nf.length;
+  };
+  const handleFileChange = (e, type) => { addFiles(e.target.files, type); e.target.value = ""; };
+  // Trascinamento file sulle caselle Documento / Contratti / Altro (richiesta Francesco).
+  const [dragBox, setDragBox] = useState(null);   // quale casella e' sotto il cursore
+  const onBoxDragOver = (e, t) => { e.preventDefault(); e.stopPropagation(); if (dragBox !== t) setDragBox(t); };
+  const onBoxDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setDragBox(null); };
+  const onBoxDrop = (e, t) => {
+    e.preventDefault(); e.stopPropagation(); setDragBox(null);
+    const dt = e.dataTransfer;
+    if (dt && dt.files && dt.files.length) addFiles(dt.files, t);
+  };
   const [draftLoaded,setDraftLoaded]=useState(false);
   const [showCart,setShowCart]=useState(false);
   const [toast,setToast]=useState(null);
@@ -3917,7 +3971,10 @@ export default function CRM() {
         {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #17a2b8",marginTop:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#17a2b8",marginBottom:14,textTransform:"uppercase"}}>📎 Step 5 — Allegati</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-            {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;return <label key={i} style={{display:"block",border:"2px dashed "+(cnt>0?"rgba(23,162,184,0.55)":"rgba(255,255,255,0.1)"),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:cnt>0?"rgba(23,162,184,0.08)":"rgba(255,255,255,0.03)"}}><input type="file" multiple accept="image/*,application/pdf" onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:700}}>Carica</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"#17a2b8",fontWeight:700}}>{cnt} file</div>}</label>;})}
+            {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
+              onDragOver={e=>onBoxDragOver(e,a.t)} onDragEnter={e=>onBoxDragOver(e,a.t)}
+              onDragLeave={onBoxDragLeave} onDrop={e=>onBoxDrop(e,a.t)}
+              style={{display:"block",border:"2px dashed "+(over?"#17a2b8":(cnt>0?"rgba(23,162,184,0.55)":"rgba(255,255,255,0.1)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"rgba(255,255,255,0.03)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:700}}>Carica</div><div style={{fontSize:9,color:"#64748b",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"#17a2b8",fontWeight:700}}>{cnt} file</div>}</label>;})}
           </div>
           {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid rgba(255,255,255,0.05)":"none"}}><div style={{fontSize:11,color:"#f8fafc"}}>{file.name} <span style={{color:"#64748b",fontSize:10}}>· {file.type}</span></div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
         </div>}
