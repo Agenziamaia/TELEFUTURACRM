@@ -95,7 +95,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         label: "Negozio",
         icon: StoreIcon,
         children: [
-            { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: ADMINS },
+            { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: EVERYONE },
             { name: "Ordine Merce", href: "/ordine-merce", icon: Package, roles: MANAGERS },
             { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: EVERYONE },
             { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
