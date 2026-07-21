@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Eye, Edit, Trash2, X } from "lucide-react";
+import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock } from "lucide-react";
 import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
@@ -21,6 +21,8 @@ interface ContrattoRow {
     data_attivazione: string;
     stato: string;
     storia: any[];
+    raw: Record<string, unknown>;      // riga contratto completa (incl. dettagli)
+    client: Record<string, unknown> | null;
 }
 
 function mapContractToRow(c: Record<string, unknown>, client?: Record<string, unknown> | null): ContrattoRow {
@@ -41,7 +43,73 @@ function mapContractToRow(c: Record<string, unknown>, client?: Record<string, un
         data_attivazione: (c.data_attivazione as string) ?? (c.data as string) ?? "—",
         stato: (c.stato as string) ?? "—",
         storia: Array.isArray(c.storia) ? (c.storia as any[]) : [],
+        raw: c,
+        client: client ?? null,
     };
+}
+
+// --- Dettaglio/Modifica contratto (richiesta Luca) -------------------------
+// "DETTAGLIO deve mostrare TUTTE le informazioni inserite alla registrazione,
+//  senza che manchi nulla" -> il dettaglio e' generato dall'elenco completo
+//  delle colonne + dall'intero oggetto `dettagli` (che varia per brand),
+//  cosi' nessun campo puo' restare fuori quando si aggiunge un brand nuovo.
+type EditField = { key: string; label: string; kind?: "date" | "stato" | "textarea" };
+
+const CONTRACT_FIELDS: EditField[] = [
+    { key: "data_registrazione", label: "Data registrazione", kind: "date" },
+    { key: "data_attivazione", label: "Data attivazione", kind: "date" },
+    { key: "data", label: "Data contratto", kind: "date" },
+    { key: "brand", label: "Brand" },
+    { key: "categoria", label: "Categoria" },
+    { key: "prodotto", label: "Prodotto" },
+    { key: "venditore", label: "Venditore" },
+    { key: "negozio", label: "Negozio" },
+    { key: "codice_attivazione", label: "Codice attivazione" },
+    { key: "operatore_bo", label: "Operatore Back Office" },
+    { key: "stato", label: "Stato", kind: "stato" },
+    { key: "stato_negozio", label: "Esito negozio" },
+    { key: "stato_admin", label: "Esito admin" },
+    { key: "note", label: "Note", kind: "textarea" },
+];
+
+const CLIENT_FIELDS: EditField[] = [
+    { key: "tipo", label: "Tipo cliente" },
+    { key: "nome", label: "Nome" },
+    { key: "cognome", label: "Cognome" },
+    { key: "ragione_sociale", label: "Ragione sociale" },
+    { key: "cf_piva", label: "Codice fiscale / P.IVA" },
+    { key: "cellulare", label: "Cellulare" },
+    { key: "email", label: "Email" },
+    { key: "indirizzo", label: "Indirizzo" },
+    { key: "cap", label: "CAP" },
+    { key: "citta", label: "Citta" },
+    { key: "nome_ref", label: "Nome referente" },
+    { key: "cognome_ref", label: "Cognome referente" },
+];
+
+const READONLY_META: EditField[] = [
+    { key: "id", label: "Codice contratto" },
+    { key: "client_id", label: "ID cliente" },
+    { key: "created_at", label: "Creato il" },
+    { key: "delegated_to", label: "Delegato a" },
+    { key: "delegated_by", label: "Delegato da" },
+];
+
+const STATI = ["Attivo", "In lavorazione", "Attivato", "Sospeso", "Annullato"];
+
+function fmtVal(v: unknown): string {
+    if (v === null || v === undefined || v === "") return "—";
+    if (typeof v === "boolean") return v ? "Si" : "No";
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+}
+
+// I valori di `dettagli` arrivano tipizzati (bool/numero/stringa): li rimettiamo
+// nel tipo originale in fase di approvazione, altrimenti salveremmo tutto testo.
+function coerceLike(sample: unknown, raw: string): unknown {
+    if (typeof sample === "boolean") return raw === "true" || raw.toLowerCase() === "si" || raw === "Sì";
+    if (typeof sample === "number") { const n = Number(raw); return Number.isNaN(n) ? raw : n; }
+    return raw;
 }
 
 export default function RicercaContratto() {
@@ -80,8 +148,16 @@ export default function RicercaContratto() {
         const hit = contractList.find((c: any) => String(c.id) === id);
         if (hit) { setSelectedContract(hit); setDetailMode("view"); deepLinked.current = true; }
     }, [contractList]);
-    const [editStato, setEditStato] = useState("");
     const [saving, setSaving] = useState(false);
+
+    // Modifica contratto: valori in editing (chiave "contract.x" / "client.x" / "dettagli.x")
+    const [editValues, setEditValues] = useState<Record<string, string>>({});
+    const [reqNote, setReqNote] = useState("");
+    const [reqMsg, setReqMsg] = useState<string | null>(null);
+    // Richieste di modifica in attesa (per il pannello amministrazione)
+    const [changeReqs, setChangeReqs] = useState<any[]>([]);
+    const [showReqs, setShowReqs] = useState(false);
+    const [reqBusy, setReqBusy] = useState<string | null>(null);
 
     // Pagination
     const [page, setPage] = useState(1);
@@ -101,7 +177,9 @@ export default function RicercaContratto() {
     const isGlobalView = seesAllStores(user?.role);
     const wholeStore = seesWholeStore(user?.role);
     // Modifica contratto riservata allo Store Manager (+ superuser) — richiesta Luca #5.
-    const canEditContract = ["store_manager", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    const canEditContract = ["store_manager", "admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
+    // Approvazione modifiche = amministrazione (Sandra, Claudia, Marta, Franca, Luca).
+    const canApprove = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     const lockedStore = !isGlobalView ? user?.negozio : null;
     const lockedVenditore = (!isGlobalView && !wholeStore) ? user?.name : null;
 
@@ -203,12 +281,208 @@ export default function RicercaContratto() {
         );
     }
 
+    // Le chiavi usano "::" e non "." perche' molte chiavi di `dettagli`
+    // contengono gia' un punto (es. "Cod.Ins.", "Op. MNP").
+    const dettagliOf = (row: ContrattoRow): [string, unknown][] => {
+        const d = row.raw?.dettagli;
+        if (!d || typeof d !== "object" || Array.isArray(d)) return [];
+        return Object.entries(d as Record<string, unknown>);
+    };
+
+    const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
+        const vals: Record<string, string> = {};
+        CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
+        CLIENT_FIELDS.forEach(f => { vals[`client::${f.key}`] = row.client?.[f.key] == null ? "" : String(row.client[f.key]); });
+        dettagliOf(row).forEach(([k, v]) => {
+            if (v !== null && typeof v === "object") return; // oggetti annidati: sola lettura
+            vals[`dettagli::${k}`] = v == null ? "" : String(v);
+        });
+        setEditValues(vals);
+        setReqNote("");
+        setReqMsg(null);
+        setSelectedContract(row);
+        setDetailMode(mode);
+    };
+
+    const originalOf = (row: ContrattoRow, key: string): unknown => {
+        const i = key.indexOf("::");
+        const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract") return row.raw?.[field];
+        if (scope === "client") return row.client?.[field];
+        return (row.raw?.dettagli as Record<string, unknown> | undefined)?.[field];
+    };
+
+    const labelOf = (key: string): string => {
+        const i = key.indexOf("::");
+        const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract") return CONTRACT_FIELDS.find(f => f.key === field)?.label || field;
+        if (scope === "client") return (CLIENT_FIELDS.find(f => f.key === field)?.label || field) + " (cliente)";
+        return field;
+    };
+
+    const pendingChanges = useMemo(() => {
+        if (!selectedContract) return {} as Record<string, { da: any; a: any; label: string }>;
+        const out: Record<string, { da: any; a: any; label: string }> = {};
+        Object.entries(editValues).forEach(([k, v]) => {
+            const orig = originalOf(selectedContract, k);
+            const origStr = orig == null ? "" : String(orig);
+            if (origStr !== v) out[k] = { da: orig ?? null, a: v, label: labelOf(k) };
+        });
+        return out;
+    }, [editValues, selectedContract]);
+
+    // Richieste di modifica: le carica l'amministrazione (tutte le pending) e
+    // chiunque apra un contratto (solo quelle del contratto aperto).
+    const loadChangeReqs = async () => {
+        const q = supabase.from("contract_change_requests").select("*").order("created_at", { ascending: false });
+        const { data } = canApprove ? await q.eq("status", "pending") : await q.limit(0);
+        setChangeReqs(data || []);
+    };
+    useEffect(() => { if (canApprove) loadChangeReqs(); }, [canApprove]);
+
+    const [contractReqs, setContractReqs] = useState<any[]>([]);
+    useEffect(() => {
+        if (!selectedContract) { setContractReqs([]); return; }
+        (async () => {
+            const { data } = await supabase.from("contract_change_requests")
+                .select("*").eq("contract_id", selectedContract.id).order("created_at", { ascending: false });
+            setContractReqs(data || []);
+        })();
+    }, [selectedContract, saving]);
+
+    const submitChangeRequest = async () => {
+        if (!selectedContract || Object.keys(pendingChanges).length === 0) return;
+        setSaving(true);
+        const payload: Record<string, unknown> = { ...pendingChanges };
+        if (reqNote.trim()) payload.__meta = { note: reqNote.trim() };
+        const { error } = await supabase.from("contract_change_requests").insert({
+            contract_id: selectedContract.id,
+            requested_by: user?.id || null,
+            requested_by_name: user?.name || "—",
+            changes: payload,
+        });
+        setSaving(false);
+        setReqMsg(error
+            ? `Errore invio richiesta: ${error.message}`
+            : "Richiesta inviata all'amministrazione. La modifica sara' effettiva dopo l'approvazione.");
+        if (!error) setDetailMode("view");
+    };
+
+    const decideRequest = async (req: any, approve: boolean, note?: string) => {
+        setReqBusy(req.id);
+        if (approve) {
+            const { data: c } = await supabase.from("contracts").select("*").eq("id", req.contract_id).single();
+            if (c) {
+                const contractPatch: Record<string, unknown> = {};
+                const clientPatch: Record<string, unknown> = {};
+                const det: Record<string, unknown> = { ...((c.dettagli as Record<string, unknown>) || {}) };
+                let detTouched = false;
+                const storia: any[] = Array.isArray(c.storia) ? [...c.storia] : [];
+                const stamp = new Date().toISOString();
+                Object.entries(req.changes || {}).forEach(([k, raw]) => {
+                    if (k.startsWith("__")) return;   // "__meta" = motivazione, non un campo
+                    const v = raw as { da: any; a: any; label?: string };
+                    const i = k.indexOf("::");
+                    const scope = k.slice(0, i), field = k.slice(i + 2);
+                    if (scope === "contract") contractPatch[field] = v.a === "" ? null : v.a;
+                    else if (scope === "client") clientPatch[field] = v.a === "" ? null : v.a;
+                    else if (scope === "dettagli") { det[field] = coerceLike(det[field], String(v.a)); detTouched = true; }
+                    storia.push({
+                        at: stamp,
+                        user: `${req.requested_by_name || "—"} → approvata da ${user?.name || "—"}`,
+                        campo: v.label || field, da: fmtVal(v.da), a: fmtVal(v.a),
+                    });
+                });
+                if (detTouched) contractPatch.dettagli = det;
+                contractPatch.storia = storia;
+                await supabase.from("contracts").update(contractPatch).eq("id", req.contract_id);
+                if (Object.keys(clientPatch).length > 0 && c.client_id) {
+                    await supabase.from("clients").update(clientPatch).eq("id", c.client_id);
+                }
+            }
+        }
+        await supabase.from("contract_change_requests").update({
+            status: approve ? "approved" : "rejected",
+            reviewed_by: user?.id || null,
+            reviewed_by_name: user?.name || "—",
+            reviewed_at: new Date().toISOString(),
+            review_note: note || null,
+        }).eq("id", req.id);
+        setReqBusy(null);
+        await loadChangeReqs();
+        fetchData();
+    };
+
     return (
         <div className="w-full">
-            <div className="mb-8">
-                <h2 className="text-3xl font-bold text-white mb-2">Ricerca Contratto</h2>
-                <p className="text-slate-400">Ricerca e gestisci i contratti registrati a sistema</p>
+            <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Contratto</h2>
+                    <p className="text-slate-400">Ricerca e gestisci i contratti registrati a sistema</p>
+                </div>
+                {canApprove && (
+                    <button onClick={() => setShowReqs(v => !v)}
+                        className={cn("px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 border transition-colors",
+                            changeReqs.length > 0
+                                ? "bg-amber-500/15 border-amber-400/40 text-amber-200 hover:bg-amber-500/25"
+                                : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
+                        <ShieldCheck className="w-4 h-4" />
+                        Richieste di modifica
+                        {changeReqs.length > 0 && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-400 text-black text-[11px] font-bold">{changeReqs.length}</span>
+                        )}
+                    </button>
+                )}
             </div>
+
+            {/* Approvazione modifiche contratto — riservata all'amministrazione */}
+            {canApprove && showReqs && (
+                <div className="glass-card mb-6 p-6">
+                    <h3 className="text-lg font-medium text-white mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
+                        <ShieldCheck className="w-5 h-5 text-amber-300" />
+                        Richieste di modifica in attesa
+                    </h3>
+                    {changeReqs.length === 0 ? (
+                        <p className="text-sm text-slate-500">Nessuna richiesta in attesa.</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {changeReqs.map(r => (
+                                <div key={r.id} className="rounded-xl bg-white/5 border border-white/10 p-4">
+                                    <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                                        <div className="text-sm text-slate-300">
+                                            <b className="text-white">{r.requested_by_name || "\u2014"}</b> chiede di modificare il contratto{" "}
+                                            <button className="font-mono text-indigo-300 hover:underline"
+                                                onClick={() => {
+                                                    const hit = contractList.find(c => c.id === r.contract_id);
+                                                    if (hit) openContract(hit, "view");
+                                                }}>{r.contract_id}</button>
+                                            <span className="text-slate-500"> \u00b7 {new Date(r.created_at).toLocaleString("it-IT")}</span>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button disabled={reqBusy === r.id} onClick={() => decideRequest(r, true)}
+                                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 flex items-center gap-1.5 disabled:opacity-40">
+                                                <Check className="w-3.5 h-3.5" /> Approva
+                                            </button>
+                                            <button disabled={reqBusy === r.id} onClick={() => decideRequest(r, false)}
+                                                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500/20 text-red-300 hover:bg-red-500/30 disabled:opacity-40">
+                                                Rifiuta
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1">
+                                        {Object.entries(r.changes || {}).filter(([k]) => !k.startsWith("__")).map(([k, c]: any) => (
+                                            <div key={k} className="text-xs text-slate-400">
+                                                <b className="text-slate-200">{c.label}</b>: <span className="text-slate-500">{fmtVal(c.da)}</span> \u2192 <span className="text-amber-300">{fmtVal(c.a)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {r.changes?.__meta?.note && <p className="text-xs text-slate-500 mt-2 italic">{r.changes.__meta.note}</p>}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Advanced Search Filter Section */}
             <div className="glass-card mb-6 p-6">
@@ -390,9 +664,9 @@ export default function RicercaContratto() {
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex gap-1 justify-center">
-                                                <button onClick={() => { setSelectedContract(row); setDetailMode("view"); }} className="p-1.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors" title="Visualizza Dettaglio"><Eye className="w-4 h-4" /></button>
+                                                <button onClick={() => openContract(row, "view")} className="p-1.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors" title="Dettaglio contratto"><Eye className="w-4 h-4" /></button>
                                                 {canEditContract && (
-                                                    <button onClick={() => { setSelectedContract(row); setDetailMode("edit"); setEditStato(row.stato); }} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Modifica"><Edit className="w-4 h-4" /></button>
+                                                    <button onClick={() => openContract(row, "edit")} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Modifica (richiede approvazione amministrazione)"><Edit className="w-4 h-4" /></button>
                                                 )}
                                             </div>
                                         </td>
@@ -431,89 +705,211 @@ export default function RicercaContratto() {
                 </div>
             </div>
 
-            {/* Contract detail / edit modal */}
-            {selectedContract && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedContract(null)}>
-                    <div className="glass-card w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
-                            <h3 className="text-lg font-bold text-white">
-                                {detailMode === "view" ? "Dettaglio contratto" : "Modifica contratto"}
-                            </h3>
-                            <button onClick={() => setSelectedContract(null)} className="p-1 hover:bg-white/10 rounded-lg text-slate-400 transition-colors">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="p-6 overflow-y-auto space-y-4">
-                            <div className="grid grid-cols-2 gap-3 text-sm">
-                                <div><span className="text-slate-500">Codice</span><p className="text-white font-mono">{selectedContract.id}</p></div>
-                                <div><span className="text-slate-500">Stato</span><p className="text-white">{selectedContract.stato}</p></div>
-                                <div className="col-span-2"><span className="text-slate-500">Venditore</span><p className="text-white">{selectedContract.venditore}</p></div>
-                                <div><span className="text-slate-500">Brand</span><p className="text-white">{selectedContract.brand}</p></div>
-                                <div><span className="text-slate-500">Prodotto</span><p className="text-white">{selectedContract.prodotto}</p></div>
-                                <div className="col-span-2"><span className="text-slate-500">Cliente</span><p className="text-white">{selectedContract.cliente}</p></div>
-                                {selectedContract.cellulare && <div><span className="text-slate-500">Cellulare</span><p className="text-white">{selectedContract.cellulare}</p></div>}
-                                <div><span className="text-slate-500">Negozio</span><p className="text-white">{selectedContract.negozio}</p></div>
-                                <div><span className="text-slate-500">Codice attivazione</span><p className="text-white font-mono">{selectedContract.codice_attivazione}</p></div>
-                                <div><span className="text-slate-500">Data registrazione</span><p className="text-white">{selectedContract.data_registrazione}</p></div>
-                                <div><span className="text-slate-500">Data attivazione</span><p className="text-white">{selectedContract.data_attivazione}</p></div>
+            {/* Dettaglio / Modifica contratto — mostra TUTTI i dati di registrazione */}
+            {selectedContract && (() => {
+                const row = selectedContract;
+                const det = dettagliOf(row);
+                const detEditable = det.filter(([, v]) => v === null || typeof v !== "object");
+                const detReadonly = det.filter(([, v]) => v !== null && typeof v === "object");
+                const pendingForThis = contractReqs.filter(r => r.status === "pending");
+                const nChanges = Object.keys(pendingChanges).length;
+
+                const Field = ({ k, label, kind }: { k: string; label: string; kind?: string }) => {
+                    const orig = originalOf(row, k);
+                    if (detailMode === "view") {
+                        return (
+                            <div>
+                                <span className="text-[11px] uppercase tracking-wider text-slate-500">{label}</span>
+                                <p className="text-white text-sm break-words">{fmtVal(orig)}</p>
                             </div>
-                            {detailMode === "edit" && (
-                                <div className="pt-4 border-t border-white/10 space-y-2">
-                                    <label className="block text-xs font-semibold text-slate-400">Nuovo stato</label>
-                                    <select
-                                        value={editStato}
-                                        onChange={e => setEditStato(e.target.value)}
-                                        className="w-full bg-[#0f111a] border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
-                                    >
-                                        <option value="Attivo">Attivo</option>
-                                        <option value="In lavorazione">In lavorazione</option>
-                                        <option value="Attivato">Attivato</option>
-                                        <option value="Sospeso">Sospeso</option>
-                                        <option value="Annullato">Annullato</option>
-                                    </select>
-                                    <button
-                                        disabled={saving || editStato === selectedContract.stato}
-                                        onClick={async () => {
-                                            setSaving(true);
-                                            // Storico modifiche: registra chi/quando/da->a (richiesta Luca #5).
-                                            const entry = { at: new Date().toISOString(), user: user?.name || "—", campo: "Stato", da: selectedContract.stato, a: editStato };
-                                            const newStoria = [...(selectedContract.storia || []), entry];
-                                            const { error } = await supabase.from("contracts").update({ stato: editStato, storia: newStoria }).eq("id", selectedContract.id);
-                                            if (!error) {
-                                                setContractList(prev => prev.map(r => r.id === selectedContract.id ? { ...r, stato: editStato, storia: newStoria } : r));
-                                                setSelectedContract(prev => prev ? { ...prev, stato: editStato, storia: newStoria } : null);
-                                            }
-                                            setSaving(false);
-                                        }}
-                                        className="w-full mt-3 px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-500 hover:bg-indigo-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {saving ? "Salvataggio..." : "Salva modifiche"}
+                        );
+                    }
+                    const val = editValues[k] ?? "";
+                    const changed = (orig == null ? "" : String(orig)) !== val;
+                    const cls = cn("glass-input w-full text-sm", changed && "border-amber-400/60 bg-amber-400/5");
+                    return (
+                        <div>
+                            <label className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">{label}</label>
+                            {kind === "stato" ? (
+                                <select className={cls} value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))}>
+                                    <option value="">—</option>
+                                    {Array.from(new Set([...STATI, val].filter(Boolean))).map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            ) : kind === "textarea" ? (
+                                <textarea rows={2} className={cls} value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))} />
+                            ) : (
+                                <input type={kind === "date" ? "date" : "text"} className={cls} value={val}
+                                    onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))} />
+                            )}
+                        </div>
+                    );
+                };
+
+                const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+                    <div>
+                        <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-3 pb-2 border-b border-white/10">{title}</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{children}</div>
+                    </div>
+                );
+
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedContract(null)}>
+                        <div className="glass-card w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">
+                                        {detailMode === "view" ? "Dettaglio contratto" : "Modifica contratto"}
+                                    </h3>
+                                    <p className="text-xs text-slate-400 font-mono">{row.id} · {row.brand} · {row.cliente}</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {detailMode === "view" && canEditContract && (
+                                        <button onClick={() => openContract(row, "edit")}
+                                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 flex items-center gap-1.5">
+                                            <Edit className="w-3.5 h-3.5" /> Modifica
+                                        </button>
+                                    )}
+                                    {detailMode === "edit" && (
+                                        <button onClick={() => openContract(row, "view")}
+                                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/5 text-slate-300 hover:bg-white/10">
+                                            Annulla
+                                        </button>
+                                    )}
+                                    <button onClick={() => setSelectedContract(null)} className="p-1 hover:bg-white/10 rounded-lg text-slate-400 transition-colors">
+                                        <X className="w-5 h-5" />
                                     </button>
                                 </div>
-                            )}
+                            </div>
 
-                            {/* Storico modifiche (richiesta Luca #5) */}
-                            {(selectedContract.storia?.length || 0) > 0 && (
-                                <div className="mt-6 pt-4 border-t border-white/10">
-                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Storico modifiche</h4>
-                                    <div className="space-y-2">
-                                        {[...selectedContract.storia].reverse().map((h: any, i: number) => (
-                                            <div key={i} className="flex items-start gap-2 text-xs">
-                                                <span className="text-slate-600 shrink-0">{h.at ? new Date(h.at).toLocaleString("it-IT") : "—"}</span>
-                                                <span className="text-slate-300">
-                                                    <b className="text-white">{h.user || "—"}</b>
-                                                    {h.campo ? ` · ${h.campo}` : ""}
-                                                    {h.da || h.a ? `: ${h.da || "—"} → ${h.a || "—"}` : ""}
-                                                </span>
+                            <div className="p-6 overflow-y-auto space-y-6">
+                                {reqMsg && (
+                                    <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{reqMsg}</div>
+                                )}
+                                {pendingForThis.length > 0 && (
+                                    <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-200 flex items-start gap-2">
+                                        <Clock className="w-4 h-4 mt-0.5 shrink-0" />
+                                        <span>
+                                            {pendingForThis.length === 1 ? "C'è una richiesta di modifica" : `Ci sono ${pendingForThis.length} richieste di modifica`} in attesa di approvazione dall&apos;amministrazione.
+                                        </span>
+                                    </div>
+                                )}
+                                {detailMode === "edit" && (
+                                    <div className="rounded-xl border border-indigo-400/30 bg-indigo-400/10 px-4 py-3 text-xs text-indigo-200">
+                                        Le modifiche non sono immediate: vengono inviate come richiesta di approvazione all&apos;amministrazione (Sandra, Claudia, Marta, Franca, Luca).
+                                    </div>
+                                )}
+
+                                <Section title="Dati contratto">
+                                    {CONTRACT_FIELDS.map(f => <Field key={f.key} k={"contract::" + f.key} label={f.label} kind={f.kind} />)}
+                                </Section>
+
+                                <Section title="Anagrafica cliente">
+                                    {CLIENT_FIELDS.map(f => <Field key={f.key} k={"client::" + f.key} label={f.label} kind={f.kind} />)}
+                                </Section>
+
+                                {(detEditable.length > 0 || detReadonly.length > 0) && (
+                                    <Section title="Dettagli registrazione">
+                                        {detEditable.map(([k]) => <Field key={k} k={"dettagli::" + k} label={k} />)}
+                                        {detReadonly.map(([k, v]) => (
+                                            <div key={k} className="sm:col-span-2 lg:col-span-3">
+                                                <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>
+                                                <pre className="text-white text-xs bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
                                             </div>
                                         ))}
+                                    </Section>
+                                )}
+
+                                <Section title="Riferimenti sistema">
+                                    {READONLY_META.map(f => (
+                                        <div key={f.key}>
+                                            <span className="text-[11px] uppercase tracking-wider text-slate-500">{f.label}</span>
+                                            <p className="text-white text-sm font-mono break-all">{fmtVal(row.raw?.[f.key])}</p>
+                                        </div>
+                                    ))}
+                                </Section>
+
+                                {detailMode === "edit" && (
+                                    <div className="pt-4 border-t border-white/10 space-y-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 mb-1">Motivo della modifica (facoltativo)</label>
+                                            <textarea rows={2} className="glass-input w-full text-sm" value={reqNote} onChange={e => setReqNote(e.target.value)}
+                                                placeholder="Es. correzione ICCID comunicata dal cliente" />
+                                        </div>
+                                        {nChanges > 0 && (
+                                            <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-1">
+                                                <p className="text-xs font-bold text-slate-300 mb-2">{nChanges} {nChanges === 1 ? "campo modificato" : "campi modificati"}</p>
+                                                {Object.entries(pendingChanges).map(([k, c]) => (
+                                                    <div key={k} className="text-xs text-slate-300">
+                                                        <b className="text-white">{c.label}</b>: <span className="text-slate-500">{fmtVal(c.da)}</span> → <span className="text-amber-300">{fmtVal(c.a)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <button
+                                            disabled={saving || nChanges === 0}
+                                            onClick={submitChangeRequest}
+                                            className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-500 hover:bg-indigo-600 text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            {saving ? "Invio..." : nChanges === 0 ? "Nessuna modifica" : "Invia richiesta di approvazione"}
+                                        </button>
                                     </div>
-                                </div>
-                            )}
+                                )}
+
+                                {contractReqs.length > 0 && (
+                                    <div className="pt-4 border-t border-white/10">
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Richieste di modifica</h4>
+                                        <div className="space-y-2">
+                                            {contractReqs.map(r => (
+                                                <div key={r.id} className="rounded-lg bg-white/5 border border-white/10 p-3 text-xs">
+                                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                                        <span className="text-slate-300"><b className="text-white">{r.requested_by_name || "—"}</b> · {new Date(r.created_at).toLocaleString("it-IT")}</span>
+                                                        <span className={cn("px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
+                                                            r.status === "pending" ? "bg-amber-500/15 text-amber-300" :
+                                                                r.status === "approved" ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300")}>
+                                                            {r.status === "pending" ? "In attesa" : r.status === "approved" ? "Approvata" : "Rifiutata"}
+                                                        </span>
+                                                    </div>
+                                                    {Object.entries(r.changes || {}).filter(([k]) => !k.startsWith("__")).map(([k, c]: any) => (
+                                                        <div key={k} className="text-slate-400">{c.label}: <span className="text-slate-500">{fmtVal(c.da)}</span> → <span className="text-amber-300">{fmtVal(c.a)}</span></div>
+                                                    ))}
+                                                    {r.changes?.__meta?.note && <p className="text-slate-500 mt-1 italic">{r.changes.__meta.note}</p>}
+                                                    {r.reviewed_by_name && <p className="text-slate-500 mt-1">Esaminata da {r.reviewed_by_name}</p>}
+                                                    {canApprove && r.status === "pending" && (
+                                                        <div className="flex gap-2 mt-2">
+                                                            <button disabled={reqBusy === r.id} onClick={() => decideRequest(r, true)}
+                                                                className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 font-semibold disabled:opacity-40">Approva</button>
+                                                            <button disabled={reqBusy === r.id} onClick={() => decideRequest(r, false)}
+                                                                className="px-3 py-1 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30 font-semibold disabled:opacity-40">Rifiuta</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {(row.storia?.length || 0) > 0 && (
+                                    <div className="pt-4 border-t border-white/10">
+                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Storico modifiche</h4>
+                                        <div className="space-y-2">
+                                            {[...row.storia].reverse().map((h: any, i: number) => (
+                                                <div key={i} className="flex items-start gap-2 text-xs">
+                                                    <span className="text-slate-600 shrink-0">{h.at ? new Date(h.at).toLocaleString("it-IT") : "—"}</span>
+                                                    <span className="text-slate-300">
+                                                        <b className="text-white">{h.user || "—"}</b>
+                                                        {h.campo ? " · " + h.campo : ""}
+                                                        {h.da || h.a ? ": " + (h.da || "—") + " → " + (h.a || "—") : ""}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
         </div>
     );
 }
