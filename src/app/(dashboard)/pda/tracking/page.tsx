@@ -481,9 +481,21 @@ function FilterBar({
 }
 
 // ─── Tabella ──────────────────────────────────────────────────────────────────
-function Tabella({ rows, onSelect }: { rows: TrackingRow[]; onSelect: (row: TrackingRow) => void }) {
+function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDelegate }: {
+  rows: TrackingRow[];
+  onSelect: (row: TrackingRow) => void;
+  canDelegate?: boolean;
+  members?: { id: string; full_name: string }[];
+  onBulkDelegate?: (ids: string[], toId: string) => void;
+}) {
   const thStyle =
     "py-2.5 px-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700 whitespace-nowrap";
+  // Selezione multipla per delega rapida dalla dashboard.
+  const [checked, setChecked] = useState<string[]>([]);
+  const [bulkTo, setBulkTo] = useState("");
+  const toggle = (id: string) => setChecked((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const allOnPage = rows.map((r) => r.id);
+  const allChecked = checked.length > 0 && allOnPage.every((id) => checked.includes(id));
 
   if (rows.length === 0) {
     return (
@@ -495,10 +507,34 @@ function Tabella({ rows, onSelect }: { rows: TrackingRow[]; onSelect: (row: Trac
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+      {/* Barra delega rapida: compare quando selezioni una o piu' pratiche */}
+      {canDelegate && checked.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 py-2.5 px-3.5 bg-indigo-900/40 border-b border-indigo-700">
+          <span className="text-[13px] font-bold text-indigo-200">{checked.length} pratic{checked.length === 1 ? "a" : "he"} selezionat{checked.length === 1 ? "a" : "e"}</span>
+          <select value={bulkTo} onChange={(e) => setBulkTo(e.target.value)}
+            className="bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-[13px] p-1.5 outline-none">
+            <option value="">— Delega a… —</option>
+            {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+          </select>
+          <button type="button" disabled={!bulkTo}
+            onClick={() => { onBulkDelegate?.(checked, bulkTo); setChecked([]); setBulkTo(""); }}
+            className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[13px] font-bold disabled:opacity-40">
+            Delega
+          </button>
+          <button type="button" onClick={() => setChecked([])} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-[13px]">Annulla</button>
+          <span className="text-[11px] text-slate-400 ml-auto">Solo collaboratori del tuo punto vendita</span>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-slate-900">
+              {canDelegate && (
+                <th className={thStyle + " w-8"}>
+                  <input type="checkbox" checked={allChecked}
+                    onChange={() => setChecked(allChecked ? [] : allOnPage)} title="Seleziona tutte" />
+                </th>
+              )}
               <th className={thStyle}>CATEGORIA</th>
               <th className={thStyle}>BRAND</th>
               <th className={thStyle}>NOMINATIVO</th>
@@ -521,6 +557,11 @@ function Tabella({ rows, onSelect }: { rows: TrackingRow[]; onSelect: (row: Trac
                   style={{ background: bg }}
                   onClick={() => onSelect(row)}
                 >
+                  {canDelegate && (
+                    <td className="py-2.5 px-3.5 border-b border-slate-800" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={checked.includes(row.id)} onChange={() => toggle(row.id)} />
+                    </td>
+                  )}
                   <td className="py-2.5 px-3.5 border-b border-slate-800">
                     <CatBadge id={row.categoria} />
                   </td>
@@ -596,6 +637,7 @@ function Drawer({
   onUpdate,
   members = [],
   canDelegate = false,
+  canEditAdmin = false,
   onDelegate,
   delegatoNome = null,
 }: {
@@ -604,6 +646,7 @@ function Drawer({
   onUpdate: (updated: TrackingRow) => void;
   members?: { id: string; full_name: string }[];
   canDelegate?: boolean;
+  canEditAdmin?: boolean;
   onDelegate?: (rowId: string, toId: string | null) => void;
   delegatoNome?: string | null;
 }) {
@@ -612,6 +655,8 @@ function Drawer({
   const [editStatoN, setEditStatoN] = useState(row.statoNegozio);
   const [editStatoA, setEditStatoA] = useState(row.statoAdmin);
   const [activeTab, setActiveTab] = useState<"negozio" | "admin" | "storico">("negozio");
+  // Se non sei amministrazione non puoi restare sul tab Esito Admin.
+  useEffect(() => { if (activeTab === "admin" && !canEditAdmin) setActiveTab("negozio"); }, [activeTab, canEditAdmin]);
   const [followup, setFollowup] = useState<FollowUpItem[]>(
     row.followup && row.followup.length > 0
       ? row.followup
@@ -727,8 +772,24 @@ function Drawer({
           <span className="text-[11px] text-slate-500 mx-1">| Admin:</span>
           <StatoBadge id={row.statoAdmin} set="admin" />
         </div>
+        {/* Delega verifica: NON fa parte della sezione admin — e' una funzione
+            dallo store manager in su, quindi sta fuori dai tab. */}
+        {canDelegate && (
+          <div className="mt-3.5 p-3 rounded-lg border border-slate-700 bg-slate-900/60">
+            <div className={labelStyle + " mb-2"}>Delega verifica a</div>
+            {row.delegated_to && (
+              <div className="mb-2 text-[12px] text-emerald-400">Attualmente delegata a <b>{delegatoNome || "collaboratore"}</b></div>
+            )}
+            <select value={row.delegated_to || ""} onChange={(e) => onDelegate?.(row.id, e.target.value || null)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-[13px] p-2 outline-none">
+              <option value="">— Nessuna delega —</option>
+              {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+            </select>
+            <p className="mt-1.5 text-[11px] text-slate-500">Solo collaboratori del tuo punto vendita. Il delegato la trova con il filtro “Delegate a me”.</p>
+          </div>
+        )}
         <div className="flex gap-0 mt-3.5">
-          {(["negozio", "admin", "storico"] as const).map((tab) => {
+          {(["negozio", "admin", "storico"] as const).filter((t) => t !== "admin" || canEditAdmin).map((tab) => {
             const labels = { negozio: "Esito Negozio", admin: "Esito Admin", storico: "Storico" };
             const active = activeTab === tab;
             return (
@@ -858,7 +919,7 @@ function Drawer({
           </div>
         )}
 
-        {activeTab === "admin" && (
+        {activeTab === "admin" && canEditAdmin && (
           <div className={panelStyle}>
             <div className="flex items-center gap-2 mb-1.5">
               <div className="w-2 h-2 rounded-full bg-purple-400 flex-shrink-0" />
@@ -906,23 +967,6 @@ function Drawer({
               Salva verifica amministrazione
             </button>
 
-            {/* Delega verifica (richiesta Luca #6): assegna la pratica a un collaboratore. */}
-            {canDelegate && (
-              <div className="mt-4 pt-4 border-t border-slate-700">
-                <div className={labelStyle + " mb-2"}>Delega verifica a</div>
-                {row.delegated_to && (
-                  <div className="mb-2 text-[12px] text-emerald-400">Attualmente delegata a <b>{delegatoNome || "collaboratore"}</b></div>
-                )}
-                <div className="flex gap-2">
-                  <select value={row.delegated_to || ""} onChange={(e) => onDelegate?.(row.id, e.target.value || null)}
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-[13px] p-2 outline-none">
-                    <option value="">— Nessuna delega —</option>
-                    {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
-                  </select>
-                </div>
-                <p className="mt-1.5 text-[11px] text-slate-500">Il delegato e lo store manager vedranno questa pratica (filtro “Delegate a me”).</p>
-              </div>
-            )}
           </div>
         )}
 
@@ -1001,14 +1045,23 @@ function Drawer({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TrackingPdaPage() {
   const { user } = useAuth();
+  // Delega: dallo store manager in su. Esito admin: solo utenti amministrazione.
   const canDelegate = ["store_manager", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
-  const [members, setMembers] = useState<{ id: string; full_name: string }[]>([]);
+  const canEditAdmin = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+  const seesAll = ["admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
+  const [allMembers, setAllMembers] = useState<{ id: string; full_name: string; primary_store: string | null }[]>([]);
   const [onlyMine, setOnlyMine] = useState(false); // "delegate a me"
   useEffect(() => {
-    supabase.from("app_users").select("id, full_name").eq("active", true).order("full_name")
-      .then(({ data }) => setMembers((data ?? []) as any));
+    supabase.from("app_users").select("id, full_name, primary_store").eq("active", true).order("full_name")
+      .then(({ data }) => setAllMembers((data ?? []) as any));
   }, []);
-  const memberName = useCallback((id?: string | null) => members.find((m) => m.id === id)?.full_name || null, [members]);
+  // Il manager puo' delegare SOLO ai collaboratori del proprio punto vendita.
+  const members = useMemo(() => {
+    if (seesAll || !user?.negozio) return allMembers;
+    const base = user.negozio.split(" ")[0].toLowerCase();
+    return allMembers.filter((m) => (m.primary_store || "").toLowerCase().startsWith(base));
+  }, [allMembers, seesAll, user?.negozio]);
+  const memberName = useCallback((id?: string | null) => allMembers.find((m) => m.id === id)?.full_name || null, [allMembers]);
 
   const [rawList, setRawList] = useState<RawRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1199,6 +1252,20 @@ export default function TrackingPdaPage() {
     setSelected((s) => s && s.id === rowId ? { ...s, delegated_to: toId, delegated_by: toId ? (user?.id ?? null) : null, storia } : s);
   }, [rawList, memberName, user]);
 
+  // Delega rapida di piu' pratiche insieme dalla dashboard.
+  const handleBulkDelegate = useCallback(async (ids: string[], toId: string) => {
+    if (!ids.length || !toId) return;
+    const nome = memberName(toId) || "collaboratore";
+    const oggi = new Date().toLocaleDateString("it-IT");
+    for (const id of ids) {
+      const target = rawList.find((r) => (r.id as string) === id);
+      const storia = Array.isArray((target as any)?.storia) ? [...(target as any).storia] : [];
+      storia.push({ data: oggi, tipo: "delega", testo: `Verifica delegata a ${nome}`, utente: user?.name || "—", ruolo: "admin" });
+      await supabase.from("contracts").update({ delegated_to: toId, delegated_by: user?.id ?? null, storia }).eq("id", id);
+    }
+    setRawList((prev) => prev.map((r) => ids.includes(r.id as string) ? { ...r, delegated_to: toId, delegated_by: user?.id } : r));
+  }, [rawList, memberName, user]);
+
   const handleUpdate = useCallback(
     async (updated: TrackingRow) => {
       const payload = {
@@ -1351,13 +1418,13 @@ export default function TrackingPdaPage() {
               brandSel={brandSel}
               setBrandSel={setBrandSel}
             />
-            <Tabella rows={filtered} onSelect={setSelected} />
+            <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} />
           </>
         )}
 
         {selected && (
           <Drawer row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate}
-            members={members} canDelegate={canDelegate} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)} />
+            members={members} canDelegate={canDelegate} canEditAdmin={canEditAdmin} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)} />
         )}
       </div>
     </div>
