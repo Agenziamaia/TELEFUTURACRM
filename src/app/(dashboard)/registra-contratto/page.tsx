@@ -3467,6 +3467,11 @@ export default function CRM() {
   const [showMargSave,setShowMargSave]=useState(false);
   const [margSaveForm,setMargSaveForm]=useState({nome:"",cognome:"",tel:"",anonimo:false});
   const [margItems,setMargItems]=useState([]);
+  // Data della vendita: prima i due campi "Data"/"Giorno" del carrello erano
+  // input non controllati (defaultValue), quindi quello che sceglieva l'operatore
+  // non veniva mai letto; in piu' il ramo solo-marginalita' aveva la data fissa
+  // "2026-03-07". Ora e' un unico stato, inizializzato a oggi.
+  const [dataVendita,setDataVendita]=useState(()=>new Date().toISOString().split("T")[0]);
   const [uploading, setUploading] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const handleFileChange = (e, type) => { if (e.target.files && e.target.files.length) { const nf = Array.from(e.target.files).map(file => ({ file, name: file.name, type })); setAttachments(prev => [...prev, ...nf]); } e.target.value = ""; };
@@ -3677,7 +3682,7 @@ export default function CRM() {
 
       // 4. Prepare Contract Rows
       const contractRows = [];
-      const dateStr = new Date().toISOString().split("T")[0];
+      const dateStr = dataVendita || new Date().toISOString().split("T")[0];
 
       fc.forEach(group => {
         (group.items || []).forEach((item) => {
@@ -3747,6 +3752,59 @@ export default function CRM() {
       sT("❌ Errore durante il salvataggio: " + (err.message || "Verifica connessione"));
     }
   };
+  // Salvataggio della vendita di soli prodotti (nessuna attivazione brand).
+  // Prima il bottone "Salva vendita" faceva soltanto fullReset() + toast:
+  // mostrava "Vendita salvata!" senza scrivere NULLA a database, quindi la
+  // marginalita' venduta senza brand andava persa. Ora crea le righe EXT-
+  // come fa handleSubmit per il ramo con brand.
+  const [margSaving,setMargSaving]=useState(false);
+  const saveMargOnly=async()=>{
+    if(margSaving)return;
+    const anon=margSaveForm.anonimo;
+    if(!anon&&!(margSaveForm.nome.trim()&&margSaveForm.cognome.trim()&&margSaveForm.tel.trim()))return;
+    setMargSaving(true);
+    try{
+      const dateStr=dataVendita||new Date().toISOString().split("T")[0];
+      let clientId;
+      if(anon){
+        // Un unico cliente segnaposto condiviso: client_id e' NOT NULL con FK,
+        // ma non inventiamo un anagrafica finta per ogni vendita anonima.
+        clientId="CL-VENDITA-DIRETTA";
+        await supabase.from("clients").upsert({
+          id:clientId,tipo:"consumer",nome:"Vendita diretta",cognome:"",
+          cellulare:"",email:"",cf_piva:null,indirizzo:"",cap:"",citta:"",is_demo:false,
+        },{onConflict:"id"});
+      }else{
+        const tel=margSaveForm.tel.trim();
+        const {data:ex}=await supabase.from("clients").select("id")
+          .eq("cellulare",tel).ilike("nome",margSaveForm.nome.trim())
+          .ilike("cognome",margSaveForm.cognome.trim()).limit(1);
+        clientId=(ex&&ex[0]&&ex[0].id)||`CL-${tel.replace(/\D/g,"")||"ND"}-${Date.now()}`;
+        const {error:ce}=await supabase.from("clients").upsert({
+          id:clientId,tipo:"consumer",nome:margSaveForm.nome.trim(),cognome:margSaveForm.cognome.trim(),
+          cellulare:tel,email:"",cf_piva:null,indirizzo:"",cap:"",citta:"",is_demo:false,
+        },{onConflict:"id"});
+        if(ce)throw ce;
+      }
+      const rows=margItems.map(mi=>({
+        id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
+        client_id:clientId,data:dateStr,brand:"Extra",categoria:"Prodotto/Servizio",
+        prodotto:mi.product,stato:"Attivo",venditore:mi.vendor||selVend,negozio:mi.store||selNeg,
+        codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:dateStr,
+        dettagli:{product:mi.product,price:mi.price,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei},
+        is_demo:false,
+      }));
+      const {error}=await supabase.from("contracts").insert(rows);
+      if(error)throw error;
+      setMargSaveForm({nome:"",cognome:"",tel:"",anonimo:false});
+      setShowMargSave(false);
+      fullReset();
+      showToast(`Vendita salvata! ${rows.length} prodott${rows.length===1?"o":"i"} registrat${rows.length===1?"o":"i"}`);
+    }catch(e){
+      showToast("Errore salvataggio: "+(e?.message||"riprova"));
+    }finally{setMargSaving(false);}
+  };
+
   // Ricerca REALE del cliente. Prima questa funzione non interrogava nulla:
   // dichiarava "Trovato!" e riempiva l'anagrafica con un cliente inventato
   // (Mario Rossi / Rossi S.r.l. / IBAN fittizio), qualunque CF si digitasse.
@@ -3867,7 +3925,7 @@ export default function CRM() {
           <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Step 6 — Attribuzione</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
-            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data <span style={{color:"#dc3545"}}>*</span></div><input type="date" defaultValue={new Date().toISOString().split("T")[0]} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
+            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
         {onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745",marginTop:12}}>
@@ -3875,7 +3933,7 @@ export default function CRM() {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/>
             <DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
-            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Giorno <span style={{color:"#dc3545"}}>*</span></div><input type="date" defaultValue="2026-03-07" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
+            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Giorno <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
         {!onlyMarg&&<NoteStep store={selNeg}/>}
@@ -3910,7 +3968,7 @@ export default function CRM() {
             </div>}
             <div style={{display:"flex",gap:10,marginTop:4}}>
               <button onClick={()=>setShowMargSave(false)} style={{flex:1,padding:"11px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:700,cursor:"pointer"}}>← Annulla</button>
-              <button onClick={()=>{const ok=margSaveForm.anonimo||(margSaveForm.nome.trim()&&margSaveForm.cognome.trim()&&margSaveForm.tel.trim());if(!ok)return;setMargSaveForm({nome:"",cognome:"",tel:"",anonimo:false});setShowMargSave(false);fullReset();showToast("Vendita salvata!");}} style={{flex:1,padding:"11px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#218838)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>✅ Salva vendita</button>
+              <button onClick={saveMargOnly} disabled={margSaving} style={{flex:1,padding:"11px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#218838)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>{margSaving?"Salvataggio...":"✅ Salva vendita"}</button>
             </div>
           </div>
         </div>}
