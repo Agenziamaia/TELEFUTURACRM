@@ -3424,6 +3424,9 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
 const NoteStep = ({store}) => {
   const [show,setShow]=useState(false);
+  // Negozio: precompilato dal login ma MODIFICABILE a mano.
+  const [negozioPro,setNegozioPro]=useState("");
+  useEffect(()=>{if(store)setNegozioPro(p=>p||store);},[store]);
   const content = (
     <div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #e83e8c"}}>
       <div style={{fontSize:11,fontWeight:700,color:"#e83e8c",marginBottom:14,textTransform:"uppercase"}}>📝 Step 7 — Note / Promemoria</div>
@@ -3438,8 +3441,8 @@ const NoteStep = ({store}) => {
         <div style={{border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
         <div style={{border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Promemoria</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data</div><input type="date" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Ora</div><input type="time" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div></div>
-          {/* Negozio non selezionabile: fisso al negozio del login (richiesta Luca, Step 7). */}
-          <div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Negozio</div><input value={store||"—"} readOnly tabIndex={-1} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.03)",color:"#8892b0",cursor:"not-allowed"}}/></div>
+          {/* Negozio: si auto-compila dal login ma resta modificabile a mano. */}
+          <div style={{marginTop:8}}><DD l="Negozio" v={negozioPro} o={v=>setNegozioPro(v)} vals={negozi} nt="Dal login — modificabile"/></div>
           <div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Descrizione</div><textarea placeholder="Dettagli…" rows={2} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
         </div>
       </div>}
