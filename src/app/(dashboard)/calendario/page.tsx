@@ -59,7 +59,7 @@ type MeetingType = "in_person" | "video_call";
 type MeetingResponseStatus = "invited" | "confirmed" | "declined";
 
 interface MeetingRecipient {
-    id: number;
+    id: string;   // uuid di app_users (recipients e' jsonb, quindi ok)
     name: string;
     store?: string;
     status: MeetingResponseStatus;
@@ -82,7 +82,9 @@ interface CalendarMeeting {
 
 const MEETING_BRANDS = ["Wind3", "Vodafone", "Tim", "Fastweb", "Corporate / Aziendale"];
 
-type MeetingUser = { id: number; name: string; store: string; brands: string[] };
+// id e' l'uuid di app_users (gli operatori arrivano dagli utenti reali, non piu'
+// dalla tabella seed calendar_operators).
+type MeetingUser = { id: string; name: string; store: string; brands: string[] };
 
 function mapAppointmentRow(r: Record<string, unknown>): Appointment {
     return {
@@ -273,7 +275,7 @@ export default function Calendario() {
 
     const [meetings, setMeetings] = useState<CalendarMeeting[]>([]);
 
-    const [calendarStores, setCalendarStores] = useState<{ id: number; name: string }[]>([]);
+    const [calendarStores, setCalendarStores] = useState<{ id: string; name: string }[]>([]);
     const [calendarOperators, setCalendarOperators] = useState<MeetingUser[]>([]);
 
     const storeNames = useMemo(() => calendarStores.map(s => s.name).sort(), [calendarStores]);
@@ -283,26 +285,36 @@ export default function Calendario() {
     useEffect(() => {
         let cancelled = false;
         (async () => {
-            const [apptRes, taskRes, blockRes, meetRes, storesRes, operatorsRes] = await Promise.all([
+            const [apptRes, taskRes, blockRes, meetRes, storesRes, operatorsRes, brandsRes] = await Promise.all([
                 supabase.from("appointments").select("*").order("date"),
                 supabase.from("calendar_tasks").select("*").order("date"),
                 supabase.from("agenda_blocks").select("*"),
                 supabase.from("calendar_meetings").select("*").order("date"),
-                supabase.from("calendar_stores").select("id, name").order("name"),
-                supabase.from("calendar_operators").select("id, name, store, brands").order("name"),
+                // Negozi e collaboratori REALI (le tabelle calendar_stores/calendar_operators
+                // contenevano ancora dati di esempio: Marco Bianchi, "Roma Centro (RM001)", ecc.)
+                supabase.from("stores").select("id, name").order("name"),
+                supabase.from("app_users").select("id, full_name, primary_store").eq("active", true).order("full_name"),
+                supabase.from("user_brands").select("user_id, brand"),
             ]);
             if (cancelled) return;
             if (!apptRes.error) setAppointments((apptRes.data ?? []).map(mapAppointmentRow));
             if (!taskRes.error) setTasks((taskRes.data ?? []).map(mapTaskRow));
             if (!blockRes.error) setAgendaBlocks((blockRes.data ?? []).map(mapAgendaBlockRow));
             if (!meetRes.error) setMeetings((meetRes.data ?? []).map(mapMeetingRow));
-            if (!storesRes.error) setCalendarStores((storesRes.data ?? []).map((r: Record<string, unknown>) => ({ id: Number(r.id), name: r.name as string })));
-            if (!operatorsRes.error) setCalendarOperators((operatorsRes.data ?? []).map((r: Record<string, unknown>) => ({
-                id: Number(r.id),
-                name: r.name as string,
-                store: r.store as string,
-                brands: Array.isArray(r.brands) ? r.brands as string[] : [],
-            })));
+            if (!storesRes.error) setCalendarStores((storesRes.data ?? []).map((r: Record<string, unknown>) => ({ id: String(r.id), name: r.name as string })));
+            if (!operatorsRes.error) {
+                const bmap = new Map<string, string[]>();
+                (brandsRes?.data ?? []).forEach((b: Record<string, unknown>) => {
+                    const k = String(b.user_id);
+                    bmap.set(k, [...(bmap.get(k) ?? []), b.brand as string]);
+                });
+                setCalendarOperators((operatorsRes.data ?? []).map((r: Record<string, unknown>) => ({
+                    id: String(r.id),
+                    name: r.full_name as string,
+                    store: (r.primary_store as string) ?? "",
+                    brands: bmap.get(String(r.id)) ?? [],
+                })));
+            }
         })();
         return () => { cancelled = true; };
     }, []);
@@ -507,7 +519,7 @@ export default function Calendario() {
         });
     };
 
-    const handleToggleRecipient = (userId: number) => {
+    const handleToggleRecipient = (userId: string) => {
         setNewMeeting(prev => {
             const exists = prev.recipients.find(r => r.id === userId);
             if (exists) {
