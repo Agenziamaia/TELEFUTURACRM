@@ -81,7 +81,9 @@ const MARG_PRODUCTS=[
   // 6a categoria (richiesta Luca #10): registra IMEI + € (ricavo), margine 4%,
   // conta come +1 telefono venduto (countsPhone).
   {cat:"📱 Telefono Cash",items:[
-    {id:"telefono_cash",name:"Telefono Cash",price:null,pctMargin:4.00,needsModel:true,needsImei:true,countsPhone:true,icon:"📱",type:"pct"},
+    // isTelCash: blocco dedicato (modello da lista + IMEI + importo di vendita).
+    // NON usa needsImei: quello e' il magazzino usato, qui l'IMEI non va collegato.
+    {id:"telefono_cash",name:"Telefono Cash",price:null,pctMargin:4.00,isTelCash:true,countsPhone:true,icon:"📱",type:"pct"},
   ]},
 ];
 
@@ -148,7 +150,8 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
   const handleAdd=()=>{
     if(!selProd)return;
     const p=selProd;
-    const pVal=p.price!==null?p.price:parseFloat(price)||0;
+    // Telefono Cash: la base del 4% e' l'importo di VENDITA inserito.
+    const pVal=p.isTelCash?(parseFloat(importo)||0):(p.price!==null?p.price:parseFloat(price)||0);
     const mVal=p.type==="fixed"?(p.fixedMargin||0):p.type==="pct"?(pVal*(p.pctMargin||0)/100):0;
     if(p.needsImei){
       const units=usatoUnits.filter(u=>u.imei||u.model);
@@ -188,6 +191,17 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
           <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Quantità</div>
             <input value={qty} onChange={e=>setQty(e.target.value)} type="number" min="1" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/></div>
           {selProd.needsModel&&!selProd.needsImei&&<div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Modello</div><input value={model} onChange={e=>setModel(e.target.value)} placeholder="es. iPhone 15..." style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>}
+          {/* TELEFONO CASH: modello dalla lista condivisa + IMEI libero (nessun collegamento
+              al magazzino usato) + importo di vendita (base del 4%). */}
+          {selProd.isTelCash&&<div style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:6,textTransform:"uppercase"}}>IMEI Dispositivo</div>
+            <div style={{padding:10,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)"}}>
+              <div style={{marginBottom:8}}><DD l="Modello" r v={model} o={v=>setModel(v)} vals={SMARTPHONES}/></div>
+              <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>IMEI</div>
+              <input value={imei} onChange={e=>setImei(e.target.value.replace(/\D/g,"").slice(0,15))} placeholder="IMEI (15 cifre)"
+                style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(imei).length===15?"2px solid #28a745":"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/>
+            </div>
+          </div>}
           {selProd.needsImei&&<div style={{marginBottom:12}}>
             <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:6,textTransform:"uppercase"}}>Dispositivi usati ({usatoUnits.length})</div>
             {usatoUnits.map((u,i)=>{const found=lookupUsato(u.imei);const _di=String(u.imei||"").replace(/\D/g,"");const done=_di.length===15;const dup=done&&usatoUnits.some((x,j)=>j!==i&&String(x.imei||"").replace(/\D/g,"")===_di);return (
@@ -199,8 +213,9 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
               </div>
             );})}
           </div>}
-          <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Importo €</div>
-            <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/></div>
+          <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{selProd.isTelCash?"Importo di vendita €":"Importo €"}</div>
+            <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
+            {selProd.isTelCash&&<div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>
           {hasDupImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Sono presenti IMEI duplicati: correggili per registrare</div>}
           <button onClick={handleAdd} disabled={hasDupImei} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:hasDupImei?"#cfcfcf":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:hasDupImei?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
         </div>)}
