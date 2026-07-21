@@ -261,7 +261,9 @@ const BRANDS = [
   { id: "very", logo: "/very-mobile.png", label: "Very Mobile", short: "VERY", color: "#1FA300", gradient: "linear-gradient(135deg, #137A00 0%, #1FA300 100%)", icon: "🟢", desc: "Mobile", ready: true },
   { id: "ho", logo: "/ho-mobile.png", label: "Ho. Mobile", short: "HO", color: "#E6007E", gradient: "linear-gradient(135deg, #B0005F 0%, #E6007E 100%)", icon: "💗", desc: "Mobile", ready: true },
 ];
-const codiciW3 = ["Magliana","Libia","San Paolo","Mazzini","Donna","Promontori","Collatina"];
+// Codici inserimento WindTre. "Garbatella" mancava (richiesta dell'ufficio):
+// era gia' presente nelle liste di Vodafone, Fastweb, Iliad, Sky e Very.
+const codiciW3 = ["Magliana","Libia","San Paolo","Mazzini","Donna","Promontori","Collatina","Garbatella"];
 const SKY_CODICI_NEGOZIO = ["Acilia","Donna","Magliana","Garbatella","Promontori","Collatina"];
 // Venditori dal DB (app_users attivi), stesso schema di `negozi`: l'array viene
 // riempito IN PLACE perche' i componenti ne tengono il riferimento.
