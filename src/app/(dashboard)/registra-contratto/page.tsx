@@ -3599,21 +3599,33 @@ export default function CRM() {
     }
 
     try {
-      // 1. Resolve CF/PIVA — ensure it's never empty
-      const cfPiva = lookupValue || "";
-      if (!cfPiva) {
-        sT("⚠️ Codice Fiscale / P.IVA obbligatorio");
+      // 1. CF/P.IVA facoltativo (migrazione 065: colonna nullable, unicita'
+      //    parziale). Obbligatori sono invece nome/cognome/cellulare.
+      const cfPiva = (lookupValue || "").trim();
+      if (anaMissing.length > 0) {
+        sT("⚠️ Campi obbligatori mancanti: " + anaMissing.join(", "));
         return;
       }
 
-      // 2. Check if client already exists by cf_piva
-      const { data: existingClient } = await supabase
-        .from("clients")
-        .select("id")
-        .eq("cf_piva", cfPiva)
-        .maybeSingle();
+      // 2. Cliente gia' in anagrafica? Con il CF e' un match certo; senza CF
+      //    riconosciamo lo stesso cliente solo se coincidono telefono E nome
+      //    (o ragione sociale), per non fondere due persone diverse.
+      const tel = (ana.cellulare || ana.recapito || "").trim();
+      let existingClient = null;
+      if (cfPiva) {
+        const { data } = await supabase.from("clients").select("id").eq("cf_piva", cfPiva).limit(1);
+        existingClient = data && data[0];
+      } else if (tel) {
+        let q = supabase.from("clients").select("id").eq("cellulare", tel);
+        q = tipoCliente === "business"
+          ? q.ilike("ragione_sociale", (ana.ragioneSociale || "").trim())
+          : q.ilike("nome", (ana.nome || "").trim()).ilike("cognome", (ana.cognome || "").trim());
+        const { data } = await q.limit(1);
+        existingClient = data && data[0];
+      }
 
-      const clientId = existingClient?.id || `CL-${cfPiva.replace(/\s/g, "")}-${Date.now()}`;
+      const idBase = cfPiva || tel.replace(/\D/g, "") || "ND";
+      const clientId = existingClient?.id || `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`;
 
       const clientData = {
         id: clientId,
@@ -3625,7 +3637,7 @@ export default function CRM() {
         cognome_ref: ana.cognomeRef || "",
         cellulare: ana.cellulare || ana.recapito || "",
         email: ana.email || "",
-        cf_piva: cfPiva,
+        cf_piva: cfPiva || null,
         indirizzo: ana.via || "",
         cap: ana.cap || "",
         citta: ana.citta || "",
@@ -3735,9 +3747,15 @@ export default function CRM() {
   // Ricerca REALE del cliente. Prima questa funzione non interrogava nulla:
   // dichiarava "Trovato!" e riempiva l'anagrafica con un cliente inventato
   // (Mario Rossi / Rossi S.r.l. / IBAN fittizio), qualunque CF si digitasse.
+  // Prosegue senza cercare: il cliente non ha (o non ricorda) il CF.
+  const skipLookup=()=>{
+    setClienteFound(false);setLookupDone(true);
+    setShowAna(true);setShowStep4(false);
+  };
   const doLookup=async()=>{
     const v=(lookupValue||"").trim();
-    if(!v||lookupBusy)return;
+    if(lookupBusy)return;
+    if(!v){skipLookup();return;}
     setLookupBusy(true);
     try{
       const {data}=await supabase.from("clients").select("*").ilike("cf_piva",v).limit(1);
@@ -3765,6 +3783,24 @@ export default function CRM() {
   const tCI=cart.reduce((s,g)=>s+g.items.length,0)+colItems().length+margItems.length;
   const bC=bObj?bObj.color:"#8892b0";
   const bG=bObj?bObj.gradient:"linear-gradient(135deg,#374151,#8892b0)";
+  // Richiesta Luca: si puo' proseguire anche senza codice fiscale e senza
+  // compilare tutto, ma nome/cognome/cellulare (per il business: ragione
+  // sociale, referente e recapito) restano obbligatori.
+  const anaMissing = (()=>{
+    const miss=[];
+    if(tipoCliente==="business"){
+      if(!(ana.ragioneSociale||"").trim())miss.push("Ragione Sociale");
+      if(!(ana.nomeRef||"").trim())miss.push("Nome Ref.");
+      if(!(ana.cognomeRef||"").trim())miss.push("Cognome Ref.");
+      if(!(ana.recapito||"").trim())miss.push("Recapito");
+    }else{
+      if(!(ana.nome||"").trim())miss.push("Nome");
+      if(!(ana.cognome||"").trim())miss.push("Cognome");
+      if(!(ana.cellulare||"").trim())miss.push("Cellulare");
+    }
+    return miss;
+  })();
+
   const gSS=i=>{if(i===0)return brand?"done":"active";if(i===1)return !brand?"pending":tipoCliente?"done":"active";if(i===2)return !tipoCliente?"pending":showAna?"done":"active";return showAna?"active":"pending"};
 
   // ═══════════ CART ═══════════
@@ -3969,18 +4005,22 @@ export default function CRM() {
           <div style={{display:"flex",gap:8}}>
             <input placeholder={tipoCliente==="privato"?"RSSMRA80A01H501Z":"12345678901"} value={lookupValue} onChange={e=>setLookupValue(e.target.value.toUpperCase())} style={{flex:1,padding:"10px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontFamily:"monospace",letterSpacing:1.2}}/>
             <button onClick={doLookup} style={{padding:"10px 18px",borderRadius:8,border:"none",background:"#6f42c1",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔍 Cerca</button>
+            <button onClick={skipLookup} title="Il cliente non ha un codice fiscale a disposizione" style={{padding:"10px 16px",borderRadius:8,border:"1px solid rgba(255,255,255,0.18)",background:"rgba(255,255,255,0.04)",color:"#cbd5e1",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Prosegui senza CF →</button>
           </div>
-          {lookupDone&&(clienteFound?<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#28a745"}}>✅ Cliente trovato in anagrafica</div>:<div style={{marginTop:10,background:"rgba(245,158,11,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#f59e0b"}}>⚠ Cliente non presente in anagrafica — compila i dati a mano</div>)}
+          {lookupDone&&(clienteFound?<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#28a745"}}>✅ Cliente trovato in anagrafica</div>:<div style={{marginTop:10,background:"rgba(245,158,11,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#f59e0b"}}>⚠ Cliente non presente in anagrafica — compila i dati a mano (bastano nome, cognome e cellulare)</div>)}
         </div>}
       </div>}
 
       {showAna&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #1B3A5C"}}>
         <div style={{fontSize:11,fontWeight:700,color:"#1B3A5C",marginBottom:14,textTransform:"uppercase"}}>📝 Step 3 — Anagrafica</div>
-        {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/><TF l="Cellulare" v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TF l="Via" v={ana.via} o={v=>uA("via",v)} p="Via Roma" pf={clienteFound}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div></>
-        :<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Ragione Sociale" r v={ana.ragioneSociale} o={v=>uA("ragioneSociale",v)} p="Rossi Srl" pf={clienteFound}/><TF l="Nome Ref." r v={ana.nomeRef} o={v=>uA("nomeRef",v)} p="Mario" pf={clienteFound}/><TF l="Cognome Ref." r v={ana.cognomeRef} o={v=>uA("cognomeRef",v)} p="Rossi" pf={clienteFound}/><TF l="Recapito" v={ana.recapito} o={v=>uA("recapito",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="info@" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TF l="Via" v={ana.via} o={v=>uA("via",v)} p="Via Roma" pf={clienteFound}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div></>}
+        {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/><TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TF l="Via" v={ana.via} o={v=>uA("via",v)} p="Via Roma" pf={clienteFound}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div></>
+        :<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Ragione Sociale" r v={ana.ragioneSociale} o={v=>uA("ragioneSociale",v)} p="Rossi Srl" pf={clienteFound}/><TF l="Nome Ref." r v={ana.nomeRef} o={v=>uA("nomeRef",v)} p="Mario" pf={clienteFound}/><TF l="Cognome Ref." r v={ana.cognomeRef} o={v=>uA("cognomeRef",v)} p="Rossi" pf={clienteFound}/><TF l="Recapito" r v={ana.recapito} o={v=>uA("recapito",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="info@" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TF l="Via" v={ana.via} o={v=>uA("via",v)} p="Via Roma" pf={clienteFound}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div></>}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           <button onClick={()=>{setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:""});setLookupValue("");setClienteFound(false);setShowStep4(false)}} style={{padding:"9px 18px",borderRadius:8,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>↺ Reset anagrafica</button>
-          <button onClick={()=>setShowStep4(true)} style={{padding:"9px 22px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#2E75B6,#1B3A5C)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"#f59e0b"}}>Obbligatori: {anaMissing.join(", ")}</span>}
+            <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"rgba(255,255,255,0.08)":"linear-gradient(135deg,#2E75B6,#1B3A5C)",color:anaMissing.length>0?"#64748b":"#fff",fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
+          </div>
         </div>
       </div>}
 

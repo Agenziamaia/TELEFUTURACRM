@@ -16,7 +16,7 @@ interface Cliente {
     cognomeRef?: string;
     cellulare: string;
     email: string;
-    cf_piva: string;
+    cf_piva: string | null;   // facoltativo dalla migrazione 065
     indirizzo: string;
     cap?: string;
     citta: string;
@@ -42,7 +42,7 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
         cognomeRef: (row.cognome_ref as string) ?? undefined,
         cellulare: row.cellulare as string,
         email: row.email as string,
-        cf_piva: row.cf_piva as string,
+        cf_piva: (row.cf_piva as string | null) ?? null,
         indirizzo: row.indirizzo as string,
         cap: (row.cap as string) ?? undefined,
         citta: row.citta as string,
@@ -119,7 +119,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             <div className="grid grid-cols-1 gap-3">
                                 <InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono />
                                 <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} />
-                                <InfoItem icon={<FileText className="w-4 h-4" />} label={cliente.tipo === 'business' ? 'Partita IVA' : 'Codice Fiscale'} value={cliente.cf_piva} mono />
+                                <InfoItem icon={<FileText className="w-4 h-4" />} label={cliente.tipo === 'business' ? 'Partita IVA' : 'Codice Fiscale'} value={cliente.cf_piva || "—"} mono />
                                 <InfoItem icon={<MapPin className="w-4 h-4" />} label="Indirizzo" value={`${cliente.indirizzo}, ${cliente.citta}`} />
                             </div>
                         </div>
@@ -248,8 +248,15 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
     const [citta, setCitta] = useState(cliente?.citta ?? "");
 
     const handleSave = async () => {
-        if (!nome || !cellulare || !cfPiva) {
-            setError("Nome, Cellulare e Codice Fiscale/P.IVA sono obbligatori.");
+        // Richiesta Luca: se il codice fiscale non esiste si deve poter salvare
+        // lo stesso; restano obbligatori solo nome, cognome e cellulare.
+        const missing = [
+            !nome.trim() && (tipo === "business" ? "Nome Referente" : "Nome"),
+            !cognome.trim() && (tipo === "business" ? "Cognome Referente" : "Cognome"),
+            !cellulare.trim() && "Cellulare",
+        ].filter(Boolean);
+        if (missing.length > 0) {
+            setError(`Campi obbligatori mancanti: ${missing.join(", ")}.`);
             return;
         }
         if (tipo === "business" && !ragioneSociale) {
@@ -269,7 +276,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             cognome_ref: tipo === "business" ? cognome : null,
             cellulare,
             email,
-            cf_piva: cfPiva,
+            cf_piva: cfPiva.trim() || null,
             indirizzo,
             cap,
             citta,
@@ -280,7 +287,8 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                 const { error: err } = await supabase.from("clients").update(basePayload).eq("id", cliente.id);
                 if (err) throw err;
             } else {
-                const insertPayload = { id: `CL-${cfPiva.replace(/\s/g, "")}-${Date.now()}`, ...basePayload };
+                const idBase = cfPiva.trim() || cellulare.replace(/\D/g, "") || "ND";
+                const insertPayload = { id: `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`, ...basePayload };
                 const { error: err } = await supabase.from("clients").insert([insertPayload]);
                 if (err) throw err;
             }
@@ -347,7 +355,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                             )}
 
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{tipo === "business" ? "Nome Referente" : "Nome"}</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{tipo === "business" ? "Nome Referente" : "Nome"} <span className="text-rose-400">*</span></label>
                                 <input
                                     type="text"
                                     value={nome}
@@ -358,7 +366,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{tipo === "business" ? "Cognome Referente" : "Cognome"}</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{tipo === "business" ? "Cognome Referente" : "Cognome"} <span className="text-rose-400">*</span></label>
                                 <input
                                     type="text"
                                     value={cognome}
@@ -369,7 +377,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Cellulare</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Cellulare <span className="text-rose-400">*</span></label>
                                 <input
                                     type="text"
                                     value={cellulare}
@@ -391,7 +399,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{tipo === "business" ? "Partita IVA" : "Codice Fiscale"}</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{tipo === "business" ? "Partita IVA" : "Codice Fiscale"} <span className="text-slate-600 normal-case font-normal">(facoltativo)</span></label>
                                 <input
                                     type="text"
                                     value={cfPiva}
@@ -578,7 +586,7 @@ export default function ClientiPage() {
             // 1. Quick Search (Full-text)
             if (quickSearch) {
                 const q = quickSearch.toLowerCase();
-                const fullString = `${c.nome} ${c.cognome || ""} ${c.ragioneSociale || ""} ${c.email} ${c.cellulare} ${c.cf_piva}`.toLowerCase();
+                const fullString = `${c.nome} ${c.cognome || ""} ${c.ragioneSociale || ""} ${c.email} ${c.cellulare} ${c.cf_piva || ""}`.toLowerCase();
                 if (!fullString.includes(q)) return false;
             }
 
@@ -589,7 +597,7 @@ export default function ClientiPage() {
             if (filterRagione && c.tipo === "business" && (!c.ragioneSociale || !c.ragioneSociale.toLowerCase().includes(filterRagione.toLowerCase()))) return false;
             if (filterCellulare && !c.cellulare.includes(filterCellulare)) return false;
             if (filterEmail && !c.email.toLowerCase().includes(filterEmail.toLowerCase())) return false;
-            if (filterIdentifier && !c.cf_piva.toLowerCase().includes(filterIdentifier.toLowerCase())) return false;
+            if (filterIdentifier && !(c.cf_piva || "").toLowerCase().includes(filterIdentifier.toLowerCase())) return false;
 
             return true;
         });
@@ -848,7 +856,7 @@ export default function ClientiPage() {
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
                                                     <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-mono text-slate-300">
-                                                        {cliente.cf_piva}
+                                                        {cliente.cf_piva || "—"}
                                                     </span>
                                                 </td>
                                             </tr>
