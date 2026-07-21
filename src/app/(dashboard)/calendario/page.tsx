@@ -282,6 +282,21 @@ export default function Calendario() {
     const agents = useMemo(() => [...new Set(calendarOperators.map(o => o.name))].sort(), [calendarOperators]);
     const meetingUsers = useMemo(() => calendarOperators, [calendarOperators]);
 
+    // Operatori a cui posso assegnare una task: tutti se vedo tutti i negozi,
+    // altrimenti solo i colleghi del mio punto vendita. Il confronto e' sul
+    // prefisso perche' i nomi non coincidono sempre ("Magliana" / "Magliana Multi").
+    const assignableAgents = useMemo(() => {
+        if (seesAllStores(user?.role)) return agents;
+        const mine = (user?.negozio || "").trim().toLowerCase();
+        if (!mine) return agents;
+        return [...new Set(calendarOperators
+            .filter(o => {
+                const st = (o.store || "").trim().toLowerCase();
+                return !!st && (st === mine || st.startsWith(mine) || mine.startsWith(st));
+            })
+            .map(o => o.name))].sort();
+    }, [agents, calendarOperators, user?.role, user?.negozio]);
+
     useEffect(() => {
         let cancelled = false;
         (async () => {
@@ -349,6 +364,11 @@ export default function Calendario() {
     const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
 
     const isCallCenter = user?.role === "admin" || user?.role === "dev"; // admin/dev = call center operator
+    // Segnalazione "Non posso assegnare task a nessun collaboratore": l'assegnazione
+    // era legata a isCallCenter (solo admin/dev), quindi ogni store manager vedeva
+    // una casella in sola lettura col proprio nome. Ora vale la regola del CRM:
+    // dallo store manager in su si assegna, ma solo dentro il proprio team.
+    const canAssignOthers = seesAllStores(user?.role) || seesWholeStore(user?.role);
     const isAgent = user?.role !== "admin" && user?.role !== "dev";
     const canCreateMeeting = seesAllStores(user?.role) || seesWholeStore(user?.role);
 
@@ -1494,12 +1514,12 @@ export default function Calendario() {
                                         {storeNames.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 ) : (
-                                    isCallCenter ? (
+                                    canAssignOthers ? (
                                         <select className="glass-input w-full" value={newTask.assignedTo} onChange={e => setNewTask(p => ({ ...p, assignedTo: e.target.value }))} required>
                                             <option value="">Seleziona operatore...</option>
                                             <option value={user?.name}>{user?.name} (Tu)</option>
-                                            <optgroup label="Altri">
-                                                {agents.filter(a => a !== user?.name).map(a => <option key={a} value={a}>{a}</option>)}
+                                            <optgroup label={seesAllStores(user?.role) ? "Altri" : `Team ${user?.negozio || ""}`}>
+                                                {assignableAgents.filter(a => a !== user?.name).map(a => <option key={a} value={a}>{a}</option>)}
                                             </optgroup>
                                         </select>
                                     ) : (
