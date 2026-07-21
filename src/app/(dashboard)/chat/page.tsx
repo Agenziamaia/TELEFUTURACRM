@@ -9,7 +9,7 @@ import {
   subscribeMessages, subscribeInbox, subscribeReceipts, refHref,
   splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
 } from "@/lib/chat";
-import { roleLabel, seesAllStores } from "@/lib/roles";
+import { roleLabel, seesAllStores, seesWholeStore } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
@@ -47,6 +47,10 @@ export default function ChatPage() {
   const { user } = useAuth();
   const meId = user?.id;
   const isAdmin = !!user && (seesAllStores(user.role) || user.role === "dev");
+  // "Devo poter vedere i membri di un gruppo. Visibilita' dal manager in su" (Luca):
+  // store manager, direzioni di area e chi vede tutti i negozi.
+  const canSeeMembers = !!user && (seesWholeStore(user.role) || seesAllStores(user.role));
+  const [showMembers, setShowMembers] = useState(false);
 
   const onDeleteConversation = async () => {
     if (!selId || !isAdmin) return;
@@ -92,6 +96,7 @@ export default function ChatPage() {
     } catch {}
   };
   useEffect(() => {
+    setShowMembers(false);
     if (!selId) { setMessages([]); setParts([]); return; }
     const loadParts = () => getParticipants(selId).then(setParts).catch(() => setParts([]));
     reloadMessages(selId);
@@ -281,10 +286,20 @@ export default function ChatPage() {
                 <p className="text-xs text-slate-500 truncate flex items-center gap-1.5">
                   {selConv.type === "dm" && <span className={`w-2 h-2 rounded-full ${dmOnline ? "bg-green-500" : "bg-slate-600"}`} />}
                   {selConv.type === "group"
-                    ? `${selConv.member_count} membri`
+                    ? (canSeeMembers
+                      ? <button onClick={() => setShowMembers(true)} className="text-purple-300 hover:text-purple-200 hover:underline">
+                        {selConv.member_count} membri
+                      </button>
+                      : `${selConv.member_count} membri`)
                     : (dmOnline ? "Online" : (lastSeen(otherPart?.last_seen_at) || roleLabel(selConv.other_role || "")))}
                 </p>
               </div>
+              {selConv.type === "group" && canSeeMembers && (
+                <button onClick={() => setShowMembers(true)} title="Membri del gruppo"
+                  className="p-2 rounded-lg text-slate-500 hover:text-purple-300 hover:bg-purple-500/10 transition-colors shrink-0">
+                  <Users className="w-4.5 h-4.5" />
+                </button>
+              )}
               {isAdmin && (
                 <button onClick={onDeleteConversation} title="Elimina conversazione (admin)"
                   className="p-2 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors shrink-0">
@@ -450,6 +465,57 @@ export default function ChatPage() {
             setRefs((p) => (p.some((x) => x.type === r.type && x.id === r.id) ? p : [...p, r]));
             setShowTag(false);
           }} />
+      )}
+
+      {showMembers && selConv?.type === "group" && canSeeMembers && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowMembers(false)}>
+          <div className="glass-card w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-white truncate">Membri del gruppo</h3>
+                <p className="text-xs text-slate-400 truncate">{title} · {parts.length} {parts.length === 1 ? "membro" : "membri"}</p>
+              </div>
+              <button onClick={() => setShowMembers(false)} className="p-1 hover:bg-white/10 rounded-lg text-slate-400 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-2">
+              {parts.length === 0 && <p className="text-sm text-slate-500 p-4 text-center">Nessun membro trovato.</p>}
+              {[...parts]
+                .sort((a, b) => (b.is_admin ? 1 : 0) - (a.is_admin ? 1 : 0) || (a.full_name || "").localeCompare(b.full_name || ""))
+                .map((m) => {
+                  const online = isOnline(m.user_id);
+                  return (
+                    <div key={m.user_id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors">
+                      <span className="relative shrink-0">
+                        <span className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border bg-indigo-500/20 text-indigo-200 border-indigo-500/30">
+                          {initials(m.full_name)}
+                        </span>
+                        {online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-[#0b0d14]" />}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-white truncate flex items-center gap-2">
+                          {m.full_name}
+                          {m.user_id === meId && <span className="text-[10px] text-slate-500 font-normal">(tu)</span>}
+                          {m.is_admin && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-200 border border-purple-500/30">
+                              Amministratore
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {roleLabel(m.role) || "—"}{m.primary_store ? ` · ${m.primary_store}` : ""}
+                        </p>
+                      </div>
+                      <span className="text-[11px] text-slate-500 shrink-0">
+                        {online ? <span className="text-green-400">Online</span> : (lastSeen(m.last_seen_at) || "")}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
       )}
 
       {showNew && meId && (
