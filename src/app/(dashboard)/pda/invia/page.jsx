@@ -263,6 +263,11 @@ export default function InviaPda() {
   const [step, setStep] = useState(draft?.step ?? 1);
   const [venditore, setVenditore] = useState(draft?.venditore ?? user?.name ?? "");
   const [negozio, setNegozio] = useState(draft?.negozio ?? user?.negozio ?? "");
+  // "Data Vendita" era un input non controllato fisso al 2026-03-07 (residuo
+  // del mock): mostrava sempre il 7 marzo e il valore scelto non veniva letto.
+  const [dataVendita, setDataVendita] = useState(
+    () => draft?.dataVendita ?? new Date().toISOString().split("T")[0]
+  );
   const [confirmReset, setConfirmReset] = useState(false);
 
   const [tipoCliente, setTipoCliente] = useState(draft?.tipoCliente ?? null);
@@ -1854,7 +1859,7 @@ export default function InviaPda() {
                     </div>
                     <div>
                       <Label text="Data Vendita" required />
-                      <input type="date" className="w-full glass-input text-sm py-2.5 shadow-sm focus:border-violet-500/50" defaultValue="2026-03-07" />
+                      <input type="date" className="w-full glass-input text-sm py-2.5 shadow-sm focus:border-violet-500/50" value={dataVendita} onChange={e => setDataVendita(e.target.value)} />
                     </div>
                   </div>
 
