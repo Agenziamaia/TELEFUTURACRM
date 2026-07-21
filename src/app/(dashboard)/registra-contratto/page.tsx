@@ -452,6 +452,7 @@ const VF_SMARTPHONES_GROUPED = [
     "ZTE Nubia Flip"
   ]},
   {group:"TCL", items:[
+    "TCL K70 5G",
     "TCL 50NextPaper 5G",
     "TCL 60R 5G"
   ]},
@@ -688,6 +689,7 @@ const WT_SMARTPHONES_GROUPED = [
     "VIVO X300"
   ]},
   {group:"TCL", items:[
+    "TCL K70 5G",
     "TCL NXTPAPER 70 PRO 8+256GB",
     "TCL NXTPAPER 60 Ultra",
     "TCL 501 2+64GB"
@@ -2217,6 +2219,7 @@ const TIM_SMARTPHONES_GROUPED = [
     "ZTE Blade A35e (2+64)"
   ]},
   {group:"TCL", items:[
+    "TCL K70 5G",
     "TCL 50NextPaper 5G",
     "TCL 60R 5G",
     "TCL NXTPAPER 70 PRO 8+256GB",
