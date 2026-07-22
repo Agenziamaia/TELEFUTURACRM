@@ -231,3 +231,22 @@ export function calcolaMalus(row: TrackingRow): number {
   const importo = MALUS_IMPORTO[row.categoria] ?? 0;
   return Math.max(0, ggAgg - soglia + 1) * importo;
 }
+
+/**
+ * Traduce lo stato di lavorazione del negozio nello `stato` del contratto, quello
+ * che Ricerca Contratto mostra in colonna (segnalazioni 37 e 38).
+ * Prima i due mondi non si parlavano: la pratica nasceva "Attivo" e restava
+ * "Attivo" qualunque cosa succedesse nel Tracking.
+ */
+export function statoContrattoDa(statoNegozio: string | null | undefined): string {
+    const s = (statoNegozio || "nuovo").toLowerCase();
+    if (s === "attivato" || s === "re_inserita" || s === "liquidato") return "Attivo";
+    if (s === "nuovo") return "Nuovo";
+    if (s.startsWith("ko") || s === "annullato") return "Annullato";
+    return "In lavorazione";
+}
+
+/** Una pratica e' attiva solo in questi stati: qui si popola la data di attivazione. */
+export function isStatoAttivo(statoNegozio: string | null | undefined): boolean {
+    return statoContrattoDa(statoNegozio) === "Attivo";
+}

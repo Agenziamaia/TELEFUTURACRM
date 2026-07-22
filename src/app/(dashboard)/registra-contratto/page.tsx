@@ -318,9 +318,9 @@ const SKY_FIBRA = ["Fibra","3P","3P 35,80","4P"];
 const SKY_BIZ_TV = ["TV Uffici"];
 const SKY_BIZ_FIBRA = ["Sky Business"];
 const SKY_BRAND_FIBRA = ["TIM","Vodafone","Fastweb","WINDTRE","Tiscali","Sky","BT Enia","Ehiweb","Open Fiber","Infratel","Vianova","Isiline","Convergenze","Full Telecom","Optima","Fibra.tn"];
-const emS = () => ({active:true,fields:{},contract:{},gnp:false,gnpNum:"",gnpOp:"",secondaLinea:false,gnp2L:null,gnp2LBrand:"",gnp2LNum:"",domiciliazione:false,opProvenienza:"",codiceOverride:"",addons:{},domiciliato:null,convergente:null,tipMob:null,mnp:null,easyPay:null,tnpGa:null,tnpTipo:"",tnpModello:"",tnpImei:"",tnpCount:null,tnpModelli:[],tnpImeis:[],packAccessori:null,packAccessoriVal:"",packAccessoriQta:"",cbTnp:false,cbTnpTipo:"",cbTnpModello:"",cbTnpImei:"",cbTnpCount:null,cbTnpModelli:[],cbTnpImeis:[],cbPackAccessori:null,cbPackAccessoriVal:"",cbPackAccessoriQta:"",cbTnpCell:"",cbTnpCC:"",cbTnpCodIns:"",cbTnpReload:null,cbTnpReloadSel:{},cbCambio:false,cbCambioVal:"",cbCambioCell:"",cbCambioCC:"",cbCambioCodIns:"",cbAddon:false,cbAddonSel:{},rfModello:"",rfImei:"",cbRf:false,cbAddonCodIns:"",cbAddonSecCell:"",cbAddonRoCell:"",cbAddonRoImei:"",cbRfCodIns:"",tnpGaReload:null,tnpGaReloadSel:{},reloadForever:null,securitySel:{},voceCasaCb:null,protectaCodIns:"",vfOffers:{},vfContratti:{},vfOffer:null,vfMnp:null,vfMnpBrand:"",vfMnpNum:"",vfDomicilio:null,vfConvergenza:null,vfNumFisso:"",vfTnp:null,vfTnpList:[],dcNumProv:"",dcNum:"",dcIccid:"",dcCodIns:"",dcRicaricaAuto:null,vfSecurity:null,cbTnpList:[],cbTraslochi:false,cbTraslochiNum:"",cbTraslochiCodIns:"",cbSecurityCodIns:"",vfFIccid:"",cbCellulare:"",cbCodContratto:"",cbCodIns2:"",cbTaglia:null,dcCbNumProv:"",dcCbIccid:"",cbCambio2:false,cbCambioCell:"",cbCambioNumMod:"",cbCambioCodIns2:"",cbSecurity:false,cbSecurityCell:"",vfFLockIn:null,vfFConvergenza:null,vfFGnp:null,vfFGnpBrand:"",vfFGnpNum:"",vfFAddons:{},vfFCodIns:"",vfFNumProvVisorio:"",vfFNumDef:"",vfbOffer:null,vfbMnp:null,vfbMnpBrand:"",vfbMnpNum:"",vfbTnp:null,vfbModello:"",vfbImei:"",vfbRataPiva:null,vfbKaskoSel:{},vfbCodIns:"",vfbCbOn:false,vfbCbCell:"",vfbCbCodIns:"",vfbFGnp:null,vfbFGnpBrand:"",vfbFGnpNum:"",vfbFCodIns:"",vfbFNumProv:"",vfbFNumDef:"",vfbFMnp:null,vfbFMnpBrand:"",vfbFMnpNum:"",vfbFCombNumProv:"",vfbFCombIccid:"",vfbNum:"",vfbIccid:"",vfbFIccid:"",vfSolDigCodIns:"",verisureCodIns:"",kfCodIns:"",vcCodIns:"",fwOffer:null,fwMnp:null,fwFSecLineCount:0,fwFSecLines:[],fwMnpBrand:"",fwMnpNum:"",fwCodIns:"",fwNumProv:"",fwNumDef:"",fwIccid:"",fwFGnp:null,fwFGnpBrand:"",fwFGnpNum:"",fwFCodIns:"",fwFNumProv:"",fwFNumDef:"",fwPod:"",fwPdr:"",fwEnCodIns:"",ilOffer:null,ilMnp:null,ilDom:null,ilMnpBrand:"",ilMnpNum:"",ilCodIns:"",ilNumProv:"",ilNumDef:"",ilIccid:"",ilFGnp:null,ilFCodIns:"",ilFNumProv:"",ilFNumDef:"",ilFwaCodIns:"",ilFwaIccid:"",ilBizOffer:null,ilBizMnp:null,ilBizMnpBrand:"",ilBizDom:null,ilBizNum:"",ilBizIccid:"",ilBizNumDef:"",ilBizCodIns:"",enCodIns:"",enPod:"",enPdr:"",enProv:"",fwEnProv:"",w3SostCell:"",w3SostIccid:"",w3SostCodContr:"",w3SostCodIns:"",vfSostCell:"",vfSostCodIns:"",timOffer:null,timMnp:null,timMnpBrand:"",timMnpNum:"",timTnp:null,timModello:"",timSpedizione:null,timFinanziato:null,timCodPratica:"",timVisionBox:null,timVisionTaglia:null,timVisionNumContr:"",timImei:"",timNumProv:"",timNum:"",timIccid:"",timCodIns:"",timFOffer:null,timFGnp:null,timFGnpBrand:"",timFGnpNum:"",timFNumProv:"",timFCodIns:"",timFVision:null,timFVisionTaglia:null,timFVisionNumContr:"",timTpTwin:null,timTpSeriale:"",timTpRecapito:"",timTpCodIns:"",veryOffer:null,veryMnp:null,veryMnpBrand:"",veryMnpNum:"",veryRicaricaAuto:null,veryFascia:null,veryCodIns:"",veryNumProv:"",veryNum:"",veryIccid:"",hoOffer:null,hoMnp:null,hoMnpBrand:"",hoMnpNum:"",hoRicaricaAuto:null,hoFascia:null,hoCodIns:"",hoNumProv:"",hoNum:"",hoIccid:""});
+const emS = () => ({active:true,fields:{},contract:{},gnp:false,gnpNum:"",gnpOp:"",secondaLinea:false,gnp2L:null,gnp2LBrand:"",gnp2LNum:"",domiciliazione:false,opProvenienza:"",codiceOverride:"",addons:{},domiciliato:null,convergente:null,tipMob:null,mnp:null,easyPay:null,tnpGa:null,tnpTipo:"",tnpModello:"",tnpImei:"",tnpCount:null,tnpModelli:[],tnpImeis:[],packAccessori:null,packAccessoriVal:"",packAccessoriQta:"",cbTnp:false,cbTnpTipo:"",cbTnpModello:"",cbTnpImei:"",cbTnpCount:null,cbTnpModelli:[],cbTnpImeis:[],cbPackAccessori:null,cbPackAccessoriVal:"",cbPackAccessoriQta:"",cbTnpCell:"",cbTnpCC:"",cbTnpCodIns:"",cbTnpReload:null,cbTnpReloadSel:{},cbCambio:false,cbCambioVal:"",cbCambioCell:"",cbCambioCC:"",cbCambioCodIns:"",cbAddon:false,cbAddonSel:{},rfModello:"",rfImei:"",cbRf:false,cbAddonCodIns:"",cbAddonSecCell:"",cbAddonRoCell:"",cbAddonRoImei:"",cbRfCodIns:"",tnpGaReload:null,tnpGaReloadSel:{},reloadForever:null,securitySel:{},voceCasaCb:null,protectaCodIns:"",vfOffers:{},vfContratti:{},vfOffer:null,vfMnp:null,vfMnpBrand:"",vfMnpNum:"",vfDomicilio:null,vfConvergenza:null,vfNumFisso:"",vfTnp:null,vfTnpList:[],dcNumProv:"",dcNum:"",dcIccid:"",dcCodIns:"",dcRicaricaAuto:null,vfSecurity:null,cbTnpList:[],cbTraslochi:false,cbTraslochiNum:"",cbTraslochiCodIns:"",cbSecurityCodIns:"",vfFIccid:"",cbCellulare:"",cbCodContratto:"",cbCodIns2:"",cbTaglia:null,dcCbNumProv:"",dcCbIccid:"",cbCambio2:false,cbCambioCell:"",cbCambioNumMod:"",cbCambioCodIns2:"",cbSecurity:false,cbSecurityCell:"",vfFLockIn:null,vfFConvergenza:null,vfFGnp:null,vfFGnpBrand:"",vfFGnpNum:"",vfFAddons:{},vfFCodIns:"",vfFNumProvVisorio:"",vfFNumDef:"",vfbOffer:null,vfbMnp:null,vfbMnpBrand:"",vfbMnpNum:"",vfbTnp:null,vfbModello:"",vfbImei:"",vfbRataPiva:null,vfbKaskoSel:{},vfbCodIns:"",vfbCbOn:false,vfbCbCell:"",vfbCbCodIns:"",vfbFGnp:null,vfbFGnpBrand:"",vfbFGnpNum:"",vfbFCodIns:"",vfbFNumProv:"",vfbFNumDef:"",vfbFMnp:null,vfbFMnpBrand:"",vfbFMnpNum:"",vfbFCombNumProv:"",vfbFCombIccid:"",vfbNum:"",vfbIccid:"",vfbFIccid:"",vfSolDigCodIns:"",verisureCodIns:"",kfCodIns:"",vcCodIns:"",fwOffer:null,fwMnp:null,fwFSecLineCount:0,fwFSecLines:[],fwMnpBrand:"",fwMnpNum:"",fwCodIns:"",fwNumProv:"",fwNumDef:"",fwIccid:"",fwFGnp:null,fwFGnpBrand:"",fwFGnpNum:"",fwFCodIns:"",fwFNumProv:"",fwFNumDef:"",fwPod:"",fwPdr:"",fwEnCodIns:"",ilOffer:null,ilMnp:null,ilDom:null,ilMnpBrand:"",ilMnpNum:"",ilCodIns:"",ilNumProv:"",ilNumDef:"",ilIccid:"",ilFGnp:null,ilFCodIns:"",ilFNumProv:"",ilFNumDef:"",ilFwaCodIns:"",ilFwaIccid:"",ilBizOffer:null,ilBizMnp:null,ilBizMnpBrand:"",ilBizDom:null,ilBizNum:"",ilBizIccid:"",ilBizNumDef:"",ilBizCodIns:"",enCodIns:"",enPod:"",enPdr:"",enProv:"",fwEnProv:"",w3SostCell:"",w3SostIccid:"",w3SostCodContr:"",w3SostCodIns:"",fwSostCell:"",fwSostIccid:"",fwSostCodContr:"",fwSostCodIns:"",vfSostCell:"",vfSostCodIns:"",timOffer:null,timMnp:null,timMnpBrand:"",timMnpNum:"",timTnp:null,timModello:"",timSpedizione:null,timFinanziato:null,timCodPratica:"",timVisionBox:null,timVisionTaglia:null,timVisionNumContr:"",timImei:"",timNumProv:"",timNum:"",timIccid:"",timCodIns:"",timFOffer:null,timFGnp:null,timFGnpBrand:"",timFGnpNum:"",timFNumProv:"",timFCodIns:"",timFVision:null,timFVisionTaglia:null,timFVisionNumContr:"",timTpTwin:null,timTpSeriale:"",timTpRecapito:"",timTpCodIns:"",veryOffer:null,veryMnp:null,veryMnpBrand:"",veryMnpNum:"",veryRicaricaAuto:null,veryFascia:null,veryCodIns:"",veryNumProv:"",veryNum:"",veryIccid:"",hoOffer:null,hoMnp:null,hoMnpBrand:"",hoMnpNum:"",hoRicaricaAuto:null,hoFascia:null,hoCodIns:"",hoNumProv:"",hoNum:"",hoIccid:""});
 
-const DET_LABELS={gnp:"GNP",gnpNum:"N. GNP",gnpOp:"Op. GNP",secondaLinea:"2ª Linea",gnp2L:"GNP 2ª Linea",gnp2LBrand:"Brand GNP 2L",gnp2LNum:"N. GNP 2L",domiciliazione:"Domiciliazione",opProvenienza:"Op. Provenienza",domiciliato:"Domiciliato",convergente:"Convergente",tipMob:"Tipologia",mnp:"MNP",easyPay:"EasyPay",tnpGa:"TNP GA",tnpTipo:"Tipo TNP",tnpModello:"Terminale",tnpImei:"IMEI TNP",tnpCount:"Q.tà TNP",packAccessori:"Pack Accessori",packAccessoriVal:"Importo Pack",packAccessoriQta:"Q.tà Accessori",cbTnp:"TNP CB",cbTnp2:"TNP CB",cbTnpTipo:"Tipo CB",cbTnpModello:"Term. CB",cbTnpImei:"IMEI CB",cbTnpCount:"Q.tà TNP CB",cbPackAccessori:"Pack Acc. CB",cbPackAccessoriVal:"Importo Pack CB",cbPackAccessoriQta:"Q.tà Acc. CB",cbTnpCell:"Cell. CB",cbTnpCC:"Cod.Cliente CB",cbTnpCodIns:"Cod.Ins. CB",cbTnpReload:"Reload CB",cbCambio:"Cambio Offerta",cbCambio2:"Cambio Offerta",cbCambioVal:"Offerta CB",cbCambioCell:"Cell. Cambio",cbCambioCC:"Cod.Cliente Cambio",cbCambioCodIns:"Cod.Ins. Cambio",cbCambioNumMod:"Numero Cambio",cbCambioCodIns2:"Cod.Ins. Cambio",cbCellulare:"Cellulare CB",cbCodContratto:"Cod. Contratto CB",cbCodIns2:"Cod.Ins. CB",cbTaglia:"Taglia CB",dcCbNumProv:"N. Provvisorio CB",dcCbIccid:"ICCID CB",cbSecurity:"Rete Sicura CB",cbSecurityCell:"Cell. Rete Sicura",cbSecurityCodIns:"Cod.Ins. Rete Sicura",cbTraslochi:"Traslochi",cbTraslochiNum:"N. Fisso Trasloco",cbTraslochiCodIns:"Cod.Ins. Trasloco",rfModello:"Modello Reload Forever",rfImei:"IMEI RF",cbRf:"Reload Forever CB",cbRfCodIns:"Cod.Ins. RF",cbAddonCodIns:"Cod.Ins. Add-on",cbAddonSecCell:"Cell. Security",cbAddonRoCell:"Cell. Reload Open",cbAddonRoImei:"IMEI Reload Open",tnpGaReload:"Reload GA",reloadForever:"Reload Forever",voceCasaCb:"Voce Casa CB",protectaCodIns:"Cod.Ins. Protecta",vfOffer:"Offerta",vfMnp:"MNP",vfMnpBrand:"Op. MNP",vfMnpNum:"N. MNP",vfDomicilio:"Domiciliata",vfConvergenza:"Convergenza",vfNumFisso:"N. Fisso Conv.",vfTnp:"TNP",vfSecurity:"Security",dcNumProv:"N. Provvisorio",dcNum:"Numero",dcIccid:"ICCID",dcCodIns:"Cod.Ins.",dcRicaricaAuto:"Ricarica Auto",vfFLockIn:"Lock In",vfFConvergenza:"Convergenza",vfFGnp:"GNP",vfFGnpBrand:"Op. GNP",vfFGnpNum:"N. GNP",vfFCodIns:"Cod.Ins.",vfFNumProvVisorio:"N. Provvisorio",vfFNumProv:"N. Provvisorio",vfFNumDef:"N. Definitivo",vfFIccid:"ICCID",vfbOffer:"Offerta",vfbMnp:"MNP",vfbMnpBrand:"Op. MNP",vfbMnpNum:"N. MNP",vfbTnp:"TNP",vfbModello:"Modello",vfbImei:"IMEI",vfbRataPiva:"Finanz.",vfbEasyRent:"Easy Rent",vfbCodIns:"Cod.Ins.",vfbNum:"Numero",vfbIccid:"ICCID",vfbCbOn:"Cambio Offerta",vfbCbCell:"Cellulare CB",vfbCbCodIns:"Cod.Ins. CB",vfbFGnp:"GNP",vfbFGnpBrand:"Op. GNP",vfbFGnpNum:"N. GNP",vfbFCodIns:"Cod.Ins.",vfbFNumProv:"N. Provvisorio",vfbFNumDef:"N. Definitivo",vfbFIccid:"ICCID",vfbFMnp:"MNP",vfbFMnpBrand:"Op. MNP",vfbFMnpNum:"N. MNP",vfbFCombNumProv:"N. Provv. Mobile",vfbFCombIccid:"ICCID Mobile",vfSolDigCodIns:"Cod.Ins.",verisureCodIns:"Cod.Ins.",kfCodIns:"Cod.Ins.",vcCodIns:"Cod.Ins.",fwOffer:"Offerta",fwMnp:"MNP",fwMnpBrand:"Op. MNP",fwMnpNum:"N. MNP",fwCodIns:"Cod.Ins.",fwNumProv:"N. Provvisorio",fwNumDef:"Numero",fwIccid:"ICCID",fwFGnp:"GNP",fwFGnpBrand:"Op. GNP",fwFGnpNum:"N. GNP",fwFCodIns:"Cod.Ins.",fwFNumProv:"N. Provvisorio",fwFNumDef:"N. Definitivo",fwPod:"POD",fwPdr:"PDR",fwEnCodIns:"Cod.Ins.",ilOffer:"Offerta",ilMnp:"MNP",ilDom:"Domiciliata",ilMnpBrand:"Op. MNP",ilMnpNum:"N. MNP",ilCodIns:"Cod.Ins.",ilNumProv:"N. Provvisorio",ilNumDef:"Numero",ilIccid:"ICCID",ilFGnp:"GNP",ilFGnpBrand:"Op. GNP",ilFGnpNum:"N. GNP",ilFCodIns:"Cod.Ins.",ilFNumProv:"N. Provvisorio",ilFNumDef:"N. Definitivo",ilFwaCodIns:"Cod.Ins.",ilFwaIccid:"ICCID",ilBizOffer:"Offerta",ilBizMnp:"MNP",ilBizMnpBrand:"Op. MNP",ilBizDom:"Domiciliazione",ilBizNum:"Numero",ilBizIccid:"ICCID",ilBizNumDef:"N. Definitivo",ilBizCodIns:"Cod.Ins.",enPod:"POD",enPdr:"PDR",enCodIns:"Cod.Ins.",enProv:"Op. Provenienza",fwEnProv:"Op. Provenienza",w3SostCell:"Numero",w3SostIccid:"ICCID",w3SostCodContr:"Cod. Contratto",w3SostCodIns:"Cod.Ins.",vfSostCell:"Numero",vfSostCodIns:"Cod.Ins.",timOffer:"Offerta",timMnp:"MNP",timMnpBrand:"Op. MNP",timMnpNum:"N. MNP",timTnp:"TNP",timModello:"Terminale",timSpedizione:"Spedizione",timFinanziato:"Finanziato",timCodPratica:"Codice Pratica",timVisionBox:"Box TIM Vision",timVisionTaglia:"TIM Vision",timVisionNumContr:"N. Contratto Vision",timImei:"IMEI",timNumProv:"N. Provvisorio",timNum:"Numero",timIccid:"ICCID",timCodIns:"Cod.Ins.",timFOffer:"Prodotto Fisso",timFGnp:"GNP",timFGnpBrand:"Op. GNP",timFGnpNum:"N. GNP",timFNumProv:"N. Fisso Provvisorio",timFCodIns:"Codice",timFVision:"TIM Vision",timFVisionTaglia:"TIM Vision",timFVisionNumContr:"N. Contratto Vision",timTpTwin:"Twin",timTpSeriale:"Seriale Telepass",timTpRecapito:"Recapito",timTpCodIns:"Cod.Ins.",veryOffer:"Offerta",veryMnp:"MNP",veryMnpBrand:"Op. MNP",veryMnpNum:"N. MNP",veryRicaricaAuto:"Ricarica Auto",veryFascia:"Tipologia offerta",veryCodIns:"Cod.Ins.",veryNumProv:"N. Provvisorio",veryNum:"Numero",veryIccid:"ICCID",hoOffer:"Offerta",hoMnp:"MNP",hoMnpBrand:"Op. MNP",hoMnpNum:"N. MNP",hoRicaricaAuto:"Ricarica Auto",hoFascia:"Tipologia offerta",hoCodIns:"Cod.Ins.",hoNumProv:"N. Provvisorio",hoNum:"Numero",hoIccid:"ICCID"};
+const DET_LABELS={gnp:"GNP",gnpNum:"N. GNP",gnpOp:"Op. GNP",secondaLinea:"2ª Linea",gnp2L:"GNP 2ª Linea",gnp2LBrand:"Brand GNP 2L",gnp2LNum:"N. GNP 2L",domiciliazione:"Domiciliazione",opProvenienza:"Op. Provenienza",domiciliato:"Domiciliato",convergente:"Convergente",tipMob:"Tipologia",mnp:"MNP",easyPay:"EasyPay",tnpGa:"TNP GA",tnpTipo:"Tipo TNP",tnpModello:"Terminale",tnpImei:"IMEI TNP",tnpCount:"Q.tà TNP",packAccessori:"Pack Accessori",packAccessoriVal:"Importo Pack",packAccessoriQta:"Q.tà Accessori",cbTnp:"TNP CB",cbTnp2:"TNP CB",cbTnpTipo:"Tipo CB",cbTnpModello:"Term. CB",cbTnpImei:"IMEI CB",cbTnpCount:"Q.tà TNP CB",cbPackAccessori:"Pack Acc. CB",cbPackAccessoriVal:"Importo Pack CB",cbPackAccessoriQta:"Q.tà Acc. CB",cbTnpCell:"Cell. CB",cbTnpCC:"Cod.Cliente CB",cbTnpCodIns:"Cod.Ins. CB",cbTnpReload:"Reload CB",cbCambio:"Cambio Offerta",cbCambio2:"Cambio Offerta",cbCambioVal:"Offerta CB",cbCambioCell:"Cell. Cambio",cbCambioCC:"Cod.Cliente Cambio",cbCambioCodIns:"Cod.Ins. Cambio",cbCambioNumMod:"Numero Cambio",cbCambioCodIns2:"Cod.Ins. Cambio",cbCellulare:"Cellulare CB",cbCodContratto:"Cod. Contratto CB",cbCodIns2:"Cod.Ins. CB",cbTaglia:"Taglia CB",dcCbNumProv:"N. Provvisorio CB",dcCbIccid:"ICCID CB",cbSecurity:"Rete Sicura CB",cbSecurityCell:"Cell. Rete Sicura",cbSecurityCodIns:"Cod.Ins. Rete Sicura",cbTraslochi:"Traslochi",cbTraslochiNum:"N. Fisso Trasloco",cbTraslochiCodIns:"Cod.Ins. Trasloco",rfModello:"Modello Reload Forever",rfImei:"IMEI RF",cbRf:"Reload Forever CB",cbRfCodIns:"Cod.Ins. RF",cbAddonCodIns:"Cod.Ins. Add-on",cbAddonSecCell:"Cell. Security",cbAddonRoCell:"Cell. Reload Open",cbAddonRoImei:"IMEI Reload Open",tnpGaReload:"Reload GA",reloadForever:"Reload Forever",voceCasaCb:"Voce Casa CB",protectaCodIns:"Cod.Ins. Protecta",vfOffer:"Offerta",vfMnp:"MNP",vfMnpBrand:"Op. MNP",vfMnpNum:"N. MNP",vfDomicilio:"Domiciliata",vfConvergenza:"Convergenza",vfNumFisso:"N. Fisso Conv.",vfTnp:"TNP",vfSecurity:"Security",dcNumProv:"N. Provvisorio",dcNum:"Numero",dcIccid:"ICCID",dcCodIns:"Cod.Ins.",dcRicaricaAuto:"Ricarica Auto",vfFLockIn:"Lock In",vfFConvergenza:"Convergenza",vfFGnp:"GNP",vfFGnpBrand:"Op. GNP",vfFGnpNum:"N. GNP",vfFCodIns:"Cod.Ins.",vfFNumProvVisorio:"N. Provvisorio",vfFNumProv:"N. Provvisorio",vfFNumDef:"N. Definitivo",vfFIccid:"ICCID",vfbOffer:"Offerta",vfbMnp:"MNP",vfbMnpBrand:"Op. MNP",vfbMnpNum:"N. MNP",vfbTnp:"TNP",vfbModello:"Modello",vfbImei:"IMEI",vfbRataPiva:"Finanz.",vfbEasyRent:"Easy Rent",vfbCodIns:"Cod.Ins.",vfbNum:"Numero",vfbIccid:"ICCID",vfbCbOn:"Cambio Offerta",vfbCbCell:"Cellulare CB",vfbCbCodIns:"Cod.Ins. CB",vfbFGnp:"GNP",vfbFGnpBrand:"Op. GNP",vfbFGnpNum:"N. GNP",vfbFCodIns:"Cod.Ins.",vfbFNumProv:"N. Provvisorio",vfbFNumDef:"N. Definitivo",vfbFIccid:"ICCID",vfbFMnp:"MNP",vfbFMnpBrand:"Op. MNP",vfbFMnpNum:"N. MNP",vfbFCombNumProv:"N. Provv. Mobile",vfbFCombIccid:"ICCID Mobile",vfSolDigCodIns:"Cod.Ins.",verisureCodIns:"Cod.Ins.",kfCodIns:"Cod.Ins.",vcCodIns:"Cod.Ins.",fwOffer:"Offerta",fwMnp:"MNP",fwMnpBrand:"Op. MNP",fwMnpNum:"N. MNP",fwCodIns:"Cod.Ins.",fwNumProv:"N. Provvisorio",fwNumDef:"Numero",fwIccid:"ICCID",fwFGnp:"GNP",fwFGnpBrand:"Op. GNP",fwFGnpNum:"N. GNP",fwFCodIns:"Cod.Ins.",fwFNumProv:"N. Provvisorio",fwFNumDef:"N. Definitivo",fwPod:"POD",fwPdr:"PDR",fwEnCodIns:"Cod.Ins.",ilOffer:"Offerta",ilMnp:"MNP",ilDom:"Domiciliata",ilMnpBrand:"Op. MNP",ilMnpNum:"N. MNP",ilCodIns:"Cod.Ins.",ilNumProv:"N. Provvisorio",ilNumDef:"Numero",ilIccid:"ICCID",ilFGnp:"GNP",ilFGnpBrand:"Op. GNP",ilFGnpNum:"N. GNP",ilFCodIns:"Cod.Ins.",ilFNumProv:"N. Provvisorio",ilFNumDef:"N. Definitivo",ilFwaCodIns:"Cod.Ins.",ilFwaIccid:"ICCID",ilBizOffer:"Offerta",ilBizMnp:"MNP",ilBizMnpBrand:"Op. MNP",ilBizDom:"Domiciliazione",ilBizNum:"Numero",ilBizIccid:"ICCID",ilBizNumDef:"N. Definitivo",ilBizCodIns:"Cod.Ins.",enPod:"POD",enPdr:"PDR",enCodIns:"Cod.Ins.",enProv:"Op. Provenienza",fwEnProv:"Op. Provenienza",w3SostCell:"Numero",w3SostIccid:"ICCID",w3SostCodContr:"Cod. Contratto",w3SostCodIns:"Cod.Ins.",fwSostCell:"Numero",fwSostIccid:"ICCID",fwSostCodContr:"Cod. Contratto",fwSostCodIns:"Cod.Ins.",vfSostCell:"Numero",vfSostCodIns:"Cod.Ins.",timOffer:"Offerta",timMnp:"MNP",timMnpBrand:"Op. MNP",timMnpNum:"N. MNP",timTnp:"TNP",timModello:"Terminale",timSpedizione:"Spedizione",timFinanziato:"Finanziato",timCodPratica:"Codice Pratica",timVisionBox:"Box TIM Vision",timVisionTaglia:"TIM Vision",timVisionNumContr:"N. Contratto Vision",timImei:"IMEI",timNumProv:"N. Provvisorio",timNum:"Numero",timIccid:"ICCID",timCodIns:"Cod.Ins.",timFOffer:"Prodotto Fisso",timFGnp:"GNP",timFGnpBrand:"Op. GNP",timFGnpNum:"N. GNP",timFNumProv:"N. Fisso Provvisorio",timFCodIns:"Codice",timFVision:"TIM Vision",timFVisionTaglia:"TIM Vision",timFVisionNumContr:"N. Contratto Vision",timTpTwin:"Twin",timTpSeriale:"Seriale Telepass",timTpRecapito:"Recapito",timTpCodIns:"Cod.Ins.",veryOffer:"Offerta",veryMnp:"MNP",veryMnpBrand:"Op. MNP",veryMnpNum:"N. MNP",veryRicaricaAuto:"Ricarica Auto",veryFascia:"Tipologia offerta",veryCodIns:"Cod.Ins.",veryNumProv:"N. Provvisorio",veryNum:"Numero",veryIccid:"ICCID",hoOffer:"Offerta",hoMnp:"MNP",hoMnpBrand:"Op. MNP",hoMnpNum:"N. MNP",hoRicaricaAuto:"Ricarica Auto",hoFascia:"Tipologia offerta",hoCodIns:"Cod.Ins.",hoNumProv:"N. Provvisorio",hoNum:"Numero",hoIccid:"ICCID"};
 const DET_SKIP={active:1,fields:1,contract:1,hasContract:1,codiceOverride:1,vfOffers:1,vfContratti:1,vfCompassItems:1,fwFSecLineCount:1};
 const DET_SELOBJ={securitySel:"Security",tnpGaReloadSel:"Reload GA",cbTnpReloadSel:"Reload CB",cbAddonSel:"Add-on CB",vfbKaskoSel:"Kasko",addons:"Add-on",vfFAddons:"Add-on"};
 const detYN=(v)=>(v===true||v==="Sì")?"Sì":(v===false?null:v);
@@ -1039,6 +1039,8 @@ const getFW = (tc) => {
   return [
     { id:"mobile", title:"MOBILE", icon:"📱", color:FW_C, radio:true, subs:[
       { id:"ga", title:"MOBILE", isFWMobile:true, fwBiz:biz, hasContract:true, ct:"ga", fields:[] },
+      // Segnalazione 34: mancava la sostituzione SIM, presente su WindTre e Vodafone.
+      { id:"sost_sim", title:"Sostituzione Sim", isFWSostSim:true, hasContract:true, ct:"multi", fields:[] },
     ]},
     { id:"fisso", title:"FISSO", icon:"🏠", color:"#28a745", radio:true, subs:
       (biz?FW_FISSO_BIZ_OFFERS:FW_FISSO_OFFERS).map(o=>({ id:o.toLowerCase().replace(/ /g,"_"), title:o, isFWFisso:true, fwBiz:biz, hasContract:true, ct:"fisso", fields:[] }))
@@ -2635,6 +2637,23 @@ const W3SostSim = ({sd, uP, sc, dupCheck}) => {
   return content;
 };
 
+// Sostituzione SIM Fastweb (segnalazione 34): stessi campi della versione WindTre.
+const FWSostSim = ({sd, uP, sc, dupCheck}) => {
+  const upv=(k,v)=>uP(k,v);
+  return (
+    <div style={{background:"rgba(204,153,0,0.10)",border:"1px solid rgba(204,153,0,0.25)",borderRadius:8,padding:14}}>
+      <div style={{fontSize:11,fontWeight:700,color:"#CC9900",marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+        <TF l="Numero" r v={sd.fwSostCell||""} o={v=>upv("fwSostCell",v)} p="3XXXXXXXXX"/>
+        <TF l="ICCID" r v={sd.fwSostIccid||""} o={v=>upv("fwSostIccid",v)} p="8939..." nt="Barcode 📷"/>
+        <TF l="Codice Contratto" r v={sd.fwSostCodContr||""} o={v=>upv("fwSostCodContr",v)} p="es. 167942"
+          err={dupCheck&&dupCheck("CODCONTR",sd.fwSostCodContr)?"Codice contratto già usato in un altro prodotto":""}/>
+        <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwSostCodIns||""} onCh={v=>upv("fwSostCodIns",v)}/>
+      </div>
+    </div>
+  );
+};
+
 const VFSostSim = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
@@ -2731,6 +2750,7 @@ const subComplete=(sub,d)=>{
   if(sub.isVFSolDig){return F("vfSolDigCodIns");}
   if(sub.isVFSostSim){return F("vfSostCell")&&F("vfSostCodIns");}
   if(sub.isW3SostSim){return F("w3SostCell")&&F("w3SostIccid")&&F("w3SostCodContr")&&F("w3SostCodIns");}
+  if(sub.isFWSostSim){return F("fwSostCell")&&F("fwSostIccid")&&F("fwSostCodContr")&&F("fwSostCodIns");}
   // FASTWEB
   if(sub.isFWMobile){if(!F("fwOffer"))return false;const isMnp=(d.fwMnp!=null)?(d.fwMnp==="Sì"):(!!d.fwOffer&&d.fwOffer.indexOf("MNP")>=0);if(isMnp&&!(F("fwMnpBrand")&&F("fwMnpNum")))return false;return F("fwCodIns")&&F("fwIccid")&&(isMnp?F("fwNumProv"):(F("fwNumDef")||F("fwNumProv")));}
   if(sub.isFWFisso){if(d.fwFGnp==="Sì"&&!(F("fwFGnpBrand")&&F("fwFGnpNum")))return false;return F("fwFCodIns")&&(F("fwFNumProv")||F("fwFNumDef"));}
@@ -2820,7 +2840,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
     vfbOffer:_r.vfbOffer||null,vfbMnp:_r.vfbMnp||null,vfbMnpBrand:_r.vfbMnpBrand||"",vfbMnpNum:_r.vfbMnpNum||"",vfbTnp:_r.vfbTnp||null,vfbModello:_r.vfbModello||"",vfbImei:_r.vfbImei||"",vfbRataPiva:_r.vfbRataPiva||null,vfbKaskoSel:_r.vfbKaskoSel||{},vfbCodIns:_r.vfbCodIns||"",
     vfbCbOn:_r.vfbCbOn||false,vfbCbCell:_r.vfbCbCell||"",vfbCbCodIns:_r.vfbCbCodIns||"",
     vfbFGnp:_r.vfbFGnp||null,vfbFGnpBrand:_r.vfbFGnpBrand||"",vfbFGnpNum:_r.vfbFGnpNum||"",vfbFCodIns:_r.vfbFCodIns||"",vfbFNumProv:_r.vfbFNumProv||"",vfbFNumDef:_r.vfbFNumDef||"",vfbFMnp:_r.vfbFMnp||null,vfbFMnpBrand:_r.vfbFMnpBrand||"",vfbFMnpNum:_r.vfbFMnpNum||"",vfbFCombNumProv:_r.vfbFCombNumProv||"",vfbFCombIccid:_r.vfbFCombIccid||"",vfbNum:_r.vfbNum||"",vfbIccid:_r.vfbIccid||"",vfbFIccid:_r.vfbFIccid||"",
-    vfSolDigCodIns:_r.vfSolDigCodIns||"",verisureCodIns:_r.verisureCodIns||"",kfCodIns:_r.kfCodIns||"",vcCodIns:_r.vcCodIns||"",fwOffer:_r.fwOffer||null,fwMnp:_r.fwMnp||null,fwFSecLineCount:_r.fwFSecLineCount||0,fwFSecLines:_r.fwFSecLines||[],fwMnpBrand:_r.fwMnpBrand||"",fwMnpNum:_r.fwMnpNum||"",fwCodIns:_r.fwCodIns||"",fwNumProv:_r.fwNumProv||"",fwNumDef:_r.fwNumDef||"",fwIccid:_r.fwIccid||"",fwFGnp:_r.fwFGnp||null,fwFGnpBrand:_r.fwFGnpBrand||"",fwFGnpNum:_r.fwFGnpNum||"",fwFCodIns:_r.fwFCodIns||"",fwFNumProv:_r.fwFNumProv||"",fwFNumDef:_r.fwFNumDef||"",fwPod:_r.fwPod||"",fwPdr:_r.fwPdr||"",fwEnCodIns:_r.fwEnCodIns||"",ilOffer:_r.ilOffer||null,ilMnp:_r.ilMnp||null,ilDom:_r.ilDom||null,ilMnpBrand:_r.ilMnpBrand||"",ilMnpNum:_r.ilMnpNum||"",ilCodIns:_r.ilCodIns||"",ilNumProv:_r.ilNumProv||"",ilNumDef:_r.ilNumDef||"",ilIccid:_r.ilIccid||"",ilFGnp:_r.ilFGnp||null,ilFCodIns:_r.ilFCodIns||"",ilFNumProv:_r.ilFNumProv||"",ilFNumDef:_r.ilFNumDef||"",ilFwaCodIns:_r.ilFwaCodIns||"",ilFwaIccid:_r.ilFwaIccid||"",ilBizOffer:_r.ilBizOffer||null,ilBizMnp:_r.ilBizMnp||null,ilBizMnpBrand:_r.ilBizMnpBrand||"",ilBizDom:_r.ilBizDom||null,ilBizNum:_r.ilBizNum||"",ilBizIccid:_r.ilBizIccid||"",ilBizNumDef:_r.ilBizNumDef||"",ilBizCodIns:_r.ilBizCodIns||"",enCodIns:_r.enCodIns||"",enPod:_r.enPod||"",enPdr:_r.enPdr||"",enProv:_r.enProv||"",fwEnProv:_r.fwEnProv||"",w3SostCell:_r.w3SostCell||"",w3SostIccid:_r.w3SostIccid||"",w3SostCodContr:_r.w3SostCodContr||"",w3SostCodIns:_r.w3SostCodIns||"",vfSostCell:_r.vfSostCell||"",vfSostCodIns:_r.vfSostCodIns||"",timOffer:_r.timOffer||null,timMnp:_r.timMnp||null,timMnpBrand:_r.timMnpBrand||"",timMnpNum:_r.timMnpNum||"",timTnp:_r.timTnp||null,timModello:_r.timModello||"",timSpedizione:_r.timSpedizione||null,timFinanziato:_r.timFinanziato||null,timCodPratica:_r.timCodPratica||"",timVisionBox:_r.timVisionBox||null,timVisionTaglia:_r.timVisionTaglia||null,timVisionNumContr:_r.timVisionNumContr||"",timImei:_r.timImei||"",timNumProv:_r.timNumProv||"",timNum:_r.timNum||"",timIccid:_r.timIccid||"",timCodIns:_r.timCodIns||"",timFOffer:_r.timFOffer||null,timFGnp:_r.timFGnp||null,timFGnpBrand:_r.timFGnpBrand||"",timFGnpNum:_r.timFGnpNum||"",timFNumProv:_r.timFNumProv||"",timFCodIns:_r.timFCodIns||"",timFVision:_r.timFVision||null,timFVisionTaglia:_r.timFVisionTaglia||null,timFVisionNumContr:_r.timFVisionNumContr||"",timTpTwin:_r.timTpTwin||null,timTpSeriale:_r.timTpSeriale||"",timTpRecapito:_r.timTpRecapito||"",timTpCodIns:_r.timTpCodIns||"",veryOffer:_r.veryOffer||null,veryMnp:_r.veryMnp||null,veryMnpBrand:_r.veryMnpBrand||"",veryMnpNum:_r.veryMnpNum||"",veryRicaricaAuto:_r.veryRicaricaAuto||null,veryFascia:_r.veryFascia||null,veryCodIns:_r.veryCodIns||"",veryNumProv:_r.veryNumProv||"",veryNum:_r.veryNum||"",veryIccid:_r.veryIccid||"",hoOffer:_r.hoOffer||null,hoMnp:_r.hoMnp||null,hoMnpBrand:_r.hoMnpBrand||"",hoMnpNum:_r.hoMnpNum||"",hoRicaricaAuto:_r.hoRicaricaAuto||null,hoFascia:_r.hoFascia||null,hoCodIns:_r.hoCodIns||"",hoNumProv:_r.hoNumProv||"",hoNum:_r.hoNum||"",hoIccid:_r.hoIccid||""};
+    vfSolDigCodIns:_r.vfSolDigCodIns||"",verisureCodIns:_r.verisureCodIns||"",kfCodIns:_r.kfCodIns||"",vcCodIns:_r.vcCodIns||"",fwOffer:_r.fwOffer||null,fwMnp:_r.fwMnp||null,fwFSecLineCount:_r.fwFSecLineCount||0,fwFSecLines:_r.fwFSecLines||[],fwMnpBrand:_r.fwMnpBrand||"",fwMnpNum:_r.fwMnpNum||"",fwCodIns:_r.fwCodIns||"",fwNumProv:_r.fwNumProv||"",fwNumDef:_r.fwNumDef||"",fwIccid:_r.fwIccid||"",fwFGnp:_r.fwFGnp||null,fwFGnpBrand:_r.fwFGnpBrand||"",fwFGnpNum:_r.fwFGnpNum||"",fwFCodIns:_r.fwFCodIns||"",fwFNumProv:_r.fwFNumProv||"",fwFNumDef:_r.fwFNumDef||"",fwPod:_r.fwPod||"",fwPdr:_r.fwPdr||"",fwEnCodIns:_r.fwEnCodIns||"",ilOffer:_r.ilOffer||null,ilMnp:_r.ilMnp||null,ilDom:_r.ilDom||null,ilMnpBrand:_r.ilMnpBrand||"",ilMnpNum:_r.ilMnpNum||"",ilCodIns:_r.ilCodIns||"",ilNumProv:_r.ilNumProv||"",ilNumDef:_r.ilNumDef||"",ilIccid:_r.ilIccid||"",ilFGnp:_r.ilFGnp||null,ilFCodIns:_r.ilFCodIns||"",ilFNumProv:_r.ilFNumProv||"",ilFNumDef:_r.ilFNumDef||"",ilFwaCodIns:_r.ilFwaCodIns||"",ilFwaIccid:_r.ilFwaIccid||"",ilBizOffer:_r.ilBizOffer||null,ilBizMnp:_r.ilBizMnp||null,ilBizMnpBrand:_r.ilBizMnpBrand||"",ilBizDom:_r.ilBizDom||null,ilBizNum:_r.ilBizNum||"",ilBizIccid:_r.ilBizIccid||"",ilBizNumDef:_r.ilBizNumDef||"",ilBizCodIns:_r.ilBizCodIns||"",enCodIns:_r.enCodIns||"",enPod:_r.enPod||"",enPdr:_r.enPdr||"",enProv:_r.enProv||"",fwEnProv:_r.fwEnProv||"",w3SostCell:_r.w3SostCell||"",w3SostIccid:_r.w3SostIccid||"",w3SostCodContr:_r.w3SostCodContr||"",w3SostCodIns:_r.w3SostCodIns||"",fwSostCell:_r.fwSostCell||"",fwSostIccid:_r.fwSostIccid||"",fwSostCodContr:_r.fwSostCodContr||"",fwSostCodIns:_r.fwSostCodIns||"",vfSostCell:_r.vfSostCell||"",vfSostCodIns:_r.vfSostCodIns||"",timOffer:_r.timOffer||null,timMnp:_r.timMnp||null,timMnpBrand:_r.timMnpBrand||"",timMnpNum:_r.timMnpNum||"",timTnp:_r.timTnp||null,timModello:_r.timModello||"",timSpedizione:_r.timSpedizione||null,timFinanziato:_r.timFinanziato||null,timCodPratica:_r.timCodPratica||"",timVisionBox:_r.timVisionBox||null,timVisionTaglia:_r.timVisionTaglia||null,timVisionNumContr:_r.timVisionNumContr||"",timImei:_r.timImei||"",timNumProv:_r.timNumProv||"",timNum:_r.timNum||"",timIccid:_r.timIccid||"",timCodIns:_r.timCodIns||"",timFOffer:_r.timFOffer||null,timFGnp:_r.timFGnp||null,timFGnpBrand:_r.timFGnpBrand||"",timFGnpNum:_r.timFGnpNum||"",timFNumProv:_r.timFNumProv||"",timFCodIns:_r.timFCodIns||"",timFVision:_r.timFVision||null,timFVisionTaglia:_r.timFVisionTaglia||null,timFVisionNumContr:_r.timFVisionNumContr||"",timTpTwin:_r.timTpTwin||null,timTpSeriale:_r.timTpSeriale||"",timTpRecapito:_r.timTpRecapito||"",timTpCodIns:_r.timTpCodIns||"",veryOffer:_r.veryOffer||null,veryMnp:_r.veryMnp||null,veryMnpBrand:_r.veryMnpBrand||"",veryMnpNum:_r.veryMnpNum||"",veryRicaricaAuto:_r.veryRicaricaAuto||null,veryFascia:_r.veryFascia||null,veryCodIns:_r.veryCodIns||"",veryNumProv:_r.veryNumProv||"",veryNum:_r.veryNum||"",veryIccid:_r.veryIccid||"",hoOffer:_r.hoOffer||null,hoMnp:_r.hoMnp||null,hoMnpBrand:_r.hoMnpBrand||"",hoMnpNum:_r.hoMnpNum||"",hoRicaricaAuto:_r.hoRicaricaAuto||null,hoFascia:_r.hoFascia||null,hoCodIns:_r.hoCodIns||"",hoNumProv:_r.hoNumProv||"",hoNum:_r.hoNum||"",hoIccid:_r.hoIccid||""};
   const f=sd.fields;
   const c=sd.contract;
   const gaOn=sale.ga&&sale.ga.active;
@@ -3023,6 +3043,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {sub.isENLuceGas&&<ENLuceGas sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sub={sub} dupCheck={dupCheck} sc={sessionCode}/>}
       {sub.isW3SostSim&&<W3SostSim sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode} dupCheck={dupCheck}/>}
       {sub.isVFSostSim&&<VFSostSim sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode}/>}
+      {sub.isFWSostSim&&<FWSostSim sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode} dupCheck={dupCheck}/>}
 
       {/* MOBILE BUSINESS flow: MNP → Brand MNP → Offerta → TNP GA → Security */}
       {sub.isMobileBiz&&(
@@ -3408,7 +3429,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       )}
 
       {/* Contract data */}
-      {sub.hasContract&&!sub.isVFMobile&&!sub.isCBVF&&!sub.isVFFisso&&!sub.isVerisure&&!sub.isKaskoFacile&&!sub.isVFCare&&!sub.isVFBizMobile&&!sub.isCBVFBiz&&!sub.isVFFissoBiz&&!sub.isVFSolDig&&!sub.isFWMobile&&!sub.isFWFisso&&!sub.isFWEnergia&&!sub.isILMobile&&!sub.isILBizMobile&&!sub.isILFisso&&!sub.isILFwa&&!sub.isENLuceGas&&!sub.isTimMobile&&!sub.isTimFisso&&!sub.isTimTelepass&&!sub.isVeryMobile&&!sub.isHoMobile&&!sub.isW3SostSim&&!sub.isVFSostSim&&!sub.isBizProtecta&&(
+      {sub.hasContract&&!sub.isVFMobile&&!sub.isCBVF&&!sub.isVFFisso&&!sub.isVerisure&&!sub.isKaskoFacile&&!sub.isVFCare&&!sub.isVFBizMobile&&!sub.isCBVFBiz&&!sub.isVFFissoBiz&&!sub.isVFSolDig&&!sub.isFWMobile&&!sub.isFWFisso&&!sub.isFWEnergia&&!sub.isILMobile&&!sub.isILBizMobile&&!sub.isILFisso&&!sub.isILFwa&&!sub.isENLuceGas&&!sub.isTimMobile&&!sub.isTimFisso&&!sub.isTimTelepass&&!sub.isVeryMobile&&!sub.isHoMobile&&!sub.isW3SostSim&&!sub.isVFSostSim&&!sub.isFWSostSim&&!sub.isBizProtecta&&(
         <div style={{borderTop:"1px solid "+group.color+"20",paddingTop:8,marginTop:8}}>
           <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:6,textTransform:"uppercase"}}>Dati contratto</div>
           <div style={{marginBottom:8,maxWidth:250}}><SCd session={sessionCode} codici={codiciW3} val={sd.codiceOverride||""} onCh={v=>uP(group.id,si,sub.id,"codiceOverride",v)}/></div>
@@ -3622,7 +3643,7 @@ export default function CRM() {
                      // in un ALTRO prodotto.
                      const _codes=new Set();
                      const _addCode=(val)=>{if(val&&String(val).trim())_codes.add(String(val).trim().toUpperCase());};
-                     _addCode(d.cbCodContratto);_addCode(d.cbTnpCC);_addCode(d.cbCambioCC);_addCode(d.w3SostCodContr);
+                     _addCode(d.cbCodContratto);_addCode(d.cbTnpCC);_addCode(d.cbCambioCC);_addCode(d.w3SostCodContr);_addCode(d.fwSostCodContr);
                      if(d.contract)_addCode(d.contract.codice_contratto);
                      _codes.forEach(cv=>{const k="CODCONTR:"+cv;map[k]=(map[k]||0)+1;});});});});};cart.forEach(g=>{if(g.sv)scan(g.sv.sales);});scan(sales);return map;})();
   const dupCheck=(t,val)=>{if(!val||!String(val).trim())return false;return (podPdrMap[t+":"+String(val).trim().toUpperCase()]||0)>1;};
@@ -3731,27 +3752,44 @@ export default function CRM() {
       const idBase = cfPiva || tel.replace(/\D/g, "") || "ND";
       const clientId = existingClient?.id || `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`;
 
+      // Segnalazione 40: l'upsert riscrive TUTTA la riga. Registrando un secondo
+      // contratto per un cliente gia' noto, i campi lasciati vuoti nel form
+      // (indirizzo, CAP, citta', email...) sovrascrivevano con "" quelli gia'
+      // salvati, e l'anagrafica si riduceva a nome e cognome. Ora si rilegge la
+      // riga esistente e il vuoto non cancella: tiene il valore precedente.
+      let prev: Record<string, unknown> = {};
+      if (existingClient?.id) {
+        const { data: full } = await supabase.from("clients").select("*").eq("id", existingClient.id).maybeSingle();
+        if (full) prev = full as Record<string, unknown>;
+      }
+      const keep = (nuovo: string, campo: string) => {
+        const v = (nuovo ?? "").toString().trim();
+        if (v) return v;
+        const old = prev[campo];
+        return old == null ? "" : String(old);
+      };
+
       const clientData = {
         id: clientId,
         tipo: tipoCliente === "privato" ? "consumer" : "business",
-        nome: ana.nome || "",
-        cognome: ana.cognome || "",
-        ragione_sociale: ana.ragioneSociale || "",
-        nome_ref: ana.nomeRef || "",
-        cognome_ref: ana.cognomeRef || "",
-        cellulare: ana.cellulare || ana.recapito || "",
-        email: ana.email || "",
+        nome: keep(ana.nome, "nome"),
+        cognome: keep(ana.cognome, "cognome"),
+        ragione_sociale: keep(ana.ragioneSociale, "ragione_sociale"),
+        nome_ref: keep(ana.nomeRef, "nome_ref"),
+        cognome_ref: keep(ana.cognomeRef, "cognome_ref"),
+        cellulare: keep(ana.cellulare || ana.recapito, "cellulare"),
+        email: keep(ana.email, "email"),
         cf_piva: cfPiva || null,
         // Segnalazioni 19 e 20: l'IBAN veniva raccolto dal form e poi scartato,
         // perche' la colonna non esisteva (migrazione 066).
-        iban: ana.iban || null,
+        iban: keep(ana.iban, "iban") || null,
         intestatario_diverso: !!ana.intDiverso,
         intestatario_nome: ana.intDiverso ? (ana.intNome || null) : null,
         intestatario_cognome: ana.intDiverso ? (ana.intCognome || null) : null,
         intestatario_cf: ana.intDiverso ? (ana.intCf || null) : null,
-        indirizzo: ana.via || "",
-        cap: ana.cap || "",
-        citta: ana.citta || "",
+        indirizzo: keep(ana.via, "indirizzo"),
+        cap: keep(ana.cap, "cap"),
+        citta: keep(ana.citta, "citta"),
         is_demo: false
       };
 
@@ -3789,7 +3827,25 @@ export default function CRM() {
 
       fc.forEach(group => {
         (group.items || []).forEach((item) => {
-          const actCode = item.details["Codice Contratto"] || item.details["Codice Proposta"] || item.details["Codice Ordine"] || item.details["Codice"] || "—";
+          // Segnalazione 39: la colonna "Codice attivazione" funzionava solo per
+          // Sky, l'unico che scrive la chiave "Codice Contratto". Gli altri brand
+          // salvano il codice sotto il nome del campo di origine: WindTre come
+          // `codice_contratto` (da d.contract) e, per il prodotto CB, come
+          // "Cod.Cliente CB". Vodafone non rilascia un codice contratto, quindi
+          // non va inventato: resta vuoto.
+          const _d = item.details || {};
+          const _brand = String(group.brandId || "").toLowerCase();
+          const actCode = _brand === "vodafone" ? "—" : (
+            _d["Codice Contratto"] ||          // Sky
+            _d["codice_contratto"] ||          // WindTre, Fastweb, Iliad, TIM…
+            _d["Cod. Contratto"] ||            // W3 sostituzione SIM
+            _d["Cod.Cliente CB"] ||            // WindTre CB (TNP)
+            _d["Cod. Contratto CB"] ||         // WindTre CB
+            _d["Cod.Cliente Cambio"] ||        // WindTre CB cambio offerta
+            _d["Codice Proposta"] ||
+            _d["Codice Ordine"] ||
+            "—"
+          );
           contractRows.push({
             id: `CTR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
             client_id: clientId,
@@ -3797,12 +3853,12 @@ export default function CRM() {
             brand: group.brandLabel,
             categoria: item.macro,
             prodotto: item.sub,
-            stato: "Attivo",
+            stato: "Nuovo",
             venditore: selVend,
             negozio: selNeg,
             codice_attivazione: String(actCode),
             data_registrazione: dateStr,
-            data_attivazione: dateStr,
+            data_attivazione: null,   // si popola dal Tracking PDA (segn. 38)
             note: (notaOn && nota.trim()) ? nota.trim() : null,
             dettagli: item.details || {},
             is_demo: false
@@ -3818,13 +3874,13 @@ export default function CRM() {
           brand: "Extra",
           categoria: "Prodotto/Servizio",
           prodotto: mi.product,
-          stato: "Attivo",
+          stato: "Nuovo",
           venditore: mi.vendor || selVend,
           negozio: mi.store || selNeg,
           codice_attivazione: "VENDITA-DIRETTA",
           data_registrazione: dateStr,
-          data_attivazione: dateStr,
-          dettagli: { product: mi.product, price: mi.price, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei },
+          data_attivazione: null,   // si popola dal Tracking PDA (segn. 38)
+          dettagli: { product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei },
           is_demo: false
         });
       });
@@ -3913,9 +3969,9 @@ export default function CRM() {
       const rows=margItems.map(mi=>({
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
         client_id:clientId,data:dateStr,brand:"Extra",categoria:"Prodotto/Servizio",
-        prodotto:mi.product,stato:"Attivo",venditore:mi.vendor||selVend,negozio:mi.store||selNeg,
-        codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:dateStr,
-        dettagli:{product:mi.product,price:mi.price,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei},
+        prodotto:mi.product,stato:"Nuovo",venditore:mi.vendor||selVend,negozio:mi.store||selNeg,
+        codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:null,
+        dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei},
         is_demo:false,
       }));
       const {error}=await supabase.from("contracts").insert(rows);

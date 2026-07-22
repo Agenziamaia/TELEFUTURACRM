@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { seesWholeStore } from "@/lib/roles";
+import { statoContrattoDa, isStatoAttivo } from "./trackingHelpers";
 import {
   CATEGORIE,
   ALL_BRANDS,
@@ -33,12 +34,30 @@ type RawRow = Record<string, unknown> & {
 };
 
 function formatDataInserimento(val: string | undefined): string {
-  if (!val) return "—";
-  if (val.includes("T")) {
-    const d = new Date(val);
-    return d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const d = parseDataRiga(val);
+  return d ? d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+}
+
+/**
+ * Le date arrivano in tre forme: ISO con orario, "yyyy-mm-dd" da
+ * data_registrazione e "gg/mm/aaaa" gia' formattato. Prima veniva convertita solo
+ * la prima, quindi in colonna comparivano date ISO e soprattutto il filtro
+ * "Periodo" faceva split("/") su "2026-07-22", otteneva un solo pezzo e saltava
+ * del tutto il confronto: sembrava non funzionare (segnalazione 35).
+ */
+function parseDataRiga(val: string | undefined | null): Date | null {
+  if (!val) return null;
+  const s = String(val).trim();
+  if (s.includes("T")) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
   }
-  return val;
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 function mapContractToTrackingRow(
@@ -1221,19 +1240,18 @@ export default function TrackingPdaPage() {
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
-        const parti = row.dataInserimento.split("/");
-        if (parti.length === 3) {
-          const rowDate = new Date(parseInt(parti[2], 10), parseInt(parti[1], 10) - 1, parseInt(parti[0], 10));
-          if (periodoDA) {
-            const da = new Date(periodoDA);
-            da.setHours(0, 0, 0, 0);
-            if (rowDate < da) return false;
-          }
-          if (periodoA) {
-            const a = new Date(periodoA);
-            a.setHours(23, 59, 59, 999);
-            if (rowDate > a) return false;
-          }
+        const rowDate = parseDataRiga(row.dataInserimento);
+        // Senza data valida la riga resta fuori: se si filtra per periodo, una
+        // pratica senza data non appartiene a quel periodo.
+        if (!rowDate) return false;
+        rowDate.setHours(12, 0, 0, 0);
+        if (periodoDA) {
+          const da = parseDataRiga(periodoDA);
+          if (da) { da.setHours(0, 0, 0, 0); if (rowDate < da) return false; }
+        }
+        if (periodoA) {
+          const a = parseDataRiga(periodoA);
+          if (a) { a.setHours(23, 59, 59, 999); if (rowDate > a) return false; }
         }
       }
       if (search.trim()) {
@@ -1320,11 +1338,21 @@ export default function TrackingPdaPage() {
 
   const handleUpdate = useCallback(
     async (updated: TrackingRow) => {
-      const payload = {
+      // Segnalazioni 37 e 38: lo stato lavorato qui deve comparire subito in
+      // Ricerca Contratto, e la data di attivazione si popola quando la pratica
+      // diventa davvero attiva (prima veniva scritta all'inserimento).
+      const payload: Record<string, unknown> = {
         stato_negozio: updated.statoNegozio,
         stato_admin: updated.statoAdmin,
         storia: updated.storia,
+        stato: statoContrattoDa(updated.statoNegozio),
       };
+      if (isStatoAttivo(updated.statoNegozio)) {
+        const gia = rawList.find((r) => (r.id as string) === updated.id)?.data_attivazione;
+        if (!gia) payload.data_attivazione = new Date().toISOString().split("T")[0];
+      } else {
+        payload.data_attivazione = null;   // tornata indietro: la data non vale piu'
+      }
       const { error } = await supabase.from("contracts").update(payload).eq("id", updated.id);
       if (error) {
         setLoadError(error.message);
