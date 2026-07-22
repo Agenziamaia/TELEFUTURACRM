@@ -3858,7 +3858,7 @@ export default function CRM() {
             negozio: selNeg,
             codice_attivazione: String(actCode),
             data_registrazione: dateStr,
-            data_attivazione: null,   // si popola dal Tracking PDA (segn. 38)
+            data_attivazione: dateStr,   // compilata subito: e' la data di registrazione (Luca)
             note: (notaOn && nota.trim()) ? nota.trim() : null,
             dettagli: item.details || {},
             is_demo: false
@@ -3879,7 +3879,7 @@ export default function CRM() {
           negozio: mi.store || selNeg,
           codice_attivazione: "VENDITA-DIRETTA",
           data_registrazione: dateStr,
-          data_attivazione: null,   // si popola dal Tracking PDA (segn. 38)
+          data_attivazione: dateStr,   // compilata subito: e' la data di registrazione (Luca)
           dettagli: { product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei },
           is_demo: false
         });
@@ -3970,7 +3970,7 @@ export default function CRM() {
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
         client_id:clientId,data:dateStr,brand:"Extra",categoria:"Prodotto/Servizio",
         prodotto:mi.product,stato:"Nuovo",venditore:mi.vendor||selVend,negozio:mi.store||selNeg,
-        codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:null,
+        codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:dateStr,
         dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei},
         is_demo:false,
       }));

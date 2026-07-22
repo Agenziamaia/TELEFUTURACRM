@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { seesWholeStore } from "@/lib/roles";
-import { statoContrattoDa, isStatoAttivo } from "./trackingHelpers";
+import { statoContrattoDa } from "./trackingHelpers";
 import {
   CATEGORIE,
   ALL_BRANDS,
@@ -1347,12 +1347,9 @@ export default function TrackingPdaPage() {
         storia: updated.storia,
         stato: statoContrattoDa(updated.statoNegozio),
       };
-      if (isStatoAttivo(updated.statoNegozio)) {
-        const gia = rawList.find((r) => (r.id as string) === updated.id)?.data_attivazione;
-        if (!gia) payload.data_attivazione = new Date().toISOString().split("T")[0];
-      } else {
-        payload.data_attivazione = null;   // tornata indietro: la data non vale piu'
-      }
+      // La data di attivazione NON si tocca qui: viene compilata alla
+      // registrazione ed e' quella la data buona (indicazione di Luca, che
+      // annulla la segnalazione 38). Qui si propaga solo lo stato.
       const { error } = await supabase.from("contracts").update(payload).eq("id", updated.id);
       if (error) {
         setLoadError(error.message);

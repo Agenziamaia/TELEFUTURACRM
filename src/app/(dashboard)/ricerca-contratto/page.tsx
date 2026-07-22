@@ -288,6 +288,46 @@ export default function RicercaContratto() {
     // render precedente e la pagina moriva con "Application error: a client-side
     // exception has occurred" — ed e' proprio cio' che si vedeva digitando nel
     // filtro Cliente (segnalazione 36).
+    // NB: queste quattro funzioni servono a pendingChanges: devono restare
+    // SOPRA quel useMemo, altrimenti al primo render con un contratto
+    // selezionato il memo le richiama prima che siano inizializzate.
+    const dettagliOf = (row: ContrattoRow): [string, unknown][] => {
+        const d = row.raw?.dettagli;
+        if (!d || typeof d !== "object" || Array.isArray(d)) return [];
+        return Object.entries(d as Record<string, unknown>);
+    };
+
+    const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
+        const vals: Record<string, string> = {};
+        CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
+        CLIENT_FIELDS.forEach(f => { vals[`client::${f.key}`] = row.client?.[f.key] == null ? "" : String(row.client[f.key]); });
+        dettagliOf(row).forEach(([k, v]) => {
+            if (v !== null && typeof v === "object") return; // oggetti annidati: sola lettura
+            vals[`dettagli::${k}`] = v == null ? "" : String(v);
+        });
+        setEditValues(vals);
+        setReqNote("");
+        setReqMsg(null);
+        setSelectedContract(row);
+        setDetailMode(mode);
+    };
+
+    const originalOf = (row: ContrattoRow, key: string): unknown => {
+        const i = key.indexOf("::");
+        const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract") return row.raw?.[field];
+        if (scope === "client") return row.client?.[field];
+        return (row.raw?.dettagli as Record<string, unknown> | undefined)?.[field];
+    };
+
+    const labelOf = (key: string): string => {
+        const i = key.indexOf("::");
+        const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract") return CONTRACT_FIELDS.find(f => f.key === field)?.label || field;
+        if (scope === "client") return (CLIENT_FIELDS.find(f => f.key === field)?.label || field) + " (cliente)";
+        return field;
+    };
+
     const pendingChanges = useMemo(() => {
         if (!selectedContract) return {} as Record<string, { da: any; a: any; label: string }>;
         const out: Record<string, { da: any; a: any; label: string }> = {};
@@ -417,42 +457,6 @@ export default function RicercaContratto() {
 
     // Le chiavi usano "::" e non "." perche' molte chiavi di `dettagli`
     // contengono gia' un punto (es. "Cod.Ins.", "Op. MNP").
-    const dettagliOf = (row: ContrattoRow): [string, unknown][] => {
-        const d = row.raw?.dettagli;
-        if (!d || typeof d !== "object" || Array.isArray(d)) return [];
-        return Object.entries(d as Record<string, unknown>);
-    };
-
-    const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
-        const vals: Record<string, string> = {};
-        CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
-        CLIENT_FIELDS.forEach(f => { vals[`client::${f.key}`] = row.client?.[f.key] == null ? "" : String(row.client[f.key]); });
-        dettagliOf(row).forEach(([k, v]) => {
-            if (v !== null && typeof v === "object") return; // oggetti annidati: sola lettura
-            vals[`dettagli::${k}`] = v == null ? "" : String(v);
-        });
-        setEditValues(vals);
-        setReqNote("");
-        setReqMsg(null);
-        setSelectedContract(row);
-        setDetailMode(mode);
-    };
-
-    const originalOf = (row: ContrattoRow, key: string): unknown => {
-        const i = key.indexOf("::");
-        const scope = key.slice(0, i), field = key.slice(i + 2);
-        if (scope === "contract") return row.raw?.[field];
-        if (scope === "client") return row.client?.[field];
-        return (row.raw?.dettagli as Record<string, unknown> | undefined)?.[field];
-    };
-
-    const labelOf = (key: string): string => {
-        const i = key.indexOf("::");
-        const scope = key.slice(0, i), field = key.slice(i + 2);
-        if (scope === "contract") return CONTRACT_FIELDS.find(f => f.key === field)?.label || field;
-        if (scope === "client") return (CLIENT_FIELDS.find(f => f.key === field)?.label || field) + " (cliente)";
-        return field;
-    };
 
 
     return (
