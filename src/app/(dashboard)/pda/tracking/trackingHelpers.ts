@@ -59,8 +59,16 @@ export function giorniLavorativiDa(dataStrIta: string): number {
 }
 
 /** ggAgg = working days since last storia event (DevSpec §5). Empty storia → 999. */
-export function giorniDaUltimoAggiornamento(storia: StoriaEvent[]): number {
-  if (!storia || storia.length === 0) return 999;
+export function giorniDaUltimoAggiornamento(storia: StoriaEvent[], dataInserimento?: string): number {
+  // Segnalazione 25: senza storico questa funzione restituiva 999 giorni. Una
+  // pratica registrata oggi, che non ha ancora nessun evento, entrava subito in
+  // malus con (999 - soglia + 1) * importo: 4.970 EUR per una MNP, 9.850 EUR per
+  // un fisso. Sono esattamente i "5000/10000 EUR" segnalati.
+  // Senza storico il conteggio parte dalla data di inserimento della pratica;
+  // se manca anche quella non si puo' dedurre nulla e il malus resta a zero.
+  if (!storia || storia.length === 0) {
+    return dataInserimento ? giorniLavorativiDa(dataInserimento) : 0;
+  }
   const ultimo = storia[storia.length - 1];
   return giorniLavorativiDa(ultimo.data);
 }
@@ -126,7 +134,7 @@ export function isAttenzioneRow(row: TrackingRow): boolean {
   if (isMalusRow(row)) return false;
 
   const gg = giorniLavorativiDa(row.dataInserimento);
-  const ggAgg = giorniDaUltimoAggiornamento(row.storia);
+  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
 
   if (row.categoria === "mnp") {
     if (ggAgg >= 5) return true;
@@ -159,7 +167,7 @@ export function isDaLavorareRow(row: TrackingRow): boolean {
   if (completatiCat.includes(row.statoNegozio)) return false;
 
   const gg = giorniLavorativiDa(row.dataInserimento);
-  const ggAgg = giorniDaUltimoAggiornamento(row.storia);
+  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
 
   if (row.categoria === "mnp") {
     if (ggAgg >= 2) return true;
@@ -186,7 +194,7 @@ export function isMalusRow(row: TrackingRow): boolean {
   const completatiCat = STATI_COMPLETATI[row.categoria] || ["attivato"];
   if (completatiCat.includes(row.statoNegozio)) return false;
 
-  const ggAgg = giorniDaUltimoAggiornamento(row.storia);
+  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
 
   if (row.categoria === "mnp") return ggAgg >= 6;
   if (row.categoria === "fisso") return ggAgg >= 15;
@@ -208,7 +216,7 @@ export function isMalusRow(row: TrackingRow): boolean {
 
 export function calcolaMalus(row: TrackingRow): number {
   if (!isMalusRow(row)) return 0;
-  const ggAgg = giorniDaUltimoAggiornamento(row.storia);
+  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
 
   if (row.categoria === "piva") {
     let totale = 0;

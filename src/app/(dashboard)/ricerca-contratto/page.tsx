@@ -183,6 +183,11 @@ export default function RicercaContratto() {
     const canApprove = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     const lockedStore = !isGlobalView ? user?.negozio : null;
     const lockedVenditore = (!isGlobalView && !wholeStore) ? user?.name : null;
+    // Segnalazione 26: il filtro Venditore era bloccato con disabled={!isGlobalView},
+    // quindi lo store manager non poteva cambiarlo pur avendone il diritto — i
+    // permessi lato query lo consentivano gia' (lockedVenditore e' null per chi
+    // vede tutto il negozio). Ora e' modificabile dallo store manager in su.
+    const canPickVenditore = isGlobalView || wholeStore;
 
     useEffect(() => {
         const fetchFilters = async () => {
@@ -573,8 +578,8 @@ export default function RicercaContratto() {
                         <label className="block text-sm font-medium text-slate-300 mb-2">Venditore</label>
                         <select
                             className="glass-input w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={!isGlobalView}
-                            value={isGlobalView ? filterVenditore : (lockedVenditore || "Tutti")}
+                            disabled={!canPickVenditore}
+                            value={canPickVenditore ? filterVenditore : (lockedVenditore || "Tutti")}
                             onChange={e => setFilterVenditore(e.target.value)}
                         >
                             <option value="Tutti">Tutti i venditori</option>

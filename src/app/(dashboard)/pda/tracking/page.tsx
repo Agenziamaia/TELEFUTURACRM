@@ -1000,7 +1000,7 @@ function Drawer({
                   </div>
                 </div>
                 {(() => {
-                  const ggAgg = giorniDaUltimoAggiornamento(row.storia);
+                  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
                   const soglia = MALUS_IMPORTO[row.categoria] ? 6 : 0;
                   const importo = MALUS_IMPORTO[row.categoria] ?? 0;
                   const giorniMalus = Math.max(0, ggAgg - (row.categoria === "piva" ? 6 : (row.categoria === "mnp" ? 6 : row.categoria === "fisso" ? 15 : row.categoria === "finanziamento" ? 6 : row.categoria === "energia" ? 15 : 2)) + 1);
