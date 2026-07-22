@@ -97,7 +97,18 @@ export function getStatoA(id: string) {
 
 export function getCat(id: string) {
   const c = CATEGORIE.find((x) => x.id === id);
-  return c || CATEGORIE[0];
+  if (c) return c;
+  // Segnalazione 14: prima si ricadeva su CATEGORIE[0], cioe' MNP. Le categorie
+  // salvate dai contratti (MOBILE, SOLUZIONI DIGITALI, MULTI-SERVIZI...) non
+  // sono fra le sei previste, quindi in colonna comparivano TUTTE come "MNP".
+  // Meglio mostrare la categoria reale in grigio che una sbagliata.
+  const label = (id || "").trim();
+  return {
+    id: label || "—",
+    label: label ? label.toUpperCase() : "—",
+    desc: "Categoria non prevista dal tracking",
+    color: "#94a3b8",
+  };
 }
 
 const STATI_COMPLETATI: Record<string, string[]> = {

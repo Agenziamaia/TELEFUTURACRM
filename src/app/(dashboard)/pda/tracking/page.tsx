@@ -62,11 +62,29 @@ function mapContractToTrackingRow(
   const statoNegozio = (c.stato_negozio as string) || "nuovo";
   const statoAdmin = (c.stato_admin as string) || "da_verificare";
 
-  // Normalize categoria to lowercase so rules match (DB may store "MNP", "Fisso", "P.IVA", etc.)
-  const rawCat = ((c.categoria as string) ?? "").trim().toLowerCase();
-  const categoria = rawCat === "p.iva" ? "piva" : rawCat || "—";
-
   const d = dettagli || (c.dettagli as Record<string, unknown> | null) || {};
+
+  // Le categorie salvate sui contratti ("MOBILE", "SKY FIBRA", "LUCE E GAS",
+  // "Prodotto/Servizio"...) non coincidono con le sei del tracking
+  // (mnp / fisso / finanziamento / piva / energia / sky): quelle riconoscibili
+  // vengono ricondotte, le altre restano com'erano invece di essere spacciate
+  // per MNP (segnalazione 14).
+  const categoria = (() => {
+    const raw = ((c.categoria as string) ?? "").trim().toLowerCase();
+    if (!raw) return "—";
+    if (raw === "p.iva" || raw === "piva") return "piva";
+    if (raw.startsWith("sky")) return "sky";
+    if (raw.includes("luce") || raw.includes("gas") || raw.includes("energia")) return "energia";
+    if (raw.includes("finanziamento")) return "finanziamento";
+    if (raw.includes("fisso")) return "fisso";
+    // "MOBILE" e' MNP solo quando la pratica e' davvero una portabilita'.
+    if (raw.includes("mobile")) {
+      const mnp = String(d.MNP ?? d.mnp ?? "").trim().toLowerCase();
+      return mnp === "sì" || mnp === "si" || mnp === "true" ? "mnp" : raw;
+    }
+    return raw;
+  })();
+
   return {
     id: (c.id as string) ?? "",
     categoria,
