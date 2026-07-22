@@ -3667,7 +3667,22 @@ export default function CRM() {
   const addMargItem=(item)=>{setMargItems(p=>[...p,item]);setShowMargPOS(false)};
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
 
+  // Segnalazione 27: i contratti si duplicavano perche' "Salva contratto" non
+  // aveva alcun blocco mentre il salvataggio era in corso. Un secondo clic (o un
+  // doppio clic) rieseguiva tutto: nei dati si vedono coppie identiche a
+  // 0,6-2,9 secondi di distanza. Il blocco usa un ref e non lo stato, perche'
+  // due clic nello stesso tick leggerebbero entrambi lo stato ancora a false.
+  const submitLock = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   const finalSubmit = async () => {
+    if (submitLock.current) return;
+    submitLock.current = true;
+    setSubmitting(true);
+    let ok = false;
+    try { ok = await _finalSubmitInner(); }
+    finally { if (!ok) { submitLock.current = false; setSubmitting(false); } }
+  };
+  const _finalSubmitInner = async () => {
     if(blockSaveAll){sT("⚠ Completa tutti i prodotti (Incompleto) prima di salvare");return;}
     const cur = colItems();
     const fc = [...cart];
@@ -3850,12 +3865,16 @@ export default function CRM() {
 
       setUploading(false);
       sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
-      setTimeout(fullReset, 2000);
+      // Il blocco resta attivo fino al reset: altrimenti nei 2 secondi di attesa
+      // il carrello e' ancora pieno e un altro clic risalverebbe tutto.
+      setTimeout(() => { fullReset(); submitLock.current = false; setSubmitting(false); }, 2000);
+      return true;
     } catch (err) {
       setUploading(false);
       console.error("Submit Error:", err);
       sT("❌ Errore durante il salvataggio: " + (err.message || "Verifica connessione"));
     }
+    return false;
   };
   // Salvataggio della vendita di soli prodotti (nessuna attivazione brand).
   // Prima il bottone "Salva vendita" faceva soltanto fullReset() + toast:
@@ -4051,7 +4070,7 @@ export default function CRM() {
           <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
           {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
           {onlyMarg&&<button onClick={()=>setShowMargSave(true)} style={{padding:"12px 36px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
-          {!onlyMarg&&<button onClick={finalSubmit} disabled={tp===0} style={{padding:"12px 36px",borderRadius:10,border:"none",background:tp>0?"linear-gradient(135deg,#28a745,#20c997)":"rgba(255,255,255,0.1)",color:"#fff",fontSize:14,fontWeight:800,cursor:tp>0?"pointer":"not-allowed",marginLeft:"auto"}}>💾 Salva contratto ({tp})</button>}
+          {!onlyMarg&&<button onClick={finalSubmit} disabled={tp===0||submitting} style={{padding:"12px 36px",borderRadius:10,border:"none",background:(tp>0&&!submitting)?"linear-gradient(135deg,#28a745,#20c997)":"rgba(255,255,255,0.1)",color:"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":`💾 Salva contratto (${tp})`}</button>}
         </div>
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div style={{background:"rgba(255,255,255,0.02)",borderRadius:16,width:"100%",maxWidth:420,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px"}}>
