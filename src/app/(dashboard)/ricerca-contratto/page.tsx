@@ -219,10 +219,17 @@ export default function RicercaContratto() {
             if (filterCellulare) query = query.ilike("clients.cellulare", `%${filterCellulare}%`);
 
             if (filterCliente) {
-                const safe = filterCliente.trim().replace(/[",]/g, "");
+                const safe = filterCliente.trim().replace(/[",()]/g, "");
                 if (safe) {
                     const term = `%${safe}%`;
-                    query = query.or(`clients.nome.ilike.${term},clients.cognome.ilike.${term},clients.ragione_sociale.ilike.${term}`);
+                    // Segnalazione 36. Prima: .or("clients.nome.ilike.…") — PostgREST
+                    // legge "clients" come colonna e "nome" come operatore, e risponde
+                    // 400 PGRST100 "failed to parse logic tree". Le condizioni su una
+                    // tabella agganciata vanno passate con referencedTable.
+                    query = query.or(
+                        `nome.ilike.${term},cognome.ilike.${term},ragione_sociale.ilike.${term}`,
+                        { referencedTable: "clients" }
+                    );
                 }
             }
 
@@ -276,56 +283,11 @@ export default function RicercaContratto() {
         document.body.removeChild(link);
     };
 
-    if (loadError) {
-        return (
-            <div className="w-full">
-                <div className="mb-8">
-                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Contratto</h2>
-                    <p className="text-red-400">Errore caricamento: {loadError}</p>
-                </div>
-            </div>
-        );
-    }
-
-    // Le chiavi usano "::" e non "." perche' molte chiavi di `dettagli`
-    // contengono gia' un punto (es. "Cod.Ins.", "Op. MNP").
-    const dettagliOf = (row: ContrattoRow): [string, unknown][] => {
-        const d = row.raw?.dettagli;
-        if (!d || typeof d !== "object" || Array.isArray(d)) return [];
-        return Object.entries(d as Record<string, unknown>);
-    };
-
-    const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
-        const vals: Record<string, string> = {};
-        CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
-        CLIENT_FIELDS.forEach(f => { vals[`client::${f.key}`] = row.client?.[f.key] == null ? "" : String(row.client[f.key]); });
-        dettagliOf(row).forEach(([k, v]) => {
-            if (v !== null && typeof v === "object") return; // oggetti annidati: sola lettura
-            vals[`dettagli::${k}`] = v == null ? "" : String(v);
-        });
-        setEditValues(vals);
-        setReqNote("");
-        setReqMsg(null);
-        setSelectedContract(row);
-        setDetailMode(mode);
-    };
-
-    const originalOf = (row: ContrattoRow, key: string): unknown => {
-        const i = key.indexOf("::");
-        const scope = key.slice(0, i), field = key.slice(i + 2);
-        if (scope === "contract") return row.raw?.[field];
-        if (scope === "client") return row.client?.[field];
-        return (row.raw?.dettagli as Record<string, unknown> | undefined)?.[field];
-    };
-
-    const labelOf = (key: string): string => {
-        const i = key.indexOf("::");
-        const scope = key.slice(0, i), field = key.slice(i + 2);
-        if (scope === "contract") return CONTRACT_FIELDS.find(f => f.key === field)?.label || field;
-        if (scope === "client") return (CLIENT_FIELDS.find(f => f.key === field)?.label || field) + " (cliente)";
-        return field;
-    };
-
+    // NB: tutti gli hook devono stare PRIMA dei return anticipati di loading/errore.
+    // Erano finiti dopo: al primo errore di caricamento React eseguiva meno hook del
+    // render precedente e la pagina moriva con "Application error: a client-side
+    // exception has occurred" — ed e' proprio cio' che si vedeva digitando nel
+    // filtro Cliente (segnalazione 36).
     const pendingChanges = useMemo(() => {
         if (!selectedContract) return {} as Record<string, { da: any; a: any; label: string }>;
         const out: Record<string, { da: any; a: any; label: string }> = {};
@@ -441,6 +403,57 @@ export default function RicercaContratto() {
         }
         setReqMsg(approve ? "Modifica approvata e applicata al contratto." : "Richiesta rifiutata.");
     };
+
+    if (loadError) {
+        return (
+            <div className="w-full">
+                <div className="mb-8">
+                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Contratto</h2>
+                    <p className="text-red-400">Errore caricamento: {loadError}</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Le chiavi usano "::" e non "." perche' molte chiavi di `dettagli`
+    // contengono gia' un punto (es. "Cod.Ins.", "Op. MNP").
+    const dettagliOf = (row: ContrattoRow): [string, unknown][] => {
+        const d = row.raw?.dettagli;
+        if (!d || typeof d !== "object" || Array.isArray(d)) return [];
+        return Object.entries(d as Record<string, unknown>);
+    };
+
+    const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
+        const vals: Record<string, string> = {};
+        CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
+        CLIENT_FIELDS.forEach(f => { vals[`client::${f.key}`] = row.client?.[f.key] == null ? "" : String(row.client[f.key]); });
+        dettagliOf(row).forEach(([k, v]) => {
+            if (v !== null && typeof v === "object") return; // oggetti annidati: sola lettura
+            vals[`dettagli::${k}`] = v == null ? "" : String(v);
+        });
+        setEditValues(vals);
+        setReqNote("");
+        setReqMsg(null);
+        setSelectedContract(row);
+        setDetailMode(mode);
+    };
+
+    const originalOf = (row: ContrattoRow, key: string): unknown => {
+        const i = key.indexOf("::");
+        const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract") return row.raw?.[field];
+        if (scope === "client") return row.client?.[field];
+        return (row.raw?.dettagli as Record<string, unknown> | undefined)?.[field];
+    };
+
+    const labelOf = (key: string): string => {
+        const i = key.indexOf("::");
+        const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract") return CONTRACT_FIELDS.find(f => f.key === field)?.label || field;
+        if (scope === "client") return (CLIENT_FIELDS.find(f => f.key === field)?.label || field) + " (cliente)";
+        return field;
+    };
+
 
     return (
         <div className="w-full">
