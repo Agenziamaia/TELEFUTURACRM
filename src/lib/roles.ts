@@ -234,3 +234,16 @@ export function areaLabel(area: Area): string {
 export function rolesByArea(area: Area): RoleDef[] {
     return ROLES.filter((r) => r.area === area);
 }
+
+/**
+ * Assistente AI: riservato ai ruoli manageriali (richiesta Luca, segnalazione 31).
+ * L'assistente legge dati di tutto il punto vendita, quindi non va aperto a
+ * venditori, caller e tecnici.
+ */
+export function canUseAI(role: string | null | undefined): boolean {
+    return [
+        "admin", "dev", "direttore_generale", "amministrativo",
+        "store_manager", "direttore_commerciale", "direttore_cc", "direttore_ob",
+        "supervisore",
+    ].includes(role || "");
+}

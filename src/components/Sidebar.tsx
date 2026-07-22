@@ -105,7 +105,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
     { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
     { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
-    { type: "link", name: "Assistente AI", href: "/assistente", icon: Sparkles, roles: EVERYONE },
+    { type: "link", name: "Assistente AI", href: "/assistente", icon: Sparkles, roles: MANAGERS },  // segnalazione 31: solo ruoli manageriali
     {
         type: "hub",
         name: "Gare",

@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { canUseAI } from "@/lib/roles";
 import { Sparkles, Send, Loader2, Wrench, Check, X, AlertTriangle } from "lucide-react";
 
 // ── mini-markdown (grassetto, tabelle, elenchi) — niente dipendenze esterne ──
@@ -68,6 +69,19 @@ const SUGGESTIONS = [
 
 export default function AssistentePage() {
   const { user } = useAuth();
+  // Nascondere la voce di menu non basta: la pagina e' raggiungibile per URL.
+  if (!canUseAI(user?.role)) {
+    return (
+      <div className="w-full">
+        <div className="glass-card p-8 text-center">
+          <h2 className="text-xl font-bold text-white mb-2">Assistente AI</h2>
+          <p className="text-slate-400 text-sm">
+            Funzione riservata ai ruoli manageriali. Se ti serve, chiedi al tuo responsabile.
+          </p>
+        </div>
+      </div>
+    );
+  }
   const meId = user?.id;
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");

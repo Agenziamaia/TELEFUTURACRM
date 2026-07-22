@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { seesWholeStore } from "@/lib/roles";
 import {
   CATEGORIE,
   ALL_BRANDS,
@@ -1081,6 +1082,28 @@ export default function TrackingPdaPage() {
   }, [allMembers, seesAll, user?.negozio]);
   const memberName = useCallback((id?: string | null) => allMembers.find((m) => m.id === id)?.full_name || null, [allMembers]);
 
+  // Segnalazione 30: il Tracking PDA caricava TUTTI i contratti senza alcun
+  // filtro di ruolo, quindi chiunque vedeva le pratiche di ogni negozio.
+  // Regola richiesta: sotto il livello manager solo le proprie pratiche e quelle
+  // delegate; i manager tutto il proprio punto vendita; il supervisore i punti
+  // vendita a cui e' associato; dall'amministrazione in su, tutto.
+  const seesWhole = seesWholeStore(user?.role);
+  const [visibleStores, setVisibleStores] = useState<string[]>([]);
+  useEffect(() => {
+    if (!user?.id || seesAll) { setVisibleStores([]); return; }
+    (async () => {
+      const [vis, us] = await Promise.all([
+        supabase.from("user_store_visibility").select("store_name").eq("user_id", user.id),
+        supabase.from("user_stores").select("store_name").eq("user_id", user.id),
+      ]);
+      const names = new Set<string>();
+      (vis.data ?? []).forEach((r: Record<string, unknown>) => { if (r.store_name) names.add(String(r.store_name)); });
+      (us.data ?? []).forEach((r: Record<string, unknown>) => { if (r.store_name) names.add(String(r.store_name)); });
+      if (user.negozio) names.add(user.negozio);
+      setVisibleStores([...names]);
+    })();
+  }, [user?.id, user?.negozio, seesAll]);
+
   const [rawList, setRawList] = useState<RawRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1141,14 +1164,25 @@ export default function TrackingPdaPage() {
         };
       });
       // Optional: use client's 41 sample data from Supabase (run migration 024_tracking_pda_sample_data.sql)
-      setRawList(list as RawRow[]);
+      // I nomi non coincidono sempre ("Magliana" vs "Magliana Multi"): confronto
+      // sul prefisso nei due sensi, come gia' altrove nel CRM.
+      const sameStore = (a?: string | null, b?: string | null) => {
+        const x = (a || "").trim().toLowerCase(), y = (b || "").trim().toLowerCase();
+        return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
+      };
+      const scoped = seesAll ? (list as RawRow[]) : (list as RawRow[]).filter((r: Record<string, unknown>) => {
+        if (seesWhole) return visibleStores.some((st) => sameStore(r.negozio as string, st));
+        return (!!r.venditore && !!user?.name && r.venditore === user.name)
+            || (!!r.delegated_to && r.delegated_to === user?.id);
+      });
+      setRawList(scoped as RawRow[]);
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : String(err));
       setRawList([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [seesAll, seesWhole, visibleStores, user?.name, user?.id]);
 
   useEffect(() => {
     fetchData();

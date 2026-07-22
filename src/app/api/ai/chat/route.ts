@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { chat, estimateCost, hasKey, MODEL_FAST, type ChatMessage } from "@/lib/ai/deepseek";
 import { getScope } from "@/lib/ai/scope";
+import { canUseAI } from "@/lib/roles";
 import { TOOL_DEFS, WRITE_TOOL_DEFS, WRITE_TOOL_NAMES, runTool } from "@/lib/ai/tools";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,10 @@ export async function POST(req: Request) {
 
   const scope = await getScope(userId);
   if (!scope) return NextResponse.json({ error: "Utente non valido o non attivo" }, { status: 403 });
+  // Il controllo che conta: la pagina si puo' aggirare, questa chiamata no.
+  if (!canUseAI(scope.role)) {
+    return NextResponse.json({ error: "Assistente riservato ai ruoli manageriali" }, { status: 403 });
+  }
 
   const convo: ChatMessage[] = [
     { role: "system", content: systemPrompt(scope) },
