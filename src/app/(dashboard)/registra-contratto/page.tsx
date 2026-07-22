@@ -3614,7 +3614,17 @@ export default function CRM() {
 
   const podPdrMap=(()=>{const map={};const scan=(so)=>{if(!so)return;Object.keys(so).forEach(cat=>{(so[cat]||[]).forEach(row=>{if(!row||typeof row!=="object")return;Object.keys(row).forEach(sid=>{const d=row[sid];if(!d||typeof d!=="object")return;const add=(t,val)=>{if(val&&String(val).trim()){const k=t+":"+String(val).trim().toUpperCase();map[k]=(map[k]||0)+1;}};add("POD",d.fwPod);add("PDR",d.fwPdr);add("POD",d.enPod);add("PDR",d.enPdr);// Codice contratto ripetuto fra piu' prodotti dello stesso brand (segnalazione 17):
                      // prima passava senza alcun avviso.
-                     add("CODCONTR",d.cbCodContratto);add("CODCONTR",d.cbTnpCC);add("CODCONTR",d.cbCambioCC);add("CODCONTR",d.w3SostCodContr);if(d.contract){add("POD",d.contract.pod);add("PDR",d.contract.pdr);add("CODCONTR",d.contract.codice_contratto);}});});});};cart.forEach(g=>{if(g.sv)scan(g.sv.sales);});scan(sales);return map;})();
+                     if(d.contract){add("POD",d.contract.pod);add("PDR",d.contract.pdr);}// Segnalazione 28: dentro UN prodotto lo stesso codice puo' comparire piu' volte
+                     // di proposito — con TNP CB + Cambio Offerta attivi la UI lo copia in
+                     // entrambi i campi. Contarlo due volte lo faceva passare per duplicato e
+                     // bloccava una vendita legittima. Qui i codici del singolo prodotto
+                     // vengono deduplicati: il conteggio sale solo se lo stesso codice compare
+                     // in un ALTRO prodotto.
+                     const _codes=new Set();
+                     const _addCode=(val)=>{if(val&&String(val).trim())_codes.add(String(val).trim().toUpperCase());};
+                     _addCode(d.cbCodContratto);_addCode(d.cbTnpCC);_addCode(d.cbCambioCC);_addCode(d.w3SostCodContr);
+                     if(d.contract)_addCode(d.contract.codice_contratto);
+                     _codes.forEach(cv=>{const k="CODCONTR:"+cv;map[k]=(map[k]||0)+1;});});});});};cart.forEach(g=>{if(g.sv)scan(g.sv.sales);});scan(sales);return map;})();
   const dupCheck=(t,val)=>{if(!val||!String(val).trim())return false;return (podPdrMap[t+":"+String(val).trim().toUpperCase()]||0)>1;};
   const hasDupPodPdr=Object.keys(podPdrMap).some(k=>k.startsWith("POD:")||k.startsWith("PDR:")?podPdrMap[k]>1:false);
   const hasDupCodContr=Object.keys(podPdrMap).some(k=>k.startsWith("CODCONTR:")&&podPdrMap[k]>1);

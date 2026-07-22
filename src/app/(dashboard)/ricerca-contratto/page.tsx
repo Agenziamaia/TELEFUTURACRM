@@ -158,6 +158,7 @@ export default function RicercaContratto() {
     const [changeReqs, setChangeReqs] = useState<any[]>([]);
     const [showReqs, setShowReqs] = useState(false);
     const [reqBusy, setReqBusy] = useState<string | null>(null);
+    const [openReqId, setOpenReqId] = useState<string | null>(null);
 
     // Pagination
     const [page, setPage] = useState(1);
@@ -395,13 +396,22 @@ export default function RicercaContratto() {
                 });
                 if (detTouched) contractPatch.dettagli = det;
                 contractPatch.storia = storia;
-                await supabase.from("contracts").update(contractPatch).eq("id", req.contract_id);
+                // Gli errori qui non venivano letti: se l'update falliva, la
+                // richiesta risultava comunque "approvata" e il contratto restava
+                // com'era, senza che nessuno se ne accorgesse (segnalazione 32).
+                const { error: cErr } = await supabase.from("contracts").update(contractPatch).eq("id", req.contract_id);
+                if (cErr) { setReqBusy(null); alert("Modifica NON applicata al contratto: " + cErr.message); return; }
                 if (Object.keys(clientPatch).length > 0 && c.client_id) {
-                    await supabase.from("clients").update(clientPatch).eq("id", c.client_id);
+                    const { error: clErr } = await supabase.from("clients").update(clientPatch).eq("id", c.client_id);
+                    if (clErr) { setReqBusy(null); alert("Modifica NON applicata al cliente: " + clErr.message); return; }
                 }
+            } else {
+                setReqBusy(null);
+                alert("Contratto " + req.contract_id + " non trovato: richiesta lasciata in attesa.");
+                return;
             }
         }
-        await supabase.from("contract_change_requests").update({
+        const { error: rErr } = await supabase.from("contract_change_requests").update({
             status: approve ? "approved" : "rejected",
             reviewed_by: user?.id || null,
             reviewed_by_name: user?.name || "—",
@@ -409,8 +419,22 @@ export default function RicercaContratto() {
             review_note: note || null,
         }).eq("id", req.id);
         setReqBusy(null);
+        if (rErr) { alert("Esito non registrato: " + rErr.message); return; }
         await loadChangeReqs();
-        fetchData();
+        await fetchData();
+        // Il dettaglio aperto mostrava ancora i valori vecchi e sembrava che
+        // l'approvazione non avesse fatto nulla: ricarico il contratto a schermo.
+        if (selectedContract && selectedContract.id === req.contract_id) {
+            const { data: fresh } = await supabase
+                .from("contracts")
+                .select("*, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
+                .eq("id", req.contract_id).single();
+            if (fresh) {
+                const cl = (fresh as any).clients || null;
+                setSelectedContract(mapContractToRow(fresh as any, cl));
+            }
+        }
+        setReqMsg(approve ? "Modifica approvata e applicata al contratto." : "Richiesta rifiutata.");
     };
 
     return (
@@ -476,6 +500,58 @@ export default function RicercaContratto() {
                                             </div>
                                         ))}
                                     </div>
+                                    {/* Richiesta Luca: prima di approvare si deve poter vedere il
+                                        contratto per intero, com'era e come diventerebbe. */}
+                                    <button onClick={() => setOpenReqId(openReqId === r.id ? null : r.id)}
+                                        className="mt-2 text-xs font-semibold text-indigo-300 hover:text-indigo-200 hover:underline">
+                                        {openReqId === r.id ? "Nascondi dettaglio" : "Vedi dettaglio completo"}
+                                    </button>
+                                    {openReqId === r.id && (() => {
+                                        const row = contractList.find(x => x.id === r.contract_id);
+                                        if (!row) return <p className="mt-2 text-xs text-slate-500">Contratto non presente nella pagina corrente: aprilo da Ricerca per il dettaglio completo.</p>;
+                                        const changed = Object.entries(r.changes || {}).filter(([k]) => !k.startsWith("__"));
+                                        const detail: [string, unknown][] = [
+                                            ...CONTRACT_FIELDS.map(f => [f.label, row.raw?.[f.key]] as [string, unknown]),
+                                            ...CLIENT_FIELDS.map(f => [f.label + " (cliente)", row.client?.[f.key]] as [string, unknown]),
+                                            ...dettagliOf(row).filter(([, v]) => v === null || typeof v !== "object"),
+                                        ];
+                                        return (
+                                            <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-3 space-y-3">
+                                                <div>
+                                                    <p className="text-[10px] uppercase tracking-wider text-amber-300 mb-1">Cosa cambia</p>
+                                                    <table className="w-full text-xs">
+                                                        <thead>
+                                                            <tr className="text-slate-500">
+                                                                <th className="text-left font-medium pb-1">Campo</th>
+                                                                <th className="text-left font-medium pb-1">Prima</th>
+                                                                <th className="text-left font-medium pb-1">Dopo</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {changed.map(([k, c]: any) => (
+                                                                <tr key={k} className="border-t border-white/5">
+                                                                    <td className="py-1 pr-2 text-slate-200 font-medium">{c.label}</td>
+                                                                    <td className="py-1 pr-2 text-slate-500 line-through">{fmtVal(c.da)}</td>
+                                                                    <td className="py-1 text-emerald-300">{fmtVal(c.a)}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">Contratto completo (valori attuali)</p>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto">
+                                                        {detail.map(([label, v]) => (
+                                                            <div key={String(label)}>
+                                                                <span className="text-[10px] uppercase tracking-wider text-slate-600">{String(label)}</span>
+                                                                <p className="text-[11px] text-slate-300 break-words">{fmtVal(v)}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
                                     {r.changes?.__meta?.note && <p className="text-xs text-slate-500 mt-2 italic">{r.changes.__meta.note}</p>}
                                 </div>
                             ))}
