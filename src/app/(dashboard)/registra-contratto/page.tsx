@@ -1688,7 +1688,7 @@ const emCB = () => ({
   cbSecurity:false, cbSecurityCell:""
 });
 
-const VFCB = ({sd, uP, sc}) => {
+const VFCB = ({sd, uP, sc, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
 
   const updCbTnpSlot=(slotIdx,updater)=>{
@@ -3000,7 +3000,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {sub.isVFBizMobile&&<VFBizMobile sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode}/>}
 
       {/* VF MOBILE CB */}
-      {sub.isCBVF&&<VFCB sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode}/>}
+      {sub.isCBVF&&<VFCB sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode} dupCheck={dupCheck}/>}
       {sub.isCBVFBiz&&<VFBizMobileCB sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode}/>}
 
       {/* FASTWEB */}
