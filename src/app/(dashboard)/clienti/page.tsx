@@ -17,6 +17,11 @@ interface Cliente {
     cellulare: string;
     email: string;
     cf_piva: string | null;   // facoltativo dalla migrazione 065
+    iban?: string | null;
+    intestatario_diverso?: boolean;
+    intestatario_nome?: string | null;
+    intestatario_cognome?: string | null;
+    intestatario_cf?: string | null;
     indirizzo: string;
     cap?: string;
     citta: string;
@@ -28,6 +33,7 @@ interface Contratto {
     brand: string;
     categoria: string;
     stato: string;
+    note?: string | null;   // nota scritta allo Step 7 della registrazione
 }
 
 
@@ -43,6 +49,11 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
         cellulare: row.cellulare as string,
         email: row.email as string,
         cf_piva: (row.cf_piva as string | null) ?? null,
+        iban: (row.iban as string | null) ?? null,
+        intestatario_diverso: !!row.intestatario_diverso,
+        intestatario_nome: (row.intestatario_nome as string | null) ?? null,
+        intestatario_cognome: (row.intestatario_cognome as string | null) ?? null,
+        intestatario_cf: (row.intestatario_cf as string | null) ?? null,
         indirizzo: row.indirizzo as string,
         cap: (row.cap as string) ?? undefined,
         citta: row.citta as string,
@@ -51,6 +62,7 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
 
 function mapRowToContratto(row: Record<string, unknown>): Contratto {
     return {
+        note: (row.note as string | null) ?? null,
         id: row.id as string,
         data: row.data as string,
         brand: row.brand as string,
@@ -129,12 +141,49 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                                 <Clock className="w-3 h-3" /> Info Aggiuntive
                             </h3>
-                            <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 flex items-center justify-center text-center py-12">
-                                <div className="space-y-2">
-                                    <AlertTriangle className="w-6 h-6 text-slate-700 mx-auto" />
-                                    <p className="text-xs text-slate-500 max-w-[200px]">Nessuna nota aggiuntiva presente per questo cliente.</p>
-                                </div>
-                            </div>
+                            {(() => {
+                                // Prima qui c'era un segnaposto che diceva SEMPRE "nessuna nota",
+                                // anche quando la nota c'era (segnalazione 21). Ora mostra le note
+                                // dei contratti e i dati bancari dell'anagrafica.
+                                const note = contratti.filter(c => (c.note || "").trim());
+                                const hasIban = !!(cliente.iban || "").trim();
+                                const intest = cliente.intestatario_diverso;
+                                if (!note.length && !hasIban && !intest) {
+                                    return (
+                                        <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 flex items-center justify-center text-center py-12">
+                                            <div className="space-y-2">
+                                                <AlertTriangle className="w-6 h-6 text-slate-700 mx-auto" />
+                                                <p className="text-xs text-slate-500 max-w-[200px]">Nessuna nota aggiuntiva presente per questo cliente.</p>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                return (
+                                    <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-3">
+                                        {hasIban && (
+                                            <div>
+                                                <p className="text-[10px] uppercase tracking-wider text-slate-500">IBAN</p>
+                                                <p className="text-sm text-white font-mono break-all">{cliente.iban}</p>
+                                            </div>
+                                        )}
+                                        {intest && (
+                                            <div>
+                                                <p className="text-[10px] uppercase tracking-wider text-slate-500">Intestatario diverso</p>
+                                                <p className="text-sm text-white">
+                                                    {[cliente.intestatario_nome, cliente.intestatario_cognome].filter(Boolean).join(" ") || "—"}
+                                                    {cliente.intestatario_cf ? ` · ${cliente.intestatario_cf}` : ""}
+                                                </p>
+                                            </div>
+                                        )}
+                                        {note.map(c => (
+                                            <div key={c.id} className="border-t border-white/5 pt-3 first:border-0 first:pt-0">
+                                                <p className="text-[10px] uppercase tracking-wider text-slate-500">Nota · {c.id}</p>
+                                                <p className="text-sm text-slate-200 whitespace-pre-wrap">{c.note}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </div>
 

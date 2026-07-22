@@ -3461,10 +3461,12 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
   return content;
 };
 
-const NoteStep = ({store}) => {
-  const [show,setShow]=useState(false);
-  // Negozio: precompilato dal login ma MODIFICABILE a mano.
-  const [negozioPro,setNegozioPro]=useState("");
+// Segnalazione 21: l'intero Step 7 era scollegato. La textarea della nota e i
+// campi del promemoria non avevano ne' value ne' onChange, quindi quello che
+// l'operatore scriveva restava nel DOM e spariva al salvataggio: 0 contratti su
+// 62 avevano una nota. Ora lo stato vive nel genitore e viene salvato.
+const NoteStep = ({store,show,setShow,nota,setNota,pData,setPData,pOra,setPOra,pNeg,setPNeg,pDesc,setPDesc}) => {
+  const negozioPro=pNeg, setNegozioPro=setPNeg;
   useEffect(()=>{if(store)setNegozioPro(p=>p||store);},[store]);
   const content = (
     <div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #e83e8c"}}>
@@ -3477,12 +3479,12 @@ const NoteStep = ({store}) => {
         </div>
       </div>
       {show&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        <div style={{border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+        <div style={{border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} value={nota} onChange={e=>setNota(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
         <div style={{border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Promemoria</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data</div><input type="date" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Ora</div><input type="time" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data</div><input type="date" value={pData} onChange={e=>setPData(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Ora</div><input type="time" value={pOra} onChange={e=>setPOra(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div></div>
           {/* Negozio: si auto-compila dal login ma resta modificabile a mano. */}
           <div style={{marginTop:8}}><DD l="Negozio" v={negozioPro} o={v=>setNegozioPro(v)} vals={negozi} nt="Dal login — modificabile"/></div>
-          <div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Descrizione</div><textarea placeholder="Dettagli…" rows={2} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+          <div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Descrizione</div><textarea placeholder="Dettagli…" rows={2} value={pDesc} onChange={e=>setPDesc(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
         </div>
       </div>}
     </div>
@@ -3509,6 +3511,13 @@ export default function CRM() {
   const [showMargSave,setShowMargSave]=useState(false);
   const [margSaveForm,setMargSaveForm]=useState({nome:"",cognome:"",tel:"",anonimo:false});
   const [margItems,setMargItems]=useState([]);
+  // Step 7 — nota e promemoria (segnalazione 21)
+  const [notaOn,setNotaOn]=useState(false);
+  const [nota,setNota]=useState("");
+  const [promData,setPromData]=useState("");
+  const [promOra,setPromOra]=useState("");
+  const [promNeg,setPromNeg]=useState("");
+  const [promDesc,setPromDesc]=useState("");
   // Data della vendita: prima i due campi "Data"/"Giorno" del carrello erano
   // input non controllati (defaultValue), quindi quello che sceglieva l'operatore
   // non veniva mai letto; in piu' il ramo solo-marginalita' aveva la data fissa
@@ -3634,7 +3643,7 @@ export default function CRM() {
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
   const rmCG=idx=>setCart(p=>p.filter((_,i)=>i!==idx));
-  const fullReset=()=>{setBrand(null);setTipoCliente(null);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",intDiverso:false,intNome:"",intCognome:"",intCf:""})};
+  const fullReset=()=>{setBrand(null);setTipoCliente(null);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",intDiverso:false,intNome:"",intCognome:"",intCf:""})};
   // ── Auto-save every state change ──
   useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,selVend,selNeg,lookupValue,margItems});
   
@@ -3769,6 +3778,7 @@ export default function CRM() {
             codice_attivazione: String(actCode),
             data_registrazione: dateStr,
             data_attivazione: dateStr,
+            note: (notaOn && nota.trim()) ? nota.trim() : null,
             dettagli: item.details || {},
             is_demo: false
           });
@@ -3793,6 +3803,22 @@ export default function CRM() {
           is_demo: false
         });
       });
+
+      // Promemoria di Step 7 -> task in calendario (tabella gia' esistente).
+      if (notaOn && promData) {
+        await supabase.from("calendar_tasks").insert({
+          title: `Promemoria contratto — ${ana.cognome || ana.ragioneSociale || "cliente"}`,
+          date: promData,
+          time: promOra || null,
+          status: "da_fare",
+          notes: promDesc || nota || null,
+          client_ref: clientId,
+          created_by: user?.name || selVend || "—",
+          assigned_to: selVend || user?.name || "—",
+          assigned_to_store: promNeg || selNeg || null,
+          is_demo: false,
+        });
+      }
 
       // 5. Insert contracts then link attachments
       if (contractRows.length > 0) {
@@ -4010,7 +4036,7 @@ export default function CRM() {
             <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Giorno <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
-        {!onlyMarg&&<NoteStep store={selNeg}/>}
+        {!onlyMarg&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
         <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
           <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
           {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
