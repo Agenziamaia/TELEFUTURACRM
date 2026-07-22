@@ -71,9 +71,17 @@ function mapRowToContratto(row: Record<string, unknown>): Contratto {
     };
 }
 
+// Categorie di archiviazione dei documenti (Step 5 della registrazione).
+// Tutto cio' che non rientra in una categoria nota finisce in "Altro".
+const CATEGORIE_DOC = [
+    { id: "documento", label: "Documenti", color: "#38bdf8", match: (t: string | null) => (t || "").toLowerCase() === "documento" },
+    { id: "contratti", label: "Contratti", color: "#a78bfa", match: (t: string | null) => (t || "").toLowerCase() === "contratti" },
+    { id: "altro", label: "Altro", color: "#94a3b8", match: (t: string | null) => !["documento", "contratti"].includes((t || "").toLowerCase()) },
+];
+
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
     const router = useRouter();
-    const [docs, setDocs] = useState<{ id: number; file_url: string; file_name: string; contract_id: string }[]>([]);
+    const [docs, setDocs] = useState<{ id: string; file_url: string; file_name: string; contract_id: string; file_type: string | null; created_at: string | null }[]>([]);
 
     // Documenti caricati: allegati dei contratti (PDA) di questo cliente.
     useEffect(() => {
@@ -82,8 +90,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         (async () => {
             const { data } = await supabase
                 .from("contract_attachments")
-                .select("id, file_url, file_name, contract_id")
-                .in("contract_id", ids);
+                .select("id, file_url, file_name, contract_id, file_type, created_at")
+                .in("contract_id", ids)
+                .order("created_at", { ascending: false });
             setDocs((data ?? []) as any);
         })();
     }, [contratti]);
@@ -245,15 +254,41 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 Nessun documento caricato per i contratti di questo cliente.
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                {docs.map((d) => (
-                                    <a key={d.id} href={d.file_url} target="_blank" rel="noreferrer"
-                                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group">
-                                        <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
-                                        <span className="text-xs text-slate-300 truncate flex-1">{d.file_name || "documento"}</span>
-                                        <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
-                                    </a>
-                                ))}
+                            // Richiesta Luca (segnalazione 29): i documenti vanno divisi per
+                            // categoria di caricamento, con la data. La categoria e' quella
+                            // scelta allo Step 5 della registrazione (file_type); quelli senza
+                            // categoria finiscono in "Altro", come chiesto.
+                            <div className="space-y-4">
+                                {CATEGORIE_DOC.map((cat) => {
+                                    const items = docs.filter((d) => (cat.match(d.file_type)));
+                                    if (items.length === 0) return null;
+                                    return (
+                                        <div key={cat.id}>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded"
+                                                    style={{ color: cat.color, background: cat.color + "1f", border: "1px solid " + cat.color + "44" }}>
+                                                    {cat.label}
+                                                </span>
+                                                <span className="text-[10px] text-slate-600">{items.length} file</span>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {items.map((d) => (
+                                                    <a key={d.id} href={d.file_url} target="_blank" rel="noreferrer"
+                                                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group">
+                                                        <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
+                                                        <span className="flex-1 min-w-0">
+                                                            <span className="block text-xs text-slate-300 truncate">{d.file_name || "documento"}</span>
+                                                            <span className="block text-[10px] text-slate-600">
+                                                                {d.created_at ? new Date(d.created_at).toLocaleDateString("it-IT") : "—"} · {d.contract_id}
+                                                            </span>
+                                                        </span>
+                                                        <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
