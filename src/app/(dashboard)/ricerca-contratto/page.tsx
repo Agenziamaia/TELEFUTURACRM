@@ -245,7 +245,7 @@ export default function RicercaContratto() {
             if (filterNegozio && filterNegozio !== "Tutti") query = query.eq("negozio", filterNegozio);
             if (filterCodice) query = query.ilike("id", `%${filterCodice}%`);
             if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
-            if (filterProdotti.length > 0) query = query.or(filterProdotti.map(p => `prodotto.ilike.%${p.replace(/[,]/g, "")}%`).join(","));
+            if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
             if (filterCodiceAttivazione) query = query.ilike("codice_attivazione", `%${filterCodiceAttivazione}%`);
             if (filterCellulare) query = query.ilike("clients.cellulare", `%${filterCellulare}%`);
 
@@ -293,7 +293,7 @@ export default function RicercaContratto() {
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, filterTableSearch]);
+    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -315,7 +315,14 @@ export default function RicercaContratto() {
         return () => { supabase.removeChannel(ch); };
     }, []);
 
-    const visibleData = contractList;
+    const visibleData = useMemo(() => {
+        const q = filterTableSearch.trim().toLowerCase();
+        if (!q) return contractList;
+        return contractList.filter(r => [
+            r.venditore, r.brand, r.prodotto, r.cliente, r.cellulare, r.negozio,
+            r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato, r.id,
+        ].some(v => String(v ?? "").toLowerCase().includes(q)));
+    }, [contractList, filterTableSearch]);
 
     const handleExportCsv = () => {
         if (visibleData.length === 0) return;

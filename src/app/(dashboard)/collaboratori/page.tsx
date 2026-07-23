@@ -6,7 +6,7 @@ import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, His
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
 
 type TabId = "badge" | "ferie" | "malattia" | "ritardi";
 
@@ -48,8 +48,8 @@ function CollaboratoriPageContent() {
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
                 {tab === "badge" && <BadgeAndDashboard isAdminLike={!!isAdminLike} />}
                 {tab === "ferie" && <FerieSection isAdminLike={!!isAdminLike} />}
-                {tab === "malattia" && isAdminLike && <MalattiaSection />}
-                {tab === "malattia" && !isAdminLike && (
+                {tab === "malattia" && isAdminOrAbove(user?.role) && <MalattiaSection />}
+                {tab === "malattia" && !isAdminOrAbove(user?.role) && (
                     <div className="glass-card p-12 text-center">
                         <Shield className="w-12 h-12 text-slate-600 mx-auto mb-4" />
                         <h3 className="text-lg font-bold text-white">Accesso Riservato</h3>
@@ -761,6 +761,20 @@ function MalattiaSection() {
         setAbsences((data ?? []) as SicknessRow[]);
     }, []);
 
+    // Segnalazione 61: collaboratore e negozio da tendina, non testo libero.
+    const [staff, setStaff] = useState<{ name: string; store: string }[]>([]);
+    const [storeList, setStoreList] = useState<string[]>([]);
+    useEffect(() => {
+        (async () => {
+            const [u, st] = await Promise.all([
+                supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name"),
+                supabase.from("stores").select("name").order("name"),
+            ]);
+            setStaff((u.data ?? []).map((x: any) => ({ name: x.full_name, store: x.primary_store || "" })));
+            setStoreList((st.data ?? []).map((x: any) => x.name));
+        })();
+    }, []);
+
     useEffect(() => {
         fetchAbsences();
     }, [fetchAbsences]);
@@ -786,13 +800,14 @@ function MalattiaSection() {
         e.preventDefault();
         if (!newEmployee.trim() || !newDateFrom || !newDateTo) return;
         setSaving(true);
-        await supabase.from("sickness_absences").insert({
+        const { error } = await supabase.from("sickness_absences").insert({
             employee_name: newEmployee.trim(),
-            store: newStore.trim() || "",
+            store: newStore.trim() || (staff.find(x => x.name === newEmployee)?.store || ""),
             date_from: newDateFrom,
             date_to: newDateTo,
             certificate_number: newCertNum.trim() || null,
         });
+        if (error) { alert("Assenza non salvata: " + error.message); setSaving(false); return; }
         await fetchAbsences();
         setShowNewModal(false);
         setNewEmployee("");
@@ -915,11 +930,17 @@ function MalattiaSection() {
                         <form onSubmit={handleCreate} className="space-y-4">
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
-                                <input type="text" required placeholder="Nome e Cognome" value={newEmployee} onChange={e => setNewEmployee(e.target.value)} className="glass-input !h-10 text-xs w-full" />
+                                <select required value={newEmployee} onChange={e => { setNewEmployee(e.target.value); const st = staff.find(x => x.name === e.target.value)?.store; if (st) setNewStore(st); }} className="glass-input !h-10 text-xs w-full">
+                                    <option value="">— Seleziona —</option>
+                                    {staff.map(x => <option key={x.name} value={x.name}>{x.name}</option>)}
+                                </select>
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Punto Vendita</label>
-                                <input type="text" placeholder="Nome Negozio" value={newStore} onChange={e => setNewStore(e.target.value)} className="glass-input !h-10 text-xs w-full" />
+                                <select value={newStore} onChange={e => setNewStore(e.target.value)} className="glass-input !h-10 text-xs w-full">
+                                    <option value="">— Seleziona —</option>
+                                    {storeList.map(n => <option key={n} value={n}>{n}</option>)}
+                                </select>
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
@@ -1017,7 +1038,9 @@ function RitardiSection() {
         if (!emp) return;
         setSaving(true);
         const today = new Date().toISOString().slice(0, 10);
-        await supabase.from("ritardi").insert({
+        // Segnalazione 60: l'insert non controllava l'errore, quindi un fallimento
+        // chiudeva il modale senza salvare ne' avvisare ("non si e' salvato").
+        const { error } = await supabase.from("ritardi").insert({
             employee_name: emp,
             store: store || "",
             date: today,
@@ -1025,6 +1048,7 @@ function RitardiSection() {
             tipo: newTipo,
             reported_by: user?.name || null,
         });
+        if (error) { alert("Ritardo non salvato: " + error.message); setSaving(false); return; }
         await fetchRows();
         setShowNewModal(false);
         setSaving(false);

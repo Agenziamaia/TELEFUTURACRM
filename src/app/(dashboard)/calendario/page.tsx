@@ -285,17 +285,31 @@ export default function Calendario() {
     // Operatori a cui posso assegnare una task: tutti se vedo tutti i negozi,
     // altrimenti solo i colleghi del mio punto vendita. Il confronto e' sul
     // prefisso perche' i nomi non coincidono sempre ("Magliana" / "Magliana Multi").
+    // Negozi di cui l'utente e' responsabile: puo' esserne piu' d'uno
+    // (segnalazione 62 — Emanuele: Magliana Multi + Magliana W3). Presi da
+    // user_stores oltre al negozio principale del login.
+    const [myStores, setMyStores] = useState<string[]>([]);
+    useEffect(() => {
+        if (!user?.id) return;
+        (async () => {
+            const { data } = await supabase.from("user_stores").select("store_name").eq("user_id", user.id);
+            const set = new Set<string>();
+            (data ?? []).forEach((r: any) => r.store_name && set.add(r.store_name));
+            if (user.negozio) set.add(user.negozio);
+            setMyStores([...set]);
+        })();
+    }, [user?.id, user?.negozio]);
+
     const assignableAgents = useMemo(() => {
         if (seesAllStores(user?.role)) return agents;
-        const mine = (user?.negozio || "").trim().toLowerCase();
-        if (!mine) return agents;
+        const mine = (myStores.length ? myStores : [user?.negozio || ""])
+            .map(x => x.trim().toLowerCase()).filter(Boolean);
+        if (!mine.length) return agents;
+        const same = (st: string) => mine.some(m => st === m || st.startsWith(m) || m.startsWith(st));
         return [...new Set(calendarOperators
-            .filter(o => {
-                const st = (o.store || "").trim().toLowerCase();
-                return !!st && (st === mine || st.startsWith(mine) || mine.startsWith(st));
-            })
+            .filter(o => { const st = (o.store || "").trim().toLowerCase(); return !!st && same(st); })
             .map(o => o.name))].sort();
-    }, [agents, calendarOperators, user?.role, user?.negozio]);
+    }, [agents, calendarOperators, user?.role, myStores, user?.negozio]);
 
     useEffect(() => {
         let cancelled = false;
@@ -597,6 +611,9 @@ export default function Calendario() {
         if (isAgent) {
             setNewAppt(p => ({ ...p, type: "self_generated" as AppointmentType, agente: user?.name ?? "" }));
         }
+        // Segnalazione 63: senza un giorno gia' selezionato il modale non
+        // comparirebbe. Se manca, si parte da oggi.
+        if (!selectedDate) setSelectedDate(new Date().toISOString().split("T")[0]);
         setShowCreateModal(true);
     };
 
