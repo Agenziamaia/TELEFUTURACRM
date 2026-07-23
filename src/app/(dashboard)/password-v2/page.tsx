@@ -14,13 +14,13 @@ const BRANDS: { id: BrandId; name: string; color: string; bg: string; image: str
     { id: "windtre", name: "WindTre", color: "text-orange-300", bg: "bg-orange-500/15 border-orange-500/40", image: "/windtre.png", categories: 4 },
     { id: "vodafone", name: "Vodafone", color: "text-rose-300", bg: "bg-rose-500/15 border-rose-500/40", image: "/vodaphone - Copy.png", categories: 3 },
     // Segnalazione 50: aggiunto TIM alla pagina Password.
-    { id: "tim", name: "Tim", color: "text-blue-300", bg: "bg-blue-500/15 border-blue-500/40", image: "/tim-logo.png", categories: 2 },
+    { id: "tim", name: "Tim", color: "text-blue-300", bg: "bg-blue-500/15 border-blue-500/40", image: "/tim-logo-v2.png", categories: 2 },
     { id: "sky", name: "Sky", color: "text-sky-300", bg: "bg-sky-500/15 border-sky-500/40", image: "/sky.png", categories: 3 },
     { id: "fastweb", name: "Fastweb", color: "text-violet-300", bg: "bg-violet-500/15 border-violet-500/40", image: "/fastweb.png", categories: 2 },
     { id: "energia", name: "Energia", color: "text-emerald-300", bg: "bg-emerald-500/15 border-emerald-500/40", image: "/energy - Copy.png", categories: 3 },
     // Segnalazione 50 (NON RISOLTO): "mancano dei brand" — allineati a Documentazione.
     { id: "iliad", name: "Iliad", color: "text-rose-300", bg: "bg-rose-500/15 border-rose-500/40", image: "/iliad.png", categories: 2 },
-    { id: "kena", name: "Kena Mobile", color: "text-amber-300", bg: "bg-amber-500/15 border-amber-500/40", image: "/kena-mobile.png", categories: 2 },
+    { id: "kena", name: "Kena Mobile", color: "text-amber-300", bg: "bg-amber-500/15 border-amber-500/40", image: "/kena-mobile-v2.png", categories: 2 },
     { id: "ho", name: "Ho Mobile", color: "text-fuchsia-300", bg: "bg-fuchsia-500/15 border-fuchsia-500/40", image: "/ho-mobile.png", categories: 2 },
 ];
 

@@ -22,7 +22,7 @@ const GARE_BRANDS = [
     { id: "fastweb", label: "Fastweb", desc: "Target Fastweb dei multi brand (nessun franchising).", color: "#CC9900", logo: "/fastweb.png" },
     { id: "sky", label: "Sky", desc: "Soglie e commissioning Sky.", color: "#0072C6", logo: "/sky.png" },
     { id: "s4", label: "S4 Energy", desc: "Soglie e commissioning energia S4.", color: "#28a745", logo: "/energy - Copy.png" },
-    { id: "tim", label: "TIM", desc: "Soglie e commissioning Tim.", color: "#0050FF", logo: "/tim-logo.png" },
+    { id: "tim", label: "TIM", desc: "Soglie e commissioning Tim.", color: "#0050FF", logo: "/tim-logo-v2.png" },
     { id: "dojo", label: "Dojo", desc: "Soglie e commissioning POS Dojo.", color: "#14b8a6", logo: "/dojo - Copy.png" },
 ] as const;
 

@@ -66,7 +66,7 @@ const BRANDS = [
         text: "text-blue-500",
         bg: "bg-blue-500/10",
         icon: PhoneCall,
-        logo: "/tim-logo.png",
+        logo: "/tim-logo-v2.png",
     },
     {
         id: "sky",
@@ -106,7 +106,7 @@ const BRANDS = [
         text: "text-amber-500",
         bg: "bg-amber-500/10",
         icon: Radio,
-        logo: "/kena-mobile.png",
+        logo: "/kena-mobile-v2.png",
     },
     {
         id: "ho",
