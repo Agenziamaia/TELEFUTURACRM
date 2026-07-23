@@ -95,6 +95,14 @@ const READONLY_META: EditField[] = [
     { key: "delegated_by", label: "Delegato da" },
 ];
 
+// Segnalazione 57: logo per ogni brand nelle tessere di riepilogo.
+const BRAND_LOGO: Record<string, string> = {
+    "WindTre": "/windtre.png", "Vodafone": "/vodaphone - Copy.png", "Fastweb": "/fastweb.png",
+    "Iliad": "/iliad.png", "Sky": "/sky.png", "Very Mobile": "/very-mobile.png", "Very": "/very-mobile.png",
+    "Ho. Mobile": "/ho-mobile.png", "Ho": "/ho-mobile.png", "Kena Mobile": "/kena-mobile.png", "Kena": "/kena-mobile.png",
+    "Tim": "/tim-logo.png", "TIM": "/tim-logo.png", "Energy": "/energy - Copy.png",
+};
+
 const STATI = ["Attivo", "In lavorazione", "Attivato", "Sospeso", "Annullato"];
 
 function fmtVal(v: unknown): string {
@@ -176,6 +184,7 @@ export default function RicercaContratto() {
     const [venditoriAltri, setVenditoriAltri] = useState<string[]>([]);
     const [uniqueBrands, setUniqueBrands] = useState<string[]>([]);
     // Segnalazione 53: prodotti e codici filtrati per brand.
+    const [brandCounts, setBrandCounts] = useState<{ brand: string; n: number }[]>([]);
     const [prodByBrand, setProdByBrand] = useState<Record<string, string[]>>({});
     const [codeByBrand, setCodeByBrand] = useState<Record<string, string[]>>({});
     const [uniqueProdotti, setUniqueProdotti] = useState<string[]>([]);
@@ -309,6 +318,24 @@ export default function RicercaContratto() {
             setLoading(false);
         }
     };
+
+    // Segnalazione 57: conteggio contratti per brand, rispettando RBAC e le date.
+    useEffect(() => {
+        (async () => {
+            let q = supabase.from("contracts").select("brand, data_registrazione");
+            if (!isGlobalView) {
+                if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
+                if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
+            }
+            if (!showExtra && !isTecnico) q = q.not("brand", "ilike", "extra");
+            if (daDataRegistrazione) q = q.gte("data_registrazione", daDataRegistrazione);
+            if (aDataRegistrazione) q = q.lte("data_registrazione", aDataRegistrazione);
+            const { data } = await q;
+            const m: Record<string, number> = {};
+            (data ?? []).forEach((r: any) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
+            setBrandCounts(Object.entries(m).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
+        })();
+    }, [isGlobalView, lockedStore, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, contractList.length]);
 
     // Debounced fetch
     useEffect(() => {
@@ -560,6 +587,32 @@ export default function RicercaContratto() {
                 )}
             </div>
 
+            {/* Segnalazione 57: tessere per brand (logo + numero contratti), come
+                nel Tracking PDA. Cliccando si filtra per quel brand. Ogni utente
+                vede i brand su cui opera. Sostituiscono il filtro Brand a tendina. */}
+            {brandCounts.length > 0 && (
+                <div className="flex flex-wrap gap-3 mb-6">
+                    {brandCounts.map(({ brand, n }) => {
+                        const active = filterBrand === brand;
+                        const logo = BRAND_LOGO[brand];
+                        const isExtra = brand.toLowerCase() === "extra";
+                        return (
+                            <button key={brand} onClick={() => { setFilterBrand(active ? "" : brand); setPage(1); }}
+                                className={cn("flex flex-col items-center justify-center gap-1.5 rounded-2xl border px-5 py-3 min-w-[104px] transition-all",
+                                    active ? "border-indigo-400/60 bg-indigo-500/10" : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]")}>
+                                <span className="h-8 flex items-center justify-center">
+                                    {isExtra ? <span className="text-2xl">💰</span>
+                                        : logo ? <img src={logo} alt={brand} className="h-8 w-auto max-w-[92px] object-contain" />
+                                            : <span className="text-sm font-bold text-slate-200">{brand}</span>}
+                                </span>
+                                <span className="text-2xl font-black text-white tabular-nums leading-none">{n}</span>
+                                <span className="text-[10px] text-slate-500 uppercase tracking-wider">{brand}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
             {/* Approvazione modifiche contratto — riservata all'amministrazione */}
             {canApprove && showReqs && (
                 <div className="glass-card mb-6 p-6">
@@ -712,14 +765,8 @@ export default function RicercaContratto() {
                         <input type="text" placeholder="Inserisci IMEI" className="glass-input w-full" value={filterImei} onChange={e => setFilterImei(e.target.value)} />
                     </div>
 
-                    {/* 4. Brand */}
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Brand</label>
-                        <select className="glass-input w-full" value={filterBrand} onChange={e => setFilterBrand(e.target.value)}>
-                            <option value="">Tutti i brand</option>
-                            {uniqueBrands.map(b => <option key={b} value={b}>{b}</option>)}
-                        </select>
-                    </div>
+                    {/* Filtro Brand rimosso: sostituito dalle tessere brand (segn.57).
+                        filterBrand resta pilotato dalle tessere. */}
 
                     {/* 5. Prodotto (multiplo, con tasto +) */}
                     <div>
