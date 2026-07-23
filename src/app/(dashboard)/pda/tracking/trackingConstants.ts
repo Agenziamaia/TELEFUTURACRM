@@ -9,7 +9,7 @@ export const CATEGORIE = [
   { id: "sky", label: "Sky", desc: "Sky 3P", color: "#ef4444" },
   // Segnalazione 43: nel filtro mancavano le categorie effettivamente usate dai
   // contratti, quindi non erano selezionabili — "Finanziamenti non filtrabili".
-  { id: "mobile", label: "Mobile", desc: "Vendite mobile senza portabilita'", color: "#0ea5e9" },
+  { id: "mobile", label: "Mobile", desc: "Vendita mobile senza portabilita' ne' finanziamento", color: "#3b82f6" },
   { id: "multi-servizi", label: "Multi-Servizi", desc: "Pacchetti multi-servizio", color: "#f472b6" },
   { id: "soluzioni digitali", label: "Soluzioni Digitali", desc: "Soluzioni digitali", color: "#22d3ee" },
 ] as const;
@@ -165,6 +165,9 @@ export type TrackingRow = {
   // Il finanziamento non e' una categoria ma una caratteristica della vendita:
   // sta dentro dettagli (EasyPay, Tipo CB "Finanziamento…"/"Rata…", Finanz.).
   finanziato?: boolean;
+  // Una pratica con MNP + finanziamento compare su due righe: serve una chiave
+  // distinta, mentre `id` resta quello del contratto per gli aggiornamenti.
+  rowKey?: string;
   statoNegozio: string;
   statoAdmin: string;
   storia: StoriaEvent[];

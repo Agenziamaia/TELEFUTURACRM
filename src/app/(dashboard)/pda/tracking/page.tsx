@@ -135,16 +135,12 @@ function mapContractToTrackingRow(
     hasDocumenti: d.hasDocumenti as boolean | undefined,
     followup: d.followup as FollowUpItem[] | undefined,
     dettagliFull: d as Record<string, unknown>,
-    finanziato: (() => {
-      const val = (k: string) => String((d as Record<string, unknown>)[k] ?? "").trim().toLowerCase();
-      if (["sì", "si", "true"].includes(val("EasyPay"))) return true;
-      if (["sì", "si", "true"].includes(val("Finanz."))) return true;
-      for (const k of ["Tipo CB", "Tipo TNP", "tnpTipo", "cbTnpTipo"]) {
-        const v = val(k);
-        if (v.startsWith("finanziamento") || v.startsWith("rata")) return true;
-      }
-      return false;
-    })(),
+    // Regole dettate da Francesco: e' finanziamento SOLO se "Tipo TNP" o
+    // "Tipo CB" iniziano per "Finanziamento". "Rata 0" e "Rata 5G" NON lo sono
+    // (sono rateizzazioni interne), e nemmeno EasyPay da solo: la prima versione
+    // segnava finanziate pratiche che non lo erano.
+    finanziato: ["Tipo TNP", "Tipo CB", "tnpTipo", "cbTnpTipo"].some((k) =>
+      String((d as Record<string, unknown>)[k] ?? "").trim().toLowerCase().startsWith("finanziamento")),
   };
 }
 
@@ -601,7 +597,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
               const bg = isMalusRow(row) ? "#2d0a0a" : i % 2 === 0 ? "transparent" : "#172033";
               return (
                 <tr
-                  key={row.id}
+                  key={row.rowKey || row.id}
                   className="cursor-pointer transition-colors hover:!bg-indigo-900/30"
                   style={{ background: bg }}
                   onClick={() => onSelect(row)}
@@ -1267,13 +1263,31 @@ export default function TrackingPdaPage() {
     fetchData();
   }, [fetchData]);
 
-  const data: TrackingRow[] = useMemo(
-    () =>
-      rawList.map((r) =>
-        mapContractToTrackingRow(r, r.clients as Record<string, unknown> | null, (r.dettagli as Record<string, unknown>) || null)
-      ),
-    [rawList]
-  );
+  // Combinazioni di vendita, come indicate da Francesco (per ora WindTre mobile):
+  //   solo Mobile                  -> Mobile
+  //   Mobile + MNP                 -> MNP
+  //   Mobile + Rata                -> Mobile   (la rata non e' un finanziamento)
+  //   Mobile + Rata + MNP          -> MNP
+  //   Mobile + Finanziamento       -> Finanziamento
+  //   Mobile + Finanziamento + MNP -> DUE righe: MNP e Finanziamento
+  // Le altre categorie (fisso, energia, sky, piva) restano una riga sola.
+  const data: TrackingRow[] = useMemo(() => {
+    const out: TrackingRow[] = [];
+    rawList.forEach((r) => {
+      const base = mapContractToTrackingRow(r, r.clients as Record<string, unknown> | null, (r.dettagli as Record<string, unknown>) || null);
+      const det = base.dettagliFull || {};
+      const isMobile = base.categoria === "mobile" || base.categoria === "mnp";
+      if (!isMobile) { out.push(base); return; }
+      const mnp = String((det as Record<string, unknown>).MNP ?? "").trim().toLowerCase();
+      const haMnp = mnp === "sì" || mnp === "si" || mnp === "true";
+      const cats: string[] = [];
+      if (base.finanziato) cats.push("finanziamento");
+      if (haMnp) cats.push("mnp");
+      if (cats.length === 0) cats.push("mobile");
+      cats.forEach((c) => out.push({ ...base, categoria: c, rowKey: `${base.id}#${c}` }));
+    });
+    return out;
+  }, [rawList]);
 
   const statiConfermato = ["confermato", "pagato", "stornato"];
   const statiCompletatiNegozio = ["attivato", "liquidato", "completo_sky", "attivo_sky"];
@@ -1296,13 +1310,7 @@ export default function TrackingPdaPage() {
           if (row.statoNegozio !== kpiFilter) return false;
         }
       }
-      if (catSel.length > 0) {
-        // "Finanziamento" non e' la categoria della pratica (che resta MOBILE):
-        // filtra sulle vendite finanziate. La categoria non viene riscritta,
-        // altrimenti cambierebbero anche le soglie di malus.
-        const match = catSel.includes(row.categoria) || (catSel.includes("finanziamento") && !!row.finanziato);
-        if (!match) return false;
-      }
+      if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
