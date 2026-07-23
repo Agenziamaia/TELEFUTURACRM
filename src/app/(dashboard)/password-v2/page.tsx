@@ -6,11 +6,13 @@ import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useStoreRecords } from "@/lib/org";
 
-type BrandId = "windtre" | "vodafone" | "sky" | "fastweb" | "energia";
+type BrandId = "windtre" | "vodafone" | "tim" | "sky" | "fastweb" | "energia";
 
 const BRANDS: { id: BrandId; name: string; color: string; bg: string; image: string; categories: number }[] = [
     { id: "windtre", name: "WindTre", color: "text-orange-300", bg: "bg-orange-500/15 border-orange-500/40", image: "/windtre.webp", categories: 4 },
     { id: "vodafone", name: "Vodafone", color: "text-rose-300", bg: "bg-rose-500/15 border-rose-500/40", image: "/vodaphone - Copy.png", categories: 3 },
+    // Segnalazione 50: aggiunto TIM alla pagina Password.
+    { id: "tim", name: "Tim", color: "text-blue-300", bg: "bg-blue-500/15 border-blue-500/40", image: "/tim-logo.png", categories: 2 },
     { id: "sky", name: "Sky", color: "text-sky-300", bg: "bg-sky-500/15 border-sky-500/40", image: "/sky.png", categories: 3 },
     { id: "fastweb", name: "Fastweb", color: "text-violet-300", bg: "bg-violet-500/15 border-violet-500/40", image: "/fastweb.png", categories: 2 },
     { id: "energia", name: "Energia", color: "text-emerald-300", bg: "bg-emerald-500/15 border-emerald-500/40", image: "/energy - Copy.png", categories: 3 },
@@ -26,6 +28,10 @@ const CATEGORIES: Record<BrandId, { id: string; name: string }[]> = {
     vodafone: [
         { id: "vodafone-one", name: "Vodafone One" },
         { id: "mnp-portal", name: "MNP Portal" },
+        { id: "admin-dashboard", name: "Admin Dashboard" },
+    ],
+    tim: [
+        { id: "tim-partner", name: "TIM Partner" },
         { id: "admin-dashboard", name: "Admin Dashboard" },
     ],
     sky: [
@@ -267,9 +273,9 @@ export default function PasswordV2Page() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {BRANDS.map((b) => {
-                                const colorHex = b.id === "windtre" ? "#f97316" : b.id === "vodafone" ? "#e60000" : b.id === "sky" ? "#0072CE" : b.id === "fastweb" ? "#7c3aed" : "#10b981";
+                                const colorHex = b.id === "windtre" ? "#f97316" : b.id === "vodafone" ? "#e60000" : b.id === "tim" ? "#003da5" : b.id === "sky" ? "#0072CE" : b.id === "fastweb" ? "#7c3aed" : "#10b981";
                                 return (
                                     <div
                                         key={b.id}
@@ -279,7 +285,7 @@ export default function PasswordV2Page() {
                                         <div className="absolute top-0 left-0 right-0 h-1" style={{ background: `linear-gradient(to right, ${colorHex}, ${colorHex}88)` }} />
                                         <div className="flex flex-col items-center justify-center text-center gap-4 py-4">
                                             <div className={cn("w-20 h-20 rounded-xl overflow-hidden flex items-center justify-center", b.bg)}>
-                                                <img src={b.image} alt={b.name} className="w-full h-full object-cover rounded-xl" />
+                                                <img src={b.image} alt={b.name} className="w-full h-full object-contain rounded-xl p-2" />
                                             </div>
                                             <div>
                                                 <h3 className="text-xl font-bold text-white mb-1">{b.name}</h3>

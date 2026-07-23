@@ -39,14 +39,24 @@ const BRANDS = [
         logo: "/windtre.webp",
     },
     {
-        id: "vodafone_fastweb",
-        name: "Vodafone / Fastweb",
+        id: "vodafone",
+        name: "Vodafone",
         color: "from-red-500 to-red-600",
         borderColor: "border-red-500",
         text: "text-red-500",
         bg: "bg-red-500/10",
         icon: Radio,
         logo: "/vodaphone - Copy.png",
+    },
+    {
+        id: "fastweb",
+        name: "Fastweb",
+        color: "from-violet-500 to-violet-600",
+        borderColor: "border-violet-500",
+        text: "text-violet-400",
+        bg: "bg-violet-500/10",
+        icon: Radio,
+        logo: "/fastweb.png",
     },
     {
         id: "tim",
@@ -56,7 +66,7 @@ const BRANDS = [
         text: "text-blue-500",
         bg: "bg-blue-500/10",
         icon: PhoneCall,
-        logo: "/TIMF.png",
+        logo: "/tim-logo.png",
     },
     {
         id: "sky",
@@ -87,6 +97,26 @@ const BRANDS = [
         bg: "bg-rose-500/10",
         icon: Radio,
         logo: "/iliad.png",
+    },
+    {
+        id: "kena",
+        name: "Kena Mobile",
+        color: "from-amber-500 to-amber-600",
+        borderColor: "border-amber-500",
+        text: "text-amber-500",
+        bg: "bg-amber-500/10",
+        icon: Radio,
+        logo: "/kena-mobile.png",
+    },
+    {
+        id: "ho",
+        name: "Ho Mobile",
+        color: "from-indigo-500 to-indigo-600",
+        borderColor: "border-indigo-500",
+        text: "text-indigo-400",
+        bg: "bg-indigo-500/10",
+        icon: Radio,
+        logo: "/ho-mobile.png",
     },
 ];
 
@@ -334,6 +364,8 @@ export default function DocumentazionePage() {
 
             {/* Main Content Area */}
             <div className="flex-1 px-4 lg:px-8 pb-8 overflow-y-auto custom-scrollbar w-full min-w-0 max-w-full">
+              {/* Segnalazione 50: pagina centrata (contenuto con larghezza massima e mx-auto). */}
+              <div className="max-w-6xl mx-auto w-full">
 
                 {/* LANDING - BRAND SELECTION */}
                 {!brandId && (
@@ -357,7 +389,7 @@ export default function DocumentazionePage() {
                                                 alt={b.name}
                                                 width={80}
                                                 height={80}
-                                                className="w-full h-full object-cover rounded-xl"
+                                                className="w-full h-full object-contain rounded-xl p-2"
                                             />
                                         ) : (
                                             <b.icon className={cn("w-10 h-10", b.text)} />
@@ -536,6 +568,7 @@ export default function DocumentazionePage() {
                     </div>
                 )}
 
+              </div>{/* /max-w-6xl (segn.50 centratura) */}
             </div>
 
             {/* MODALS */}
