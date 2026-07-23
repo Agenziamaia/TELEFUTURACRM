@@ -134,6 +134,17 @@ function mapContractToTrackingRow(
     hasPda: d.hasPda as boolean | undefined,
     hasDocumenti: d.hasDocumenti as boolean | undefined,
     followup: d.followup as FollowUpItem[] | undefined,
+    dettagliFull: d as Record<string, unknown>,
+    finanziato: (() => {
+      const val = (k: string) => String((d as Record<string, unknown>)[k] ?? "").trim().toLowerCase();
+      if (["sì", "si", "true"].includes(val("EasyPay"))) return true;
+      if (["sì", "si", "true"].includes(val("Finanz."))) return true;
+      for (const k of ["Tipo CB", "Tipo TNP", "tnpTipo", "cbTnpTipo"]) {
+        const v = val(k);
+        if (v.startsWith("finanziamento") || v.startsWith("rata")) return true;
+      }
+      return false;
+    })(),
   };
 }
 
@@ -900,6 +911,42 @@ function Drawer({
                 </div>
               </div>
             )}
+            {/* Segnalazione 43: "dettagli contratto mancanti". I riquadri qui sopra
+                cercano chiavi come numFissoProvvisorio o modelloTelefono, che nei
+                contratti reali non esistono: i dettagli sono salvati con le
+                etichette del modulo ("ICCID", "Offerta", "Cod.Ins.", "IMEI"...).
+                Questo blocco mostra l'intero contenuto, quindi non manca nulla
+                qualunque sia il brand. */}
+            {(() => {
+              const det = row.dettagliFull || {};
+              const voci = Object.entries(det).filter(([k, v]) =>
+                v !== null && v !== undefined && v !== "" && typeof v !== "object" && !k.startsWith("_"));
+              if (voci.length === 0) return null;
+              return (
+                <div className={panelStyle}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" />
+                    <div className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Dettagli registrazione</div>
+                    <div className="ml-auto text-[10px] text-slate-500">{voci.length} campi</div>
+                    {row.finanziato && (
+                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/40">
+                        Finanziato
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3.5">
+                    {voci.map(([k, v]) => (
+                      <div key={k}>
+                        <div className={labelStyle}>{k}</div>
+                        <div className={valStyle + " break-words"}>
+                          {typeof v === "boolean" ? (v ? "Sì" : "No") : String(v)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             <div className={panelStyle}>
               <div className="flex items-center gap-2 mb-3">
                 <div className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0" />
@@ -1241,7 +1288,13 @@ export default function TrackingPdaPage() {
           if (row.statoNegozio !== kpiFilter) return false;
         }
       }
-      if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
+      if (catSel.length > 0) {
+        // "Finanziamento" non e' la categoria della pratica (che resta MOBILE):
+        // filtra sulle vendite finanziate. La categoria non viene riscritta,
+        // altrimenti cambierebbero anche le soglie di malus.
+        const match = catSel.includes(row.categoria) || (catSel.includes("finanziamento") && !!row.finanziato);
+        if (!match) return false;
+      }
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {

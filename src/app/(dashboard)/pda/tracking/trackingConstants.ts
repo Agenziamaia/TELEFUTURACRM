@@ -157,6 +157,14 @@ export type TrackingRow = {
   numContratto: string;
   numAttivazione: string;
   dataInserimento: string;
+  // Segnalazione 43: i dettagli venivano letti con chiavi camelCase inesistenti
+  // (numFissoProvvisorio, tipoEnergia, modelloTelefono...) mentre a database
+  // stanno con le etichette reali ("ICCID", "Offerta", "Cod.Ins."), percio' il
+  // pannello risultava vuoto. Ora la riga porta l'oggetto intero.
+  dettagliFull?: Record<string, unknown>;
+  // Il finanziamento non e' una categoria ma una caratteristica della vendita:
+  // sta dentro dettagli (EasyPay, Tipo CB "Finanziamento…"/"Rata…", Finanz.).
+  finanziato?: boolean;
   statoNegozio: string;
   statoAdmin: string;
   storia: StoriaEvent[];
