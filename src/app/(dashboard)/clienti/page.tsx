@@ -18,6 +18,7 @@ interface Cliente {
     email: string;
     cf_piva: string | null;   // facoltativo dalla migrazione 065
     iban?: string | null;
+    acquisito_da?: string | null;
     intestatario_diverso?: boolean;
     intestatario_nome?: string | null;
     intestatario_cognome?: string | null;
@@ -50,6 +51,7 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
         email: row.email as string,
         cf_piva: (row.cf_piva as string | null) ?? null,
         iban: (row.iban as string | null) ?? null,
+        acquisito_da: (row.acquisito_da as string | null) ?? null,
         intestatario_diverso: !!row.intestatario_diverso,
         intestatario_nome: (row.intestatario_nome as string | null) ?? null,
         intestatario_cognome: (row.intestatario_cognome as string | null) ?? null,
@@ -120,6 +122,12 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${cliente.tipo === 'business' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'}`}>
                                     {cliente.tipo}
                                 </span>
+                                {/* Segnalazione 56: negozio di acquisizione (primo contratto). */}
+                                {cliente.acquisito_da && (
+                                    <span className="px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/25 text-[10px] font-bold text-indigo-300 uppercase tracking-widest">
+                                        {cliente.acquisito_da === "Agenzia" ? "Acquisito dall'agenzia" : `Acquisito nel negozio di: ${cliente.acquisito_da}`}
+                                    </span>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -330,6 +338,14 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
     const [indirizzo, setIndirizzo] = useState(cliente?.indirizzo ?? "");
     const [cap, setCap] = useState(cliente?.cap ?? "");
     const [citta, setCitta] = useState(cliente?.citta ?? "");
+    // Segnalazione 56: acquisizione. Su nuovo cliente si sceglie negozio/Agenzia;
+    // su modifica il dato non si tocca (e' storico, lo mostra il badge).
+    const [acquisito, setAcquisito] = useState(cliente?.acquisito_da ?? "");
+    const [storeOptions, setStoreOptions] = useState<string[]>([]);
+    useEffect(() => {
+        supabase.from("stores").select("name").order("name")
+            .then(({ data }) => setStoreOptions((data ?? []).map((r: any) => r.name)));
+    }, []);
 
     const handleSave = async () => {
         // Richiesta Luca: se il codice fiscale non esiste si deve poter salvare
@@ -345,6 +361,10 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
         }
         if (tipo === "business" && !ragioneSociale) {
             setError("La Ragione Sociale è obbligatoria per i clienti Business.");
+            return;
+        }
+        if (!cliente && !acquisito) {
+            setError("Seleziona da chi è stato acquisito il cliente (negozio o Agenzia).");
             return;
         }
 
@@ -372,7 +392,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                 if (err) throw err;
             } else {
                 const idBase = cfPiva.trim() || cellulare.replace(/\D/g, "") || "ND";
-                const insertPayload = { id: `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`, ...basePayload };
+                const insertPayload = { id: `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`, ...basePayload, acquisito_da: acquisito || null };
                 const { error: err } = await supabase.from("clients").insert([insertPayload]);
                 if (err) throw err;
             }
@@ -526,6 +546,16 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                                     placeholder="Es. Roma"
                                 />
                             </div>
+                            {!cliente && (
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Acquisito da <span className="text-rose-400">*</span></label>
+                                    <select value={acquisito} onChange={(e) => setAcquisito(e.target.value)} className="w-full glass-input text-sm rounded-xl py-3">
+                                        <option value="">— Seleziona —</option>
+                                        <option value="Agenzia">Agenzia</option>
+                                        {storeOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

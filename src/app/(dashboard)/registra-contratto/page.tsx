@@ -3802,6 +3802,9 @@ export default function CRM() {
         indirizzo: keep(ana.via, "indirizzo"),
         cap: keep(ana.cap, "cap"),
         citta: keep(ana.citta, "citta"),
+        // Segnalazione 56: negozio di acquisizione. Storico: il primo contratto
+        // vince, i successivi non lo modificano.
+        acquisito_da: (prev.acquisito_da as string) || selNeg || null,
         is_demo: false
       };
 
