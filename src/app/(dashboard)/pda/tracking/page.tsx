@@ -316,6 +316,9 @@ function FilterBar({
   setPeriodoA,
   brandSel,
   setBrandSel,
+  venditoreSel,
+  setVenditoreSel,
+  venditori,
 }: {
   catSel: string[];
   setCatSel: (v: string[]) => void;
@@ -329,6 +332,9 @@ function FilterBar({
   setPeriodoA: (v: string) => void;
   brandSel: string[];
   setBrandSel: (v: string[]) => void;
+  venditoreSel: string;
+  setVenditoreSel: (v: string) => void;
+  venditori: string[];
 }) {
   const [statoOpen, setStatoOpen] = useState(false);
 
@@ -396,6 +402,16 @@ function FilterBar({
           </button>
         )}
       </div>
+      {venditori.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <span className="text-xs text-slate-400 font-semibold mr-1">VENDITORE</span>
+          <select value={venditoreSel} onChange={(e) => setVenditoreSel(e.target.value)}
+            className="rounded-lg px-3 py-1 text-xs bg-slate-900 border border-slate-700 text-slate-200">
+            <option value="">Tutti</option>
+            {venditori.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+      )}
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <span className="text-xs text-slate-400 font-semibold mr-1">BRAND</span>
         {ALL_BRANDS.map((b) => {
@@ -1211,6 +1227,9 @@ export default function TrackingPdaPage() {
   const [periodoDA, setPeriodoDA] = useState("");
   const [periodoA, setPeriodoA] = useState("");
   const [brandSel, setBrandSel] = useState<string[]>([]);
+  // Segnalazione 54: filtro Venditore (dallo store manager in su) per vedere
+  // solo le pratiche da verificare di un singolo collaboratore del team.
+  const [venditoreSel, setVenditoreSel] = useState<string>("");
   const [selected, setSelected] = useState<TrackingRow | null>(null);
   const [kpiFilter, setKpiFilter] = useState<string | null>(null);
   const [escludiConfermati, setEscludiConfermati] = useState(false);
@@ -1361,6 +1380,7 @@ export default function TrackingPdaPage() {
       }
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
+      if (venditoreSel && row.venditore !== venditoreSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
         const rowDate = parseDataRiga(row.dataInserimento);
@@ -1390,7 +1410,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id]);
+  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id, venditoreSel]);
 
   const filteredPerKpi = useMemo(() => {
     return data.filter((row) => {
@@ -1398,6 +1418,7 @@ export default function TrackingPdaPage() {
       if (escludiCompletati && statiCompletatiNegozio.includes(row.statoNegozio)) return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
+      if (venditoreSel && row.venditore !== venditoreSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
         const parti = row.dataInserimento.split("/");
@@ -1630,6 +1651,9 @@ export default function TrackingPdaPage() {
               setPeriodoA={setPeriodoA}
               brandSel={brandSel}
               setBrandSel={setBrandSel}
+              venditoreSel={venditoreSel}
+              setVenditoreSel={setVenditoreSel}
+              venditori={seesWhole && !seesAll ? members.map((m) => m.full_name) : []}
             />
             <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} />
           </>
