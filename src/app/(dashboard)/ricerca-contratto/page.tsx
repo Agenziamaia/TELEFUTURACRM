@@ -166,7 +166,14 @@ export default function RicercaContratto() {
     const [totalCount, setTotalCount] = useState(0);
 
     // Filter Options
-    const [uniqueVenditori, setUniqueVenditori] = useState<string[]>([]);
+    // Segnalazione 26 (commenti di Francesco): "appaiono nomi errati e non
+    // completi" e "devono apparire prima i collaboratori del proprio team".
+    // La tendina si riempiva con DISTINCT contracts.venditore: solo 15 nomi su 45
+    // account — chi non ha ancora venduto non compariva — e includeva "Alberto",
+    // che non e' un utente. Ora la sorgente sono gli account attivi, divisi in
+    // due gruppi: prima il team del proprio punto vendita, poi gli altri.
+    const [venditoriTeam, setVenditoriTeam] = useState<string[]>([]);
+    const [venditoriAltri, setVenditoriAltri] = useState<string[]>([]);
     const [uniqueBrands, setUniqueBrands] = useState<string[]>([]);
     const [uniqueProdotti, setUniqueProdotti] = useState<string[]>([]);
     const [uniqueNegozi, setUniqueNegozi] = useState<string[]>([]);
@@ -193,7 +200,7 @@ export default function RicercaContratto() {
         const fetchFilters = async () => {
             const { data } = await supabase.from("contracts").select("venditore, brand, prodotto, negozio");
             if (data) {
-                setUniqueVenditori(Array.from(new Set(data.map((r: any) => r.venditore).filter(Boolean))).sort() as string[]);
+                // (i venditori arrivano da app_users, vedi effect dedicato)
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
                 setUniqueProdotti(Array.from(new Set(data.map((r: any) => r.prodotto).filter(Boolean))).sort() as string[]);
                 setUniqueNegozi(Array.from(new Set(data.map((r: any) => r.negozio).filter(Boolean))).sort() as string[]);
@@ -201,6 +208,30 @@ export default function RicercaContratto() {
         };
         fetchFilters();
     }, []);
+
+    // Elenco venditori dagli account attivi, con il proprio team in cima.
+    useEffect(() => {
+        (async () => {
+            const { data } = await supabase
+                .from("app_users")
+                .select("full_name, primary_store")
+                .eq("active", true)
+                .order("full_name");
+            const mio = (user?.negozio || "").trim().toLowerCase();
+            const stessoNegozio = (st: string | null) => {
+                const x = (st || "").trim().toLowerCase();
+                return !!x && !!mio && (x === mio || x.startsWith(mio) || mio.startsWith(x));
+            };
+            const team: string[] = [], altri: string[] = [];
+            (data ?? []).forEach((u: Record<string, unknown>) => {
+                const nome = String(u.full_name || "").trim();
+                if (!nome) return;
+                (stessoNegozio(u.primary_store as string) ? team : altri).push(nome);
+            });
+            setVenditoriTeam(team);
+            setVenditoriAltri(altri);
+        })();
+    }, [user?.negozio]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -620,7 +651,16 @@ export default function RicercaContratto() {
                             onChange={e => setFilterVenditore(e.target.value)}
                         >
                             <option value="Tutti">Tutti i venditori</option>
-                            {uniqueVenditori.map(v => <option key={v} value={v}>{v}</option>)}
+                            {venditoriTeam.length > 0 && (
+                                <optgroup label={`Team ${user?.negozio || "punto vendita"}`}>
+                                    {venditoriTeam.map(v => <option key={v} value={v}>{v}</option>)}
+                                </optgroup>
+                            )}
+                            {venditoriAltri.length > 0 && (
+                                <optgroup label="Altri consulenti">
+                                    {venditoriAltri.map(v => <option key={v} value={v}>{v}</option>)}
+                                </optgroup>
+                            )}
                         </select>
                     </div>
 
