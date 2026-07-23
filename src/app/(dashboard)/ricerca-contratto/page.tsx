@@ -930,7 +930,21 @@ export default function RicercaContratto() {
                 const pendingForThis = contractReqs.filter(r => r.status === "pending");
                 const nChanges = Object.keys(pendingChanges).length;
 
-                const Field = ({ k, label, kind }: { k: string; label: string; kind?: string }) => {
+                // Segnalazione 71: il campo era un componente definito nel render,
+                // quindi ogni battuta gli cambiava identita' e React rimontava
+                // l'input (perdita di focus, sensazione di "non modificabile" e
+                // lag). Ora e' una funzione che restituisce JSX, chiamata inline:
+                // nessun rimontaggio. Categoria/Prodotto/Venditore/Negozio sono
+                // tendine popolate dai valori reali.
+                const optionsFor = (k: string): string[] | null => {
+                    if (k === "contract::venditore") return [...venditoriTeam, ...venditoriAltri];
+                    if (k === "contract::negozio") return uniqueNegozi;
+                    if (k === "contract::brand") return uniqueBrands;
+                    if (k === "contract::prodotto") return uniqueProdotti;
+                    if (k === "contract::categoria") return Array.from(new Set(uniqueProdotti.length ? contractList.map(c => String(c.raw?.categoria || "")).filter(Boolean) : [])).sort();
+                    return null;
+                };
+                const renderField = (k: string, label: string, kind?: string) => {
                     const orig = originalOf(row, k);
                     if (detailMode === "view") {
                         return (
@@ -943,13 +957,19 @@ export default function RicercaContratto() {
                     const val = editValues[k] ?? "";
                     const changed = (orig == null ? "" : String(orig)) !== val;
                     const cls = cn("glass-input w-full text-sm", changed && "border-amber-400/60 bg-amber-400/5");
+                    const opts = optionsFor(k);
                     return (
-                        <div>
+                        <div key={k}>
                             <label className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">{label}</label>
                             {kind === "stato" ? (
                                 <select className={cls} value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))}>
                                     <option value="">—</option>
                                     {Array.from(new Set([...STATI, val].filter(Boolean))).map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            ) : opts ? (
+                                <select className={cls} value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))}>
+                                    <option value="">—</option>
+                                    {Array.from(new Set([...opts, val].filter(Boolean))).map(o => <option key={o} value={o}>{o}</option>)}
                                 </select>
                             ) : kind === "textarea" ? (
                                 <textarea rows={2} className={cls} value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))} />
@@ -1018,7 +1038,7 @@ export default function RicercaContratto() {
 
                                 {(detEditable.length > 0 || detReadonly.length > 0) && (
                                     <Section title="Dettagli registrazione">
-                                        {detEditable.map(([k]) => <Field key={k} k={"dettagli::" + k} label={k} />)}
+                                        {detEditable.map(([k]) => renderField("dettagli::" + k, k))}
                                         {detReadonly.map(([k, v]) => (
                                             <div key={k} className="sm:col-span-2 lg:col-span-3">
                                                 <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>
@@ -1029,7 +1049,7 @@ export default function RicercaContratto() {
                                 )}
 
                                 <Section title="Dati contratto">
-                                    {CONTRACT_FIELDS.map(f => <Field key={f.key} k={"contract::" + f.key} label={f.label} kind={f.kind} />)}
+                                    {CONTRACT_FIELDS.map(f => renderField("contract::" + f.key, f.label, f.kind))}
                                     {/* Segnalazione 67: nel box Dati contratto anche il codice
                                         inserimento, che cambia nome per brand ma sta nei dettagli. */}
                                     {(() => {
@@ -1045,7 +1065,7 @@ export default function RicercaContratto() {
                                 </Section>
 
                                 <Section title="Anagrafica cliente">
-                                    {CLIENT_FIELDS.map(f => <Field key={f.key} k={"client::" + f.key} label={f.label} kind={f.kind} />)}
+                                    {CLIENT_FIELDS.map(f => renderField("client::" + f.key, f.label, f.kind))}
                                 </Section>
 
                                 <Section title="Riferimenti sistema">
