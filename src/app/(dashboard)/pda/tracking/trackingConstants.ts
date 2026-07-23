@@ -7,6 +7,11 @@ export const CATEGORIE = [
   { id: "piva", label: "P.IVA", desc: "Vodafone Business", color: "#8b5cf6" },
   { id: "energia", label: "Energia", desc: "Luce & Gas", color: "#10b981" },
   { id: "sky", label: "Sky", desc: "Sky 3P", color: "#ef4444" },
+  // Segnalazione 43: nel filtro mancavano le categorie effettivamente usate dai
+  // contratti, quindi non erano selezionabili — "Finanziamenti non filtrabili".
+  { id: "mobile", label: "Mobile", desc: "Vendite mobile senza portabilita'", color: "#0ea5e9" },
+  { id: "multi-servizi", label: "Multi-Servizi", desc: "Pacchetti multi-servizio", color: "#f472b6" },
+  { id: "soluzioni digitali", label: "Soluzioni Digitali", desc: "Soluzioni digitali", color: "#22d3ee" },
 ] as const;
 
 const STATI_NEGOZIO_BASE = [

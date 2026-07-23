@@ -264,6 +264,26 @@ export default function RicercaContratto() {
         return () => clearTimeout(timer);
     }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, filterTableSearch]);
 
+    // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
+    // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
+    // stato fatto nel Tracking PDA si vedeva solo ricaricando a mano.
+    useEffect(() => {
+        const ch = supabase
+            .channel("ricerca-contratti-stato")
+            .on("postgres_changes", { event: "UPDATE", schema: "public", table: "contracts" }, (payload) => {
+                const row = payload.new as Record<string, unknown>;
+                if (!row?.id) return;
+                setContractList(prev => prev.map(r => r.id === row.id
+                    ? { ...r, stato: (row.stato as string) ?? r.stato, raw: { ...r.raw, ...row } }
+                    : r));
+                setSelectedContract(prev => prev && prev.id === row.id
+                    ? { ...prev, stato: (row.stato as string) ?? prev.stato, raw: { ...prev.raw, ...row } }
+                    : prev);
+            })
+            .subscribe();
+        return () => { supabase.removeChannel(ch); };
+    }, []);
+
     const visibleData = contractList;
 
     const handleExportCsv = () => {

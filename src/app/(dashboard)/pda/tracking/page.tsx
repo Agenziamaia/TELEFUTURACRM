@@ -1189,7 +1189,12 @@ export default function TrackingPdaPage() {
         const x = (a || "").trim().toLowerCase(), y = (b || "").trim().toLowerCase();
         return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
       };
-      const scoped = seesAll ? (list as RawRow[]) : (list as RawRow[]).filter((r: Record<string, unknown>) => {
+      // Segnalazione 43: i prodotti venduti a marginalita' (brand "Extra") non
+      // sono pratiche da lavorare — niente attivazione, niente stato, niente
+      // malus — e sporcavano solo l'elenco. Fuori dal Tracking.
+      const lavorabili = (list as RawRow[]).filter((r: Record<string, unknown>) =>
+        String(r.brand || "").trim().toLowerCase() !== "extra");
+      const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (seesWhole) return visibleStores.some((st) => sameStore(r.negozio as string, st));
         return (!!r.venditore && !!user?.name && r.venditore === user.name)
             || (!!r.delegated_to && r.delegated_to === user?.id);
