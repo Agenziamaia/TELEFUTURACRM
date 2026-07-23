@@ -3858,7 +3858,10 @@ export default function CRM() {
             categoria_macro: categoriaDi(group.brandLabel, item.macro, item.sub),
             controlli: controlliDi(item.details),
             prodotto: item.sub,
-            stato: "Nuovo",
+            // Segnalazione 52: Extra e Sostituzione SIM nascono gia' attivi
+            // (Completato nel Tracking), non "Nuovo".
+            stato: (/sostituzione|sost /i.test(String(item.sub || "")) || categoriaDi(group.brandLabel, item.macro, item.sub) === "extra") ? "Attivo" : "Nuovo",
+            stato_negozio: (/sostituzione|sost /i.test(String(item.sub || "")) || categoriaDi(group.brandLabel, item.macro, item.sub) === "extra") ? "attivato" : "nuovo",
             venditore: selVend,
             negozio: selNeg,
             codice_attivazione: String(actCode),
