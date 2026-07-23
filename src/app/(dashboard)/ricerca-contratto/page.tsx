@@ -175,6 +175,9 @@ export default function RicercaContratto() {
     const [venditoriTeam, setVenditoriTeam] = useState<string[]>([]);
     const [venditoriAltri, setVenditoriAltri] = useState<string[]>([]);
     const [uniqueBrands, setUniqueBrands] = useState<string[]>([]);
+    // Segnalazione 53: prodotti e codici filtrati per brand.
+    const [prodByBrand, setProdByBrand] = useState<Record<string, string[]>>({});
+    const [codeByBrand, setCodeByBrand] = useState<Record<string, string[]>>({});
     const [uniqueProdotti, setUniqueProdotti] = useState<string[]>([]);
     const [uniqueNegozi, setUniqueNegozi] = useState<string[]>([]);
 
@@ -188,8 +191,15 @@ export default function RicercaContratto() {
     const canEditContract = ["store_manager", "admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
     // Approvazione modifiche = amministrazione (Sandra, Claudia, Marta, Franca, Luca).
     const canApprove = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    // Segnalazione 55: i contratti brand Extra sono nascosti di default; un
+    // checkbox li mostra. Il ruolo Tecnico li vede sempre tutti (di tutto il
+    // negozio), quindi per lui il filtro non si applica.
+    const isTecnico = user?.role === "tecnico";
+    const [showExtra, setShowExtra] = useState(false);
     const lockedStore = !isGlobalView ? user?.negozio : null;
-    const lockedVenditore = (!isGlobalView && !wholeStore) ? user?.name : null;
+    // Il tecnico vede tutte le vendite del proprio negozio (segn. 55), non solo
+    // le proprie: quindi niente blocco sul nome, resta solo il blocco sul negozio.
+    const lockedVenditore = (!isGlobalView && !wholeStore && user?.role !== "tecnico") ? user?.name : null;
     // Segnalazione 26: il filtro Venditore era bloccato con disabled={!isGlobalView},
     // quindi lo store manager non poteva cambiarlo pur avendone il diritto — i
     // permessi lato query lo consentivano gia' (lockedVenditore e' null per chi
@@ -198,12 +208,21 @@ export default function RicercaContratto() {
 
     useEffect(() => {
         const fetchFilters = async () => {
-            const { data } = await supabase.from("contracts").select("venditore, brand, prodotto, negozio");
+            const { data } = await supabase.from("contracts").select("venditore, brand, prodotto, negozio, codice_attivazione");
             if (data) {
-                // (i venditori arrivano da app_users, vedi effect dedicato)
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
                 setUniqueProdotti(Array.from(new Set(data.map((r: any) => r.prodotto).filter(Boolean))).sort() as string[]);
                 setUniqueNegozi(Array.from(new Set(data.map((r: any) => r.negozio).filter(Boolean))).sort() as string[]);
+                // prodotti e codici raggruppati per brand
+                const pb: Record<string, Set<string>> = {}, cb: Record<string, Set<string>> = {};
+                (data as any[]).forEach(r => {
+                    if (!r.brand) return;
+                    if (r.prodotto) (pb[r.brand] ??= new Set()).add(r.prodotto);
+                    const c = String(r.codice_attivazione || "").trim();
+                    if (c && c !== "—" && c !== "VENDITA-DIRETTA") (cb[r.brand] ??= new Set()).add(c);
+                });
+                setProdByBrand(Object.fromEntries(Object.entries(pb).map(([k, v]) => [k, [...v].sort()])));
+                setCodeByBrand(Object.fromEntries(Object.entries(cb).map(([k, v]) => [k, [...v].sort()])));
             }
         };
         fetchFilters();
@@ -246,7 +265,9 @@ export default function RicercaContratto() {
             if (filterCodice) query = query.ilike("id", `%${filterCodice}%`);
             if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
-            if (filterCodiceAttivazione) query = query.ilike("codice_attivazione", `%${filterCodiceAttivazione}%`);
+            // Extra nascosti salvo checkbox o ruolo Tecnico (segnalazione 55).
+            if (!showExtra && !isTecnico) query = query.not("brand", "ilike", "extra");
+            if (filterCodiceAttivazione) query = query.eq("codice_attivazione", filterCodiceAttivazione);
             if (filterCellulare) query = query.ilike("clients.cellulare", `%${filterCellulare}%`);
 
             if (filterCliente) {
@@ -293,7 +314,7 @@ export default function RicercaContratto() {
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei]);
+    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -642,10 +663,18 @@ export default function RicercaContratto() {
 
             {/* Advanced Search Filter Section */}
             <div className="glass-card mb-6 p-6">
-                <h3 className="text-lg font-medium text-white mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
-                    <Search className="w-5 h-5 text-indigo-400" />
-                    Filtri di ricerca
-                </h3>
+                <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-2 flex-wrap gap-2">
+                    <h3 className="text-lg font-medium text-white flex items-center gap-2">
+                        <Search className="w-5 h-5 text-indigo-400" />
+                        Filtri di ricerca
+                    </h3>
+                    {!isTecnico && (
+                        <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
+                            <input type="checkbox" checked={showExtra} onChange={e => { setShowExtra(e.target.checked); setPage(1); }} className="w-4 h-4 accent-indigo-500" />
+                            Mostra anche i contratti Extra 💰
+                        </label>
+                    )}
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 
                     {/* 1. Venditore */}
@@ -698,7 +727,7 @@ export default function RicercaContratto() {
                         <div className="flex gap-2">
                             <select className="glass-input w-full" value={prodPick} onChange={e => setProdPick(e.target.value)}>
                                 <option value="">{filterProdotti.length ? "Aggiungi prodotto…" : "Tutti i prodotti"}</option>
-                                {uniqueProdotti.filter(p => !filterProdotti.includes(p)).map(p => <option key={p} value={p}>{p}</option>)}
+                                {(filterBrand ? (prodByBrand[filterBrand] || []) : uniqueProdotti).filter(p => !filterProdotti.includes(p)).map(p => <option key={p} value={p}>{p}</option>)}
                             </select>
                             <button type="button" title="Aggiungi prodotto al filtro"
                                 onClick={() => { if (prodPick) { setFilterProdotti(prev => prev.includes(prodPick) ? prev : [...prev, prodPick]); setProdPick(""); } }}
@@ -734,7 +763,16 @@ export default function RicercaContratto() {
                     {/* 7. Codice di attivazione */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Codice di attivazione</label>
-                        <input type="text" placeholder="Es. ACT-12345" className="glass-input w-full" value={filterCodiceAttivazione} onChange={e => setFilterCodiceAttivazione(e.target.value)} />
+                        {/* Segnalazione 53: tendina dei codici, suddivisi per brand. */}
+                        <select className="glass-input w-full" value={filterCodiceAttivazione} onChange={e => setFilterCodiceAttivazione(e.target.value)}>
+                            <option value="">Tutti i codici</option>
+                            {(filterBrand ? [[filterBrand, codeByBrand[filterBrand] || []] as [string, string[]]] : Object.entries(codeByBrand))
+                                .map(([b, codes]) => codes.length ? (
+                                    <optgroup key={b} label={b}>
+                                        {codes.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </optgroup>
+                                ) : null)}
+                        </select>
                     </div>
 
                     {/* 8. Cliente */}
