@@ -36,7 +36,7 @@ const BRANDS = [
         text: "text-orange-500",
         bg: "bg-orange-500/10",
         icon: Wifi,
-        logo: "/windtre.webp",
+        logo: "/windtre.png",
     },
     {
         id: "vodafone",

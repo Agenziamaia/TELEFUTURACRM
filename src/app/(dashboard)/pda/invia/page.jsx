@@ -24,7 +24,7 @@ const ALL_BRANDS = [
     bg: "#EBF3FB",
     desc: "Mobile · Fisso · Luce&Gas · Multi-Servizi",
     onlyBusiness: false,
-    logo: "/windtre.webp",
+    logo: "/windtre.png",
   },
   {
     id: "sky",
