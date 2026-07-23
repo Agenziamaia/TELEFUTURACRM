@@ -339,7 +339,8 @@ export default function DocumentazionePage() {
         <div className="flex flex-col h-[calc(100vh-theme(spacing.16))] lg:h-screen lg:pl-64 w-full overflow-hidden min-w-0 max-w-full">
             {/* Header Area */}
             <div className="flex-none p-4 lg:p-8 w-full min-w-0 max-w-full">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                {/* Segnalazione 50: header centrato nella stessa larghezza del contenuto. */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 max-w-6xl mx-auto w-full">
                     <div>
                         <div className="flex items-center gap-3 mb-2">
                             <div className="p-2 bg-indigo-500/20 rounded-lg border border-indigo-500/30">

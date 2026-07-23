@@ -228,7 +228,8 @@ export default function RicercaContratto() {
                 if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
-            if (!showExtra && !isTecnico) q = q.not("brand", "ilike", "extra");
+            if (isTecnico) q = q.ilike("brand", "extra");
+            else if (!showExtra) q = q.not("brand", "ilike", "extra");
             const { data } = await q;
             if (data) {
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
@@ -287,8 +288,10 @@ export default function RicercaContratto() {
             if (filterCodice) query = query.ilike("id", `%${filterCodice}%`);
             if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
-            // Extra nascosti salvo checkbox o ruolo Tecnico (segnalazione 55).
-            if (!showExtra && !isTecnico) query = query.not("brand", "ilike", "extra");
+            // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
+            // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
+            if (isTecnico) query = query.ilike("brand", "extra");
+            else if (!showExtra) query = query.not("brand", "ilike", "extra");
             // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
             // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
             if (filterCodiceAttivazione) query = query.eq('dettagli->>"Cod.Ins."', filterCodiceAttivazione);
@@ -342,7 +345,8 @@ export default function RicercaContratto() {
                 if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
-            if (!showExtra && !isTecnico) q = q.not("brand", "ilike", "extra");
+            if (isTecnico) q = q.ilike("brand", "extra");
+            else if (!showExtra) q = q.not("brand", "ilike", "extra");
             if (daDataRegistrazione) q = q.gte("data_registrazione", daDataRegistrazione);
             if (aDataRegistrazione) q = q.lte("data_registrazione", aDataRegistrazione);
             const { data } = await q;
@@ -351,6 +355,16 @@ export default function RicercaContratto() {
             setBrandCounts(Object.entries(m).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
         })();
     }, [isGlobalView, lockedStore, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, contractList.length]);
+
+    // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
+    // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
+    // pagina corrente restava oltre l'ultima e la lista appariva VUOTA — sembrava
+    // che "non generasse alcun risultato".
+    const firstFilterRun = useRef(true);
+    useEffect(() => {
+        if (firstFilterRun.current) { firstFilterRun.current = false; return; }
+        setPage(1);
+    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra]);
 
     // Debounced fetch
     useEffect(() => {
