@@ -1719,9 +1719,10 @@ const VFCB = ({sd, uP, sc, dupCheck}) => {
       {sd.cbTnp&&(
         <div style={{marginBottom:12}}>
           <div style={{background:VF_LIGHT,border:"1px solid "+VF_BORDER,borderRadius:8,padding:14,marginBottom:10}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px",marginBottom:10}}>
+            {/* Segnalazione 44: nel primo box il codice contratto non va chiesto,
+                servono solo il cellulare del cliente e il codice inserimento. */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr",gap:"10px 14px",marginBottom:10}}>
               <TF l="Cellulare cliente" r v={sd.cbCellulare||""} o={v=>upv("cbCellulare",v)} p="3XXXXXXXXX"/>
-              <TF l="Codice Contratto" r v={sd.cbCodContratto||""} o={v=>upv("cbCodContratto",v)} p="es. 167942" err={dupCheck&&dupCheck("CODCONTR",sd.cbCodContratto)?"Codice contratto già usato in un altro prodotto":""}/>
             </div>
             <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.cbCodIns2||""} onCh={v=>upv("cbCodIns2",v)}/>
           </div>
@@ -2646,8 +2647,6 @@ const FWSostSim = ({sd, uP, sc, dupCheck}) => {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <TF l="Numero" r v={sd.fwSostCell||""} o={v=>upv("fwSostCell",v)} p="3XXXXXXXXX"/>
         <TF l="ICCID" r v={sd.fwSostIccid||""} o={v=>upv("fwSostIccid",v)} p="8939..." nt="Barcode 📷"/>
-        <TF l="Codice Contratto" r v={sd.fwSostCodContr||""} o={v=>upv("fwSostCodContr",v)} p="es. 167942"
-          err={dupCheck&&dupCheck("CODCONTR",sd.fwSostCodContr)?"Codice contratto già usato in un altro prodotto":""}/>
         <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwSostCodIns||""} onCh={v=>upv("fwSostCodIns",v)}/>
       </div>
     </div>
@@ -2725,7 +2724,7 @@ const subComplete=(sub,d)=>{
   }
   if(sub.isCBVF){ // VF CB privato: almeno un'azione completa
     let any=false;
-    if(d.cbTnp===true){any=true;if(!(F("cbCellulare")&&F("cbCodContratto")))return false;if(!_vfTnpListOk(d.cbTnpList))return false;}
+    if(d.cbTnp===true){any=true;if(!F("cbCellulare"))return false;if(!_vfTnpListOk(d.cbTnpList))return false;}
     if(d.cbCambio2===true){any=true;if(!F("cbCambioNumMod"))return false;}
     if(d.cbSecurity===true){any=true;if(!F("cbSecurityCell"))return false;}
     if(d.cbTraslochi===true){any=true;if(!F("cbTraslochiNum"))return false;}
@@ -2750,7 +2749,8 @@ const subComplete=(sub,d)=>{
   if(sub.isVFSolDig){return F("vfSolDigCodIns");}
   if(sub.isVFSostSim){return F("vfSostCell")&&F("vfSostCodIns");}
   if(sub.isW3SostSim){return F("w3SostCell")&&F("w3SostIccid")&&F("w3SostCodContr")&&F("w3SostCodIns");}
-  if(sub.isFWSostSim){return F("fwSostCell")&&F("fwSostIccid")&&F("fwSostCodContr")&&F("fwSostCodIns");}
+  // Segnalazione 34 (commento): "Codice contratto non va richiesto".
+  if(sub.isFWSostSim){return F("fwSostCell")&&F("fwSostIccid")&&F("fwSostCodIns");}
   // FASTWEB
   if(sub.isFWMobile){if(!F("fwOffer"))return false;const isMnp=(d.fwMnp!=null)?(d.fwMnp==="Sì"):(!!d.fwOffer&&d.fwOffer.indexOf("MNP")>=0);if(isMnp&&!(F("fwMnpBrand")&&F("fwMnpNum")))return false;return F("fwCodIns")&&F("fwIccid")&&(isMnp?F("fwNumProv"):(F("fwNumDef")||F("fwNumProv")));}
   if(sub.isFWFisso){if(d.fwFGnp==="Sì"&&!(F("fwFGnpBrand")&&F("fwFGnpNum")))return false;return F("fwFCodIns")&&(F("fwFNumProv")||F("fwFNumDef"));}

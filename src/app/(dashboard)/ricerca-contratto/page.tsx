@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock } from "lucide-react";
+import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation } from "lucide-react";
 import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
@@ -823,6 +823,18 @@ export default function RicercaContratto() {
                                         <td className="px-4 py-3">
                                             <div className="flex gap-1 justify-center">
                                                 <button onClick={() => openContract(row, "view")} className="p-1.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors" title="Dettaglio contratto"><Eye className="w-4 h-4" /></button>
+                                                {/* Segnalazione 46: scorciatoia verso Tracking PDA, con
+                                                    la ricerca gia' impostata sul nominativo del cliente
+                                                    e il dettaglio della pratica aperto. */}
+                                                <button
+                                                    onClick={() => {
+                                                        const q = encodeURIComponent(row.cliente || "");
+                                                        window.location.href = `/pda/tracking?q=${q}&id=${encodeURIComponent(row.id)}`;
+                                                    }}
+                                                    className="p-1.5 rounded bg-teal-500/20 text-teal-300 hover:bg-teal-500/30 transition-colors"
+                                                    title="Apri in Tracking PDA">
+                                                    <Navigation className="w-4 h-4" />
+                                                </button>
                                                 {canEditContract && (
                                                     <button onClick={() => openContract(row, "edit")} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Modifica (richiede approvazione amministrazione)"><Edit className="w-4 h-4" /></button>
                                                 )}
@@ -957,13 +969,6 @@ export default function RicercaContratto() {
                                     </div>
                                 )}
 
-                                <Section title="Dati contratto">
-                                    {CONTRACT_FIELDS.map(f => <Field key={f.key} k={"contract::" + f.key} label={f.label} kind={f.kind} />)}
-                                </Section>
-
-                                <Section title="Anagrafica cliente">
-                                    {CLIENT_FIELDS.map(f => <Field key={f.key} k={"client::" + f.key} label={f.label} kind={f.kind} />)}
-                                </Section>
 
                                 {(detEditable.length > 0 || detReadonly.length > 0) && (
                                     <Section title="Dettagli registrazione">
@@ -976,6 +981,14 @@ export default function RicercaContratto() {
                                         ))}
                                     </Section>
                                 )}
+
+                                <Section title="Dati contratto">
+                                    {CONTRACT_FIELDS.map(f => <Field key={f.key} k={"contract::" + f.key} label={f.label} kind={f.kind} />)}
+                                </Section>
+
+                                <Section title="Anagrafica cliente">
+                                    {CLIENT_FIELDS.map(f => <Field key={f.key} k={"client::" + f.key} label={f.label} kind={f.kind} />)}
+                                </Section>
 
                                 <Section title="Riferimenti sistema">
                                     {READONLY_META.map(f => (

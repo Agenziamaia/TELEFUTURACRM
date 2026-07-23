@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { seesWholeStore } from "@/lib/roles";
@@ -1271,6 +1271,17 @@ export default function TrackingPdaPage() {
   //   Mobile + Finanziamento       -> Finanziamento
   //   Mobile + Finanziamento + MNP -> DUE righe: MNP e Finanziamento
   // Le altre categorie (fisso, energia, sky, piva) restano una riga sola.
+  // Segnalazione 46: arrivando dall'icona di navigazione di Ricerca Contratto,
+  // la ricerca testuale si imposta sul nominativo del cliente e si apre subito
+  // il pannello della pratica.
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (deepLinked.current) return;
+    const sp = new URLSearchParams(window.location.search);
+    const q = sp.get("q");
+    if (q) { setSearch(q); deepLinked.current = true; }
+  }, []);
+
   const data: TrackingRow[] = useMemo(() => {
     const out: TrackingRow[] = [];
     rawList.forEach((r) => {
@@ -1288,6 +1299,15 @@ export default function TrackingPdaPage() {
     });
     return out;
   }, [rawList]);
+
+  const deepOpened = useRef(false);
+  useEffect(() => {
+    if (deepOpened.current || data.length === 0) return;
+    const id = new URLSearchParams(window.location.search).get("id");
+    if (!id) return;
+    const hit = data.find((r) => r.id === id);
+    if (hit) { setSelected(hit); deepOpened.current = true; }
+  }, [data]);
 
   const statiConfermato = ["confermato", "pagato", "stornato"];
   const statiCompletatiNegozio = ["attivato", "liquidato", "completo_sky", "attivo_sky"];
