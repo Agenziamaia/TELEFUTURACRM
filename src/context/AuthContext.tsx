@@ -108,8 +108,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const logout = () => {
         setUser(null);
         localStorage.removeItem("crm_session");
+        localStorage.removeItem("crm_last_activity");
         router.push("/");
     };
+
+    // Segnalazione 49: dopo 15 minuti di inattivita' (nessun click/tasto/scroll)
+    // la sessione scade — l'utente torna al login e, non essendoci piu' sessione,
+    // sparisce dalla presenza in chat (offline). La normale navigazione tra le
+    // pagine NON resetta nulla e non scollega dalla chat (segnalazione 69):
+    // qualsiasi interazione rimanda semplicemente in avanti la scadenza.
+    useEffect(() => {
+        if (!user) return;
+        const IDLE_MS = 15 * 60 * 1000;
+        let timer: ReturnType<typeof setTimeout>;
+        const doLogout = () => {
+            setUser(null);
+            localStorage.removeItem("crm_session");
+            localStorage.removeItem("crm_last_activity");
+            router.push("/");
+        };
+        const reset = () => {
+            localStorage.setItem("crm_last_activity", String(Date.now()));
+            clearTimeout(timer);
+            timer = setTimeout(doLogout, IDLE_MS);
+        };
+        // se un'altra scheda ha gia' superato il limite mentre questa era ferma
+        const last = Number(localStorage.getItem("crm_last_activity") || 0);
+        if (last && Date.now() - last > IDLE_MS) { doLogout(); return; }
+        const events = ["mousedown", "keydown", "scroll", "touchstart", "click"];
+        events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+        // controlla anche al ritorno sulla scheda (dopo sospensione/inattivita')
+        const onVisible = () => {
+            if (document.visibilityState !== "visible") return;
+            const l = Number(localStorage.getItem("crm_last_activity") || 0);
+            if (l && Date.now() - l > IDLE_MS) doLogout(); else reset();
+        };
+        document.addEventListener("visibilitychange", onVisible);
+        reset();
+        return () => {
+            clearTimeout(timer);
+            events.forEach((e) => window.removeEventListener(e, reset));
+            document.removeEventListener("visibilitychange", onVisible);
+        };
+    }, [user, router]);
 
     return (
         <AuthContext.Provider value={{ user, login, completeFirstLogin, logout, isAuthenticated: !!user }}>
