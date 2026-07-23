@@ -402,16 +402,6 @@ function FilterBar({
           </button>
         )}
       </div>
-      {venditori.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-          <span className="text-xs text-slate-400 font-semibold mr-1">VENDITORE</span>
-          <select value={venditoreSel} onChange={(e) => setVenditoreSel(e.target.value)}
-            className="rounded-lg px-3 py-1 text-xs bg-slate-900 border border-slate-700 text-slate-200">
-            <option value="">Tutti</option>
-            {venditori.map((n) => <option key={n} value={n}>{n}</option>)}
-          </select>
-        </div>
-      )}
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <span className="text-xs text-slate-400 font-semibold mr-1">BRAND</span>
         {ALL_BRANDS.map((b) => {
@@ -452,6 +442,44 @@ function FilterBar({
           </button>
         )}
       </div>
+      {/* Segnalazione 54: filtro Venditore come ultimo, con pulsanti cliccabili
+          (come Categoria e Brand) invece della tendina. "Tutti" + i nomi dei
+          collaboratori del negozio, manager compreso. Visibile allo store manager. */}
+      {venditori.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <span className="text-xs text-slate-400 font-semibold mr-1">VENDITORE</span>
+          <button
+            type="button"
+            onClick={() => setVenditoreSel("")}
+            className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
+            style={{
+              borderColor: venditoreSel === "" ? "#6366f1" : "#334155",
+              background: venditoreSel === "" ? "#6366f133" : "transparent",
+              color: venditoreSel === "" ? "#818cf8" : "#94a3b8",
+            }}
+          >
+            Tutti
+          </button>
+          {venditori.map((n) => {
+            const sel = venditoreSel === n;
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setVenditoreSel(sel ? "" : n)}
+                className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
+                style={{
+                  borderColor: sel ? "#6366f1" : "#334155",
+                  background: sel ? "#6366f133" : "transparent",
+                  color: sel ? "#818cf8" : "#94a3b8",
+                }}
+              >
+                {n}
+              </button>
+            );
+          })}
+        </div>
+      )}
       <div className="flex gap-2.5 items-center flex-wrap">
         <div className="relative flex-[2] min-w-[200px]">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>

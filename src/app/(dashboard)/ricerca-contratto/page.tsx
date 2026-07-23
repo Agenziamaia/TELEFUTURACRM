@@ -217,25 +217,38 @@ export default function RicercaContratto() {
 
     useEffect(() => {
         const fetchFilters = async () => {
-            const { data } = await supabase.from("contracts").select("venditore, brand, prodotto, negozio, codice_attivazione");
+            // Segnalazione 47: le tendine devono offrire SOLO cio' che l'utente puo'
+            // davvero vedere. Prima la lista prodotti/codici era globale, quindi uno
+            // store manager poteva scegliere un prodotto presente in un altro negozio
+            // e la ricerca tornava vuota (sembrava rotta). Ora applico lo stesso RBAC
+            // di fetchData. Segnalazione 53: i "codici" del filtro sono i codici di
+            // inserimento (dettagli['Cod.Ins.']), non piu' i codici contratto.
+            let q = supabase.from("contracts").select("venditore, brand, prodotto, negozio, dettagli");
+            if (!isGlobalView) {
+                if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
+                if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
+            }
+            if (!showExtra && !isTecnico) q = q.not("brand", "ilike", "extra");
+            const { data } = await q;
             if (data) {
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
                 setUniqueProdotti(Array.from(new Set(data.map((r: any) => r.prodotto).filter(Boolean))).sort() as string[]);
                 setUniqueNegozi(Array.from(new Set(data.map((r: any) => r.negozio).filter(Boolean))).sort() as string[]);
-                // prodotti e codici raggruppati per brand
+                // prodotti e codici di inserimento raggruppati per brand
                 const pb: Record<string, Set<string>> = {}, cb: Record<string, Set<string>> = {};
                 (data as any[]).forEach(r => {
                     if (!r.brand) return;
                     if (r.prodotto) (pb[r.brand] ??= new Set()).add(r.prodotto);
-                    const c = String(r.codice_attivazione || "").trim();
-                    if (c && c !== "—" && c !== "VENDITA-DIRETTA") (cb[r.brand] ??= new Set()).add(c);
+                    const det = (r.dettagli && typeof r.dettagli === "object") ? r.dettagli : {};
+                    const ci = String(det["Cod.Ins."] ?? "").trim();
+                    if (ci && ci !== "—") (cb[r.brand] ??= new Set()).add(ci);
                 });
                 setProdByBrand(Object.fromEntries(Object.entries(pb).map(([k, v]) => [k, [...v].sort()])));
                 setCodeByBrand(Object.fromEntries(Object.entries(cb).map(([k, v]) => [k, [...v].sort()])));
             }
         };
         fetchFilters();
-    }, []);
+    }, [isGlobalView, lockedStore, lockedVenditore, showExtra, isTecnico]);
 
     // Elenco venditori dagli account attivi, con il proprio team in cima.
     useEffect(() => {
@@ -276,7 +289,9 @@ export default function RicercaContratto() {
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
             // Extra nascosti salvo checkbox o ruolo Tecnico (segnalazione 55).
             if (!showExtra && !isTecnico) query = query.not("brand", "ilike", "extra");
-            if (filterCodiceAttivazione) query = query.eq("codice_attivazione", filterCodiceAttivazione);
+            // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
+            // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
+            if (filterCodiceAttivazione) query = query.eq('dettagli->>"Cod.Ins."', filterCodiceAttivazione);
             if (filterCellulare) query = query.ilike("clients.cellulare", `%${filterCellulare}%`);
 
             if (filterCliente) {
@@ -807,10 +822,11 @@ export default function RicercaContratto() {
                         </select>
                     </div>
 
-                    {/* 7. Codice di attivazione */}
+                    {/* 7. Codice di inserimento */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Codice di attivazione</label>
-                        {/* Segnalazione 53: tendina dei codici, suddivisi per brand. */}
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Codice di inserimento</label>
+                        {/* Segnalazione 53: tendina dei codici di inserimento (Cod.Ins.),
+                            suddivisi per brand; se un brand e' selezionato mostra solo i suoi. */}
                         <select className="glass-input w-full" value={filterCodiceAttivazione} onChange={e => setFilterCodiceAttivazione(e.target.value)}>
                             <option value="">Tutti i codici</option>
                             {(filterBrand ? [[filterBrand, codeByBrand[filterBrand] || []] as [string, string[]]] : Object.entries(codeByBrand))
