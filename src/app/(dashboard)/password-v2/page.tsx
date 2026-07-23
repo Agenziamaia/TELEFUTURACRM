@@ -5,6 +5,8 @@ import { LockKeyhole, Wifi, Radio, Tv, Zap, Leaf, ArrowLeft, RotateCcw, Eye, Eye
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useStoreRecords } from "@/lib/org";
+import { supabase } from "@/lib/supabaseClient";
+import { Plus, Pencil, Trash2, Save } from "lucide-react";
 
 type BrandId = "windtre" | "vodafone" | "tim" | "sky" | "fastweb" | "energia";
 
@@ -77,7 +79,76 @@ export default function PasswordV2Page() {
     const [revealingId, setRevealingId] = useState<number | null>(null);
     const [copiedId, setCopiedId] = useState<number | null>(null);
 
-    const isAllowed = user && ["admin", "store_manager"].includes(user.role);
+    const isAllowed = user && ["admin", "store_manager", "direttore_commerciale", "dev", "direttore_generale", "amministrativo"].includes(user.role);
+    // Segnalazione 73: dal Direttore Commerciale in su si possono gestire categorie
+    // e credenziali (creare raccolte per ogni brand). Gli altri restano in sola lettura.
+    const canManage = !!user && ["direttore_commerciale", "admin", "dev", "direttore_generale"].includes(user.role);
+
+    // Categorie dal DB (password_categories), gestibili quando canManage.
+    const [dbCats, setDbCats] = useState<{ id: number; brand_id: string; cat_key: string; name: string; sort: number }[]>([]);
+    const fetchCats = async () => {
+        const { data } = await supabase.from("password_categories").select("id, brand_id, cat_key, name, sort").eq("archived", false).order("sort");
+        if (data) setDbCats(data as typeof dbCats);
+    };
+    useEffect(() => { fetchCats(); }, []);
+    const catsFor = (b: BrandId | null): { id: string; name: string; dbId: number }[] => {
+        if (!b) return [];
+        const rows = dbCats.filter((c) => c.brand_id === b);
+        if (rows.length) return rows.map((c) => ({ id: c.cat_key, name: c.name, dbId: c.id }));
+        return (CATEGORIES[b] || []).map((c) => ({ id: c.id, name: c.name, dbId: 0 }));
+    };
+    const [addingCat, setAddingCat] = useState(false);
+    const [newCatName, setNewCatName] = useState("");
+    const [editCatId, setEditCatId] = useState<number | null>(null);
+    const [editCatName, setEditCatName] = useState("");
+    const catSlug = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "cat";
+    const addCat = async (b: BrandId, name: string) => {
+        const nm = name.trim();
+        if (!nm) return;
+        const key = catSlug(nm) + "-" + Math.random().toString(36).slice(2, 6);
+        const maxSort = dbCats.filter((c) => c.brand_id === b).reduce((m, c) => Math.max(m, c.sort), 0);
+        await supabase.from("password_categories").insert({ brand_id: b, cat_key: key, name: nm, sort: maxSort + 10 });
+        setAddingCat(false); setNewCatName(""); fetchCats();
+    };
+    const renameCat = async (dbId: number, name: string) => {
+        const nm = name.trim();
+        if (!nm) { setEditCatId(null); return; }
+        await supabase.from("password_categories").update({ name: nm }).eq("id", dbId);
+        setEditCatId(null); setEditCatName(""); fetchCats();
+    };
+    const archiveCat = async (dbId: number) => {
+        await supabase.from("password_categories").update({ archived: true }).eq("id", dbId);
+        fetchCats();
+    };
+
+    // Gestione credenziali (creazione/modifica/eliminazione).
+    const [credForm, setCredForm] = useState<{ id: number | null; accessType: string; username: string; password: string } | null>(null);
+    const [savingCred, setSavingCred] = useState(false);
+    const saveCred = async () => {
+        if (!credForm || !brand || !category || !store) return;
+        if (!credForm.accessType.trim() || !credForm.username.trim() || (credForm.id === null && !credForm.password)) return;
+        setSavingCred(true);
+        try {
+            if (credForm.id === null) {
+                await fetch(`/api/passwords/credentials`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ brandId: brand, categoryId: category, storeId: store, accessType: credForm.accessType, username: credForm.username, password: credForm.password }),
+                });
+            } else {
+                await fetch(`/api/passwords/credentials/${credForm.id}`, {
+                    method: "PATCH", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ accessType: credForm.accessType, username: credForm.username, password: credForm.password }),
+                });
+            }
+            setCredForm(null);
+            fetchCredentials();
+        } finally { setSavingCred(false); }
+    };
+    const deleteCred = async (id: number) => {
+        if (!window.confirm("Eliminare questa credenziale?")) return;
+        await fetch(`/api/passwords/credentials/${id}`, { method: "DELETE" });
+        fetchCredentials();
+    };
 
     useEffect(() => {
         if (brand && category && store) {
@@ -151,8 +222,7 @@ export default function PasswordV2Page() {
                     <div>
                         <h1 className="text-2xl font-black text-white tracking-tight">Accesso Riservato</h1>
                         <p className="text-slate-400 mt-2 text-sm">
-                            La sezione Password CRM è visibile solo a ruoli <span className="font-semibold text-slate-200">admin</span> e{" "}
-                            <span className="font-semibold text-slate-200">store manager</span>.
+                            La sezione Password CRM è riservata ai ruoli <span className="font-semibold text-slate-200">store manager</span>, <span className="font-semibold text-slate-200">direttore commerciale</span> e amministrazione.
                         </p>
                     </div>
                 </div>
@@ -162,7 +232,7 @@ export default function PasswordV2Page() {
 
     const step = !brand ? 1 : !category ? 2 : !store ? 3 : 4;
     const currentBrand = brand ? BRANDS.find((b) => b.id === brand) : null;
-    const currentCategory = brand && category ? CATEGORIES[brand].find((c) => c.id === category) : null;
+    const currentCategory = brand && category ? catsFor(brand).find((c) => c.id === category) : null;
     const currentStore = store ? STORES.find((s) => s.id === store) : null;
 
     return (
@@ -171,7 +241,7 @@ export default function PasswordV2Page() {
                 <div>
                     <h1 className="text-4xl font-black text-white tracking-tight">Password CRM</h1>
                     <p className="text-slate-500 font-medium mt-1">
-                        Credenziali di accesso per i vari brand — visibile solo ad admin e store manager
+                        Credenziali di accesso per i vari brand{canManage ? " — puoi creare, modificare ed eliminare categorie e credenziali" : " — sola lettura"}
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -307,22 +377,66 @@ export default function PasswordV2Page() {
                             Step 2 — Seleziona categoria — {currentBrand?.name}
                         </p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {CATEGORIES[brand].map((c) => {
+                            {catsFor(brand).map((c) => {
                                 const active = category === c.id;
+                                const editing = canManage && editCatId === c.dbId && c.dbId > 0;
                                 return (
-                                    <button
+                                    <div
                                         key={c.id}
-                                        onClick={() => { setCategory(c.id); setStore(null); }}
                                         className={cn(
-                                            "rounded-2xl border p-4 text-left transition-all",
+                                            "rounded-2xl border p-4 transition-all relative",
                                             active ? "bg-indigo-500/20 border-indigo-500/40" : "bg-white/5 border-white/10 hover:bg-white/10"
                                         )}
                                     >
-                                        <p className={cn("font-semibold text-sm", active ? "text-white" : "text-slate-100")}>{c.name}</p>
-                                        <p className="text-xs text-slate-500 mt-1">Sistema di accesso</p>
-                                    </button>
+                                        {editing ? (
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    autoFocus value={editCatName}
+                                                    onChange={(e) => setEditCatName(e.target.value)}
+                                                    onKeyDown={(e) => { if (e.key === "Enter") renameCat(c.dbId, editCatName); if (e.key === "Escape") setEditCatId(null); }}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                                                />
+                                                <button onClick={() => renameCat(c.dbId, editCatName)} className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400"><Save className="w-4 h-4" /></button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <button onClick={() => { setCategory(c.id); setStore(null); }} className="text-left w-full">
+                                                    <p className={cn("font-semibold text-sm", active ? "text-white" : "text-slate-100")}>{c.name}</p>
+                                                    <p className="text-xs text-slate-500 mt-1">Sistema di accesso</p>
+                                                </button>
+                                                {canManage && c.dbId > 0 && (
+                                                    <div className="absolute top-2 right-2 flex gap-1">
+                                                        <button onClick={() => { setEditCatId(c.dbId); setEditCatName(c.name); }} title="Rinomina" className="p-1 rounded-md hover:bg-white/10 text-slate-400"><Pencil className="w-3.5 h-3.5" /></button>
+                                                        <button onClick={() => { if (window.confirm(`Rimuovere la categoria "${c.name}"?`)) archiveCat(c.dbId); }} title="Rimuovi" className="p-1 rounded-md hover:bg-rose-500/20 text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
                                 );
                             })}
+                            {/* Aggiungi categoria (segn.73) */}
+                            {canManage && (
+                                addingCat ? (
+                                    <div className="rounded-2xl border border-indigo-500/30 p-4 flex flex-col gap-2">
+                                        <input
+                                            autoFocus value={newCatName}
+                                            onChange={(e) => setNewCatName(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === "Enter") addCat(brand, newCatName); if (e.key === "Escape") { setAddingCat(false); setNewCatName(""); } }}
+                                            placeholder="Nome categoria"
+                                            className="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                                        />
+                                        <div className="flex gap-2">
+                                            <button onClick={() => addCat(brand, newCatName)} className="flex-1 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold">Crea</button>
+                                            <button onClick={() => { setAddingCat(false); setNewCatName(""); }} className="px-3 py-1.5 rounded-lg bg-white/5 text-slate-300 text-xs">Annulla</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button onClick={() => setAddingCat(true)} className="rounded-2xl border border-dashed border-white/15 hover:border-indigo-500/50 hover:bg-white/[0.03] p-4 flex items-center justify-center gap-2 text-slate-400 hover:text-indigo-300 transition-all">
+                                        <Plus className="w-5 h-5" /> <span className="text-sm font-semibold">Nuova categoria</span>
+                                    </button>
+                                )
+                            )}
                         </div>
                     </div>
                 )}
@@ -365,10 +479,43 @@ export default function PasswordV2Page() {
                                         {currentBrand?.name} • {currentCategory?.name} • {currentStore?.name}
                                     </p>
                                 </div>
-                                <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-[10px] font-bold text-emerald-300">
-                                    {credentials.length} credenziali
-                                </span>
+                                <div className="flex items-center gap-3">
+                                    <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-[10px] font-bold text-emerald-300">
+                                        {credentials.length} credenziali
+                                    </span>
+                                    {canManage && !credForm && (
+                                        <button
+                                            onClick={() => setCredForm({ id: null, accessType: "", username: "", password: "" })}
+                                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold transition-all"
+                                        >
+                                            <Plus className="w-4 h-4" /> Aggiungi credenziale
+                                        </button>
+                                    )}
+                                </div>
                             </div>
+                            {/* Segnalazione 73: form creazione/modifica credenziale (Direttore Commerciale in su). */}
+                            {canManage && credForm && (
+                                <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-2xl border border-indigo-500/30 bg-indigo-500/[0.04] p-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tipo di accesso</label>
+                                        <input value={credForm.accessType} onChange={(e) => setCredForm({ ...credForm, accessType: e.target.value })} placeholder="es. Portale Agente" className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Username</label>
+                                        <input value={credForm.username} onChange={(e) => setCredForm({ ...credForm, username: e.target.value })} placeholder="username" className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-indigo-500" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Password {credForm.id !== null && <span className="text-slate-500 normal-case">(vuota = invariata)</span>}</label>
+                                        <input value={credForm.password} onChange={(e) => setCredForm({ ...credForm, password: e.target.value })} placeholder={credForm.id === null ? "password" : "••••••"} className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-indigo-500" />
+                                    </div>
+                                    <div className="sm:col-span-3 flex gap-2 justify-end">
+                                        <button onClick={() => setCredForm(null)} className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold">Annulla</button>
+                                        <button onClick={saveCred} disabled={savingCred} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-xs font-bold">
+                                            {savingCred ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salva
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="border border-white/10 rounded-2xl overflow-hidden bg-black/20">
                             <table className="w-full text-sm text-slate-300">
@@ -377,12 +524,13 @@ export default function PasswordV2Page() {
                                         <th className="px-4 py-2 text-left">Tipo di accesso</th>
                                         <th className="px-4 py-2 text-left">Username</th>
                                         <th className="px-4 py-2 text-left text-right">Password</th>
+                                        {canManage && <th className="px-4 py-2 text-right">Azioni</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {loading ? (
                                         <tr>
-                                            <td className="px-4 py-20 text-center" colSpan={3}>
+                                            <td className="px-4 py-20 text-center" colSpan={canManage ? 4 : 3}>
                                                 <div className="flex flex-col items-center gap-3">
                                                     <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
                                                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Caricamento credenziali...</p>
@@ -391,7 +539,7 @@ export default function PasswordV2Page() {
                                         </tr>
                                     ) : credentials.length === 0 ? (
                                         <tr>
-                                            <td className="px-4 py-12 text-center text-slate-500" colSpan={3}>
+                                            <td className="px-4 py-12 text-center text-slate-500" colSpan={canManage ? 4 : 3}>
                                                 Nessuna credenziale configurata per questa combinazione.
                                             </td>
                                         </tr>
@@ -458,6 +606,14 @@ export default function PasswordV2Page() {
                                                             </div>
                                                         </div>
                                                     </td>
+                                                    {canManage && (
+                                                        <td className="px-4 py-3">
+                                                            <div className="flex items-center gap-1 justify-end">
+                                                                <button type="button" title="Modifica" onClick={() => setCredForm({ id: c.id, accessType: c.accessType, username: c.username, password: "" })} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><Pencil className="w-3.5 h-3.5" /></button>
+                                                                <button type="button" title="Elimina" onClick={() => deleteCred(c.id)} className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                            </div>
+                                                        </td>
+                                                    )}
                                                 </tr>
                                             );
                                         })
@@ -476,7 +632,7 @@ export default function PasswordV2Page() {
                 <div className="space-y-1">
                     <p className="font-black text-amber-500 uppercase tracking-widest text-[10px]">Nota di sicurezza</p>
                     <p className="text-[13px] leading-relaxed">
-                        Questa sezione contiene credenziali sensibili. L&apos;accesso è limitato ai ruoli <span className="text-amber-200 font-bold">admin</span> e <span className="text-amber-200 font-bold">store manager</span>.
+                        Questa sezione contiene credenziali sensibili. La consultazione è riservata; la gestione (creare, modificare, eliminare categorie e credenziali) è riservata al <span className="text-amber-200 font-bold">Direttore Commerciale</span> e ruoli superiori.
                         Le password sono visibili solo dopo aver cliccato sull&apos;icona dell&apos;occhio. <span className="underline decoration-amber-500/50 underline-offset-4">Non condividere queste credenziali.</span>
                     </p>
                 </div>

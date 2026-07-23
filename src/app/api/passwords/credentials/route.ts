@@ -39,3 +39,31 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: message }, { status: 500 });
     }
 }
+
+// Segnalazione 73: creazione credenziale (Direttore Commerciale in su, gate lato UI).
+export async function POST(request: Request) {
+    try {
+        const body = await request.json();
+        const { brandId, categoryId, storeId, accessType, username, password } = body ?? {};
+        if (!brandId || !categoryId || !storeId || !accessType || !username || password == null || password === "") {
+            return NextResponse.json({ error: "Campi obbligatori mancanti" }, { status: 400 });
+        }
+        const { data, error } = await supabase
+            .from("password_credentials")
+            .insert({
+                brand_id: String(brandId),
+                category_id: String(categoryId),
+                store_id: String(storeId),
+                access_type: String(accessType),
+                username: String(username),
+                password_encrypted: String(password),
+            })
+            .select("id")
+            .single();
+        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        return NextResponse.json({ id: data.id });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : "Internal Server Error";
+        return NextResponse.json({ error: message }, { status: 500 });
+    }
+}
