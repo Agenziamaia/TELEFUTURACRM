@@ -11,8 +11,9 @@ export const CATEGORIE = [
   { id: "fisso", label: "Fisso / Fibra", desc: "Linee fisse, fibra e FWA", color: "#0ea5e9" },
   { id: "energia", label: "Energia", desc: "Luce e gas", color: "#10b981" },
   { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "#ef4444" },
-  { id: "assicurazioni", label: "Assicurazioni", desc: "Polizze e protezione", color: "#ec4899" },
   { id: "digitale", label: "Soluzioni Digitali", desc: "Servizi digitali", color: "#22d3ee" },
+  { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni e pacchetti", color: "#ec4899" },
+  { id: "pos", label: "POS", desc: "Terminali di pagamento", color: "#f59e0b" },
   { id: "piva", label: "P.IVA", desc: "Vodafone Business", color: "#8b5cf6" },
 ] as const;
 

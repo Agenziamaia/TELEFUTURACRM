@@ -25,13 +25,18 @@
 
 // ─── Asse 2: categorie di servizio, condivise da tutti i brand ───────────────
 
+// Le categorie coincidono con le metriche di target (tabella target_metrics),
+// che sono le categorie di reporting decise dall'ufficio. Cosi' un contratto e
+// il suo obiettivo contano la stessa cosa per costruzione, senza liste di nomi
+// da tenere allineate a mano.
 export type CategoriaId =
     | "mobile"
     | "fisso"
     | "energia"
     | "tv"
-    | "assicurazioni"
     | "digitale"
+    | "multi_servizi"
+    | "pos"
     | "extra";
 
 export interface CategoriaDef {
@@ -47,8 +52,9 @@ export const CATEGORIE: CategoriaDef[] = [
     { id: "fisso", label: "Fisso / Fibra", desc: "Linee fisse, fibra e FWA", color: "#0ea5e9", icon: "🏠" },
     { id: "energia", label: "Energia", desc: "Luce e gas", color: "#10b981", icon: "⚡" },
     { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "#ef4444", icon: "📺" },
-    { id: "assicurazioni", label: "Assicurazioni", desc: "Polizze e protezione", color: "#ec4899", icon: "🛡️" },
     { id: "digitale", label: "Soluzioni Digitali", desc: "Servizi digitali e cloud", color: "#22d3ee", icon: "💻" },
+    { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni e pacchetti multi-servizio", color: "#ec4899", icon: "🛡️" },
+    { id: "pos", label: "POS", desc: "Terminali di pagamento", color: "#f59e0b", icon: "🏧" },
     { id: "extra", label: "Extra", desc: "Prodotti e servizi a marginalita'", color: "#94a3b8", icon: "💰" },
 ];
 
@@ -97,20 +103,26 @@ export function categoriaDi(
     const tutto = `${c} ${p}`;
 
     // Il brand "Extra" raccoglie le vendite a marginalita': accessori, SIM
-    // sciolte, riparazioni. Non e' una pratica da attivare.
+    // sciolte, riparazioni. Non e' una pratica da attivare, non entra nei target.
     if (b === "extra" || c.startsWith("prodotto")) return "extra";
 
-    // Energia: tre nomi diversi per lo stesso servizio.
+    // POS: terminale di pagamento (metrica di target dedicata). Prima del mobile,
+    // altrimenti "terminale" del telefono lo intercetterebbe.
+    if (/\bpos\b/.test(tutto)) return "pos";
+
+    // Energia: piu' nomi per lo stesso servizio (LUCE E GAS / ENERGIA / S4 ENERGIA).
     if (/(luce|gas|energia|energy)/.test(tutto)) return "energia";
 
     // Fisso e fibra, compresa quella di Sky, che il brand chiama "SKY FIBRA".
     if (/(fisso|fibra|fwa)/.test(tutto)) return "fisso";
 
+    // Multi-servizi: assicurazioni, protezioni, pacchetti (WindTre "MULTI-SERVIZI").
+    if (/(multi.?serviz|assicura|polizza|kasko|protec)/.test(tutto)) return "multi_servizi";
+
+    if (/(digital|backup|cloud|security)/.test(tutto)) return "digitale";
+
     // Mobile, compreso "SKY MOBILE".
     if (/(mobile|sim)/.test(tutto)) return "mobile";
-
-    if (/(assicura|polizza|kasko)/.test(tutto)) return "assicurazioni";
-    if (/(digital|backup|cloud|security)/.test(tutto)) return "digitale";
 
     // Sky senza altre indicazioni: il prodotto storico e' la TV.
     if (/(tv|sky)/.test(tutto) || b === "sky") return "tv";
