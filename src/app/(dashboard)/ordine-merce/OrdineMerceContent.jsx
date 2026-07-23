@@ -6,6 +6,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 // chiudere/ricaricare la pagina SENZA inviare l'ordine, e riprenderlo piu' tardi.
 const CART_STORAGE_KEY = "ordine-merce-cart-v1";
 import { supabase } from "@/lib/supabaseClient";
+import { useStores } from "@/lib/org";
 
 /* ═══════════════════════════════════════════════════
    ORDINE MERCE v2 — Telefutura CRM
@@ -332,13 +333,10 @@ const USATI_FASCE = {
   l: { label: "Fascia L", desc: "High end" },
 };
 
-export const STORES = [
-  { id: "roma_centro", name: "Roma Centro" },
-  { id: "roma_est", name: "Roma Est" },
-  { id: "milano_duomo", name: "Milano Duomo" },
-  { id: "napoli_centro", name: "Napoli Centro" },
-];
-const storeName = id => STORES.find(s => s.id === id)?.name || id;
+// Segnalazione 51: i negozi ora sono quelli reali (tabella stores, via useStores).
+// L'identita' del negozio e' direttamente il NOME (myStore = primary_store
+// dell'utente, o.store = nome del negozio), quindi storeName restituisce il nome.
+const storeName = id => id || "";
 
 const CATEGORIES = {
   brand: { label: "Brand", color: "#818cf8", bg: "rgba(99, 102, 241, 0.2)", icon: "📡" },
@@ -362,7 +360,8 @@ const Pill = ({ label, color, bg, small }) => (
 /* ═══ MAIN COMPONENT ═══ */
 export default function OrdineMerceContent({ role: propRole, myStore: propMyStore }) {
   const [roleState, setRoleState] = useState("store_manager");
-  const [myStoreState] = useState("roma_centro");
+  const [myStoreState] = useState("");
+  const storeList = useStores(); // negozi reali dal DB (segn.51)
   const role = propRole != null ? propRole : roleState;
   const myStore = propMyStore != null ? propMyStore : myStoreState;
   const isControlled = propRole != null;
@@ -1718,7 +1717,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
           {isAdmin && (
             <select style={s.select} value={fStore} onChange={e => setFStore(e.target.value)}>
               <option value="tutti">Tutti i negozi</option>
-              {STORES.map(st => <option key={st.id} value={st.id}>{st.name}</option>)}
+              {storeList.map(st => <option key={st} value={st}>{st}</option>)}
             </select>
           )}
           <span style={{ fontSize: 12, color: C.grayLight, marginLeft: "auto" }}>{filtered.length} ordini</span>
