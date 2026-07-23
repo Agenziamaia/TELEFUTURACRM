@@ -1,17 +1,19 @@
 // Tracking PDA v2 — constants and types (from TrackingPDA_DevSpec / TrackingPDA_v2.0.jsx)
 
+// Le voci del filtro vengono dalla tassonomia unica (src/lib/tassonomia.ts):
+// le 7 categorie di servizio, uguali per ogni brand, piu' i controlli, che sono
+// ortogonali (una vendita mobile puo' essere insieme portabilita' e
+// finanziamento e compare su due righe).
 export const CATEGORIE = [
-  { id: "mnp", label: "MNP", desc: "Portabilità mobile", color: "#6366f1" },
-  { id: "fisso", label: "Fisso", desc: "Linee fisse", color: "#0ea5e9" },
-  { id: "finanziamento", label: "Finanziamento", desc: "Wind / VF / Fastweb", color: "#f59e0b" },
+  { id: "mnp", label: "MNP", desc: "Portabilita' mobile", color: "#6366f1" },
+  { id: "finanziamento", label: "Finanziamento", desc: "Terminale finanziato", color: "#f59e0b" },
+  { id: "mobile", label: "Mobile", desc: "SIM e offerte mobili", color: "#3b82f6" },
+  { id: "fisso", label: "Fisso / Fibra", desc: "Linee fisse, fibra e FWA", color: "#0ea5e9" },
+  { id: "energia", label: "Energia", desc: "Luce e gas", color: "#10b981" },
+  { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "#ef4444" },
+  { id: "assicurazioni", label: "Assicurazioni", desc: "Polizze e protezione", color: "#ec4899" },
+  { id: "digitale", label: "Soluzioni Digitali", desc: "Servizi digitali", color: "#22d3ee" },
   { id: "piva", label: "P.IVA", desc: "Vodafone Business", color: "#8b5cf6" },
-  { id: "energia", label: "Energia", desc: "Luce & Gas", color: "#10b981" },
-  { id: "sky", label: "Sky", desc: "Sky 3P", color: "#ef4444" },
-  // Segnalazione 43: nel filtro mancavano le categorie effettivamente usate dai
-  // contratti, quindi non erano selezionabili — "Finanziamenti non filtrabili".
-  { id: "mobile", label: "Mobile", desc: "Vendita mobile senza portabilita' ne' finanziamento", color: "#3b82f6" },
-  { id: "multi-servizi", label: "Multi-Servizi", desc: "Pacchetti multi-servizio", color: "#f472b6" },
-  { id: "soluzioni digitali", label: "Soluzioni Digitali", desc: "Soluzioni digitali", color: "#22d3ee" },
 ] as const;
 
 const STATI_NEGOZIO_BASE = [
@@ -125,6 +127,8 @@ export const MALUS_SOGLIE: Record<string, number | null> = {
   piva: 6,
   energia: 15,
   sky: 2,
+  tv: 2,          // "sky" nella vecchia nomenclatura
+  mobile: 0,      // le vendite mobili semplici non maturano malus
 };
 
 export const MALUS_IMPORTO: Record<string, number> = {
@@ -134,6 +138,7 @@ export const MALUS_IMPORTO: Record<string, number> = {
   piva: 5,
   energia: 10,
   sky: 5,
+  tv: 5,
 };
 
 export type StoriaEvent = {
@@ -165,6 +170,7 @@ export type TrackingRow = {
   // Il finanziamento non e' una categoria ma una caratteristica della vendita:
   // sta dentro dettagli (EasyPay, Tipo CB "Finanziamento…"/"Rata…", Finanz.).
   finanziato?: boolean;
+  controlli?: string[];
   // Una pratica con MNP + finanziamento compare su due righe: serve una chiave
   // distinta, mentre `id` resta quello del contratto per gli aggiornamenti.
   rowKey?: string;

@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { seesWholeStore } from "@/lib/roles";
+import { categoriaDi, controlliDi, righeTracking } from "@/lib/tassonomia";
 import { statoContrattoDa } from "./trackingHelpers";
 import {
   CATEGORIE,
@@ -84,26 +85,13 @@ function mapContractToTrackingRow(
 
   const d = dettagli || (c.dettagli as Record<string, unknown> | null) || {};
 
-  // Le categorie salvate sui contratti ("MOBILE", "SKY FIBRA", "LUCE E GAS",
-  // "Prodotto/Servizio"...) non coincidono con le sei del tracking
-  // (mnp / fisso / finanziamento / piva / energia / sky): quelle riconoscibili
-  // vengono ricondotte, le altre restano com'erano invece di essere spacciate
-  // per MNP (segnalazione 14).
-  const categoria = (() => {
-    const raw = ((c.categoria as string) ?? "").trim().toLowerCase();
-    if (!raw) return "—";
-    if (raw === "p.iva" || raw === "piva") return "piva";
-    if (raw.startsWith("sky")) return "sky";
-    if (raw.includes("luce") || raw.includes("gas") || raw.includes("energia")) return "energia";
-    if (raw.includes("finanziamento")) return "finanziamento";
-    if (raw.includes("fisso")) return "fisso";
-    // "MOBILE" e' MNP solo quando la pratica e' davvero una portabilita'.
-    if (raw.includes("mobile")) {
-      const mnp = String(d.MNP ?? d.mnp ?? "").trim().toLowerCase();
-      return mnp === "sì" || mnp === "si" || mnp === "true" ? "mnp" : raw;
-    }
-    return raw;
-  })();
+  // Categoria dalla tassonomia unica: si usa quella scritta a database
+  // (categoria_macro) e, per i contratti piu' vecchi, la si ricava al volo dalle
+  // stesse regole. Niente piu' logica di normalizzazione sparsa nelle pagine.
+  const categoria = (c.categoria_macro as string) || categoriaDi(c.brand as string, c.categoria as string, c.prodotto as string);
+  const controlli = Array.isArray(c.controlli) && c.controlli.length
+    ? (c.controlli as string[])
+    : controlliDi(d as Record<string, unknown>);
 
   return {
     id: (c.id as string) ?? "",
@@ -135,12 +123,8 @@ function mapContractToTrackingRow(
     hasDocumenti: d.hasDocumenti as boolean | undefined,
     followup: d.followup as FollowUpItem[] | undefined,
     dettagliFull: d as Record<string, unknown>,
-    // Regole dettate da Francesco: e' finanziamento SOLO se "Tipo TNP" o
-    // "Tipo CB" iniziano per "Finanziamento". "Rata 0" e "Rata 5G" NON lo sono
-    // (sono rateizzazioni interne), e nemmeno EasyPay da solo: la prima versione
-    // segnava finanziate pratiche che non lo erano.
-    finanziato: ["Tipo TNP", "Tipo CB", "tnpTipo", "cbTnpTipo"].some((k) =>
-      String((d as Record<string, unknown>)[k] ?? "").trim().toLowerCase().startsWith("finanziamento")),
+    controlli,
+    finanziato: controlli.includes("finanziamento"),
   };
 }
 
@@ -1239,7 +1223,7 @@ export default function TrackingPdaPage() {
     try {
       // Left join clients so contracts without a matching client still appear (avoids 0 rows).
       const selectCols =
-        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
+        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, categoria_macro, controlli, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
       const { data: baseData, error: baseErr } = await supabase
         .from("contracts")
         .select(selectCols)
@@ -1330,15 +1314,7 @@ export default function TrackingPdaPage() {
     const out: TrackingRow[] = [];
     rawList.forEach((r) => {
       const base = mapContractToTrackingRow(r, r.clients as Record<string, unknown> | null, (r.dettagli as Record<string, unknown>) || null);
-      const det = base.dettagliFull || {};
-      const isMobile = base.categoria === "mobile" || base.categoria === "mnp";
-      if (!isMobile) { out.push(base); return; }
-      const mnp = String((det as Record<string, unknown>).MNP ?? "").trim().toLowerCase();
-      const haMnp = mnp === "sì" || mnp === "si" || mnp === "true";
-      const cats: string[] = [];
-      if (base.finanziato) cats.push("finanziamento");
-      if (haMnp) cats.push("mnp");
-      if (cats.length === 0) cats.push("mobile");
+      const cats = righeTracking(base.categoria as never, (base.controlli || []) as never);
       // Segnalazione 66: ogni riga ha il proprio esito. Quello della categoria e'
       // in stati_categoria; se manca si eredita da stato_negozio, cosi' le
       // pratiche gia' lavorate non perdono lo stato.

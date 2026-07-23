@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
+import { categoriaDi, controlliDi } from "@/lib/tassonomia";
 import { useAuth } from "@/context/AuthContext";
 const ReqCtx = createContext(null);
 const SubKeyCtx = createContext(null);
@@ -3852,6 +3853,10 @@ export default function CRM() {
             data: dateStr,
             brand: group.brandLabel,
             categoria: item.macro,
+            // Tassonomia unica: categoria valida per tutti i brand + controlli
+            // richiesti dalla pratica. Il nome del brand resta in `categoria`.
+            categoria_macro: categoriaDi(group.brandLabel, item.macro, item.sub),
+            controlli: controlliDi(item.details),
             prodotto: item.sub,
             stato: "Nuovo",
             venditore: selVend,
@@ -3873,6 +3878,8 @@ export default function CRM() {
           data: dateStr,
           brand: "Extra",
           categoria: "Prodotto/Servizio",
+          categoria_macro: "extra",
+          controlli: [],
           prodotto: mi.product,
           stato: "Nuovo",
           venditore: mi.vendor || selVend,
@@ -3968,7 +3975,7 @@ export default function CRM() {
       }
       const rows=margItems.map(mi=>({
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
-        client_id:clientId,data:dateStr,brand:"Extra",categoria:"Prodotto/Servizio",
+        client_id:clientId,data:dateStr,brand:"Extra",categoria:"Prodotto/Servizio",categoria_macro:"extra",controlli:[],
         prodotto:mi.product,stato:"Nuovo",venditore:mi.vendor||selVend,negozio:mi.store||selNeg,
         codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:dateStr,
         dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei},
