@@ -144,6 +144,33 @@ function mapContractToTrackingRow(
   };
 }
 
+// Segnalazioni 48, 65 e 70: i riquadri per categoria leggevano chiavi camelCase
+// (tipoFinanziamento, codiceNegozio, modelloTelefono, tipoEnergia) che nei
+// contratti reali non esistono, quindi restavano vuoti. I dettagli sono salvati
+// con le etichette del modulo. Questa funzione prende la prima chiave presente.
+function detVal(det: Record<string, unknown> | undefined, ...chiavi: string[]): string | null {
+  if (!det) return null;
+  for (const k of chiavi) {
+    const v = det[k];
+    if (v !== null && v !== undefined && String(v).trim() !== "") return String(v);
+  }
+  return null;
+}
+
+/** Codice inserimento: cambia nome a seconda del prodotto, va sempre mostrato. */
+function codiceInserimento(det: Record<string, unknown> | undefined): string | null {
+  if (!det) return null;
+  const esatte = detVal(det, "Cod.Ins.", "Cod. Ins.", "codice_inserimento", "Codice");
+  if (esatte) return esatte;
+  // fallback: qualunque chiave che inizi per "Cod.Ins" (CB, Cambio, Protecta, RF...)
+  for (const [k, v] of Object.entries(det)) {
+    if (/^cod\.?\s?ins/i.test(k) && v !== null && v !== undefined && String(v).trim() !== "") {
+      return String(v);
+    }
+  }
+  return null;
+}
+
 // ─── Badges ───────────────────────────────────────────────────────────────────
 function StatoBadge({ id, set }: { id: string; set: "admin" | "negozio" }) {
   const s = set === "admin" ? getStatoA(id) : getStatoN(id);
@@ -887,9 +914,14 @@ function Drawer({
                   <div className="text-xs font-bold text-green-500 uppercase tracking-wider">Dati energia</div>
                 </div>
                 <div className="grid grid-cols-2 gap-3.5">
-                  <div className="col-span-2"><div className={labelStyle}>Tipo fornitura</div><div className={valStyle}>{row.tipoEnergia ?? "—"}</div></div>
-                  {row.pod && <div className="col-span-2"><div className={labelStyle}>POD</div><div className={valStyle + " font-mono"}>{row.pod}</div></div>}
-                  {row.pdr && <div className="col-span-2"><div className={labelStyle}>PDR</div><div className={valStyle + " font-mono"}>{row.pdr}</div></div>}
+                  {/* Segnalazione 65: tipo fornitura e codice inserimento. */}
+                  <div><div className={labelStyle}>Tipo fornitura</div><div className={valStyle}>
+                    {detVal(row.dettagliFull, "Tipo Fornitura", "tipoEnergia", "Tipologia")
+                      ?? (detVal(row.dettagliFull, "pdr", "PDR") ? "Gas" : detVal(row.dettagliFull, "pod", "POD") ? "Luce" : "—")}
+                  </div></div>
+                  <div><div className={labelStyle}>Codice inserimento</div><div className={valStyle + " font-mono"}>{codiceInserimento(row.dettagliFull) ?? "—"}</div></div>
+                  {detVal(row.dettagliFull, "pod", "POD") && <div className="col-span-2"><div className={labelStyle}>POD</div><div className={valStyle + " font-mono"}>{detVal(row.dettagliFull, "pod", "POD")}</div></div>}
+                  {detVal(row.dettagliFull, "pdr", "PDR") && <div className="col-span-2"><div className={labelStyle}>PDR</div><div className={valStyle + " font-mono"}>{detVal(row.dettagliFull, "pdr", "PDR")}</div></div>}
                 </div>
               </div>
             )}
@@ -900,10 +932,16 @@ function Drawer({
                   <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">Dati finanziamento</div>
                 </div>
                 <div className="grid grid-cols-2 gap-3.5">
-                  <div><div className={labelStyle}>Tipo</div><div className={valStyle}>{row.tipoFinanziamento ?? "—"}</div></div>
-                  <div><div className={labelStyle}>Codice negozio</div><div className={valStyle + " font-mono"}>{row.codiceNegozio ?? "—"}</div></div>
-                  <div className="col-span-2"><div className={labelStyle}>Modello telefono</div><div className={valStyle}>{row.modelloTelefono ?? "—"}</div></div>
-                  {row.numeroPratica && <div className="col-span-2"><div className={labelStyle}>N° pratica</div><div className={valStyle + " font-mono"}>{row.numeroPratica}</div></div>}
+                  {/* Segnalazione 48: Tipo = Tipo TNP o Tipo CB, Codice negozio =
+                      codice inserimento, Modello = Terminali TNP o Terminali CB. */}
+                  <div><div className={labelStyle}>Tipo</div><div className={valStyle}>{detVal(row.dettagliFull, "Tipo TNP", "Tipo CB") ?? "—"}</div></div>
+                  <div><div className={labelStyle}>Codice inserimento</div><div className={valStyle + " font-mono"}>{codiceInserimento(row.dettagliFull) ?? "—"}</div></div>
+                  <div className="col-span-2"><div className={labelStyle}>Modello telefono</div><div className={valStyle}>
+                    {detVal(row.dettagliFull, "Terminali TNP", "Terminali CB", "Terminale", "Term. CB", "Modello") ?? "—"}
+                  </div></div>
+                  {detVal(row.dettagliFull, "IMEI TNP", "IMEI CB", "IMEI") && (
+                    <div className="col-span-2"><div className={labelStyle}>IMEI</div><div className={valStyle + " font-mono"}>{detVal(row.dettagliFull, "IMEI TNP", "IMEI CB", "IMEI")}</div></div>
+                  )}
                 </div>
               </div>
             )}
@@ -932,6 +970,12 @@ function Drawer({
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-3.5">
+                    {/* Segnalazione 70: il codice inserimento deve comparire sempre,
+                        anche quando la chiave ha un nome diverso per prodotto. */}
+                    <div className="col-span-2">
+                      <div className={labelStyle}>Cod.Ins. (codice inserimento)</div>
+                      <div className={valStyle + " font-mono"}>{codiceInserimento(det as Record<string, unknown>) ?? "—"}</div>
+                    </div>
                     {voci.map(([k, v]) => (
                       <div key={k}>
                         <div className={labelStyle}>{k}</div>
@@ -1195,7 +1239,7 @@ export default function TrackingPdaPage() {
     try {
       // Left join clients so contracts without a matching client still appear (avoids 0 rows).
       const selectCols =
-        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
+        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
       const { data: baseData, error: baseErr } = await supabase
         .from("contracts")
         .select(selectCols)
@@ -1205,18 +1249,18 @@ export default function TrackingPdaPage() {
       if (baseErr) throw baseErr;
 
       // Optional: fetch tracking columns (requires migration 022). If it fails, we still show contracts with defaults.
-      let trackingMap = new Map<string, { stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[] }>();
+      let trackingMap = new Map<string, { stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string> }>();
       const { data: trackingData, error: trackingErr } = await supabase
         .from("contracts")
-        .select("id, stato_negozio, stato_admin, storia")
+        .select("id, stato_negozio, stato_admin, storia, stati_categoria")
         .order("created_at", { ascending: false })
         .limit(500);
 
       if (!trackingErr && trackingData?.length) {
         trackingMap = new Map(
-          (trackingData as { id: string; stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[] }[]).map((r) => [
+          (trackingData as { id: string; stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string> }[]).map((r) => [
             r.id,
-            { stato_negozio: r.stato_negozio, stato_admin: r.stato_admin, storia: r.storia },
+            { stato_negozio: r.stato_negozio, stato_admin: r.stato_admin, storia: r.storia, stati_categoria: r.stati_categoria },
           ])
         );
       }
@@ -1295,7 +1339,16 @@ export default function TrackingPdaPage() {
       if (base.finanziato) cats.push("finanziamento");
       if (haMnp) cats.push("mnp");
       if (cats.length === 0) cats.push("mobile");
-      cats.forEach((c) => out.push({ ...base, categoria: c, rowKey: `${base.id}#${c}` }));
+      // Segnalazione 66: ogni riga ha il proprio esito. Quello della categoria e'
+      // in stati_categoria; se manca si eredita da stato_negozio, cosi' le
+      // pratiche gia' lavorate non perdono lo stato.
+      const perCat = (r.stati_categoria as Record<string, string> | undefined) || {};
+      cats.forEach((c) => out.push({
+        ...base,
+        categoria: c,
+        rowKey: `${base.id}#${c}`,
+        statoNegozio: perCat[c] ?? base.statoNegozio,
+      }));
     });
     return out;
   }, [rawList]);
@@ -1435,12 +1488,28 @@ export default function TrackingPdaPage() {
       // Segnalazioni 37 e 38: lo stato lavorato qui deve comparire subito in
       // Ricerca Contratto, e la data di attivazione si popola quando la pratica
       // diventa davvero attiva (prima veniva scritta all'inserimento).
+      // Se la pratica ha piu' controlli (MNP + finanziamento), l'esito va scritto
+      // sulla sua categoria e non sulla colonna condivisa, altrimenti si
+      // sovrascrivono a vicenda (segnalazione 66).
+      const rigaEspansa = !!updated.rowKey && updated.rowKey.includes("#");
+      const cat = updated.categoria;
+      const attuali = (rawList.find((r) => (r.id as string) === updated.id)?.stati_categoria as Record<string, string>) || {};
+      const nuoviStati = { ...attuali, [cat]: updated.statoNegozio };
+
+      // Lo stato del contratto e' "Attivo" solo quando TUTTI i controlli sono
+      // completati: con due verifiche aperte la pratica non e' finita.
+      const tuttiStati = rigaEspansa ? Object.values(nuoviStati) : [updated.statoNegozio];
+      const statoContratto = tuttiStati.every((st) => statoContrattoDa(st) === "Attivo")
+        ? "Attivo"
+        : statoContrattoDa(tuttiStati.find((st) => statoContrattoDa(st) !== "Attivo") ?? updated.statoNegozio);
+
       const payload: Record<string, unknown> = {
-        stato_negozio: updated.statoNegozio,
         stato_admin: updated.statoAdmin,
         storia: updated.storia,
-        stato: statoContrattoDa(updated.statoNegozio),
+        stato: statoContratto,
+        stati_categoria: nuoviStati,
       };
+      if (!rigaEspansa) payload.stato_negozio = updated.statoNegozio;
       // La data di attivazione NON si tocca qui: viene compilata alla
       // registrazione ed e' quella la data buona (indicazione di Luca, che
       // annulla la segnalazione 38). Qui si propaga solo lo stato.
@@ -1450,10 +1519,7 @@ export default function TrackingPdaPage() {
         return;
       }
       setRawList((prev) =>
-        prev.map((r) => {
-          if ((r.id as string) !== updated.id) return r;
-          return { ...r, ...payload };
-        })
+        prev.map((r) => ((r.id as string) === updated.id ? { ...r, ...payload } : r))
       );
       setSelected(updated);
     },

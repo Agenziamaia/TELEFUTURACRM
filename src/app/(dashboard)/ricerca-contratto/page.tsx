@@ -823,10 +823,11 @@ export default function RicercaContratto() {
                                         <td className="px-4 py-3">
                                             <div className="flex gap-1 justify-center">
                                                 <button onClick={() => openContract(row, "view")} className="p-1.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors" title="Dettaglio contratto"><Eye className="w-4 h-4" /></button>
-                                                {/* Segnalazione 46: scorciatoia verso Tracking PDA, con
-                                                    la ricerca gia' impostata sul nominativo del cliente
-                                                    e il dettaglio della pratica aperto. */}
-                                                <button
+                                                {/* Segnalazione 46: scorciatoia verso Tracking PDA.
+                                                    Segnalazione 64: va vista da tutti, non solo dallo
+                                                    store manager, e non ha senso sulle vendite Extra,
+                                                    che nel Tracking non compaiono. */}
+                                                {String(row.brand || "").trim().toLowerCase() !== "extra" && <button
                                                     onClick={() => {
                                                         const q = encodeURIComponent(row.cliente || "");
                                                         window.location.href = `/pda/tracking?q=${q}&id=${encodeURIComponent(row.id)}`;
@@ -834,7 +835,7 @@ export default function RicercaContratto() {
                                                     className="p-1.5 rounded bg-teal-500/20 text-teal-300 hover:bg-teal-500/30 transition-colors"
                                                     title="Apri in Tracking PDA">
                                                     <Navigation className="w-4 h-4" />
-                                                </button>
+                                                </button>}
                                                 {canEditContract && (
                                                     <button onClick={() => openContract(row, "edit")} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Modifica (richiede approvazione amministrazione)"><Edit className="w-4 h-4" /></button>
                                                 )}
