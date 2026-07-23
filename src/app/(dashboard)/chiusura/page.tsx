@@ -133,6 +133,17 @@ function SocietaBlock({ societa, files, setFiles }: { societa: string; files: Fi
     const removeFile = (key: DocKey, i: number) => {
         setFiles(prev => { const c = { ...prev, [key]: prev[key].filter((_, j) => j !== i) }; return c; });
     };
+    // Segnalazione 72: trascinare i file nelle caselle, oltre al tasto Allega.
+    const [dragKey, setDragKey] = useState<DocKey | null>(null);
+    const addDroppedFiles = (key: DocKey, list: FileList | null) => {
+        if (!list?.length) return;
+        const toAdd: FileEntry[] = [];
+        for (let i = 0; i < list.length; i++) {
+            const file = list[i];
+            toAdd.push({ name: file.name, size: formatFileSize(file.size), file });
+        }
+        setFiles(prev => ({ ...prev, [key]: [...prev[key], ...toAdd] }));
+    };
 
     return (
         <div className="rounded-2xl border-2 overflow-hidden" style={{ borderColor: color + "60" }}>
@@ -158,7 +169,12 @@ function SocietaBlock({ societa, files, setFiles }: { societa: string; files: Fi
             </div>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
                 {DOC_TYPES.map(dt => (
-                    <div key={dt.key} className={cn("rounded-xl border p-3 transition-all", files[dt.key].length > 0 ? "bg-white/[0.04] border-white/15" : "bg-white/[0.01] border-white/5")}>
+                    <div key={dt.key}
+                        onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (dragKey !== dt.key) setDragKey(dt.key); }}
+                        onDragLeave={e => { e.preventDefault(); e.stopPropagation(); setDragKey(null); }}
+                        onDrop={e => { e.preventDefault(); e.stopPropagation(); setDragKey(null); addDroppedFiles(dt.key, e.dataTransfer?.files || null); }}
+                        className={cn("rounded-xl border p-3 transition-all", dragKey === dt.key ? "border-2 scale-[1.02]" : files[dt.key].length > 0 ? "bg-white/[0.04] border-white/15" : "bg-white/[0.01] border-white/5")}
+                        style={dragKey === dt.key ? { borderColor: color, background: color + "18" } : undefined}>
                         <div className="flex items-start gap-2 mb-2">
                             <span className="text-lg">{dt.icon}</span>
                             <div className="flex-1 min-w-0">
@@ -180,7 +196,7 @@ function SocietaBlock({ societa, files, setFiles }: { societa: string; files: Fi
                             </div>
                         ))}
                         <button type="button" onClick={() => handleAddClick(dt.key)} className="mt-1.5 w-full py-1.5 rounded-lg border border-dashed border-white/10 text-xs text-slate-500 font-semibold hover:border-white/20 hover:text-slate-300 transition-all">
-                            + Allega
+                            {dragKey === dt.key ? "Rilascia qui" : "+ Allega o trascina"}
                         </button>
                     </div>
                 ))}

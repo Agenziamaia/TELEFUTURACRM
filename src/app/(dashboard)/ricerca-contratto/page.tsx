@@ -992,6 +992,18 @@ export default function RicercaContratto() {
 
                                 <Section title="Dati contratto">
                                     {CONTRACT_FIELDS.map(f => <Field key={f.key} k={"contract::" + f.key} label={f.label} kind={f.kind} />)}
+                                    {/* Segnalazione 67: nel box Dati contratto anche il codice
+                                        inserimento, che cambia nome per brand ma sta nei dettagli. */}
+                                    {(() => {
+                                        const det = (row.raw?.dettagli as Record<string, unknown>) || {};
+                                        const ci = det["Cod.Ins."] ?? Object.entries(det).find(([k]) => /^cod\.?\s?ins/i.test(k))?.[1];
+                                        return (
+                                            <div>
+                                                <span className="text-[11px] uppercase tracking-wider text-slate-500">Codice inserimento</span>
+                                                <p className="text-white text-sm break-words">{ci ? String(ci) : "—"}</p>
+                                            </div>
+                                        );
+                                    })()}
                                 </Section>
 
                                 <Section title="Anagrafica cliente">

@@ -694,7 +694,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const canNext = () => {
     if (step === 1) return !!(venditore && negozio);
     if (step === 2) return !!(tipoCliente && clienteFound !== null);
-    if (step === 3) return !!(tipoProdotto && brand && model && capacita && colore && imei && prezzoAcquisto && gradoUsura && (!hasExtraMargine || extraMargineImporto));
+    if (step === 3) return !!(tipoProdotto && brand && model && capacita && colore && imei.length === 15 && prezzoAcquisto && gradoUsura && (!hasExtraMargine || extraMargineImporto));
     if (step === 4) return !!(metodoPagamento && (metodoPagamento !== "bonifico" || ibanPag));
     if (step === 5) return !!(allegDoc && allegDich);
     return false;
@@ -843,7 +843,13 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
               </select>
             </div>
             <div><label className={lbl}>IMEI *</label>
-              <input value={imei} onChange={e => setImei(e.target.value)} maxLength={15} placeholder="353456789012345" className={inp} />
+              {/* Segnalazione 58: solo cifre, esattamente 15. Bordo rosso finche'
+                  non sono 15, impossibile inserirne di piu' o non numerici. */}
+              <input value={imei} inputMode="numeric"
+                onChange={e => setImei(e.target.value.replace(/\D/g, "").slice(0, 15))}
+                placeholder="353456789012345"
+                className={inp + (imei && imei.length !== 15 ? " !border-rose-500" : "")} />
+              {imei && imei.length !== 15 && <p className="text-[10px] text-rose-400 mt-1">IMEI: {imei.length}/15 cifre</p>}
             </div>
             <div><label className={lbl}>Prezzo Acquisto () *</label>
               <input type="number" step="1" min="0" value={prezzoAcquisto} onChange={e => setPrezzoAcquisto(e.target.value)} placeholder="es. 250" className={inp} />
