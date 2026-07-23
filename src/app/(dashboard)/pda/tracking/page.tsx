@@ -919,15 +919,16 @@ function Drawer({
                 qualunque sia il brand. */}
             {(() => {
               const det = row.dettagliFull || {};
-              const voci = Object.entries(det).filter(([k, v]) =>
-                v !== null && v !== undefined && v !== "" && typeof v !== "object" && !k.startsWith("_"));
-              if (voci.length === 0) return null;
+              const tutte = Object.entries(det).filter(([k]) => !k.startsWith("_"));
+              const voci = tutte.filter(([, v]) => v === null || typeof v !== "object");
+              const annidate = tutte.filter(([, v]) => v !== null && typeof v === "object");
+              if (tutte.length === 0) return null;
               return (
                 <div className={panelStyle}>
                   <div className="flex items-center gap-2 mb-3">
                     <div className="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" />
                     <div className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Dettagli registrazione</div>
-                    <div className="ml-auto text-[10px] text-slate-500">{voci.length} campi</div>
+                    <div className="ml-auto text-[10px] text-slate-500">{tutte.length} campi</div>
                     {row.finanziato && (
                       <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/40">
                         Finanziato
@@ -939,8 +940,15 @@ function Drawer({
                       <div key={k}>
                         <div className={labelStyle}>{k}</div>
                         <div className={valStyle + " break-words"}>
-                          {typeof v === "boolean" ? (v ? "Sì" : "No") : String(v)}
+                          {v === null || v === undefined || v === "" ? "—"
+                            : typeof v === "boolean" ? (v ? "Sì" : "No") : String(v)}
                         </div>
+                      </div>
+                    ))}
+                    {annidate.map(([k, v]) => (
+                      <div key={k} className="col-span-2">
+                        <div className={labelStyle}>{k}</div>
+                        <pre className="text-[11px] text-slate-300 bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
                       </div>
                     ))}
                   </div>
