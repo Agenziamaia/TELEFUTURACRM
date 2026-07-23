@@ -127,6 +127,18 @@ const CATEGORIES = [
 ];
 
 /* ─── HELPERS ─── */
+// Segnalazione 73: le categorie ora arrivano dal DB (doc_categories) e non hanno
+// un componente icona; la scegliamo dalla chiave.
+function catIconFor(key: string) {
+    const k = (key || "").toLowerCase();
+    if (k.includes("modul")) return FileSignature;
+    if (k.includes("oper")) return FileText;
+    return Folder;
+}
+function slugify(str: string) {
+    return (str || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "sezione";
+}
 function getBrand(id: string) { return BRANDS.find(b => b.id === id); }
 function getCat(id: string) { return CATEGORIES.find(c => c.id === id); }
 
@@ -201,9 +213,8 @@ export default function DocumentazionePage() {
 
     const getDocs = useCallback((brandId: string, catId: string) => (docsByBrandCategory[brandId]?.[catId] ?? []), [docsByBrandCategory]);
     const getTotalDocs = useCallback((brandId: string) => {
-        let total = 0;
-        CATEGORIES.forEach((c) => { total += (docsByBrandCategory[brandId]?.[c.id]?.length ?? 0); });
-        return total;
+        const cats = docsByBrandCategory[brandId] || {};
+        return Object.values(cats).reduce((s, arr) => s + arr.length, 0);
     }, [docsByBrandCategory]);
 
     useEffect(() => {
@@ -234,6 +245,39 @@ export default function DocumentazionePage() {
     const [isAdmin, setIsAdmin] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
     useEffect(() => { if (!canEdit && isAdmin) setIsAdmin(false); }, [canEdit, isAdmin]);
+
+    // Segnalazione 73: categorie/sezioni gestibili dal Direttore Commerciale in su.
+    const [dbCats, setDbCats] = useState<{ id: number; brand_id: string | null; cat_key: string; name: string; descrizione: string | null; sort: number; archived: boolean }[]>([]);
+    const fetchCats = useCallback(async () => {
+        const { data } = await supabase.from("doc_categories").select("id, brand_id, cat_key, name, descrizione, sort, archived").eq("archived", false).order("sort");
+        if (data) setDbCats(data as typeof dbCats);
+    }, []);
+    useEffect(() => { fetchCats(); }, [fetchCats]);
+    // Gestione inline (niente prompt del browser: input dentro la pagina).
+    const [addingCat, setAddingCat] = useState(false);
+    const [newCatName, setNewCatName] = useState("");
+    const [editCatId, setEditCatId] = useState<number | null>(null);
+    const [editCatName, setEditCatName] = useState("");
+    const addCategory = useCallback(async (name: string, forBrand: string) => {
+        const nm = name.trim();
+        if (!nm) return;
+        const key = slugify(nm) + "-" + Math.random().toString(36).slice(2, 6);
+        const maxSort = dbCats.reduce((m, c) => Math.max(m, c.sort), 0);
+        await supabase.from("doc_categories").insert({ brand_id: forBrand, cat_key: key, name: nm, sort: maxSort + 10 });
+        setAddingCat(false); setNewCatName("");
+        fetchCats();
+    }, [dbCats, fetchCats]);
+    const renameCategory = useCallback(async (dbId: number, name: string) => {
+        const nm = name.trim();
+        if (!nm) { setEditCatId(null); return; }
+        await supabase.from("doc_categories").update({ name: nm }).eq("id", dbId);
+        setEditCatId(null); setEditCatName("");
+        fetchCats();
+    }, [fetchCats]);
+    const archiveCategory = useCallback(async (dbId: number) => {
+        await supabase.from("doc_categories").update({ archived: true }).eq("id", dbId);
+        fetchCats();
+    }, [fetchCats]);
     const [previewDoc, setPreviewDoc] = useState<DocEntry | null>(null);
     const [fillDoc, setFillDoc] = useState<DocEntry | null>(null);
     const [showUpload, setShowUpload] = useState(false);
@@ -249,7 +293,14 @@ export default function DocumentazionePage() {
     const [renameValue, setRenameValue] = useState("");
 
     const brand = brandId ? getBrand(brandId) : null;
-    const cat = catId ? getCat(catId) : null;
+    // Segnalazione 73: categorie effettive = globali (brand_id null) + quelle del
+    // brand corrente. Fallback alle 3 storiche finche' il DB non ha risposto.
+    const effCats = useMemo(() => {
+        const rows = dbCats.filter(c => !c.archived && (c.brand_id === null || c.brand_id === brandId));
+        if (rows.length) return rows.map(c => ({ id: c.cat_key, name: c.name, desc: c.descrizione ?? "", icon: catIconFor(c.cat_key), dbId: c.id, shared: c.brand_id === null }));
+        return CATEGORIES.map(c => ({ id: c.id, name: c.name, desc: c.desc, icon: c.icon, dbId: 0, shared: true }));
+    }, [dbCats, brandId]);
+    const cat = catId ? (effCats.find(c => c.id === catId) ?? getCat(catId)) : null;
     const allDocs = brandId && catId ? getDocs(brandId, catId) : [];
     // I documenti archiviati (OLD) sono nascosti finche' non si sceglie di mostrarli.
     const docs = showArchived ? allDocs : allDocs.filter((d) => !d.archived);
@@ -410,29 +461,87 @@ export default function DocumentazionePage() {
                 {/* CATEGORY SELECTION */}
                 {brandId && !catId && brand && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {CATEGORIES.map(c => {
+                        {effCats.map(c => {
                             const docCount = getDocs(brand.id, c.id).length;
+                            const editing = editCatId === c.dbId && c.dbId > 0;
                             return (
                                 <div
                                     key={c.id}
-                                    onClick={() => setView((prev) => ({ ...prev, catId: c.id }))}
+                                    onClick={() => { if (!editing) setView((prev) => ({ ...prev, catId: c.id })); }}
                                     className={cn(
-                                        "glass-card p-6 cursor-pointer group hover:bg-white/[0.04] transition-all border border-white/10 hover:border-white/20 flex gap-4"
+                                        "glass-card p-6 group hover:bg-white/[0.04] transition-all border border-white/10 hover:border-white/20 flex gap-4 relative",
+                                        editing ? "cursor-default" : "cursor-pointer"
                                     )}
                                 >
                                     <div className={cn("p-3 rounded-xl h-fit", brand.bg)}>
                                         <c.icon className={cn("w-6 h-6", brand.text)} />
                                     </div>
-                                    <div>
-                                        <h3 className="text-lg font-bold text-white mb-1 group-hover:text-indigo-400 transition-colors">{c.name}</h3>
-                                        <p className="text-sm text-slate-400 mb-3">{c.desc}</p>
-                                        <span className={cn("inline-block px-2.5 py-1 rounded-md text-xs font-bold bg-[#0f111a]/50 border border-white/5", brand.text)}>
-                                            {docCount} documenti
-                                        </span>
+                                    <div className="min-w-0 flex-1">
+                                        {editing ? (
+                                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                                <input
+                                                    autoFocus
+                                                    value={editCatName}
+                                                    onChange={(e) => setEditCatName(e.target.value)}
+                                                    onKeyDown={(e) => { if (e.key === "Enter") renameCategory(c.dbId, editCatName); if (e.key === "Escape") setEditCatId(null); }}
+                                                    className="w-full bg-[#0f111a] border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                                                />
+                                                <button onClick={() => renameCategory(c.dbId, editCatName)} className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30"><ChevronRight className="w-4 h-4" /></button>
+                                                <button onClick={() => setEditCatId(null)} className="p-1.5 rounded-lg bg-white/5 text-slate-400 hover:bg-white/10"><X className="w-4 h-4" /></button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <h3 className="text-lg font-bold text-white mb-1 group-hover:text-indigo-400 transition-colors flex items-center gap-2">
+                                                    {c.name}
+                                                    {c.shared && <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 border border-white/10 rounded px-1.5 py-0.5">condivisa</span>}
+                                                </h3>
+                                                <p className="text-sm text-slate-400 mb-3">{c.desc}</p>
+                                                <span className={cn("inline-block px-2.5 py-1 rounded-md text-xs font-bold bg-[#0f111a]/50 border border-white/5", brand.text)}>
+                                                    {docCount} documenti
+                                                </span>
+                                            </>
+                                        )}
                                     </div>
+                                    {/* Gestione sezione (solo Direttore Commerciale in su, e solo per le
+                                        sezioni specifiche del brand: le "condivise" restano invariate). */}
+                                    {isAdmin && !editing && c.dbId > 0 && !c.shared && (
+                                        <div className="absolute top-3 right-3 flex gap-1" onClick={(e) => e.stopPropagation()}>
+                                            <button onClick={() => { setEditCatId(c.dbId); setEditCatName(c.name); }} title="Rinomina" className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400"><Edit className="w-4 h-4" /></button>
+                                            <button onClick={() => { if (window.confirm(`Rimuovere la sezione "${c.name}"?`)) archiveCategory(c.dbId); }} title="Rimuovi" className="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400"><Trash2 className="w-4 h-4" /></button>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
+
+                        {/* Aggiungi nuova sezione per questo brand (segn.73) */}
+                        {isAdmin && (
+                            addingCat ? (
+                                <div className="glass-card p-6 border border-indigo-500/30 flex flex-col gap-3">
+                                    <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Nuova sezione — {brand.name}</label>
+                                    <input
+                                        autoFocus
+                                        value={newCatName}
+                                        onChange={(e) => setNewCatName(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === "Enter") addCategory(newCatName, brand.id); if (e.key === "Escape") { setAddingCat(false); setNewCatName(""); } }}
+                                        placeholder="es. Listini Business"
+                                        className="w-full bg-[#0f111a] border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-indigo-500"
+                                    />
+                                    <div className="flex gap-2">
+                                        <button onClick={() => addCategory(newCatName, brand.id)} className="flex-1 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold">Crea</button>
+                                        <button onClick={() => { setAddingCat(false); setNewCatName(""); }} className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-sm">Annulla</button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => setAddingCat(true)}
+                                    className="glass-card p-6 border border-dashed border-white/15 hover:border-indigo-500/50 hover:bg-white/[0.03] transition-all flex items-center justify-center gap-3 text-slate-400 hover:text-indigo-300"
+                                >
+                                    <Plus className="w-6 h-6" />
+                                    <span className="font-semibold">Nuova sezione</span>
+                                </button>
+                            )
+                        )}
                     </div>
                 )}
 
@@ -715,7 +824,7 @@ export default function DocumentazionePage() {
                                     onChange={e => setUploadCategory(e.target.value)}
                                     className="w-full bg-[#0f111a] border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
                                 >
-                                    {CATEGORIES.map(c => (
+                                    {effCats.map(c => (
                                         <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
                                 </select>
