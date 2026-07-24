@@ -7,6 +7,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 const CART_STORAGE_KEY = "ordine-merce-cart-v1";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
+import { useAuth } from "@/context/AuthContext";
 
 /* ═══════════════════════════════════════════════════
    ORDINE MERCE v2 — Telefutura CRM
@@ -362,6 +363,10 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [roleState, setRoleState] = useState("store_manager");
   const [myStoreState] = useState("");
   const storeList = useStores(); // negozi reali dal DB (segn.51)
+  // Utente corrente: serve per legare la bozza del carrello alla persona (segn.51)
+  const { user } = useAuth();
+  const userId = user?.id || null;
+  const userName = user?.name || null;
   const role = propRole != null ? propRole : roleState;
   const myStore = propMyStore != null ? propMyStore : myStoreState;
   const isControlled = propRole != null;
@@ -427,22 +432,60 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [inkPending, setInkPending] = useState(null); // which ink item is being configured
   const [cart, setCart] = useState([]); // [{name, qty, cat, brand?, sub?, subCat?}]
   const [orderNote, setOrderNote] = useState("");
-  // Carica il carrello salvato al primo mount; salvalo ad ogni modifica.
-  const cartLoaded = useRef(false);
+  // Segnalazione 51: la bozza del carrello va ripresa anche il giorno dopo.
+  // Prima viveva SOLO nel localStorage del browser, quindi si perdeva cambiando
+  // dispositivo/browser. Ora sta anche a database (una bozza per utente).
+  // Nota: "cartReady" e' uno state, non una ref: cosi' l'effetto di salvataggio
+  // non parte prima che il carrello caricato sia stato davvero applicato
+  // (con una ref partiva subito e cancellava la bozza appena letta).
+  const [cartReady, setCartReady] = useState(false);
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(CART_STORAGE_KEY);
-      if (raw) { const d = JSON.parse(raw); if (Array.isArray(d?.cart)) setCart(d.cart); if (typeof d?.note === "string") setOrderNote(d.note); }
-    } catch { /* ignore */ }
-    cartLoaded.current = true;
-  }, []);
+    let annullato = false;
+    (async () => {
+      let caricato = null;
+      try {
+        const raw = localStorage.getItem(CART_STORAGE_KEY);
+        if (raw) { const d = JSON.parse(raw); if (Array.isArray(d?.cart)) caricato = { cart: d.cart, note: typeof d?.note === "string" ? d.note : "" }; }
+      } catch { /* ignore */ }
+      // il database ha la precedenza: e' quello che sopravvive al cambio browser
+      if (userId) {
+        try {
+          const { data } = await supabase.from("merchandise_order_drafts")
+            .select("cart, note").eq("user_id", userId).maybeSingle();
+          if (data && Array.isArray(data.cart) && data.cart.length > 0) {
+            caricato = { cart: data.cart, note: data.note || "" };
+          }
+        } catch { /* ignore */ }
+      }
+      if (annullato) return;
+      if (caricato) { setCart(caricato.cart); setOrderNote(caricato.note); }
+      setCartReady(true);
+    })();
+    return () => { annullato = true; };
+  }, [userId]);
+
   useEffect(() => {
-    if (!cartLoaded.current) return;
+    if (!cartReady) return;
     try {
       if (cart.length === 0 && !orderNote) localStorage.removeItem(CART_STORAGE_KEY);
       else localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ cart, note: orderNote }));
     } catch { /* ignore */ }
-  }, [cart, orderNote]);
+    if (!userId) return;
+    // salvataggio a database con un piccolo ritardo, per non scrivere ad ogni tasto
+    const t = setTimeout(async () => {
+      try {
+        if (cart.length === 0 && !orderNote) {
+          await supabase.from("merchandise_order_drafts").delete().eq("user_id", userId);
+        } else {
+          await supabase.from("merchandise_order_drafts").upsert({
+            user_id: userId, user_name: userName || null, store: myStore || null,
+            cart, note: orderNote || null, updated_at: new Date().toISOString(),
+          }, { onConflict: "user_id" });
+        }
+      } catch { /* ignore */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [cart, orderNote, cartReady, userId, userName, myStore]);
   const [createStep, setCreateStep] = useState(0); // 0=build, 1=review
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);

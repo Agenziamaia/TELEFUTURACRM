@@ -620,22 +620,23 @@ export default function RicercaContratto() {
                 nel Tracking PDA. Cliccando si filtra per quel brand. Ogni utente
                 vede i brand su cui opera. Sostituiscono il filtro Brand a tendina. */}
             {brandCounts.length > 0 && (
-                <div className="flex flex-wrap gap-3 mb-6">
+                /* Segnalazione 57: tessere piu' grandi e centrate (richiesta Francesco). */
+                <div className="flex flex-wrap gap-4 mb-8 justify-center">
                     {brandCounts.map(({ brand, n }) => {
                         const active = filterBrand === brand;
                         const logo = BRAND_LOGO[brand];
                         const isExtra = brand.toLowerCase() === "extra";
                         return (
                             <button key={brand} onClick={() => { setFilterBrand(active ? "" : brand); setPage(1); }}
-                                className={cn("flex flex-col items-center justify-center gap-1.5 rounded-2xl border px-5 py-3 min-w-[104px] transition-all",
+                                className={cn("flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all",
                                     active ? "border-indigo-400/60 bg-indigo-500/10" : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]")}>
-                                <span className="h-8 flex items-center justify-center">
-                                    {isExtra ? <span className="text-2xl">💰</span>
-                                        : logo ? <img src={logo} alt={brand} className="h-8 w-auto max-w-[92px] object-contain" />
-                                            : <span className="text-sm font-bold text-slate-200">{brand}</span>}
+                                <span className="h-14 flex items-center justify-center">
+                                    {isExtra ? <span className="text-4xl">💰</span>
+                                        : logo ? <img src={logo} alt={brand} className="h-14 w-auto max-w-[140px] object-contain" />
+                                            : <span className="text-lg font-bold text-slate-200">{brand}</span>}
                                 </span>
-                                <span className="text-2xl font-black text-white tabular-nums leading-none">{n}</span>
-                                <span className="text-[10px] text-slate-500 uppercase tracking-wider">{brand}</span>
+                                <span className="text-4xl font-black text-white tabular-nums leading-none">{n}</span>
+                                <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">{brand}</span>
                             </button>
                         );
                     })}

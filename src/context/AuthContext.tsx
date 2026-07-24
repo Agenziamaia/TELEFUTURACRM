@@ -105,7 +105,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { ok: true };
     };
 
+    // Segnalazione 69: la conversazione dell'Assistente AI si azzera SOLO al
+    // logout (navigando fra le pagine resta). Qui ripuliamo la sua chiave.
+    const clearAiChat = (uid?: string | null) => {
+        try {
+            if (uid) localStorage.removeItem(`crm_ai_chat_${uid}`);
+            else Object.keys(localStorage).filter(k => k.startsWith("crm_ai_chat_")).forEach(k => localStorage.removeItem(k));
+        } catch { /* ignore */ }
+    };
+
     const logout = () => {
+        clearAiChat(user?.id);
         setUser(null);
         localStorage.removeItem("crm_session");
         localStorage.removeItem("crm_last_activity");
@@ -122,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const IDLE_MS = 15 * 60 * 1000;
         let timer: ReturnType<typeof setTimeout>;
         const doLogout = () => {
+            clearAiChat(user?.id);
             setUser(null);
             localStorage.removeItem("crm_session");
             localStorage.removeItem("crm_last_activity");

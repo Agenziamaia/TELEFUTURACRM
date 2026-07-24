@@ -88,6 +88,28 @@ export default function AssistentePage() {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef(null);
 
+  // Segnalazione 69: navigando fra le pagine del CRM la conversazione non deve
+  // ripartire da zero. Prima i messaggi stavano solo nello state del componente,
+  // quindi uscendo dalla pagina si perdevano. Ora restano salvati per l'utente e
+  // si azzerano solo al logout (AuthContext rimuove questa chiave).
+  const CHAT_KEY = meId ? `crm_ai_chat_${meId}` : null;
+  const chatReady = useRef(false);
+  useEffect(() => {
+    if (!CHAT_KEY) return;
+    try {
+      const raw = localStorage.getItem(CHAT_KEY);
+      if (raw) { const d = JSON.parse(raw); if (Array.isArray(d)) setMsgs(d); }
+    } catch { /* ignore */ }
+    chatReady.current = true;
+  }, [CHAT_KEY]);
+  useEffect(() => {
+    if (!CHAT_KEY || !chatReady.current) return;
+    try {
+      if (msgs.length === 0) localStorage.removeItem(CHAT_KEY);
+      else localStorage.setItem(CHAT_KEY, JSON.stringify(msgs));
+    } catch { /* ignore */ }
+  }, [msgs, CHAT_KEY]);
+
   useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs, loading]);
 
   const ask = async (text) => {
