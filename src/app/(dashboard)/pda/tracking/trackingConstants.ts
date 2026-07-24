@@ -176,6 +176,8 @@ export type TrackingRow = {
   // distinta, mentre `id` resta quello del contratto per gli aggiornamenti.
   rowKey?: string;
   statoNegozio: string;
+  // Segnalazione 77: stato della pratica (colonna "stato"), distinto dall'esito negozio
+  statoPratica: string;
   statoAdmin: string;
   storia: StoriaEvent[];
   cf: string;

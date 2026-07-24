@@ -121,6 +121,14 @@ function coerceLike(sample: unknown, raw: string): unknown {
     return raw;
 }
 
+// Segnalazione 76: codice di inserimento del contratto. La chiave nei dettagli
+// cambia da brand a brand ("Cod.Ins.", "Cod.Ins. CB", ...): si prende la prima utile.
+function codInsDi(row: ContrattoRow): string {
+    const d = (row.raw?.dettagli as Record<string, unknown>) || {};
+    const v = d["Cod.Ins."] ?? Object.entries(d).find(([k]) => /^cod\.?\s?ins/i.test(k))?.[1];
+    return v == null ? "" : String(v).trim();
+}
+
 export default function RicercaContratto() {
     const { user } = useAuth();
     const [contractList, setContractList] = useState<ContrattoRow[]>([]);
@@ -411,10 +419,11 @@ export default function RicercaContratto() {
 
     const handleExportCsv = () => {
         if (visibleData.length === 0) return;
-        const headers = ["Venditore", "Brand", "Prodotto", "Cliente", "Negozio", "Codice Attivazione", "Data Registrazione", "Data Attivazione", "Stato"];
+        // Segnalazione 76: anche nell'esport il Codice ins. e il nome corretto della colonna
+        const headers = ["Venditore", "Brand", "Prodotto", "Cliente", "Negozio", "Codice ins.", "Codice contratto", "Data Registrazione", "Data Attivazione", "Stato"];
         const rows = visibleData.map(r => [
-            r.venditore, r.brand, r.prodotto, r.cliente, r.negozio, r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato
-        ].map(val => `"${String(val).replace(/"/g, '""')}"`).join(","));
+            r.venditore, r.brand, r.prodotto, r.cliente, r.negozio, codInsDi(r), r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato
+        ].map(val => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","));
         const csvContent = [headers.join(","), ...rows].join("\n");
         const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
@@ -924,7 +933,10 @@ export default function RicercaContratto() {
                                     <th className="px-4 py-4 font-semibold">Prodotto</th>
                                     <th className="px-4 py-4 font-semibold">Cliente</th>
                                     <th className="px-4 py-4 font-semibold">Negozio</th>
-                                    <th className="px-4 py-4 font-semibold">Codice Attivazione</th>
+                                    {/* Segnalazione 76: "Codice Attivazione" si chiama Codice
+                                        contratto; prima di esso la colonna Codice ins. */}
+                                    <th className="px-4 py-4 font-semibold">Codice ins.</th>
+                                    <th className="px-4 py-4 font-semibold">Codice contratto</th>
                                     <th className="px-4 py-4 font-semibold">Data Registrazione</th>
                                     <th className="px-4 py-4 font-semibold">Data Attivazione</th>
                                     <th className="px-4 py-4 font-semibold">Stato</th>
@@ -939,6 +951,7 @@ export default function RicercaContratto() {
                                         <td className="px-4 py-3 text-slate-300">{row.prodotto}</td>
                                         <td className="px-4 py-3 text-slate-300 font-medium">{row.cliente}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{row.negozio}</td>
+                                        <td className="px-4 py-3 text-slate-400 text-xs">{codInsDi(row) || "—"}</td>
                                         <td className="px-4 py-3 text-slate-400 font-mono text-xs">{row.codice_attivazione}</td>
                                         <td className="px-4 py-3 text-slate-500 text-xs">{row.data_registrazione}</td>
                                         <td className="px-4 py-3 text-slate-500 text-xs">{row.data_attivazione}</td>
@@ -976,7 +989,7 @@ export default function RicercaContratto() {
                                 ))}
                                 {visibleData.length === 0 && (
                                     <tr>
-                                        <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
+                                        <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
                                             Nessun contratto trovato per i criteri o permessi correnti.
                                         </td>
                                     </tr>

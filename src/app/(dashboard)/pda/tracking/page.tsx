@@ -105,6 +105,9 @@ function mapContractToTrackingRow(
     numAttivazione: (c.codice_attivazione as string) ?? "—",
     dataInserimento,
     statoNegozio,
+    // Segnalazione 77: stato della pratica (colonna "stato"), diverso dall'esito
+    // negozio. Serve per il filtro "Tutti gli stati".
+    statoPratica: (c.stato as string) || "—",
     statoAdmin,
     storia,
     cf,
@@ -310,6 +313,9 @@ function FilterBar({
   setSearch,
   statoSel,
   setStatoSel,
+  praticaSel,
+  setPraticaSel,
+  statiPraticaDisponibili,
   periodoDA,
   setPeriodoDA,
   periodoA,
@@ -326,6 +332,9 @@ function FilterBar({
   setSearch: (v: string) => void;
   statoSel: string[];
   setStatoSel: (v: string[]) => void;
+  praticaSel: string[];
+  setPraticaSel: (v: string[]) => void;
+  statiPraticaDisponibili: string[];
   periodoDA: string;
   setPeriodoDA: (v: string) => void;
   periodoA: string;
@@ -337,6 +346,7 @@ function FilterBar({
   venditori: string[];
 }) {
   const [statoOpen, setStatoOpen] = useState(false);
+  const [praticaOpen, setPraticaOpen] = useState(false);   // segnalazione 77
 
   const toggleCat = (id: string) => {
     if (catSel.includes(id)) {
@@ -497,12 +507,14 @@ function FilterBar({
             onClick={() => setStatoOpen(!statoOpen)}
             className={inputStyle + " text-left flex items-center justify-between cursor-pointer"}
           >
+            {/* Segnalazione 77: questa tendina elenca gli ESITI NEGOZIO, non gli
+                stati pratica: rinominata di conseguenza. */}
             <span className={statoSel.length === 0 ? "text-slate-500" : "text-slate-100"}>
               {statoSel.length === 0
-                ? "Tutti gli stati"
+                ? "Tutti gli esiti"
                 : statoSel.length === 1
                   ? (statiDisponibili.find((s) => s.id === statoSel[0])?.label ?? statoSel[0])
-                  : `${statoSel.length} stati selezionati`}
+                  : `${statoSel.length} esiti selezionati`}
             </span>
             <span className="text-slate-500 text-[10px] ml-2">{statoOpen ? "▲" : "▼"}</span>
           </button>
@@ -513,7 +525,7 @@ function FilterBar({
             >
               <div className="flex items-center justify-between py-2 px-3 border-b border-slate-700">
                 <span className="text-[11px] text-slate-500 font-semibold">
-                  {statoSel.length > 0 ? `${statoSel.length} selezionati` : "Seleziona stati"}
+                  {statoSel.length > 0 ? `${statoSel.length} selezionati` : "Seleziona esiti"}
                 </span>
                 {statoSel.length > 0 && (
                   <button
@@ -557,6 +569,58 @@ function FilterBar({
               >
                 Chiudi ▲
               </div>
+            </div>
+          )}
+        </div>
+        {/* Segnalazione 77: nuova tendina che legge davvero la colonna "stato
+            pratica" (Nuovo / In lavorazione / Attivo / Annullato). */}
+        <div className="relative flex-1 min-w-[180px]">
+          <button
+            type="button"
+            onClick={() => setPraticaOpen(!praticaOpen)}
+            className={inputStyle + " text-left flex items-center justify-between cursor-pointer"}
+          >
+            <span className={praticaSel.length === 0 ? "text-slate-500" : "text-slate-100"}>
+              {praticaSel.length === 0
+                ? "Tutti gli stati"
+                : praticaSel.length === 1
+                  ? praticaSel[0]
+                  : `${praticaSel.length} stati selezionati`}
+            </span>
+            <span className="text-slate-500 text-[10px] ml-2">{praticaOpen ? "▲" : "▼"}</span>
+          </button>
+          {praticaOpen && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
+              style={{ boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}>
+              <div className="flex items-center justify-between py-2 px-3 border-b border-slate-700">
+                <span className="text-[11px] text-slate-500 font-semibold">
+                  {praticaSel.length > 0 ? `${praticaSel.length} selezionati` : "Seleziona stati"}
+                </span>
+                {praticaSel.length > 0 && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setPraticaSel([]); }}
+                    className="bg-transparent border-none text-slate-500 text-[11px] cursor-pointer p-0">✕ Tutti</button>
+                )}
+              </div>
+              {statiPraticaDisponibili.map((s) => {
+                const sel = praticaSel.includes(s);
+                return (
+                  <div key={s} role="button" tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (sel) setPraticaSel(praticaSel.filter((x) => x !== s));
+                      else setPraticaSel([...praticaSel, s]);
+                    }}
+                    className={`flex items-center gap-2.5 py-1.5 px-3 cursor-pointer ${sel ? "bg-indigo-900/40" : ""}`}>
+                    <div className="w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0"
+                      style={{ borderColor: sel ? "#6366f1" : "#475569", background: sel ? "#6366f1" : "transparent" }}>
+                      {sel && <span className="text-black text-[9px] font-black">✓</span>}
+                    </div>
+                    <span className="text-[13px] text-slate-200">{s}</span>
+                  </div>
+                );
+              })}
+              <div role="button" tabIndex={0} onClick={() => setPraticaOpen(false)}
+                className="py-2 px-3 border-t border-slate-700 text-center text-[11px] text-slate-500 cursor-pointer">Chiudi ▲</div>
             </div>
           )}
         </div>
@@ -1258,6 +1322,9 @@ export default function TrackingPdaPage() {
   // Segnalazione 54: filtro Venditore (dallo store manager in su) per vedere
   // solo le pratiche da verificare di un singolo collaboratore del team.
   const [venditoreSel, setVenditoreSel] = useState<string>("");
+  // Segnalazione 77: filtro sullo stato pratica (colonna "stato"), separato
+  // dagli esiti negozio.
+  const [praticaSel, setPraticaSel] = useState<string[]>([]);
   const [selected, setSelected] = useState<TrackingRow | null>(null);
   const [kpiFilter, setKpiFilter] = useState<string | null>(null);
   const [escludiConfermati, setEscludiConfermati] = useState(false);
@@ -1382,6 +1449,11 @@ export default function TrackingPdaPage() {
     return out;
   }, [rawList]);
 
+  const statiPraticaDisponibili = useMemo(
+    () => Array.from(new Set(data.map((r) => r.statoPratica).filter((x) => x && x !== "—"))).sort(),
+    [data]
+  );
+
   const deepOpened = useRef(false);
   useEffect(() => {
     if (deepOpened.current || data.length === 0) return;
@@ -1416,6 +1488,7 @@ export default function TrackingPdaPage() {
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
+      if (praticaSel.length > 0 && !praticaSel.includes(row.statoPratica)) return false;
       if (periodoDA || periodoA) {
         const rowDate = parseDataRiga(row.dataInserimento);
         // Senza data valida la riga resta fuori: se si filtra per periodo, una
@@ -1444,7 +1517,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id, venditoreSel]);
+  }, [data, catSel, brandSel, search, statoSel, praticaSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id, venditoreSel]);
 
   const filteredPerKpi = useMemo(() => {
     return data.filter((row) => {
@@ -1454,6 +1527,7 @@ export default function TrackingPdaPage() {
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
+      if (praticaSel.length > 0 && !praticaSel.includes(row.statoPratica)) return false;
       if (periodoDA || periodoA) {
         const parti = row.dataInserimento.split("/");
         if (parti.length === 3) {
@@ -1483,7 +1557,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, escludiConfermati, escludiCompletati]);
+  }, [data, catSel, brandSel, search, statoSel, praticaSel, periodoDA, periodoA, escludiConfermati, escludiCompletati]);
 
   // Delega la verifica di una pratica a un collaboratore (o rimuove la delega).
   const handleDelegate = useCallback(async (rowId: string, toId: string | null) => {
@@ -1678,6 +1752,9 @@ export default function TrackingPdaPage() {
               search={search}
               setSearch={setSearch}
               statoSel={statoSel}
+              praticaSel={praticaSel}
+              setPraticaSel={setPraticaSel}
+              statiPraticaDisponibili={statiPraticaDisponibili}
               setStatoSel={setStatoSel}
               periodoDA={periodoDA}
               setPeriodoDA={setPeriodoDA}
