@@ -298,7 +298,10 @@ export default function RicercaContratto() {
         try {
             let query = supabase
                 .from("contracts")
-                .select("*, clients!inner(nome, cognome, ragione_sociale, cellulare)", { count: "exact" });
+                // Anagrafica COMPLETA anche dalla lista: il dettaglio aperto da qui
+                // mostrava "—" su tutti i campi non selezionati (il DB era pieno,
+                // la query portava solo i 4 campi delle colonne).
+                .select("*, clients!inner(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)", { count: "exact" });
 
             // Apply Server-side filters
             if (filterVenditore && filterVenditore !== "Tutti") query = query.eq("venditore", filterVenditore);
