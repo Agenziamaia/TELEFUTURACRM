@@ -78,6 +78,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }, [pathname, router]);
 
+    // Il permesso "guarda come" viene riletto dal database a ogni avvio: cosi'
+    // vale subito anche per chi era gia' connesso quando e' stato concesso, senza
+    // dover uscire e rientrare (e sparisce subito se viene revocato).
+    useEffect(() => {
+        if (!baseUser?.id) return;
+        let vivo = true;
+        (async () => {
+            const { data } = await supabase
+                .from("app_users").select("can_switch_role").eq("id", baseUser.id).maybeSingle();
+            if (!vivo || !data) return;
+            const puo = !!data.can_switch_role;
+            if (puo !== !!baseUser.canSwitchRole) {
+                const aggiornato = { ...baseUser, canSwitchRole: puo };
+                setUser(aggiornato);
+                try { localStorage.setItem("crm_session", JSON.stringify(aggiornato)); } catch { }
+            }
+        })();
+        return () => { vivo = false; };
+    }, [baseUser?.id, baseUser?.canSwitchRole]);
+
     // Protezione rotte (ruoli reali). admin/direttore_generale = accesso pieno.
     useEffect(() => {
         if (!user) return;
