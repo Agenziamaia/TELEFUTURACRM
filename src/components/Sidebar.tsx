@@ -135,6 +135,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
             { name: "Negozi", sez: "negozi", icon: StoreIcon },
             { name: "Costi condivisi", sez: "condivisi", icon: Building2 },
             { name: "Altri costi", sez: "altri", icon: Tag },
+            { name: "Marginalità", sez: "marginalita", icon: Package },
             { name: "Target", sez: "target", icon: ClipboardList },
         ],
     },

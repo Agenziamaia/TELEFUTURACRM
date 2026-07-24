@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { ToastHost, dbError, notify } from "./_views/toast";
 import { FixedStoreCosts, StoreAttachments } from "./_views/store-extra";
 import { TargetSection } from "./_views/target";
+import { MarginalitaView } from "./_views/marginalita";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
@@ -57,6 +58,7 @@ import {
     Trash2,
     ArrowLeft,
     Euro,
+    Package,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -154,6 +156,7 @@ const SEZIONI = [
     { id: "negozi", label: "Negozi", icon: StoreIcon, desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
     { id: "condivisi", label: "Costi condivisi", icon: Building2, desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
     { id: "altri", label: "Altri costi", icon: Tag, desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
+    { id: "marginalita", label: "Marginalità", icon: Package, desc: "Catalogo prodotti e servizi: IVA, costi e margini, valore visibile per le gare, legami coi brand." },
     { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
 ] as const;
 
@@ -432,6 +435,8 @@ function AmministrazioneInner() {
                         <AltriCostiView month={month} livePeople={livePeople} />
                     )}
                 </>
+            ) : sez === "marginalita" ? (
+                <MarginalitaView />
             ) : (
                 <TargetSection />
             )}
