@@ -92,8 +92,8 @@ const BRAND_SUB = {
       vodafone: {
         _hasChannels: true,
         channels: {
-          vdf_store: { label: "Vodafone Store", items: ["Sostituzioni", "E Sim", "E Sim Next", "Sim Next"] },
-          vnd: { label: "VND", items: ["Sostituzioni", "E Sim", "E Sim Next", "Sim Next"] },
+          vdf_store: { label: "Vodafone Store", items: ["Sostituzioni", "E Sim", "E Sim Vodafone", "Sim Vodafone"] },
+          vnd: { label: "VND", items: ["Sostituzioni", "E Sim", "E Sim Vodafone", "Sim Vodafone"] },
         }
       },
       fastweb: ["Sim", "ESim", "Sostitutiva", "ESim Sostitutiva"],

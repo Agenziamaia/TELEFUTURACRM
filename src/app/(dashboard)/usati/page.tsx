@@ -78,6 +78,33 @@ const statusMap = Object.fromEntries(STATUS_LIST.map(s => [s.key, s]));
 const STATUS_KEYS = STATUS_LIST.map(s => s.key);
 const LIFECYCLE: UsatoStatus[] = ["acquistato", "in_transito", "ricevuto", "in_lavorazione", "pronto", "invio_in_negozio", "in_vendita", "venduto"];
 
+// ── Chi può muovere ogni fase (segue il telefono fisico) ──────────────────────
+// negozio spedisce → LABORATORIO (ricezione, lavorazione, pronto, invio) = Tecnico Senior
+// → il negozio destinazione ACCETTA → vende o trasferisce. Amministrazione e admin: sempre tutto.
+const RUOLI_SEMPRE = ["admin", "dev", "direttore_generale", "amministrativo"];
+const RUOLI_NEGOZIO = ["venditore", "store_manager", "direttore_commerciale"];
+function puoMuovere(status: UsatoStatus, u: { role?: string; grade?: string | null } | null | undefined): boolean {
+    if (!u?.role) return false;
+    if (RUOLI_SEMPRE.includes(u.role)) return true;
+    const senior = u.role === "tecnico" && u.grade === "tecnico_senior";
+    switch (status) {
+        case "acquistato": return RUOLI_NEGOZIO.includes(u.role) || senior;   // il negozio spedisce al laboratorio
+        case "in_transito":                                                    // il tecnico firma l'arrivo
+        case "ricevuto":                                                       // inizia la lavorazione
+        case "in_lavorazione":                                                 // completa (pronto) o KO
+        case "pronto": return senior;                                          // il laboratorio spedisce al negozio
+        case "invio_in_negozio": return RUOLI_NEGOZIO.includes(u.role);        // ACCETTA chi riceve
+        case "in_vendita": return RUOLI_NEGOZIO.includes(u.role);              // vende o trasferisce
+        default: return false;
+    }
+}
+function faseGestitaDa(status: UsatoStatus): string {
+    if (["in_transito", "ricevuto", "in_lavorazione", "pronto"].includes(status)) return "Fase gestita dal Tecnico Senior (o amministrazione)";
+    if (status === "invio_in_negozio") return "In attesa di accettazione dal negozio destinazione";
+    if (status === "acquistato") return "Il negozio invia il dispositivo al laboratorio";
+    return "Fase gestita dal negozio che ha il dispositivo";
+}
+
 const KPI_CARDS = [
   { key: "_all", label: "Totale", icon: "📊", colorClass: "text-indigo-400", bgClass: "bg-indigo-500/10", borderClass: "border-indigo-500/30" },
   { key: "acquistato", label: "Acquistato", icon: "🛒", colorClass: "text-slate-400", bgClass: "bg-slate-500/10", borderClass: "border-slate-500/30" },
@@ -469,7 +496,12 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             <div className="text-sm font-bold text-white mb-3"> Stato</div>
             <StatusBadge statusKey={dev.status} />
             <div className="mt-4"><StatusTimeline currentStatus={dev.status} history={dev.status_history} /></div>
-            {canAdvance && (
+            {canAdvance && !puoMuovere(dev.status, user) && (
+              <div className="mt-4 text-[11px] text-slate-500 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5">
+                🔒 {faseGestitaDa(dev.status)}
+              </div>
+            )}
+            {canAdvance && puoMuovere(dev.status, user) && (
               <div className="mt-4 flex flex-col gap-2">
                 {needsStore && (
                   <select value={targetStore} onChange={e => setTargetStore(e.target.value)}

@@ -61,7 +61,15 @@ export const ROLES: RoleDef[] = [
         ],
     },
     { id: "direttore_commerciale", label: "Direttore Commerciale", area: "pv", grades: [] },
-    { id: "tecnico", label: "Tecnico", area: "pv", grades: [] },
+    {
+        id: "tecnico",
+        label: "Tecnico",
+        area: "pv",
+        grades: [
+            { id: "tecnico", label: "Tecnico" },
+            { id: "tecnico_senior", label: "Tecnico Senior" },  // gestisce le fasi di laboratorio degli usati
+        ],
+    },
     {
         id: "caller",
         label: "Caller",
