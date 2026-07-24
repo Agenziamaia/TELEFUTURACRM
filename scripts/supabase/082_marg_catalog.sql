@@ -77,7 +77,6 @@ BEGIN
     (cid,'Sost Very','Very Mobile',false,12),
     (cid,'Sim Kena','Kena Mobile',true,18),
     (cid,'Sim L',NULL,false,13),
-    (cid,'Sim Next',NULL,false,14),
     (cid,'Subentro/Reale Util.',NULL,false,15);
 
   INSERT INTO public.marg_categories (name, kind, sort_order) VALUES ('ESIM','prodotti',4) RETURNING id INTO cid;

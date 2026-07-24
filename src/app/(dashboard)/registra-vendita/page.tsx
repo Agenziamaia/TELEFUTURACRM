@@ -57,7 +57,7 @@ const MARG_PRODUCTS=[
   ]},
   {cat:"📶 SIM",items:[
     
-    {id:"sim_w3",name:"Sim Wind3",price:null,fixedMargin:-5,linked:true,icon:"📶",type:"fixed"},{id:"sim_vf",name:"Sim Vodafone",price:null,fixedMargin:0,linked:true,icon:"📶",type:"fixed"},
+    {id:"sim_w3",name:"Sim Wind3",price:null,fixedMargin:-5,linked:true,icon:"📶",type:"fixed"},{id:"sim_vf",name:"Sim Vodafone",price:null,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},
     {id:"sim_fw",name:"Sim Fastweb",price:0,fixedMargin:-23,linked:true,icon:"📶",type:"fixed"},
     {id:"sost_fw",name:"Sost Fastweb",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
     {id:"sim_iliad",name:"Sim Iliad",price:0,fixedMargin:-10,linked:true,icon:"📶",type:"fixed"},
@@ -70,7 +70,7 @@ const MARG_PRODUCTS=[
     {id:"sim_very",name:"Sim Very",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},{id:"sim_kena",name:"Sim Kena",price:null,fixedMargin:0,linked:true,icon:"📶",type:"fixed"},
     {id:"sost_very",name:"Sost Very",price:0,fixedMargin:-7,linked:true,icon:"🔄",type:"fixed"},
     {id:"sim_l",name:"Sim L",price:0,fixedMargin:-15,linked:true,icon:"📶",type:"fixed"},
-    {id:"sim_next",name:"Sim Next",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},
+    
     {id:"subentro",name:"Subentro/Reale Util.",price:0,fixedMargin:-10,linked:true,icon:"🔄",type:"fixed"},
   ]},
   {cat:"📲 ESIM",items:[
