@@ -1128,7 +1128,10 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
         <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
             <DD l="Operatore GNP" r v={sd.fwFGnpBrand||""} o={v=>upv("fwFGnpBrand",v)} vals={FW_GNP_BRANDS}/>
-            <TF l="Numero Fisso GNP" r v={sd.fwFGnpNum||""} o={v=>{upv("fwFGnpNum",v);if(isCentr)upv("fwFNumDef",v);}} p="06XXXXXXXX"/>
+            {/* Segnalazione 78: il numero fisso GNP E' il numero definitivo, quindi
+                lo riportiamo da solo su N. Fisso Definitivo e non lo richiediamo
+                una seconda volta nel box Dati contratto. */}
+            <TF l="Numero Fisso GNP" r v={sd.fwFGnpNum||""} o={v=>{upv("fwFGnpNum",v);upv("fwFNumDef",v);}} p="06XXXXXXXX"/>
           </div>
           {hasSecLines&&(
             <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.1)",paddingTop:10}}>
@@ -1157,8 +1160,15 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
             ):(
               <TF l="N. Fisso Definitivo" r v={sd.fwFNumDef||""} o={v=>upv("fwFNumDef",v)} p="06XXXXXXXX"/>
             )}
-            {sd.fwFGnp==="Sì"&&(
-              <TF l="N. Fisso Definitivo" r v={sd.fwFNumDef||""} o={v=>{upv("fwFNumDef",v);if(isCentr)upv("fwFGnpNum",v);}} p="06XXXXXXXX"/>
+            {/* Segnalazione 78: con GNP = Si il definitivo arriva dal Numero Fisso GNP:
+                non si chiede di nuovo. Lo mostriamo solo in lettura per conferma. */}
+            {sd.fwFGnp==="Sì"&&sd.fwFGnpNum&&(
+              <div>
+                <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>N. Fisso Definitivo</div>
+                <div style={{padding:"7px 10px",borderRadius:6,fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",color:"#f8fafc"}}>
+                  {sd.fwFGnpNum} <span style={{color:"#64748b",fontSize:11}}>— da Numero Fisso GNP</span>
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -1909,7 +1919,9 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
         <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
             <DD l="Operatore GNP" r v={sd.vfbFGnpBrand||""} o={v=>upv("vfbFGnpBrand",v)} vals={VF_GNP_BRANDS}/>
-            <TF l="Numero Fisso GNP" r v={sd.vfbFGnpNum||""} o={v=>upv("vfbFGnpNum",v)} p="06XXXXXXXX"/>
+            {/* Segnalazione 78: il numero fisso GNP e' anche il definitivo, quindi lo
+                riportiamo da solo e non lo si richiede una seconda volta. */}
+            <TF l="Numero Fisso GNP" r v={sd.vfbFGnpNum||""} o={v=>{upv("vfbFGnpNum",v);upv("vfbFNumDef",v);}} p="06XXXXXXXX"/>
           </div>
         </div>
       )}
