@@ -66,6 +66,19 @@ export const CATEGORIE_CANONICHE: string[] = [
     "Mobile", "Fisso", "Energia", "TV", "Customer Base", "Multi-Servizi", "POS", "Soluzioni Digitali", "Extra",
 ];
 
+// Etichetta canonica per ogni categoria (per tradurre i valori grezzi storici
+// nella voce giusta della tendina: "MOBILE" -> "Mobile", "SKY FIBRA" -> "Fisso").
+export const CANONICA_BY_ID: Record<CategoriaId, string> = {
+    mobile: "Mobile", fisso: "Fisso", energia: "Energia", tv: "TV", cb: "Customer Base",
+    multi_servizi: "Multi-Servizi", pos: "POS", digitale: "Soluzioni Digitali", extra: "Extra",
+};
+
+// Lista ufficiale dei brand vendibili (asse 1 del flusso): le tendine brand
+// usano QUESTA, non i distinct dello storico (un brand senza vendite sparirebbe).
+export const BRAND_CANONICI: string[] = [
+    "WindTre", "Vodafone", "Fastweb", "Iliad", "Sky", "TIM", "Very Mobile", "Ho. Mobile", "Kena Mobile", "S4", "Dojo", "Extra",
+];
+
 export function categoriaDef(id: string | null | undefined): CategoriaDef {
     return CATEGORIE.find((c) => c.id === id) ?? {
         id: "extra" as CategoriaId,

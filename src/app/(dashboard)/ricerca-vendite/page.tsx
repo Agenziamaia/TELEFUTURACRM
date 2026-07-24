@@ -6,7 +6,7 @@ import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { CATEGORIE_CANONICHE, categoriaDef, categoriaDi } from "@/lib/tassonomia";
+import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, categoriaDef, categoriaDi } from "@/lib/tassonomia";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { codiciPerBrand } from "@/lib/codiciInserimento";
 
@@ -1070,7 +1070,7 @@ export default function RicercaContratto() {
                 const optionsFor = (k: string): string[] | null => {
                     if (k === "contract::venditore") return [...venditoriTeam, ...venditoriAltri];
                     if (k === "contract::negozio") return uniqueNegozi;
-                    if (k === "contract::brand") return uniqueBrands;
+                    if (k === "contract::brand") return BRAND_CANONICI;  // lista ufficiale: un brand senza vendite (es. TIM) deve comunque esserci
                     if (k === "contract::prodotto") return uniqueProdotti;
                     if (k === "contract::categoria") return CATEGORIE_CANONICHE;  // solo categorie ufficiali, mai valori grezzi tipo "SKY FIBRA"
                     // Segnalazione 71/68: il codice di inserimento va a tendina con i
@@ -1093,8 +1093,18 @@ export default function RicercaContratto() {
                             </div>
                         );
                     }
-                    const val = editValues[k] ?? "";
-                    const changed = (orig == null ? "" : String(orig)) !== val;
+                    let val = editValues[k] ?? "";
+                    // Categoria: i contratti storici hanno valori grezzi ("MOBILE", "SKY FIBRA");
+                    // nella tendina vanno tradotti nella canonica, cosi' la spunta cade sulla
+                    // voce giusta e non compare il doppione in fondo.
+                    if (k === "contract::categoria" && val && !CATEGORIE_CANONICHE.includes(val)) {
+                        val = CANONICA_BY_ID[categoriaDi(String(row.brand || ""), val, String(row.prodotto || ""))];
+                    }
+                    let origCmp = orig == null ? "" : String(orig);
+                    if (k === "contract::categoria" && origCmp && !CATEGORIE_CANONICHE.includes(origCmp)) {
+                        origCmp = CANONICA_BY_ID[categoriaDi(String(row.brand || ""), origCmp, String(row.prodotto || ""))];
+                    }
+                    const changed = origCmp !== val;
                     const cls = cn("glass-input w-full text-sm", changed && "border-amber-400/60 bg-amber-400/5");
                     const opts = optionsFor(k);
                     return (
