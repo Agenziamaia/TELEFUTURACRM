@@ -66,7 +66,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         icon: UserCog,
         children: [
             { name: "Invia pda", href: "/pda/invia", icon: Send, roles: EVERYONE },
-            { name: "Gestione pda", href: "/gestione", icon: Database, roles: ADMINS },
+            { name: "Gestione pda", href: "/gestione", icon: Database, roles: [...ADMINS, "amministrativo", "direttore_ob", "agente"] },
         ],
     },
     {

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Search, FolderOpen, Archive, Paperclip, CheckSquare, MessageSquare, X, Filter } from "lucide-react";
 import { cn } from "@/utils";
-import { StatusDropdown, STATUS_OPTIONS } from "@/components/StatusDropdown";
+import { StatusDropdown, STATUS_OPTIONS, getStatusColor } from "@/components/StatusDropdown";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -77,6 +77,87 @@ export default function GestionePda() {
     const [tableSearch, setTableSearch] = useState("");
 
     const isAdmin = user?.role === "admin" || user?.role === "dev";
+    // OUTBOUND in SOLA LETTURA (richiesta Luca 25/07): l'agente vede SOLO le sue
+    // pratiche, il direttore outbound tutte quelle caricate dal reparto. Nessun
+    // potere di modifica sui campi registrati: possono solo (a) integrare i
+    // documenti quando il back office li chiede (stato "Sospeso Mancanza di
+    // Documento") e (b) chiedere all'amministrazione l'autorizzazione a modificare.
+    const role = user?.role || "";
+    const isOutbound = role === "agente" || role === "direttore_ob";
+    const readOnly = isOutbound;
+    const [obNames, setObNames] = useState<Set<string> | null>(null);
+    useEffect(() => {
+        if (!isOutbound || !user?.id) { setObNames(null); return; }
+        (async () => {
+            if (role === "agente") {
+                const { data } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
+                setObNames(new Set([data?.full_name, data?.match_name, user?.name].filter(Boolean) as string[]));
+            } else {
+                const { data } = await supabase.from("app_users").select("full_name,match_name")
+                    .in("role", ["agente", "direttore_ob"]).eq("active", true);
+                setObNames(new Set(((data ?? []) as { full_name: string; match_name: string | null }[])
+                    .flatMap((u) => [u.full_name, u.match_name]).filter(Boolean) as string[]));
+            }
+        })();
+    }, [isOutbound, role, user?.id, user?.name]);
+
+    // Integrazione documentale (spazio dedicato: i campi originali NON si toccano)
+    const [integra, setIntegra] = useState<{ id: string } | null>(null);
+    const [intFiles, setIntFiles] = useState<File[]>([]);
+    const [intNote, setIntNote] = useState("");
+    const [intBusy, setIntBusy] = useState(false);
+    const [intMsg, setIntMsg] = useState("");
+    // Richiesta di modifica -> amministrazione (stessa coda dei consulenti)
+    const [reqEdit, setReqEdit] = useState<{ id: string } | null>(null);
+    const [reqMotivo, setReqMotivo] = useState("");
+    const [reqBusy, setReqBusy] = useState(false);
+    const [reqMsg, setReqMsg] = useState("");
+
+    const submitIntegrazione = async () => {
+        if (!integra || (intFiles.length === 0 && !intNote.trim())) return;
+        setIntBusy(true);
+        setIntMsg("");
+        const uploaded: { url: string; name: string; type: string }[] = [];
+        let fail = 0;
+        for (const f of intFiles) {
+            const ext = f.name.split(".").pop();
+            const path = `integrazioni/${integra.id}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+            const { error } = await supabase.storage.from("contracts").upload(path, f);
+            if (error) { fail++; continue; }
+            const { data: { publicUrl } } = supabase.storage.from("contracts").getPublicUrl(path);
+            uploaded.push({ url: publicUrl, name: f.name, type: f.type || "file" });
+        }
+        if (uploaded.length) {
+            await supabase.from("contract_attachments").insert(uploaded.map((u) => ({
+                contract_id: integra.id, file_url: u.url, file_name: u.name, file_type: u.type,
+            })));
+        }
+        const stamp = new Date().toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        const row = rawList.find((r) => r.id === integra.id);
+        const nuovaNota = `${((row?.note as string) || "").trim()}
+[Integrazione ${stamp} — ${user?.name}] ${intNote.trim() || `${uploaded.length} documento/i allegati`}`.trim();
+        await supabase.from("contracts").update({ note: nuovaNota }).eq("id", integra.id);
+        setRawList((prev) => prev.map((r) => (r.id === integra.id ? { ...r, note: nuovaNota } : r)));
+        setIntBusy(false);
+        if (fail) { setIntMsg(`⚠️ ${fail} file non caricati — riprova`); return; }
+        setIntMsg("✅ Integrazione inviata al back office");
+        setTimeout(() => { setIntegra(null); setIntFiles([]); setIntNote(""); setIntMsg(""); }, 1400);
+    };
+
+    const submitRichiesta = async () => {
+        if (!reqEdit || !reqMotivo.trim()) return;
+        setReqBusy(true);
+        const { error } = await supabase.from("contract_change_requests").insert({
+            contract_id: reqEdit.id,
+            requested_by: user?.id || null,
+            requested_by_name: user?.name || "—",
+            changes: { __meta: { note: reqMotivo.trim(), origine: "gestione_pda" } },
+        });
+        setReqBusy(false);
+        if (error) { setReqMsg("Errore invio richiesta: " + error.message); return; }
+        setReqMsg("✅ Richiesta inviata all'amministrazione: potrai modificare dopo l'approvazione");
+        setTimeout(() => { setReqEdit(null); setReqMotivo(""); setReqMsg(""); }, 1800);
+    };
 
     const fetchList = useCallback(async () => {
         const { data, error } = await supabase
@@ -102,6 +183,8 @@ export default function GestionePda() {
 
     const filtered = useMemo(() => {
         let out = rawList;
+        // Outbound: l'agente solo le sue, il direttore tutte quelle del reparto.
+        if (isOutbound) out = obNames ? out.filter((r) => obNames.has((r.venditore as string) || "")) : [];
         if (filterProdotto) out = out.filter(r => r.categoria === filterProdotto);
         if (filterBrand) out = out.filter(r => r.brand === filterBrand);
         if (filterVenditore) out = out.filter(r => r.venditore === filterVenditore);
@@ -128,7 +211,7 @@ export default function GestionePda() {
             });
         }
         return out.map(mapToGestioneRow);
-    }, [rawList, filterProdotto, filterBrand, filterVenditore, filterStato, daDataInvio, aDataInvio, tableSearch]);
+    }, [rawList, isOutbound, obNames, filterProdotto, filterBrand, filterVenditore, filterStato, daDataInvio, aDataInvio, tableSearch]);
 
     const updateContract = useCallback(async (id: string, patch: Record<string, unknown>) => {
         const { error } = await supabase.from("contracts").update(patch).eq("id", id);
@@ -150,8 +233,8 @@ export default function GestionePda() {
         <div className="w-full">
             <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-white mb-2">Gestione PDA (Back Office)</h2>
-                    <p className="text-slate-400">Visualizza, verifica e gestisci le PDA ricevute</p>
+                    <h2 className="text-3xl font-bold text-white mb-2">{isOutbound ? "Gestione PDA" : "Gestione PDA (Back Office)"}</h2>
+                    <p className="text-slate-400">{role === "agente" ? "Le tue pratiche inviate — sola visualizzazione: verifica i dati e integra i documenti quando richiesto" : role === "direttore_ob" ? "Le pratiche del reparto Outbound — sola visualizzazione" : "Visualizza, verifica e gestisci le PDA ricevute"}</p>
                 </div>
                 {!showFilters && (
                     <button type="button" onClick={() => setShowFilters(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 transition-colors">
@@ -258,11 +341,27 @@ export default function GestionePda() {
                                     <td className="px-4 py-3">
                                         <div className="flex gap-1 justify-center">
                                             <button type="button" onClick={() => { setSelectedNote({ id: row.id, text: row.note }); setNoteDraft(row.note); }} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Apri pratica"><FolderOpen className="w-4 h-4" /></button>
-                                            <button type="button" onClick={() => {}} className="p-1.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors" title="Allegati"><Paperclip className="w-4 h-4" /></button>
-                                            <button type="button" onClick={() => {}} className="p-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors" title="Archivia"><Archive className="w-4 h-4" /></button>
+                                            {!readOnly && <button type="button" onClick={() => {}} className="p-1.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors" title="Allegati"><Paperclip className="w-4 h-4" /></button>}
+                                            {!readOnly && <button type="button" onClick={() => {}} className="p-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors" title="Archivia"><Archive className="w-4 h-4" /></button>}
+                                            {readOnly && (row.stato === "Sospeso Mancanza di Documento" ? (
+                                                <button type="button" onClick={() => { setIntegra({ id: row.id }); setIntFiles([]); setIntNote(""); setIntMsg(""); }}
+                                                    className="px-2 py-1.5 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors text-[11px] font-bold whitespace-nowrap"
+                                                    title="Il back office ha chiesto un'integrazione documentale: carica qui i documenti">
+                                                    📎 Integra
+                                                </button>
+                                            ) : (
+                                                <button type="button" onClick={() => { setReqEdit({ id: row.id }); setReqMotivo(""); setReqMsg(""); }}
+                                                    className="px-2 py-1.5 rounded bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 transition-colors text-[11px] font-bold whitespace-nowrap"
+                                                    title="La PDA e' gia' inviata: per modificarla serve l'autorizzazione dell'amministrazione">
+                                                    ✋ Richiedi modifica
+                                                </button>
+                                            ))}
                                         </div>
                                     </td>
                                     <td className="px-2 py-3">
+                                        {readOnly ? (
+                                            <span className="text-xs text-slate-400">{row.operatore || "—"}</span>
+                                        ) : (
                                         <select
                                             className="glass-input w-full text-xs py-1.5 px-2 h-auto"
                                             value={row.operatore}
@@ -272,9 +371,14 @@ export default function GestionePda() {
                                             <option>Alfonso Carluccini</option>
                                             <option>Alessandro Sandri</option>
                                         </select>
+                                        )}
                                     </td>
                                     <td className="px-2 py-3">
-                                        <StatusDropdown value={row.stato} isAgent={false} onChange={val => updateContract(row.id, { stato: val })} />
+                                        {readOnly ? (
+                                            <span className={cn("text-[11px] font-bold px-2.5 py-1 rounded-full border whitespace-nowrap", getStatusColor(row.stato))}>{row.stato}</span>
+                                        ) : (
+                                            <StatusDropdown value={row.stato} isAgent={false} onChange={val => updateContract(row.id, { stato: val })} />
+                                        )}
                                     </td>
                                     <td className="px-2 py-3 text-center">
                                         <button
@@ -304,6 +408,74 @@ export default function GestionePda() {
                 </div>
             </div>
 
+            {/* Integrazione documentale (outbound): spazio DEDICATO — i campi della
+                pratica non si toccano; i documenti finiscono negli allegati del
+                contratto e la nota traccia chi ha integrato e quando. */}
+            {integra && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="glass-card w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+                        <div className="flex items-center justify-between p-5 border-b border-white/10 bg-white/[0.02] rounded-t-xl">
+                            <div>
+                                <h3 className="text-lg font-bold text-white">📎 Integrazione documentale</h3>
+                                <p className="text-xs text-slate-400">Pratica #{integra.id} — richiesta dal back office</p>
+                            </div>
+                            <button onClick={() => setIntegra(null)} className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6 overflow-y-auto space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Documenti da allegare</label>
+                                <label className="block border-2 border-dashed border-emerald-500/30 rounded-xl p-5 text-center cursor-pointer hover:bg-emerald-500/5 transition-colors">
+                                    <input type="file" multiple className="hidden" onChange={(e) => setIntFiles(Array.from(e.target.files || []))} />
+                                    <Paperclip className="w-6 h-6 text-emerald-400 mx-auto mb-1" />
+                                    <div className="text-sm text-slate-300 font-medium">Clicca per scegliere i file</div>
+                                    <div className="text-xs text-slate-500 mt-1">{intFiles.length ? `${intFiles.length} file selezionati: ${intFiles.map(f => f.name).join(", ")}` : "PDF, foto documenti, moduli firmati…"}</div>
+                                </label>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">Nota per il back office (facoltativa)</label>
+                                <textarea className="glass-input w-full min-h-[80px] resize-y text-sm" placeholder="Es. allego documento fronte/retro come richiesto"
+                                    value={intNote} onChange={(e) => setIntNote(e.target.value)} />
+                            </div>
+                            <p className="text-xs text-slate-500">I dati già registrati della pratica NON vengono toccati: questa integrazione aggiunge solo documenti e nota.</p>
+                            {intMsg && <div className={cn("text-sm font-medium", intMsg.startsWith("✅") ? "text-emerald-400" : "text-amber-400")}>{intMsg}</div>}
+                        </div>
+                        <div className="p-5 border-t border-white/10 bg-black/20 flex justify-end gap-3 rounded-b-xl">
+                            <button type="button" onClick={() => setIntegra(null)} className="px-5 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10">Annulla</button>
+                            <button type="button" onClick={submitIntegrazione} disabled={intBusy || (intFiles.length === 0 && !intNote.trim())}
+                                className="primary-btn px-6 py-2 text-sm disabled:opacity-50">{intBusy ? "Invio…" : "Invia integrazione"}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Richiesta di modifica (outbound): la PDA e' gia' inviata — serve
+                l'approvazione dell'amministrazione (stessa coda dei consulenti). */}
+            {reqEdit && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="glass-card w-full max-w-lg shadow-2xl flex flex-col">
+                        <div className="flex items-center justify-between p-5 border-b border-white/10 bg-white/[0.02] rounded-t-xl">
+                            <div>
+                                <h3 className="text-lg font-bold text-white">✋ Richiesta di modifica</h3>
+                                <p className="text-xs text-slate-400">Pratica #{reqEdit.id} — va autorizzata dall'amministrazione</p>
+                            </div>
+                            <button onClick={() => setReqEdit(null)} className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6 space-y-3">
+                            <label className="block text-sm font-medium text-slate-300">Cosa va corretto e perché? <span className="text-rose-400">*</span></label>
+                            <textarea className="glass-input w-full min-h-[110px] resize-y text-sm" placeholder="Es. numero di telefono errato: il corretto è 33x…"
+                                value={reqMotivo} onChange={(e) => setReqMotivo(e.target.value)} />
+                            <p className="text-xs text-slate-500">La PDA è già stata inviata: la modifica sarà effettiva solo dopo l'approvazione dell'amministrazione.</p>
+                            {reqMsg && <div className={cn("text-sm font-medium", reqMsg.startsWith("✅") ? "text-emerald-400" : "text-rose-400")}>{reqMsg}</div>}
+                        </div>
+                        <div className="p-5 border-t border-white/10 bg-black/20 flex justify-end gap-3 rounded-b-xl">
+                            <button type="button" onClick={() => setReqEdit(null)} className="px-5 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10">Annulla</button>
+                            <button type="button" onClick={submitRichiesta} disabled={reqBusy || !reqMotivo.trim()}
+                                className="primary-btn px-6 py-2 text-sm disabled:opacity-50">{reqBusy ? "Invio…" : "Invia richiesta"}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Note Modal */}
             {selectedNote && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -331,9 +503,10 @@ export default function GestionePda() {
                         <div className="p-6 overflow-y-auto">
                             <label className="block text-sm font-medium text-slate-300 mb-2">Aggiungi o modifica nota</label>
                             <textarea
-                                className="glass-input w-full min-h-[160px] resize-y text-sm leading-relaxed"
-                                placeholder="Scrivi una nota per questa pratica..."
+                                className="glass-input w-full min-h-[160px] resize-y text-sm leading-relaxed disabled:opacity-70"
+                                placeholder={readOnly ? "Nessuna nota sulla pratica." : "Scrivi una nota per questa pratica..."}
                                 value={noteDraft}
+                                disabled={readOnly}
                                 onChange={e => setNoteDraft(e.target.value)}
                             />
                             <p className="text-xs text-slate-500 mt-2">
@@ -350,14 +523,14 @@ export default function GestionePda() {
                             >
                                 Annulla
                             </button>
-                            <button
+                            {!readOnly && <button
                                 type="button"
                                 onClick={handleSaveNote}
                                 disabled={savingNote}
                                 className="primary-btn px-6 py-2 text-sm disabled:opacity-50"
                             >
                                 {savingNote ? "Salvataggio..." : "Salva Note"}
-                            </button>
+                            </button>}
                         </div>
                     </div>
                 </div>

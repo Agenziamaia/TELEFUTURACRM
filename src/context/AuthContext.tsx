@@ -103,7 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!user) return;
         const isAdmin = user.role === "admin" || user.role === "dev" || user.role === "direttore_generale";
         const adminOnly = ["/gestione", "/amministrazione", "/gare"];
-        if (!isAdmin && adminOnly.some((p) => pathname.startsWith(p))) {
+        // Gestione PDA: aperta anche al reparto Outbound (direttore + agenti) in
+        // SOLA LETTURA sulle proprie pratiche — il gating fine sta nella pagina.
+        const gestioneOutbound = pathname.startsWith("/gestione") && ["direttore_ob", "agente", "amministrativo"].includes(user.role);
+        if (!isAdmin && !gestioneOutbound && adminOnly.some((p) => pathname.startsWith(p))) {
             router.push("/dashboard");
         }
     }, [user, pathname, router]);
