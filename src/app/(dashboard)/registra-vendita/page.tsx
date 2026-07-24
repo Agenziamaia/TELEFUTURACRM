@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
-import { categoriaDi, controlliDi } from "@/lib/tassonomia";
+import { categoriaDi, controlliDi, CANONICA_BY_ID } from "@/lib/tassonomia";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { useAuth } from "@/context/AuthContext";
 const ReqCtx = createContext(null);
@@ -3967,28 +3967,31 @@ export default function CRM() {
             _d["Codice Ordine"] ||
             "—"
           );
+          // Tassonomia unica: in `categoria` va l'ETICHETTA CANONICA (Mobile, Fisso,
+          // Energia, ...) — mai piu' il titolo del menu' del brand, che resta nei
+          // dettagli (menu_brand) per non perdere nulla. Layer 1 del flusso (Luca 25/07).
+          const macroId = categoriaDi(group.brandLabel, item.macro, item.sub);
+          const giaAttivo = /sostituzione|sost /i.test(String(item.sub || "")) || macroId === "extra";
           contractRows.push({
             id: `CTR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
             client_id: clientId,
             data: dateStr,
             brand: group.brandLabel,
-            categoria: item.macro,
-            // Tassonomia unica: categoria valida per tutti i brand + controlli
-            // richiesti dalla pratica. Il nome del brand resta in `categoria`.
-            categoria_macro: categoriaDi(group.brandLabel, item.macro, item.sub),
+            categoria: CANONICA_BY_ID[macroId],
+            categoria_macro: macroId,
             controlli: controlliDi(item.details),
             prodotto: item.sub,
             // Segnalazione 52: Extra e Sostituzione SIM nascono gia' attivi
             // (Completato nel Tracking), non "Nuovo".
-            stato: (/sostituzione|sost /i.test(String(item.sub || "")) || categoriaDi(group.brandLabel, item.macro, item.sub) === "extra") ? "Attivo" : "Nuovo",
-            stato_negozio: (/sostituzione|sost /i.test(String(item.sub || "")) || categoriaDi(group.brandLabel, item.macro, item.sub) === "extra") ? "attivato" : "nuovo",
+            stato: giaAttivo ? "Attivo" : "Nuovo",
+            stato_negozio: giaAttivo ? "attivato" : "nuovo",
             venditore: selVend,
             negozio: selNeg,
             codice_attivazione: String(actCode),
             data_registrazione: dateStr,
             data_attivazione: dateStr,   // compilata subito: e' la data di registrazione (Luca)
             note: (notaOn && nota.trim()) ? nota.trim() : null,
-            dettagli: item.details || {},
+            dettagli: { ...(item.details || {}), menu_brand: item.macro },
             is_demo: false
           });
         });
@@ -4000,7 +4003,7 @@ export default function CRM() {
           client_id: clientId,
           data: dateStr,
           brand: "Marginalità",
-          categoria: "Prodotto/Servizio",
+          categoria: "Marginalità",
           categoria_macro: "extra",
           controlli: [],
           prodotto: mi.product,
@@ -4105,7 +4108,7 @@ export default function CRM() {
       }
       const rows=margItems.map(mi=>({
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
-        client_id:clientId,data:dateStr,brand:"Marginalità",categoria:"Prodotto/Servizio",categoria_macro:"extra",controlli:[],
+        client_id:clientId,data:dateStr,brand:"Marginalità",categoria:"Marginalità",categoria_macro:"extra",controlli:[],
         // Segnalazione 52: le vendite a marginalita' sono brand Extra, quindi
         // nascono gia' Attive (non sono pratiche da attivare). Questo percorso di
         // salvataggio scriveva "Nuovo" fisso e non valorizzava l'esito negozio.

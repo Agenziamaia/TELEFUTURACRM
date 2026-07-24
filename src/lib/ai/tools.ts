@@ -47,7 +47,7 @@ export const TOOL_DEFS: ToolDef[] = [
           stato: { type: "string", description: "es. Attivo, In lavorazione, Annullato, Sospeso" },
           negozio: { type: "string" },
           venditore: { type: "string" },
-          categoria: { type: "string", description: "es. MOBILE, FISSO, ENERGIA" },
+          categoria: { type: "string", description: "categoria canonica: Mobile, Fisso, Energia, TV, Customer Base, Multi-Servizi, POS, Marginalità" },
           prodotto: { type: "string" },
           cliente: { type: "string", description: "nome o codice fiscale del cliente" },
           from: { type: "string", description: "data inizio ISO (YYYY-MM-DD)" },

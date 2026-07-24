@@ -54,8 +54,9 @@ export const CATEGORIE: CategoriaDef[] = [
     { id: "energia", label: "Energia", desc: "Luce e gas", color: "#10b981", icon: "⚡" },
     { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "#ef4444", icon: "📺" },
     { id: "cb", label: "Customer Base", desc: "Lavorazioni sulla base clienti: cambi offerta, telefono incluso, add-on", color: "#8b5cf6", icon: "🔁" },
-    { id: "digitale", label: "Soluzioni Digitali", desc: "Servizi digitali e cloud", color: "#22d3ee", icon: "💻" },
-    { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni e pacchetti multi-servizio", color: "#ec4899", icon: "🛡️" },
+    // "Soluzioni Digitali" NON e' una categoria (decisione Luca 25/07): i servizi
+    // digitali rientrano in Multi-Servizi e si distinguono a livello di PRODOTTO.
+    { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni, servizi digitali e pacchetti multi-servizio", color: "#ec4899", icon: "🛡️" },
     { id: "pos", label: "POS", desc: "Terminali di pagamento", color: "#f59e0b", icon: "🏧" },
     { id: "extra", label: "Marginalità", desc: "Prodotti e servizi a marginalita' (ex Extra)", color: "#94a3b8", icon: "💰" },
 ];
@@ -63,14 +64,16 @@ export const CATEGORIE: CategoriaDef[] = [
 // Etichette canoniche per compilare/modificare la categoria di una vendita
 // (le uniche ammesse nelle tendine: mai piu' valori grezzi tipo "SKY FIBRA").
 export const CATEGORIE_CANONICHE: string[] = [
-    "Mobile", "Fisso", "Energia", "TV", "Customer Base", "Multi-Servizi", "POS", "Soluzioni Digitali", "Marginalità",
+    "Mobile", "Fisso", "Energia", "TV", "Customer Base", "Multi-Servizi", "POS", "Marginalità",
 ];
 
 // Etichetta canonica per ogni categoria (per tradurre i valori grezzi storici
 // nella voce giusta della tendina: "MOBILE" -> "Mobile", "SKY FIBRA" -> "Fisso").
 export const CANONICA_BY_ID: Record<CategoriaId, string> = {
     mobile: "Mobile", fisso: "Fisso", energia: "Energia", tv: "TV", cb: "Customer Base",
-    multi_servizi: "Multi-Servizi", pos: "POS", digitale: "Soluzioni Digitali", extra: "Marginalità",
+    // "digitale" e' un id LEGACY: non viene piu' prodotto, ma i dati storici che
+    // lo portassero ancora devono tradurre in Multi-Servizi.
+    multi_servizi: "Multi-Servizi", pos: "POS", digitale: "Multi-Servizi", extra: "Marginalità",
 };
 
 // Lista ufficiale dei brand vendibili (asse 1 del flusso): le tendine brand
@@ -80,6 +83,7 @@ export const BRAND_CANONICI: string[] = [
 ];
 
 export function categoriaDef(id: string | null | undefined): CategoriaDef {
+    if (id === "digitale") id = "multi_servizi"; // id legacy: assorbito in Multi-Servizi
     return CATEGORIE.find((c) => c.id === id) ?? {
         id: "extra" as CategoriaId,
         label: String(id || "—"),
@@ -141,10 +145,9 @@ export function categoriaDi(
     // Fisso e fibra, compresa quella di Sky, che il brand chiama "SKY FIBRA".
     if (/(fisso|fibra|fwa)/.test(tutto)) return "fisso";
 
-    // Multi-servizi: assicurazioni, protezioni, pacchetti (WindTre "MULTI-SERVIZI").
-    if (/(multi.?serviz|assicura|polizza|kasko|protec)/.test(tutto)) return "multi_servizi";
-
-    if (/(digital|backup|cloud|security)/.test(tutto)) return "digitale";
+    // Multi-servizi: assicurazioni, protezioni, pacchetti (WindTre "MULTI-SERVIZI")
+    // e servizi DIGITALI (backup, cloud): non sono una categoria a parte.
+    if (/(multi.?serviz|assicura|polizza|kasko|protec|digital|backup|cloud|security)/.test(tutto)) return "multi_servizi";
 
     // Mobile, compreso "SKY MOBILE".
     if (/(mobile|sim)/.test(tutto)) return "mobile";
