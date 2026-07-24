@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState, useEffect, useCallback } from "react";
-import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3 } from "lucide-react";
+import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -308,6 +308,7 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
 }
 
 function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
+    const { user } = useAuth();   // serve per il tasto "Esporta ore" (segn.83)
     const [shifts, setShifts] = useState<ShiftRow[]>([]);
     const [filterPerson, setFilterPerson] = useState("");
     const [filterStore, setFilterStore] = useState("");
@@ -356,6 +357,53 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
         return `${h}h ${m}m`;
     };
 
+    // Segnalazione 83: esporta le ore di TUTTI i collaboratori in un file che si
+    // apre con Excel. Prende tutti i turni chiusi (non solo gli ultimi 50 a
+    // schermo) e aggiunge in fondo il totale per collaboratore.
+    const [exporting, setExporting] = useState(false);
+    const esportaOre = async () => {
+        setExporting(true);
+        try {
+            const { data, error } = await supabase
+                .from("shifts")
+                .select("employee_name, store, started_at, ended_at, total_pause_minutes")
+                .not("ended_at", "is", null)
+                .order("employee_name")
+                .order("started_at");
+            if (error) { alert("Esportazione non riuscita: " + error.message); return; }
+            const righe = (data ?? []) as ShiftRow[];
+            if (righe.length === 0) { alert("Non ci sono turni conclusi da esportare."); return; }
+            const oreDi = (s: ShiftRow) => {
+                const ini = new Date(s.started_at).getTime();
+                const fine = new Date(s.ended_at as string).getTime();
+                const pausa = (s.total_pause_minutes || 0) * 60000;
+                return Math.max(0, (fine - ini - pausa)) / 3600000;
+            };
+            const dec = (n: number) => n.toFixed(2).replace(".", ",");   // Excel italiano
+            const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+            const intestazioni = ["Collaboratore", "Negozio", "Data", "Entrata", "Uscita", "Pausa (min)", "Ore lavorate"];
+            const corpo = righe.map((s) => [
+                s.employee_name, s.store,
+                new Date(s.started_at).toLocaleDateString("it-IT"),
+                formatTime(s.started_at), formatTime(s.ended_at),
+                String(s.total_pause_minutes || 0), dec(oreDi(s)),
+            ].map(q).join(";"));
+            const totali = new Map<string, number>();
+            righe.forEach((s) => totali.set(s.employee_name, (totali.get(s.employee_name) || 0) + oreDi(s)));
+            const riepilogo = ["", q("TOTALE ORE PER COLLABORATORE"),
+                ...[...totali.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+                    .map(([nome, ore]) => [nome, "", "", "", "", "", dec(ore)].map(q).join(";"))];
+            const csv = [intestazioni.map(q).join(";"), ...corpo, ...riepilogo].join("\r\n");
+            const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `ore-collaboratori-${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } finally { setExporting(false); }
+    };
+
     return (
         <div className="space-y-6">
             {/* Header and Filters */}
@@ -368,6 +416,19 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                     <p className="text-xs text-slate-500">Monitoraggio turni e storico presenze</p>
                 </div>
                 <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                    {/* Segnalazione 83: scarica le ore di tutti i collaboratori (solo amministrazione) */}
+                    {isAdminOrAbove(user?.role) && (
+                        <button
+                            type="button"
+                            onClick={esportaOre}
+                            disabled={exporting}
+                            title="Scarica le ore di tutti i collaboratori (si apre con Excel)"
+                            className="px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-bold flex items-center gap-2 disabled:opacity-50"
+                        >
+                            <Download className="w-4 h-4" />
+                            {exporting ? "Esporto…" : "Esporta ore"}
+                        </button>
+                    )}
                     <input
                         type="text"
                         placeholder="Nome..."
