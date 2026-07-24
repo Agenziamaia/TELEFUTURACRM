@@ -9,11 +9,23 @@ import {
   subscribeMessages, subscribeInbox, subscribeReceipts, refHref,
   splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
 } from "@/lib/chat";
+import type { ChatMessage } from "@/lib/chat";
 import { roleLabel, seesAllStores, seesWholeStore } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2 } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply } from "lucide-react";
+
+// Segnalazione 74: testo breve del messaggio citato (i tag @[tipo:id|etichetta]
+// diventano la loro etichetta, altrimenti si vedrebbe il token grezzo).
+function previewBody(m: ChatMessage): string {
+  if (!m.body) return (m.attachments || []).length ? "Allegato" : "—";
+  const t = splitBody(m.body)
+    .map((p: any) => (p.text !== undefined ? p.text : (p.ref?.label || "").split(" · ")[0]))
+    .join("")
+    .trim();
+  return t.length > 120 ? t.slice(0, 120) + "…" : (t || "Allegato");
+}
 
 // icona + colore per tipo di tag
 const REF_UI = {
@@ -66,6 +78,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [parts, setParts] = useState([]);
   const [text, setText] = useState("");
+  // Segnalazione 74: messaggio a cui si sta rispondendo (stile WhatsApp).
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [files, setFiles] = useState([]);
   const [refs, setRefs] = useState([]);          // record CRM taggati nel messaggio in corso
   const [showTag, setShowTag] = useState(false);
@@ -179,8 +193,8 @@ export default function ChatPage() {
     if (!text.trim() && files.length === 0 && refs.length === 0) return;
     setSending(true);
     try {
-      await sendMessage(selId, meId, text.trim(), files, refs);
-      setText(""); setFiles([]); setRefs([]); setMention(null); setMentionRows([]);
+      await sendMessage(selId, meId, text.trim(), files, refs, replyTo?.id ?? null);
+      setText(""); setFiles([]); setRefs([]); setMention(null); setMentionRows([]); setReplyTo(null);
       await reloadMessages(selId);
     }
     catch (e) { console.error("chat send failed", e); alert("Invio non riuscito: " + (e?.message || e)); }
@@ -311,14 +325,36 @@ export default function ChatPage() {
             <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
               {messages.map((m) => {
                 const mine = m.sender_id === meId;
+                // Segnalazione 74: messaggio citato (se e' stato eliminato resta il segnaposto)
+                const quoted = m.reply_to ? messages.find((x) => x.id === m.reply_to) : null;
                 const showDay = (() => { const d = dayLabel(m.created_at); if (d !== lastDay) { lastDay = d; return d; } return null; })();
+                const btnRispondi = (
+                  <button type="button" title="Rispondi" onClick={() => setReplyTo(m)}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-opacity">
+                    <Reply className="w-4 h-4" />
+                  </button>
+                );
                 return (
-                  <div key={m.id}>
+                  <div key={m.id} id={`msg-${m.id}`}>
                     {showDay && <div className="text-center my-3"><span className="text-[11px] text-slate-500 bg-white/5 px-3 py-1 rounded-full">{showDay}</span></div>}
-                    <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                    <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}>
+                      {mine && btnRispondi}
                       <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
                         {!mine && selConv.type === "group" && (
                           <p className="text-[11px] font-semibold text-indigo-300 mb-0.5">{senderName[m.sender_id] || "—"}</p>
+                        )}
+                        {quoted && (
+                          <button type="button" title="Vai al messaggio"
+                            onClick={() => document.getElementById(`msg-${quoted.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                            className={`w-full text-left mb-1.5 px-2 py-1 rounded-lg border-l-2 ${mine ? "bg-black/20 border-indigo-200/70" : "bg-black/25 border-indigo-400"}`}>
+                            <span className={`block text-[10px] font-semibold ${mine ? "text-indigo-100" : "text-indigo-300"}`}>
+                              {quoted.sender_id === meId ? "Tu" : (senderName[quoted.sender_id] || "—")}
+                            </span>
+                            <span className="block text-[11px] opacity-80 truncate">{previewBody(quoted)}</span>
+                          </button>
+                        )}
+                        {m.reply_to && !quoted && (
+                          <div className="mb-1.5 px-2 py-1 rounded-lg bg-black/20 text-[11px] italic opacity-70">Messaggio non più disponibile</div>
                         )}
                         {(m.attachments || []).map((a) => (
                           <div key={a.id} className="mb-1">
@@ -370,6 +406,7 @@ export default function ChatPage() {
                           })()}
                         </p>
                       </div>
+                      {!mine && btnRispondi}
                     </div>
                   </div>
                 );
@@ -378,6 +415,22 @@ export default function ChatPage() {
 
             {/* composer */}
             <div className="relative border-t border-white/5 px-4 py-3 shrink-0">
+              {/* Segnalazione 74: anteprima del messaggio a cui si risponde */}
+              {replyTo && (
+                <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-xl bg-white/5 border-l-2 border-indigo-400">
+                  <Reply className="w-4 h-4 text-indigo-300 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-semibold text-indigo-300">
+                      Rispondi a {replyTo.sender_id === meId ? "te stesso" : (senderName[replyTo.sender_id] || "—")}
+                    </p>
+                    <p className="text-[11px] text-slate-400 truncate">{previewBody(replyTo)}</p>
+                  </div>
+                  <button type="button" onClick={() => setReplyTo(null)} title="Annulla risposta"
+                    className="shrink-0 p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
               {mention && mentionRows.length > 0 && (
                 <div className="absolute bottom-full left-4 right-4 mb-2 max-h-64 overflow-y-auto rounded-xl border border-white/10 bg-[#161a26] shadow-2xl z-20">
                   <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5">

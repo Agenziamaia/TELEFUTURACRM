@@ -148,8 +148,15 @@ export default function RicercaContratto() {
     const [selectedContract, setSelectedContract] = useState<ContrattoRow | null>(null);
     const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
 
-    // Deep link dai tag in chat: /ricerca-contratto?id=<id> apre il dettaglio del contratto
+    // Deep link dai tag in chat e dalla ricerca globale in alto:
+    // /ricerca-contratto?id=<id> apre il dettaglio del contratto.
+    // Segnalazione 75: il contratto cercato puo' non essere nella pagina caricata,
+    // quindi filtro subito per quell'id: cosi' c'e' di sicuro e il dettaglio si apre.
     const deepLinked = useRef(false);
+    useEffect(() => {
+        const id = new URLSearchParams(window.location.search).get("id");
+        if (id) setFilterCodice(id);
+    }, []);
     useEffect(() => {
         if (deepLinked.current || contractList.length === 0) return;
         const id = new URLSearchParams(window.location.search).get("id");

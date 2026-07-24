@@ -1,12 +1,25 @@
 "use client";
 
-import { Search, Sun, Maximize, Bell, Menu, LogOut, ArrowLeft } from "lucide-react";
+import { Search, Sun, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { roleLabel } from "@/lib/roles";
-import { useRef, useEffect } from "react";
+import { roleLabel, seesAllStores } from "@/lib/roles";
+import { supabase } from "@/lib/supabaseClient";
+import { useRef, useEffect, useState } from "react";
 
 const CRM_BACK_EVENT = "crm-back";
+
+// Segnalazione 75: risultato della ricerca globale — un cliente col suo
+// contratto piu' recente, cosi' un clic porta dritto al dettaglio.
+type Hit = {
+    contractId: string;
+    cliente: string;
+    cf: string | null;
+    cellulare: string | null;
+    brand: string | null;
+    prodotto: string | null;
+    data: string | null;
+};
 
 export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     const router = useRouter();
@@ -14,6 +27,68 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     const { user, logout } = useAuth();
     const lastPathRef = useRef<string | null>(null);
     const previousPathRef = useRef<string | null>(null);
+
+    // ─── Ricerca globale (segnalazione 75) ───
+    const [q, setQ] = useState("");
+    const [hits, setHits] = useState<Hit[]>([]);
+    const [searching, setSearching] = useState(false);
+    const [openRes, setOpenRes] = useState(false);
+    const boxRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        const onDocClick = (e: MouseEvent) => {
+            if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpenRes(false);
+        };
+        document.addEventListener("mousedown", onDocClick);
+        return () => document.removeEventListener("mousedown", onDocClick);
+    }, []);
+
+    useEffect(() => {
+        const term = q.trim();
+        if (term.length < 2) { setHits([]); setSearching(false); return; }
+        setSearching(true);
+        const t = setTimeout(async () => {
+            try {
+                // niente virgole/parentesi/apici: romperebbero il filtro OR di PostgREST
+                const safe = term.replace(/[",()]/g, "").trim();
+                if (!safe) { setHits([]); return; }
+                const like = `%${safe}%`;
+                let query = supabase
+                    .from("contracts")
+                    .select("id, brand, prodotto, data_registrazione, created_at, codice_attivazione, client_id, clients!inner(nome, cognome, ragione_sociale, cf_piva, cellulare)")
+                    .or(`nome.ilike.${like},cognome.ilike.${like},ragione_sociale.ilike.${like},cf_piva.ilike.${like},cellulare.ilike.${like}`, { referencedTable: "clients" })
+                    .order("created_at", { ascending: false })
+                    .limit(40);
+                // ognuno vede solo i contratti del proprio negozio
+                if (!seesAllStores(user?.role) && user?.negozio) {
+                    query = query.ilike("negozio", `${String(user.negozio).split(" ")[0]}%`);
+                }
+                const { data } = await query;
+                // un risultato per cliente: il contratto piu' recente (i dati arrivano gia' ordinati)
+                const perCliente = new Map<string, Hit>();
+                (data ?? []).forEach((r: any) => {
+                    const c = r.clients || {};
+                    const key = r.client_id || r.id;
+                    if (perCliente.has(key)) return;
+                    const nome = [c.ragione_sociale, [c.nome, c.cognome].filter(Boolean).join(" ")]
+                        .filter(Boolean)[0] || "—";
+                    perCliente.set(key, {
+                        contractId: r.id, cliente: nome, cf: c.cf_piva ?? null, cellulare: c.cellulare ?? null,
+                        brand: r.brand ?? null, prodotto: r.prodotto ?? null,
+                        data: r.data_registrazione ?? null,
+                    });
+                });
+                setHits(Array.from(perCliente.values()).slice(0, 8));
+            } catch { setHits([]); }
+            finally { setSearching(false); }
+        }, 300);
+        return () => clearTimeout(t);
+    }, [q, user?.role, user?.negozio]);
+
+    const apriHit = (h: Hit) => {
+        setOpenRes(false); setQ("");
+        router.push(`/ricerca-contratto?id=${encodeURIComponent(h.contractId)}`);
+    };
 
     useEffect(() => {
         if (lastPathRef.current !== pathname) {
@@ -60,16 +135,58 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                 >
                     <Menu className="w-6 h-6" />
                 </button>
-                {/* Search Bar Replica */}
-                <div className="max-w-md w-full relative hidden md:block">
+                {/* Segnalazione 75: la barra di ricerca non faceva nulla. Ora cerca il
+                    cliente (nome, C.F./P.IVA, cellulare) e porta al suo contratto piu'
+                    recente. Rispetta il negozio dell'utente. */}
+                <div ref={boxRef} className="max-w-md w-full relative hidden md:block">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Search className="h-4 w-4 text-slate-500" />
+                        {searching ? <Loader2 className="h-4 w-4 text-slate-500 animate-spin" /> : <Search className="h-4 w-4 text-slate-500" />}
                     </div>
                     <input
                         type="text"
+                        value={q}
+                        onChange={(e) => { setQ(e.target.value); setOpenRes(true); }}
+                        onFocus={() => setOpenRes(true)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && hits.length > 0) apriHit(hits[0]);
+                            if (e.key === "Escape") setOpenRes(false);
+                        }}
                         className="glass-input w-full pl-10 h-10 text-sm"
-                        placeholder="Search for anything..."
+                        placeholder="Cerca cliente: nome, C.F./P.IVA o cellulare…"
                     />
+                    {openRes && q.trim().length >= 2 && (
+                        <div className="absolute left-0 right-0 top-full mt-2 rounded-xl border border-white/10 bg-[#161a26] shadow-2xl z-50 overflow-hidden">
+                            {hits.length === 0 ? (
+                                <p className="px-3 py-3 text-xs text-slate-500">
+                                    {searching ? "Ricerca in corso…" : "Nessun cliente trovato"}
+                                </p>
+                            ) : (
+                                <>
+                                    <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-500 border-b border-white/5">
+                                        Contratto più recente — Invio per il primo
+                                    </p>
+                                    {hits.map((h) => (
+                                        <button key={h.contractId} type="button" onClick={() => apriHit(h)}
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-white/5">
+                                            <span className="w-7 h-7 shrink-0 rounded-lg border border-indigo-500/30 bg-indigo-500/10 flex items-center justify-center">
+                                                <UserIcon className="w-3.5 h-3.5 text-indigo-300" />
+                                            </span>
+                                            <span className="flex-1 min-w-0">
+                                                <span className="block text-sm text-white truncate">{h.cliente}</span>
+                                                <span className="block text-[10px] text-slate-500 truncate">
+                                                    {[h.cf, h.cellulare].filter(Boolean).join(" · ") || "—"}
+                                                </span>
+                                            </span>
+                                            <span className="shrink-0 text-right">
+                                                <span className="block text-[11px] text-slate-300">{[h.brand, h.prodotto].filter(Boolean).join(" · ") || "—"}</span>
+                                                <span className="block text-[10px] text-slate-500">{h.data || ""}</span>
+                                            </span>
+                                        </button>
+                                    ))}
+                                </>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 

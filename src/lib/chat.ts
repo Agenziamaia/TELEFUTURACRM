@@ -39,6 +39,8 @@ export function refHref(r: ChatRef): string {
 export interface ChatMessage {
   id: string; sender_id: string | null; body: string | null; created_at: string;
   edited_at: string | null; attachments: ChatAttachment[]; refs: ChatRef[];
+  // Segnalazione 74: id del messaggio a cui questo risponde (stile WhatsApp).
+  reply_to: string | null;
 }
 export interface Participant {
   user_id: string; is_admin: boolean; full_name: string; role: string; primary_store: string | null;
@@ -131,7 +133,7 @@ export function subscribeReceipts(convId: string, onChange: () => void) {
 export async function listMessages(convId: string): Promise<ChatMessage[]> {
   const { data, error } = await supabase
     .from("chat_messages")
-    .select("id, sender_id, body, created_at, edited_at, refs, chat_attachments(id, url, name, mime, size_bytes)")
+    .select("id, sender_id, body, created_at, edited_at, refs, reply_to, chat_attachments(id, url, name, mime, size_bytes)")
     .eq("conversation_id", convId)
     .is("deleted_at", null)
     .order("created_at", { ascending: true });
@@ -140,6 +142,7 @@ export async function listMessages(convId: string): Promise<ChatMessage[]> {
     id: m.id, sender_id: m.sender_id, body: m.body, created_at: m.created_at,
     edited_at: m.edited_at, attachments: m.chat_attachments || [],
     refs: Array.isArray(m.refs) ? m.refs : [],
+    reply_to: m.reply_to ?? null,
   }));
 }
 
@@ -254,7 +257,8 @@ const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
 
 // Invia un messaggio: carica gli allegati sul bucket, inserisce il messaggio e gli allegati.
 export async function sendMessage(
-  convId: string, meId: string, body: string, files: File[] = [], refs: ChatRef[] = []
+  convId: string, meId: string, body: string, files: File[] = [], refs: ChatRef[] = [],
+  replyTo: string | null = null   // segnalazione 74
 ): Promise<void> {
   const uploaded: { url: string; name: string; mime: string; size: number }[] = [];
   for (const f of files) {
@@ -266,7 +270,7 @@ export async function sendMessage(
   }
   const { data: msg, error } = await supabase
     .from("chat_messages")
-    .insert({ conversation_id: convId, sender_id: meId, body: body || null, refs })
+    .insert({ conversation_id: convId, sender_id: meId, body: body || null, refs, reply_to: replyTo })
     .select("id")
     .single();
   if (error) throw error;
