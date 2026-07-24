@@ -7,6 +7,7 @@ import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { codiciPerBrand } from "@/lib/codiciInserimento";
 
 interface ContrattoRow {
     id: string;
@@ -228,7 +229,7 @@ export default function RicercaContratto() {
                 if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
-            if (isTecnico) q = q.ilike("brand", "extra");
+            if (isTecnico) q = q.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
             else if (!showExtra) q = q.not("brand", "ilike", "extra");
             const { data } = await q;
             if (data) {
@@ -290,7 +291,7 @@ export default function RicercaContratto() {
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
             // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
             // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
-            if (isTecnico) query = query.ilike("brand", "extra");
+            if (isTecnico) query = query.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
             else if (!showExtra) query = query.not("brand", "ilike", "extra");
             // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
             // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
@@ -345,7 +346,7 @@ export default function RicercaContratto() {
                 if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
-            if (isTecnico) q = q.ilike("brand", "extra");
+            if (isTecnico) q = q.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
             else if (!showExtra) q = q.not("brand", "ilike", "extra");
             if (daDataRegistrazione) q = q.gte("data_registrazione", daDataRegistrazione);
             if (aDataRegistrazione) q = q.lte("data_registrazione", aDataRegistrazione);
@@ -1029,14 +1030,13 @@ export default function RicercaContratto() {
                     if (k === "contract::brand") return uniqueBrands;
                     if (k === "contract::prodotto") return uniqueProdotti;
                     if (k === "contract::categoria") return Array.from(new Set(uniqueProdotti.length ? contractList.map(c => String(c.raw?.categoria || "")).filter(Boolean) : [])).sort();
-                    // Segnalazione 71: anche il codice di inserimento va a tendina.
-                    // Si popola con i codici del brand del contratto; se quel brand
-                    // non ne ha ancora, si mostrano tutti quelli censiti.
+                    // Segnalazione 71/68: il codice di inserimento va a tendina con i
+                    // codici VERI del brand (elenco unico condiviso con Registra
+                    // Contratto). Prima si ricavavano dai contratti gia' salvati,
+                    // quindi comparivano solo i codici gia' usati (per Kena il solo
+                    // "Collatina") e per i brand senza storico non compariva nulla.
                     if (/^dettagli::cod\.?\s?ins/i.test(k)) {
-                        const b = String(row.brand || "");
-                        const perBrand = codeByBrand[b] || [];
-                        const tutti = Array.from(new Set(Object.values(codeByBrand).flat()));
-                        return (perBrand.length ? perBrand : tutti).slice().sort();
+                        return codiciPerBrand(row.brand, uniqueNegozi);
                     }
                     return null;
                 };
