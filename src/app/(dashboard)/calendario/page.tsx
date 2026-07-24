@@ -8,7 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
-import { useVisibleStores } from "@/lib/visibleStores";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto)
 type AppointmentType = "incoming" | "outgoing" | "self_generated";
@@ -291,10 +291,12 @@ export default function Calendario() {
     // UNICA della visibilita' (primary + user_stores + user_store_visibility):
     // prima mancava user_store_visibility, quindi la visibilita' data dall'admin
     // qui non valeva.
-    const { stores: myStores } = useVisibleStores();
+    const { seesAll: seesAllVis, stores: myStores } = useVisibleStores();
+    // negozi di riferimento per i confronti (fallback sul primary se lista vuota)
+    const mieiNegozi = myStores.length ? myStores : (user?.negozio ? [user.negozio] : []);
 
     const assignableAgents = useMemo(() => {
-        if (seesAllStores(user?.role)) return agents;
+        if (seesAllVis) return agents;
         const mine = (myStores.length ? myStores : [user?.negozio || ""])
             .map(x => x.trim().toLowerCase()).filter(Boolean);
         if (!mine.length) return agents;
@@ -302,7 +304,7 @@ export default function Calendario() {
         return [...new Set(calendarOperators
             .filter(o => { const st = (o.store || "").trim().toLowerCase(); return !!st && same(st); })
             .map(o => o.name))].sort();
-    }, [agents, calendarOperators, user?.role, myStores, user?.negozio]);
+    }, [agents, calendarOperators, seesAllVis, myStores, user?.negozio]);
 
     useEffect(() => {
         let cancelled = false;
@@ -393,7 +395,8 @@ export default function Calendario() {
         if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
         // Agent: own appointments, or inbound appointments for their store
         if (a.agente === user?.name) return true;
-        if (a.type === "incoming" && a.store && user?.negozio && (a.store === user.negozio || a.store.includes(user.negozio) || user.negozio.includes(a.store))) return true;
+        // Appuntamenti inbound di QUALSIASI negozio visibile (non solo il principale).
+        if (a.type === "incoming" && a.store && mieiNegozi.some((m) => sameStore(a.store, m))) return true;
         return false;
     });
 
@@ -411,8 +414,8 @@ export default function Calendario() {
             }
             // Agent: visible if assigned to me, or assigned to my store
             if (t.assignedToStore) {
-                const myStore = user?.negozio ?? "";
-                const storeMatch = myStore && (t.assignedToStore === myStore || myStore.includes(t.assignedToStore) || t.assignedToStore.includes(myStore));
+                // task assegnate a QUALSIASI negozio visibile
+                const storeMatch = mieiNegozi.some((m) => sameStore(t.assignedToStore, m));
                 if (!storeMatch) return false;
             } else {
                 if (!(t.assignedTo === user?.name || t.createdBy === user?.name)) return false;
@@ -1528,7 +1531,7 @@ export default function Calendario() {
                                         <select className="glass-input w-full" value={newTask.assignedTo} onChange={e => setNewTask(p => ({ ...p, assignedTo: e.target.value }))} required>
                                             <option value="">Seleziona operatore...</option>
                                             <option value={user?.name}>{user?.name} (Tu)</option>
-                                            <optgroup label={seesAllStores(user?.role) ? "Altri" : `Team ${user?.negozio || ""}`}>
+                                            <optgroup label={seesAllVis ? "Altri" : `Team ${mieiNegozi.join(", ")}`}>
                                                 {assignableAgents.filter(a => a !== user?.name).map(a => <option key={a} value={a}>{a}</option>)}
                                             </optgroup>
                                         </select>

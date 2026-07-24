@@ -7,7 +7,6 @@ import { useAuth } from "@/context/AuthContext";
 import { RotateCcw, Download, Eye, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
-import { seesAllStores } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 
 //  Types ─
@@ -793,9 +792,9 @@ export default function ChiusuraNegozio() {
     // la pagina filtrata sul proprio negozio - che per loro e' l'Ufficio o e'
     // vuoto - e quindi NESSUNA chiusura. Ora vale la regola del CRM: chi vede
     // tutti i negozi vede tutte le chiusure.
-    const isAdmin = seesAllStores(user?.role);
-    // Negozi visibili dalla FONTE UNICA (primary + user_stores + user_store_visibility).
-    const { stores: visStores } = useVisibleStores();
+    // Ambito dalla FONTE UNICA: decide anche il "vede tutto" (l'amministrativo
+    // puo' essere ristretto dall'admin ad alcuni negozi).
+    const { seesAll: isAdmin, stores: visStores } = useVisibleStores();
     const userStores = visStores.length ? visStores : (user?.negozio ? [user.negozio] : []);
     const [history, setHistory] = useState<Chiusura[]>([]);
     const [loading, setLoading] = useState(true);

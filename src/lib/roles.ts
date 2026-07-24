@@ -139,6 +139,9 @@ export function seesWholeStore(role: string | null | undefined): boolean {
     return [
         "store_manager", "direttore_commerciale", "direttore_cc", "direttore_ob",
         "back_office_caller", "supervisore", "back_office",
+        // l'amministrativo vede l'INTERO negozio (mai bloccato sul proprio nome):
+        // conta quando l'admin gli restringe la visibilita' ad alcuni negozi.
+        "amministrativo",
     ].includes(role || "");
 }
 

@@ -10,7 +10,7 @@ const ALLOWED_ROLES = ["admin", "dev", "direttore_generale", "amministrativo", "
 export default function OrdineMercePage() {
   const { user } = useAuth();
   // Negozi visibili dalla fonte unica (primary + user_stores + user_store_visibility).
-  const { stores: myStores } = useVisibleStores();
+  const { seesAll, stores: myStores } = useVisibleStores();
 
   if (!user) {
     return (
@@ -29,6 +29,6 @@ export default function OrdineMercePage() {
   // quindi ricadeva sempre sul primo negozio finto. Ora si passa direttamente il
   // negozio reale dell'utente (primary_store) e la pagina usa i negozi veri dal DB.
   return (
-    <OrdineMerceContent role={user.role} myStore={user.negozio || ""} myStores={myStores} />
+    <OrdineMerceContent role={user.role} myStore={user.negozio || ""} myStores={myStores} seesAll={seesAll} />
   );
 }

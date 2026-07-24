@@ -17,7 +17,6 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { seesAllStores } from "@/lib/roles";
 import { useAuth } from "@/context/AuthContext";
 
 /** Confronto tollerante tra nomi negozio: esatto o per prefisso, perche' i dati
@@ -45,7 +44,8 @@ export function negozioInValues(stores: string[]): string[] {
 }
 
 export interface VisibleStores {
-    /** true per i ruoli a visibilita' globale (seesAllStores): nessun filtro. */
+    /** true = nessun filtro: admin/dev/direttore_generale sempre; amministrativo
+     *  solo finche' l'admin non gli restringe la visibilita' (righe esplicite). */
     seesAll: boolean;
     /** Negozi visibili (vuoto se seesAll o se l'utente non ha negozi). */
     stores: string[];
@@ -56,33 +56,47 @@ export interface VisibleStores {
 
 export function useVisibleStores(): VisibleStores {
     const { user } = useAuth();
-    const seesAll = seesAllStores(user?.role);
-    const [stores, setStores] = useState<string[]>([]);
-    const [loaded, setLoaded] = useState(false);
+    // Visibilita' globale INCONDIZIONATA solo per admin/dev/direttore generale.
+    // L'AMMINISTRATIVO vede tutti i negozi DI DEFAULT, ma l'admin puo' toglierne:
+    // se ha righe esplicite in user_store_visibility, vale SOLO quella lista
+    // (nessuna riga = default tutti). Regola decisa da Luca il 25/07.
+    const roleAll = !!user && ["admin", "dev", "direttore_generale"].includes(user.role);
+    const isAmministrativo = user?.role === "amministrativo";
+    const [state, setState] = useState<{ seesAll: boolean; stores: string[]; loaded: boolean }>(
+        { seesAll: roleAll, stores: [], loaded: false },
+    );
 
     useEffect(() => {
-        if (!user?.id || seesAll) {
-            setStores([]);
-            setLoaded(true);
+        if (!user?.id) {
+            setState({ seesAll: false, stores: [], loaded: false });
+            return;
+        }
+        if (roleAll) {
+            setState({ seesAll: true, stores: [], loaded: true });
             return;
         }
         let vivo = true;
-        setLoaded(false);
+        setState((p) => ({ ...p, loaded: false }));
         (async () => {
             const [us, vis] = await Promise.all([
                 supabase.from("user_stores").select("store_name").eq("user_id", user.id),
                 supabase.from("user_store_visibility").select("store_name").eq("user_id", user.id),
             ]);
             if (!vivo) return;
+            const visRows = (vis.data ?? []).map((r: { store_name?: string | null }) => String(r.store_name || "")).filter(Boolean);
+            if (isAmministrativo && visRows.length === 0) {
+                // amministrativo senza restrizioni esplicite: tutti i negozi
+                setState({ seesAll: true, stores: [], loaded: true });
+                return;
+            }
             const set = new Set<string>();
             if (user.negozio) set.add(user.negozio);
             (us.data ?? []).forEach((r: { store_name?: string | null }) => { if (r.store_name) set.add(String(r.store_name)); });
-            (vis.data ?? []).forEach((r: { store_name?: string | null }) => { if (r.store_name) set.add(String(r.store_name)); });
-            setStores([...set].sort());
-            setLoaded(true);
+            visRows.forEach((n) => set.add(n));
+            setState({ seesAll: false, stores: [...set].sort(), loaded: true });
         })();
         return () => { vivo = false; };
-    }, [user?.id, user?.negozio, seesAll]);
+    }, [user?.id, user?.negozio, roleAll, isAmministrativo]);
 
-    return { seesAll, stores, loaded };
+    return state;
 }

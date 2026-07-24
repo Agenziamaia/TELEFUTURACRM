@@ -1283,7 +1283,6 @@ export default function TrackingPdaPage() {
   // Delega: dallo store manager in su. Esito admin: solo utenti amministrazione.
   const canDelegate = ["store_manager", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
   const canEditAdmin = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
-  const seesAll = ["admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
   const [allMembers, setAllMembers] = useState<{ id: string; full_name: string; primary_store: string | null }[]>([]);
   const [onlyMine, setOnlyMine] = useState(false); // "delegate a me"
   useEffect(() => {
@@ -1298,7 +1297,8 @@ export default function TrackingPdaPage() {
   // I negozi visibili arrivano dalla FONTE UNICA (primary + user_stores +
   // user_store_visibility): prima la stessa union era ricalcolata qui a mano.
   const seesWhole = seesWholeStore(user?.role);
-  const { stores: visibleStores } = useVisibleStores();
+  // seesAll dalla fonte unica: per l'amministrativo dipende dalle restrizioni admin.
+  const { seesAll, stores: visibleStores } = useVisibleStores();
 
   // Il manager puo' delegare SOLO ai collaboratori dei propri punti vendita —
   // TUTTI quelli visibili, non solo il principale.

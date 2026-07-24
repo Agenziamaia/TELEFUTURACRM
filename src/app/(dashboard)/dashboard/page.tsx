@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { seesAllStores, roleLabel } from "@/lib/roles";
+import { roleLabel } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
 import {
   FileText, Users, CheckCircle2, Clock, Store as StoreIcon,
@@ -70,10 +70,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("month");
 
-  const seesAll = !!user && (seesAllStores(user.role) || user.role === "dev");
-  // Ambito negozi dalla FONTE UNICA (primary + user_stores + user_store_visibility):
-  // prima la stessa union era ricalcolata qui a mano.
-  const { stores: myStores, loaded: visLoaded } = useVisibleStores();
+  // Ambito dalla FONTE UNICA: decide anche il "vede tutto" (amministrativo restringibile).
+  const { seesAll, stores: myStores, loaded: visLoaded } = useVisibleStores();
   const visKey = myStores.join("|");
 
   useEffect(() => {

@@ -7,7 +7,7 @@ import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, categoriaDef, categoriaDi } from "@/lib/tassonomia";
-import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
 import { codiciPerBrand } from "@/lib/codiciInserimento";
 
@@ -213,7 +213,9 @@ export default function RicercaContratto() {
     // Ruoli reali (roles.ts): la vecchia lista era ancora quella del mock, quindi
     // dev/direttore_generale/amministrativo finivano filtrati sul proprio nome e
     // non vedevano NESSUN contratto.
-    const isGlobalView = seesAllStores(user?.role);
+    // Il "vede tutto" arriva dalla FONTE UNICA della visibilita': per l'amministrativo
+    // non basta piu' il ruolo (l'admin puo' restringergli i negozi visibili).
+    const { seesAll: isGlobalView, stores: visStores, loaded: visLoaded } = useVisibleStores();
     const wholeStore = seesWholeStore(user?.role);
     // Modifica contratto riservata allo Store Manager (+ superuser) — richiesta Luca #5.
     const canEditContract = ["store_manager", "admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
@@ -224,10 +226,6 @@ export default function RicercaContratto() {
     // negozio), quindi per lui il filtro non si applica.
     const isTecnico = user?.role === "tecnico";
     const [showExtra, setShowExtra] = useState(false);
-    // Visibilita' negozi dalla FONTE UNICA (primary + user_stores + user_store_visibility):
-    // prima il blocco era sul solo primary_store, quindi chi aveva piu' negozi in
-    // visibilita' (Emanuele: Magliana W3 + Multi) ne vedeva uno solo.
-    const { stores: visStores, loaded: visLoaded } = useVisibleStores();
     const lockedStores = !isGlobalView && visStores.length ? negozioInValues(visStores) : null;
     const visKey = (lockedStores || []).join("|");
     // Finche' la lista visibilita' non e' arrivata NON si interroga (si eviterebbe

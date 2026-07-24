@@ -360,7 +360,7 @@ const Pill = ({ label, color, bg, small }) => (
 );
 
 /* ═══ MAIN COMPONENT ═══ */
-export default function OrdineMerceContent({ role: propRole, myStore: propMyStore, myStores: propMyStores }) {
+export default function OrdineMerceContent({ role: propRole, myStore: propMyStore, myStores: propMyStores, seesAll: propSeesAll }) {
   const [roleState, setRoleState] = useState("store_manager");
   const [myStoreState] = useState("");
   const storeList = useStores(); // negozi reali dal DB (segn.51)
@@ -496,7 +496,11 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [editingItemIdx, setEditingItemIdx] = useState(null);
   const [editForm, setEditForm] = useState({ name: "", qty: 1 });
 
+  // PANNELLO amministrazione (azioni, colonne, bulk): dipende dal RUOLO.
   const isAdmin = ["admin","dev","direttore_generale","amministrativo","back_office_caller","back_office"].includes(role || "");
+  // AMBITO DATI: tutti i negozi solo se la fonte unica lo dice (l'amministrativo
+  // puo' essere ristretto dall'admin); il back office resta completo per ruolo.
+  const vedeTutti = (propSeesAll != null ? propSeesAll : isAdmin) || ["back_office_caller","back_office"].includes(role || "");
   // Anche l'amministrazione puo' creare un ordine: prima il tasto era riservato
   // allo Store Manager, quindi un admin vedeva tutti gli ordini ma non poteva
   // farne uno. Chi non ha un negozio proprio (es. admin) lo sceglie qui.
@@ -513,7 +517,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
-      if (!isAdmin && !negoziMiei.some(st => sameStore(o.store, st))) return false;
+      if (!vedeTutti && !negoziMiei.some(st => sameStore(o.store, st))) return false;
       if (fStatus !== "tutti" && o.status !== fStatus) return false;
       if (fStore !== "tutti" && o.store !== fStore) return false;
       if (fCats.length > 0) {
@@ -526,11 +530,11 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
       }
       return true;
     });
-  }, [orders, isAdmin, negoziMiei, fStatus, fStore, fCats, fSearch]);
+  }, [orders, vedeTutti, negoziMiei, fStatus, fStore, fCats, fSearch]);
 
   /* ─── Stats ─── */
   const stats = useMemo(() => {
-    const base = isAdmin ? orders : orders.filter(o => o.store === myStore);
+    const base = vedeTutti ? orders : orders.filter(o => negoziMiei.some(st => sameStore(o.store, st)));
     return {
       totale: base.length,
       nuovi: base.filter(o => o.status === "nuovo").length,
@@ -1702,7 +1706,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
       <div style={s.header}>
         <div>
           <h1 style={s.title}>📦 Ordine Merce</h1>
-          <p style={s.subtitle}>{isAdmin ? "Pannello Amministrazione — Tutti i negozi" : `Negozio: ${storeName(myStore)}`}</p>
+          <p style={s.subtitle}>{isAdmin ? `Pannello Amministrazione — ${vedeTutti ? "Tutti i negozi" : negoziMiei.join(", ")}` : `Negozio: ${negoziMiei.join(", ") || storeName(myStore)}`}</p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {!isControlled && (
@@ -1784,8 +1788,8 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
 
           {isAdmin && (
             <select style={s.select} value={fStore} onChange={e => setFStore(e.target.value)}>
-              <option value="tutti">Tutti i negozi</option>
-              {storeList.map(st => <option key={st} value={st}>{st}</option>)}
+              <option value="tutti">{vedeTutti ? "Tutti i negozi" : "Tutti i miei negozi"}</option>
+              {(vedeTutti ? storeList : negoziMiei).map(st => <option key={st} value={st}>{st}</option>)}
             </select>
           )}
           <span style={{ fontSize: 12, color: C.grayLight, marginLeft: "auto" }}>{filtered.length} ordini</span>

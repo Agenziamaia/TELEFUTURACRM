@@ -1047,8 +1047,13 @@ function RitardiSection() {
     // vedevano la pagina filtrata sul proprio negozio (l'Ufficio) e non potevano
     // segnalare per altri. Ora vale la regola del CRM: chi vede tutti i negozi, piu'
     // il direttore commerciale.
-    const reportAll = seesAllStores(user?.role) || user?.role === "direttore_commerciale";
-    const isStoreMgr = user?.role === "store_manager";
+    // "vede tutto" dalla FONTE UNICA (amministrativo restringibile dall'admin);
+    // il direttore commerciale mantiene la vista completa per ruolo.
+    const { seesAll: seesAllVis, stores: myStores } = useVisibleStores();
+    const reportAll = seesAllVis || user?.role === "direttore_commerciale";
+    // L'amministrativo si comporta da manager sui negozi visibili: conta quando
+    // l'admin gli restringe la visibilita' (reportAll diventa false).
+    const isStoreMgr = user?.role === "store_manager" || user?.role === "amministrativo";
     const canReportOthers = reportAll || isStoreMgr;
 
     const [rows, setRows] = useState<RitardoRow[]>([]);
@@ -1068,10 +1073,6 @@ function RitardiSection() {
     // gestisce piu' punti vendita (es. Magliana Multi + Magliana W3) vedeva solo
     // quelli del negozio principale, quindi il ritardo appena creato per l'altro
     // negozio spariva e sembrava non salvato. Ora si usano TUTTI i propri negozi.
-    // Negozi visibili dalla FONTE UNICA (primary + user_stores + user_store_visibility):
-    // prima mancava user_store_visibility, quindi la visibilita' data dall'admin
-    // qui non valeva.
-    const { stores: myStores } = useVisibleStores();
 
     const fetchRows = useCallback(async () => {
         const { data } = await supabase.from("ritardi").select("*").order("date", { ascending: false });
