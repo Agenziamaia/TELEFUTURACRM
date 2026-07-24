@@ -4289,15 +4289,13 @@ export default function CRM() {
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:56,marginBottom:12}}>{b.logo?<Image src={b.logo} alt={b.label} width={180} height={56} style={{height:56,width:"auto",maxWidth:"85%",objectFit:"contain"}}/>:<span style={{fontSize:36}}>{b.icon}</span>}</div><div style={{fontWeight:800,fontSize:15,color:b.color}}>{b.label}</div><div style={{fontSize:10,color:"#64748b",marginTop:3}}>{b.desc}</div>
           </button>)}
-        </div>
-        <div style={{marginTop:12}}>
-          <button onClick={()=>setShowMargPOS(true)} style={{width:"100%",padding:"14px 20px",borderRadius:12,border:"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-            <span style={{fontSize:24}}>📦</span>
-            <div style={{textAlign:"left"}}>
-              <div style={{fontWeight:800,fontSize:14,color:"#6f42c1"}}>Prodotti & Marginalità</div>
-              <div style={{fontSize:11,color:"#9b59b6",marginTop:2}}>Registra vendite prodotti senza attivazione brand</div>
-            </div>
-            {margItems.length>0&&<span style={{marginLeft:"auto",background:"#6f42c1",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
+          {/* Segnalazione 68: "Prodotti & Marginalita'" non e' piu' una barra a tutta
+              larghezza sotto la griglia, ma una casella della griglia accanto ai brand. */}
+          <button onClick={()=>setShowMargPOS(true)} style={{padding:16,borderRadius:12,border:"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden"}}>
+            {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"#6f42c1",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:56,marginBottom:12}}><span style={{fontSize:36}}>📦</span></div>
+            <div style={{fontWeight:800,fontSize:15,color:"#6f42c1"}}>Prodotti & Marginalità</div>
+            <div style={{fontSize:10,color:"#9b59b6",marginTop:3}}>Vendite prodotti senza attivazione brand</div>
           </button>
         </div>
       </div>:<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 1</span><span style={{fontSize:13,fontWeight:600}}>Brand: <span style={{color:bObj.color}}>{bObj.icon} {bObj.label}{tipoCliente==="business"?" Business":""}</span></span></div>}
