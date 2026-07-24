@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { seesWholeStore } from "@/lib/roles";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { categoriaDi, controlliDi, righeTracking } from "@/lib/tassonomia";
 import { statoContrattoDa } from "./trackingHelpers";
 import {
@@ -1289,35 +1290,25 @@ export default function TrackingPdaPage() {
     supabase.from("app_users").select("id, full_name, primary_store").eq("active", true).order("full_name")
       .then(({ data }) => setAllMembers((data ?? []) as any));
   }, []);
-  // Il manager puo' delegare SOLO ai collaboratori del proprio punto vendita.
-  const members = useMemo(() => {
-    if (seesAll || !user?.negozio) return allMembers;
-    const base = user.negozio.split(" ")[0].toLowerCase();
-    return allMembers.filter((m) => (m.primary_store || "").toLowerCase().startsWith(base));
-  }, [allMembers, seesAll, user?.negozio]);
-  const memberName = useCallback((id?: string | null) => allMembers.find((m) => m.id === id)?.full_name || null, [allMembers]);
-
   // Segnalazione 30: il Tracking PDA caricava TUTTI i contratti senza alcun
   // filtro di ruolo, quindi chiunque vedeva le pratiche di ogni negozio.
   // Regola richiesta: sotto il livello manager solo le proprie pratiche e quelle
   // delegate; i manager tutto il proprio punto vendita; il supervisore i punti
   // vendita a cui e' associato; dall'amministrazione in su, tutto.
+  // I negozi visibili arrivano dalla FONTE UNICA (primary + user_stores +
+  // user_store_visibility): prima la stessa union era ricalcolata qui a mano.
   const seesWhole = seesWholeStore(user?.role);
-  const [visibleStores, setVisibleStores] = useState<string[]>([]);
-  useEffect(() => {
-    if (!user?.id || seesAll) { setVisibleStores([]); return; }
-    (async () => {
-      const [vis, us] = await Promise.all([
-        supabase.from("user_store_visibility").select("store_name").eq("user_id", user.id),
-        supabase.from("user_stores").select("store_name").eq("user_id", user.id),
-      ]);
-      const names = new Set<string>();
-      (vis.data ?? []).forEach((r: Record<string, unknown>) => { if (r.store_name) names.add(String(r.store_name)); });
-      (us.data ?? []).forEach((r: Record<string, unknown>) => { if (r.store_name) names.add(String(r.store_name)); });
-      if (user.negozio) names.add(user.negozio);
-      setVisibleStores([...names]);
-    })();
-  }, [user?.id, user?.negozio, seesAll]);
+  const { stores: visibleStores } = useVisibleStores();
+
+  // Il manager puo' delegare SOLO ai collaboratori dei propri punti vendita —
+  // TUTTI quelli visibili, non solo il principale.
+  const members = useMemo(() => {
+    if (seesAll) return allMembers;
+    const miei = visibleStores.length ? visibleStores : (user?.negozio ? [user.negozio] : []);
+    if (!miei.length) return allMembers;
+    return allMembers.filter((m) => miei.some((st) => sameStore(m.primary_store, st)));
+  }, [allMembers, seesAll, visibleStores, user?.negozio]);
+  const memberName = useCallback((id?: string | null) => allMembers.find((m) => m.id === id)?.full_name || null, [allMembers]);
 
   const [rawList, setRawList] = useState<RawRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1385,12 +1376,6 @@ export default function TrackingPdaPage() {
         };
       });
       // Optional: use client's 41 sample data from Supabase (run migration 024_tracking_pda_sample_data.sql)
-      // I nomi non coincidono sempre ("Magliana" vs "Magliana Multi"): confronto
-      // sul prefisso nei due sensi, come gia' altrove nel CRM.
-      const sameStore = (a?: string | null, b?: string | null) => {
-        const x = (a || "").trim().toLowerCase(), y = (b || "").trim().toLowerCase();
-        return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
-      };
       // Segnalazione 43: i prodotti venduti a marginalita' (brand "Extra") non
       // sono pratiche da lavorare — niente attivazione, niente stato, niente
       // malus — e sporcavano solo l'elenco. Fuori dal Tracking.

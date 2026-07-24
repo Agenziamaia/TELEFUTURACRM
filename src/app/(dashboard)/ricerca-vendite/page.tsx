@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, categoriaDef, categoriaDi } from "@/lib/tassonomia";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
 import { codiciPerBrand } from "@/lib/codiciInserimento";
 
 interface ContrattoRow {
@@ -223,7 +224,15 @@ export default function RicercaContratto() {
     // negozio), quindi per lui il filtro non si applica.
     const isTecnico = user?.role === "tecnico";
     const [showExtra, setShowExtra] = useState(false);
-    const lockedStore = !isGlobalView ? user?.negozio : null;
+    // Visibilita' negozi dalla FONTE UNICA (primary + user_stores + user_store_visibility):
+    // prima il blocco era sul solo primary_store, quindi chi aveva piu' negozi in
+    // visibilita' (Emanuele: Magliana W3 + Multi) ne vedeva uno solo.
+    const { stores: visStores, loaded: visLoaded } = useVisibleStores();
+    const lockedStores = !isGlobalView && visStores.length ? negozioInValues(visStores) : null;
+    const visKey = (lockedStores || []).join("|");
+    // Finche' la lista visibilita' non e' arrivata NON si interroga (si eviterebbe
+    // un primo fetch senza filtro o filtrato male).
+    const visReady = isGlobalView || visLoaded;
     // Il tecnico vede tutte le vendite del proprio negozio (segn. 55), non solo
     // le proprie: quindi niente blocco sul nome, resta solo il blocco sul negozio.
     const lockedVenditore = (!isGlobalView && !wholeStore && user?.role !== "tecnico") ? user?.name : null;
@@ -243,7 +252,7 @@ export default function RicercaContratto() {
             // inserimento (dettagli['Cod.Ins.']), non piu' i codici contratto.
             let q = supabase.from("contracts").select("venditore, brand, prodotto, negozio, dettagli");
             if (!isGlobalView) {
-                if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
+                if (lockedStores) q = q.in("negozio", lockedStores);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
             if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
@@ -266,8 +275,8 @@ export default function RicercaContratto() {
                 setCodeByBrand(Object.fromEntries(Object.entries(cb).map(([k, v]) => [k, [...v].sort()])));
             }
         };
-        fetchFilters();
-    }, [isGlobalView, lockedStore, lockedVenditore, showExtra, isTecnico]);
+        if (visReady) fetchFilters();
+    }, [isGlobalView, visKey, visReady, lockedVenditore, showExtra, isTecnico]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Elenco venditori dagli account attivi, con il proprio team in cima.
     useEffect(() => {
@@ -277,11 +286,9 @@ export default function RicercaContratto() {
                 .select("full_name, primary_store")
                 .eq("active", true)
                 .order("full_name");
-            const mio = (user?.negozio || "").trim().toLowerCase();
-            const stessoNegozio = (st: string | null) => {
-                const x = (st || "").trim().toLowerCase();
-                return !!x && !!mio && (x === mio || x.startsWith(mio) || mio.startsWith(x));
-            };
+            // "Team" = colleghi di TUTTI i negozi visibili, non solo del principale.
+            const miei = visStores.length ? visStores : (user?.negozio ? [user.negozio] : []);
+            const stessoNegozio = (st: string | null) => miei.some((m) => sameStore(st, m));
             const team: string[] = [], altri: string[] = [];
             (data ?? []).forEach((u: Record<string, unknown>) => {
                 const nome = String(u.full_name || "").trim();
@@ -291,9 +298,10 @@ export default function RicercaContratto() {
             setVenditoriTeam(team);
             setVenditoriAltri(altri);
         })();
-    }, [user?.negozio]);
+    }, [user?.negozio, visKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchData = async () => {
+        if (!visReady) return; // la lista dei negozi visibili non e' ancora arrivata
         setLoading(true);
         try {
             let query = supabase
@@ -341,12 +349,10 @@ export default function RicercaContratto() {
                 }
             }
 
-            // RBAC
+            // RBAC: tutti i negozi visibili (negozioInValues include anche la radice
+            // legacy: i contratti storici salvavano "Magliana" senza suffisso).
             if (!isGlobalView) {
-                // I contratti storici non usano il nome esatto del negozio ("Magliana" vs
-                // "Magliana Multi"): con un match esatto lo staff non vedrebbe nulla.
-                // Confronto sulla radice del nome.
-                if (lockedStore) query = query.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
+                if (lockedStores) query = query.in("negozio", lockedStores);
                 if (lockedVenditore) query = query.eq("venditore", lockedVenditore);
             }
 
@@ -369,9 +375,10 @@ export default function RicercaContratto() {
     // Segnalazione 57: conteggio contratti per brand, rispettando RBAC e le date.
     useEffect(() => {
         (async () => {
+            if (!visReady) return;
             let q = supabase.from("contracts").select("brand, data_registrazione");
             if (!isGlobalView) {
-                if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
+                if (lockedStores) q = q.in("negozio", lockedStores);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
             if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
@@ -388,7 +395,7 @@ export default function RicercaContratto() {
             (data ?? []).forEach((r: any) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
             setBrandCounts(Object.entries(m).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
         })();
-    }, [isGlobalView, lockedStore, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione, contractList.length]);
+    }, [isGlobalView, visKey, visReady, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
     // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
@@ -400,11 +407,11 @@ export default function RicercaContratto() {
         setPage(1);
     }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
 
-    // Debounced fetch
+    // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -866,16 +873,18 @@ export default function RicercaContratto() {
                         )}
                     </div>
 
-                    {/* 6. Negozio di attivazione */}
+                    {/* 6. Negozio di attivazione — la tendina offre SOLO i negozi visibili
+                        all'utente (uniqueNegozi arriva dalla query gia' filtrata RBAC), quindi
+                        chi ha piu' negozi in visibilita' puo' passare dall'uno all'altro.
+                        Prima era disabled e inchiodata sul primary_store. */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Negozio di attivazione</label>
                         <select
-                            className="glass-input w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={!isGlobalView}
-                            value={isGlobalView ? filterNegozio : (lockedStore || "Tutti")}
+                            className="glass-input w-full"
+                            value={filterNegozio}
                             onChange={e => setFilterNegozio(e.target.value)}
                         >
-                            <option value="Tutti">Tutti i negozi</option>
+                            <option value="Tutti">{isGlobalView ? "Tutti i negozi" : "Tutti i miei negozi"}</option>
                             {uniqueNegozi.map(n => <option key={n} value={n}>{n}</option>)}
                         </select>
                     </div>

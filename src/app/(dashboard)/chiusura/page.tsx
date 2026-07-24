@@ -8,6 +8,7 @@ import { RotateCcw, Download, Eye, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
 import { seesAllStores } from "@/lib/roles";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 
 //  Types ─
 type DocKey = "cassa" | "pos" | "ddt_w3" | "ddt_vf" | "fatture";
@@ -209,6 +210,12 @@ function SocietaBlock({ societa, files, setFiles }: { societa: string; files: Fi
 //  VistaInvio 
 function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: () => void }) {
     const { user } = useAuth();
+    // Chi ha piu' negozi in visibilita' (es. Emanuele: Magliana W3 + Multi) deve
+    // poter scegliere PER QUALE negozio sta inviando la chiusura; con un negozio
+    // solo resta il comportamento di prima (nessuna scelta da fare).
+    const { stores: visStores } = useVisibleStores();
+    const [storeSel, setStoreSel] = useState("");
+    const storeInvio = storeSel || user?.negozio || visStores[0] || "";
     type SocState = { active: boolean; files: FilesMap; note: string };
     const initState = (): Record<string, SocState> => {
         const s: Record<string, SocState> = {};
@@ -253,7 +260,7 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
         setValidErr(null);
         // Niente fallback su un negozio reale: 5 utenti non hanno primary_store e
         // le loro chiusure finivano attribuite a "Magliana" senza che nessuno lo sapesse.
-        const store = user?.negozio || "";
+        const store = storeInvio;
         if (!store) {
             setValidErr("Nessun negozio associato al tuo account: chiedi all'amministrazione di assegnartelo.");
             setSending(false);
@@ -337,16 +344,25 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
 
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
                 <div className="flex gap-3 flex-wrap">
-                    {[
-                        ["Data", new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" })],
-                        ["Negozio", user?.negozio || "—"],
-                        ["Operatore", user?.name || "Operatore"]
-                    ].map(([l, v]) => (
-                        <div key={l} className="flex-1 min-w-28 bg-white/[0.03] border border-white/5 rounded-xl px-3 py-2.5">
-                            <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide mb-1">{l}</div>
-                            <div className="text-sm font-bold text-white">{v}</div>
-                        </div>
-                    ))}
+                    <div className="flex-1 min-w-28 bg-white/[0.03] border border-white/5 rounded-xl px-3 py-2.5">
+                        <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide mb-1">Data</div>
+                        <div className="text-sm font-bold text-white">{new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" })}</div>
+                    </div>
+                    <div className="flex-1 min-w-28 bg-white/[0.03] border border-white/5 rounded-xl px-3 py-2.5">
+                        <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide mb-1">Negozio</div>
+                        {visStores.length > 1 ? (
+                            <select value={storeInvio} onChange={e => setStoreSel(e.target.value)}
+                                className="w-full bg-transparent text-sm font-bold text-white outline-none cursor-pointer [&>option]:bg-slate-900">
+                                {visStores.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        ) : (
+                            <div className="text-sm font-bold text-white">{storeInvio || "—"}</div>
+                        )}
+                    </div>
+                    <div className="flex-1 min-w-28 bg-white/[0.03] border border-white/5 rounded-xl px-3 py-2.5">
+                        <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide mb-1">Operatore</div>
+                        <div className="text-sm font-bold text-white">{user?.name || "Operatore"}</div>
+                    </div>
                 </div>
 
                 <div>
@@ -566,7 +582,7 @@ function VistaFatture({ onClose, history, onToggleEmessa }: { onClose: () => voi
 }
 
 //  VistaGestione 
-function VistaGestione({ isAdmin, userStore, history }: { isAdmin: boolean; userStore: string; history: Chiusura[] }) {
+function VistaGestione({ isAdmin, userStores, history }: { isAdmin: boolean; userStores: string[]; history: Chiusura[] }) {
     const NEGOZI = useStores();
     const [fStore, setFStore] = useState("");
     const [fSoc, setFSoc] = useState("");
@@ -574,7 +590,8 @@ function VistaGestione({ isAdmin, userStore, history }: { isAdmin: boolean; user
     const [fDateB, setFDateB] = useState("");
     const [expanded, setExpanded] = useState<number | null>(null);
 
-    const baseData = isAdmin ? history : history.filter(r => r.store === userStore);
+    // Tutte le chiusure dei negozi visibili (non solo il primary_store).
+    const baseData = isAdmin ? history : history.filter(r => userStores.some(st => sameStore(r.store, st)));
     const filtered = useMemo(() => baseData.filter(r => {
         if (fStore && r.store !== fStore) return false;
         if (fSoc && r.societa !== fSoc) return false;
@@ -610,7 +627,7 @@ function VistaGestione({ isAdmin, userStore, history }: { isAdmin: boolean; user
 
             {!isAdmin && (
                 <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-blue-500/5 border border-blue-500/20 text-sm text-blue-300">
-                    Solo le chiusure di <strong className="ml-1">{userStore}</strong>
+                    Solo le chiusure di <strong className="ml-1">{userStores.join(", ") || "—"}</strong>
                 </div>
             )}
 
@@ -777,7 +794,9 @@ export default function ChiusuraNegozio() {
     // vuoto - e quindi NESSUNA chiusura. Ora vale la regola del CRM: chi vede
     // tutti i negozi vede tutte le chiusure.
     const isAdmin = seesAllStores(user?.role);
-    const userStore = user?.negozio || "";
+    // Negozi visibili dalla FONTE UNICA (primary + user_stores + user_store_visibility).
+    const { stores: visStores } = useVisibleStores();
+    const userStores = visStores.length ? visStores : (user?.negozio ? [user.negozio] : []);
     const [history, setHistory] = useState<Chiusura[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -853,7 +872,7 @@ export default function ChiusuraNegozio() {
                 {loading ? (
                     <div className="py-12 text-center text-slate-400">Caricamento...</div>
                 ) : (
-                    <VistaGestione isAdmin={isAdmin} userStore={userStore} history={history} />
+                    <VistaGestione isAdmin={isAdmin} userStores={userStores} history={history} />
                 )}
             </div>
 

@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { useVisibleStores } from "@/lib/visibleStores";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto)
 type AppointmentType = "incoming" | "outgoing" | "self_generated";
@@ -286,19 +287,11 @@ export default function Calendario() {
     // altrimenti solo i colleghi del mio punto vendita. Il confronto e' sul
     // prefisso perche' i nomi non coincidono sempre ("Magliana" / "Magliana Multi").
     // Negozi di cui l'utente e' responsabile: puo' esserne piu' d'uno
-    // (segnalazione 62 — Emanuele: Magliana Multi + Magliana W3). Presi da
-    // user_stores oltre al negozio principale del login.
-    const [myStores, setMyStores] = useState<string[]>([]);
-    useEffect(() => {
-        if (!user?.id) return;
-        (async () => {
-            const { data } = await supabase.from("user_stores").select("store_name").eq("user_id", user.id);
-            const set = new Set<string>();
-            (data ?? []).forEach((r: any) => r.store_name && set.add(r.store_name));
-            if (user.negozio) set.add(user.negozio);
-            setMyStores([...set]);
-        })();
-    }, [user?.id, user?.negozio]);
+    // (segnalazione 62 — Emanuele: Magliana Multi + Magliana W3). Dalla FONTE
+    // UNICA della visibilita' (primary + user_stores + user_store_visibility):
+    // prima mancava user_store_visibility, quindi la visibilita' data dall'admin
+    // qui non valeva.
+    const { stores: myStores } = useVisibleStores();
 
     const assignableAgents = useMemo(() => {
         if (seesAllStores(user?.role)) return agents;

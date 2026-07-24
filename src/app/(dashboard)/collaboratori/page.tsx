@@ -7,6 +7,7 @@ import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
+import { useVisibleStores } from "@/lib/visibleStores";
 
 type TabId = "badge" | "ferie" | "malattia" | "ritardi";
 
@@ -1067,17 +1068,10 @@ function RitardiSection() {
     // gestisce piu' punti vendita (es. Magliana Multi + Magliana W3) vedeva solo
     // quelli del negozio principale, quindi il ritardo appena creato per l'altro
     // negozio spariva e sembrava non salvato. Ora si usano TUTTI i propri negozi.
-    const [myStores, setMyStores] = useState<string[]>([]);
-    useEffect(() => {
-        if (!user?.id) return;
-        (async () => {
-            const { data } = await supabase.from("user_stores").select("store_name").eq("user_id", user.id);
-            const set = new Set<string>();
-            (data ?? []).forEach((r: any) => r.store_name && set.add(r.store_name));
-            if (user.negozio) set.add(user.negozio);
-            setMyStores([...set]);
-        })();
-    }, [user?.id, user?.negozio]);
+    // Negozi visibili dalla FONTE UNICA (primary + user_stores + user_store_visibility):
+    // prima mancava user_store_visibility, quindi la visibilita' data dall'admin
+    // qui non valeva.
+    const { stores: myStores } = useVisibleStores();
 
     const fetchRows = useCallback(async () => {
         const { data } = await supabase.from("ritardi").select("*").order("date", { ascending: false });

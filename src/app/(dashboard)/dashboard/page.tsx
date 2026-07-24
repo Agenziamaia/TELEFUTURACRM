@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, roleLabel } from "@/lib/roles";
+import { useVisibleStores } from "@/lib/visibleStores";
 import {
   FileText, Users, CheckCircle2, Clock, Store as StoreIcon,
   TrendingUp, AlertTriangle, ArrowRight, Loader2,
@@ -66,30 +67,20 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [contracts, setContracts] = useState([]);
   const [clientCount, setClientCount] = useState(0);
-  const [myStores, setMyStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("month");
 
   const seesAll = !!user && (seesAllStores(user.role) || user.role === "dev");
+  // Ambito negozi dalla FONTE UNICA (primary + user_stores + user_store_visibility):
+  // prima la stessa union era ricalcolata qui a mano.
+  const { stores: myStores, loaded: visLoaded } = useVisibleStores();
+  const visKey = myStores.join("|");
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !visLoaded) return;
     let alive = true;
     (async () => {
       setLoading(true);
-      // ambito negozi dell'utente (stessa logica dell'assistente AI)
-      let stores = [];
-      if (!seesAll) {
-        const [{ data: us }, { data: vis }] = await Promise.all([
-          supabase.from("user_stores").select("store_name").eq("user_id", user.id),
-          supabase.from("user_store_visibility").select("store_name").eq("user_id", user.id),
-        ]);
-        const set = new Set();
-        if (user.negozio) set.add(user.negozio);
-        (us || []).forEach((r) => r.store_name && set.add(r.store_name));
-        (vis || []).forEach((r) => r.store_name && set.add(r.store_name));
-        stores = [...set];
-      }
       const [{ data: cs }, { count: cc }] = await Promise.all([
         supabase.from("contracts")
           .select("id, brand, categoria, prodotto, stato, negozio, venditore, data_registrazione")
@@ -97,11 +88,11 @@ export default function Dashboard() {
         supabase.from("clients").select("id", { count: "exact", head: true }),
       ]);
       if (!alive) return;
-      const rows = (cs || []).filter((c) => seesAll || stores.some((s) => sameStore(c.negozio, s)));
-      setMyStores(stores); setContracts(rows); setClientCount(cc || 0); setLoading(false);
+      const rows = (cs || []).filter((c) => seesAll || myStores.some((s) => sameStore(c.negozio, s)));
+      setContracts(rows); setClientCount(cc || 0); setLoading(false);
     })();
     return () => { alive = false; };
-  }, [user?.id, seesAll]);
+  }, [user?.id, seesAll, visLoaded, visKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const inPeriod = useMemo(() => {
     if (period === "all") return contracts;
