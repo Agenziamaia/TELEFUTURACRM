@@ -333,8 +333,13 @@ const extractDetails=(d)=>{
   if(Array.isArray(d.vfTnpList)&&d.vfTnpList.length){const parts=d.vfTnpList.filter(s=>s&&s.tipo).map(slotSum);if(parts.length)out["TNP Dispositivi"]=parts.join(" | ");}
   if(Array.isArray(d.cbTnpList)&&d.cbTnpList.length){const parts=d.cbTnpList.filter(s=>s&&s.tipo).map(slotSum);if(parts.length)out["TNP CB Dispositivi"]=parts.join(" | ");}
   const joinPairs=(mods,imeis,lbl)=>{if(Array.isArray(mods)){const p=mods.map((m,i)=>m?(m+(imeis&&imeis[i]?" ("+imeis[i]+")":"")):"").filter(Boolean);if(p.length)out[lbl]=p.join(" | ");}};
-  joinPairs(d.tnpModelli,d.tnpImeis,"Terminali TNP");
-  joinPairs(d.cbTnpModelli,d.cbTnpImeis,"Terminali CB");
+  // Si salvano SOLO i terminali fino alla quantita' scelta: abbassando la
+  // "Q.ta TNP" i terminali in eccesso restavano nell'elenco (nascosti a schermo)
+  // e finivano lo stesso nel contratto, facendo comparire il terminale di
+  // un'altra vendita.
+  const finoA=(n,arr)=>(Array.isArray(arr)&&n>0)?arr.slice(0,n):arr;
+  joinPairs(finoA(d.tnpCount,d.tnpModelli),finoA(d.tnpCount,d.tnpImeis),"Terminali TNP");
+  joinPairs(finoA(d.cbTnpCount,d.cbTnpModelli),finoA(d.cbTnpCount,d.cbTnpImeis),"Terminali CB");
   if(Array.isArray(d.fwFSecLines)){const sl=d.fwFSecLines.filter(Boolean);if(sl.length)out["2e Linee"]=sl.join(", ");}
   Object.keys(d).forEach(k=>{if(DET_SKIP[k]||DET_SELOBJ[k])return;const v=d[k];if(v===null||v===undefined||v===""||v===false)return;if(typeof v==="object")return;const lbl=DET_LABELS[k]||k;const yv=detYN(v);if(yv!==null&&yv!==undefined&&yv!=="")out[lbl]=yv;});
   // Il codice del box "Dati contratto" (usato da WindTre e da tutti i prodotti
@@ -2975,7 +2980,12 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                       <div style={{fontSize:11,fontWeight:700,color:"#2E75B6",marginBottom:6}}>Quanti TNP hai finanziato?</div>
                       <div style={{display:"flex",gap:6,marginBottom:8}}>
                         {[1,2,3].map(n=>
-                          <button key={n} onClick={()=>uP(group.id,si,sub.id,"tnpCount",sd.tnpCount===n?null:n)} style={{width:40,height:40,borderRadius:8,border:sd.tnpCount===n?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.tnpCount===n?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.tnpCount===n?"#fff":"#8892b0",fontSize:14,fontWeight:700,cursor:"pointer"}}>{n}</button>
+                          <button key={n} onClick={()=>{const nuovo=sd.tnpCount===n?null:n;uP(group.id,si,sub.id,"tnpCount",nuovo);
+                            /* abbassando la quantita' i terminali in eccesso vanno tolti,
+                               altrimenti restano nascosti e finiscono nel contratto */
+                            const lim=nuovo||0;
+                            uP(group.id,si,sub.id,"tnpModelli",(sd.tnpModelli||[]).slice(0,lim));
+                            uP(group.id,si,sub.id,"tnpImeis",(sd.tnpImeis||[]).slice(0,lim));}} style={{width:40,height:40,borderRadius:8,border:sd.tnpCount===n?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.tnpCount===n?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.tnpCount===n?"#fff":"#8892b0",fontSize:14,fontWeight:700,cursor:"pointer"}}>{n}</button>
                         )}
                       </div>
                       {sd.tnpCount&&[...Array(sd.tnpCount)].map((_,idx)=>(
@@ -3274,7 +3284,10 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                       <div style={{fontSize:11,fontWeight:700,color:"#2E75B6",marginBottom:6}}>Quanti TNP hai finanziato?</div>
                       <div style={{display:"flex",gap:6,marginBottom:8}}>
                         {[1,2,3].map(n=>
-                          <button key={n} onClick={()=>uP(group.id,si,sub.id,"cbTnpCount",sd.cbTnpCount===n?null:n)} style={{width:40,height:40,borderRadius:8,border:sd.cbTnpCount===n?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.cbTnpCount===n?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.cbTnpCount===n?"#fff":"#8892b0",fontSize:14,fontWeight:700,cursor:"pointer"}}>{n}</button>
+                          <button key={n} onClick={()=>{const nuovo=sd.cbTnpCount===n?null:n;uP(group.id,si,sub.id,"cbTnpCount",nuovo);
+                            const lim=nuovo||0;
+                            uP(group.id,si,sub.id,"cbTnpModelli",(sd.cbTnpModelli||[]).slice(0,lim));
+                            uP(group.id,si,sub.id,"cbTnpImeis",(sd.cbTnpImeis||[]).slice(0,lim));}} style={{width:40,height:40,borderRadius:8,border:sd.cbTnpCount===n?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.cbTnpCount===n?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.cbTnpCount===n?"#fff":"#8892b0",fontSize:14,fontWeight:700,cursor:"pointer"}}>{n}</button>
                         )}
                       </div>
                       {sd.cbTnpCount&&[...Array(sd.cbTnpCount)].map((_,idx)=>(
