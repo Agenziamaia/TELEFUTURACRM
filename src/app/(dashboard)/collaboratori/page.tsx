@@ -996,6 +996,22 @@ function RitardiSection() {
     // La direzione (reportAll) senza negozio vede tutti gli attivi.
     const [storeStaff, setStoreStaff] = useState<{ name: string; store: string }[]>([]);
 
+    // Segnalazione 60: il ritardo si salvava davvero, ma non compariva. Chi
+    // gestisce piu' punti vendita (es. Magliana Multi + Magliana W3) vedeva solo
+    // quelli del negozio principale, quindi il ritardo appena creato per l'altro
+    // negozio spariva e sembrava non salvato. Ora si usano TUTTI i propri negozi.
+    const [myStores, setMyStores] = useState<string[]>([]);
+    useEffect(() => {
+        if (!user?.id) return;
+        (async () => {
+            const { data } = await supabase.from("user_stores").select("store_name").eq("user_id", user.id);
+            const set = new Set<string>();
+            (data ?? []).forEach((r: any) => r.store_name && set.add(r.store_name));
+            if (user.negozio) set.add(user.negozio);
+            setMyStores([...set]);
+        })();
+    }, [user?.id, user?.negozio]);
+
     const fetchRows = useCallback(async () => {
         const { data } = await supabase.from("ritardi").select("*").order("date", { ascending: false });
         setRows((data ?? []) as RitardoRow[]);
@@ -1005,18 +1021,39 @@ function RitardiSection() {
     }, [fetchRows]);
     useEffect(() => {
         (async () => {
-            let q = supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name");
-            if (!reportAll && user?.negozio) q = q.ilike("primary_store", `${user.negozio.split(" ")[0]}%`);
+            const q = supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name");
             const { data } = await q;
-            setStoreStaff((data ?? []).map((u: any) => ({ name: u.full_name, store: u.primary_store || "" })));
+            let lista = (data ?? []).map((u: any) => ({ name: u.full_name, store: u.primary_store || "" }));
+            // Segnalazione 60: chi gestisce piu' negozi deve poter scegliere i
+            // collaboratori di TUTTI i suoi punti vendita, non solo del principale.
+            if (!reportAll) {
+                const negozi = myStores.length ? myStores : (user?.negozio ? [user.negozio] : []);
+                if (negozi.length) {
+                    const ok = (s: string) => negozi.some((n) => {
+                        const x = (s || "").trim().toLowerCase(), y = (n || "").trim().toLowerCase();
+                        return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
+                    });
+                    lista = lista.filter((u) => ok(u.store));
+                }
+            }
+            setStoreStaff(lista);
         })();
-    }, [reportAll, user?.negozio]);
+    }, [reportAll, user?.negozio, myStores]);
 
     // visibilità: direzione+ vede tutto; store manager il proprio negozio; gli altri solo i propri
+    const stessoNegozio = (a: string, b: string) => {
+        const x = (a || "").trim().toLowerCase(), y = (b || "").trim().toLowerCase();
+        return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
+    };
     const scoped = rows.filter((r) => {
         if (reportAll) return true;
-        if (isStoreMgr && user?.negozio) return (r.store || "").toLowerCase().includes(user.negozio.toLowerCase()) || user.negozio.toLowerCase().includes((r.store || "").toLowerCase());
-        return r.employee_name === user?.name;
+        // il ritardo e' mio in ogni caso (anche se l'ha segnalato il manager)
+        if (r.employee_name === user?.name) return true;
+        if (isStoreMgr) {
+            const negozi = myStores.length ? myStores : (user?.negozio ? [user.negozio] : []);
+            return negozi.some((n) => stessoNegozio(r.store || "", n));
+        }
+        return false;
     });
     const filtered = scoped.filter((r) => r.employee_name.toLowerCase().includes(filterPerson.toLowerCase()));
     const uniquePeople = new Set(filtered.map((r) => r.employee_name)).size;

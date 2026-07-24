@@ -305,6 +305,15 @@ function KpiBar({
   );
 }
 
+// Segnalazione 77: "stato pratica" = lo stato di malus mostrato in tabella.
+const STATI_PRATICA = ["🔴 Malus", "⚠️ Warning", "⚡ Da Lavorare", "— Nessuno"];
+function statoPraticaDi(row: TrackingRow): string {
+  if (isMalusRow(row)) return "🔴 Malus";
+  if (isAttenzioneRow(row)) return "⚠️ Warning";
+  if (isDaLavorareRow(row)) return "⚡ Da Lavorare";
+  return "— Nessuno";
+}
+
 // ─── FilterBar ───────────────────────────────────────────────────────────────
 function FilterBar({
   catSel,
@@ -1449,10 +1458,9 @@ export default function TrackingPdaPage() {
     return out;
   }, [rawList]);
 
-  const statiPraticaDisponibili = useMemo(
-    () => Array.from(new Set(data.map((r) => r.statoPratica).filter((x) => x && x !== "—"))).sort(),
-    [data]
-  );
+  // Segnalazione 77 (chiarita da Manu): la colonna "stato pratica" contiene i 3
+  // stati di malus; la tendina serve a tirare su per prime le pratiche urgenti.
+  const statiPraticaDisponibili = STATI_PRATICA;
 
   const deepOpened = useRef(false);
   useEffect(() => {
@@ -1488,7 +1496,7 @@ export default function TrackingPdaPage() {
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
-      if (praticaSel.length > 0 && !praticaSel.includes(row.statoPratica)) return false;
+      if (praticaSel.length > 0 && !praticaSel.includes(statoPraticaDi(row))) return false;
       if (periodoDA || periodoA) {
         const rowDate = parseDataRiga(row.dataInserimento);
         // Senza data valida la riga resta fuori: se si filtra per periodo, una
@@ -1527,7 +1535,7 @@ export default function TrackingPdaPage() {
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
-      if (praticaSel.length > 0 && !praticaSel.includes(row.statoPratica)) return false;
+      if (praticaSel.length > 0 && !praticaSel.includes(statoPraticaDi(row))) return false;
       if (periodoDA || periodoA) {
         const parti = row.dataInserimento.split("/");
         if (parti.length === 3) {
