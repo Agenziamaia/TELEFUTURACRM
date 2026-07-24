@@ -149,9 +149,17 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
     if(show&&selProd&&selProd.needsImei){const n=Math.max(1,parseInt(qty)||1);setUsatoUnits(prev=>{const a=prev.map(u=>({...u}));while(a.length<n)a.push({imei:"",model:""});a.length=n;return a;});}
   },[qty,selProd,show]);
   if(!show)return null;
+  // Prezzo di vendita OBBLIGATORIO anche dall'aggiunta manuale: per le voci di brand
+  // (SIM/ESIM/Sost, linked) e per quelle a margine percentuale (senza importo il
+  // margine verrebbe 0). Le vendite SIM a importo NULL nascevano proprio da qui:
+  // la guardia al checkout copriva solo le voci AUTO del flusso brand.
+  const needImporto=!!(selProd&&(selProd.linked||selProd.type==="pct"));
+  const importoMissing=needImporto&&String(importo).trim()==="";
   const handleAdd=()=>{
     if(!selProd)return;
+    if(importoMissing)return;
     const p=selProd;
+    const impVal=String(importo).trim()===""?null:(parseFloat(importo)||0);
     // Telefono Cash: la base del 4% e' l'importo di VENDITA inserito.
     const pVal=p.isTelCash?(parseFloat(importo)||0):(p.price!==null?p.price:parseFloat(price)||0);
     const mVal=p.type==="fixed"?(p.fixedMargin||0):p.type==="pct"?(pVal*(p.pctMargin||0)/100):0;
@@ -160,9 +168,9 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
       const _im=units.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
       if(new Set(_im).size!==_im.length)return;
       const q=units.length||1;
-      onAdd({product:p.name,productId:p.id,price:pVal,qty:q,importo:parseFloat(importo)||null,margin:mVal,totalMargin:mVal*q,model:units.map(u=>u.model).filter(Boolean).join(", ")||null,imei:units.map(u=>u.imei).filter(Boolean).join(", ")||null,units,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false});
+      onAdd({product:p.name,productId:p.id,price:pVal,qty:q,importo:impVal,margin:mVal,totalMargin:mVal*q,model:units.map(u=>u.model).filter(Boolean).join(", ")||null,imei:units.map(u=>u.imei).filter(Boolean).join(", ")||null,units,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false,priceRequired:needImporto});
     }else{
-      onAdd({product:p.name,productId:p.id,price:pVal,qty:parseInt(qty)||1,importo:parseFloat(importo)||null,margin:mVal,totalMargin:mVal*(parseInt(qty)||1),model:model||null,imei:imei||null,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false});
+      onAdd({product:p.name,productId:p.id,price:pVal,qty:parseInt(qty)||1,importo:impVal,margin:mVal,totalMargin:mVal*(parseInt(qty)||1),model:model||null,imei:imei||null,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false,priceRequired:needImporto});
     }
     setSelProd(null);setPrice("");setQty("1");setImporto("");setModel("");setImei("");setUsatoUnits([{imei:"",model:""}]);
   };
@@ -215,11 +223,12 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
               </div>
             );})}
           </div>}
-          <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{selProd.isTelCash?"Importo di vendita €":"Importo €"}</div>
-            <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
+          <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{selProd.isTelCash?"Importo di vendita €":"Importo €"}{needImporto&&<span style={{color:"#dc3545"}}> *</span>}</div>
+            <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:importoMissing?"2px solid #dc3545":"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
             {selProd.isTelCash&&<div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>
           {hasDupImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Sono presenti IMEI duplicati: correggili per registrare</div>}
-          <button onClick={handleAdd} disabled={hasDupImei} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:hasDupImei?"#cfcfcf":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:hasDupImei?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
+          {importoMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
+          <button onClick={handleAdd} disabled={hasDupImei||importoMissing} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:(hasDupImei||importoMissing)?"#cfcfcf":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:(hasDupImei||importoMissing)?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
         </div>)}
       </div>
     </div>
@@ -3767,7 +3776,8 @@ export default function CRM() {
   const computeAutoMarg=(prev,brandId,brandLabel,items)=>{
     if(!brandLabel)return prev;
     const adds=[];
-    const push=(name,locked)=>{if(!adds.some(a=>a.product===name))adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,priceLocked:!!locked,priceRequired:!locked})};
+    // niente doppioni: se la stessa voce e' gia' stata aggiunta A MANO dal pannello, l'auto non la duplica
+    const push=(name,locked)=>{if(!adds.some(a=>a.product===name)&&!prev.some(m=>!m.auto&&m.product===name))adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,priceLocked:!!locked,priceRequired:!locked})};
     for(const it of (items||[])){
       const macro=String(it.macro||"").toUpperCase();const sub=String(it.sub||"");
       if(/sostituzione\s*sim/i.test(sub)){if(AUTO_SOST[brandId])push(AUTO_SOST[brandId]);}
@@ -3781,7 +3791,10 @@ export default function CRM() {
     const merged=adds.map(a=>{const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&m.product===a.product);return old?{...a,importo:old.importo}:a});
     return adds.length||kept.length!==prev.length?[...kept,...merged]:prev;
   };
-  const margPriceMissing=(list)=>list.filter(m=>m.priceRequired&&(m.importo==null||m.importo===""));
+  // Blocca il salvataggio se manca il prezzo di vendita: voci AUTO obbligatorie
+  // (priceRequired), voci manuali marcate priceRequired dal pannello, e — per le
+  // bozze salvate prima di questo flag — qualsiasi voce di brand (linked: SIM/Sost).
+  const margPriceMissing=(list)=>list.filter(m=>(m.priceRequired||m.linked)&&!m.priceLocked&&(m.importo==null||m.importo===""));
   // live: le voci auto seguono in tempo reale la selezione dei prodotti del brand corrente
   useEffect(()=>{ if(bObj) setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); },[sales,skyS,brand]); // eslint-disable-line react-hooks/exhaustive-deps
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
@@ -4218,10 +4231,10 @@ export default function CRM() {
                 {item.model&&<span style={{fontSize:11,color:"#64748b",marginLeft:6}}>{item.model}</span>}
                 <span style={{fontSize:11,color:"#6f42c1",marginLeft:8}}>x{item.qty||1}</span>
                 {item.auto&&<span style={{fontSize:9,fontWeight:800,color:"#6f42c1",border:"1px solid rgba(111,66,193,.4)",borderRadius:5,padding:"1px 6px",marginLeft:8}}>AUTO · {item.autoFrom}</span>}
-                {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"#17a2b8",marginLeft:8}}>prezzo di listino</span>:item.auto?null:(item.importo!=null&&<span style={{fontSize:11,color:"#28a745",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
+                {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"#17a2b8",marginLeft:8}}>prezzo di listino</span>:(item.auto||item.priceRequired||item.linked)?null:(item.importo!=null&&<span style={{fontSize:11,color:"#28a745",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                {item.auto&&!item.priceLocked&&<span style={{display:"flex",alignItems:"center",gap:4}}>
+                {(item.auto||item.priceRequired||item.linked)&&!item.priceLocked&&<span style={{display:"flex",alignItems:"center",gap:4}}>
                   <input type="number" step="0.01" min="0" value={item.importo??""} placeholder="prezzo *"
                     onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((m,i)=>i===idx?{...m,importo:v}:m))}}
                     style={{width:92,padding:"6px 8px",borderRadius:7,fontSize:12,textAlign:"right",border:(item.importo==null||item.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>
@@ -4349,7 +4362,7 @@ export default function CRM() {
                     <div key={mi} style={{background:"rgba(255,255,255,0.03)",borderRadius:6,padding:"5px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0"}}>{m.product}<span style={{color:"#64748b",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"#6f42c1",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
                       {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"#17a2b8"}}>listino</div>
-                      :m.auto?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
+                      :(m.auto||m.priceRequired||m.linked)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
                         <input type="number" step="0.01" min="0" value={m.importo??""} placeholder="prezzo *"
                           onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((x,i)=>i===mi?{...x,importo:v}:x))}}
                           style={{width:74,padding:"4px 6px",borderRadius:6,fontSize:11,textAlign:"right",border:(m.importo==null||m.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"rgba(255,255,255,0.05)",color:"#f8fafc"}}/>
