@@ -424,6 +424,14 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
       return u;
     });
   };
+  // Trasferimento tra negozi anche a dispositivo GIA' IN VENDITA (es. fermo in
+  // vetrina da troppo): torna "in arrivo" verso il negozio scelto, che deve
+  // accettarlo — solo all'accettazione passa in carico a lui. Ripetibile.
+  const sendToStore = () => {
+    if (!targetStore) return;
+    setDev(p => ({ ...p, status: "invio_in_negozio", target_store: targetStore, note_tecnico: noteTecnico,
+      status_history: { ...p.status_history, invio_in_negozio: { date: new Date(), operatore } } }));
+  };
   const setKO = () => setDev(p => ({ ...p, status: "ko", note_tecnico: noteTecnico,
     status_history: { ...p.status_history, ko: { date: new Date(), operatore } } }));
   const handleSave = () => { const u: Device = { ...dev, note_tecnico: noteTecnico, sale_price: editSalePrice ? (parseFloat(salePriceVal) || 0) : 0 }; onSave(u); onClose(); };
@@ -475,6 +483,19 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                     : dev.status === "invio_in_negozio" ? <>✅ Accetta in negozio{dev.target_store ? ` (${dev.target_store})` : ""}</>
                     : <>{statusMap[next]?.icon} {statusMap[next]?.label}</>}
                 </button>}
+                {dev.status === "in_vendita" && (
+                  <div className="flex flex-col gap-2 border-t border-white/10 pt-3 mt-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Trasferisci a un altro negozio</div>
+                    <select value={targetStore} onChange={e => setTargetStore(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
+                      <option value="">Seleziona Negozio...</option>
+                      {NEGOZI.filter(n => n !== dev.store).map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <button onClick={sendToStore} disabled={!targetStore} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-sm font-semibold hover:bg-amber-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                      📤 Invia a {targetStore || "…"}
+                    </button>
+                  </div>
+                )}
                 {["in_lavorazione", "ricevuto"].includes(dev.status) && (
                   <button onClick={setKO} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-semibold hover:bg-red-500/30 transition-all"> KO</button>
                 )}
