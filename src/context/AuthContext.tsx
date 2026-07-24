@@ -16,12 +16,16 @@ interface User {
     grade?: string | null;
     negozio?: string;      // primary_store (chiave storica: molti file leggono user.negozio)
     mustChange?: boolean;  // primo accesso: cambio password obbligatorio
+    canSwitchRole?: boolean;  // puo' guardare il CRM con un altro ruolo (solo Luca)
 }
 
 interface LoginResult { ok: boolean; error?: string; mustChange?: boolean; email?: string }
 
 interface AuthContextType {
-    user: User | null;
+    user: User | null;        // ATTENZIONE: role qui e' il ruolo EFFETTIVO (vedi viewAs)
+    realRole: Role | null;    // ruolo vero dell'account, non cambia mai
+    viewAs: Role | null;      // ruolo che si sta simulando (null = nessuno)
+    setViewAs: (r: Role | null) => void;
     login: (email: string, password: string) => Promise<LoginResult>;
     completeFirstLogin: (email: string, oldPw: string, newPw: string) => Promise<LoginResult>;
     logout: () => void;
@@ -39,11 +43,28 @@ function rowToUser(row: any): User {
         grade: row.grade,
         negozio: row.primary_store || undefined,
         mustChange: !!row.must_change_password,
+        canSwitchRole: !!row.can_switch_role,
     };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [user, setUser] = useState<User | null>(null);
+    // baseUser = account vero (quello che finisce in localStorage).
+    // viewAs = ruolo simulato: NON viene mai scritto sull'account.
+    const [baseUser, setUser] = useState<User | null>(null);
+    const [viewAs, setViewAsState] = useState<Role | null>(null);
+    useEffect(() => {
+        try { const v = localStorage.getItem("crm_view_as"); if (v) setViewAsState(v as Role); } catch { }
+    }, []);
+    const setViewAs = (r: Role | null) => {
+        setViewAsState(r);
+        try { if (r) localStorage.setItem("crm_view_as", r); else localStorage.removeItem("crm_view_as"); } catch { }
+    };
+    // Il permesso sta sull'account vero: cosi' il selettore resta visibile anche
+    // mentre si simula un ruolo basso, altrimenti non si potrebbe piu' tornare admin.
+    const puoCambiare = !!baseUser?.canSwitchRole;
+    const user: User | null = baseUser
+        ? { ...baseUser, role: (puoCambiare && viewAs) ? viewAs : baseUser.role }
+        : null;
     const router = useRouter();
     const pathname = usePathname();
 
@@ -116,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const logout = () => {
         clearAiChat(user?.id);
+        setViewAs(null);   // il "guarda come" non sopravvive al logout
         setUser(null);
         localStorage.removeItem("crm_session");
         localStorage.removeItem("crm_last_activity");
@@ -164,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, [user, router]);
 
     return (
-        <AuthContext.Provider value={{ user, login, completeFirstLogin, logout, isAuthenticated: !!user }}>
+        <AuthContext.Provider value={{ user, realRole: baseUser?.role ?? null, viewAs: puoCambiare ? viewAs : null, setViewAs, login, completeFirstLogin, logout, isAuthenticated: !!user }}>
             {children}
         </AuthContext.Provider>
     );

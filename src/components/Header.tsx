@@ -3,8 +3,9 @@
 import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { roleLabel, seesAllStores } from "@/lib/roles";
+import { roleLabel, seesAllStores, ROLES } from "@/lib/roles";
 import { supabase } from "@/lib/supabaseClient";
+import { cn } from "@/utils";
 import { useRef, useEffect, useState } from "react";
 
 const CRM_BACK_EVENT = "crm-back";
@@ -24,7 +25,8 @@ type Hit = {
 export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     const router = useRouter();
     const pathname = usePathname();
-    const { user, logout } = useAuth();
+    const { user, logout, realRole, viewAs, setViewAs } = useAuth();
+    const canSwitchRole = !!user?.canSwitchRole;
     const lastPathRef = useRef<string | null>(null);
     const previousPathRef = useRef<string | null>(null);
 
@@ -229,8 +231,39 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
 
             <div className="flex items-center gap-6">
-                {/* Tasto tema chiaro/scuro rimosso: il CRM e' solo in tema scuro
-                    (glassmorphism), quindi il tasto non aveva nulla da commutare. */}
+                {/* Richiesta di Luca: guardare il CRM con gli occhi di un altro ruolo.
+                    Il selettore dipende dal ruolo VERO, quindi resta visibile anche
+                    mentre si simula un ruolo basso e si puo' sempre tornare indietro.
+                    Il ruolo a database non viene mai modificato. */}
+                {canSwitchRole && (
+                    <div className="hidden md:flex items-center gap-2">
+                        <select
+                            value={viewAs || ""}
+                            onChange={(e) => setViewAs((e.target.value || null) as any)}
+                            title="Guarda il CRM come un altro ruolo"
+                            className={cn(
+                                "h-9 rounded-xl px-3 text-xs font-semibold border transition-colors cursor-pointer",
+                                viewAs
+                                    ? "bg-amber-500/20 border-amber-500/50 text-amber-200"
+                                    : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                            )}
+                        >
+                            <option value="">Il mio ruolo ({realRole ? roleLabel(realRole) : "—"})</option>
+                            {ROLES.filter((r) => r.id !== realRole).map((r) => (
+                                <option key={r.id} value={r.id}>Vedi come: {r.label}</option>
+                            ))}
+                        </select>
+                        {viewAs && (
+                            <button
+                                onClick={() => setViewAs(null)}
+                                title="Torna al tuo ruolo"
+                                className="h-9 px-3 rounded-xl bg-amber-500/20 border border-amber-500/50 text-amber-200 text-xs font-bold hover:bg-amber-500/30"
+                            >
+                                Esci
+                            </button>
+                        )}
+                    </div>
+                )}
                 {/* Il tasto schermo intero non faceva nulla: ora entra ed esce davvero. */}
                 <button
                     onClick={toggleFullscreen}
@@ -266,7 +299,9 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                 <div className="flex items-center gap-3 pl-4 border-l border-white/10 cursor-pointer">
                     <div className="hidden text-right md:block">
                         <p className="text-sm font-medium text-white leading-none">{user?.name || "Ospite"}</p>
-                        <p className="text-xs text-slate-400 mt-1">{user?.role ? roleLabel(user.role) : "Nessun Ruolo"}</p>
+                        <p className={cn("text-xs mt-1", viewAs ? "text-amber-300 font-semibold" : "text-slate-400")}>
+                            {user?.role ? roleLabel(user.role) : "Nessun Ruolo"}{viewAs ? " (simulato)" : ""}
+                        </p>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border-2 border-indigo-500/40 flex items-center justify-center overflow-hidden">
                         {user?.name ? getInitials(user.name) : 'A'}
