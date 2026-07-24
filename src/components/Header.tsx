@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Sun, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon } from "lucide-react";
+import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel, seesAllStores } from "@/lib/roles";
@@ -229,9 +229,8 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
 
             <div className="flex items-center gap-6">
-                <button className="text-slate-400 hover:text-white transition-colors" title="Tema chiaro / scuro">
-                    <Sun className="h-5 w-5" />
-                </button>
+                {/* Tasto tema chiaro/scuro rimosso: il CRM e' solo in tema scuro
+                    (glassmorphism), quindi il tasto non aveva nulla da commutare. */}
                 {/* Il tasto schermo intero non faceva nulla: ora entra ed esce davvero. */}
                 <button
                     onClick={toggleFullscreen}
