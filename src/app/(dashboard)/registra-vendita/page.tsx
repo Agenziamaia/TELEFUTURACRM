@@ -4361,7 +4361,7 @@ export default function CRM() {
         <div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:36,height:36,background:"rgba(255,255,255,.2)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{bObj?bObj.icon:"⚡"}</div><div><div style={{color:"#fff",fontWeight:700,fontSize:16}}>Registra Vendita</div><div style={{color:"rgba(255,255,255,.7)",fontSize:11}}>{bObj?bObj.label:"Seleziona brand"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div></div></div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           
-          <button onClick={()=>setConfirmReset(true)} title="Reset tutto" style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.25)",borderRadius:8,padding:"8px 14px",color:"rgba(255,255,255,.85)",fontSize:13,cursor:"pointer",fontWeight:700}}>🔄 Reset</button>
+          
         </div>
       </div>
 
