@@ -493,6 +493,12 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [editForm, setEditForm] = useState({ name: "", qty: 1 });
 
   const isAdmin = ["admin","dev","direttore_generale","amministrativo","back_office_caller","back_office"].includes(role || "");
+  // Anche l'amministrazione puo' creare un ordine: prima il tasto era riservato
+  // allo Store Manager, quindi un admin vedeva tutti gli ordini ma non poteva
+  // farne uno. Chi non ha un negozio proprio (es. admin) lo sceglie qui.
+  const canCreateOrder = isStoreManager || isAdmin;
+  const [orderStore, setOrderStore] = useState("");
+  const storeOrdine = myStore || orderStore;
   const isStoreManager = role === "store_manager";
 
   /* ─── Filter logic ─── */
@@ -569,13 +575,16 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   /* ─── Submit ─── */
   const [submitting, setSubmitting] = useState(false);
   const submitOrder = async () => {
+    // Chi non ha un negozio proprio (amministrazione) deve sceglierlo, altrimenti
+    // l'ordine finirebbe senza punto vendita.
+    if (!storeOrdine) { alert("Seleziona il negozio per cui stai ordinando."); return; }
     setSubmitting(true);
     const nextNum = "ORD-" + new Date().getFullYear() + "-" + String(orders.length + 1).padStart(4, "0");
     const { data: orderData, error: orderError } = await supabase
       .from("merchandise_orders")
       .insert({
         order_number: nextNum,
-        store: myStore,
+        store: storeOrdine,
         status: "nuovo",
         note: orderNote
       })
@@ -1378,7 +1387,18 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderTop: `1px solid ${C.border}` }}>
                   <span style={{ fontSize: 13, color: C.grayLight }}>
-                    Negozio: <strong style={{ color: C.text }}>{storeName(myStore)}</strong>
+                    Negozio:{" "}
+                    {myStore ? (
+                      <strong style={{ color: C.text }}>{storeName(myStore)}</strong>
+                    ) : (
+                      /* amministrazione: nessun negozio proprio, va scelto */
+                      <select value={orderStore} onChange={e => setOrderStore(e.target.value)}
+                        style={{ padding: "6px 10px", borderRadius: 6, fontSize: 13, background: C.grayBg,
+                                 border: "1px solid " + (orderStore ? C.border : C.danger), color: C.text }}>
+                        <option value="">— Seleziona negozio —</option>
+                        {storeList.map(st => <option key={st} value={st}>{st}</option>)}
+                      </select>
+                    )}
                   </span>
                   <button style={{ ...s.btn, padding: "10px 28px", fontSize: 14, background: C.primary, color: "#fff", opacity: submitting ? 0.7 : 1 }}
                     disabled={submitting}
@@ -1688,7 +1708,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                 onClick={() => setRoleState("admin")}>Amministrazione</button>
             </div>
           )}
-          {isStoreManager && (
+          {canCreateOrder && (
             <button style={{ ...s.btn, background: C.primary, color: "#fff", position: "relative" }} onClick={() => setShowCreate(true)}>
               {cart.length > 0 ? `Riprendi carrello (${cart.reduce((a, c) => a + c.qty, 0)})` : "+ Crea Ordine"}
             </button>
