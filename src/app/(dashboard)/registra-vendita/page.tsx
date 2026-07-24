@@ -28,7 +28,7 @@ const vCF=(v)=>{if(!v)return null;const u=v.toUpperCase().replace(/\s/g,"");if(!
 
 // ── MARGINALITÀ DATA ──
 const MARG_PRODUCTS=[
-  {cat:"📦 Prodotti",items:[
+  {cat:"📦 Prodotti",items:[{id:"vendita_usato",name:"Vendita Usato",price:null,pctMargin:13.00,needsModel:true,needsImei:true,icon:"♻️",type:"pct"},
     {id:"plx",name:"PLX",price:null,fixedMargin:8,hasQty:true,icon:"📦",type:"fixed"},
     {id:"cncp",name:"CN/CP",price:null,fixedMargin:2,hasQty:true,icon:"💳",type:"fixed"},
     {id:"new_cover",name:"New Cover",price:null,fixedMargin:8,hasQty:true,icon:"🔲",type:"fixed"},
@@ -41,7 +41,7 @@ const MARG_PRODUCTS=[
     {id:"assistenza",name:"Assistenza Tecnico",price:null,pctMargin:81.97,icon:"🔧",type:"pct"},
     {id:"backup",name:"Backup",price:null,pctMargin:81.97,icon:"💿",type:"pct"},
     {id:"riparazione",name:"Riparazione",price:null,pctMargin:24.59,needsModel:true,icon:"🔨",type:"pct"},
-    {id:"vendita_usato",name:"Vendita Usato",price:null,pctMargin:13.00,needsModel:true,needsImei:true,icon:"♻️",type:"pct"},
+    
     {id:"chiusura",name:"Chiusura Sim/Fisso",price:null,pctMargin:81.97,icon:"✂️",type:"pct"},
     {id:"etelefono",name:"E.Telefono",price:null,pctMargin:81.97,icon:"📞",type:"pct"},
     {id:"accessori",name:"Accessori",price:null,pctMargin:24.59,hasQty:true,icon:"🎧",type:"pct"},
@@ -56,7 +56,7 @@ const MARG_PRODUCTS=[
     {id:"kasko_sv",name:"Kasko SV",price:null,pctMargin:60.00,icon:"🔖",type:"pct"},
   ]},
   {cat:"📶 SIM",items:[
-    {id:"family_ontop",name:"Family+ On Top",price:null,fixedMargin:10,icon:"👨‍👩‍👧",type:"fixed"},
+    
     {id:"sim_w3",name:"Sim Wind3",price:null,fixedMargin:-5,linked:true,icon:"📶",type:"fixed"},
     {id:"sim_fw",name:"Sim Fastweb",price:0,fixedMargin:-23,linked:true,icon:"📶",type:"fixed"},
     {id:"sost_fw",name:"Sost Fastweb",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
@@ -3600,6 +3600,7 @@ export default function CRM() {
   const [showMargSave,setShowMargSave]=useState(false);
   const [margSaveForm,setMargSaveForm]=useState({nome:"",cognome:"",tel:"",anonimo:false});
   const [margItems,setMargItems]=useState([]);
+  const [expR,setExpR]=useState({}); // riepilogo destro: gruppi esplosi/chiusi
   // Step 7 — nota e promemoria (segnalazione 21)
   const [notaOn,setNotaOn]=useState(false);
   const [nota,setNota]=useState("");
@@ -3742,7 +3743,7 @@ export default function CRM() {
   const addCart=()=>{
     const items=colItems();
     if(blockSaveAll){sT(hasIncomplete?"⚠ Ci sono prodotti Incompleti: completali prima di salvare":(hasDupPodPdr?"⚠ POD/PDR duplicato: correggi prima di salvare":(hasDupCodContr?"⚠ Codice contratto duplicato: correggi prima di salvare":"⚠ Numero/ICCID non valido: correggi prima di salvare")));return;}
-    if(items.length>0&&bObj){const snap={sales:JSON.parse(JSON.stringify(sales)),sesCode,skyS:JSON.parse(JSON.stringify(skyS))};setCart(p=>[...p,{brandId:brand,brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items,sv:snap}]);sT("✅ "+items.length+" prodotti "+bObj.label)}
+    if(items.length>0&&bObj){const snap={sales:JSON.parse(JSON.stringify(sales)),sesCode,skyS:JSON.parse(JSON.stringify(skyS))};setCart(p=>[...p,{brandId:brand,brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items,sv:snap}]);setMargItems(p=>computeAutoMarg(p,brand,bObj.label,items));sT("✅ "+items.length+" prodotti "+bObj.label)}
     setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setBrand(null);
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
@@ -3759,6 +3760,28 @@ export default function CRM() {
   
   // ── Marginalità handlers ──
   const addMargItem=(item)=>{setMargItems(p=>[...p,item]);setShowMargPOS(false)};
+  // AUTO-MARGINALITÀ dal flusso brand: GA mobile -> SIM del brand (prezzo obbligatorio al
+  // checkout); Sostituzione Sim -> voce Sost; telefono TNP -> prodotto a prezzo di listino.
+  const AUTO_SIM={windtre:"Sim Wind3",fastweb:"Sim Fastweb",iliad:"Sim Iliad",sky:"Sim Sky",ho:"Sim Ho.",tim:"Sim TIM",very:"Sim Very"};
+  const AUTO_SOST={windtre:"Sost Wind3",fastweb:"Sost Fastweb",tim:"Sost TIM",vodafone:"Sost Vodafone",very:"Sost Very"};
+  const computeAutoMarg=(prev,brandId,brandLabel,items)=>{
+    if(!brandLabel)return prev;
+    const adds=[];
+    const push=(name,locked)=>{if(!adds.some(a=>a.product===name))adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,priceLocked:!!locked,priceRequired:!locked})};
+    for(const it of (items||[])){
+      const macro=String(it.macro||"").toUpperCase();const sub=String(it.sub||"");
+      if(/sostituzione\s*sim/i.test(sub)){if(AUTO_SOST[brandId])push(AUTO_SOST[brandId]);}
+      else if(macro.includes("MOBILE")&&!/\bcb\b/i.test(sub)&&AUTO_SIM[brandId])push(AUTO_SIM[brandId]);
+      const det=it.details||{};
+      const tnp=[det["Tipo TNP"],det.tnpTipo,det.cbTnpTipo].map(v=>String(v||"").trim().toLowerCase());
+      if(tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))push("Telefono TNP (listino)",true);
+    }
+    const kept=prev.filter(m=>!(m.auto&&m.autoFrom===brandLabel));
+    // preserva i prezzi già digitati sugli auto identici
+    const merged=adds.map(a=>{const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&m.product===a.product);return old?{...a,importo:old.importo}:a});
+    return adds.length||kept.length!==prev.length?[...kept,...merged]:prev;
+  };
+  const margPriceMissing=(list)=>list.filter(m=>m.priceRequired&&(m.importo==null||m.importo===""));
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
 
   // Segnalazione 27: i contratti si duplicavano perche' "Salva contratto" non
@@ -3770,6 +3793,11 @@ export default function CRM() {
   const [submitting, setSubmitting] = useState(false);
   const finalSubmit = async () => {
     if (submitLock.current) return;
+    // auto-marginalità anche per il brand corrente non ancora "aggiunto al carrello"
+    const nextMarg = bObj ? computeAutoMarg(margItems, brand, bObj.label, colItems()) : margItems;
+    if (nextMarg !== margItems) setMargItems(nextMarg);
+    const senzaPrezzo = margPriceMissing(nextMarg);
+    if (senzaPrezzo.length) { setShowCart(true); sT("⚠️ Inserisci il prezzo di vendita per: " + senzaPrezzo.map(m => m.product).join(", ")); return; }
     submitLock.current = true;
     setSubmitting(true);
     let ok = false;
@@ -4029,6 +4057,8 @@ export default function CRM() {
   // come fa handleSubmit per il ramo con brand.
   const [margSaving,setMargSaving]=useState(false);
   const saveMargOnly=async()=>{
+    const _mm = margPriceMissing(margItems);
+    if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
     if(margSaving)return;
     const anon=margSaveForm.anonimo;
     if(!anon&&!(margSaveForm.nome.trim()&&margSaveForm.cognome.trim()&&margSaveForm.tel.trim()))return;
@@ -4183,9 +4213,19 @@ export default function CRM() {
                 <span style={{fontWeight:700,fontSize:13}}>{item.product}</span>
                 {item.model&&<span style={{fontSize:11,color:"#64748b",marginLeft:6}}>{item.model}</span>}
                 <span style={{fontSize:11,color:"#6f42c1",marginLeft:8}}>x{item.qty||1}</span>
-                {item.importo!=null&&<span style={{fontSize:11,color:"#28a745",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>}
+                {item.auto&&<span style={{fontSize:9,fontWeight:800,color:"#6f42c1",border:"1px solid rgba(111,66,193,.4)",borderRadius:5,padding:"1px 6px",marginLeft:8}}>AUTO · {item.autoFrom}</span>}
+                {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"#17a2b8",marginLeft:8}}>prezzo di listino</span>:item.auto?null:(item.importo!=null&&<span style={{fontSize:11,color:"#28a745",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
               </div>
-              <button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {item.auto&&!item.priceLocked&&<span style={{display:"flex",alignItems:"center",gap:4}}>
+                  <input type="number" step="0.01" min="0" value={item.importo??""} placeholder="prezzo *"
+                    onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((m,i)=>i===idx?{...m,importo:v}:m))}}
+                    style={{width:92,padding:"6px 8px",borderRadius:7,fontSize:12,textAlign:"right",border:(item.importo==null||item.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>
+                  <span style={{fontSize:11,color:"#8892b0"}}>€</span>
+                </span>}
+                {item.auto?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"#dc3545",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
+                :<button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button>}
+              </div>
             </div>
           ))}
         </div>}
@@ -4286,12 +4326,29 @@ export default function CRM() {
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].map((g,gi)=>(
-                <div key={gi} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid "+(g.brandColor||"#64748b"),borderRadius:8,padding:"8px 10px"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{g.brandIcon} {g.brandLabel}{g.isCurrent?" •":""}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"#64748b"}}>{g.items.length}</div></div>
-                  <div style={{fontSize:10,color:"#64748b",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>
+                <div key={gi} onClick={()=>setExpR(p=>({...p,["g"+gi]:!p["g"+gi]}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid "+(g.brandColor||"#64748b"),borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{g.brandIcon} {g.brandLabel}{g.isCurrent?" •":""}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"#64748b"}}>{g.items.length} {expR["g"+gi]?"▾":"▸"}</div></div>
+                  {!expR["g"+gi]&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>}
+                  {expR["g"+gi]&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
+                    {g.items.map((it,ii)=>{const det=it.details||{};const off=det["Offerta Mobile"]||det.offerta||det["Offerta"]||"";return (
+                      <div key={ii} style={{background:"rgba(255,255,255,0.03)",borderRadius:6,padding:"5px 8px"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0"}}>{it.macroIcon} {it.sub}<span style={{color:"#64748b",fontWeight:600}}> · vendita {it.saleNum}</span></div>
+                        {off&&<div style={{fontSize:10,color:"#8892b0",marginTop:1}}>{String(off)}</div>}
+                      </div>);})}
+                  </div>}
                 </div>
               ))}
-              {margItems.length>0&&<div style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid #6f42c1",borderRadius:8,padding:"8px 10px"}}><div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#6f42c1"}}>📦 Prodotti & Marginalità</div><div style={{fontSize:11,fontWeight:700,color:"#6f42c1"}}>{margItems.length}</div></div></div>}
+              {margItems.length>0&&<div onClick={()=>setExpR(p=>({...p,marg:!p.marg}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid #6f42c1",borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#6f42c1"}}>📦 Prodotti & Marginalità</div><div style={{fontSize:11,fontWeight:700,color:"#6f42c1"}}>{margItems.length} {expR.marg?"▾":"▸"}</div></div>
+                {expR.marg&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
+                  {margItems.map((m,mi)=>(
+                    <div key={mi} style={{background:"rgba(255,255,255,0.03)",borderRadius:6,padding:"5px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0"}}>{m.product}<span style={{color:"#64748b",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"#6f42c1",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
+                      <div style={{fontSize:10,fontWeight:700,color:m.priceLocked?"#17a2b8":(m.importo!=null?"#28a745":"#dc3545")}}>{m.priceLocked?"listino":(m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire")}</div>
+                    </div>
+                  ))}
+                </div>}
+              </div>}
             </div>
           )}
         </div>
@@ -4303,7 +4360,7 @@ export default function CRM() {
       <div style={{background:bG,borderRadius:12,padding:"14px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:36,height:36,background:"rgba(255,255,255,.2)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{bObj?bObj.icon:"⚡"}</div><div><div style={{color:"#fff",fontWeight:700,fontSize:16}}>Registra Vendita</div><div style={{color:"rgba(255,255,255,.7)",fontSize:11}}>{bObj?bObj.label:"Seleziona brand"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div></div></div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>setShowMargSection(true)} title="Prodotti & Marginalità" style={{padding:"8px 16px",borderRadius:8,border:"1px solid rgba(255,255,255,.4)",background:"rgba(255,255,255,.15)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>📦 Prodotti&Marginalità{margItems.length>0&&<span style={{background:"#FFD800",color:"#f8fafc",borderRadius:8,padding:"1px 7px",fontSize:11,fontWeight:800}}>{margItems.length}</span>}</button><button onClick={()=>setShowCart(true)} style={{background:tCI>0?"rgba(255,255,255,.25)":"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.3)",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,cursor:"pointer",fontWeight:700,display:"flex",alignItems:"center",gap:6}}>🛒 Carrello{tCI>0&&<span style={{background:"#FFD800",color:"#f8fafc",borderRadius:10,padding:"1px 7px",fontSize:11,fontWeight:800}}>{tCI}</span>}</button>
+          
           <button onClick={()=>setConfirmReset(true)} title="Reset tutto" style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.25)",borderRadius:8,padding:"8px 14px",color:"rgba(255,255,255,.85)",fontSize:13,cursor:"pointer",fontWeight:700}}>🔄 Reset</button>
         </div>
       </div>

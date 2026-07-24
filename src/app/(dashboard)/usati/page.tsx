@@ -415,6 +415,10 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
       const u: Device = { ...p, status: next!, note_tecnico: noteTecnico,
         status_history: { ...p.status_history, [next!]: { date: new Date(), operatore } } };
       if (needsStore) u.target_store = targetStore;
+      // Accettazione: quando il negozio destinazione accetta (invio -> in vendita),
+      // il dispositivo passa in carico a LUI (prima restava sul magazzino mittente
+      // e non era vendibile dal negozio che lo aveva ricevuto).
+      if (next === "in_vendita" && p.target_store) { u.store = p.target_store; u.target_store = null; }
       if (next === "in_vendita") u.listed_date = new Date();
       if (next === "venduto") u.sold_date = new Date();
       return u;
@@ -467,7 +471,9 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                   </select>
                 )}
                 {next && <button onClick={advanceStatus} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/30 transition-all">
-                  {statusMap[next]?.icon} {statusMap[next]?.label}
+                  {needsStore ? <>📤 Invia a {targetStore || "…"}</>
+                    : dev.status === "invio_in_negozio" ? <>✅ Accetta in negozio{dev.target_store ? ` (${dev.target_store})` : ""}</>
+                    : <>{statusMap[next]?.icon} {statusMap[next]?.label}</>}
                 </button>}
                 {["in_lavorazione", "ricevuto"].includes(dev.status) && (
                   <button onClick={setKO} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-semibold hover:bg-red-500/30 transition-all"> KO</button>

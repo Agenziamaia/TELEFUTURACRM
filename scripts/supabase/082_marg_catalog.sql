@@ -48,12 +48,13 @@ BEGIN
 
   INSERT INTO public.marg_categories (name, kind, sort_order) VALUES ('Prodotti','prodotti',0) RETURNING id INTO cid;
   INSERT INTO public.marg_items (category_id, name, sort_order) VALUES
-    (cid,'PLX',0),(cid,'CN/CP',1),(cid,'New Cover',2),(cid,'Mem / Pen',3),(cid,'Orologio Cash',4),(cid,'Mi Band 6',5),(cid,'PowerBank',6);
+    (cid,'PLX',0),(cid,'CN/CP',1),(cid,'New Cover',2),(cid,'Mem / Pen',3),(cid,'Orologio Cash',4),(cid,'Mi Band 6',5),(cid,'PowerBank',6),
+    (cid,'Vendita Usato',7);  -- e' un PRODOTTO (decisione Luca): pesca dal magazzino usati del negozio
 
   INSERT INTO public.marg_categories (name, kind, sort_order) VALUES ('Servizi','servizi',1) RETURNING id INTO cid;
   INSERT INTO public.marg_items (category_id, name, sort_order) VALUES
-    (cid,'Assistenza Tecnico',0),(cid,'Backup',1),(cid,'Riparazione',2),(cid,'Vendita Usato',3),(cid,'Chiusura Sim/Fisso',4),
-    (cid,'E.Telefono',5),(cid,'Accessori',6),(cid,'Extra Acc. Compass',7),(cid,'Telefoni Senior',8),(cid,'Ear Buds',9),(cid,'Salva Scontrino',10);
+    (cid,'Assistenza Tecnico',0),(cid,'Backup',1),(cid,'Riparazione',2),(cid,'Chiusura Sim/Fisso',3),
+    (cid,'E.Telefono',4),(cid,'Accessori',5),(cid,'Extra Acc. Compass',6),(cid,'Telefoni Senior',7),(cid,'Ear Buds',8),(cid,'Salva Scontrino',9);
 
   INSERT INTO public.marg_categories (name, kind, sort_order) VALUES ('Kasko','servizi',2) RETURNING id INTO cid;
   INSERT INTO public.marg_items (category_id, name, sort_order) VALUES
@@ -61,7 +62,6 @@ BEGIN
 
   INSERT INTO public.marg_categories (name, kind, sort_order) VALUES ('SIM','prodotti',3) RETURNING id INTO cid;
   INSERT INTO public.marg_items (category_id, name, brand, auto_link, sort_order) VALUES
-    (cid,'Family+ On Top','WindTre',false,0),
     (cid,'Sim Wind3','WindTre',true,1),
     (cid,'Sim Fastweb','Fastweb',true,2),
     (cid,'Sost Fastweb','Fastweb',false,3),
