@@ -167,11 +167,11 @@ export default function Dashboard() {
               <p className="text-slate-300 font-medium">Nessun contratto {period === "month" ? "questo mese" : "a sistema"}</p>
               <p className="text-sm text-slate-500 mt-1">
                 {period === "month"
-                  ? "Prova a selezionare “Tutto”, oppure registra un contratto."
-                  : "Registra il primo contratto per popolare la dashboard."}
+                  ? "Prova a selezionare “Tutto”, oppure registra una vendita."
+                  : "Registra la prima vendita per popolare la dashboard."}
               </p>
               <Link href="/registra-contratto" className="primary-btn inline-flex items-center gap-2 mt-4">
-                Registra Contratto <ArrowRight className="w-4 h-4" />
+                Registra Vendita <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
           )}

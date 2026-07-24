@@ -71,11 +71,11 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
     },
     {
         type: "group",
-        label: "Contratti",
+        label: "Vendite",
         icon: FileText,
         children: [
-            { name: "Registra Contratto", href: "/registra-contratto", icon: FilePlus, roles: EVERYONE },
-            { name: "Ricerca Contratto", href: "/ricerca-contratto", icon: Database, roles: EVERYONE },
+            { name: "Registra Vendita", href: "/registra-contratto", icon: FilePlus, roles: EVERYONE },
+            { name: "Ricerca Vendite", href: "/ricerca-contratto", icon: Database, roles: EVERYONE },
             { name: "Tracking pda", href: "/pda/tracking", icon: Navigation, roles: EVERYONE },
         ],
     },

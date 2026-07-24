@@ -233,7 +233,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     )}
                                     {contratti.map((ctr: Contratto) => (
                                         <tr key={ctr.id} onClick={() => openContract(ctr.id)}
-                                            className="hover:bg-indigo-500/5 cursor-pointer transition-colors group" title="Apri in Ricerca Contratto">
+                                            className="hover:bg-indigo-500/5 cursor-pointer transition-colors group" title="Apri in Ricerca Vendite">
                                             <td className="px-4 py-3 text-slate-400 flex items-center gap-2">
                                                 <Calendar className="w-3 h-3 text-slate-600" /> {ctr.data}
                                             </td>

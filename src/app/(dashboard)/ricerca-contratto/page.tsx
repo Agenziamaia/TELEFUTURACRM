@@ -614,7 +614,7 @@ export default function RicercaContratto() {
         return (
             <div className="w-full">
                 <div className="mb-8">
-                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Contratto</h2>
+                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Vendite</h2>
                     <p className="text-red-400">Errore caricamento: {loadError}</p>
                 </div>
             </div>
@@ -629,7 +629,7 @@ export default function RicercaContratto() {
         <div className="w-full">
             <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
                 <div>
-                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Contratto</h2>
+                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Vendite</h2>
                     <p className="text-slate-400">Ricerca e gestisci i contratti registrati a sistema</p>
                 </div>
                 {canApprove && (
