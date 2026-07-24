@@ -65,7 +65,8 @@ const CONTRACT_FIELDS: EditField[] = [
     { key: "prodotto", label: "Prodotto" },
     { key: "venditore", label: "Venditore" },
     { key: "negozio", label: "Negozio" },
-    { key: "codice_attivazione", label: "Codice attivazione" },
+    // Segnalazione 76: si chiama Codice contratto (anche in Modifica, non solo in colonna)
+    { key: "codice_attivazione", label: "Codice contratto" },
     { key: "operatore_bo", label: "Operatore Back Office" },
     { key: "stato", label: "Stato", kind: "stato" },
     { key: "stato_negozio", label: "Esito negozio" },

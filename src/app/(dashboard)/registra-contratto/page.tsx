@@ -2816,6 +2816,16 @@ const subComplete=(sub,d)=>{
       }
       if((d.tnpGa==="No"||d.tnpGa===false)&&d.reloadForever==null)return false;
     }
+    // Il box "Dati contratto" non veniva MAI controllato: i campi erano segnati
+    // obbligatori a schermo ma il contratto si salvava lo stesso, finendo in
+    // Ricerca Contratto senza Codice contratto (segnalato su WindTre MOBILE).
+    if(sub.ct==="ga"){
+      const cc=d.contract||{};
+      if(!_NE(cc.codice_contratto)||!_NE(cc.num_provvisorio)||!_NE(cc.iccid))return false;
+      const isMnp=(d.mnp===true||d.mnp==="Sì");
+      if(isMnp&&!sub.isMobileBiz&&(!_NE(cc.num_definitivo)||!_NE(cc.brand_mnp)))return false;
+      if(isMnp&&sub.isMobileBiz&&!_NE(cc.num_definitivo))return false;
+    }
     return true;
   }
   // WINDTRE Mobile Business
@@ -2825,6 +2835,12 @@ const subComplete=(sub,d)=>{
     if(sub.bizOffers&&!_NE(f.offerta))return false;
     if(d.tnpGa==null)return false;
     if((d.tnpGa==="Sì"||d.tnpGa===true)&&!_NE(d.tnpTipo))return false;
+    // stesso controllo del box "Dati contratto" (vedi mobile privato)
+    if(sub.ct==="ga"){
+      const cc=d.contract||{};
+      if(!_NE(cc.codice_contratto)||!_NE(cc.num_provvisorio)||!_NE(cc.iccid))return false;
+      if((d.mnp===true||d.mnp==="Sì")&&!_NE(cc.num_definitivo))return false;
+    }
     return true;
   }
   // WINDTRE CB (privato): almeno un'azione completa
