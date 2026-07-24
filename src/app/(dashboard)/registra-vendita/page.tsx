@@ -258,7 +258,8 @@ const BRANDS = [
   { id: "vodafone", logo: "/vodaphone - Copy.png", label: "Vodafone", short: "VF", color: "#E60000", gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)", icon: "📱", desc: "Mobile, Fisso, Multi-Servizi, Verisure", ready: true },
   { id: "fastweb", logo: "/fastweb.png", label: "Fastweb", short: "FW", color: "#CC9900", gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)", icon: "⚡", desc: "Mobile, Fisso, Energy", ready: true },
   { id: "iliad", logo: "/iliad.png", label: "Iliad", short: "IL", color: "#C00028", gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)", icon: "📡", desc: "Mobile e Fisso (Fibra)", ready: true },
-  { id: "energy", logo: "/energy - Copy.png", label: "Energy", short: "EN", color: "#28a745", gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)", icon: "🔋", desc: "Forniture Luce e Gas (S4, Barton)", ready: true },
+  { id: "energy", logo: "/energy - Copy.png", label: "S4", short: "S4", color: "#28a745", gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)", icon: "🔋", desc: "Forniture Luce e Gas", ready: true },
+  { id: "dojo", logo: "/dojo - Copy.png", label: "Dojo", short: "DOJO", color: "#14b8a6", gradient: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", icon: "🏧", desc: "POS e pagamenti", ready: true },
   { id: "tim", logo: "/tim-logo-v2.png", label: "TIM", short: "TIM", color: "#0050FF", gradient: "linear-gradient(135deg, #0033A0 0%, #0050FF 100%)", icon: "☎️", desc: "Mobile, Fisso, Multi-Servizi", ready: true },
   { id: "very", logo: "/very-mobile.png", label: "Very Mobile", short: "VERY", color: "#1FA300", gradient: "linear-gradient(135deg, #137A00 0%, #1FA300 100%)", icon: "🟢", desc: "Mobile", ready: true },
   { id: "ho", logo: "/ho-mobile.png", label: "Ho. Mobile", short: "HO", color: "#E6007E", gradient: "linear-gradient(135deg, #B0005F 0%, #E6007E 100%)", icon: "💗", desc: "Mobile", ready: true },
@@ -2085,12 +2086,6 @@ const getEN = (tc) => {
       { id:"s4_luce", title:"Luce", isENLuceGas:true, enBrand:"S4", enProd:"Luce", hasContract:true, ct:"multi", fields:[]},
       { id:"s4_gas", title:"Gas", isENLuceGas:true, enBrand:"S4", enProd:"Gas", hasContract:true, ct:"multi", fields:[]},
     ]},
-    { id:"barton", title:"BARTON ENERGY", icon:"🔋", color:"#1a6b2d", radio:false, subs:[
-      { id:"bt_luce", title:"Luce", isENLuceGas:true, enBrand:"Barton", enProd:"Luce", hasContract:true, ct:"multi", fields:[]},
-      { id:"bt_luce_rid", title:"Luce RID", isENLuceGas:true, enBrand:"Barton", enProd:"LuceRID", hasContract:true, ct:"multi", fields:[]},
-      { id:"bt_gas", title:"Gas", isENLuceGas:true, enBrand:"Barton", enProd:"Gas", hasContract:true, ct:"multi", fields:[]},
-      { id:"bt_gas_rid", title:"Gas RID", isENLuceGas:true, enBrand:"Barton", enProd:"GasRID", hasContract:true, ct:"multi", fields:[]},
-    ]},
   ];
 };
 
@@ -2556,6 +2551,14 @@ const getHO = (tc) => (tc==="business")?[]:[
   ]},
 ];
 // Segnalazione 68: Kena Mobile segue il flusso identico a Ho Mobile.
+// Dojo: brand POS — consumer e business, prodotti della categoria POS
+const DOJO_CODICI_NEGOZIO=[];
+const getDOJO = () => [
+  { id:"pos", title:"POS", icon:"🏧", color:"#14b8a6", radio:false, subs:[
+    { id:"pos_dojo", title:"POS Dojo", hasContract:true, ct:"multi", fields:[]},
+  ]},
+];
+
 const getKena = (tc) => (tc==="business")?[]:[
   { id:"mobile", title:"MOBILE", icon:"📱", color:KENA_C, radio:true, subs:[
     { id:"ga", title:"MOBILE", isKenaMobile:true, hasContract:true, ct:"ga", fields:[] },
@@ -3660,7 +3663,7 @@ export default function CRM() {
   const [vfQtyModal,setVfQtyModal]=useState(null);
 
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
-  const cats=(brand==="windtre"?getW3(tipoCliente):brand==="vodafone"?getVF(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):[]);
+  const cats=(brand==="windtre"?getW3(tipoCliente):brand==="vodafone"?getVF(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):brand==="dojo"?getDOJO():[]);
   // Segnalazione 84: con un contratto energia (di qualsiasi brand) serve una
   // cartella "Fattura" per la bolletta del vecchio operatore.
   const _blEnergia=(BRANDS.find(b=>b.id===brand)||{}).label||"";
@@ -3698,7 +3701,7 @@ export default function CRM() {
 
   const colItems=useCallback(()=>{
     const items=[];
-    if(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"){const getCats=brand==="windtre"?getW3(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):getVF(tipoCliente);getCats.forEach(g=>{(sales[g.id]||[{}]).forEach((sale,si)=>{g.subs.forEach(sub=>{const d=sale[sub.id];if(d&&d.active){const det={...(d.fields||{}),...(d.contract||{}),hasContract:!!sub.hasContract};const _ed=extractDetails(d);for(const _k in _ed)det[_k]=_ed[_k];items.push({macro:g.title,macroColor:g.color,macroIcon:g.icon,sub:sub.title,saleNum:si+1,details:det})}})})})
+    if(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"){const getCats=brand==="windtre"?getW3(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):brand==="dojo"?getDOJO():getVF(tipoCliente);getCats.forEach(g=>{(sales[g.id]||[{}]).forEach((sale,si)=>{g.subs.forEach(sub=>{const d=sale[sub.id];if(d&&d.active){const det={...(d.fields||{}),...(d.contract||{}),hasContract:!!sub.hasContract};const _ed=extractDetails(d);for(const _k in _ed)det[_k]=_ed[_k];items.push({macro:g.title,macroColor:g.color,macroIcon:g.icon,sub:sub.title,saleNum:si+1,details:det})}})})})
     }else if(brand==="sky"){skyS.forEach((s,si)=>{if(s.tvSel)items.push({macro:"SKY TV",macroColor:"#0072C6",macroIcon:"📺",sub:s.tvSel,saleNum:si+1,details:{hasContract:true,"Codice Contratto":s.tvCC||"","Cod.Ins.":s.tvCodIns||sesCode||""}});if(s.fibraSel){const det={hasContract:true,"Codice Contratto":s.fibraCC||"","Cod.Ins.":s.fibraCodIns||sesCode||"","GNP":s.fibraGnp==="Sì"?"Sì":"No"};if(s.fibraGnp==="Sì"){det["Brand GNP"]=s.fibraGnpBrand||"";det["N.Fisso Portabilità"]=s.fibraGnpNum||""}items.push({macro:"SKY FIBRA",macroColor:"#0072C6",macroIcon:"🌐",sub:s.fibraSel,saleNum:si+1,details:det})}if(s.mobileSel){const det={hasContract:false,"Cod.Ins.":s.mobCodIns||sesCode||"","MNP":s.mobMnp==="Sì"?"Sì":"No"};if(s.mobMnp==="Sì"){det["N.Provvisorio"]=s.mobNumProv||"";det["N.Definitivo"]=s.mobNumDef||"";det["Brand MNP"]=s.mobBrandMnp||"";det["ICCID"]=s.mobIccid||""}else if(s.mobMnp==="No"){det["Numero"]=s.mobNum||"";det["ICCID"]=s.mobIccidNo||""}if(s.mobTied)det["TIED"]=s.mobTied;items.push({macro:"SKY MOBILE",macroColor:"#0072C6",macroIcon:"📱",sub:"Sky Mobile",saleNum:si+1,details:det})}});}
     return items;
   },[brand,sales,skyS,tipoCliente]);
@@ -4376,11 +4379,11 @@ export default function CRM() {
         </div>
       </div>}
 
-      {showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="sky"?"#0072C6":"#2E75B6")}}>
-        <div style={{fontSize:11,fontWeight:700,color:brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="sky"?"#0072C6":"#2E75B6",marginBottom:14,textTransform:"uppercase"}}>📂 Step 4 — Prodotti e Contratto</div>
+      {showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6")}}>
+        <div style={{fontSize:11,fontWeight:700,color:brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6",marginBottom:14,textTransform:"uppercase"}}>📂 Step 4 — Prodotti e Contratto</div>
         <div style={{background:"rgba(0,114,198,0.10)",borderRadius:8,padding:10,marginBottom:14,display:"flex",alignItems:"center",gap:12,border:"1px solid rgba(0,114,198,0.18)",flexWrap:"wrap"}}>
           <span style={{fontSize:11,fontWeight:700,color:"#1B3A5C"}}>Codice inserimento:</span>
-          <select value={sesCode} onChange={e=>setSesCode(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid rgba(0,114,198,0.18)",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.02)",minWidth:140}}><option value="">— Seleziona —</option>{(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <select value={sesCode} onChange={e=>setSesCode(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid rgba(0,114,198,0.18)",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.02)",minWidth:140}}><option value="">— Seleziona —</option>{(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="dojo"?DOJO_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=><option key={c} value={c}>{c}</option>)}</select>
         </div>
         {cats.map(group=>{const cc=catCounts(group.id,group.subs);return <div key={group.id} style={{marginBottom:16}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:16}}>{group.icon}</span><span style={{fontSize:13,fontWeight:700,color:group.color,textTransform:"uppercase"}}>{group.title}</span>{cc.tot>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:"#8892b0",background:"transparent",borderRadius:999,padding:"2px 10px"}}>{cc.tot} {cc.tot===1?"vendita":"vendite"}{cc.ok>0&&<span style={{color:"#28a745"}}>· {cc.ok} ✓</span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>· {cc.warn} ⚠</span>}{cc.empty>0&&<span style={{color:"#64748b"}}>· {cc.empty} ●</span>}</span>}</div>

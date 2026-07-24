@@ -102,7 +102,7 @@ const BRAND_LOGO: Record<string, string> = {
     "WindTre": "/windtre.png", "Vodafone": "/vodaphone - Copy.png", "Fastweb": "/fastweb.png",
     "Iliad": "/iliad.png", "Sky": "/sky.png", "Very Mobile": "/very-mobile.png", "Very": "/very-mobile.png",
     "Ho. Mobile": "/ho-mobile.png", "Ho": "/ho-mobile.png", "Kena Mobile": "/kena-mobile-v2.png", "Kena": "/kena-mobile-v2.png",
-    "Tim": "/tim-logo-v2.png", "TIM": "/tim-logo-v2.png", "Energy": "/energy - Copy.png",
+    "Tim": "/tim-logo-v2.png", "TIM": "/tim-logo-v2.png", "Energy": "/energy - Copy.png", "S4": "/energy - Copy.png", "Dojo": "/dojo - Copy.png",
 };
 
 const STATI = ["Attivo", "In lavorazione", "Attivato", "Sospeso", "Annullato"];
