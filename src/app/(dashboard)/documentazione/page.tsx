@@ -303,7 +303,11 @@ export default function DocumentazionePage() {
     const cat = catId ? (effCats.find(c => c.id === catId) ?? getCat(catId)) : null;
     const allDocs = brandId && catId ? getDocs(brandId, catId) : [];
     // I documenti archiviati (OLD) sono nascosti finche' non si sceglie di mostrarli.
-    const docs = showArchived ? allDocs : allDocs.filter((d) => !d.archived);
+    // Segnalazione 79: i documenti nuovi restano sempre in vista; quelli
+    // archiviati finiscono in una sezione OLD a parte, in fondo all'elenco.
+    const docsCorrenti = allDocs.filter((d) => !d.archived);
+    const docsOld = allDocs.filter((d) => d.archived);
+    const docs = showArchived ? [...docsCorrenti, ...docsOld] : docsCorrenti;
     const archivedCount = allDocs.filter((d) => d.archived).length;
 
     const toggleArchive = async (doc: DocEntry) => {
@@ -336,11 +340,15 @@ export default function DocumentazionePage() {
     }, [setView]);
 
     return (
-        <div className="flex flex-col h-[calc(100vh-theme(spacing.16))] lg:h-screen lg:pl-64 w-full overflow-hidden min-w-0 max-w-full">
+        /* Segnalazione 79: i margini erano sballati perche' questa pagina aggiungeva
+           un secondo scostamento per la barra laterale (lg:pl-64) e un proprio
+           padding sopra a quelli che il layout applica gia' a tutte le pagine, piu'
+           un'altezza fissa con scroll interno. Ora usa lo stesso schema delle altre
+           pagine: contenitore centrato a larghezza massima e scroll normale. */
+        <div className="w-full max-w-7xl mx-auto space-y-6">
             {/* Header Area */}
-            <div className="flex-none p-4 lg:p-8 w-full min-w-0 max-w-full">
-                {/* Segnalazione 50: header centrato nella stessa larghezza del contenuto. */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 max-w-6xl mx-auto w-full">
+            <div>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 w-full">
                     <div>
                         <div className="flex items-center gap-3 mb-2">
                             <div className="p-2 bg-indigo-500/20 rounded-lg border border-indigo-500/30">
@@ -415,9 +423,7 @@ export default function DocumentazionePage() {
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 px-4 lg:px-8 pb-8 overflow-y-auto custom-scrollbar w-full min-w-0 max-w-full">
-              {/* Segnalazione 50: pagina centrata (contenuto con larghezza massima e mx-auto). */}
-              <div className="max-w-6xl mx-auto w-full">
+            <div className="w-full min-w-0">
 
                 {/* LANDING - BRAND SELECTION */}
                 {!brandId && (
@@ -595,8 +601,16 @@ export default function DocumentazionePage() {
                                             </td>
                                         </tr>
                                     ) : (
-                                        docs.map(doc => (
-                                            <tr key={doc.id} className="hover:bg-white/[0.02]">
+                                        docs.map((doc, di) => (
+                                          <React.Fragment key={doc.id}>
+                                            {doc.archived && (di === 0 || !docs[di - 1].archived) && (
+                                              <tr>
+                                                <td colSpan={5} className="px-6 py-2 bg-amber-500/[0.07] border-t border-amber-500/25 text-[11px] font-bold uppercase tracking-widest text-amber-400">
+                                                  OLD — archivio dei canvass superati
+                                                </td>
+                                              </tr>
+                                            )}
+                                            <tr className="hover:bg-white/[0.02]">
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3">
                                                         <FileText className="w-5 h-5 text-slate-500" />
@@ -670,6 +684,7 @@ export default function DocumentazionePage() {
                                                     </div>
                                                 </td>
                                             </tr>
+                                          </React.Fragment>
                                         ))
                                     )}
                                 </tbody>
@@ -678,7 +693,6 @@ export default function DocumentazionePage() {
                     </div>
                 )}
 
-              </div>{/* /max-w-6xl (segn.50 centratura) */}
             </div>
 
             {/* MODALS */}
