@@ -49,12 +49,13 @@ BEGIN
   INSERT INTO public.marg_categories (name, kind, sort_order) VALUES ('Prodotti','prodotti',0) RETURNING id INTO cid;
   INSERT INTO public.marg_items (category_id, name, sort_order) VALUES
     (cid,'PLX',0),(cid,'CN/CP',1),(cid,'New Cover',2),(cid,'Mem / Pen',3),(cid,'Orologio Cash',4),(cid,'Mi Band 6',5),(cid,'PowerBank',6),
-    (cid,'Vendita Usato',7);  -- e' un PRODOTTO (decisione Luca): pesca dal magazzino usati del negozio
+    (cid,'Vendita Usato',7),  -- e' un PRODOTTO (decisione Luca): pesca dal magazzino usati del negozio
+    (cid,'Accessori',8),(cid,'Telefoni Senior',9),(cid,'Ear Buds',10);  -- prodotti, non servizi (decisione Luca)
 
   INSERT INTO public.marg_categories (name, kind, sort_order) VALUES ('Servizi','servizi',1) RETURNING id INTO cid;
   INSERT INTO public.marg_items (category_id, name, sort_order) VALUES
     (cid,'Assistenza Tecnico',0),(cid,'Backup',1),(cid,'Riparazione',2),(cid,'Chiusura Sim/Fisso',3),
-    (cid,'E.Telefono',4),(cid,'Accessori',5),(cid,'Extra Acc. Compass',6),(cid,'Telefoni Senior',7),(cid,'Ear Buds',8),(cid,'Salva Scontrino',9);
+    (cid,'E.Telefono',4),(cid,'Extra Acc. Compass',5),(cid,'Salva Scontrino',6);
 
   INSERT INTO public.marg_categories (name, kind, sort_order) VALUES ('Kasko','servizi',2) RETURNING id INTO cid;
   INSERT INTO public.marg_items (category_id, name, sort_order) VALUES
