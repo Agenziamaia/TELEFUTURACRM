@@ -119,7 +119,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
             { name: "Vodafone VND", sez: "vnd", color: "#ff6666" },
             { name: "Fastweb", sez: "fastweb", color: "#FFD800" },
             { name: "Sky", sez: "sky", color: "#0072C6" },
-            { name: "S4 Energy", sez: "s4", color: "#28a745" },
+            { name: "S4", sez: "s4", color: "#28a745" },
             { name: "TIM", sez: "tim", color: "#0050FF" },
             { name: "Dojo", sez: "dojo", color: "#14b8a6" },
         ],

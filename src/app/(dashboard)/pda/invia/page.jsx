@@ -48,7 +48,7 @@ const ALL_BRANDS = [
   },
   {
     id: "energy",
-    label: "Energy",
+    label: "S4",
     badge: "NRG",
     color: "#fd7e14",
     bg: "#FFF3E6",

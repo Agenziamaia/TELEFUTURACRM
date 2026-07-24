@@ -314,7 +314,7 @@ function useNegozi(){
   useEffect(()=>{const fn=()=>bump(v=>v+1);_negoziSubs.add(fn);loadNegozi();return()=>{_negoziSubs.delete(fn);};},[]);
   return negozi;
 }
-const opProv = ["Enel Energia","Eni Plenitude","A2A Energia","Edison Energia","Iren Mercato","Hera Comm","Sorgenia","Acea Energia","Engie","E.ON","Illumia","Wekiwi","Pulsee","Octopus Energy","Green Network","Dolomiti Energia","Axpo","NeN","Tate","WindTre Luce e Gas","Fastweb Energia","S4 Energy","Barton Energy","Altro"];
+const opProv = ["Enel Energia","Eni Plenitude","A2A Energia","Edison Energia","Iren Mercato","Hera Comm","Sorgenia","Acea Energia","Engie","E.ON","Illumia","Wekiwi","Pulsee","Octopus Energy","Green Network","Dolomiti Energia","Axpo","NeN","Tate","WindTre Luce e Gas","Fastweb Energia","S4","Barton Energy","Altro"];
 const opProvNoW3 = opProv.filter(o=>o!=="WindTre Luce e Gas");
 const brandMNP = ["TIM","Vodafone","WindTre","Iliad","Sky Mobile","Fastweb Mobile","PosteMobile","ho. Mobile","Kena Mobile","Very Mobile","CoopVoce","Spusu","Lyca Mobile","1Mobile","Tiscali Mobile","Digi Mobil","Noitel","Optima Mobile","Feder Mobile","Rabona Mobile","Elimobile","BT Italia","Segnoverde Mobile","Uno Mobile","Saily","Visitel","Ops! Mobile"];
 const SKY_TV = ["TV","TV 14,90","Sky Glass"];

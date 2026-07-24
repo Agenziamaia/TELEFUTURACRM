@@ -430,7 +430,7 @@ function FilterBar({
             WindTre: "#f97316",
             Iliad: "#a855f7",
             Tim: "#14b8a6",
-            "S4 Energy": "#22c55e",
+            "S4": "#22c55e",
             Sky: "#ef4444",
           };
           const color = brandColors[b] || "#94a3b8";
