@@ -1020,6 +1020,15 @@ export default function RicercaContratto() {
                     if (k === "contract::brand") return uniqueBrands;
                     if (k === "contract::prodotto") return uniqueProdotti;
                     if (k === "contract::categoria") return Array.from(new Set(uniqueProdotti.length ? contractList.map(c => String(c.raw?.categoria || "")).filter(Boolean) : [])).sort();
+                    // Segnalazione 71: anche il codice di inserimento va a tendina.
+                    // Si popola con i codici del brand del contratto; se quel brand
+                    // non ne ha ancora, si mostrano tutti quelli censiti.
+                    if (/^dettagli::Cod\.Ins\./.test(k)) {
+                        const b = String(row.brand || "");
+                        const perBrand = codeByBrand[b] || [];
+                        const tutti = Array.from(new Set(Object.values(codeByBrand).flat()));
+                        return (perBrand.length ? perBrand : tutti).slice().sort();
+                    }
                     return null;
                 };
                 const renderField = (k: string, label: string, kind?: string) => {
@@ -1050,9 +1059,12 @@ export default function RicercaContratto() {
                                     {Array.from(new Set([...opts, val].filter(Boolean))).map(o => <option key={o} value={o}>{o}</option>)}
                                 </select>
                             ) : kind === "textarea" ? (
-                                <textarea rows={2} className={cls} value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))} />
+                                <textarea rows={2} className={cls} autoComplete="off" value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))} />
                             ) : (
+                                /* autoComplete/name casuale: senza, Chrome riempiva i campi da solo
+                                   e li colorava di GIALLO (segnalazione 71). */
                                 <input type={kind === "date" ? "date" : "text"} className={cls} value={val}
+                                    autoComplete="off" name={`f-${k}`} data-lpignore="true"
                                     onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))} />
                             )}
                         </div>

@@ -244,3 +244,18 @@
   color: inherit;
   transition: all 0.15s;
 }
+/* Segnalazione 71: Chrome coloriva di GIALLO i campi che riempiva da solo
+   (autofill), stonando col tema scuro e facendo sembrare le caselle bloccate.
+   Qui forziamo sfondo e colore del testo dell'autofill sul tema del CRM. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: #f8fafc;
+  caret-color: #f8fafc;
+  -webkit-box-shadow: 0 0 0 1000px #0f111a inset;
+  box-shadow: 0 0 0 1000px #0f111a inset;
+  transition: background-color 9999s ease-in-out 0s;
+}
