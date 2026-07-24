@@ -34,6 +34,7 @@ export type CategoriaId =
     | "fisso"
     | "energia"
     | "tv"
+    | "cb"
     | "digitale"
     | "multi_servizi"
     | "pos"
@@ -52,10 +53,17 @@ export const CATEGORIE: CategoriaDef[] = [
     { id: "fisso", label: "Fisso / Fibra", desc: "Linee fisse, fibra e FWA", color: "#0ea5e9", icon: "🏠" },
     { id: "energia", label: "Energia", desc: "Luce e gas", color: "#10b981", icon: "⚡" },
     { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "#ef4444", icon: "📺" },
+    { id: "cb", label: "Customer Base", desc: "Lavorazioni sulla base clienti: cambi offerta, telefono incluso, add-on", color: "#8b5cf6", icon: "🔁" },
     { id: "digitale", label: "Soluzioni Digitali", desc: "Servizi digitali e cloud", color: "#22d3ee", icon: "💻" },
     { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni e pacchetti multi-servizio", color: "#ec4899", icon: "🛡️" },
     { id: "pos", label: "POS", desc: "Terminali di pagamento", color: "#f59e0b", icon: "🏧" },
     { id: "extra", label: "Extra", desc: "Prodotti e servizi a marginalita'", color: "#94a3b8", icon: "💰" },
+];
+
+// Etichette canoniche per compilare/modificare la categoria di una vendita
+// (le uniche ammesse nelle tendine: mai piu' valori grezzi tipo "SKY FIBRA").
+export const CATEGORIE_CANONICHE: string[] = [
+    "Mobile", "Fisso", "Energia", "TV", "Customer Base", "Multi-Servizi", "POS", "Soluzioni Digitali", "Extra",
 ];
 
 export function categoriaDef(id: string | null | undefined): CategoriaDef {
@@ -112,6 +120,10 @@ export function categoriaDi(
 
     // Energia: piu' nomi per lo stesso servizio (LUCE E GAS / ENERGIA / S4 ENERGIA).
     if (/(luce|gas|energia|energy)/.test(tutto)) return "energia";
+
+    // Customer Base: lavorazioni sulla base clienti (prodotto "CB", "FISSO CB").
+    // Prima di fisso/mobile: un "FISSO CB" e' una lavorazione CB, non un fisso nuovo.
+    if (/\bcb\b|customer base/.test(tutto)) return "cb";
 
     // Fisso e fibra, compresa quella di Sky, che il brand chiama "SKY FIBRA".
     if (/(fisso|fibra|fwa)/.test(tutto)) return "fisso";

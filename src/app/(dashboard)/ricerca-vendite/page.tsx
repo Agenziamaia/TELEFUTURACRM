@@ -6,6 +6,7 @@ import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
+import { CATEGORIE_CANONICHE, categoriaDef, categoriaDi } from "@/lib/tassonomia";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { codiciPerBrand } from "@/lib/codiciInserimento";
 
@@ -952,6 +953,7 @@ export default function RicercaContratto() {
                                 <tr>
                                     <th className="px-4 py-4 font-semibold">Venditore</th>
                                     <th className="px-4 py-4 font-semibold">Brand</th>
+                                    <th className="px-4 py-4 font-semibold">Categoria</th>
                                     <th className="px-4 py-4 font-semibold">Prodotto</th>
                                     <th className="px-4 py-4 font-semibold">Cliente</th>
                                     <th className="px-4 py-4 font-semibold">Negozio</th>
@@ -959,7 +961,6 @@ export default function RicercaContratto() {
                                         contratto; prima di esso la colonna Codice ins. */}
                                     <th className="px-4 py-4 font-semibold">Codice ins.</th>
                                     <th className="px-4 py-4 font-semibold">Codice contratto</th>
-                                    <th className="px-4 py-4 font-semibold">Data Registrazione</th>
                                     <th className="px-4 py-4 font-semibold">Data Attivazione</th>
                                     <th className="px-4 py-4 font-semibold">Stato</th>
                                     <th className="px-4 py-4 w-32 text-center">Azioni</th>
@@ -970,12 +971,12 @@ export default function RicercaContratto() {
                                     <tr key={row.id} className="border-b border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-colors">
                                         <td className="px-4 py-3 text-slate-300">{row.venditore}</td>
                                         <td className="px-4 py-3 font-medium text-white">{row.brand}</td>
+                                        <td className="px-4 py-3">{(() => { const d = categoriaDef((row.raw?.categoria_macro as string) || categoriaDi(row.brand, row.raw?.categoria as string, row.prodotto)); return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border" style={{ color: d.color, borderColor: d.color + "55", backgroundColor: d.color + "18" }}>{d.label}</span>; })()}</td>
                                         <td className="px-4 py-3 text-slate-300">{row.prodotto}</td>
                                         <td className="px-4 py-3 text-slate-300 font-medium">{row.cliente}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{row.negozio}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{codInsDi(row) || "—"}</td>
                                         <td className="px-4 py-3 text-slate-400 font-mono text-xs">{row.codice_attivazione}</td>
-                                        <td className="px-4 py-3 text-slate-500 text-xs">{row.data_registrazione}</td>
                                         <td className="px-4 py-3 text-slate-500 text-xs">{row.data_attivazione}</td>
                                         <td className="px-4 py-3">
                                             <span className={cn(
@@ -1071,7 +1072,7 @@ export default function RicercaContratto() {
                     if (k === "contract::negozio") return uniqueNegozi;
                     if (k === "contract::brand") return uniqueBrands;
                     if (k === "contract::prodotto") return uniqueProdotti;
-                    if (k === "contract::categoria") return Array.from(new Set(uniqueProdotti.length ? contractList.map(c => String(c.raw?.categoria || "")).filter(Boolean) : [])).sort();
+                    if (k === "contract::categoria") return CATEGORIE_CANONICHE;  // solo categorie ufficiali, mai valori grezzi tipo "SKY FIBRA"
                     // Segnalazione 71/68: il codice di inserimento va a tendina con i
                     // codici VERI del brand (elenco unico condiviso con Registra
                     // Contratto). Prima si ricavavano dai contratti gia' salvati,
@@ -1181,7 +1182,7 @@ export default function RicercaContratto() {
                                 )}
                                 {detailMode === "edit" && (
                                     <div className="rounded-xl border border-indigo-400/30 bg-indigo-400/10 px-4 py-3 text-xs text-indigo-200">
-                                        Le modifiche non sono immediate: vengono inviate come richiesta di approvazione all&apos;amministrazione (Sandra, Claudia, Marta, Franca, Luca).
+                                        Le modifiche non sono immediate: vengono inviate come richiesta di approvazione all&apos;amministrazione.
                                     </div>
                                 )}
 
