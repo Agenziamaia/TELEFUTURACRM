@@ -337,6 +337,12 @@ const extractDetails=(d)=>{
   joinPairs(d.cbTnpModelli,d.cbTnpImeis,"Terminali CB");
   if(Array.isArray(d.fwFSecLines)){const sl=d.fwFSecLines.filter(Boolean);if(sl.length)out["2e Linee"]=sl.join(", ");}
   Object.keys(d).forEach(k=>{if(DET_SKIP[k]||DET_SELOBJ[k])return;const v=d[k];if(v===null||v===undefined||v===""||v===false)return;if(typeof v==="object")return;const lbl=DET_LABELS[k]||k;const yv=detYN(v);if(yv!==null&&yv!==undefined&&yv!=="")out[lbl]=yv;});
+  // Il codice del box "Dati contratto" (usato da WindTre e da tutti i prodotti
+  // senza un campo Cod.Ins. dedicato) sta in codiceOverride, che pero' e' in
+  // DET_SKIP: non veniva MAI salvato e il contratto restava senza Codice
+  // Inserimento. Lo scriviamo qui, senza sovrascrivere un Cod.Ins. gia' presente.
+  const _codIns=String(d.codiceOverride==null?"":d.codiceOverride).trim();
+  if(_codIns&&!out["Cod.Ins."])out["Cod.Ins."]=_codIns;
   return out;
 };
 
