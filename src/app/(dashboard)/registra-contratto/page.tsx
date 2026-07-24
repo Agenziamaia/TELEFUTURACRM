@@ -3659,6 +3659,11 @@ export default function CRM() {
 
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
   const cats=(brand==="windtre"?getW3(tipoCliente):brand==="vodafone"?getVF(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):[]);
+  // Segnalazione 84: con un contratto energia (di qualsiasi brand) serve una
+  // cartella "Fattura" per la bolletta del vecchio operatore.
+  const _blEnergia=(BRANDS.find(b=>b.id===brand)||{}).label||"";
+  const haEnergia=cats.some(g=>(sales[g.id]||[]).some(sale=>g.subs.some(sub=>
+    sale&&sale[sub.id]&&sale[sub.id].active&&categoriaDi(_blEnergia,g.title,sub.title)==="energia")));
   const sT=m=>{setToast(m);setTimeout(()=>setToast(null),3500)};
   const uA=(k,v)=>setAna(p=>({...p,[k]:v}));
   const gS=catId=>sales[catId]||[{}];
@@ -4181,8 +4186,8 @@ export default function CRM() {
         </div>}
         {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #17a2b8",marginTop:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#17a2b8",marginBottom:14,textTransform:"uppercase"}}>📎 Step 5 — Allegati</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-            {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+            {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
               onDragOver={e=>onBoxDragOver(e,a.t)} onDragEnter={e=>onBoxDragOver(e,a.t)}
               onDragLeave={onBoxDragLeave} onDrop={e=>onBoxDrop(e,a.t)}
               style={{display:"block",border:"2px dashed "+(over?"#17a2b8":(cnt>0?"rgba(23,162,184,0.55)":"rgba(255,255,255,0.1)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"rgba(255,255,255,0.03)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:700}}>Carica</div><div style={{fontSize:9,color:"#64748b",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"#17a2b8",fontWeight:700}}>{cnt} file</div>}</label>;})}

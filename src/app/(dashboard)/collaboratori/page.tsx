@@ -979,7 +979,13 @@ type RitardoRow = { id: string; employee_name: string; store: string; date: stri
 
 function RitardiSection() {
     const { user } = useAuth();
-    const reportAll = ["admin", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
+    // Segnalazione 85: l'amministrazione deve poter segnalare i ritardi di TUTTI i
+    // collaboratori. Prima l'elenco era ["admin","direttore_generale","direttore_commerciale"]:
+    // restavano fuori il ruolo "amministrativo" (Sandra, Claudia) e "dev", che quindi
+    // vedevano la pagina filtrata sul proprio negozio (l'Ufficio) e non potevano
+    // segnalare per altri. Ora vale la regola del CRM: chi vede tutti i negozi, piu'
+    // il direttore commerciale.
+    const reportAll = seesAllStores(user?.role) || user?.role === "direttore_commerciale";
     const isStoreMgr = user?.role === "store_manager";
     const canReportOthers = reportAll || isStoreMgr;
 

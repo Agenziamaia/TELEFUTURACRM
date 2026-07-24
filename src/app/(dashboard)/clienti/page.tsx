@@ -79,7 +79,9 @@ function mapRowToContratto(row: Record<string, unknown>): Contratto {
 const CATEGORIE_DOC = [
     { id: "documento", label: "Documenti", color: "#38bdf8", match: (t: string | null) => (t || "").toLowerCase() === "documento" },
     { id: "contratti", label: "Contratti", color: "#a78bfa", match: (t: string | null) => (t || "").toLowerCase() === "contratti" },
-    { id: "altro", label: "Altro", color: "#94a3b8", match: (t: string | null) => !["documento", "contratti"].includes((t || "").toLowerCase()) },
+    // Segnalazione 84: bollette del vecchio operatore sui contratti energia.
+    { id: "fattura", label: "Fatture", color: "#fbbf24", match: (t: string | null) => (t || "").toLowerCase() === "fattura" },
+    { id: "altro", label: "Altro", color: "#94a3b8", match: (t: string | null) => !["documento", "contratti", "fattura"].includes((t || "").toLowerCase()) },
 ];
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
