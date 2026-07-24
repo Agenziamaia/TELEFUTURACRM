@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink } from "lucide-react";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { useRouter } from "next/navigation";
 
 interface Cliente {
@@ -84,6 +85,8 @@ const CATEGORIE_DOC = [
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
     const router = useRouter();
     const [docs, setDocs] = useState<{ id: string; file_url: string; file_name: string; contract_id: string; file_type: string | null; created_at: string | null }[]>([]);
+    // Immagine aperta a schermo (prima si apriva in una scheda nuova).
+    const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
 
     // Documenti caricati: allegati dei contratti (PDA) di questo cliente.
     useEffect(() => {
@@ -280,19 +283,34 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 <span className="text-[10px] text-slate-600">{items.length} file</span>
                                             </div>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                {items.map((d) => (
-                                                    <a key={d.id} href={d.file_url} target="_blank" rel="noreferrer"
-                                                        className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group">
-                                                        <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
-                                                        <span className="flex-1 min-w-0">
-                                                            <span className="block text-xs text-slate-300 truncate">{d.file_name || "documento"}</span>
-                                                            <span className="block text-[10px] text-slate-600">
-                                                                {d.created_at ? new Date(d.created_at).toLocaleDateString("it-IT") : "—"} · {d.contract_id}
+                                                {items.map((d) => {
+                                                    // Le immagini si aprono qui sopra invece che in una scheda nuova.
+                                                    const isImmagine = /^image\//i.test(d.file_type || "")
+                                                        || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(d.file_name || "");
+                                                    const contenuto = (
+                                                        <>
+                                                            <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
+                                                            <span className="flex-1 min-w-0">
+                                                                <span className="block text-xs text-slate-300 truncate">{d.file_name || "documento"}</span>
+                                                                <span className="block text-[10px] text-slate-600">
+                                                                    {d.created_at ? new Date(d.created_at).toLocaleDateString("it-IT") : "—"} · {d.contract_id}
+                                                                </span>
                                                             </span>
-                                                        </span>
-                                                        <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
-                                                    </a>
-                                                ))}
+                                                            <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
+                                                        </>
+                                                    );
+                                                    const cls = "flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group text-left w-full";
+                                                    return isImmagine ? (
+                                                        <button key={d.id} type="button" className={cls}
+                                                            onClick={() => setLightbox({ src: d.file_url, alt: d.file_name || "" })}>
+                                                            {contenuto}
+                                                        </button>
+                                                    ) : (
+                                                        <a key={d.id} href={d.file_url} target="_blank" rel="noreferrer" className={cls}>
+                                                            {contenuto}
+                                                        </a>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     );
@@ -318,6 +336,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                     </button>
                 </div>
             </div>
+            {lightbox && (
+                <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />
+            )}
         </div>
     );
 }

@@ -14,6 +14,7 @@ import { roleLabel, seesAllStores, seesWholeStore } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply } from "lucide-react";
 
 // Segnalazione 74: testo breve del messaggio citato (i tag @[tipo:id|etichetta]
@@ -80,6 +81,8 @@ export default function ChatPage() {
   const [text, setText] = useState("");
   // Segnalazione 74: messaggio a cui si sta rispondendo (stile WhatsApp).
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  // Immagine aperta a schermo (prima si apriva in una scheda nuova).
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const [files, setFiles] = useState([]);
   const [refs, setRefs] = useState([]);          // record CRM taggati nel messaggio in corso
   const [showTag, setShowTag] = useState(false);
@@ -359,7 +362,9 @@ export default function ChatPage() {
                         {(m.attachments || []).map((a) => (
                           <div key={a.id} className="mb-1">
                             {isImg(a.mime)
-                              ? <a href={a.url} target="_blank" rel="noreferrer"><img src={a.url} alt={a.name || ""} className="max-w-[220px] max-h-[220px] rounded-lg object-cover" /></a>
+                              ? <button type="button" onClick={() => setLightbox({ src: a.url, alt: a.name || "" })} title="Apri l'immagine">
+                                  <img src={a.url} alt={a.name || ""} className="max-w-[220px] max-h-[220px] rounded-lg object-cover cursor-zoom-in" />
+                                </button>
                               : <a href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-black/20 hover:bg-black/30 text-xs"><FileText className="w-4 h-4 shrink-0" /><span className="truncate max-w-[180px]">{a.name || "file"}</span></a>}
                           </div>
                         ))}
@@ -575,6 +580,10 @@ export default function ChatPage() {
         <NewChatModal meId={meId} onClose={() => setShowNew(false)}
           onCreated={(cid) => { setShowNew(false); reloadInbox(); setSelId(cid); }}
           onBroadcastDone={() => { setShowNew(false); reloadInbox(); }} />
+      )}
+
+      {lightbox && (
+        <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />
       )}
     </div>
   );
