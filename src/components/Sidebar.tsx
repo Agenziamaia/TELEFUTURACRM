@@ -74,8 +74,8 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         label: "Vendite",
         icon: FileText,
         children: [
-            { name: "Registra Vendita", href: "/registra-contratto", icon: FilePlus, roles: EVERYONE },
-            { name: "Ricerca Vendite", href: "/ricerca-contratto", icon: Database, roles: EVERYONE },
+            { name: "Registra Vendita", href: "/registra-vendita", icon: FilePlus, roles: EVERYONE },
+            { name: "Ricerca Vendite", href: "/ricerca-vendite", icon: Database, roles: EVERYONE },
             { name: "Tracking pda", href: "/pda/tracking", icon: Navigation, roles: EVERYONE },
         ],
     },

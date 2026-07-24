@@ -89,7 +89,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
 
     const apriHit = (h: Hit) => {
         setOpenRes(false); setQ("");
-        router.push(`/ricerca-contratto?id=${encodeURIComponent(h.contractId)}`);
+        router.push(`/ricerca-vendite?id=${encodeURIComponent(h.contractId)}`);
     };
 
     // ─── Schermo intero ───

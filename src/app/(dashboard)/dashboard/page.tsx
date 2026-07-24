@@ -170,7 +170,7 @@ export default function Dashboard() {
                   ? "Prova a selezionare “Tutto”, oppure registra una vendita."
                   : "Registra la prima vendita per popolare la dashboard."}
               </p>
-              <Link href="/registra-contratto" className="primary-btn inline-flex items-center gap-2 mt-4">
+              <Link href="/registra-vendita" className="primary-btn inline-flex items-center gap-2 mt-4">
                 Registra Vendita <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
@@ -216,7 +216,7 @@ export default function Dashboard() {
               <div className="glass-card p-5">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-white">Ultimi contratti</h3>
-                  <Link href="/ricerca-contratto" className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+                  <Link href="/ricerca-vendite" className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
                     Vedi tutti <ArrowRight className="w-3 h-3" />
                   </Link>
                 </div>

@@ -32,7 +32,7 @@ export interface ChatRef { type: RefKind; id: string; label: string }
 /** Dove porta il tag quando ci clicchi. */
 export function refHref(r: ChatRef): string {
   if (r.type === "cliente") return `/clienti?id=${encodeURIComponent(r.id)}`;
-  if (r.type === "contratto") return `/ricerca-contratto?id=${encodeURIComponent(r.id)}`;
+  if (r.type === "contratto") return `/ricerca-vendite?id=${encodeURIComponent(r.id)}`;
   return `/calendario?appuntamento=${encodeURIComponent(r.id)}`;
 }
 

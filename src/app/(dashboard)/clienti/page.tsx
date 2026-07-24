@@ -105,7 +105,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     }, [contratti]);
 
     // Click su una vendita -> apre il dettaglio in Ricerca Contratto (deep link ?id=).
-    const openContract = (id: string) => { onClose(); router.push(`/ricerca-contratto?id=${encodeURIComponent(id)}`); };
+    const openContract = (id: string) => { onClose(); router.push(`/ricerca-vendite?id=${encodeURIComponent(id)}`); };
 
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
