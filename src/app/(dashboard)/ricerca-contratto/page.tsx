@@ -312,6 +312,14 @@ export default function RicercaContratto() {
             // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
             if (filterCodiceAttivazione) query = query.eq('dettagli->>"Cod.Ins."', filterCodiceAttivazione);
             if (filterCellulare) query = query.ilike("clients.cellulare", `%${filterCellulare}%`);
+            // Segnalazione 80: i quattro filtri data non venivano MAI applicati alla
+            // ricerca (li usava solo il conteggio delle tessere brand): si sceglieva
+            // una data e l'elenco restava identico. Le date sono in formato
+            // AAAA-MM-GG, quindi il confronto e' diretto.
+            if (daDataRegistrazione) query = query.gte("data_registrazione", daDataRegistrazione);
+            if (aDataRegistrazione) query = query.lte("data_registrazione", aDataRegistrazione);
+            if (daDataAttivazione) query = query.gte("data_attivazione", daDataAttivazione);
+            if (aDataAttivazione) query = query.lte("data_attivazione", aDataAttivazione);
 
             if (filterCliente) {
                 const safe = filterCliente.trim().replace(/[",()]/g, "");
@@ -380,13 +388,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra]);
+    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
 
     // Debounced fetch
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra]);
+    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di

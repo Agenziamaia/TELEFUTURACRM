@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { RotateCcw, Download, Eye, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
+import { seesAllStores } from "@/lib/roles";
 
 //  Types ─
 type DocKey = "cassa" | "pos" | "ddt_w3" | "ddt_vf" | "fatture";
@@ -770,7 +771,12 @@ function VistaGestione({ isAdmin, userStore, history }: { isAdmin: boolean; user
 //  Main Page 
 export default function ChiusuraNegozio() {
     const { user } = useAuth();
-    const isAdmin = user?.role === "admin" || user?.role === "dev";
+    // Segnalazione 82: la vista completa era riservata ai soli ruoli admin/dev,
+    // quindi l'amministrazione (amministrativo) e la direzione generale vedevano
+    // la pagina filtrata sul proprio negozio - che per loro e' l'Ufficio o e'
+    // vuoto - e quindi NESSUNA chiusura. Ora vale la regola del CRM: chi vede
+    // tutti i negozi vede tutte le chiusure.
+    const isAdmin = seesAllStores(user?.role);
     const userStore = user?.negozio || "";
     const [history, setHistory] = useState<Chiusura[]>([]);
     const [loading, setLoading] = useState(true);
