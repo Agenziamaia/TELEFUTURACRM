@@ -3949,7 +3949,12 @@ export default function CRM() {
           categoria_macro: "extra",
           controlli: [],
           prodotto: mi.product,
-          stato: "Nuovo",
+          // Segnalazione 52: anche i prodotti a marginalita' salvati INSIEME a una
+          // registrazione brand sono vendite Extra, quindi nascono gia' Attivi.
+          // Questo percorso era rimasto su "Nuovo" (l'altro, la vendita diretta
+          // senza brand, era gia' stato corretto).
+          stato: "Attivo",
+          stato_negozio: "attivato",
           venditore: mi.vendor || selVend,
           negozio: mi.store || selNeg,
           codice_attivazione: "VENDITA-DIRETTA",
