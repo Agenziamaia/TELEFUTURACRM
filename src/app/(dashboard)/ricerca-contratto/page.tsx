@@ -1003,7 +1003,16 @@ export default function RicercaContratto() {
             {selectedContract && (() => {
                 const row = selectedContract;
                 const det = dettagliOf(row);
-                const detEditable = det.filter(([, v]) => v === null || typeof v !== "object");
+                // Segnalazione 67/71: il codice di inserimento vive nei dettagli ma si
+                // mostra (e si modifica) nel box "Dati contratto". La chiave cambia da
+                // brand a brand: uso quella davvero presente, altrimenti la standard.
+                const codInsKey = (() => {
+                    const d = (row.raw?.dettagli as Record<string, unknown>) || {};
+                    if (d["Cod.Ins."] !== undefined) return "Cod.Ins.";
+                    return Object.keys(d).find(k => /^cod\.?\s?ins/i.test(k)) ?? "Cod.Ins.";
+                })();
+                // esclusa dai "Dettagli" per non averla due volte
+                const detEditable = det.filter(([k, v]) => k !== codInsKey && (v === null || typeof v !== "object"));
                 const detReadonly = det.filter(([, v]) => v !== null && typeof v === "object");
                 const pendingForThis = contractReqs.filter(r => r.status === "pending");
                 const nChanges = Object.keys(pendingChanges).length;
@@ -1023,7 +1032,7 @@ export default function RicercaContratto() {
                     // Segnalazione 71: anche il codice di inserimento va a tendina.
                     // Si popola con i codici del brand del contratto; se quel brand
                     // non ne ha ancora, si mostrano tutti quelli censiti.
-                    if (/^dettagli::Cod\.Ins\./.test(k)) {
+                    if (/^dettagli::cod\.?\s?ins/i.test(k)) {
                         const b = String(row.brand || "");
                         const perBrand = codeByBrand[b] || [];
                         const tutti = Array.from(new Set(Object.values(codeByBrand).flat()));
@@ -1140,18 +1149,9 @@ export default function RicercaContratto() {
 
                                 <Section title="Dati contratto">
                                     {CONTRACT_FIELDS.map(f => renderField("contract::" + f.key, f.label, f.kind))}
-                                    {/* Segnalazione 67: nel box Dati contratto anche il codice
-                                        inserimento, che cambia nome per brand ma sta nei dettagli. */}
-                                    {(() => {
-                                        const det = (row.raw?.dettagli as Record<string, unknown>) || {};
-                                        const ci = det["Cod.Ins."] ?? Object.entries(det).find(([k]) => /^cod\.?\s?ins/i.test(k))?.[1];
-                                        return (
-                                            <div>
-                                                <span className="text-[11px] uppercase tracking-wider text-slate-500">Codice inserimento</span>
-                                                <p className="text-white text-sm break-words">{ci ? String(ci) : "—"}</p>
-                                            </div>
-                                        );
-                                    })()}
+                                    {/* Segnalazione 67/71: il codice inserimento sta nel box Dati
+                                        contratto ed e' modificabile come gli altri campi (tendina). */}
+                                    {renderField("dettagli::" + codInsKey, "Codice inserimento")}
                                 </Section>
 
                                 <Section title="Anagrafica cliente">
