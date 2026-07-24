@@ -14,7 +14,8 @@ export const CODICI_SKY = ["Acilia", "Donna", "Magliana", "Garbatella", "Promont
 export const CODICI_TIM = ["Collatina"];
 export const CODICI_VERY = ["Donna", "Promontori", "Garbatella"];
 export const CODICI_HO = ["Collatina", "Donna", "Magliana", "Promontori"];
-export const CODICI_KENA = ["Collatina", "Donna", "Magliana", "Promontori"];
+// Segnalazione 68: per Kena l'unico codice valido e' Collatina (indicazione ufficio).
+export const CODICI_KENA = ["Collatina"];
 
 /** Chiave normalizzata del brand (regge "WindTre", "Wind3", "Ho. Mobile", ...). */
 function chiaveBrand(brand: string | null | undefined): string {

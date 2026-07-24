@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation } from "lucide-react";
+import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation, FileText } from "lucide-react";
 import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
@@ -372,14 +372,19 @@ export default function RicercaContratto() {
             }
             if (isTecnico) q = q.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
             else if (!showExtra) q = q.not("brand", "ilike", "extra");
+            // Segnalazione 80: le tessere devono seguire GLI STESSI filtri data
+            // dell'elenco. Prima guardavano solo le date di registrazione, quindi
+            // filtrando per data di attivazione l'elenco cambiava e le tessere no.
             if (daDataRegistrazione) q = q.gte("data_registrazione", daDataRegistrazione);
             if (aDataRegistrazione) q = q.lte("data_registrazione", aDataRegistrazione);
+            if (daDataAttivazione) q = q.gte("data_attivazione", daDataAttivazione);
+            if (aDataAttivazione) q = q.lte("data_attivazione", aDataAttivazione);
             const { data } = await q;
             const m: Record<string, number> = {};
             (data ?? []).forEach((r: any) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
             setBrandCounts(Object.entries(m).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
         })();
-    }, [isGlobalView, lockedStore, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, contractList.length]);
+    }, [isGlobalView, lockedStore, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione, contractList.length]);
 
     // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
     // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
@@ -645,6 +650,14 @@ export default function RicercaContratto() {
             {/* Segnalazione 57: tessere per brand (logo + numero contratti), come
                 nel Tracking PDA. Cliccando si filtra per quel brand. Ogni utente
                 vede i brand su cui opera. Sostituiscono il filtro Brand a tendina. */}
+            {/* Segnalazione 80: se il periodo scelto non ha contratti, le tessere
+                sparivano del tutto e sembrava che i loghi non comparissero. Ora
+                si spiega il motivo invece di lasciare il vuoto. */}
+            {brandCounts.length === 0 && (daDataRegistrazione || aDataRegistrazione || daDataAttivazione || aDataAttivazione) && (
+                <div className="mb-8 text-center text-sm text-slate-500">
+                    Nessun contratto nel periodo selezionato: per questo non compare nessun brand.
+                </div>
+            )}
             {brandCounts.length > 0 && (
                 /* Segnalazione 57: tessere piu' grandi e centrate (richiesta Francesco). */
                 <div className="flex flex-wrap gap-4 mb-8 justify-center">
@@ -1127,6 +1140,15 @@ export default function RicercaContratto() {
                                     <p className="text-xs text-slate-400 font-mono">{row.id} · {row.brand} · {row.cliente}</p>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                    {/* Segnalazione 81: scorciatoia ai documenti del cliente. Apre la
+                                        scheda cliente, dove ci sono gli allegati delle sue pratiche. */}
+                                    {!!row.raw?.client_id && (
+                                        <a href={`/clienti?id=${encodeURIComponent(String(row.raw.client_id))}`}
+                                            title="Apri i documenti di questo cliente"
+                                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 flex items-center gap-1.5">
+                                            <FileText className="w-3.5 h-3.5" /> Documenti cliente
+                                        </a>
+                                    )}
                                     {detailMode === "view" && canEditContract && (
                                         <button onClick={() => openContract(row, "edit")}
                                             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 flex items-center gap-1.5">

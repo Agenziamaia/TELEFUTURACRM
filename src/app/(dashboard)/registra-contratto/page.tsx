@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer,
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { categoriaDi, controlliDi } from "@/lib/tassonomia";
+import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { useAuth } from "@/context/AuthContext";
 const ReqCtx = createContext(null);
 const SubKeyCtx = createContext(null);
@@ -2376,7 +2377,10 @@ const HO_C = "#E6007E";
 const VERY_CODICI_NEGOZIO = ["Donna","Promontori","Garbatella"];
 const HO_CODICI_NEGOZIO = ["Collatina","Donna","Magliana","Promontori"];
 const KENA_C = "#F5A623";
-const KENA_CODICI_NEGOZIO = ["Collatina","Donna","Magliana","Promontori"];
+// Segnalazione 68: per Kena l'unico codice che deve comparire e' Collatina.
+// Preso dall'elenco unico condiviso con Ricerca Contratto, cosi' non possono
+// piu' divergere.
+const KENA_CODICI_NEGOZIO = CODICI_KENA;
 const FASCIA_OPTS = ["< 6,99 €","> 6,99 €"];
 
 const getTIM = (tc) => {
