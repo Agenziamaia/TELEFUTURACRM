@@ -57,7 +57,7 @@ const MARG_PRODUCTS=[
   ]},
   {cat:"📶 SIM",items:[
     
-    {id:"sim_w3",name:"Sim Wind3",price:null,fixedMargin:-5,linked:true,icon:"📶",type:"fixed"},
+    {id:"sim_w3",name:"Sim Wind3",price:null,fixedMargin:-5,linked:true,icon:"📶",type:"fixed"},{id:"sim_vf",name:"Sim Vodafone",price:null,fixedMargin:0,linked:true,icon:"📶",type:"fixed"},
     {id:"sim_fw",name:"Sim Fastweb",price:0,fixedMargin:-23,linked:true,icon:"📶",type:"fixed"},
     {id:"sost_fw",name:"Sost Fastweb",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
     {id:"sim_iliad",name:"Sim Iliad",price:0,fixedMargin:-10,linked:true,icon:"📶",type:"fixed"},
@@ -67,7 +67,7 @@ const MARG_PRODUCTS=[
     {id:"sost_tim",name:"Sost TIM",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
     {id:"sost_vod",name:"Sost Vodafone",price:0,fixedMargin:-10,linked:true,icon:"🔄",type:"fixed"},
     {id:"sost_w3",name:"Sost Wind3",price:0,fixedMargin:-15,linked:true,icon:"🔄",type:"fixed"},
-    {id:"sim_very",name:"Sim Very",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},
+    {id:"sim_very",name:"Sim Very",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},{id:"sim_kena",name:"Sim Kena",price:null,fixedMargin:0,linked:true,icon:"📶",type:"fixed"},
     {id:"sost_very",name:"Sost Very",price:0,fixedMargin:-7,linked:true,icon:"🔄",type:"fixed"},
     {id:"sim_l",name:"Sim L",price:0,fixedMargin:-15,linked:true,icon:"📶",type:"fixed"},
     {id:"sim_next",name:"Sim Next",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},
@@ -3762,7 +3762,7 @@ export default function CRM() {
   const addMargItem=(item)=>{setMargItems(p=>[...p,item]);setShowMargPOS(false)};
   // AUTO-MARGINALITÀ dal flusso brand: GA mobile -> SIM del brand (prezzo obbligatorio al
   // checkout); Sostituzione Sim -> voce Sost; telefono TNP -> prodotto a prezzo di listino.
-  const AUTO_SIM={windtre:"Sim Wind3",fastweb:"Sim Fastweb",iliad:"Sim Iliad",sky:"Sim Sky",ho:"Sim Ho.",tim:"Sim TIM",very:"Sim Very"};
+  const AUTO_SIM={windtre:"Sim Wind3",vodafone:"Sim Vodafone",fastweb:"Sim Fastweb",iliad:"Sim Iliad",sky:"Sim Sky",ho:"Sim Ho.",tim:"Sim TIM",very:"Sim Very",kena:"Sim Kena"};
   const AUTO_SOST={windtre:"Sost Wind3",fastweb:"Sost Fastweb",tim:"Sost TIM",vodafone:"Sost Vodafone",very:"Sost Very"};
   const computeAutoMarg=(prev,brandId,brandLabel,items)=>{
     if(!brandLabel)return prev;
@@ -3782,6 +3782,8 @@ export default function CRM() {
     return adds.length||kept.length!==prev.length?[...kept,...merged]:prev;
   };
   const margPriceMissing=(list)=>list.filter(m=>m.priceRequired&&(m.importo==null||m.importo===""));
+  // live: le voci auto seguono in tempo reale la selezione dei prodotti del brand corrente
+  useEffect(()=>{ if(bObj) setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); },[sales,skyS,brand]); // eslint-disable-line react-hooks/exhaustive-deps
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
 
   // Segnalazione 27: i contratti si duplicavano perche' "Salva contratto" non
@@ -3801,11 +3803,13 @@ export default function CRM() {
     submitLock.current = true;
     setSubmitting(true);
     let ok = false;
-    try { ok = await _finalSubmitInner(); }
+    try { ok = await _finalSubmitInner(nextMarg); }
     finally { if (!ok) { submitLock.current = false; setSubmitting(false); } }
   };
-  const _finalSubmitInner = async () => {
+  const _finalSubmitInner = async (margList = margItems) => {
     if(blockSaveAll){sT("⚠ Completa tutti i prodotti (Incompleto) prima di salvare");return;}
+    const _mm2 = margPriceMissing(margList);
+    if(_mm2.length){setShowCart(true);sT("⚠️ Inserisci il prezzo di vendita per: "+_mm2.map(m=>m.product).join(", "));return;}
     const cur = colItems();
     const fc = [...cart];
     if (cur.length > 0 && bObj) {
@@ -3819,7 +3823,7 @@ export default function CRM() {
       });
     }
 
-    if (fc.length === 0 && margItems.length === 0) {
+    if (fc.length === 0 && margList.length === 0) {
       sT("⚠️ Nessun prodotto da salvare");
       return;
     }
@@ -3977,7 +3981,7 @@ export default function CRM() {
         });
       });
 
-      margItems.forEach(mi => {
+      margList.forEach(mi => {
         contractRows.push({
           id: `EXT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
           client_id: clientId,
@@ -4338,13 +4342,20 @@ export default function CRM() {
                   </div>}
                 </div>
               ))}
-              {margItems.length>0&&<div onClick={()=>setExpR(p=>({...p,marg:!p.marg}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid #6f42c1",borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
-                <div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#6f42c1"}}>📦 Prodotti & Marginalità</div><div style={{fontSize:11,fontWeight:700,color:"#6f42c1"}}>{margItems.length} {expR.marg?"▾":"▸"}</div></div>
-                {expR.marg&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
+              {margItems.length>0&&<div onClick={()=>setExpR(p=>({...p,marg:(p.marg??true)?false:true}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid #6f42c1",borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#6f42c1"}}>📦 Prodotti & Marginalità</div><div style={{fontSize:11,fontWeight:700,color:"#6f42c1"}}>{margItems.length} {(expR.marg??true)?"▾":"▸"}</div></div>
+                {(expR.marg??true)&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                   {margItems.map((m,mi)=>(
                     <div key={mi} style={{background:"rgba(255,255,255,0.03)",borderRadius:6,padding:"5px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0"}}>{m.product}<span style={{color:"#64748b",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"#6f42c1",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
-                      <div style={{fontSize:10,fontWeight:700,color:m.priceLocked?"#17a2b8":(m.importo!=null?"#28a745":"#dc3545")}}>{m.priceLocked?"listino":(m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire")}</div>
+                      {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"#17a2b8"}}>listino</div>
+                      :m.auto?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
+                        <input type="number" step="0.01" min="0" value={m.importo??""} placeholder="prezzo *"
+                          onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((x,i)=>i===mi?{...x,importo:v}:x))}}
+                          style={{width:74,padding:"4px 6px",borderRadius:6,fontSize:11,textAlign:"right",border:(m.importo==null||m.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"rgba(255,255,255,0.05)",color:"#f8fafc"}}/>
+                        <span style={{fontSize:10,color:"#8892b0"}}>€</span>
+                      </span>
+                      :<div style={{fontSize:10,fontWeight:700,color:m.importo!=null?"#28a745":"#dc3545"}}>{m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire"}</div>}
                     </div>
                   ))}
                 </div>}

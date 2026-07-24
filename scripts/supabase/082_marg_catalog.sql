@@ -63,6 +63,7 @@ BEGIN
   INSERT INTO public.marg_categories (name, kind, sort_order) VALUES ('SIM','prodotti',3) RETURNING id INTO cid;
   INSERT INTO public.marg_items (category_id, name, brand, auto_link, sort_order) VALUES
     (cid,'Sim Wind3','WindTre',true,1),
+    (cid,'Sim Vodafone','Vodafone',true,17),
     (cid,'Sim Fastweb','Fastweb',true,2),
     (cid,'Sost Fastweb','Fastweb',false,3),
     (cid,'Sim Iliad','Iliad',true,4),
@@ -74,6 +75,7 @@ BEGIN
     (cid,'Sost Wind3','WindTre',false,10),
     (cid,'Sim Very','Very Mobile',true,11),
     (cid,'Sost Very','Very Mobile',false,12),
+    (cid,'Sim Kena','Kena Mobile',true,18),
     (cid,'Sim L',NULL,false,13),
     (cid,'Sim Next',NULL,false,14),
     (cid,'Subentro/Reale Util.',NULL,false,15);
