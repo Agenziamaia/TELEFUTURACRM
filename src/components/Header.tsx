@@ -90,6 +90,44 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
         router.push(`/ricerca-contratto?id=${encodeURIComponent(h.contractId)}`);
     };
 
+    // ─── Schermo intero ───
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    useEffect(() => {
+        const onFs = () => setIsFullscreen(!!document.fullscreenElement);
+        document.addEventListener("fullscreenchange", onFs);
+        return () => document.removeEventListener("fullscreenchange", onFs);
+    }, []);
+    const toggleFullscreen = () => {
+        if (document.fullscreenElement) document.exitFullscreen?.();
+        else document.documentElement.requestFullscreen?.();
+    };
+
+    // ─── Comunicazioni: pallino sulle nuove ───
+    // Non esiste una tabella "letto/non letto": si tiene l'ultima apertura per
+    // utente e si contano le comunicazioni piu' recenti di quella.
+    const [nuoveCom, setNuoveCom] = useState(0);
+    const chiaveVisto = user?.id ? `crm_comunicazioni_viste_${user.id}` : null;
+    useEffect(() => {
+        if (!chiaveVisto) return;
+        let vivo = true;
+        (async () => {
+            try {
+                const visto = localStorage.getItem(chiaveVisto) || "1970-01-01";
+                const { count } = await supabase
+                    .from("comunicazioni")
+                    .select("id", { count: "exact", head: true })
+                    .gt("created_at", visto);
+                if (vivo) setNuoveCom(count ?? 0);
+            } catch { /* ignore */ }
+        })();
+        return () => { vivo = false; };
+    }, [chiaveVisto, pathname]);
+    const openComunicazioni = () => {
+        if (chiaveVisto) { try { localStorage.setItem(chiaveVisto, new Date().toISOString()); } catch { } }
+        setNuoveCom(0);
+        router.push("/comunicazioni");
+    };
+
     useEffect(() => {
         if (lastPathRef.current !== pathname) {
             previousPathRef.current = lastPathRef.current;
@@ -191,15 +229,30 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
             </div>
 
             <div className="flex items-center gap-6">
-                <button className="text-slate-400 hover:text-white transition-colors">
+                <button className="text-slate-400 hover:text-white transition-colors" title="Tema chiaro / scuro">
                     <Sun className="h-5 w-5" />
                 </button>
-                <button className="text-slate-400 hover:text-white transition-colors">
+                {/* Il tasto schermo intero non faceva nulla: ora entra ed esce davvero. */}
+                <button
+                    onClick={toggleFullscreen}
+                    title={isFullscreen ? "Esci da schermo intero" : "Schermo intero"}
+                    className="text-slate-400 hover:text-white transition-colors"
+                >
                     <Maximize className="h-5 w-5" />
                 </button>
-                <button className="text-slate-400 hover:text-white transition-colors relative">
+                {/* La campanella non faceva nulla: ora porta alle Comunicazioni e il
+                    pallino rosso compare solo se ce ne sono di nuove dall'ultima volta. */}
+                <button
+                    onClick={openComunicazioni}
+                    title={nuoveCom > 0 ? `${nuoveCom} comunicazioni nuove` : "Comunicazioni"}
+                    className="text-slate-400 hover:text-white transition-colors relative"
+                >
                     <Bell className="h-5 w-5" />
-                    <span className="absolute top-0 right-0 w-2 h-2 bg-rose-500 rounded-full"></span>
+                    {nuoveCom > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-rose-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center">
+                            {nuoveCom > 9 ? "9+" : nuoveCom}
+                        </span>
+                    )}
                 </button>
 
                 {/* Mobile Quick Logout */}
