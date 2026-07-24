@@ -246,8 +246,8 @@ export default function RicercaContratto() {
                 if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
-            if (isTecnico) q = q.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
-            else if (!showExtra) q = q.not("brand", "ilike", "extra");
+            if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
+            else if (!showExtra) q = q.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             const { data } = await q;
             if (data) {
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
@@ -311,8 +311,8 @@ export default function RicercaContratto() {
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
             // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
             // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
-            if (isTecnico) query = query.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
-            else if (!showExtra) query = query.not("brand", "ilike", "extra");
+            if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
+            else if (!showExtra) query = query.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
             // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
             if (filterCodiceAttivazione) query = query.eq('dettagli->>"Cod.Ins."', filterCodiceAttivazione);
@@ -374,8 +374,8 @@ export default function RicercaContratto() {
                 if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
-            if (isTecnico) q = q.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
-            else if (!showExtra) q = q.not("brand", "ilike", "extra");
+            if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
+            else if (!showExtra) q = q.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             // Segnalazione 80: le tessere devono seguire GLI STESSI filtri data
             // dell'elenco. Prima guardavano solo le date di registrazione, quindi
             // filtrando per data di attivazione l'elenco cambiava e le tessere no.
@@ -668,7 +668,7 @@ export default function RicercaContratto() {
                     {brandCounts.map(({ brand, n }) => {
                         const active = filterBrand === brand;
                         const logo = BRAND_LOGO[brand];
-                        const isExtra = brand.toLowerCase() === "extra";
+                        const isExtra = ["extra", "marginalità", "marginalita"].includes(brand.toLowerCase());
                         return (
                             <button key={brand} onClick={() => { setFilterBrand(active ? "" : brand); setPage(1); }}
                                 className={cn("flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all",
@@ -797,7 +797,7 @@ export default function RicercaContratto() {
                     {!isTecnico && (
                         <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
                             <input type="checkbox" checked={showExtra} onChange={e => { setShowExtra(e.target.checked); setPage(1); }} className="w-4 h-4 accent-indigo-500" />
-                            Mostra anche i contratti Extra 💰
+                            Mostra anche la Marginalità 💰
                         </label>
                     )}
                 </div>
@@ -997,7 +997,7 @@ export default function RicercaContratto() {
                                                     Segnalazione 64: va vista da tutti, non solo dallo
                                                     store manager, e non ha senso sulle vendite Extra,
                                                     che nel Tracking non compaiono. */}
-                                                {String(row.brand || "").trim().toLowerCase() !== "extra" && <button
+                                                {!["extra", "marginalità", "marginalita"].includes(String(row.brand || "").trim().toLowerCase()) && <button
                                                     onClick={() => {
                                                         const q = encodeURIComponent(row.cliente || "");
                                                         window.location.href = `/pda/tracking?q=${q}&id=${encodeURIComponent(row.id)}`;

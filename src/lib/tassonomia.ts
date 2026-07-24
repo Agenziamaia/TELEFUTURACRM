@@ -57,26 +57,26 @@ export const CATEGORIE: CategoriaDef[] = [
     { id: "digitale", label: "Soluzioni Digitali", desc: "Servizi digitali e cloud", color: "#22d3ee", icon: "💻" },
     { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni e pacchetti multi-servizio", color: "#ec4899", icon: "🛡️" },
     { id: "pos", label: "POS", desc: "Terminali di pagamento", color: "#f59e0b", icon: "🏧" },
-    { id: "extra", label: "Extra", desc: "Prodotti e servizi a marginalita'", color: "#94a3b8", icon: "💰" },
+    { id: "extra", label: "Marginalità", desc: "Prodotti e servizi a marginalita' (ex Extra)", color: "#94a3b8", icon: "💰" },
 ];
 
 // Etichette canoniche per compilare/modificare la categoria di una vendita
 // (le uniche ammesse nelle tendine: mai piu' valori grezzi tipo "SKY FIBRA").
 export const CATEGORIE_CANONICHE: string[] = [
-    "Mobile", "Fisso", "Energia", "TV", "Customer Base", "Multi-Servizi", "POS", "Soluzioni Digitali", "Extra",
+    "Mobile", "Fisso", "Energia", "TV", "Customer Base", "Multi-Servizi", "POS", "Soluzioni Digitali", "Marginalità",
 ];
 
 // Etichetta canonica per ogni categoria (per tradurre i valori grezzi storici
 // nella voce giusta della tendina: "MOBILE" -> "Mobile", "SKY FIBRA" -> "Fisso").
 export const CANONICA_BY_ID: Record<CategoriaId, string> = {
     mobile: "Mobile", fisso: "Fisso", energia: "Energia", tv: "TV", cb: "Customer Base",
-    multi_servizi: "Multi-Servizi", pos: "POS", digitale: "Soluzioni Digitali", extra: "Extra",
+    multi_servizi: "Multi-Servizi", pos: "POS", digitale: "Soluzioni Digitali", extra: "Marginalità",
 };
 
 // Lista ufficiale dei brand vendibili (asse 1 del flusso): le tendine brand
 // usano QUESTA, non i distinct dello storico (un brand senza vendite sparirebbe).
 export const BRAND_CANONICI: string[] = [
-    "WindTre", "Vodafone", "Fastweb", "Iliad", "Sky", "TIM", "Very Mobile", "Ho. Mobile", "Kena Mobile", "S4", "Dojo", "Extra",
+    "WindTre", "Vodafone", "Fastweb", "Iliad", "Sky", "TIM", "Very Mobile", "Ho. Mobile", "Kena Mobile", "S4", "Dojo", "Marginalità",
 ];
 
 export function categoriaDef(id: string | null | undefined): CategoriaDef {
@@ -123,9 +123,9 @@ export function categoriaDi(
     const p = testo(prodotto);
     const tutto = `${c} ${p}`;
 
-    // Il brand "Extra" raccoglie le vendite a marginalita': accessori, SIM
-    // sciolte, riparazioni. Non e' una pratica da attivare, non entra nei target.
-    if (b === "extra" || c.startsWith("prodotto")) return "extra";
+    // Il brand "Marginalità" (ex "Extra") raccoglie le vendite a marginalita':
+    // accessori, SIM sciolte, riparazioni. Non e' una pratica da attivare.
+    if (b === "extra" || b === "marginalità" || b === "marginalita" || c.startsWith("prodotto")) return "extra";
 
     // POS: terminale di pagamento (metrica di target dedicata). Prima del mobile,
     // altrimenti "terminale" del telefono lo intercetterebbe.

@@ -3986,7 +3986,7 @@ export default function CRM() {
           id: `EXT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
           client_id: clientId,
           data: dateStr,
-          brand: "Extra",
+          brand: "Marginalità",
           categoria: "Prodotto/Servizio",
           categoria_macro: "extra",
           controlli: [],
@@ -4092,7 +4092,7 @@ export default function CRM() {
       }
       const rows=margItems.map(mi=>({
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
-        client_id:clientId,data:dateStr,brand:"Extra",categoria:"Prodotto/Servizio",categoria_macro:"extra",controlli:[],
+        client_id:clientId,data:dateStr,brand:"Marginalità",categoria:"Prodotto/Servizio",categoria_macro:"extra",controlli:[],
         // Segnalazione 52: le vendite a marginalita' sono brand Extra, quindi
         // nascono gia' Attive (non sono pratiche da attivare). Questo percorso di
         // salvataggio scriveva "Nuovo" fisso e non valorizzava l'esito negozio.

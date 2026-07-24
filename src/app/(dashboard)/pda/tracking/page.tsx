@@ -1400,7 +1400,7 @@ export default function TrackingPdaPage() {
       const lavorabili = (list as RawRow[]).filter((r: Record<string, unknown>) => {
         const b = String(r.brand || "").trim().toLowerCase();
         const p = String(r.prodotto || "").trim().toLowerCase();
-        return b !== "extra" && !/sost/.test(p);
+        return b !== "extra" && !b.startsWith("marginal") && !/sost/.test(p);
       });
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (seesWhole) return visibleStores.some((st) => sameStore(r.negozio as string, st));
