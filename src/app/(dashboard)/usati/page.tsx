@@ -658,6 +658,10 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const [capacita, setCapacita] = useState("");
   const [colore, setColore] = useState("");
   const [imei, setImei] = useState("");
+  // Segnalazione 58: l'IMEI a 15 cifre e' obbligatorio solo per smartphone e
+  // tablet; portatili e watch usano un seriale alfanumerico di lunghezza libera.
+  const imeiNumerico = tipoProdotto === "smartphone" || tipoProdotto === "tablet";
+  const imeiValido = imeiNumerico ? imei.length === 15 : imei.trim().length > 0;
   const [prezzoAcquisto, setPrezzoAcquisto] = useState("");
   const [gradoUsura, setGradoUsura] = useState("");
   const [hasExtraMargine, setHasExtraMargine] = useState(false);
@@ -694,7 +698,9 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const canNext = () => {
     if (step === 1) return !!(venditore && negozio);
     if (step === 2) return !!(tipoCliente && clienteFound !== null);
-    if (step === 3) return !!(tipoProdotto && brand && model && capacita && colore && imei.length === 15 && prezzoAcquisto && gradoUsura && (!hasExtraMargine || extraMargineImporto));
+    // Segnalazione 58: le 15 cifre valgono SOLO per smartphone e tablet.
+    // Portatili e watch hanno un seriale alfanumerico, anche piu' corto.
+    if (step === 3) return !!(tipoProdotto && brand && model && capacita && colore && imeiValido && prezzoAcquisto && gradoUsura && (!hasExtraMargine || extraMargineImporto));
     if (step === 4) return !!(metodoPagamento && (metodoPagamento !== "bonifico" || ibanPag));
     if (step === 5) return !!(allegDoc && allegDich);
     return false;
@@ -842,14 +848,15 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
                 {COLORI_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            <div><label className={lbl}>IMEI *</label>
-              {/* Segnalazione 58: solo cifre, esattamente 15. Bordo rosso finche'
-                  non sono 15, impossibile inserirne di piu' o non numerici. */}
-              <input value={imei} inputMode="numeric"
-                onChange={e => setImei(e.target.value.replace(/\D/g, "").slice(0, 15))}
-                placeholder="353456789012345"
-                className={inp + (imei && imei.length !== 15 ? " !border-rose-500" : "")} />
-              {imei && imei.length !== 15 && <p className="text-[10px] text-rose-400 mt-1">IMEI: {imei.length}/15 cifre</p>}
+            <div><label className={lbl}>{imeiNumerico ? "IMEI *" : "Seriale *"}</label>
+              {/* Segnalazione 58: le 15 cifre valgono SOLO per smartphone e tablet
+                  (bordo rosso finche' non sono 15, impossibile inserirne di piu' o
+                  non numerici). Portatili e watch: seriale alfanumerico libero. */}
+              <input value={imei} inputMode={imeiNumerico ? "numeric" : "text"}
+                onChange={e => setImei(imeiNumerico ? e.target.value.replace(/\D/g, "").slice(0, 15) : e.target.value)}
+                placeholder={imeiNumerico ? "353456789012345" : "Seriale del dispositivo"}
+                className={inp + (imeiNumerico && imei && imei.length !== 15 ? " !border-rose-500" : "")} />
+              {imeiNumerico && imei && imei.length !== 15 && <p className="text-[10px] text-rose-400 mt-1">IMEI: {imei.length}/15 cifre</p>}
             </div>
             <div><label className={lbl}>Prezzo Acquisto () *</label>
               <input type="number" step="1" min="0" value={prezzoAcquisto} onChange={e => setPrezzoAcquisto(e.target.value)} placeholder="es. 250" className={inp} />
