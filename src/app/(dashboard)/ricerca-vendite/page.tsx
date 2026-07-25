@@ -256,7 +256,10 @@ export default function RicercaContratto() {
     // checkbox li mostra. Il ruolo Tecnico li vede sempre tutti (di tutto il
     // negozio), quindi per lui il filtro non si applica.
     const isTecnico = user?.role === "tecnico";
-    const [showExtra, setShowExtra] = useState(false);
+    // Marginalità SEMPRE visibile (via il flag — regola Luca 25/07). Le tessere
+    // brand sono filtri MULTI-selezione: all'apertura tutte attive, si deflagga
+    // ciò che non interessa (offBrands = insieme dei brand spenti).
+    const [offBrands, setOffBrands] = useState<Set<string>>(new Set());
     const lockedStores = !isGlobalView && visStores.length ? negozioInValues(visStores) : null;
     const visKey = (lockedStores || []).join("|");
     // Finche' la lista visibilita' non e' arrivata NON si interroga (si eviterebbe
@@ -285,7 +288,6 @@ export default function RicercaContratto() {
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
             if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
-            else if (!showExtra) q = q.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             const { data } = await q;
             if (data) {
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
@@ -305,7 +307,7 @@ export default function RicercaContratto() {
             }
         };
         if (visReady) fetchFilters();
-    }, [isGlobalView, visKey, visReady, lockedVenditore, showExtra, isTecnico]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Elenco venditori dagli account attivi, con il proprio team in cima.
     useEffect(() => {
@@ -349,7 +351,6 @@ export default function RicercaContratto() {
             // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
             // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
             if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
-            else if (!showExtra) query = query.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
             // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
             if (filterCodiceAttivazione) query = query.eq('dettagli->>"Cod.Ins."', filterCodiceAttivazione);
@@ -362,6 +363,11 @@ export default function RicercaContratto() {
             if (aDataRegistrazione) query = query.lte("data_registrazione", aDataRegistrazione);
             if (daDataAttivazione) query = query.gte("data_attivazione", daDataAttivazione);
             if (aDataAttivazione) query = query.lte("data_attivazione", aDataAttivazione);
+
+            // tessere brand: se qualcuna è spenta, si escludono quei brand
+            if (offBrands.size > 0) {
+                offBrands.forEach((b) => { query = query.neq("brand", b); });
+            }
 
             if (filterCliente) {
                 const safe = filterCliente.trim().replace(/[",()]/g, "");
@@ -411,7 +417,6 @@ export default function RicercaContratto() {
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
             if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
-            else if (!showExtra) q = q.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             // Segnalazione 80: le tessere devono seguire GLI STESSI filtri data
             // dell'elenco. Prima guardavano solo le date di registrazione, quindi
             // filtrando per data di attivazione l'elenco cambiava e le tessere no.
@@ -424,7 +429,7 @@ export default function RicercaContratto() {
             (data ?? []).forEach((r: any) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
             setBrandCounts(Object.entries(m).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
         })();
-    }, [isGlobalView, visKey, visReady, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, daDataRegistrazione, aDataRegistrazione, aDataAttivazione, daDataAttivazione, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
     // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
@@ -434,13 +439,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
+    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -708,13 +713,16 @@ export default function RicercaContratto() {
                 /* Segnalazione 57: tessere piu' grandi e centrate (richiesta Francesco). */
                 <div className="flex flex-wrap gap-4 mb-8 justify-center">
                     {brandCounts.map(({ brand, n }) => {
-                        const active = filterBrand === brand;
+                        // multi-selezione: tutte ACCESE all'apertura, click = spegni/riaccendi
+                        const active = !offBrands.has(brand);
                         const logo = BRAND_LOGO[brand];
                         const isExtra = ["extra", "marginalità", "marginalita"].includes(brand.toLowerCase());
                         return (
-                            <button key={brand} onClick={() => { setFilterBrand(active ? "" : brand); setPage(1); }}
+                            <button key={brand}
+                                onClick={() => { setOffBrands((p) => { const nx = new Set(p); if (nx.has(brand)) nx.delete(brand); else nx.add(brand); return nx; }); setPage(1); }}
+                                title={active ? "Attivo — clicca per nascondere questo brand" : "Nascosto — clicca per mostrarlo di nuovo"}
                                 className={cn("flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all",
-                                    active ? "border-indigo-400/60 bg-indigo-500/10" : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]")}>
+                                    active ? "border-indigo-400/60 bg-indigo-500/10" : "border-white/10 bg-white/[0.02] opacity-40 grayscale hover:opacity-70")}>
                                 {/* Richiesta Luca 25/07: SOLO il logo (un filo piu' grande), niente
                                     nome — il brand si riconosce dal marchio. Resta il conteggio. */}
                                 <span className="h-16 flex items-center justify-center" title={brand}>
@@ -722,7 +730,7 @@ export default function RicercaContratto() {
                                         : logo ? <img src={logo} alt={brand} className="h-16 w-auto max-w-[160px] object-contain" />
                                             : <span className="text-lg font-bold text-slate-200">{brand}</span>}
                                 </span>
-                                <span className="text-xs text-slate-400 tabular-nums leading-none">{n} contratti</span>
+                                <span className="text-xs text-slate-400 tabular-nums leading-none">{n} {isExtra ? "vendite" : "contratti"}</span>
                             </button>
                         );
                     })}
@@ -877,12 +885,6 @@ export default function RicercaContratto() {
                         <Search className="w-5 h-5 text-indigo-400" />
                         Filtri di ricerca
                     </h3>
-                    {!isTecnico && (
-                        <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
-                            <input type="checkbox" checked={showExtra} onChange={e => { setShowExtra(e.target.checked); setPage(1); }} className="w-4 h-4 accent-indigo-500" />
-                            Mostra anche la Marginalità 💰
-                        </label>
-                    )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 
