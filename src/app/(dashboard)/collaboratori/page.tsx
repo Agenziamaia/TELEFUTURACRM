@@ -6,7 +6,7 @@ import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, His
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
+import { seesAllStores, seesWholeStore, isAdminOrAbove, canUseBadge } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
 
 type TabId = "badge" | "ferie" | "malattia" | "ritardi";
@@ -84,6 +84,9 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     const [teamStats, setTeamStats] = useState({ presenti: 0, totalMinutes: 0 });
     const [loading, setLoading] = useState(true);
 
+    // Il timer/inizia turno e' SOLO per il call center (regola Luca 25/07):
+    // chi supervisiona le presenze non timbra e la tabella prende tutto lo spazio.
+    const puoTimbrare = canUseBadge(user?.role);
     const status: "off" | "running" | "paused" = !activeShift ? "off" : activeShift.pause_started_at ? "paused" : "running";
     const canStart = status === "off";
     const canPause = status === "running";
@@ -206,8 +209,8 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                {/* Badge Action Card */}
-                <div className="xl:col-span-4 glass-card p-8 flex flex-col items-center text-center relative overflow-hidden group">
+                {/* Badge Action Card — solo call center */}
+                {puoTimbrare && <div className="xl:col-span-4 glass-card p-8 flex flex-col items-center text-center relative overflow-hidden group">
                     {/* Decorative background logo icon */}
                     <Clock className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 text-white/5 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700" />
 
@@ -291,21 +294,29 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                         </div>
                     </div>
                     {user?.name && <StoricoPersonale nome={user.name} />}
-                </div>
+                </div>}
 
-                {/* Dashboard admin/Team View */}
-                <div className="xl:col-span-8 flex flex-col gap-6 min-w-0">
+                {/* Dashboard admin/Team View: senza card timbratura occupa TUTTA la larghezza */}
+                <div className={cn(puoTimbrare ? "xl:col-span-8" : "xl:col-span-12", "flex flex-col gap-6 min-w-0")}>
                     {isAdminLike ? (
                         <>
                             <BadgeAdminDashboard onRefresh={async () => { await fetchActiveShift(); await fetchTeamStats(); }} />
                             <PresenzeAdmin />
                         </>
-                    ) : (
+                    ) : puoTimbrare ? (
                         <div className="glass-card p-8 h-full flex flex-col items-center justify-center text-center">
                             <Shield className="w-16 h-16 text-slate-700 mb-6" />
                             <h3 className="text-lg font-bold text-slate-300">Vista Team Riservata</h3>
                             <p className="text-sm text-slate-500 mt-2 max-w-sm">
                                 Solo gli amministratori e i manager possono visualizzare in tempo reale lo stato degli altri collaboratori.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="glass-card p-8 h-full flex flex-col items-center justify-center text-center">
+                            <Clock className="w-16 h-16 text-slate-700 mb-6" />
+                            <h3 className="text-lg font-bold text-slate-300">Timbratura riservata al call center</h3>
+                            <p className="text-sm text-slate-500 mt-2 max-w-sm">
+                                I ruoli di negozio non usano il badge: per presenze e turni parla col tuo responsabile.
                             </p>
                         </div>
                     )}
