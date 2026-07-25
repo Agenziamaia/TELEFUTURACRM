@@ -1350,6 +1350,15 @@ function StoricoPersonale({ nome }: { nome: string }) {
 }
 
 function PresenzeAdmin() {
+    // Cancellare una timbratura dallo storico: SOLO l'admin (regola Luca 25/07).
+    const { user } = useAuth();
+    const canDeleteShift = ["admin", "dev"].includes(user?.role || "");
+    const [delId, setDelId] = useState<number | null>(null);
+    const eliminaTimbratura = async (id: number) => {
+        await supabase.from("shifts").delete().eq("id", id);
+        setDelId(null);
+        setRows((prev) => prev.filter((r) => r.id !== id));
+    };
     const primoDelMese = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
     const [da, setDa] = useState(primoDelMese());
     const [a, setA] = useState(() => new Date().toISOString().slice(0, 10));
@@ -1473,11 +1482,12 @@ function PresenzeAdmin() {
                             <th className="px-3 py-2.5 text-right">Uscita</th>
                             <th className="px-3 py-2.5 text-right">Pausa</th>
                             <th className="px-3 py-2.5 text-right">Ore nette</th>
+                            {canDeleteShift && <th className="px-3 py-2.5 w-16"></th>}
                         </tr>
                     </thead>
                     <tbody>
                         {filtered.length === 0 ? (
-                            <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500">Nessuna presenza nel periodo.</td></tr>
+                            <tr><td colSpan={canDeleteShift ? 8 : 7} className="px-3 py-8 text-center text-slate-500">Nessuna presenza nel periodo.</td></tr>
                         ) : filtered.map((x) => (
                             <tr key={x.id} className="border-t border-white/5 text-slate-300">
                                 <td className="px-3 py-2">{new Date(x.started_at).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}</td>
@@ -1487,6 +1497,19 @@ function PresenzeAdmin() {
                                 <td className="px-3 py-2 text-right">{x.ended_at ? new Date(x.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                                 <td className="px-3 py-2 text-right text-amber-400/80">{Math.round(x.total_pause_minutes || 0)}m</td>
                                 <td className="px-3 py-2 text-right font-bold text-slate-100">{fmtOre(oreNette(x))}</td>
+                                {canDeleteShift && (
+                                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                                        {delId === x.id ? (
+                                            <span className="inline-flex items-center gap-1">
+                                                <button onClick={() => eliminaTimbratura(x.id)} className="text-[10px] px-2 py-1 rounded-md bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 font-bold">Elimina</button>
+                                                <button onClick={() => setDelId(null)} className="text-[10px] px-1.5 py-1 rounded-md text-slate-400 hover:text-white">✕</button>
+                                            </span>
+                                        ) : (
+                                            <button onClick={() => setDelId(x.id)} title="Elimina timbratura (solo admin)"
+                                                className="p-1 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors">🗑</button>
+                                        )}
+                                    </td>
+                                )}
                             </tr>
                         ))}
                     </tbody>
