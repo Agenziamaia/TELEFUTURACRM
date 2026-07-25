@@ -221,6 +221,37 @@ export default function RicercaContratto() {
     const canEditContract = ["store_manager", "admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
     // Approvazione modifiche = amministrazione (Sandra, Claudia, Marta, Franca, Luca).
     const canApprove = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    // Cestino contratto (regola Luca 25/07): bottone dallo store manager in su.
+    // Eliminano DIRETTAMENTE amministrazione, admin e direzione commerciale
+    // (+ direzione generale); lo store manager invia la richiesta e serve
+    // l'approvazione dell'amministrazione, come per le modifiche.
+    const canDeleteDirect = ["amministrativo", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
+    const canDeleteButton = canDeleteDirect || user?.role === "store_manager";
+    const [delTarget, setDelTarget] = useState<any>(null);
+    const [delMotivo, setDelMotivo] = useState("");
+    const [delBusy, setDelBusy] = useState(false);
+    const [delMsg, setDelMsg] = useState("");
+    const eseguiEliminazione = async () => {
+        if (!delTarget || delBusy) return;
+        setDelBusy(true); setDelMsg("");
+        if (canDeleteDirect) {
+            // gli allegati cadono in CASCADE; le richieste restano per lo storico
+            const { error } = await supabase.from("contracts").delete().eq("id", delTarget.id);
+            if (error) { setDelMsg("⚠️ Eliminazione non riuscita: " + error.message); setDelBusy(false); return; }
+            await supabase.from("contract_change_requests").update({ status: "rejected", review_note: "Contratto eliminato", reviewed_by_name: user?.name || "—", reviewed_at: new Date().toISOString() }).eq("contract_id", delTarget.id).eq("status", "pending");
+            setDelBusy(false); setDelTarget(null);
+            fetchData();
+        } else {
+            if (!delMotivo.trim()) { setDelMsg("Spiega il motivo dell'eliminazione."); setDelBusy(false); return; }
+            const { error } = await supabase.from("contract_change_requests").insert({
+                contract_id: delTarget.id, requested_by: user?.id || null, requested_by_name: user?.name || "—",
+                changes: { __delete: true, __meta: { note: delMotivo.trim(), origine: "ricerca_vendite" } },
+            });
+            if (error) { setDelMsg("⚠️ Invio non riuscito: " + error.message); setDelBusy(false); return; }
+            setDelBusy(false); setDelMsg("✅ Richiesta inviata all'amministrazione: la pratica sarà eliminata solo dopo l'approvazione.");
+            setTimeout(() => { setDelTarget(null); setDelMotivo(""); setDelMsg(""); }, 1800);
+        }
+    };
     // Segnalazione 55: i contratti brand Extra sono nascosti di default; un
     // checkbox li mostra. Il ruolo Tecnico li vede sempre tutti (di tutto il
     // negozio), quindi per lui il filtro non si applica.
@@ -553,7 +584,13 @@ export default function RicercaContratto() {
 
     const decideRequest = async (req: any, approve: boolean, note?: string) => {
         setReqBusy(req.id);
-        if (approve) {
+        // Richiesta di CANCELLAZIONE (changes.__delete): approvare = eliminare la
+        // pratica (gli allegati cadono in cascata; la richiesta resta per lo storico).
+        if (approve && (req.changes || {}).__delete) {
+            const { error: dErr } = await supabase.from("contracts").delete().eq("id", req.contract_id);
+            if (dErr) { setReqBusy(null); alert("Contratto NON eliminato: " + dErr.message); return; }
+            await supabase.from("contract_change_requests").update({ status: "rejected", review_note: "Contratto eliminato", reviewed_by_name: user?.name || "—", reviewed_at: new Date().toISOString() }).eq("contract_id", req.contract_id).eq("status", "pending").neq("id", req.id);
+        } else if (approve) {
             const { data: c } = await supabase.from("contracts").select("*").eq("id", req.contract_id).single();
             if (c) {
                 const contractPatch: Record<string, unknown> = {};
@@ -692,6 +729,41 @@ export default function RicercaContratto() {
                 </div>
             )}
 
+            {/* Cestino contratto: conferma (diretta) o richiesta (store manager) */}
+            {delTarget && (
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+                    <div className="glass-card w-full max-w-md shadow-2xl">
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2"><Trash2 className="w-5 h-5 text-rose-400" /> {canDeleteDirect ? "Elimina contratto" : "Richiesta di eliminazione"}</h3>
+                            <button onClick={() => setDelTarget(null)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <div className="text-sm text-slate-300">
+                                <span className="font-mono text-indigo-300">{delTarget.id}</span> · <b className="text-white">{delTarget.brand}</b> · {delTarget.prodotto} · {delTarget.cliente || "—"}
+                            </div>
+                            {canDeleteDirect ? (
+                                <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">Azione definitiva: la pratica sparisce da Ricerca e Tracking insieme ai suoi allegati. Non si può annullare.</p>
+                            ) : (
+                                <>
+                                    <label className="block text-sm font-medium text-slate-300">Motivo dell&apos;eliminazione <span className="text-rose-400">*</span></label>
+                                    <textarea className="glass-input w-full min-h-[90px] resize-y text-sm" placeholder="Es. pratica duplicata / inserita per errore…"
+                                        value={delMotivo} onChange={e => setDelMotivo(e.target.value)} />
+                                    <p className="text-xs text-slate-500">La pratica sarà eliminata solo dopo l&apos;approvazione dell&apos;amministrazione (arriva anche nel fulmine ⚡).</p>
+                                </>
+                            )}
+                            {delMsg && <div className={cn("text-sm font-medium", delMsg.startsWith("✅") ? "text-emerald-400" : "text-rose-300")}>{delMsg}</div>}
+                        </div>
+                        <div className="p-5 border-t border-white/10 flex justify-end gap-3">
+                            <button onClick={() => setDelTarget(null)} className="px-5 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10">Annulla</button>
+                            <button onClick={eseguiEliminazione} disabled={delBusy}
+                                className="px-6 py-2 rounded-lg text-sm font-bold bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 disabled:opacity-50">
+                                {delBusy ? "Attendere…" : canDeleteDirect ? "Elimina definitivamente" : "Invia richiesta"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Approvazione modifiche contratto — riservata all'amministrazione */}
             {canApprove && showReqs && (
                 <div className="glass-card mb-6 p-6">
@@ -707,7 +779,7 @@ export default function RicercaContratto() {
                                 <div key={r.id} className="rounded-xl bg-white/5 border border-white/10 p-4">
                                     <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
                                         <div className="text-sm text-slate-300">
-                                            <b className="text-white">{r.requested_by_name || "\u2014"}</b> chiede di modificare il contratto{" "}
+                                            <b className="text-white">{r.requested_by_name || "\u2014"}</b> chiede di {(r.changes || {}).__delete ? <b className="text-rose-300">ELIMINARE</b> : "modificare"} il contratto{" "}
                                             <button className="font-mono text-indigo-300 hover:underline"
                                                 onClick={() => {
                                                     const hit = contractList.find(c => c.id === r.contract_id);
@@ -727,6 +799,11 @@ export default function RicercaContratto() {
                                         </div>
                                     </div>
                                     <div className="space-y-1">
+                                        {(r.changes || {}).__delete && (
+                                            <div className="text-xs font-bold text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
+                                                ❌ Richiesta di CANCELLAZIONE della pratica{(r.changes?.__meta?.note) ? ` — motivo: “${r.changes.__meta.note}”` : ""} · approvare = eliminare definitivamente
+                                            </div>
+                                        )}
                                         {Object.entries(r.changes || {}).filter(([k]) => !k.startsWith("__")).map(([k, c]: any) => (
                                             <div key={k} className="text-xs text-slate-400">
                                                 <b className="text-slate-200">{c.label}</b>: <span className="text-slate-500">{fmtVal(c.da)}</span> \u2192 <span className="text-amber-300">{fmtVal(c.a)}</span>
@@ -1017,6 +1094,13 @@ export default function RicercaContratto() {
                                                 </button>}
                                                 {canEditContract && (
                                                     <button onClick={() => openContract(row, "edit")} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Modifica (richiede approvazione amministrazione)"><Edit className="w-4 h-4" /></button>
+                                                )}
+                                                {canDeleteButton && (
+                                                    <button onClick={() => { setDelTarget(row); setDelMotivo(""); setDelMsg(""); }}
+                                                        className="p-1.5 rounded bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 transition-colors"
+                                                        title={canDeleteDirect ? "Elimina contratto" : "Richiedi eliminazione (approvazione amministrazione)"}>
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
                                                 )}
                                             </div>
                                         </td>
