@@ -509,6 +509,17 @@ export default function RicercaContratto() {
         return Object.entries(d as Record<string, unknown>);
     };
 
+    // Apre il contratto della richiesta anche se NON e' nella pagina corrente
+    // (lo carica dal DB): nel dettaglio i campi richiesti sono evidenziati.
+    const openContractById = async (id: string) => {
+        const hit = contractList.find(c => c.id === id);
+        if (hit) { openContract(hit, "view"); return; }
+        const { data } = await supabase.from("contracts")
+            .select("*, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
+            .eq("id", id).maybeSingle();
+        if (!data) { alert("Contratto " + id + " non trovato."); return; }
+        openContract(mapContractToRow(data as any, (data as any).clients), "view");
+    };
     const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
         const vals: Record<string, string> = {};
         CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
@@ -572,6 +583,9 @@ export default function RicercaContratto() {
 
     const submitChangeRequest = async () => {
         if (!selectedContract || Object.keys(pendingChanges).length === 0) return;
+        // Regola Luca 25/07: OGNI richiesta che prevede autorizzazione DEVE avere
+        // il motivo compilato — senza, non parte.
+        if (!reqNote.trim()) { setReqMsg("Il motivo della modifica è obbligatorio: spiega cosa correggi e perché."); return; }
         setSaving(true);
         const payload: Record<string, unknown> = { ...pendingChanges };
         if (reqNote.trim()) payload.__meta = { note: reqNote.trim() };
@@ -794,11 +808,9 @@ export default function RicercaContratto() {
                                         <div className="text-sm text-slate-300">
                                             <b className="text-white">{r.requested_by_name || "\u2014"}</b> chiede di {(r.changes || {}).__delete ? <b className="text-rose-300">ELIMINARE</b> : "modificare"} il contratto{" "}
                                             <button className="font-mono text-indigo-300 hover:underline"
-                                                onClick={() => {
-                                                    const hit = contractList.find(c => c.id === r.contract_id);
-                                                    if (hit) openContract(hit, "view");
-                                                }}>{r.contract_id}</button>
-                                            <span className="text-slate-500"> \u00b7 {new Date(r.created_at).toLocaleString("it-IT")}</span>
+                                                onClick={() => openContractById(r.contract_id)}
+                                                title="Apri il contratto (i campi richiesti sono evidenziati)">{r.contract_id}</button>
+                                            <span className="text-slate-500"> · {new Date(r.created_at).toLocaleString("it-IT")}</span>
                                         </div>
                                         <div className="flex gap-2">
                                             <button disabled={reqBusy === r.id} onClick={() => decideRequest(r, true)}
@@ -817,9 +829,19 @@ export default function RicercaContratto() {
                                                 ❌ Richiesta di CANCELLAZIONE della pratica{(r.changes?.__meta?.note) ? ` — motivo: “${r.changes.__meta.note}”` : ""} · approvare = eliminare definitivamente
                                             </div>
                                         )}
+                                        {!(r.changes || {}).__delete && r.changes?.__meta?.note && (
+                                            <div className="text-xs text-slate-300 bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2">
+                                                📝 <b>Motivo:</b> “{r.changes.__meta.note}”
+                                            </div>
+                                        )}
                                         {Object.entries(r.changes || {}).filter(([k]) => !k.startsWith("__")).map(([k, c]: any) => (
-                                            <div key={k} className="text-xs text-slate-400">
-                                                <b className="text-slate-200">{c.label}</b>: <span className="text-slate-500">{fmtVal(c.da)}</span> \u2192 <span className="text-amber-300">{fmtVal(c.a)}</span>
+                                            <div key={k} className="text-xs">
+                                                <span className="inline-flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Campo</span>
+                                                    <b className="text-white">{c.label}</b>
+                                                    <span className="text-slate-500">da</span> <span className="text-slate-300">{fmtVal(c.da)}</span>
+                                                    <span className="text-slate-500">a</span> <span className="text-amber-300 font-bold">{fmtVal(c.a)}</span>
+                                                </span>
                                             </div>
                                         ))}
                                     </div>
@@ -831,7 +853,7 @@ export default function RicercaContratto() {
                                     </button>
                                     {openReqId === r.id && (() => {
                                         const row = contractList.find(x => x.id === r.contract_id);
-                                        if (!row) return <p className="mt-2 text-xs text-slate-500">Contratto non presente nella pagina corrente: aprilo da Ricerca per il dettaglio completo.</p>;
+                                        if (!row) return <button onClick={() => openContractById(r.contract_id)} className="mt-2 text-xs font-bold text-indigo-300 hover:text-indigo-200 hover:underline">Apri il contratto completo (con i campi richiesti in evidenza) →</button>;
                                         const changed = Object.entries(r.changes || {}).filter(([k]) => !k.startsWith("__"));
                                         const detail: [string, unknown][] = [
                                             ...CONTRACT_FIELDS.map(f => [f.label, row.raw?.[f.key]] as [string, unknown]),
@@ -1153,7 +1175,10 @@ export default function RicercaContratto() {
                 // esclusa dai "Dettagli" per non averla due volte
                 const detEditable = det.filter(([k, v]) => k !== codInsKey && (v === null || typeof v !== "object"));
                 const detReadonly = det.filter(([, v]) => v !== null && typeof v === "object");
-                const pendingForThis = contractReqs.filter(r => r.status === "pending");
+                // SOLO le richieste di QUESTO contratto (prima contava tutte le pendenti)
+                const pendingForThis = contractReqs.filter(r => r.status === "pending" && r.contract_id === row.id);
+                // campi con richiesta in corso -> evidenziati nel dettaglio
+                const pendingKeys = pendingForThis.flatMap(r => Object.keys(r.changes || {}).filter(k => !k.startsWith("__")));
                 const nChanges = Object.keys(pendingChanges).length;
 
                 // Segnalazione 71: il campo era un componente definito nel render,
@@ -1180,10 +1205,11 @@ export default function RicercaContratto() {
                 };
                 const renderField = (k: string, label: string, kind?: string) => {
                     const orig = originalOf(row, k);
+                    const inRichiesta = pendingKeys.includes(k);
                     if (detailMode === "view") {
                         return (
-                            <div>
-                                <span className="text-[11px] uppercase tracking-wider text-slate-500">{label}</span>
+                            <div className={inRichiesta ? "rounded-lg ring-2 ring-amber-400/60 bg-amber-400/10 px-2 py-1.5 -mx-2" : undefined}>
+                                <span className="text-[11px] uppercase tracking-wider text-slate-500">{label}{inRichiesta && <span className="ml-1.5 text-amber-300 font-bold normal-case">· modifica richiesta</span>}</span>
                                 <p className="text-white text-sm break-words">{fmtVal(orig)}</p>
                             </div>
                         );
@@ -1284,9 +1310,17 @@ export default function RicercaContratto() {
                                 {pendingForThis.length > 0 && (
                                     <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-200 flex items-start gap-2">
                                         <Clock className="w-4 h-4 mt-0.5 shrink-0" />
-                                        <span>
-                                            {pendingForThis.length === 1 ? "C'è una richiesta di modifica" : `Ci sono ${pendingForThis.length} richieste di modifica`} in attesa di approvazione dall&apos;amministrazione.
-                                        </span>
+                                        <div className="space-y-1.5">
+                                            <span>
+                                                {pendingForThis.length === 1 ? "C'è una richiesta di modifica" : `Ci sono ${pendingForThis.length} richieste di modifica`} in attesa di approvazione — i campi interessati sono evidenziati qui sotto.
+                                            </span>
+                                            {pendingForThis.map((pr: any) => (
+                                                <div key={pr.id} className="text-xs text-amber-100/90">
+                                                    <b>{pr.requested_by_name || "—"}</b>{pr.changes?.__meta?.note ? ` · “${pr.changes.__meta.note}”` : ""}:{" "}
+                                                    {Object.entries(pr.changes || {}).filter(([k]) => !k.startsWith("__")).map(([k, c]: any) => `${c.label}: ${fmtVal(c.da)} → ${fmtVal(c.a)}`).join(" · ") || (pr.changes?.__delete ? "richiesta di cancellazione" : "")}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                                 {detailMode === "edit" && (
@@ -1331,7 +1365,7 @@ export default function RicercaContratto() {
                                 {detailMode === "edit" && (
                                     <div className="pt-4 border-t border-white/10 space-y-3">
                                         <div>
-                                            <label className="block text-xs font-semibold text-slate-400 mb-1">Motivo della modifica (facoltativo)</label>
+                                            <label className="block text-xs font-semibold text-slate-400 mb-1">Motivo della modifica <span className="text-rose-400">* obbligatorio</span></label>
                                             <textarea rows={2} className="glass-input w-full text-sm" value={reqNote} onChange={e => setReqNote(e.target.value)}
                                                 placeholder="Es. correzione ICCID comunicata dal cliente" />
                                         </div>

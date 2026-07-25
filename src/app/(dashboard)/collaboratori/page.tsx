@@ -545,6 +545,9 @@ type VacationRequest = { id: number; employee_name: string; store: string; date_
 
 function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const { user } = useAuth();
+    // Regola Luca 25/07: la RICHIESTA ferie e' per tutti (store manager compreso)
+    // TRANNE dall'amministrativo in su, che le ferie le approva e basta.
+    const puoRichiedere = !["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
     const [reason, setReason] = useState("");
@@ -619,9 +622,9 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                 </div>
             )}
 
-            <div className={cn("grid grid-cols-1 gap-6", isAdminLike ? "xl:grid-cols-1" : "xl:grid-cols-12")}>
+            <div className={cn("grid grid-cols-1 gap-6", puoRichiedere ? "xl:grid-cols-12" : "xl:grid-cols-1")}>
                 {/* Form Richiesta */}
-                {!isAdminLike && showForm && (
+                {puoRichiedere && showForm && (
                     <div className="xl:col-span-4 space-y-6 animate-in slide-in-from-left-4 duration-300">
                         <div className="glass-card p-6 border-indigo-500/30">
                             <div className="flex items-center justify-between mb-6">
@@ -677,7 +680,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                 )}
 
                 {/* Tabella Richieste */}
-                <div className={cn(isAdminLike ? "xl:col-span-1" : showForm ? "xl:col-span-8" : "xl:col-span-12", "space-y-4")}>
+                <div className={cn(!puoRichiedere ? "xl:col-span-1" : showForm ? "xl:col-span-8" : "xl:col-span-12", "space-y-4")}>
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-1">
                         <div className="space-y-0.5">
                             <h3 className="text-lg font-bold text-white uppercase tracking-tight">
@@ -686,7 +689,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             <p className="text-xs text-slate-500">Monitoraggio e gestione dello stato approvazioni</p>
                         </div>
 
-                        {!isAdminLike && !showForm && (
+                        {puoRichiedere && !showForm && (
                             <button
                                 onClick={() => setShowForm(true)}
                                 className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-500/25 flex items-center gap-2 active:scale-[0.98]"
