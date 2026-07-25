@@ -48,17 +48,24 @@ export function UrgentTasks() {
         setTasks((p) => p.filter((t) => t.id !== id));
     };
 
-    if (!isAdmin || tasks.length === 0) return null;
+    // Sempre visibile per l'admin (anche a zero task: altrimenti non si scopre);
+    // il colore ambra e il contatore compaiono solo quando c'e' qualcosa da fare.
+    if (!isAdmin) return null;
     return (
         <div className="relative" ref={boxRef}>
-            <button onClick={() => setOpen((o) => !o)} title="Task urgenti da fare"
-                className="relative p-2 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-white/5 transition-colors">
+            <button onClick={() => setOpen((o) => !o)} title={tasks.length ? `${tasks.length} task urgenti da fare` : "Task urgenti (vuoto)"}
+                className={`relative p-2 rounded-lg hover:bg-white/5 transition-colors ${tasks.length ? "text-amber-400 hover:text-amber-300" : "text-slate-400 hover:text-white"}`}>
                 <Zap className="h-5 w-5" />
-                <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">{tasks.length}</span>
+                {tasks.length > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[10px] font-bold flex items-center justify-center">{tasks.length}</span>
+                )}
             </button>
             {open && (
                 <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-xl border border-white/10 bg-[#0f1420] shadow-2xl z-[200] p-2 space-y-1">
                     <div className="px-2 py-1.5 text-xs font-bold text-amber-300 uppercase tracking-wider">⚡ Task urgenti</div>
+                    {tasks.length === 0 && (
+                        <div className="p-3 text-sm text-slate-500">Nessuna task urgente. Qui arrivano le cose DA FARE — ad esempio un nuovo utente creato dall'amministrazione da completare con costo, visibilità e brand.</div>
+                    )}
                     {tasks.map((t) => (
                         <div key={t.id} className="p-2.5 rounded-lg bg-white/[0.03] border border-white/8">
                             <button onClick={() => { if (t.link) { router.push(t.link); setOpen(false); } }} className="text-left w-full">
