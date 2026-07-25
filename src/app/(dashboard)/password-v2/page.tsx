@@ -98,7 +98,7 @@ export default function PasswordV2Page() {
     const isAllowed = user && ["admin", "store_manager", "direttore_commerciale", "dev", "direttore_generale", "amministrativo"].includes(user.role);
     // Segnalazione 73: dal Direttore Commerciale in su si possono gestire categorie
     // e credenziali (creare raccolte per ogni brand). Gli altri restano in sola lettura.
-    const canManage = !!user && ["direttore_commerciale", "admin", "dev", "direttore_generale"].includes(user.role);
+    const canManage = !!user && ["direttore_commerciale", "amministrativo", "admin", "dev", "direttore_generale"].includes(user.role);
 
     // Categorie dal DB (password_categories), gestibili quando canManage.
     const [dbCats, setDbCats] = useState<{ id: number; brand_id: string; cat_key: string; name: string; sort: number }[]>([]);

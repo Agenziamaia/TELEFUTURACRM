@@ -241,7 +241,7 @@ export default function DocumentazionePage() {
 
     // Solo Direttore Commerciale (e superuser) puo' modificare i file (richiesta Luca #14).
     const { user } = useAuth();
-    const canEdit = ["direttore_commerciale", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    const canEdit = ["direttore_commerciale", "amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     const [isAdmin, setIsAdmin] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
     useEffect(() => { if (!canEdit && isAdmin) setIsAdmin(false); }, [canEdit, isAdmin]);

@@ -36,6 +36,8 @@ interface Contratto {
     brand: string;
     categoria: string;
     stato: string;
+    venditore?: string | null;   // segnalazione 97
+    negozio?: string | null;     // segnalazione 97
     note?: string | null;   // nota scritta allo Step 7 della registrazione
 }
 
@@ -72,6 +74,8 @@ function mapRowToContratto(row: Record<string, unknown>): Contratto {
         brand: row.brand as string,
         categoria: row.categoria as string,
         stato: row.stato as string,
+        venditore: (row.venditore as string | null) ?? null,
+        negozio: (row.negozio as string | null) ?? null,
     };
 }
 
@@ -128,12 +132,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${cliente.tipo === 'business' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'}`}>
                                     {cliente.tipo}
                                 </span>
-                                {/* Segnalazione 56: negozio di acquisizione (primo contratto). */}
-                                {cliente.acquisito_da && (
-                                    <span className="px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/25 text-[10px] font-bold text-indigo-300 uppercase tracking-widest">
-                                        {cliente.acquisito_da === "Agenzia" ? "Acquisito dall'agenzia" : `Acquisito nel negozio di: ${cliente.acquisito_da}`}
-                                    </span>
-                                )}
+                                {/* Segnalazione 97: rimosso il badge "Acquisito nel negozio di"
+                                    dall'intestazione; il negozio ora e' in colonna nella tabella. */}
                             </div>
                         </div>
                     </div>
@@ -225,12 +225,15 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                         <th className="px-4 py-3 font-bold">Data</th>
                                         <th className="px-4 py-3 font-bold">Brand</th>
                                         <th className="px-4 py-3 font-bold">Categoria</th>
+                                        {/* Segnalazione 97: Venditore e Negozio fra Categoria e Stato. */}
+                                        <th className="px-4 py-3 font-bold">Venditore</th>
+                                        <th className="px-4 py-3 font-bold">Negozio</th>
                                         <th className="px-4 py-3 font-bold text-right">Stato</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/5">
                                     {contratti.length === 0 && (
-                                        <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-600">Nessun contratto per questo cliente.</td></tr>
+                                        <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-600">Nessun contratto per questo cliente.</td></tr>
                                     )}
                                     {contratti.map((ctr: Contratto) => (
                                         <tr key={ctr.id} onClick={() => openContract(ctr.id)}
@@ -240,6 +243,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                             </td>
                                             <td className="px-4 py-3 text-white font-semibold">{ctr.brand}</td>
                                             <td className="px-4 py-3 text-slate-400">{ctr.categoria}</td>
+                                            <td className="px-4 py-3 text-slate-300">{ctr.venditore || "—"}</td>
+                                            <td className="px-4 py-3 text-slate-400 text-xs">{ctr.negozio || "—"}</td>
                                             <td className="px-4 py-3 text-right">
                                                 <span className="inline-flex items-center gap-1.5">
                                                     <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${ctr.stato === 'Attivato' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
