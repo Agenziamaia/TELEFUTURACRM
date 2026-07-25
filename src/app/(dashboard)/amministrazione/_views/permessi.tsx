@@ -15,11 +15,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { roleLabel } from "@/lib/roles";
+import { roleLabel, AREAS } from "@/lib/roles";
 import { useRoles } from "@/lib/useRoles";
 import { NAVIGATION, effectiveAllowed, OUTBOUND_HIDDEN_GROUPS, hubChildKey, hubSubKey, groupKey, type PermMap } from "@/lib/nav";
 import { CAPABILITIES, capKey, capAllowed, capChoice, type CapGroup, type CapGroupChoice } from "@/lib/capabilities";
 import { notify, dbError } from "./toast";
+
+const AREA_CHIP_COLORS: Record<string, string> = { pv: "#6366f1", cc: "#0ea5e9", ob: "#f59e0b", sede: "#a855f7" };
 
 interface Riga { href: string; nome: string; gruppo?: string; defaultRoles: string[]; livello?: number; padre?: string }
 
@@ -132,16 +134,28 @@ export function PermessiView() {
     return (
         <div className="space-y-5 max-w-4xl">
             <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 space-y-3">
-                <div className="flex flex-wrap items-end gap-3">
-                    <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Ruolo</label>
-                        <select className="glass-input text-sm" value={ruolo} onChange={(e) => setRuolo(e.target.value)}>
-                            <option value="">— Scegli il ruolo —</option>
-                            {ruoli.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-                        </select>
-                    </div>
-                    <p className="text-xs text-slate-500 pb-2 max-w-xl">
-                        Gli interruttori mostrano cosa VEDE il ruolo: menù e accesso alle pagine seguono in automatico.
+                {/* Selettore ruolo a RIQUADRI, divisi per contesto (richiesta Luca):
+                    un click e via, niente tendina da scorrere. */}
+                <div className="space-y-2.5">
+                    {AREAS.filter((a) => ruoli.some((r) => r.area === a.id)).map((a) => (
+                        <div key={a.id} className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold uppercase tracking-widest w-24 shrink-0" style={{ color: AREA_CHIP_COLORS[a.id] }}>{a.label}</span>
+                            {ruoli.filter((r) => r.area === a.id).map((r) => {
+                                const on = ruolo === r.id;
+                                return (
+                                    <button key={r.id} onClick={() => setRuolo(on ? "" : r.id)}
+                                        className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
+                                        style={on
+                                            ? { color: AREA_CHIP_COLORS[a.id], borderColor: AREA_CHIP_COLORS[a.id], background: AREA_CHIP_COLORS[a.id] + "22" }
+                                            : { color: "#94a3b8", borderColor: "rgba(255,255,255,0.1)" }}>
+                                        {r.label}{on && " ✓"}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ))}
+                    <p className="text-xs text-slate-500 pt-1">
+                        Gli interruttori mostrano cosa VEDE il ruolo scelto: menù e accesso alle pagine seguono in automatico.
                         L&apos;Admin vede sempre tutto e non è modificabile da qui.
                     </p>
                 </div>
