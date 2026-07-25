@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { ROLES, type Area, type Grade } from "@/lib/roles";
+import { ROLES, registerDynamicRoleDefs, type Area, type Grade } from "@/lib/roles";
 
 export interface RoleDefRow {
     id: string;
@@ -44,12 +44,17 @@ async function fetchRows(force = false): Promise<void> {
     _inflight = (async () => {
         const { data, error } = await supabase.from("role_defs").select("id,label,area,grades,is_custom");
         if (!error) _rows = ((data ?? []) as RoleDefRow[]).map((r) => ({ ...r, grades: Array.isArray(r.grades) ? r.grades : [] }));
+        registerDynamicRoleDefs(_rows);
         _loaded = true;
         _inflight = null;
         _subs.forEach((fn) => fn());
     })();
     return _inflight;
 }
+
+/** Carica (una volta) i ruoli DB e alimenta il registro dinamico di roles.ts:
+ *  chiamata da AuthContext al login, cosi' le etichette custom valgono ovunque. */
+export function loadRoleDefs(): Promise<void> { return fetchRows(); }
 
 export function useRoles() {
     const [, bump] = useState(0);

@@ -217,16 +217,28 @@ export const BRAND_COLORS: Record<string, { color: string; text: string }> = {
     Energia: { color: "#16a34a", text: "#4ade80" },
 };
 
+// ── Registro DINAMICO dai ruoli a database (role_defs, mig. 087) ─────────────
+// Alimentato da useRoles/AuthContext al caricamento: cosi' roleLabel, gradeLabel
+// e areaOf risolvono anche i ruoli CREATI DA UI (e le etichette modificate)
+// in TUTTO il CRM, senza cambiare i punti che li chiamano.
+const DYNAMIC = new Map<string, { label: string; area: Area; grades: Grade[] }>();
+export function registerDynamicRoleDefs(rows: { id: string; label: string; area: Area; grades: Grade[] }[]): void {
+    DYNAMIC.clear();
+    rows.forEach((r) => DYNAMIC.set(r.id, { label: r.label, area: r.area, grades: Array.isArray(r.grades) ? r.grades : [] }));
+}
+
 export function getRole(id: string): RoleDef | undefined {
     return ROLES.find((r) => r.id === id);
 }
 
 export function roleLabel(id: string): string {
-    return getRole(id)?.label ?? id;
+    return DYNAMIC.get(id)?.label ?? getRole(id)?.label ?? id;
 }
 
 export function gradesFor(id: string): Grade[] {
-    return getRole(id)?.grades ?? [];
+    const dyn = DYNAMIC.get(id);
+    if (dyn && dyn.grades.length) return dyn.grades;
+    return getRole(id)?.grades ?? dyn?.grades ?? [];
 }
 
 export function gradeLabel(roleId: string, gradeId: string | null | undefined): string {
@@ -235,7 +247,7 @@ export function gradeLabel(roleId: string, gradeId: string | null | undefined): 
 }
 
 export function areaOf(roleId: string): Area | undefined {
-    return getRole(roleId)?.area;
+    return DYNAMIC.get(roleId)?.area ?? getRole(roleId)?.area;
 }
 
 export function areaLabel(area: Area): string {

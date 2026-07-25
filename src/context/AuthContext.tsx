@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { routeBases, effectiveAllowed } from "@/lib/nav";
+import { loadRoleDefs } from "@/lib/useRoles";
 import type { RoleId } from "@/lib/roles";
 
 // Ruolo reale (da app_users / roles.ts). "admin" mantiene visibilita' globale.
@@ -118,6 +119,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })();
         return () => { vivo = false; };
     }, [baseUser?.id, baseUser?.canSwitchRole]);
+
+    // Etichette dei ruoli creati/modificati da UI: idrata il registro dinamico
+    // (roles.ts) appena la sessione esiste — vale per tutto il CRM.
+    useEffect(() => { if (baseUser?.id) loadRoleDefs(); }, [baseUser?.id]);
 
     // Protezione rotte GUIDATA DALLA NAVIGAZIONE (src/lib/nav.ts + tabella
     // role_permissions): stessa fonte della Sidebar e della pagina Permessi, in
