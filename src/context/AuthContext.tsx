@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { routeBases, effectiveAllowed } from "@/lib/nav";
+import { routeBases, effectiveAllowed, groupKey, groupByLabel } from "@/lib/nav";
 import { loadRoleDefs } from "@/lib/useRoles";
 import type { RoleId } from "@/lib/roles";
 
@@ -148,7 +148,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (pathname === "/dashboard" || pathname === "/") return;
         const hit = routeBases().find(({ base }) => base !== "/dashboard" && pathname.startsWith(base));
         if (!hit) return; // rotte fuori menu: valgono i controlli delle singole pagine
-        const ok = hit.items.some((it) => effectiveAllowed(user.role, it.href, it.roles, routePerms, it.group));
+        const ok = hit.items.some((it) => {
+            if (it.group) {
+                const g = groupByLabel(it.group);
+                if (!effectiveAllowed(user.role, groupKey(it.group), g?.roles ?? ["*"], routePerms, it.group)) return false;
+            }
+            return effectiveAllowed(user.role, it.href, it.roles, routePerms, it.group);
+        });
         if (!ok) router.push("/dashboard");
     }, [user, pathname, router, routePerms]);
 

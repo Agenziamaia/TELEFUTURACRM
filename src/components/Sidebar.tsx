@@ -41,7 +41,7 @@ import {
 
 // Struttura menù + logica permessi: fonte unica in src/lib/nav.ts
 // (amministrabile da Amministrazione → Permessi, tabella role_permissions).
-import { NAVIGATION, effectiveAllowed, hubChildKey, type NavHub, type NavEntry } from "@/lib/nav";
+import { NAVIGATION, effectiveAllowed, hubChildKey, groupKey, type NavHub, type NavEntry } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
 
 interface SidebarProps {
@@ -98,6 +98,8 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
         if (!user) return [];
         return NAVIGATION.filter((item: NavEntry) => {
             if (item.type === "link" || item.type === "hub") return vede(item.href, item.roles);
+            // gruppo: passa dal SUO interruttore (accesso all'hub) E da almeno una voce
+            if (!vede(groupKey(item.label), item.roles ?? ["*"], item.label)) return false;
             return item.children.some((c) => vede(c.href, c.roles, item.label));
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps

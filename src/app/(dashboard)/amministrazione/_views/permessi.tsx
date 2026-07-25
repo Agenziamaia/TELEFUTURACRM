@@ -16,7 +16,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel } from "@/lib/roles";
 import { useRoles } from "@/lib/useRoles";
-import { NAVIGATION, effectiveAllowed, canSeeDefault, OUTBOUND_HIDDEN_GROUPS, hubChildKey, hubSubKey, type PermMap } from "@/lib/nav";
+import { NAVIGATION, effectiveAllowed, canSeeDefault, OUTBOUND_HIDDEN_GROUPS, hubChildKey, hubSubKey, groupKey, type PermMap } from "@/lib/nav";
 import { notify, dbError } from "./toast";
 
 interface Riga { href: string; nome: string; gruppo?: string; defaultRoles: string[]; livello?: number; padre?: string }
@@ -39,8 +39,16 @@ function catalogo(): { titolo: string; voci: Riga[] }[] {
             });
             out.push({ titolo: `${e.name} (hub)`, voci });
         } else {
+            // GRUPPO del menu': stessa resa degli hub (riga di accesso + voci indentate)
             if (sciolte.length) { out.push({ titolo: "Voci principali", voci: sciolte }); sciolte = []; }
-            out.push({ titolo: e.label, voci: e.children.map((c) => ({ href: c.href, nome: c.name, gruppo: e.label, defaultRoles: c.roles })) });
+            const gk = groupKey(e.label);
+            out.push({
+                titolo: `${e.label} (hub)`,
+                voci: [
+                    { href: gk, nome: `${e.label} — accesso all'hub`, gruppo: e.label, defaultRoles: e.roles ?? ["*"] },
+                    ...e.children.map((c) => ({ href: c.href, nome: c.name, gruppo: e.label, defaultRoles: c.roles, livello: 1, padre: gk })),
+                ],
+            });
         }
     });
     if (sciolte.length) out.push({ titolo: "Voci principali", voci: sciolte });

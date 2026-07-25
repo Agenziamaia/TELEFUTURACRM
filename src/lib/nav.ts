@@ -24,7 +24,7 @@ import {
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
 export type NavLink = { name: string; href: string; icon: NavIcon; roles: string[] };
-export type NavGroup = { type: "group"; label: string; icon: NavIcon; children: NavLink[] };
+export type NavGroup = { type: "group"; label: string; icon: NavIcon; roles?: string[]; children: NavLink[] };
 export type NavItem = { type: "link"; name: string; href: string; icon: NavIcon; roles: string[] };
 export type NavHubSub = { id: string; name: string; roles: string[] };
 export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string; roles?: string[]; subs?: NavHubSub[] };
@@ -46,6 +46,7 @@ export const NAVIGATION: NavEntry[] = [
         type: "group",
         label: "Agenti",
         icon: UserCog,
+        roles: OUTBOUND_NAV,
         children: [
             { name: "Invia pda", href: "/pda/invia", icon: Send, roles: OUTBOUND_NAV },
             { name: "Gestione pda", href: "/gestione", icon: Database, roles: OUTBOUND_NAV },
@@ -133,6 +134,11 @@ export const NAVIGATION: NavEntry[] = [
 ];
 
 // Chiavi di permesso delle sezioni interne di un hub e delle loro funzioni.
+// Chiave di permesso di un GRUPPO del menu' (accesso all'hub): spegnerla
+// nasconde l'intero gruppo, qualunque sia lo stato delle voci interne.
+export const groupKey = (label: string) => `group:${label}`;
+export const groupByLabel = (label: string): NavGroup | undefined =>
+    NAVIGATION.find((e): e is NavGroup => e.type === "group" && e.label === label);
 export const hubChildKey = (hub: NavHub, c: NavHubChild) => `${hub.href}?${hub.param || "sez"}=${c.sez}`;
 export const hubSubKey = (hub: NavHub, c: NavHubChild, subId: string) => `${hubChildKey(hub, c)}&tab=${subId}`;
 export const hubByHref = (href: string): NavHub | undefined =>
