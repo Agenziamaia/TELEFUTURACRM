@@ -296,7 +296,7 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                             )}
                         </div>
                     </div>
-                    {user?.name && <StoricoPersonale nome={user.name} />}
+                    {user?.name && <StoricoPersonale nome={user.name} parte="kpi" />}
                 </div>}
 
                 {/* Dashboard admin/Team View: senza card timbratura occupa TUTTA la larghezza */}
@@ -306,14 +306,8 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                             <BadgeAdminDashboard onRefresh={async () => { await fetchActiveShift(); await fetchTeamStats(); }} />
                             <PresenzeAdmin />
                         </>
-                    ) : puoTimbrare ? (
-                        <div className="glass-card p-8 h-full flex flex-col items-center justify-center text-center">
-                            <Shield className="w-16 h-16 text-slate-700 mb-6" />
-                            <h3 className="text-lg font-bold text-slate-300">Vista Team Riservata</h3>
-                            <p className="text-sm text-slate-500 mt-2 max-w-sm">
-                                Solo gli amministratori e i manager possono visualizzare in tempo reale lo stato degli altri collaboratori.
-                            </p>
-                        </div>
+                    ) : puoTimbrare && user?.name ? (
+                        <StoricoPersonale nome={user.name} parte="storico" />
                     ) : (
                         <div className="glass-card p-8 h-full flex flex-col items-center justify-center text-center">
                             <Clock className="w-16 h-16 text-slate-700 mb-6" />
@@ -1308,7 +1302,7 @@ function KpiBox({ label, value, sub, color }: { label: string; value: string; su
     );
 }
 
-function StoricoPersonale({ nome }: { nome: string }) {
+function StoricoPersonale({ nome, parte = "tutto" }: { nome: string; parte?: "kpi" | "storico" | "tutto" }) {
     const [rows, setRows] = useState<ShiftRow[]>([]);
     useEffect(() => {
         const inizio = new Date(); inizio.setDate(1); inizio.setHours(0, 0, 0, 0);
@@ -1316,7 +1310,17 @@ function StoricoPersonale({ nome }: { nome: string }) {
             .gte("started_at", inizio.toISOString()).order("started_at", { ascending: false }).limit(200)
             .then(({ data }) => setRows((data ?? []) as ShiftRow[]));
     }, [nome]);
-    if (rows.length === 0) return null;
+    if (rows.length === 0) {
+        // il riquadro storico esiste anche vuoto (spiega cosa arrivera' li')
+        if (parte === "storico") return (
+            <div className="glass-card p-8 h-full flex flex-col items-center justify-center text-center">
+                <Clock className="w-12 h-12 text-slate-700 mb-4" />
+                <h3 className="text-base font-bold text-slate-300">Nessuna badgiata questo mese</h3>
+                <p className="text-sm text-slate-500 mt-2 max-w-sm">Qui vedrai lo storico delle tue timbrature: entrata, uscita, pause e ore nette.</p>
+            </div>
+        );
+        return null;
+    }
 
     const chiusi = rows.filter((r) => r.ended_at);
     const perGiorno = new Map<string, number>();
@@ -1336,29 +1340,50 @@ function StoricoPersonale({ nome }: { nome: string }) {
         consistenza = Math.max(0, Math.min(100, Math.round(100 - (Math.sqrt(varz) / media) * 100)));
     }
 
+    const mese = oggi.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+    const kpiBlock = (
+        <div className="grid grid-cols-2 gap-2">
+            <KpiBox label="Ore fatte" value={fmtOre(oreTot)} sub={`${giorniFatti} giorni lavorati`} color="#6366f1" />
+            <KpiBox label="Media giornaliera" value={fmtOre(media)} color="#0ea5e9" />
+            <KpiBox label="Proiezione fine mese" value={fmtOre(proiezione)} sub={`${rimasti} giorni lavorativi rimasti (lun–ven)`} color="#22c55e" />
+            <KpiBox label="Consistenza" value={consistenza != null ? `${consistenza}%` : "—"} sub="regolarità delle ore giornaliere" color="#f59e0b" />
+        </div>
+    );
+    const listaBlock = (
+        <div className={cn("space-y-1.5 overflow-y-auto pr-1", parte === "storico" ? "max-h-[560px]" : "max-h-64")}>
+            {rows.map((r) => (
+                <div key={r.id} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-white/[0.03] border border-white/5">
+                    <span className="text-slate-300 font-medium w-24 shrink-0">{new Date(r.started_at).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
+                    <span className="text-slate-400">{new Date(r.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="text-slate-600">→</span>
+                    {r.ended_at
+                        ? <span className="text-slate-400">{new Date(r.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>
+                        : <span className="text-emerald-400 font-bold">in corso</span>}
+                    {(r.total_pause_minutes || 0) > 0.5 && <span className="text-amber-400/80">⏸ {Math.round(r.total_pause_minutes)}m</span>}
+                    <span className="ml-auto font-bold text-slate-200">{r.ended_at ? fmtOre(oreNette(r)) : ""}</span>
+                </div>
+            ))}
+        </div>
+    );
+
+    // "kpi" = sotto il tasto Inizia turno; "storico" = riquadro a destra
+    if (parte === "kpi") return (
+        <div className="glass-card p-5 mt-6 text-left">
+            <h3 className="text-sm font-bold text-white mb-3">📊 I tuoi KPI — {mese}</h3>
+            {kpiBlock}
+        </div>
+    );
+    if (parte === "storico") return (
+        <div className="glass-card p-6 h-full text-left">
+            <h3 className="text-sm font-bold text-white mb-3">🗂 Storico badgiate — {mese}</h3>
+            {listaBlock}
+        </div>
+    );
     return (
-        <div className="glass-card p-5 mt-6">
-            <h3 className="text-sm font-bold text-white mb-3">📊 Le tue timbrature — {oggi.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</h3>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-                <KpiBox label="Ore fatte" value={fmtOre(oreTot)} sub={`${giorniFatti} giorni lavorati`} color="#6366f1" />
-                <KpiBox label="Media giornaliera" value={fmtOre(media)} color="#0ea5e9" />
-                <KpiBox label="Proiezione fine mese" value={fmtOre(proiezione)} sub={`${rimasti} giorni lavorativi rimasti (lun–ven)`} color="#22c55e" />
-                <KpiBox label="Consistenza" value={consistenza != null ? `${consistenza}%` : "—"} sub="regolarità delle ore giornaliere" color="#f59e0b" />
-            </div>
-            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                {rows.map((r) => (
-                    <div key={r.id} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-white/[0.03] border border-white/5">
-                        <span className="text-slate-300 font-medium w-24 shrink-0">{new Date(r.started_at).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
-                        <span className="text-slate-400">{new Date(r.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>
-                        <span className="text-slate-600">→</span>
-                        {r.ended_at
-                            ? <span className="text-slate-400">{new Date(r.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>
-                            : <span className="text-emerald-400 font-bold">in corso</span>}
-                        {(r.total_pause_minutes || 0) > 0.5 && <span className="text-amber-400/80">⏸ {Math.round(r.total_pause_minutes)}m</span>}
-                        <span className="ml-auto font-bold text-slate-200">{r.ended_at ? fmtOre(oreNette(r)) : ""}</span>
-                    </div>
-                ))}
-            </div>
+        <div className="glass-card p-5 mt-6 text-left">
+            <h3 className="text-sm font-bold text-white mb-3">📊 Le tue timbrature — {mese}</h3>
+            <div className="mb-4">{kpiBlock}</div>
+            {listaBlock}
         </div>
     );
 }
