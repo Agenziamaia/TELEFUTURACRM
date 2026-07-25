@@ -3759,7 +3759,11 @@ export default function CRM() {
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
   const rmCG=idx=>setCart(p=>p.filter((_,i)=>i!==idx));
-  const fullReset=()=>{setBrand(null);setTipoCliente(null);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",intDiverso:false,intNome:"",intCognome:"",intCf:""})};
+  const fullReset=()=>{setBrand(null);setTipoCliente(null);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+    // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
+    // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
+    // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
+    setSelVend(user?.name||"");setSelNeg(user?.negozio||"");};
   // ── Auto-save every state change ──
   useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,selVend,selNeg,lookupValue,margItems});
   
@@ -3973,7 +3977,12 @@ export default function CRM() {
           // Energia, ...) — mai piu' il titolo del menu' del brand, che resta nei
           // dettagli (menu_brand) per non perdere nulla. Layer 1 del flusso (Luca 25/07).
           const macroId = categoriaDi(group.brandLabel, item.macro, item.sub);
-          const giaAttivo = /sostituzione|sost /i.test(String(item.sub || "")) || macroId === "extra";
+          // Segnalazione 91: una pratica MOBILE senza finanziamento e senza MNP
+          // non e' da lavorare nel Tracking, quindi nasce gia' Attiva (come Extra
+          // e Sostituzioni). Esempi: francesca iossa, Alberto Franzini.
+          const _ctrl = controlliDi(item.details);
+          const mobileSemplice = macroId === "mobile" && !_ctrl.includes("mnp") && !_ctrl.includes("finanziamento");
+          const giaAttivo = /sostituzione|sost /i.test(String(item.sub || "")) || macroId === "extra" || mobileSemplice;
           contractRows.push({
             id: `CTR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
             client_id: clientId,

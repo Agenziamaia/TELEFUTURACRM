@@ -1325,7 +1325,16 @@ export default function TrackingPdaPage() {
       const lavorabili = (list as RawRow[]).filter((r: Record<string, unknown>) => {
         const b = String(r.brand || "").trim().toLowerCase();
         const p = String(r.prodotto || "").trim().toLowerCase();
-        return b !== "extra" && !b.startsWith("marginal") && !/sost/.test(p);
+        if (b === "extra" || b.startsWith("marginal") || /sost/.test(p)) return false;
+        // Segnalazione 91: una pratica MOBILE senza finanziamento e senza MNP non
+        // e' da lavorare -> fuori dal Tracking (e in Ricerca risulta gia' Attivo).
+        const macro = String(r.categoria_macro || "").toLowerCase()
+          || categoriaDi(r.brand as string, r.categoria as string, r.prodotto as string);
+        const ctrl = (Array.isArray(r.controlli) && r.controlli.length)
+          ? (r.controlli as string[])
+          : controlliDi((r.dettagli as Record<string, unknown>) || {});
+        if (macro === "mobile" && !ctrl.includes("mnp") && !ctrl.includes("finanziamento")) return false;
+        return true;
       });
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (seesWhole) return visibleStores.some((st) => sameStore(r.negozio as string, st));
