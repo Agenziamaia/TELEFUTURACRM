@@ -151,10 +151,15 @@ export default function RicercaContratto() {
     const [filterCellulare, setFilterCellulare] = useState("");
     const [filterImei, setFilterImei] = useState("");
     const [filterTableSearch, setFilterTableSearch] = useState("");
+    // Solo la DATA DI ATTIVAZIONE (regola Luca 25/07: coppia "registrazione" tolta).
+    // Il picker emette gg/mm/aaaa mentre il DB confronta testo ISO aaaa-mm-gg:
+    // senza conversione il filtro non trovava MAI nulla ("non funziona").
     const [daDataAttivazione, setDaDataAttivazione] = useState("");
     const [aDataAttivazione, setADataAttivazione] = useState("");
-    const [daDataRegistrazione, setDaDataRegistrazione] = useState("");
-    const [aDataRegistrazione, setADataRegistrazione] = useState("");
+    const dataIso = (v: string) => {
+        const m = (v || "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        return m ? `${m[3]}-${m[2]}-${m[1]}` : (v || "").trim();
+    };
 
     const [selectedContract, setSelectedContract] = useState<ContrattoRow | null>(null);
     const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
@@ -359,10 +364,8 @@ export default function RicercaContratto() {
             // ricerca (li usava solo il conteggio delle tessere brand): si sceglieva
             // una data e l'elenco restava identico. Le date sono in formato
             // AAAA-MM-GG, quindi il confronto e' diretto.
-            if (daDataRegistrazione) query = query.gte("data_registrazione", daDataRegistrazione);
-            if (aDataRegistrazione) query = query.lte("data_registrazione", aDataRegistrazione);
-            if (daDataAttivazione) query = query.gte("data_attivazione", daDataAttivazione);
-            if (aDataAttivazione) query = query.lte("data_attivazione", aDataAttivazione);
+            if (daDataAttivazione) query = query.gte("data_attivazione", dataIso(daDataAttivazione));
+            if (aDataAttivazione) query = query.lte("data_attivazione", dataIso(aDataAttivazione));
 
             // tessere brand: se qualcuna è spenta, si escludono quei brand
             if (offBrands.size > 0) {
@@ -420,16 +423,14 @@ export default function RicercaContratto() {
             // Segnalazione 80: le tessere devono seguire GLI STESSI filtri data
             // dell'elenco. Prima guardavano solo le date di registrazione, quindi
             // filtrando per data di attivazione l'elenco cambiava e le tessere no.
-            if (daDataRegistrazione) q = q.gte("data_registrazione", daDataRegistrazione);
-            if (aDataRegistrazione) q = q.lte("data_registrazione", aDataRegistrazione);
-            if (daDataAttivazione) q = q.gte("data_attivazione", daDataAttivazione);
-            if (aDataAttivazione) q = q.lte("data_attivazione", aDataAttivazione);
+            if (daDataAttivazione) q = q.gte("data_attivazione", dataIso(daDataAttivazione));
+            if (aDataAttivazione) q = q.lte("data_attivazione", dataIso(aDataAttivazione));
             const { data } = await q;
             const m: Record<string, number> = {};
             (data ?? []).forEach((r: any) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
             setBrandCounts(Object.entries(m).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
         })();
-    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, daDataRegistrazione, aDataRegistrazione, aDataAttivazione, daDataAttivazione, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, aDataAttivazione, daDataAttivazione, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
     // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
@@ -439,13 +440,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
+    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataAttivazione, aDataAttivazione]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataAttivazione, aDataAttivazione]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -704,7 +705,7 @@ export default function RicercaContratto() {
             {/* Segnalazione 80: se il periodo scelto non ha contratti, le tessere
                 sparivano del tutto e sembrava che i loghi non comparissero. Ora
                 si spiega il motivo invece di lasciare il vuoto. */}
-            {brandCounts.length === 0 && (daDataRegistrazione || aDataRegistrazione || daDataAttivazione || aDataAttivazione) && (
+            {brandCounts.length === 0 && (daDataAttivazione || aDataAttivazione) && (
                 <div className="mb-8 text-center text-sm text-slate-500">
                     Nessun contratto nel periodo selezionato: per questo non compare nessun brand.
                 </div>
@@ -1010,19 +1011,11 @@ export default function RicercaContratto() {
                         <label className="block text-sm font-medium text-slate-300 mb-2">A data attivazione</label>
                         <DatePickerInput id="a_data_attivazione" value={aDataAttivazione} onChange={setADataAttivazione} placeholder="Seleziona data" />
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Da data registrazione</label>
-                        <DatePickerInput id="da_data_registrazione" value={daDataRegistrazione} onChange={setDaDataRegistrazione} placeholder="Seleziona data" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">A data registrazione</label>
-                        <DatePickerInput id="a_data_registrazione" value={aDataRegistrazione} onChange={setADataRegistrazione} placeholder="Seleziona data" />
-                    </div>
                 </div>
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setFilterTableSearch(""); setDaDataAttivazione(""); setADataAttivazione(""); setDaDataRegistrazione(""); setADataRegistrazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setFilterTableSearch(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportCsv}>
                         Scarica CSV
                     </button>
