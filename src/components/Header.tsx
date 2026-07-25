@@ -1,6 +1,7 @@
 "use client";
 
 import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon } from "lucide-react";
+import { UrgentTasks } from "@/components/UrgentTasks";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel, seesAllStores, ROLES } from "@/lib/roles";
@@ -272,8 +273,9 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                 >
                     <Maximize className="h-5 w-5" />
                 </button>
-                {/* La campanella non faceva nulla: ora porta alle Comunicazioni e il
-                    pallino rosso compare solo se ce ne sono di nuove dall'ultima volta. */}
+                {/* La campanella = COMUNICAZIONI; le cose DA FARE stanno nella ⚡
+                    Task urgenti qui accanto (es. nuovo utente da completare). */}
+                <UrgentTasks />
                 <button
                     onClick={openComunicazioni}
                     title={nuoveCom > 0 ? `${nuoveCom} comunicazioni nuove` : "Comunicazioni"}

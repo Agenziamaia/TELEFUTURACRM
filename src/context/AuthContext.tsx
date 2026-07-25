@@ -103,6 +103,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!user) return;
         const isAdmin = user.role === "admin" || user.role === "dev" || user.role === "direttore_generale";
         const adminOnly = ["/gestione", "/amministrazione", "/gare"];
+        // GARE: solo l'admin vero (nemmeno il direttore generale) — regola Luca 25/07.
+        if (pathname.startsWith("/gare") && !["admin", "dev"].includes(user.role)) {
+            router.push("/dashboard");
+            return;
+        }
+        // Amministrazione: anche l'amministrativo (solo sezione Utenti, gating in pagina).
+        if (pathname.startsWith("/amministrazione") && user.role === "amministrativo") return;
         // Gestione PDA: aperta anche al reparto Outbound (direttore + agenti) in
         // SOLA LETTURA sulle proprie pratiche — il gating fine sta nella pagina.
         const gestioneOutbound = pathname.startsWith("/gestione") && ["direttore_ob", "agente", "amministrativo"].includes(user.role);

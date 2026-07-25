@@ -166,7 +166,11 @@ function AmministrazioneInner() {
     const searchParams = useSearchParams();
     const sez = searchParams.get("sez");
     const go = (s?: string) => router.push(s ? `/amministrazione?sez=${s}` : "/amministrazione");
-    const current = SEZIONI.find((s) => s.id === sez);
+    // amministrativo e direttore_generale: SOLO la sezione Utenti, con funzioni
+    // ridotte (niente costi/visibilita'/brand nel form; le gestisce l'admin).
+    const soloUtenti = ["amministrativo", "direttore_generale"].includes(user?.role || "");
+    const sezioniVisibili = soloUtenti ? SEZIONI.filter((s) => s.id === "utenti") : SEZIONI;
+    const current = SEZIONI.find((s) => s.id === (soloUtenti && sez && sez !== "utenti" ? "utenti" : sez));
     const [users, setUsers] = useState<AppUser[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [loading, setLoading] = useState(true);
@@ -312,7 +316,7 @@ function AmministrazioneInner() {
 
             {!current ? (
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {SEZIONI.map((s) => {
+                    {sezioniVisibili.map((s) => {
                         const Icon = s.icon;
                         return (
                             <button
@@ -626,6 +630,11 @@ function UserForm({
     onSaved: () => void;
 }) {
     const formRules = useRoleCosts();
+    // amministrativo/direttore_generale: creano utenti con campi (quasi) tutti
+    // OBBLIGATORI (IBAN escluso) e SENZA le sezioni costo/visibilita'/brand,
+    // che restano all'admin: alla creazione gli parte una task urgente.
+    const { user: me } = useAuth();
+    const soloUtenti = ["amministrativo", "direttore_generale"].includes(me?.role || "");
     const [f, setF] = useState(() => {
         if (!editing) return { ...EMPTY_USER };
         return {
@@ -675,6 +684,15 @@ function UserForm({
         if (!f.full_name?.trim()) {
             setErr("Il nome è obbligatorio.");
             return;
+        }
+        if (soloUtenti && !editing) {
+            const obbligatori: [string, unknown][] = [
+                ["Email", f.email], ["Telefono", f.phone], ["Ruolo", f.role], ["Azienda", f.company],
+                ["Ore settimanali", f.weekly_hours], ["Tipo contratto", f.contract_type],
+                ["Data assunzione", f.hire_date], ["Indirizzo", f.address],
+            ];
+            const mancanti = obbligatori.filter(([, v]) => !String(v ?? "").trim()).map(([l]) => l);
+            if (mancanti.length) { setErr("Campi obbligatori mancanti: " + mancanti.join(", ") + " (solo l'IBAN può attendere)."); return; }
         }
         setSaving(true);
         setErr("");
@@ -748,6 +766,18 @@ function UserForm({
         if (vis.length)
             await supabase.from("user_store_visibility").insert(vis.map((store_name) => ({ user_id: userId, store_name })));
 
+        if (soloUtenti && !editing && userId) {
+            // La campanella e' delle Comunicazioni: le cose DA FARE vanno nelle
+            // task urgenti (⚡ accanto alla campanella). Tollera la 085 mancante.
+            await supabase.from("admin_tasks").insert({
+                tipo: "nuovo_utente",
+                titolo: `Completa il nuovo utente: ${f.full_name?.trim()}`,
+                dettaglio: "Da impostare: attribuzione costo, visibilità negozi e brand abilitati.",
+                link: "/amministrazione?sez=utenti",
+                target_role: "admin",
+                created_by: me?.name || "—",
+            }).then(({ error }) => { if (error) console.warn("admin_tasks assente (mig. 085):", error.message); });
+        }
         setSaving(false);
         onSaved();
     };
@@ -930,8 +960,8 @@ function UserForm({
                         </Field>
                     )}
 
-                    {/* Negozi: dove CADE il costo della persona */}
-                    <Field label="Negozi (attribuzione costo)">
+                    {/* Negozi: dove CADE il costo della persona — solo admin */}
+                    {!soloUtenti && <Field label="Negozi (attribuzione costo)">
                         <p className="text-[10px] text-slate-500 mb-1.5">Il costo della persona pesa su questi punti vendita.</p>
                         <div className="flex flex-wrap gap-2">
                             {stores.map((s) => {
@@ -954,10 +984,10 @@ function UserForm({
                             })}
                             {stores.length === 0 && <span className="text-xs text-slate-500">Nessun negozio in anagrafica.</span>}
                         </div>
-                    </Field>
+                    </Field>}
 
-                    {/* Visibilità: cosa deve VEDERE (apre negozio E collaboratori in tutto il CRM) */}
-                    <Field label="Visibilità negozi (nessun costo)">
+                    {/* Visibilità: cosa deve VEDERE — solo admin */}
+                    {!soloUtenti && <Field label="Visibilità negozi (nessun costo)">
                         <p className="text-[10px] text-slate-500 mb-1.5">
                             La persona vede dati e collaboratori di questi punti vendita in TUTTO il CRM; il suo costo NON pesa su di loro.
                             I negozi di attribuzione costo sono inclusi in automatico.
@@ -989,10 +1019,10 @@ function UserForm({
                                 );
                             })}
                         </div>
-                    </Field>
+                    </Field>}
 
-                    {/* Brand */}
-                    <Field label="Brand abilitati">
+                    {/* Brand — solo admin */}
+                    {!soloUtenti && <Field label="Brand abilitati">
                         <div className="flex flex-wrap gap-2">
                             {BRANDS.map((b) => {
                                 const on = (f.brands as string[]).includes(b);
@@ -1013,7 +1043,7 @@ function UserForm({
                                 );
                             })}
                         </div>
-                    </Field>
+                    </Field>}
 
                     <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
                         <div className="flex gap-2">
@@ -1197,6 +1227,9 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
                             <BrandChip key={b} brand={b} md />
                         ))}
                     </div>
+
+                    {/* Allegati del collaboratore: documenti, contratto, buste paga, altro */}
+                    <UserAllegati userId={u.id} />
                     {/* subtabs */}
                     <div className="flex gap-1 mt-4 overflow-x-auto">
                         {subtabs.map((s) => (
@@ -2313,4 +2346,89 @@ function fmtDateTime(d: string | null): string {
     const dt = new Date(d);
     if (isNaN(dt.getTime())) return d;
     return dt.toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+
+/* ── Allegati utente (mig. 085): Documenti / Contratto di assunzione / Buste paga / Altro.
+      Upload nel bucket "contracts" sotto utenti/<id>/<categoria>/; accessibile a chi
+      apre il dettaglio (admin, amministrativo, direzione generale). ── */
+const CATEGORIE_ALLEGATI = [
+    { id: "documenti", label: "📄 Documenti" },
+    { id: "contratto", label: "✍️ Contratto di assunzione" },
+    { id: "buste_paga", label: "💶 Buste paga" },
+    { id: "altro", label: "📦 Altro" },
+] as const;
+
+function UserAllegati({ userId }: { userId: string }) {
+    const { user: me } = useAuth();
+    const [rows, setRows] = useState<{ id: string; category: string; file_url: string; file_name: string | null; created_at: string }[]>([]);
+    const [manca085, setManca085] = useState(false);
+    const [busyCat, setBusyCat] = useState("");
+    const load = async () => {
+        const { data, error } = await supabase.from("user_attachments")
+            .select("id,category,file_url,file_name,created_at").eq("user_id", userId).order("created_at", { ascending: false });
+        if (error) { setManca085(true); return; }
+        setManca085(false);
+        setRows((data ?? []) as typeof rows);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => { load(); }, [userId]);
+    const upload = async (cat: string, files: FileList | null) => {
+        if (!files?.length) return;
+        setBusyCat(cat);
+        for (const f of Array.from(files)) {
+            const ext = f.name.split(".").pop();
+            const path = `utenti/${userId}/${cat}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+            const { error } = await supabase.storage.from("contracts").upload(path, f);
+            if (error) continue;
+            const { data: { publicUrl } } = supabase.storage.from("contracts").getPublicUrl(path);
+            await supabase.from("user_attachments").insert({
+                user_id: userId, category: cat, file_url: publicUrl, file_name: f.name, uploaded_by: me?.name || "—",
+            });
+        }
+        setBusyCat("");
+        load();
+    };
+    const remove = async (id: string) => {
+        await supabase.from("user_attachments").delete().eq("id", id);
+        setRows((p) => p.filter((r) => r.id !== id));
+    };
+    return (
+        <div className="mt-4 pt-4 border-t border-white/10">
+            <h3 className="text-sm font-bold text-slate-200 mb-3">📎 Allegati</h3>
+            {manca085 ? (
+                <p className="text-xs text-amber-400">Funzione in attivazione: serve la migrazione 085 sul database.</p>
+            ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                    {CATEGORIE_ALLEGATI.map((c) => {
+                        const list = rows.filter((r) => r.category === c.id);
+                        return (
+                            <div key={c.id} className="p-3 rounded-lg bg-white/[0.03] border border-white/8">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-bold text-slate-300">{c.label} {list.length > 0 && <span className="text-slate-500">({list.length})</span>}</span>
+                                    <label className="text-[11px] px-2 py-1 rounded-md bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25 cursor-pointer font-bold">
+                                        {busyCat === c.id ? "Carico…" : "+ Carica"}
+                                        <input type="file" multiple className="hidden" onChange={(e) => { upload(c.id, e.target.files); e.target.value = ""; }} />
+                                    </label>
+                                </div>
+                                {list.length === 0 ? (
+                                    <p className="text-[11px] text-slate-600">Nessun file.</p>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {list.map((r) => (
+                                            <div key={r.id} className="flex items-center gap-2 text-[11px]">
+                                                <a href={r.file_url} target="_blank" rel="noreferrer" className="text-indigo-300 hover:text-indigo-200 truncate flex-1">{r.file_name || "file"}</a>
+                                                <span className="text-slate-600">{new Date(r.created_at).toLocaleDateString("it-IT")}</span>
+                                                <button onClick={() => remove(r.id)} className="text-rose-400 hover:text-rose-300 font-bold" title="Elimina">✕</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
 }

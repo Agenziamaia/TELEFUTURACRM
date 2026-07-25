@@ -112,7 +112,8 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         href: "/gare",
         param: "brand",
         icon: Trophy,
-        roles: ADMINS,
+        // Le GARE le vede SOLO l'admin (regola Luca 25/07): ne' direzione ne' altri.
+        roles: ["admin", "dev"],
         children: [
             { name: "WindTre", sez: "w3", color: "#FF6B00" },
             { name: "Vodafone Store", sez: "vs", color: "#E60000" },
@@ -129,7 +130,9 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         name: "Amministrazione",
         href: "/amministrazione",
         icon: Shield,
-        roles: ADMINS,
+        // amministrativo e direttore_generale entrano ma vedono SOLO Utenti
+        // (la pagina nasconde le altre sezioni e le funzioni riservate all'admin).
+        roles: [...ADMINS, "amministrativo"],
         children: [
             { name: "Utenti", sez: "utenti", icon: UsersIcon },
             { name: "Negozi", sez: "negozi", icon: StoreIcon },
@@ -345,6 +348,11 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 
 // Sotto-menu del hub: evidenzia la sezione attiva leggendo ?sez= (isolato in Suspense per useSearchParams)
 function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const { user } = useAuth();
+    // Amministrazione per amministrativo/direttore_generale = SOLO Utenti.
+    const soloUtenti = hub.href === "/amministrazione" && !["admin", "dev"].includes(user?.role || "");
+    if (soloUtenti) hub = { ...hub, children: hub.children.filter((c) => c.sez === "utenti") };
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const param = hub.param || "sez";
