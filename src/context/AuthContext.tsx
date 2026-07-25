@@ -171,7 +171,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // qualsiasi interazione rimanda semplicemente in avanti la scadenza.
     useEffect(() => {
         if (!user) return;
-        const IDLE_MS = 15 * 60 * 1000;
+        // Segnalazione 90: scadenza inattivita' portata da 15 minuti a 1 ora.
+        // Ogni interazione entro l'ora rimanda in avanti la scadenza (gia' cosi').
+        const IDLE_MS = 60 * 60 * 1000;
         let timer: ReturnType<typeof setTimeout>;
         const doLogout = () => {
             clearAiChat(user?.id);

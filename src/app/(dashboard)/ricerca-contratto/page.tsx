@@ -674,8 +674,9 @@ export default function RicercaContratto() {
                                         : logo ? <img src={logo} alt={brand} className="h-14 w-auto max-w-[140px] object-contain" />
                                             : <span className="text-lg font-bold text-slate-200">{brand}</span>}
                                 </span>
-                                <span className="text-4xl font-black text-white tabular-nums leading-none">{n}</span>
-                                <span className="text-xs text-slate-400 uppercase tracking-wider font-semibold">{brand}</span>
+                                {/* Segnalazione 94: nome brand piu' grande, numero contratti piccolo. */}
+                                <span className="text-base text-white uppercase tracking-wide font-bold">{brand}</span>
+                                <span className="text-xs text-slate-400 tabular-nums leading-none">{n} contratti</span>
                             </button>
                         );
                     })}
@@ -970,7 +971,9 @@ export default function RicercaContratto() {
                                     <tr key={row.id} className="border-b border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-colors">
                                         <td className="px-4 py-3 text-slate-300">{row.venditore}</td>
                                         <td className="px-4 py-3 font-medium text-white">{row.brand}</td>
-                                        <td className="px-4 py-3 text-slate-300">{row.prodotto}</td>
+                                        {/* Segnalazione 95: la colonna Prodotto mostra la CATEGORIA
+                                            (asse 2 del database), non piu' il prodotto (asse 3). */}
+                                        <td className="px-4 py-3 text-slate-300">{String(row.raw?.categoria || row.prodotto || "—")}</td>
                                         <td className="px-4 py-3 text-slate-300 font-medium">{row.cliente}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{row.negozio}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{codInsDi(row) || "—"}</td>
@@ -1122,7 +1125,11 @@ export default function RicercaContratto() {
                     );
                 };
 
-                const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+                {/* Segnalazione 92: era un COMPONENTE definito nel render, quindi a ogni
+                    battuta cambiava identita' e React rimontava le caselle, facendo
+                    perdere il focus (si inseriva un carattere alla volta). Ora e' una
+                    funzione che restituisce JSX: nessun rimontaggio, il focus resta. */}
+                const Section = (title: string, children: React.ReactNode) => (
                     <div>
                         <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-3 pb-2 border-b border-white/10">{title}</h4>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{children}</div>
@@ -1187,7 +1194,7 @@ export default function RicercaContratto() {
 
 
                                 {(detEditable.length > 0 || detReadonly.length > 0) && (
-                                    <Section title="Dettagli registrazione">
+                                    Section("Dettagli registrazione", <>
                                         {detEditable.map(([k]) => renderField("dettagli::" + k, k))}
                                         {detReadonly.map(([k, v]) => (
                                             <div key={k} className="sm:col-span-2 lg:col-span-3">
@@ -1195,28 +1202,28 @@ export default function RicercaContratto() {
                                                 <pre className="text-white text-xs bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
                                             </div>
                                         ))}
-                                    </Section>
+                                    </>)
                                 )}
 
-                                <Section title="Dati contratto">
+                                {Section("Dati contratto", <>
                                     {CONTRACT_FIELDS.map(f => renderField("contract::" + f.key, f.label, f.kind))}
                                     {/* Segnalazione 67/71: il codice inserimento sta nel box Dati
                                         contratto ed e' modificabile come gli altri campi (tendina). */}
                                     {renderField("dettagli::" + codInsKey, "Codice inserimento")}
-                                </Section>
+                                </>)}
 
-                                <Section title="Anagrafica cliente">
+                                {Section("Anagrafica cliente", <>
                                     {CLIENT_FIELDS.map(f => renderField("client::" + f.key, f.label, f.kind))}
-                                </Section>
+                                </>)}
 
-                                <Section title="Riferimenti sistema">
+                                {Section("Riferimenti sistema", <>
                                     {READONLY_META.map(f => (
                                         <div key={f.key}>
                                             <span className="text-[11px] uppercase tracking-wider text-slate-500">{f.label}</span>
                                             <p className="text-white text-sm font-mono break-all">{fmtVal(row.raw?.[f.key])}</p>
                                         </div>
                                     ))}
-                                </Section>
+                                </>)}
 
                                 {detailMode === "edit" && (
                                     <div className="pt-4 border-t border-white/10 space-y-3">

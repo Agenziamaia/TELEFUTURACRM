@@ -902,18 +902,20 @@ const TF = ({l,r,v,o,p,pf,dis,nt,err}) => {
   const L=(l||"").toLowerCase();
   const isIccid=L.includes("iccid");
   const isImei=L.includes("imei");
+  const isIban=L.includes("iban");   // segnalazione 88: IBAN IT = 27 alfanumerici
   const isPod=L==="pod";
   const isPdr=L==="pdr";
   const isNum=!isIccid&&!isImei&&!isPod&&!isPdr&&(L.includes("provvisorio")||L.includes("portabil")||L.includes("definitivo")||L.includes("cellulare")||L.includes("telefono")||L.includes("fisso")||L==="numero"||L==="numero portabilità");
   const isFixedNum=isNum&&(L.includes("fiss")||L.includes("gnp"));
   const numMin=isFixedNum?7:9, numMax=isFixedNum?11:10;
-  const onCh=(raw)=>{if(!o)return;let val=raw;if(isIccid)val=raw.replace(/\D/g,"").slice(0,19);else if(isImei)val=raw.replace(/\D/g,"").slice(0,15);else if(isPod)val=raw.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,15);else if(isPdr)val=raw.replace(/\D/g,"").slice(0,14);else if(isNum)val=raw.replace(/\D/g,"").slice(0,numMax);o(val);};
+  const onCh=(raw)=>{if(!o)return;let val=raw;if(isIccid)val=raw.replace(/\D/g,"").slice(0,19);else if(isImei)val=raw.replace(/\D/g,"").slice(0,15);else if(isIban)val=raw.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,27);else if(isPod)val=raw.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,15);else if(isPdr)val=raw.replace(/\D/g,"").slice(0,14);else if(isNum)val=raw.replace(/\D/g,"").slice(0,numMax);o(val);};
   const paresIban=/^IT\d{2}[A-Z0-9]{18,}$/i.test(String(v||"").replace(/\s/g,""));
   let vErr="";
   if(err)vErr=err;
   else if(paresIban&&(L.includes("cod")||isImei))vErr="Sembra un IBAN: qui va il codice, non l'IBAN";
   else if(isIccid&&v&&v.length!==19)vErr="ICCID: 19 cifre richieste";
   else if(isImei&&v&&v.length!==15)vErr="IMEI: 15 cifre richieste";
+  else if(isIban&&v&&v.length!==27)vErr="IBAN: 27 caratteri richiesti ("+v.length+"/27)";
   else if(isPod&&v&&!(v.length>=14&&v.length<=15&&/^IT/.test(v)))vErr="POD: IT + 14-15 caratteri";
   else if(isPdr&&v&&v.length!==14)vErr="PDR: 14 cifre richieste";
   else if(isNum&&v&&v.length<numMin)vErr="Min "+numMin+" cifre";
