@@ -10,6 +10,8 @@ import { TargetSection } from "./_views/target";
 import { MarginalitaView } from "./_views/marginalita";
 import { PermessiView } from "./_views/permessi";
 import { RuoliView } from "./_views/ruoli";
+import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
+import { useRolePermissions } from "@/lib/usePermissions";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
@@ -170,11 +172,21 @@ function AmministrazioneInner() {
     // Utenti e' un GRUPPO (Luca 25/07): Lista utenti / Permessi (solo admin) / Ruoli
     const utTab = searchParams.get("tab") || "lista";
     const go = (s?: string) => router.push(s ? `/amministrazione?sez=${s}` : "/amministrazione");
-    // amministrativo e direttore_generale: SOLO la sezione Utenti, con funzioni
-    // ridotte (niente costi/visibilita'/brand nel form; le gestisce l'admin).
-    const soloUtenti = ["amministrativo", "direttore_generale"].includes(user?.role || "");
-    const sezioniVisibili = soloUtenti ? SEZIONI.filter((s) => s.id === "utenti") : SEZIONI;
-    const current = SEZIONI.find((s) => s.id === (soloUtenti && sez && sez !== "utenti" ? "utenti" : sez));
+    // GATING DAI PERMESSI (nav.ts + role_permissions): ogni sezione dell'hub e
+    // ogni funzione di Utenti si concede una a una dalla pagina Permessi.
+    const { perms } = useRolePermissions(user?.role);
+    const hubAmm = hubByHref("/amministrazione")!;
+    const sezOk = (id: string) => {
+        const child = hubAmm.children.find((c) => c.sez === id);
+        return child ? effectiveAllowed(user?.role, hubChildKey(hubAmm, child), child.roles ?? hubAmm.roles, perms) : true;
+    };
+    const tabOk = (id: string) => {
+        const child = hubAmm.children.find((c) => c.sez === "utenti");
+        const sub = child?.subs?.find((x) => x.id === id);
+        return child && sub ? effectiveAllowed(user?.role, hubSubKey(hubAmm, child, id), sub.roles, perms) : true;
+    };
+    const sezioniVisibili = SEZIONI.filter((s) => sezOk(s.id));
+    const current = SEZIONI.find((s) => s.id === sez && sezOk(s.id));
     const [users, setUsers] = useState<AppUser[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [loading, setLoading] = useState(true);
@@ -350,7 +362,7 @@ function AmministrazioneInner() {
                 <>
                     {/* Il gruppo Utenti: tre funzioni sotto lo stesso tetto */}
                     <div className="flex gap-2 flex-wrap">
-                        {([["lista", "👥 Lista utenti", true], ["permessi", "🔐 Permessi", ["admin", "dev"].includes(user?.role || "")], ["ruoli", "🏷️ Ruoli", true]] as [string, string, boolean][])
+                        {([["lista", "👥 Lista utenti", tabOk("lista")], ["permessi", "🔐 Permessi", tabOk("permessi")], ["ruoli", "🏷️ Ruoli", tabOk("ruoli")]] as [string, string, boolean][])
                             .filter(([, , vis]) => vis)
                             .map(([id, label]) => (
                                 <button key={id} onClick={() => router.push(`/amministrazione?sez=utenti&tab=${id}`)}
@@ -359,7 +371,9 @@ function AmministrazioneInner() {
                                 </button>
                             ))}
                     </div>
-                    {utTab === "permessi" ? <PermessiView /> : utTab === "ruoli" ? <RuoliView /> : (
+                    {utTab === "permessi" && tabOk("permessi") ? <PermessiView /> : utTab === "ruoli" && tabOk("ruoli") ? <RuoliView /> : !tabOk("lista") ? (
+                        <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Funzione non abilitata per il tuo ruolo.</div>
+                    ) : (
                     <>
                     {/* Filtri */}
                     <div className="glass-panel p-4 flex flex-wrap gap-3 items-center">

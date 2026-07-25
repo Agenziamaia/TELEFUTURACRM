@@ -41,7 +41,7 @@ import {
 
 // Struttura menù + logica permessi: fonte unica in src/lib/nav.ts
 // (amministrabile da Amministrazione → Permessi, tabella role_permissions).
-import { NAVIGATION, effectiveAllowed, type NavHub, type NavEntry } from "@/lib/nav";
+import { NAVIGATION, effectiveAllowed, hubChildKey, type NavHub, type NavEntry } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
 
 interface SidebarProps {
@@ -249,9 +249,11 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const { user } = useAuth();
-    // Amministrazione per amministrativo/direttore_generale = SOLO Utenti.
-    const soloUtenti = hub.href === "/amministrazione" && !["admin", "dev"].includes(user?.role || "");
-    if (soloUtenti) hub = { ...hub, children: hub.children.filter((c) => c.sez === "utenti") };
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const { perms } = useRolePermissions(user?.role);
+    // Le sezioni interne dell'hub seguono i permessi (default: roles del child,
+    // o quelli dell'hub se il child non li dichiara) — amministrabili una a una.
+    hub = { ...hub, children: hub.children.filter((c) => effectiveAllowed(user?.role, hubChildKey(hub, c), c.roles ?? hub.roles, perms)) };
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const param = hub.param || "sez";

@@ -26,7 +26,8 @@ export type NavIcon = React.ComponentType<{ className?: string }>;
 export type NavLink = { name: string; href: string; icon: NavIcon; roles: string[] };
 export type NavGroup = { type: "group"; label: string; icon: NavIcon; children: NavLink[] };
 export type NavItem = { type: "link"; name: string; href: string; icon: NavIcon; roles: string[] };
-export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string };
+export type NavHubSub = { id: string; name: string; roles: string[] };
+export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string; roles?: string[]; subs?: NavHubSub[] };
 export type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: NavIcon; roles: string[]; children: NavHubChild[] };
 export type NavEntry = NavGroup | NavItem | NavHub;
 
@@ -112,15 +113,30 @@ export const NAVIGATION: NavEntry[] = [
         icon: Shield,
         roles: [...ADMINS, "amministrativo"],
         children: [
-            { name: "Utenti", sez: "utenti", icon: Users },
-            { name: "Negozi", sez: "negozi", icon: Store },
-            { name: "Costi condivisi", sez: "condivisi", icon: Building2 },
-            { name: "Altri costi", sez: "altri", icon: Tag },
-            { name: "Marginalità", sez: "marginalita", icon: Package },
-            { name: "Target", sez: "target", icon: ClipboardList },
+            // Ogni SEZIONE dell'hub ha i suoi ruoli (decidibili una a una dalla
+            // pagina Permessi); Utenti ha anche le sue FUNZIONI interne (subs).
+            {
+                name: "Utenti", sez: "utenti", icon: Users, roles: [...ADMINS, "amministrativo"],
+                subs: [
+                    { id: "lista", name: "Lista utenti", roles: [...ADMINS, "amministrativo"] },
+                    { id: "permessi", name: "Permessi", roles: ["admin", "dev"] },
+                    { id: "ruoli", name: "Ruoli", roles: [...ADMINS, "amministrativo"] },
+                ],
+            },
+            { name: "Negozi", sez: "negozi", icon: Store, roles: ["admin", "dev"] },
+            { name: "Costi condivisi", sez: "condivisi", icon: Building2, roles: ["admin", "dev"] },
+            { name: "Altri costi", sez: "altri", icon: Tag, roles: ["admin", "dev"] },
+            { name: "Marginalità", sez: "marginalita", icon: Package, roles: ["admin", "dev"] },
+            { name: "Target", sez: "target", icon: ClipboardList, roles: ["admin", "dev"] },
         ],
     },
 ];
+
+// Chiavi di permesso delle sezioni interne di un hub e delle loro funzioni.
+export const hubChildKey = (hub: NavHub, c: NavHubChild) => `${hub.href}?${hub.param || "sez"}=${c.sez}`;
+export const hubSubKey = (hub: NavHub, c: NavHubChild, subId: string) => `${hubChildKey(hub, c)}&tab=${subId}`;
+export const hubByHref = (href: string): NavHub | undefined =>
+    NAVIGATION.find((e): e is NavHub => e.type === "hub" && e.href === href);
 
 // gruppi nascosti di default al reparto outbound (salvo riga esplicita)
 export const OUTBOUND_HIDDEN_GROUPS = ["Vendite", "Collaboratori", "Negozio"];
