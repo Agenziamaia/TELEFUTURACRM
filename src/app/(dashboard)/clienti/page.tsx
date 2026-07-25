@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
 
 interface Cliente {
     id: string;
@@ -376,6 +377,14 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             .then(({ data }) => setStoreOptions((data ?? []).map((r: any) => r.name)));
     }, []);
 
+    // Univocita' (regole Luca): CF/P.IVA bloccanti, cellulare con scelta
+    // sposta/cambia, email solo segnalata.
+    const [dupCell, setDupCell] = useState<DupCliente | null>(null);
+    const [emailDup, setEmailDup] = useState<DupCliente | null>(null);
+    const spostaRef = useRef(false);
+    const checkEmail = async () => {
+        setEmailDup(email.trim() ? (await trovaDuplicati({ excludeId: cliente?.id || null, email })).email : null);
+    };
     const handleSave = async () => {
         // Richiesta Luca: se il codice fiscale non esiste si deve poter salvare
         // lo stesso; restano obbligatori solo nome, cognome e cellulare.
@@ -396,6 +405,14 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             setError("Seleziona da chi è stato acquisito il cliente (negozio o Agenzia).");
             return;
         }
+
+        const dup = await trovaDuplicati({ excludeId: cliente?.id || null, cellulare, cfPiva, email });
+        if (dup.cfPiva) {
+            setError(`${tipo === "business" ? "La Partita IVA è già associata" : "Il Codice Fiscale è già associato"} al cliente "${dup.cfPiva.label}": è un dato univoco, controlla o correggi.`);
+            return;
+        }
+        if (dup.cellulare && !spostaRef.current) { setDupCell(dup.cellulare); return; }
+        if (dup.cellulare && spostaRef.current) { await liberaCellulare(dup.cellulare.id); spostaRef.current = false; setDupCell(null); }
 
         setLoading(true);
         setError(null);
@@ -447,6 +464,21 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+                    {dupCell && (
+                        <div className="mx-6 mb-2 p-4 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-2">
+                            <p className="text-sm text-amber-200 font-medium">📱 Questo cellulare è già associato al cliente <strong>“{dupCell.label}”</strong> — il numero è un dato univoco.</p>
+                            <div className="flex gap-2 flex-wrap">
+                                <button type="button" onClick={() => { spostaRef.current = true; handleSave(); }}
+                                    className="text-xs px-3 py-2 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-200 hover:bg-amber-500/30 font-bold">
+                                    Sposta il numero su questo cliente (lo toglie a “{dupCell.label}”)
+                                </button>
+                                <button type="button" onClick={() => setDupCell(null)}
+                                    className="text-xs px-3 py-2 rounded-lg bg-white/5 border border-white/15 text-slate-300 hover:bg-white/10 font-bold">
+                                    Inserisco un altro numero
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     {error && (
                         <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
                             {error}
@@ -526,9 +558,13 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
+                                    onBlur={checkEmail}
                                     className="w-full glass-input text-sm rounded-xl py-3"
                                     placeholder="mario.rossi@email.com"
                                 />
+                                {emailDup && (
+                                    <p className="text-xs text-amber-400">⚠️ Email già registrata sotto il cliente “{emailDup.label}” — si può salvare comunque.</p>
+                                )}
                             </div>
 
                             <div className="space-y-1.5">
