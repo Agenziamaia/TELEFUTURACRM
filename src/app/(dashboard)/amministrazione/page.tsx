@@ -252,7 +252,9 @@ function AmministrazioneInner() {
         return map;
     }, [filteredUsers]);
 
-    if (user && user.role !== "admin" && user.role !== "dev") {
+    // amministrativo e direttore_generale entrano per la SOLA sezione Utenti
+    // (sezioniVisibili sopra); tutti gli altri ruoli restano fuori.
+    if (user && !["admin", "dev", "amministrativo", "direttore_generale"].includes(user.role)) {
         return (
             <div className="glass-panel p-10 text-center max-w-lg mx-auto mt-10">
                 <Shield className="w-10 h-10 text-rose-400 mx-auto mb-4" />
