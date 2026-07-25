@@ -87,6 +87,9 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     // Il timer/inizia turno e' SOLO per il call center (regola Luca 25/07):
     // chi supervisiona le presenze non timbra e la tabella prende tutto lo spazio.
     const puoTimbrare = canUseBadge(user?.role);
+    // Il BACK OFFICE / CALLER timbra come un caller e NON ha il pannello team
+    // (regola Luca 25/07). Vale SOLO nel tab Badge: gli altri tab restano com'erano.
+    const vistaTeam = isAdminLike && user?.role !== "back_office_caller";
     const status: "off" | "running" | "paused" = !activeShift ? "off" : activeShift.pause_started_at ? "paused" : "running";
     const canStart = status === "off";
     const canPause = status === "running";
@@ -103,7 +106,7 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     }, [user?.name]);
 
     const fetchTeamStats = useCallback(async () => {
-        if (!isAdminLike) return;
+        if (!vistaTeam) return;
         const today = new Date().toISOString().slice(0, 10);
         const { count: presenti } = await supabase.from("shifts").select("*", { count: 'exact', head: true }).is("ended_at", null);
         const { data: todayShifts } = await supabase.from("shifts").select("*").gte("started_at", today);
@@ -115,7 +118,7 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
             totalMins += Math.max(0, (end - start) / 60000 - pause);
         });
         setTeamStats({ presenti: presenti || 0, totalMinutes: Math.floor(totalMins) });
-    }, [isAdminLike]);
+    }, [vistaTeam]);
 
     useEffect(() => {
         (async () => {
@@ -192,7 +195,7 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                     </p>
                 </div>
 
-                {isAdminLike && (
+                {vistaTeam && (
                     <>
                         <div className="glass-panel p-5 border-l-4 border-l-sky-500">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Presenti Ora</p>
@@ -298,7 +301,7 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
 
                 {/* Dashboard admin/Team View: senza card timbratura occupa TUTTA la larghezza */}
                 <div className={cn(puoTimbrare ? "xl:col-span-8" : "xl:col-span-12", "flex flex-col gap-6 min-w-0")}>
-                    {isAdminLike ? (
+                    {vistaTeam ? (
                         <>
                             <BadgeAdminDashboard onRefresh={async () => { await fetchActiveShift(); await fetchTeamStats(); }} />
                             <PresenzeAdmin />
