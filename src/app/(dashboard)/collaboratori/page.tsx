@@ -80,7 +80,7 @@ type ShiftRow = { id: number; employee_name: string; store: string; started_at: 
 function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     const { user } = useAuth();
     const [activeShift, setActiveShift] = useState<ShiftRow | null>(null);
-    const [todayMinutes, setTodayMinutes] = useState(0);
+        const [todaySeconds, setTodaySeconds] = useState(0);
     const [teamStats, setTeamStats] = useState({ presenti: 0, totalMinutes: 0 });
     const [loading, setLoading] = useState(true);
 
@@ -123,18 +123,20 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
 
     useEffect(() => {
         if (!activeShift) {
-            setTodayMinutes(0);
+            setTodaySeconds(0);
             return;
         }
+        // Il timer contava (e si aggiornava) solo al MINUTO: sembrava fermo.
+        // Ora conta i SECONDI e batte ogni secondo (i secondi si mostrano piccoli).
         const compute = () => {
-            const start = new Date(activeShift.started_at).getTime() / 60000;
-            const now = Date.now() / 60000;
-            let pause = Number(activeShift.total_pause_minutes) || 0;
-            if (activeShift.pause_started_at) pause += (now - new Date(activeShift.pause_started_at).getTime() / 60000);
-            setTodayMinutes(Math.max(0, Math.floor(now - start - pause)));
+            const start = new Date(activeShift.started_at).getTime() / 1000;
+            const now = Date.now() / 1000;
+            let pauseSec = (Number(activeShift.total_pause_minutes) || 0) * 60;
+            if (activeShift.pause_started_at) pauseSec += (now - new Date(activeShift.pause_started_at).getTime() / 1000);
+            setTodaySeconds(Math.max(0, Math.floor(now - start - pauseSec)));
         };
         compute();
-        const t = setInterval(compute, 60000);
+        const t = setInterval(compute, 1000);
         return () => clearInterval(t);
     }, [activeShift]);
 
@@ -183,7 +185,7 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                 <div className="glass-panel p-5 border-l-4 border-l-emerald-500">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Tempo Oggi</p>
                     <p className="text-2xl font-black text-white">
-                        {Math.floor(todayMinutes / 60)}h <span className="text-emerald-400">{String(todayMinutes % 60).padStart(2, "0")}m</span>
+                        {Math.floor(todaySeconds / 3600)}h <span className="text-emerald-400">{String(Math.floor(todaySeconds / 60) % 60).padStart(2, "0")}m</span> <span className="text-sm text-slate-400">{String(todaySeconds % 60).padStart(2, "0")}s</span>
                     </p>
                 </div>
 
@@ -220,8 +222,9 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                         <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl border border-white/5 p-6 mb-8 shadow-inner">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 italic">Timer Real-time</p>
                             <p className="text-5xl font-black text-white tracking-tighter tabular-nums drop-shadow-[0_0_10px_rgba(99,102,241,0.3)]">
-                                {Math.floor(todayMinutes / 60).toString().padStart(2, "0")}:
-                                {String(todayMinutes % 60).padStart(2, "0")}
+                                {Math.floor(todaySeconds / 3600).toString().padStart(2, "0")}:
+                                {String(Math.floor(todaySeconds / 60) % 60).padStart(2, "0")}
+                                <span className="text-2xl text-slate-400 align-baseline">:{String(todaySeconds % 60).padStart(2, "0")}</span>
                             </p>
                         </div>
 
@@ -323,9 +326,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
         setLoading(true);
         // Prendi tutti i turni non chiusi (active) e gli ultimi 50 chiusi
         const { data: activeData } = await supabase.from("shifts").select("*").is("ended_at", null).order("started_at", { ascending: false });
-        const { data: historyData } = await supabase.from("shifts").select("*").not("ended_at", "is", null).order("ended_at", { ascending: false }).limit(50);
-
-        setShifts([...(activeData || []), ...(historyData || [])] as ShiftRow[]);
+        setShifts((activeData || []) as ShiftRow[]);
         setLoading(false);
     }, []);
 
@@ -334,17 +335,24 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
     }, [fetchShifts]);
 
     const activeShifts = shifts.filter(s => !s.ended_at);
-    const historyShifts = shifts.filter(s => !!s.ended_at);
+    // Chiusura FORZATA di un turno rimasto aperto: solo pack amministrazione.
+    const canForce = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    const [forceId, setForceId] = useState<number | null>(null);
+    const forzaChiusura = async (sh: ShiftRow) => {
+        const now = new Date();
+        let pause = Number(sh.total_pause_minutes) || 0;
+        if (sh.pause_started_at) pause += Math.max(0, (now.getTime() - new Date(sh.pause_started_at).getTime()) / 60000);
+        await supabase.from("shifts").update({ ended_at: now.toISOString(), pause_started_at: null, total_pause_minutes: pause }).eq("id", sh.id);
+        setForceId(null);
+        await fetchShifts();
+        onRefresh();
+    };
 
     const filteredActive = activeShifts.filter(s =>
         s.employee_name.toLowerCase().includes(filterPerson.toLowerCase()) &&
         s.store.toLowerCase().includes(filterStore.toLowerCase())
     );
 
-    const filteredHistory = historyShifts.filter(s =>
-        s.employee_name.toLowerCase().includes(filterPerson.toLowerCase()) &&
-        s.store.toLowerCase().includes(filterStore.toLowerCase())
-    );
 
     const formatTime = (iso: string | null) => {
         if (!iso) return "--:--";
@@ -494,6 +502,21 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                                         <span className="text-xs font-medium text-amber-500/70">{Math.floor(Number(s.total_pause_minutes) || 0)}m</span>
                                     </div>
                                 </div>
+                                {canForce && (
+                                    <div className="relative z-10">
+                                        {forceId === s.id ? (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => forzaChiusura(s)} className="flex-1 text-[11px] py-1.5 rounded-lg bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 font-bold">Conferma chiusura</button>
+                                                <button onClick={() => setForceId(null)} className="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white text-[11px]">✕</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setForceId(s.id)} title="Chiude il turno adesso (per turni dimenticati aperti)"
+                                                className="w-full text-[11px] py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-slate-400 hover:text-rose-300 hover:border-rose-500/40 font-bold transition-colors">
+                                                ⛔ Forza chiusura
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -505,53 +528,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                 )}
             </div>
 
-            {/* Recent History Table */}
-            <div className="space-y-3">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Storico Recente (Ultimi 50)</p>
-                <div className="glass-card overflow-hidden">
-                    <div className="overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-white/[0.02] border-b border-white/5">
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Collaboratore</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Negozio</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Entrata</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Uscita</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Totale</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {filteredHistory.map(s => {
-                                    const start = new Date(s.started_at).getTime();
-                                    const end = s.ended_at ? new Date(s.ended_at).getTime() : 0;
-                                    const totalMins = end > 0 ? (end - start) / 60000 - (Number(s.total_pause_minutes) || 0) : 0;
-
-                                    return (
-                                        <tr key={s.id} className="hover:bg-white/[0.01] transition-colors group">
-                                            <td className="px-5 py-4 text-xs font-medium text-slate-400 capitalize">{formatDateShort(s.started_at)}</td>
-                                            <td className="px-5 py-4 text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">{s.employee_name}</td>
-                                            <td className="px-5 py-4 text-xs text-slate-500">{s.store}</td>
-                                            <td className="px-5 py-4 text-xs text-slate-400 text-center">{formatTime(s.started_at)}</td>
-                                            <td className="px-5 py-4 text-xs text-slate-400 text-center">{formatTime(s.ended_at)}</td>
-                                            <td className="px-5 py-4 text-sm font-black text-white text-right tracking-tight">
-                                                <span className="text-emerald-500/80">{minsToHours(totalMins)}</span>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                                {filteredHistory.length === 0 && (
-                                    <tr>
-                                        <td colSpan={6} className="px-5 py-12 text-center text-slate-500 text-sm italic">
-                                            Nessun dato storico trovato
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+            {/* Lo storico vive nel pannello Presenze qui sotto (filtri periodo/persona/negozio + export) */}
         </div>
     );
 }
@@ -1377,6 +1354,7 @@ function PresenzeAdmin() {
     const [da, setDa] = useState(primoDelMese());
     const [a, setA] = useState(() => new Date().toISOString().slice(0, 10));
     const [persona, setPersona] = useState("");
+    const [negozio, setNegozio] = useState("");
     const [rows, setRows] = useState<ShiftRow[]>([]);
     const [bench, setBench] = useState<{ label: string; ore: number }[]>([]);
 
@@ -1407,8 +1385,9 @@ function PresenzeAdmin() {
         })();
     }, [persona]);
 
-    const filtered = persona ? rows.filter((r) => r.employee_name === persona) : rows;
+    const filtered = rows.filter((r) => (!persona || r.employee_name === persona) && (!negozio || r.store === negozio));
     const persone = [...new Set(rows.map((r) => r.employee_name))].sort();
+    const negozi = [...new Set(rows.map((r) => r.store).filter(Boolean))].sort();
     const oreTot = filtered.reduce((acc, x) => acc + oreNette(x), 0);
     const giorniPresenza = new Set(filtered.map((r) => `${r.employee_name}|${r.started_at.slice(0, 10)}`)).size;
     const personeAttive = new Set(filtered.map((r) => r.employee_name)).size;
@@ -1437,7 +1416,7 @@ function PresenzeAdmin() {
     return (
         <div className="glass-card p-6">
             <div className="flex flex-wrap items-end gap-3 mb-4">
-                <h3 className="text-base font-bold text-white mr-auto">🗓 Presenze — periodo e persona</h3>
+                <h3 className="text-base font-bold text-white mr-auto">🗓 Storico presenze</h3>
                 <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Dal</label>
                     <input type="date" value={da} onChange={(e) => setDa(e.target.value)} className="glass-input text-xs py-1.5" />
@@ -1451,6 +1430,13 @@ function PresenzeAdmin() {
                     <select value={persona} onChange={(e) => setPersona(e.target.value)} className="glass-input text-xs py-1.5">
                         <option value="">Tutte</option>
                         {persone.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Negozio</label>
+                    <select value={negozio} onChange={(e) => setNegozio(e.target.value)} className="glass-input text-xs py-1.5">
+                        <option value="">Tutti</option>
+                        {negozi.map((n) => <option key={n} value={n}>{n}</option>)}
                     </select>
                 </div>
                 <button onClick={exportCsv} disabled={filtered.length === 0}
