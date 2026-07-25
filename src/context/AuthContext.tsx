@@ -21,11 +21,17 @@ interface User {
 
 interface LoginResult { ok: boolean; error?: string; mustChange?: boolean; email?: string }
 
+export interface ViewAsUser { id: string; name: string; role: Role; grade?: string | null; negozio?: string }
+
 interface AuthContextType {
     user: User | null;        // ATTENZIONE: role qui e' il ruolo EFFETTIVO (vedi viewAs)
     realRole: Role | null;    // ruolo vero dell'account, non cambia mai
     viewAs: Role | null;      // ruolo che si sta simulando (null = nessuno)
     setViewAs: (r: Role | null) => void;
+    // Simulazione di un UTENTE specifico (richiesta Luca 25/07): dopo il ruolo si
+    // sceglie la persona, cosi' visibilita' e negozi sono esattamente i suoi.
+    viewAsUser: ViewAsUser | null;
+    setViewAsUser: (u: ViewAsUser | null) => void;
     login: (email: string, password: string) => Promise<LoginResult>;
     completeFirstLogin: (email: string, oldPw: string, newPw: string) => Promise<LoginResult>;
     logout: () => void;
@@ -52,18 +58,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // viewAs = ruolo simulato: NON viene mai scritto sull'account.
     const [baseUser, setUser] = useState<User | null>(null);
     const [viewAs, setViewAsState] = useState<Role | null>(null);
+    const [viewAsUser, setViewAsUserState] = useState<ViewAsUser | null>(null);
     useEffect(() => {
         try { const v = localStorage.getItem("crm_view_as"); if (v) setViewAsState(v as Role); } catch { }
+        try { const u = localStorage.getItem("crm_view_as_user"); if (u) setViewAsUserState(JSON.parse(u)); } catch { }
     }, []);
     const setViewAs = (r: Role | null) => {
         setViewAsState(r);
+        // cambiare ruolo azzera l'utente simulato (potrebbe non avere quel ruolo)
+        setViewAsUserState(null);
+        try { localStorage.removeItem("crm_view_as_user"); } catch { }
         try { if (r) localStorage.setItem("crm_view_as", r); else localStorage.removeItem("crm_view_as"); } catch { }
+    };
+    const setViewAsUser = (u: ViewAsUser | null) => {
+        setViewAsUserState(u);
+        try { if (u) localStorage.setItem("crm_view_as_user", JSON.stringify(u)); else localStorage.removeItem("crm_view_as_user"); } catch { }
     };
     // Il permesso sta sull'account vero: cosi' il selettore resta visibile anche
     // mentre si simula un ruolo basso, altrimenti non si potrebbe piu' tornare admin.
     const puoCambiare = !!baseUser?.canSwitchRole;
+    // Utente EFFETTIVO: con un utente simulato si assumono identita', ruolo e
+    // negozio SUOI (cosi' useVisibleStores legge la sua visibilita' reale);
+    // con il solo ruolo simulato cambia solo il ruolo, come prima.
     const user: User | null = baseUser
-        ? { ...baseUser, role: (puoCambiare && viewAs) ? viewAs : baseUser.role }
+        ? (puoCambiare && viewAsUser)
+            ? { ...baseUser, id: viewAsUser.id, name: viewAsUser.name, role: viewAsUser.role, grade: viewAsUser.grade, negozio: viewAsUser.negozio }
+            : { ...baseUser, role: (puoCambiare && viewAs) ? viewAs : baseUser.role }
         : null;
     const router = useRouter();
     const pathname = usePathname();
@@ -173,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const logout = () => {
         clearAiChat(user?.id);
         setViewAs(null);   // il "guarda come" non sopravvive al logout
+        setViewAsUser(null);
         setUser(null);
         localStorage.removeItem("crm_session");
         localStorage.removeItem("crm_last_activity");
@@ -223,7 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, [user, router]);
 
     return (
-        <AuthContext.Provider value={{ user, realRole: baseUser?.role ?? null, viewAs: puoCambiare ? viewAs : null, setViewAs, login, completeFirstLogin, logout, isAuthenticated: !!user }}>
+        <AuthContext.Provider value={{ user, realRole: baseUser?.role ?? null, viewAs: puoCambiare ? viewAs : null, setViewAs, viewAsUser: puoCambiare ? viewAsUser : null, setViewAsUser, login, completeFirstLogin, logout, isAuthenticated: !!user }}>
             {children}
         </AuthContext.Provider>
     );

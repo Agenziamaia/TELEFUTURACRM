@@ -26,7 +26,16 @@ type Hit = {
 export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     const router = useRouter();
     const pathname = usePathname();
-    const { user, logout, realRole, viewAs, setViewAs } = useAuth();
+    const { user, logout, realRole, viewAs, setViewAs, viewAsUser, setViewAsUser } = useAuth();
+    // utenti attivi del ruolo simulato, per impersonare la PERSONA (visibilita' sua)
+    const [utentiRuolo, setUtentiRuolo] = useState<{ id: string; full_name: string; grade: string | null; primary_store: string | null }[]>([]);
+    useEffect(() => {
+        if (!viewAs) { setUtentiRuolo([]); return; }
+        let vivo = true;
+        supabase.from("app_users").select("id,full_name,grade,primary_store").eq("role", viewAs).eq("active", true).order("full_name")
+            .then(({ data }) => { if (vivo) setUtentiRuolo((data ?? []) as typeof utentiRuolo); });
+        return () => { vivo = false; };
+    }, [viewAs]);
     const canSwitchRole = !!user?.canSwitchRole;
     const lastPathRef = useRef<string | null>(null);
     const previousPathRef = useRef<string | null>(null);
@@ -254,6 +263,29 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                                 <option key={r.id} value={r.id}>Vedi come: {r.label}</option>
                             ))}
                         </select>
+                        {/* Secondo passo (richiesta Luca): scegli la PERSONA — visibilita',
+                            negozi e identita' diventano esattamente i suoi. */}
+                        {viewAs && utentiRuolo.length > 0 && (
+                            <select
+                                value={viewAsUser?.id || ""}
+                                onChange={(e) => {
+                                    const u = utentiRuolo.find((x) => x.id === e.target.value);
+                                    setViewAsUser(u ? { id: u.id, name: u.full_name, role: viewAs, grade: u.grade, negozio: u.primary_store || undefined } : null);
+                                }}
+                                title="Impersona un utente specifico: vedrai la SUA visibilita'"
+                                className={cn(
+                                    "h-9 rounded-xl px-3 text-xs font-semibold border transition-colors cursor-pointer max-w-[180px]",
+                                    viewAsUser
+                                        ? "bg-amber-500/20 border-amber-500/50 text-amber-200"
+                                        : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                                )}
+                            >
+                                <option value="">Ruolo generico</option>
+                                {utentiRuolo.map((u) => (
+                                    <option key={u.id} value={u.id}>👤 {u.full_name}{u.primary_store ? ` · ${u.primary_store}` : ""}</option>
+                                ))}
+                            </select>
+                        )}
                         {viewAs && (
                             <button
                                 onClick={() => setViewAs(null)}
@@ -302,7 +334,7 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                     <div className="hidden text-right md:block">
                         <p className="text-sm font-medium text-white leading-none">{user?.name || "Ospite"}</p>
                         <p className={cn("text-xs mt-1", viewAs ? "text-amber-300 font-semibold" : "text-slate-400")}>
-                            {user?.role ? roleLabel(user.role) : "Nessun Ruolo"}{viewAs ? " (simulato)" : ""}
+                            {user?.role ? roleLabel(user.role) : "Nessun Ruolo"}{viewAsUser ? ` (simulato: ${viewAsUser.name})` : viewAs ? " (simulato)" : ""}
                         </p>
                     </div>
                     <div className="w-9 h-9 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border-2 border-indigo-500/40 flex items-center justify-center overflow-hidden">
