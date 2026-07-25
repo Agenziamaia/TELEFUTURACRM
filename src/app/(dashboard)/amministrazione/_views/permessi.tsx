@@ -14,7 +14,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { ROLES, roleLabel } from "@/lib/roles";
+import { roleLabel } from "@/lib/roles";
+import { useRoles } from "@/lib/useRoles";
 import { NAVIGATION, effectiveAllowed, canSeeDefault, OUTBOUND_HIDDEN_GROUPS, hubChildKey, hubSubKey, type PermMap } from "@/lib/nav";
 import { notify, dbError } from "./toast";
 
@@ -49,7 +50,8 @@ function catalogo(): { titolo: string; voci: Riga[] }[] {
 export function PermessiView() {
     const { user } = useAuth();
     const isAdmin = ["admin", "dev"].includes(user?.role || "");
-    const ruoli = useMemo(() => ROLES.filter((r) => !["admin", "dev"].includes(r.id)), []);
+    const { roles: allRoles } = useRoles();
+    const ruoli = useMemo(() => allRoles.filter((r) => !["admin", "dev"].includes(r.id)), [allRoles]);
     const [ruolo, setRuolo] = useState<string>("");
     const [righe, setRighe] = useState<PermMap>(new Map());
     const [busy, setBusy] = useState<string | null>(null);

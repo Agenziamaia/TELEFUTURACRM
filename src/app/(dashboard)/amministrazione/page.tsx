@@ -12,6 +12,7 @@ import { PermessiView } from "./_views/permessi";
 import { RuoliView } from "./_views/ruoli";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
+import { useRoles } from "@/lib/useRoles";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
@@ -175,6 +176,8 @@ function AmministrazioneInner() {
     // GATING DAI PERMESSI (nav.ts + role_permissions): ogni sezione dell'hub e
     // ogni funzione di Utenti si concede una a una dalla pagina Permessi.
     const { perms } = useRolePermissions(user?.role);
+    // ruoli FUSI codice+DB: i ruoli creati da UI compaiono in filtri e form
+    const { roles: allRoles } = useRoles();
     const hubAmm = hubByHref("/amministrazione")!;
     const sezOk = (id: string) => {
         const child = hubAmm.children.find((c) => c.sez === id);
@@ -396,7 +399,7 @@ function AmministrazioneInner() {
                         </select>
                         <select className="glass-input w-auto" value={fRole} onChange={(e) => setFRole(e.target.value)}>
                             <option value="">Tutti i ruoli</option>
-                            {ROLES.map((r) => (
+                            {allRoles.map((r) => (
                                 <option key={r.id} value={r.id}>
                                     {r.label}
                                 </option>
@@ -665,6 +668,7 @@ function UserForm({
     onSaved: () => void;
 }) {
     const formRules = useRoleCosts();
+    const { roles: allRoles, gradesOf } = useRoles();
     // amministrativo/direttore_generale: creano utenti con campi (quasi) tutti
     // OBBLIGATORI (IBAN escluso) e SENZA le sezioni costo/visibilita'/brand,
     // che restano all'admin: alla creazione gli parte una task urgente.
@@ -682,7 +686,7 @@ function UserForm({
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState("");
 
-    const grades = gradesFor(f.role || "");
+    const grades = gradesOf(f.role || "");
 
     const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
 
@@ -711,7 +715,7 @@ function UserForm({
         });
 
     const onRoleChange = (role: string) => {
-        const g = gradesFor(role);
+        const g = gradesOf(role);
         setF((p) => ({ ...p, role, grade: g.length ? g[0].id : null }));
     };
 
@@ -859,7 +863,7 @@ function UserForm({
                             <select className="glass-input w-full" value={f.role} onChange={(e) => onRoleChange(e.target.value)}>
                                 {AREAS.map((a) => (
                                     <optgroup key={a.id} label={a.label}>
-                                        {ROLES.filter((r) => r.area === a.id).map((r) => (
+                                        {allRoles.filter((r) => r.area === a.id).map((r) => (
                                             <option key={r.id} value={r.id}>
                                                 {r.label}
                                             </option>
