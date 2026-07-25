@@ -142,8 +142,19 @@ export function RuoliView() {
             )}
 
             {!loaded ? <div className="p-8 text-center text-slate-500">Caricamento…</div> : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                    {visibili.map((r) => {
+                /* DIVISORI per contesto (come la Lista utenti): i ruoli raggruppati
+                   sotto l'intestazione della loro area, nell'ordine ufficiale. */
+                <div className="space-y-6">
+                    {AREAS.filter((a) => visibili.some((r) => r.area === a.id)).map((a) => (
+                        <div key={a.id} className="space-y-3">
+                            <div className="flex items-center gap-2 pb-1.5 border-b border-white/8">
+                                <span className="w-2 h-2 rounded-full" style={{ background: AREA_COLORS[a.id] }} />
+                                <h3 className="text-xs font-bold uppercase tracking-widest" style={{ color: AREA_COLORS[a.id] }}>
+                                    {a.label} · {visibili.filter((r) => r.area === a.id).length}
+                                </h3>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                {visibili.filter((r) => r.area === a.id).map((r) => {
                         const gente = perRuolo.get(r.id) ?? [];
                         const open = aperto === r.id;
                         const col = AREA_COLORS[r.area] || "#64748b";
@@ -212,6 +223,9 @@ export function RuoliView() {
                             </div>
                         );
                     })}
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
 
