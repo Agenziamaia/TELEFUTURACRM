@@ -164,9 +164,16 @@ export function PermessiView() {
                             <div className="divide-y divide-white/5">
                                 {g.voci.map((v) => {
                                     const eff = effectiveAllowed(ruolo, v.href, v.defaultRoles, righe, v.gruppo);
-                                    // se il livello sopra e' spento, la voce interna non conta nulla
-                                    const padreOff = !!v.padre && !g.voci.some((x) => x.href === v.padre &&
-                                        effectiveAllowed(ruolo, x.href, x.defaultRoles, righe, x.gruppo));
+                                    // COERENZA GERARCHICA (regola Luca): con un antenato spento la voce
+                                    // non conta nulla e NON si puo' accendere — prima si accende l'hub
+                                    // (o la sezione), poi si scelgono le voci interne una a una.
+                                    let padreOff = false;
+                                    for (let ph = v.padre; ph; ) {
+                                        const par = g.voci.find((x) => x.href === ph);
+                                        if (!par) break;
+                                        if (!effectiveAllowed(ruolo, par.href, par.defaultRoles, righe, par.gruppo)) { padreOff = true; break; }
+                                        ph = par.padre;
+                                    }
                                     // capacita' agganciate a QUESTA sezione: ingranaggio sulla riga
                                     const capGroup = CAPABILITIES.find((cg) => cg.section === v.href);
                                     return (
@@ -184,9 +191,9 @@ export function PermessiView() {
                                                         ⚙️
                                                     </button>
                                                 )}
-                                                <button onClick={() => toggle(v)} disabled={busy === v.href}
-                                                    className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"} ${busy === v.href ? "opacity-50" : ""}`}
-                                                    title={eff ? "Visibile — clicca per nascondere" : "Nascosta — clicca per concedere"}>
+                                                <button onClick={() => { if (!padreOff) toggle(v); }} disabled={busy === v.href || padreOff}
+                                                    className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"} ${busy === v.href ? "opacity-50" : ""} ${padreOff ? "cursor-not-allowed" : ""}`}
+                                                    title={padreOff ? "Prima accendi l'accesso all'hub (la riga sopra): con l'hub spento le voci interne non si possono abilitare" : eff ? "Visibile — clicca per nascondere" : "Nascosta — clicca per concedere"}>
                                                     <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${eff ? "left-6" : "left-0.5"}`} />
                                                 </button>
                                             </div>
