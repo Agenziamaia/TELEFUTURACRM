@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { routeBases, effectiveAllowed } from "@/lib/nav";
 import type { RoleId } from "@/lib/roles";
 
 // Ruolo reale (da app_users / roles.ts). "admin" mantiene visibilita' globale.
@@ -118,30 +119,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return () => { vivo = false; };
     }, [baseUser?.id, baseUser?.canSwitchRole]);
 
-    // Protezione rotte (ruoli reali). admin/direttore_generale = accesso pieno.
+    // Protezione rotte GUIDATA DALLA NAVIGAZIONE (src/lib/nav.ts + tabella
+    // role_permissions): stessa fonte della Sidebar e della pagina Permessi, in
+    // entrambe le direzioni — cio' che l'admin concede/toglie da li' vale anche
+    // qui, senza codice. admin/dev passano sempre; /dashboard mai bloccata.
+    const [routePerms, setRoutePerms] = useState<Map<string, boolean> | null>(null);
     useEffect(() => {
-        if (!user) return;
-        const isAdmin = user.role === "admin" || user.role === "dev" || user.role === "direttore_generale";
-        const adminOnly = ["/gestione", "/amministrazione", "/gare"];
-        // GARE: solo l'admin vero (nemmeno il direttore generale) — regola Luca 25/07.
-        if (pathname.startsWith("/gare") && !["admin", "dev"].includes(user.role)) {
-            router.push("/dashboard");
-            return;
-        }
-        // Amministrazione: anche l'amministrativo (solo sezione Utenti, gating in pagina).
-        if (pathname.startsWith("/amministrazione") && user.role === "amministrativo") return;
-        // Gestione PDA: aperta anche al reparto Outbound (direttore + agenti) in
-        // SOLA LETTURA sulle proprie pratiche — il gating fine sta nella pagina.
-        const gestioneOutbound = pathname.startsWith("/gestione") && ["direttore_ob", "agente", "amministrativo"].includes(user.role);
-        if (!isAdmin && !gestioneOutbound && adminOnly.some((p) => pathname.startsWith(p))) {
-            router.push("/dashboard");
-        }
-        // Il reparto Outbound non accede a Vendite, Collaboratori e Negozio.
-        const outboundBlocked = ["/registra-vendita", "/ricerca-vendite", "/pda/tracking", "/collaboratori", "/usati", "/ordine-merce", "/chiusura", "/password-v2"];
-        if (["agente", "direttore_ob"].includes(user.role) && outboundBlocked.some((p) => pathname.startsWith(p))) {
-            router.push("/dashboard");
-        }
-    }, [user, pathname, router]);
+        const role = user?.role;
+        if (!role || role === "admin" || role === "dev") { setRoutePerms(new Map()); return; }
+        let vivo = true;
+        supabase.from("role_permissions").select("perm_key,allowed").eq("role", role)
+            .then(({ data, error }) => {
+                if (!vivo) return;
+                const m = new Map<string, boolean>();
+                if (!error) (data ?? []).forEach((r: { perm_key: string; allowed: boolean }) => m.set(r.perm_key, r.allowed));
+                setRoutePerms(m);
+            });
+        return () => { vivo = false; };
+    }, [user?.role]);
+    useEffect(() => {
+        if (!user || !routePerms) return;
+        if (user.role === "admin" || user.role === "dev") return;
+        if (pathname === "/dashboard" || pathname === "/") return;
+        const hit = routeBases().find(({ base }) => base !== "/dashboard" && pathname.startsWith(base));
+        if (!hit) return; // rotte fuori menu: valgono i controlli delle singole pagine
+        const ok = hit.items.some((it) => effectiveAllowed(user.role, it.href, it.roles, routePerms, it.group));
+        if (!ok) router.push("/dashboard");
+    }, [user, pathname, router, routePerms]);
 
     const persist = (u: User) => {
         setUser(u);

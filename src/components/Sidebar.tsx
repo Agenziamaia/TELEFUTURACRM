@@ -39,110 +39,10 @@ import {
     Trophy,
 } from "lucide-react";
 
-type NavLink = { name: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[] };
-type NavGroup = { type: "group"; label: string; icon: React.ComponentType<{ className?: string }>; children: NavLink[] };
-type NavItem = { type: "link"; name: string; href: string; icon: React.ComponentType<{ className?: string }>; roles: string[] };
-// Hub: la voce naviga alla pagina E esplode le sotto-sezioni (?param=) sotto di sé
-type NavHubChild = { name: string; sez: string; icon?: React.ComponentType<{ className?: string }>; color?: string };
-type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: React.ComponentType<{ className?: string }>; roles: string[]; children: NavHubChild[] };
-
-// Gruppi di ruoli reali (roles.ts). "*" = tutti gli account autenticati.
-const EVERYONE = ["*"];
-const ADMINS = ["admin", "dev", "direttore_generale"];
-const MANAGERS = ["admin", "dev", "direttore_generale", "store_manager", "direttore_commerciale", "amministrativo", "direttore_cc", "direttore_ob"];
-const CALLCENTER = ["admin", "dev", "direttore_generale", "caller", "back_office_caller", "direttore_cc"];
-
-// Un elemento e' visibile se e' aperto a tutti ("*") o se include il ruolo reale dell'utente.
-const canSee = (roles: string[], role?: string | null) =>
-    roles.includes("*") || (!!role && roles.includes(role));
-
-const navigation: (NavGroup | NavItem | NavHub)[] = [
-    { type: "link", name: "Home", href: "/dashboard", icon: Home, roles: EVERYONE },
-    { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: EVERYONE },
-    { type: "link", name: "Caller", href: "/caller", icon: Phone, roles: CALLCENTER },
-    {
-        type: "group",
-        label: "Agenti",
-        icon: UserCog,
-        children: [
-            { name: "Invia pda", href: "/pda/invia", icon: Send, roles: EVERYONE },
-            { name: "Gestione pda", href: "/gestione", icon: Database, roles: [...ADMINS, "amministrativo", "direttore_ob", "agente"] },
-        ],
-    },
-    {
-        type: "group",
-        label: "Vendite",
-        icon: FileText,
-        children: [
-            { name: "Registra Vendita", href: "/registra-vendita", icon: FilePlus, roles: EVERYONE },
-            { name: "Ricerca Vendite", href: "/ricerca-vendite", icon: Database, roles: EVERYONE },
-            { name: "Tracking pda", href: "/pda/tracking", icon: Navigation, roles: EVERYONE },
-        ],
-    },
-    {
-        type: "group",
-        label: "Collaboratori",
-        icon: UsersIcon,
-        children: [
-            { name: "Badge", href: "/collaboratori?tab=badge", icon: Clock, roles: EVERYONE },
-            { name: "Ferie", href: "/collaboratori?tab=ferie", icon: CalendarDays, roles: EVERYONE },
-            { name: "Malattia", href: "/collaboratori?tab=malattia", icon: Shield, roles: MANAGERS },
-            { name: "Ritardi", href: "/collaboratori?tab=ritardi", icon: Clock3, roles: EVERYONE },
-        ],
-    },
-    {
-        type: "group",
-        label: "Negozio",
-        icon: StoreIcon,
-        children: [
-            { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: EVERYONE },
-            { name: "Ordine Merce", href: "/ordine-merce", icon: Package, roles: MANAGERS },
-            { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: EVERYONE },
-            { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
-        ],
-    },
-    { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: EVERYONE },
-    { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
-    { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
-    { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
-    { type: "link", name: "Assistente AI", href: "/assistente", icon: Sparkles, roles: MANAGERS },  // segnalazione 31: solo ruoli manageriali
-    {
-        type: "hub",
-        name: "Gare",
-        href: "/gare",
-        param: "brand",
-        icon: Trophy,
-        // Le GARE le vede SOLO l'admin (regola Luca 25/07): ne' direzione ne' altri.
-        roles: ["admin", "dev"],
-        children: [
-            { name: "WindTre", sez: "w3", color: "#FF6B00" },
-            { name: "Vodafone Store", sez: "vs", color: "#E60000" },
-            { name: "Vodafone VND", sez: "vnd", color: "#ff6666" },
-            { name: "Fastweb", sez: "fastweb", color: "#FFD800" },
-            { name: "Sky", sez: "sky", color: "#0072C6" },
-            { name: "S4", sez: "s4", color: "#28a745" },
-            { name: "TIM", sez: "tim", color: "#0050FF" },
-            { name: "Dojo", sez: "dojo", color: "#14b8a6" },
-        ],
-    },
-    {
-        type: "hub",
-        name: "Amministrazione",
-        href: "/amministrazione",
-        icon: Shield,
-        // amministrativo e direttore_generale entrano ma vedono SOLO Utenti
-        // (la pagina nasconde le altre sezioni e le funzioni riservate all'admin).
-        roles: [...ADMINS, "amministrativo"],
-        children: [
-            { name: "Utenti", sez: "utenti", icon: UsersIcon },
-            { name: "Negozi", sez: "negozi", icon: StoreIcon },
-            { name: "Costi condivisi", sez: "condivisi", icon: Building2 },
-            { name: "Altri costi", sez: "altri", icon: Tag },
-            { name: "Marginalità", sez: "marginalita", icon: Package },
-            { name: "Target", sez: "target", icon: ClipboardList },
-        ],
-    },
-];
+// Struttura menù + logica permessi: fonte unica in src/lib/nav.ts
+// (amministrabile da Amministrazione → Permessi, tabella role_permissions).
+import { NAVIGATION, effectiveAllowed, type NavHub, type NavEntry } from "@/lib/nav";
+import { useRolePermissions } from "@/lib/usePermissions";
 
 interface SidebarProps {
     isOpen?: boolean;
@@ -152,6 +52,9 @@ interface SidebarProps {
 export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     const pathname = usePathname();
     const { user, logout } = useAuth();
+    // override per ruolo dal DB (Amministrazione → Permessi); default = codice
+    const { perms } = useRolePermissions(user?.role);
+    const vede = (href: string, roles: string[], group?: string) => effectiveAllowed(user?.role, href, roles, perms, group);
 
     // Totale messaggi chat non letti -> badge sulla voce "Chat"
     const [chatUnread, setChatUnread] = useState(0);
@@ -168,7 +71,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
         const initial: Record<string, boolean> = {};
-        navigation.forEach((item) => {
+        NAVIGATION.forEach((item) => {
             if (item.type === "group") {
                 const hasActiveChild = item.children.some((c) => pathname === c.href);
                 initial[item.label] = hasActiveChild;
@@ -180,7 +83,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 
     // Entrando in una sezione hub (anche da altrove), la voce si esplode da sola
     useEffect(() => {
-        navigation.forEach((item) => {
+        NAVIGATION.forEach((item) => {
             if (item.type === "hub" && pathname.startsWith(item.href)) {
                 setExpandedGroups((prev) => (prev[item.name] ? prev : { ...prev, [item.name]: true }));
             }
@@ -193,16 +96,12 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 
     const visibleItems = useMemo(() => {
         if (!user) return [];
-        // Il reparto OUTBOUND (agenti + direttore) non vede Vendite, Collaboratori
-        // e Negozio (regola Luca 25/07) — le rotte sono bloccate anche in AuthContext.
-        const isOutbound = user.role === "agente" || user.role === "direttore_ob";
-        return navigation.filter((item) => {
-            if (isOutbound && "label" in item && ["Vendite", "Collaboratori", "Negozio"].includes(item.label)) return false;
-            if (item.type === "link" || item.type === "hub") return canSee(item.roles, user.role);
-            const children = item.children.filter((c) => canSee(c.roles, user.role));
-            return children.length > 0;
+        return NAVIGATION.filter((item: NavEntry) => {
+            if (item.type === "link" || item.type === "hub") return vede(item.href, item.roles);
+            return item.children.some((c) => vede(c.href, c.roles, item.label));
         });
-    }, [user]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user, perms]);
 
     return (
         <>
@@ -287,7 +186,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                             }
                             const group = item;
                             const isExpanded = expandedGroups[group.label] ?? false;
-                            const visibleChildren = group.children.filter((c) => canSee(c.roles, user?.role));
+                            const visibleChildren = group.children.filter((c) => vede(c.href, c.roles, group.label));
                             const Icon = group.icon;
                             return (
                                 <div key={group.label} className="space-y-0.5">

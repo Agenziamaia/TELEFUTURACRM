@@ -8,6 +8,8 @@ import { ToastHost, dbError, notify } from "./_views/toast";
 import { FixedStoreCosts, StoreAttachments } from "./_views/store-extra";
 import { TargetSection } from "./_views/target";
 import { MarginalitaView } from "./_views/marginalita";
+import { PermessiView } from "./_views/permessi";
+import { RuoliView } from "./_views/ruoli";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
@@ -152,7 +154,7 @@ export default function AmministrazionePage() {
 
 // Sezioni del hub Amministrazione: ogni card apre la sua pagina piena (?sez=)
 const SEZIONI = [
-    { id: "utenti", label: "Utenti", icon: Users, desc: "Anagrafica completa: ruoli e gradi, negozi e brand, contratti, costi e allegati." },
+    { id: "utenti", label: "Utenti", icon: Users, desc: "Lista utenti con costi e allegati; permessi di visibilità per ruolo; ruoli e organigramma." },
     { id: "negozi", label: "Negozi", icon: StoreIcon, desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
     { id: "condivisi", label: "Costi condivisi", icon: Building2, desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
     { id: "altri", label: "Altri costi", icon: Tag, desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
@@ -165,6 +167,8 @@ function AmministrazioneInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const sez = searchParams.get("sez");
+    // Utenti e' un GRUPPO (Luca 25/07): Lista utenti / Permessi (solo admin) / Ruoli
+    const utTab = searchParams.get("tab") || "lista";
     const go = (s?: string) => router.push(s ? `/amministrazione?sez=${s}` : "/amministrazione");
     // amministrativo e direttore_generale: SOLO la sezione Utenti, con funzioni
     // ridotte (niente costi/visibilita'/brand nel form; le gestisce l'admin).
@@ -293,7 +297,7 @@ function AmministrazioneInner() {
                         {current ? current.desc : "Il governo della piattaforma: scegli una sezione."}
                     </p>
                 </div>
-                {sez === "utenti" && !tableMissing && (
+                {sez === "utenti" && utTab === "lista" && !tableMissing && (
                     <div className="flex gap-2">
                         <button
                             onClick={() => setShowRoleCosts(true)}
@@ -344,6 +348,19 @@ function AmministrazioneInner() {
                 </div>
             ) : tableMissing ? null : sez === "utenti" ? (
                 <>
+                    {/* Il gruppo Utenti: tre funzioni sotto lo stesso tetto */}
+                    <div className="flex gap-2 flex-wrap">
+                        {([["lista", "👥 Lista utenti", true], ["permessi", "🔐 Permessi", ["admin", "dev"].includes(user?.role || "")], ["ruoli", "🏷️ Ruoli", true]] as [string, string, boolean][])
+                            .filter(([, , vis]) => vis)
+                            .map(([id, label]) => (
+                                <button key={id} onClick={() => router.push(`/amministrazione?sez=utenti&tab=${id}`)}
+                                    className={`text-sm px-4 py-2 rounded-lg border transition-colors ${utTab === id ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-200 font-bold" : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-slate-200"}`}>
+                                    {label}
+                                </button>
+                            ))}
+                    </div>
+                    {utTab === "permessi" ? <PermessiView /> : utTab === "ruoli" ? <RuoliView /> : (
+                    <>
                     {/* Filtri */}
                     <div className="glass-panel p-4 flex flex-wrap gap-3 items-center">
                         <div className="relative flex-1 min-w-[220px]">
@@ -412,6 +429,8 @@ function AmministrazioneInner() {
                                 </div>
                             </div>
                         ))
+                    )}
+                    </>
                     )}
                 </>
             ) : sez === "negozi" ? (
