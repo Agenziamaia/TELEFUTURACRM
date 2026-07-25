@@ -190,7 +190,11 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 
     const visibleItems = useMemo(() => {
         if (!user) return [];
+        // Il reparto OUTBOUND (agenti + direttore) non vede Vendite, Collaboratori
+        // e Negozio (regola Luca 25/07) — le rotte sono bloccate anche in AuthContext.
+        const isOutbound = user.role === "agente" || user.role === "direttore_ob";
         return navigation.filter((item) => {
+            if (isOutbound && "label" in item && ["Vendite", "Collaboratori", "Negozio"].includes(item.label)) return false;
             if (item.type === "link" || item.type === "hub") return canSee(item.roles, user.role);
             const children = item.children.filter((c) => canSee(c.roles, user.role));
             return children.length > 0;

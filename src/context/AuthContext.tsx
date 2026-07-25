@@ -109,6 +109,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!isAdmin && !gestioneOutbound && adminOnly.some((p) => pathname.startsWith(p))) {
             router.push("/dashboard");
         }
+        // Il reparto Outbound non accede a Vendite, Collaboratori e Negozio.
+        const outboundBlocked = ["/registra-vendita", "/ricerca-vendite", "/pda/tracking", "/collaboratori", "/usati", "/ordine-merce", "/chiusura", "/password-v2"];
+        if (["agente", "direttore_ob"].includes(user.role) && outboundBlocked.some((p) => pathname.startsWith(p))) {
+            router.push("/dashboard");
+        }
     }, [user, pathname, router]);
 
     const persist = (u: User) => {

@@ -6,6 +6,7 @@ import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 
 interface Cliente {
     id: string;
@@ -654,6 +655,71 @@ export default function ClientiPage() {
     const filterIdentifier = view.filterIdentifier;
     const setFilterIdentifier = (v: string) => setView((p) => ({ ...p, filterIdentifier: v }));
 
+    // ── OUTBOUND: vede per intero SOLO i clienti inseriti da lui (pratiche con il
+    // suo nome); degli altri solo nome/ragione sociale — dati e scheda oscurati.
+    // L'accesso completo si chiede all'amministrazione (client_access_requests).
+    const { user } = useAuth();
+    const role = user?.role || "";
+    const isOutbound = role === "agente" || role === "direttore_ob";
+    const canApproveAccess = ["amministrativo", "admin", "dev", "direttore_generale"].includes(role);
+    const [mieiClienti, setMieiClienti] = useState<Set<string> | null>(null);
+    const [accessOk, setAccessOk] = useState<Set<string>>(new Set());
+    const [accessPending, setAccessPending] = useState<Set<string>>(new Set());
+    const [richiesteAccesso, setRichiesteAccesso] = useState<Record<string, unknown>[]>([]);
+    const [accessMsg, setAccessMsg] = useState("");
+    const loadAccessi = async () => {
+        if (!user?.id) return;
+        const { data: reqs, error } = await supabase.from("client_access_requests")
+            .select("client_id,status").eq("requested_by", user.id);
+        if (!error) {
+            setAccessOk(new Set((reqs ?? []).filter((r) => r.status === "approved").map((r) => String(r.client_id))));
+            setAccessPending(new Set((reqs ?? []).filter((r) => r.status === "pending").map((r) => String(r.client_id))));
+        }
+    };
+    useEffect(() => {
+        if (!user?.id) return;
+        (async () => {
+            if (isOutbound) {
+                let nomi: string[] = [];
+                if (role === "agente") {
+                    const { data } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
+                    nomi = [data?.full_name, data?.match_name, user.name].filter(Boolean) as string[];
+                } else {
+                    const { data } = await supabase.from("app_users").select("full_name,match_name")
+                        .in("role", ["agente", "direttore_ob"]).eq("active", true);
+                    nomi = ((data ?? []) as { full_name: string; match_name: string | null }[])
+                        .flatMap((u) => [u.full_name, u.match_name]).filter(Boolean) as string[];
+                }
+                const { data: cs } = await supabase.from("contracts").select("client_id")
+                    .in("venditore", nomi.length ? nomi : ["—"]).limit(10000);
+                setMieiClienti(new Set(((cs ?? []) as { client_id: string | null }[]).map((c) => c.client_id).filter(Boolean) as string[]));
+                await loadAccessi();
+            }
+            if (canApproveAccess) {
+                const { data: reqs, error } = await supabase.from("client_access_requests")
+                    .select("*, clients(nome,cognome,ragione_sociale,tipo)").eq("status", "pending").order("created_at");
+                if (!error) setRichiesteAccesso((reqs ?? []) as Record<string, unknown>[]);
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, isOutbound, canApproveAccess, role]);
+    const oscurato = (c: Cliente) => isOutbound && (mieiClienti === null || (!mieiClienti.has(c.id) && !accessOk.has(c.id)));
+    const richiediAccesso = async (c: Cliente) => {
+        setAccessMsg("");
+        const { error } = await supabase.from("client_access_requests").insert({
+            client_id: c.id, requested_by: user?.id || null, requested_by_name: user?.name || "—",
+        });
+        if (error) { setAccessMsg("⚠️ Invio non riuscito (funzione in attivazione): riprova più tardi."); return; }
+        setAccessPending((p) => new Set([...p, c.id]));
+        setAccessMsg("✅ Richiesta inviata all'amministrazione: vedrai i dati appena approvata.");
+    };
+    const decidiAccesso = async (id: string, approve: boolean) => {
+        await supabase.from("client_access_requests").update({
+            status: approve ? "approved" : "rejected", decided_by: user?.name || "—", decided_at: new Date().toISOString(),
+        }).eq("id", id);
+        setRichiesteAccesso((p) => p.filter((r) => r.id !== id));
+    };
+
     const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
     const [contrattiForModal, setContrattiForModal] = useState<Contratto[]>([]);
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -762,7 +828,26 @@ export default function ClientiPage() {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight text-white">Clienti</h1>
-                        <p className="text-sm text-slate-400">Anagrafica completa dei clienti Consumer e Business</p>
+                        <p className="text-sm text-slate-400">{isOutbound ? "I tuoi clienti per intero; gli altri sono riservati — l'accesso si chiede all'amministrazione" : "Anagrafica completa dei clienti Consumer e Business"}</p>
+                        {accessMsg && <p className={`text-sm mt-1 font-medium ${accessMsg.startsWith("✅") ? "text-emerald-400" : "text-amber-400"}`}>{accessMsg}</p>}
+                        {canApproveAccess && richiesteAccesso.length > 0 && (
+                            <div className="mt-3 p-3 rounded-xl bg-violet-500/10 border border-violet-500/30 space-y-2">
+                                <div className="text-sm font-bold text-violet-300">🔓 Richieste di accesso ai dati cliente ({richiesteAccesso.length})</div>
+                                {richiesteAccesso.map((r) => {
+                                    const cl = r.clients as Record<string, unknown> | null;
+                                    const nomeCl = cl ? (cl.tipo === "business" && cl.ragione_sociale ? String(cl.ragione_sociale) : `${cl.nome || ""} ${cl.cognome || ""}`.trim()) : String(r.client_id);
+                                    return (
+                                        <div key={String(r.id)} className="flex items-center gap-3 text-sm text-slate-300 flex-wrap">
+                                            <span><strong className="text-white">{String(r.requested_by_name)}</strong> chiede l'accesso a <strong className="text-white">{nomeCl}</strong></span>
+                                            <span className="ml-auto flex gap-2">
+                                                <button onClick={() => decidiAccesso(String(r.id), true)} className="text-xs px-3 py-1.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 font-bold">Approva</button>
+                                                <button onClick={() => decidiAccesso(String(r.id), false)} className="text-xs px-3 py-1.5 rounded-md bg-rose-500/15 border border-rose-500/40 text-rose-300 hover:bg-rose-500/25 font-bold">Rifiuta</button>
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>
                 <button
@@ -946,7 +1031,35 @@ export default function ClientiPage() {
                                             </td>
                                         </tr>
                                     ) : paginatedData.length > 0 ? (
-                                        paginatedData.map((cliente) => (
+                                        paginatedData.map((cliente) => oscurato(cliente) ? (
+                                            /* Cliente GIA' NOSTRO non inserito dall'outbound: solo il nome.
+                                               Per i dati completi serve l'ok dell'amministrazione. */
+                                            <tr key={cliente.id} className="border-b border-white/5 bg-white/[0.01]">
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex-none w-10 h-10 rounded-full flex items-center justify-center border bg-white/5 border-white/10 text-slate-500">🔒</div>
+                                                        <div>
+                                                            <div className="font-medium text-slate-300">
+                                                                {cliente.tipo === "business" ? cliente.ragioneSociale : `${cliente.nome} ${cliente.cognome}`}
+                                                            </div>
+                                                            <div className="text-xs text-slate-600 mt-0.5">Cliente già acquisito — dati riservati</div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
+                                                <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
+                                                <td className="px-6 py-4 text-right">
+                                                    {accessPending.has(cliente.id) ? (
+                                                        <span className="text-xs px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium">⏳ In attesa di approvazione</span>
+                                                    ) : (
+                                                        <button onClick={() => richiediAccesso(cliente)}
+                                                            className="text-xs px-2.5 py-1.5 rounded-md bg-violet-500/15 border border-violet-500/40 text-violet-300 hover:bg-violet-500/25 transition-colors font-medium">
+                                                            🔓 Richiedi accesso
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ) : (
                                             <tr key={cliente.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-3">
