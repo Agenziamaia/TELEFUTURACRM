@@ -4,8 +4,9 @@ import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserI
 import { UrgentTasks } from "@/components/UrgentTasks";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { roleLabel, seesAllStores, ROLES } from "@/lib/roles";
+import { roleLabel, seesAllStores } from "@/lib/roles";
 import { supabase } from "@/lib/supabaseClient";
+import { useRoles } from "@/lib/useRoles";
 import { cn } from "@/utils";
 import { useRef, useEffect, useState } from "react";
 
@@ -27,6 +28,8 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     const router = useRouter();
     const pathname = usePathname();
     const { user, logout, realRole, viewAs, setViewAs, viewAsUser, setViewAsUser } = useAuth();
+    // ruoli FUSI codice+DB: anche i ruoli creati da UI si possono impersonare
+    const { roles: allRoles } = useRoles();
     // utenti attivi del ruolo simulato, per impersonare la PERSONA (visibilita' sua)
     const [utentiRuolo, setUtentiRuolo] = useState<{ id: string; full_name: string; grade: string | null; primary_store: string | null }[]>([]);
     useEffect(() => {
@@ -258,9 +261,9 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                                     : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
                             )}
                         >
-                            <option value="">Il mio ruolo ({realRole ? roleLabel(realRole) : "—"})</option>
-                            {ROLES.filter((r) => r.id !== realRole).map((r) => (
-                                <option key={r.id} value={r.id}>Vedi come: {r.label}</option>
+                            <option value="">{realRole ? roleLabel(realRole) : "—"}</option>
+                            {allRoles.filter((r) => r.id !== realRole).map((r) => (
+                                <option key={r.id} value={r.id}>{r.label}</option>
                             ))}
                         </select>
                         {/* Secondo passo (richiesta Luca): scegli la PERSONA — visibilita',
@@ -280,9 +283,9 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                                         : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
                                 )}
                             >
-                                <option value="">Ruolo generico</option>
+                                <option value="">Solo ruolo</option>
                                 {utentiRuolo.map((u) => (
-                                    <option key={u.id} value={u.id}>👤 {u.full_name}{u.primary_store ? ` · ${u.primary_store}` : ""}</option>
+                                    <option key={u.id} value={u.id}>{u.full_name}{u.primary_store ? ` · ${u.primary_store}` : ""}</option>
                                 ))}
                             </select>
                         )}
