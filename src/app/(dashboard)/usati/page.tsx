@@ -78,6 +78,33 @@ const statusMap = Object.fromEntries(STATUS_LIST.map(s => [s.key, s]));
 const STATUS_KEYS = STATUS_LIST.map(s => s.key);
 const LIFECYCLE: UsatoStatus[] = ["acquistato", "in_transito", "ricevuto", "in_lavorazione", "pronto", "invio_in_negozio", "in_vendita", "venduto"];
 
+// ── Chi può muovere ogni fase (segue il telefono fisico) ──────────────────────
+// negozio spedisce → LABORATORIO (ricezione, lavorazione, pronto, invio) = Tecnico Senior
+// → il negozio destinazione ACCETTA → vende o trasferisce. Amministrazione e admin: sempre tutto.
+const RUOLI_SEMPRE = ["admin", "dev", "direttore_generale", "amministrativo"];
+const RUOLI_NEGOZIO = ["venditore", "store_manager", "direttore_commerciale"];
+function puoMuovere(status: UsatoStatus, u: { role?: string; grade?: string | null } | null | undefined): boolean {
+    if (!u?.role) return false;
+    if (RUOLI_SEMPRE.includes(u.role)) return true;
+    const senior = u.role === "tecnico" && u.grade === "tecnico_senior";
+    switch (status) {
+        case "acquistato": return RUOLI_NEGOZIO.includes(u.role) || senior;   // il negozio spedisce al laboratorio
+        case "in_transito":                                                    // il tecnico firma l'arrivo
+        case "ricevuto":                                                       // inizia la lavorazione
+        case "in_lavorazione":                                                 // completa (pronto) o KO
+        case "pronto": return senior;                                          // il laboratorio spedisce al negozio
+        case "invio_in_negozio": return RUOLI_NEGOZIO.includes(u.role);        // ACCETTA chi riceve
+        case "in_vendita": return RUOLI_NEGOZIO.includes(u.role);              // vende o trasferisce
+        default: return false;
+    }
+}
+function faseGestitaDa(status: UsatoStatus): string {
+    if (["in_transito", "ricevuto", "in_lavorazione", "pronto"].includes(status)) return "Fase gestita dal Tecnico Senior (o amministrazione)";
+    if (status === "invio_in_negozio") return "In attesa di accettazione dal negozio destinazione";
+    if (status === "acquistato") return "Il negozio invia il dispositivo al laboratorio";
+    return "Fase gestita dal negozio che ha il dispositivo";
+}
+
 const KPI_CARDS = [
   { key: "_all", label: "Totale", icon: "📊", colorClass: "text-indigo-400", bgClass: "bg-indigo-500/10", borderClass: "border-indigo-500/30" },
   { key: "acquistato", label: "Acquistato", icon: "🛒", colorClass: "text-slate-400", bgClass: "bg-slate-500/10", borderClass: "border-slate-500/30" },
@@ -415,10 +442,22 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
       const u: Device = { ...p, status: next!, note_tecnico: noteTecnico,
         status_history: { ...p.status_history, [next!]: { date: new Date(), operatore } } };
       if (needsStore) u.target_store = targetStore;
+      // Accettazione: quando il negozio destinazione accetta (invio -> in vendita),
+      // il dispositivo passa in carico a LUI (prima restava sul magazzino mittente
+      // e non era vendibile dal negozio che lo aveva ricevuto).
+      if (next === "in_vendita" && p.target_store) { u.store = p.target_store; u.target_store = null; }
       if (next === "in_vendita") u.listed_date = new Date();
       if (next === "venduto") u.sold_date = new Date();
       return u;
     });
+  };
+  // Trasferimento tra negozi anche a dispositivo GIA' IN VENDITA (es. fermo in
+  // vetrina da troppo): torna "in arrivo" verso il negozio scelto, che deve
+  // accettarlo — solo all'accettazione passa in carico a lui. Ripetibile.
+  const sendToStore = () => {
+    if (!targetStore) return;
+    setDev(p => ({ ...p, status: "invio_in_negozio", target_store: targetStore, note_tecnico: noteTecnico,
+      status_history: { ...p.status_history, invio_in_negozio: { date: new Date(), operatore } } }));
   };
   const setKO = () => setDev(p => ({ ...p, status: "ko", note_tecnico: noteTecnico,
     status_history: { ...p.status_history, ko: { date: new Date(), operatore } } }));
@@ -457,7 +496,12 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             <div className="text-sm font-bold text-white mb-3"> Stato</div>
             <StatusBadge statusKey={dev.status} />
             <div className="mt-4"><StatusTimeline currentStatus={dev.status} history={dev.status_history} /></div>
-            {canAdvance && (
+            {canAdvance && !puoMuovere(dev.status, user) && (
+              <div className="mt-4 text-[11px] text-slate-500 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5">
+                🔒 {faseGestitaDa(dev.status)}
+              </div>
+            )}
+            {canAdvance && puoMuovere(dev.status, user) && (
               <div className="mt-4 flex flex-col gap-2">
                 {needsStore && (
                   <select value={targetStore} onChange={e => setTargetStore(e.target.value)}
@@ -467,8 +511,23 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                   </select>
                 )}
                 {next && <button onClick={advanceStatus} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/30 transition-all">
-                  {statusMap[next]?.icon} {statusMap[next]?.label}
+                  {needsStore ? <>📤 Invia a {targetStore || "…"}</>
+                    : dev.status === "invio_in_negozio" ? <>✅ Accetta in negozio{dev.target_store ? ` (${dev.target_store})` : ""}</>
+                    : <>{statusMap[next]?.icon} {statusMap[next]?.label}</>}
                 </button>}
+                {dev.status === "in_vendita" && (
+                  <div className="flex flex-col gap-2 border-t border-white/10 pt-3 mt-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Trasferisci a un altro negozio</div>
+                    <select value={targetStore} onChange={e => setTargetStore(e.target.value)}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
+                      <option value="">Seleziona Negozio...</option>
+                      {NEGOZI.filter(n => n !== dev.store).map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <button onClick={sendToStore} disabled={!targetStore} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-sm font-semibold hover:bg-amber-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                      📤 Invia a {targetStore || "…"}
+                    </button>
+                  </div>
+                )}
                 {["in_lavorazione", "ricevuto"].includes(dev.status) && (
                   <button onClick={setKO} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/20 text-red-400 border border-red-500/30 text-sm font-semibold hover:bg-red-500/30 transition-all"> KO</button>
                 )}

@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
-import { categoriaDi, controlliDi } from "@/lib/tassonomia";
+import { categoriaDi, controlliDi, CANONICA_BY_ID } from "@/lib/tassonomia";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { useAuth } from "@/context/AuthContext";
 const ReqCtx = createContext(null);
@@ -28,7 +28,7 @@ const vCF=(v)=>{if(!v)return null;const u=v.toUpperCase().replace(/\s/g,"");if(!
 
 // ── MARGINALITÀ DATA ──
 const MARG_PRODUCTS=[
-  {cat:"📦 Prodotti",items:[
+  {cat:"📦 Prodotti",items:[{id:"accessori",name:"Accessori",price:null,pctMargin:24.59,hasQty:true,icon:"🎧",type:"pct"},{id:"tel_senior",name:"Telefoni Senior",price:null,pctMargin:12.30,needsModel:true,icon:"📱",type:"pct"},{id:"earbuds",name:"Ear Buds",price:null,pctMargin:40.98,icon:"🎵",type:"pct"},{id:"vendita_usato",name:"Vendita Usato",price:null,pctMargin:13.00,needsModel:true,needsImei:true,icon:"♻️",type:"pct"},
     {id:"plx",name:"PLX",price:null,fixedMargin:8,hasQty:true,icon:"📦",type:"fixed"},
     {id:"cncp",name:"CN/CP",price:null,fixedMargin:2,hasQty:true,icon:"💳",type:"fixed"},
     {id:"new_cover",name:"New Cover",price:null,fixedMargin:8,hasQty:true,icon:"🔲",type:"fixed"},
@@ -41,13 +41,13 @@ const MARG_PRODUCTS=[
     {id:"assistenza",name:"Assistenza Tecnico",price:null,pctMargin:81.97,icon:"🔧",type:"pct"},
     {id:"backup",name:"Backup",price:null,pctMargin:81.97,icon:"💿",type:"pct"},
     {id:"riparazione",name:"Riparazione",price:null,pctMargin:24.59,needsModel:true,icon:"🔨",type:"pct"},
-    {id:"vendita_usato",name:"Vendita Usato",price:null,pctMargin:13.00,needsModel:true,needsImei:true,icon:"♻️",type:"pct"},
+    
     {id:"chiusura",name:"Chiusura Sim/Fisso",price:null,pctMargin:81.97,icon:"✂️",type:"pct"},
     {id:"etelefono",name:"E.Telefono",price:null,pctMargin:81.97,icon:"📞",type:"pct"},
-    {id:"accessori",name:"Accessori",price:null,pctMargin:24.59,hasQty:true,icon:"🎧",type:"pct"},
+    
     {id:"extra_acc",name:"Extra Acc. Compass",price:null,pctMargin:65.00,icon:"🧭",type:"pct"},
-    {id:"tel_senior",name:"Telefoni Senior",price:null,pctMargin:12.30,needsModel:true,icon:"📱",type:"pct"},
-    {id:"earbuds",name:"Ear Buds",price:null,pctMargin:40.98,icon:"🎵",type:"pct"},
+    
+    
     {id:"salva_scontrino",name:"Salva Scontrino",price:null,fixedMargin:3,icon:"🧾",type:"fixed"},
   ]},
   {cat:"🛡️ Kasko",items:[
@@ -56,8 +56,8 @@ const MARG_PRODUCTS=[
     {id:"kasko_sv",name:"Kasko SV",price:null,pctMargin:60.00,icon:"🔖",type:"pct"},
   ]},
   {cat:"📶 SIM",items:[
-    {id:"family_ontop",name:"Family+ On Top",price:null,fixedMargin:10,icon:"👨‍👩‍👧",type:"fixed"},
-    {id:"sim_w3",name:"Sim Wind3",price:null,fixedMargin:-5,linked:true,icon:"📶",type:"fixed"},
+    
+    {id:"sim_w3",name:"Sim Wind3",price:null,fixedMargin:-5,linked:true,icon:"📶",type:"fixed"},{id:"sim_vf",name:"Sim Vodafone",price:null,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},
     {id:"sim_fw",name:"Sim Fastweb",price:0,fixedMargin:-23,linked:true,icon:"📶",type:"fixed"},
     {id:"sost_fw",name:"Sost Fastweb",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
     {id:"sim_iliad",name:"Sim Iliad",price:0,fixedMargin:-10,linked:true,icon:"📶",type:"fixed"},
@@ -67,10 +67,10 @@ const MARG_PRODUCTS=[
     {id:"sost_tim",name:"Sost TIM",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
     {id:"sost_vod",name:"Sost Vodafone",price:0,fixedMargin:-10,linked:true,icon:"🔄",type:"fixed"},
     {id:"sost_w3",name:"Sost Wind3",price:0,fixedMargin:-15,linked:true,icon:"🔄",type:"fixed"},
-    {id:"sim_very",name:"Sim Very",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},
+    {id:"sim_very",name:"Sim Very",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},{id:"sim_kena",name:"Sim Kena",price:null,fixedMargin:0,linked:true,icon:"📶",type:"fixed"},
     {id:"sost_very",name:"Sost Very",price:0,fixedMargin:-7,linked:true,icon:"🔄",type:"fixed"},
     {id:"sim_l",name:"Sim L",price:0,fixedMargin:-15,linked:true,icon:"📶",type:"fixed"},
-    {id:"sim_next",name:"Sim Next",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},
+    
     {id:"subentro",name:"Subentro/Reale Util.",price:0,fixedMargin:-10,linked:true,icon:"🔄",type:"fixed"},
   ]},
   {cat:"📲 ESIM",items:[
@@ -149,9 +149,17 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
     if(show&&selProd&&selProd.needsImei){const n=Math.max(1,parseInt(qty)||1);setUsatoUnits(prev=>{const a=prev.map(u=>({...u}));while(a.length<n)a.push({imei:"",model:""});a.length=n;return a;});}
   },[qty,selProd,show]);
   if(!show)return null;
+  // Prezzo di vendita OBBLIGATORIO anche dall'aggiunta manuale: per le voci di brand
+  // (SIM/ESIM/Sost, linked) e per quelle a margine percentuale (senza importo il
+  // margine verrebbe 0). Le vendite SIM a importo NULL nascevano proprio da qui:
+  // la guardia al checkout copriva solo le voci AUTO del flusso brand.
+  const needImporto=!!(selProd&&(selProd.linked||selProd.type==="pct"));
+  const importoMissing=needImporto&&String(importo).trim()==="";
   const handleAdd=()=>{
     if(!selProd)return;
+    if(importoMissing)return;
     const p=selProd;
+    const impVal=String(importo).trim()===""?null:(parseFloat(importo)||0);
     // Telefono Cash: la base del 4% e' l'importo di VENDITA inserito.
     const pVal=p.isTelCash?(parseFloat(importo)||0):(p.price!==null?p.price:parseFloat(price)||0);
     const mVal=p.type==="fixed"?(p.fixedMargin||0):p.type==="pct"?(pVal*(p.pctMargin||0)/100):0;
@@ -160,9 +168,9 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
       const _im=units.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
       if(new Set(_im).size!==_im.length)return;
       const q=units.length||1;
-      onAdd({product:p.name,productId:p.id,price:pVal,qty:q,importo:parseFloat(importo)||null,margin:mVal,totalMargin:mVal*q,model:units.map(u=>u.model).filter(Boolean).join(", ")||null,imei:units.map(u=>u.imei).filter(Boolean).join(", ")||null,units,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false});
+      onAdd({product:p.name,productId:p.id,price:pVal,qty:q,importo:impVal,margin:mVal,totalMargin:mVal*q,model:units.map(u=>u.model).filter(Boolean).join(", ")||null,imei:units.map(u=>u.imei).filter(Boolean).join(", ")||null,units,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false,priceRequired:needImporto});
     }else{
-      onAdd({product:p.name,productId:p.id,price:pVal,qty:parseInt(qty)||1,importo:parseFloat(importo)||null,margin:mVal,totalMargin:mVal*(parseInt(qty)||1),model:model||null,imei:imei||null,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false});
+      onAdd({product:p.name,productId:p.id,price:pVal,qty:parseInt(qty)||1,importo:impVal,margin:mVal,totalMargin:mVal*(parseInt(qty)||1),model:model||null,imei:imei||null,venditore,negozio,date:new Date().toISOString().split("T")[0],linked:p.linked||false,countsPhone:p.countsPhone||false,priceRequired:needImporto});
     }
     setSelProd(null);setPrice("");setQty("1");setImporto("");setModel("");setImei("");setUsatoUnits([{imei:"",model:""}]);
   };
@@ -215,11 +223,12 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
               </div>
             );})}
           </div>}
-          <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{selProd.isTelCash?"Importo di vendita €":"Importo €"}</div>
-            <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
+          <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{selProd.isTelCash?"Importo di vendita €":"Importo €"}{needImporto&&<span style={{color:"#dc3545"}}> *</span>}</div>
+            <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:importoMissing?"2px solid #dc3545":"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
             {selProd.isTelCash&&<div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>
           {hasDupImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Sono presenti IMEI duplicati: correggili per registrare</div>}
-          <button onClick={handleAdd} disabled={hasDupImei} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:hasDupImei?"#cfcfcf":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:hasDupImei?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
+          {importoMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
+          <button onClick={handleAdd} disabled={hasDupImei||importoMissing} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:(hasDupImei||importoMissing)?"#cfcfcf":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:(hasDupImei||importoMissing)?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
         </div>)}
       </div>
     </div>
@@ -258,7 +267,8 @@ const BRANDS = [
   { id: "vodafone", logo: "/vodaphone - Copy.png", label: "Vodafone", short: "VF", color: "#E60000", gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)", icon: "📱", desc: "Mobile, Fisso, Multi-Servizi, Verisure", ready: true },
   { id: "fastweb", logo: "/fastweb.png", label: "Fastweb", short: "FW", color: "#CC9900", gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)", icon: "⚡", desc: "Mobile, Fisso, Energy", ready: true },
   { id: "iliad", logo: "/iliad.png", label: "Iliad", short: "IL", color: "#C00028", gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)", icon: "📡", desc: "Mobile e Fisso (Fibra)", ready: true },
-  { id: "energy", logo: "/energy - Copy.png", label: "Energy", short: "EN", color: "#28a745", gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)", icon: "🔋", desc: "Forniture Luce e Gas (S4, Barton)", ready: true },
+  { id: "energy", logo: "/energy - Copy.png", label: "S4", short: "S4", color: "#28a745", gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)", icon: "🔋", desc: "Forniture Luce e Gas", ready: true },
+  { id: "dojo", logo: "/dojo - Copy.png", label: "Dojo", short: "DOJO", color: "#14b8a6", gradient: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", icon: "🏧", desc: "POS e pagamenti", ready: true },
   { id: "tim", logo: "/tim-logo-v2.png", label: "TIM", short: "TIM", color: "#0050FF", gradient: "linear-gradient(135deg, #0033A0 0%, #0050FF 100%)", icon: "☎️", desc: "Mobile, Fisso, Multi-Servizi", ready: true },
   { id: "very", logo: "/very-mobile.png", label: "Very Mobile", short: "VERY", color: "#1FA300", gradient: "linear-gradient(135deg, #137A00 0%, #1FA300 100%)", icon: "🟢", desc: "Mobile", ready: true },
   { id: "ho", logo: "/ho-mobile.png", label: "Ho. Mobile", short: "HO", color: "#E6007E", gradient: "linear-gradient(135deg, #B0005F 0%, #E6007E 100%)", icon: "💗", desc: "Mobile", ready: true },
@@ -313,7 +323,7 @@ function useNegozi(){
   useEffect(()=>{const fn=()=>bump(v=>v+1);_negoziSubs.add(fn);loadNegozi();return()=>{_negoziSubs.delete(fn);};},[]);
   return negozi;
 }
-const opProv = ["Enel Energia","Eni Plenitude","A2A Energia","Edison Energia","Iren Mercato","Hera Comm","Sorgenia","Acea Energia","Engie","E.ON","Illumia","Wekiwi","Pulsee","Octopus Energy","Green Network","Dolomiti Energia","Axpo","NeN","Tate","WindTre Luce e Gas","Fastweb Energia","S4 Energy","Barton Energy","Altro"];
+const opProv = ["Enel Energia","Eni Plenitude","A2A Energia","Edison Energia","Iren Mercato","Hera Comm","Sorgenia","Acea Energia","Engie","E.ON","Illumia","Wekiwi","Pulsee","Octopus Energy","Green Network","Dolomiti Energia","Axpo","NeN","Tate","WindTre Luce e Gas","Fastweb Energia","S4","Barton Energy","Altro"];
 const opProvNoW3 = opProv.filter(o=>o!=="WindTre Luce e Gas");
 const brandMNP = ["TIM","Vodafone","WindTre","Iliad","Sky Mobile","Fastweb Mobile","PosteMobile","ho. Mobile","Kena Mobile","Very Mobile","CoopVoce","Spusu","Lyca Mobile","1Mobile","Tiscali Mobile","Digi Mobil","Noitel","Optima Mobile","Feder Mobile","Rabona Mobile","Elimobile","BT Italia","Segnoverde Mobile","Uno Mobile","Saily","Visitel","Ops! Mobile"];
 const SKY_TV = ["TV","TV 14,90","Sky Glass"];
@@ -2087,12 +2097,6 @@ const getEN = (tc) => {
       { id:"s4_luce", title:"Luce", isENLuceGas:true, enBrand:"S4", enProd:"Luce", hasContract:true, ct:"multi", fields:[]},
       { id:"s4_gas", title:"Gas", isENLuceGas:true, enBrand:"S4", enProd:"Gas", hasContract:true, ct:"multi", fields:[]},
     ]},
-    { id:"barton", title:"BARTON ENERGY", icon:"🔋", color:"#1a6b2d", radio:false, subs:[
-      { id:"bt_luce", title:"Luce", isENLuceGas:true, enBrand:"Barton", enProd:"Luce", hasContract:true, ct:"multi", fields:[]},
-      { id:"bt_luce_rid", title:"Luce RID", isENLuceGas:true, enBrand:"Barton", enProd:"LuceRID", hasContract:true, ct:"multi", fields:[]},
-      { id:"bt_gas", title:"Gas", isENLuceGas:true, enBrand:"Barton", enProd:"Gas", hasContract:true, ct:"multi", fields:[]},
-      { id:"bt_gas_rid", title:"Gas RID", isENLuceGas:true, enBrand:"Barton", enProd:"GasRID", hasContract:true, ct:"multi", fields:[]},
-    ]},
   ];
 };
 
@@ -2558,6 +2562,14 @@ const getHO = (tc) => (tc==="business")?[]:[
   ]},
 ];
 // Segnalazione 68: Kena Mobile segue il flusso identico a Ho Mobile.
+// Dojo: brand POS — consumer e business, prodotti della categoria POS
+const DOJO_CODICI_NEGOZIO=[];
+const getDOJO = () => [
+  { id:"pos", title:"POS", icon:"🏧", color:"#14b8a6", radio:false, subs:[
+    { id:"pos_dojo", title:"POS Dojo", hasContract:true, ct:"multi", fields:[]},
+  ]},
+];
+
 const getKena = (tc) => (tc==="business")?[]:[
   { id:"mobile", title:"MOBILE", icon:"📱", color:KENA_C, radio:true, subs:[
     { id:"ga", title:"MOBILE", isKenaMobile:true, hasContract:true, ct:"ga", fields:[] },
@@ -3599,6 +3611,7 @@ export default function CRM() {
   const [showMargSave,setShowMargSave]=useState(false);
   const [margSaveForm,setMargSaveForm]=useState({nome:"",cognome:"",tel:"",anonimo:false});
   const [margItems,setMargItems]=useState([]);
+  const [expR,setExpR]=useState({}); // riepilogo destro: gruppi esplosi/chiusi
   // Step 7 — nota e promemoria (segnalazione 21)
   const [notaOn,setNotaOn]=useState(false);
   const [nota,setNota]=useState("");
@@ -3662,7 +3675,7 @@ export default function CRM() {
   const [vfQtyModal,setVfQtyModal]=useState(null);
 
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
-  const cats=(brand==="windtre"?getW3(tipoCliente):brand==="vodafone"?getVF(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):[]);
+  const cats=(brand==="windtre"?getW3(tipoCliente):brand==="vodafone"?getVF(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):brand==="dojo"?getDOJO():[]);
   // Segnalazione 84: con un contratto energia (di qualsiasi brand) serve una
   // cartella "Fattura" per la bolletta del vecchio operatore.
   const _blEnergia=(BRANDS.find(b=>b.id===brand)||{}).label||"";
@@ -3700,7 +3713,7 @@ export default function CRM() {
 
   const colItems=useCallback(()=>{
     const items=[];
-    if(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"){const getCats=brand==="windtre"?getW3(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):getVF(tipoCliente);getCats.forEach(g=>{(sales[g.id]||[{}]).forEach((sale,si)=>{g.subs.forEach(sub=>{const d=sale[sub.id];if(d&&d.active){const det={...(d.fields||{}),...(d.contract||{}),hasContract:!!sub.hasContract};const _ed=extractDetails(d);for(const _k in _ed)det[_k]=_ed[_k];items.push({macro:g.title,macroColor:g.color,macroIcon:g.icon,sub:sub.title,saleNum:si+1,details:det})}})})})
+    if(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"){const getCats=brand==="windtre"?getW3(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):brand==="dojo"?getDOJO():getVF(tipoCliente);getCats.forEach(g=>{(sales[g.id]||[{}]).forEach((sale,si)=>{g.subs.forEach(sub=>{const d=sale[sub.id];if(d&&d.active){const det={...(d.fields||{}),...(d.contract||{}),hasContract:!!sub.hasContract};const _ed=extractDetails(d);for(const _k in _ed)det[_k]=_ed[_k];items.push({macro:g.title,macroColor:g.color,macroIcon:g.icon,sub:sub.title,saleNum:si+1,details:det})}})})})
     }else if(brand==="sky"){skyS.forEach((s,si)=>{if(s.tvSel)items.push({macro:"SKY TV",macroColor:"#0072C6",macroIcon:"📺",sub:s.tvSel,saleNum:si+1,details:{hasContract:true,"Codice Contratto":s.tvCC||"","Cod.Ins.":s.tvCodIns||sesCode||""}});if(s.fibraSel){const det={hasContract:true,"Codice Contratto":s.fibraCC||"","Cod.Ins.":s.fibraCodIns||sesCode||"","GNP":s.fibraGnp==="Sì"?"Sì":"No"};if(s.fibraGnp==="Sì"){det["Brand GNP"]=s.fibraGnpBrand||"";det["N.Fisso Portabilità"]=s.fibraGnpNum||""}items.push({macro:"SKY FIBRA",macroColor:"#0072C6",macroIcon:"🌐",sub:s.fibraSel,saleNum:si+1,details:det})}if(s.mobileSel){const det={hasContract:false,"Cod.Ins.":s.mobCodIns||sesCode||"","MNP":s.mobMnp==="Sì"?"Sì":"No"};if(s.mobMnp==="Sì"){det["N.Provvisorio"]=s.mobNumProv||"";det["N.Definitivo"]=s.mobNumDef||"";det["Brand MNP"]=s.mobBrandMnp||"";det["ICCID"]=s.mobIccid||""}else if(s.mobMnp==="No"){det["Numero"]=s.mobNum||"";det["ICCID"]=s.mobIccidNo||""}if(s.mobTied)det["TIED"]=s.mobTied;items.push({macro:"SKY MOBILE",macroColor:"#0072C6",macroIcon:"📱",sub:"Sky Mobile",saleNum:si+1,details:det})}});}
     return items;
   },[brand,sales,skyS,tipoCliente]);
@@ -3741,7 +3754,7 @@ export default function CRM() {
   const addCart=()=>{
     const items=colItems();
     if(blockSaveAll){sT(hasIncomplete?"⚠ Ci sono prodotti Incompleti: completali prima di salvare":(hasDupPodPdr?"⚠ POD/PDR duplicato: correggi prima di salvare":(hasDupCodContr?"⚠ Codice contratto duplicato: correggi prima di salvare":"⚠ Numero/ICCID non valido: correggi prima di salvare")));return;}
-    if(items.length>0&&bObj){const snap={sales:JSON.parse(JSON.stringify(sales)),sesCode,skyS:JSON.parse(JSON.stringify(skyS))};setCart(p=>[...p,{brandId:brand,brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items,sv:snap}]);sT("✅ "+items.length+" prodotti "+bObj.label)}
+    if(items.length>0&&bObj){const snap={sales:JSON.parse(JSON.stringify(sales)),sesCode,skyS:JSON.parse(JSON.stringify(skyS))};setCart(p=>[...p,{brandId:brand,brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items,sv:snap}]);setMargItems(p=>computeAutoMarg(p,brand,bObj.label,items));sT("✅ "+items.length+" prodotti "+bObj.label)}
     setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setBrand(null);
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
@@ -3758,6 +3771,34 @@ export default function CRM() {
   
   // ── Marginalità handlers ──
   const addMargItem=(item)=>{setMargItems(p=>[...p,item]);setShowMargPOS(false)};
+  // AUTO-MARGINALITÀ dal flusso brand: GA mobile -> SIM del brand (prezzo obbligatorio al
+  // checkout); Sostituzione Sim -> voce Sost; telefono TNP -> prodotto a prezzo di listino.
+  const AUTO_SIM={windtre:"Sim Wind3",vodafone:"Sim Vodafone",fastweb:"Sim Fastweb",iliad:"Sim Iliad",sky:"Sim Sky",ho:"Sim Ho.",tim:"Sim TIM",very:"Sim Very",kena:"Sim Kena"};
+  const AUTO_SOST={windtre:"Sost Wind3",fastweb:"Sost Fastweb",tim:"Sost TIM",vodafone:"Sost Vodafone",very:"Sost Very"};
+  const computeAutoMarg=(prev,brandId,brandLabel,items)=>{
+    if(!brandLabel)return prev;
+    const adds=[];
+    // niente doppioni: se la stessa voce e' gia' stata aggiunta A MANO dal pannello, l'auto non la duplica
+    const push=(name,locked)=>{if(!adds.some(a=>a.product===name)&&!prev.some(m=>!m.auto&&m.product===name))adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,priceLocked:!!locked,priceRequired:!locked})};
+    for(const it of (items||[])){
+      const macro=String(it.macro||"").toUpperCase();const sub=String(it.sub||"");
+      if(/sostituzione\s*sim/i.test(sub)){if(AUTO_SOST[brandId])push(AUTO_SOST[brandId]);}
+      else if(macro.includes("MOBILE")&&!/\bcb\b/i.test(sub)&&AUTO_SIM[brandId])push(AUTO_SIM[brandId]);
+      const det=it.details||{};
+      const tnp=[det["Tipo TNP"],det.tnpTipo,det.cbTnpTipo].map(v=>String(v||"").trim().toLowerCase());
+      if(tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))push("Telefono TNP (listino)",true);
+    }
+    const kept=prev.filter(m=>!(m.auto&&m.autoFrom===brandLabel));
+    // preserva i prezzi già digitati sugli auto identici
+    const merged=adds.map(a=>{const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&m.product===a.product);return old?{...a,importo:old.importo}:a});
+    return adds.length||kept.length!==prev.length?[...kept,...merged]:prev;
+  };
+  // Blocca il salvataggio se manca il prezzo di vendita: voci AUTO obbligatorie
+  // (priceRequired), voci manuali marcate priceRequired dal pannello, e — per le
+  // bozze salvate prima di questo flag — qualsiasi voce di brand (linked: SIM/Sost).
+  const margPriceMissing=(list)=>list.filter(m=>(m.priceRequired||m.linked)&&!m.priceLocked&&(m.importo==null||m.importo===""));
+  // live: le voci auto seguono in tempo reale la selezione dei prodotti del brand corrente
+  useEffect(()=>{ if(bObj) setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); },[sales,skyS,brand]); // eslint-disable-line react-hooks/exhaustive-deps
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
 
   // Segnalazione 27: i contratti si duplicavano perche' "Salva contratto" non
@@ -3769,14 +3810,21 @@ export default function CRM() {
   const [submitting, setSubmitting] = useState(false);
   const finalSubmit = async () => {
     if (submitLock.current) return;
+    // auto-marginalità anche per il brand corrente non ancora "aggiunto al carrello"
+    const nextMarg = bObj ? computeAutoMarg(margItems, brand, bObj.label, colItems()) : margItems;
+    if (nextMarg !== margItems) setMargItems(nextMarg);
+    const senzaPrezzo = margPriceMissing(nextMarg);
+    if (senzaPrezzo.length) { setShowCart(true); sT("⚠️ Inserisci il prezzo di vendita per: " + senzaPrezzo.map(m => m.product).join(", ")); return; }
     submitLock.current = true;
     setSubmitting(true);
     let ok = false;
-    try { ok = await _finalSubmitInner(); }
+    try { ok = await _finalSubmitInner(nextMarg); }
     finally { if (!ok) { submitLock.current = false; setSubmitting(false); } }
   };
-  const _finalSubmitInner = async () => {
+  const _finalSubmitInner = async (margList = margItems) => {
     if(blockSaveAll){sT("⚠ Completa tutti i prodotti (Incompleto) prima di salvare");return;}
+    const _mm2 = margPriceMissing(margList);
+    if(_mm2.length){setShowCart(true);sT("⚠️ Inserisci il prezzo di vendita per: "+_mm2.map(m=>m.product).join(", "));return;}
     const cur = colItems();
     const fc = [...cart];
     if (cur.length > 0 && bObj) {
@@ -3790,7 +3838,7 @@ export default function CRM() {
       });
     }
 
-    if (fc.length === 0 && margItems.length === 0) {
+    if (fc.length === 0 && margList.length === 0) {
       sT("⚠️ Nessun prodotto da salvare");
       return;
     }
@@ -3921,40 +3969,43 @@ export default function CRM() {
             _d["Codice Ordine"] ||
             "—"
           );
+          // Tassonomia unica: in `categoria` va l'ETICHETTA CANONICA (Mobile, Fisso,
+          // Energia, ...) — mai piu' il titolo del menu' del brand, che resta nei
+          // dettagli (menu_brand) per non perdere nulla. Layer 1 del flusso (Luca 25/07).
+          const macroId = categoriaDi(group.brandLabel, item.macro, item.sub);
+          const giaAttivo = /sostituzione|sost /i.test(String(item.sub || "")) || macroId === "extra";
           contractRows.push({
             id: `CTR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
             client_id: clientId,
             data: dateStr,
             brand: group.brandLabel,
-            categoria: item.macro,
-            // Tassonomia unica: categoria valida per tutti i brand + controlli
-            // richiesti dalla pratica. Il nome del brand resta in `categoria`.
-            categoria_macro: categoriaDi(group.brandLabel, item.macro, item.sub),
+            categoria: CANONICA_BY_ID[macroId],
+            categoria_macro: macroId,
             controlli: controlliDi(item.details),
             prodotto: item.sub,
             // Segnalazione 52: Extra e Sostituzione SIM nascono gia' attivi
             // (Completato nel Tracking), non "Nuovo".
-            stato: (/sostituzione|sost /i.test(String(item.sub || "")) || categoriaDi(group.brandLabel, item.macro, item.sub) === "extra") ? "Attivo" : "Nuovo",
-            stato_negozio: (/sostituzione|sost /i.test(String(item.sub || "")) || categoriaDi(group.brandLabel, item.macro, item.sub) === "extra") ? "attivato" : "nuovo",
+            stato: giaAttivo ? "Attivo" : "Nuovo",
+            stato_negozio: giaAttivo ? "attivato" : "nuovo",
             venditore: selVend,
             negozio: selNeg,
             codice_attivazione: String(actCode),
             data_registrazione: dateStr,
             data_attivazione: dateStr,   // compilata subito: e' la data di registrazione (Luca)
             note: (notaOn && nota.trim()) ? nota.trim() : null,
-            dettagli: item.details || {},
+            dettagli: { ...(item.details || {}), menu_brand: item.macro },
             is_demo: false
           });
         });
       });
 
-      margItems.forEach(mi => {
+      margList.forEach(mi => {
         contractRows.push({
           id: `EXT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
           client_id: clientId,
           data: dateStr,
-          brand: "Extra",
-          categoria: "Prodotto/Servizio",
+          brand: "Marginalità",
+          categoria: "Marginalità",
           categoria_macro: "extra",
           controlli: [],
           prodotto: mi.product,
@@ -4028,6 +4079,8 @@ export default function CRM() {
   // come fa handleSubmit per il ramo con brand.
   const [margSaving,setMargSaving]=useState(false);
   const saveMargOnly=async()=>{
+    const _mm = margPriceMissing(margItems);
+    if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
     if(margSaving)return;
     const anon=margSaveForm.anonimo;
     if(!anon&&!(margSaveForm.nome.trim()&&margSaveForm.cognome.trim()&&margSaveForm.tel.trim()))return;
@@ -4057,7 +4110,7 @@ export default function CRM() {
       }
       const rows=margItems.map(mi=>({
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
-        client_id:clientId,data:dateStr,brand:"Extra",categoria:"Prodotto/Servizio",categoria_macro:"extra",controlli:[],
+        client_id:clientId,data:dateStr,brand:"Marginalità",categoria:"Marginalità",categoria_macro:"extra",controlli:[],
         // Segnalazione 52: le vendite a marginalita' sono brand Extra, quindi
         // nascono gia' Attive (non sono pratiche da attivare). Questo percorso di
         // salvataggio scriveva "Nuovo" fisso e non valorizzava l'esito negozio.
@@ -4182,9 +4235,19 @@ export default function CRM() {
                 <span style={{fontWeight:700,fontSize:13}}>{item.product}</span>
                 {item.model&&<span style={{fontSize:11,color:"#64748b",marginLeft:6}}>{item.model}</span>}
                 <span style={{fontSize:11,color:"#6f42c1",marginLeft:8}}>x{item.qty||1}</span>
-                {item.importo!=null&&<span style={{fontSize:11,color:"#28a745",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>}
+                {item.auto&&<span style={{fontSize:9,fontWeight:800,color:"#6f42c1",border:"1px solid rgba(111,66,193,.4)",borderRadius:5,padding:"1px 6px",marginLeft:8}}>AUTO · {item.autoFrom}</span>}
+                {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"#17a2b8",marginLeft:8}}>prezzo di listino</span>:(item.auto||item.priceRequired||item.linked)?null:(item.importo!=null&&<span style={{fontSize:11,color:"#28a745",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
               </div>
-              <button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                {(item.auto||item.priceRequired||item.linked)&&!item.priceLocked&&<span style={{display:"flex",alignItems:"center",gap:4}}>
+                  <input type="number" step="0.01" min="0" value={item.importo??""} placeholder="prezzo *"
+                    onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((m,i)=>i===idx?{...m,importo:v}:m))}}
+                    style={{width:92,padding:"6px 8px",borderRadius:7,fontSize:12,textAlign:"right",border:(item.importo==null||item.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>
+                  <span style={{fontSize:11,color:"#8892b0"}}>€</span>
+                </span>}
+                {item.auto?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"#dc3545",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
+                :<button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button>}
+              </div>
             </div>
           ))}
         </div>}
@@ -4285,12 +4348,36 @@ export default function CRM() {
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].map((g,gi)=>(
-                <div key={gi} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid "+(g.brandColor||"#64748b"),borderRadius:8,padding:"8px 10px"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{g.brandIcon} {g.brandLabel}{g.isCurrent?" •":""}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"#64748b"}}>{g.items.length}</div></div>
-                  <div style={{fontSize:10,color:"#64748b",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>
+                <div key={gi} onClick={()=>setExpR(p=>({...p,["g"+gi]:!p["g"+gi]}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid "+(g.brandColor||"#64748b"),borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{g.brandIcon} {g.brandLabel}{g.isCurrent?" •":""}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"#64748b"}}>{g.items.length} {expR["g"+gi]?"▾":"▸"}</div></div>
+                  {!expR["g"+gi]&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>}
+                  {expR["g"+gi]&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
+                    {g.items.map((it,ii)=>{const det=it.details||{};const off=det["Offerta Mobile"]||det.offerta||det["Offerta"]||"";return (
+                      <div key={ii} style={{background:"rgba(255,255,255,0.03)",borderRadius:6,padding:"5px 8px"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0"}}>{it.macroIcon} {it.sub}<span style={{color:"#64748b",fontWeight:600}}> · vendita {it.saleNum}</span></div>
+                        {off&&<div style={{fontSize:10,color:"#8892b0",marginTop:1}}>{String(off)}</div>}
+                      </div>);})}
+                  </div>}
                 </div>
               ))}
-              {margItems.length>0&&<div style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid #6f42c1",borderRadius:8,padding:"8px 10px"}}><div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#6f42c1"}}>📦 Prodotti & Marginalità</div><div style={{fontSize:11,fontWeight:700,color:"#6f42c1"}}>{margItems.length}</div></div></div>}
+              {margItems.length>0&&<div onClick={()=>setExpR(p=>({...p,marg:(p.marg??true)?false:true}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid #6f42c1",borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#6f42c1"}}>📦 Prodotti & Marginalità</div><div style={{fontSize:11,fontWeight:700,color:"#6f42c1"}}>{margItems.length} {(expR.marg??true)?"▾":"▸"}</div></div>
+                {(expR.marg??true)&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
+                  {margItems.map((m,mi)=>(
+                    <div key={mi} style={{background:"rgba(255,255,255,0.03)",borderRadius:6,padding:"5px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0"}}>{m.product}<span style={{color:"#64748b",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"#6f42c1",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
+                      {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"#17a2b8"}}>listino</div>
+                      :(m.auto||m.priceRequired||m.linked)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
+                        <input type="number" step="0.01" min="0" value={m.importo??""} placeholder="prezzo *"
+                          onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((x,i)=>i===mi?{...x,importo:v}:x))}}
+                          style={{width:74,padding:"4px 6px",borderRadius:6,fontSize:11,textAlign:"right",border:(m.importo==null||m.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"rgba(255,255,255,0.05)",color:"#f8fafc"}}/>
+                        <span style={{fontSize:10,color:"#8892b0"}}>€</span>
+                      </span>
+                      :<div style={{fontSize:10,fontWeight:700,color:m.importo!=null?"#28a745":"#dc3545"}}>{m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire"}</div>}
+                    </div>
+                  ))}
+                </div>}
+              </div>}
             </div>
           )}
         </div>
@@ -4300,10 +4387,10 @@ export default function CRM() {
       </div>
       {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#28a745",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
       <div style={{background:bG,borderRadius:12,padding:"14px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:36,height:36,background:"rgba(255,255,255,.2)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{bObj?bObj.icon:"⚡"}</div><div><div style={{color:"#fff",fontWeight:700,fontSize:16}}>Registra Contratto</div><div style={{color:"rgba(255,255,255,.7)",fontSize:11}}>{bObj?bObj.label:"Seleziona brand"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div></div></div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:36,height:36,background:"rgba(255,255,255,.2)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{bObj?bObj.icon:"⚡"}</div><div><div style={{color:"#fff",fontWeight:700,fontSize:16}}>Registra Vendita</div><div style={{color:"rgba(255,255,255,.7)",fontSize:11}}>{bObj?bObj.label:"Seleziona brand"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div></div></div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>setShowMargSection(true)} title="Prodotti & Marginalità" style={{padding:"8px 16px",borderRadius:8,border:"1px solid rgba(255,255,255,.4)",background:"rgba(255,255,255,.15)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>📦 Prodotti&Marginalità{margItems.length>0&&<span style={{background:"#FFD800",color:"#f8fafc",borderRadius:8,padding:"1px 7px",fontSize:11,fontWeight:800}}>{margItems.length}</span>}</button><button onClick={()=>setShowCart(true)} style={{background:tCI>0?"rgba(255,255,255,.25)":"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.3)",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,cursor:"pointer",fontWeight:700,display:"flex",alignItems:"center",gap:6}}>🛒 Carrello{tCI>0&&<span style={{background:"#FFD800",color:"#f8fafc",borderRadius:10,padding:"1px 7px",fontSize:11,fontWeight:800}}>{tCI}</span>}</button>
-          <button onClick={()=>setConfirmReset(true)} title="Reset tutto" style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.25)",borderRadius:8,padding:"8px 14px",color:"rgba(255,255,255,.85)",fontSize:13,cursor:"pointer",fontWeight:700}}>🔄 Reset</button>
+          
+          
         </div>
       </div>
 
@@ -4378,11 +4465,11 @@ export default function CRM() {
         </div>
       </div>}
 
-      {showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="sky"?"#0072C6":"#2E75B6")}}>
-        <div style={{fontSize:11,fontWeight:700,color:brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="sky"?"#0072C6":"#2E75B6",marginBottom:14,textTransform:"uppercase"}}>📂 Step 4 — Prodotti e Contratto</div>
+      {showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6")}}>
+        <div style={{fontSize:11,fontWeight:700,color:brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6",marginBottom:14,textTransform:"uppercase"}}>📂 Step 4 — Prodotti e Contratto</div>
         <div style={{background:"rgba(0,114,198,0.10)",borderRadius:8,padding:10,marginBottom:14,display:"flex",alignItems:"center",gap:12,border:"1px solid rgba(0,114,198,0.18)",flexWrap:"wrap"}}>
           <span style={{fontSize:11,fontWeight:700,color:"#1B3A5C"}}>Codice inserimento:</span>
-          <select value={sesCode} onChange={e=>setSesCode(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid rgba(0,114,198,0.18)",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.02)",minWidth:140}}><option value="">— Seleziona —</option>{(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <select value={sesCode} onChange={e=>setSesCode(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid rgba(0,114,198,0.18)",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.02)",minWidth:140}}><option value="">— Seleziona —</option>{(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="dojo"?DOJO_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=><option key={c} value={c}>{c}</option>)}</select>
         </div>
         {cats.map(group=>{const cc=catCounts(group.id,group.subs);return <div key={group.id} style={{marginBottom:16}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:16}}>{group.icon}</span><span style={{fontSize:13,fontWeight:700,color:group.color,textTransform:"uppercase"}}>{group.title}</span>{cc.tot>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:"#8892b0",background:"transparent",borderRadius:999,padding:"2px 10px"}}>{cc.tot} {cc.tot===1?"vendita":"vendite"}{cc.ok>0&&<span style={{color:"#28a745"}}>· {cc.ok} ✓</span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>· {cc.warn} ⚠</span>}{cc.empty>0&&<span style={{color:"#64748b"}}>· {cc.empty} ●</span>}</span>}</div>

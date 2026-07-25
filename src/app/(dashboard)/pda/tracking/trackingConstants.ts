@@ -119,7 +119,10 @@ export const STATI_ADMIN_FINANZIAMENTO = [
   { id: "ripagato", label: "Ripagato", color: "#4ade80", bg: "#052e16" },
 ];
 
-export const ALL_BRANDS = ["Vodafone", "Fastweb", "WindTre", "Iliad", "Tim", "S4 Energy", "Sky"];
+import { BRAND_CANONICI } from "@/lib/tassonomia";
+// Fonte unica (tassonomia): niente liste parallele da tenere allineate a mano.
+// La Marginalità non ha pratiche da tracciare.
+export const ALL_BRANDS = BRAND_CANONICI.filter((b) => b !== "Marginalità");
 
 export const MALUS_SOGLIE: Record<string, number | null> = {
   mnp: 6,

@@ -8,6 +8,7 @@ const CART_STORAGE_KEY = "ordine-merce-cart-v1";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
 import { useAuth } from "@/context/AuthContext";
+import { sameStore } from "@/lib/visibleStores";
 
 /* ═══════════════════════════════════════════════════
    ORDINE MERCE v2 — Telefutura CRM
@@ -92,8 +93,8 @@ const BRAND_SUB = {
       vodafone: {
         _hasChannels: true,
         channels: {
-          vdf_store: { label: "Vodafone Store", items: ["Sostituzioni", "E Sim", "E Sim Next", "Sim Next"] },
-          vnd: { label: "VND", items: ["Sostituzioni", "E Sim", "E Sim Next", "Sim Next"] },
+          vdf_store: { label: "Vodafone Store", items: ["Sostituzioni", "E Sim", "E Sim Vodafone", "Sim Vodafone"] },
+          vnd: { label: "VND", items: ["Sostituzioni", "E Sim", "E Sim Vodafone", "Sim Vodafone"] },
         }
       },
       fastweb: ["Sim", "ESim", "Sostitutiva", "ESim Sostitutiva"],
@@ -359,7 +360,7 @@ const Pill = ({ label, color, bg, small }) => (
 );
 
 /* ═══ MAIN COMPONENT ═══ */
-export default function OrdineMerceContent({ role: propRole, myStore: propMyStore }) {
+export default function OrdineMerceContent({ role: propRole, myStore: propMyStore, myStores: propMyStores, seesAll: propSeesAll }) {
   const [roleState, setRoleState] = useState("store_manager");
   const [myStoreState] = useState("");
   const storeList = useStores(); // negozi reali dal DB (segn.51)
@@ -369,6 +370,9 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const userName = user?.name || null;
   const role = propRole != null ? propRole : roleState;
   const myStore = propMyStore != null ? propMyStore : myStoreState;
+  // TUTTI i negozi visibili all'utente (fonte unica, passati dalla pagina):
+  // chi ne gestisce piu' d'uno vede gli ordini di tutti e sceglie per quale ordina.
+  const negoziMiei = (propMyStores && propMyStores.length) ? propMyStores : (myStore ? [myStore] : []);
   const isControlled = propRole != null;
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -492,13 +496,18 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [editingItemIdx, setEditingItemIdx] = useState(null);
   const [editForm, setEditForm] = useState({ name: "", qty: 1 });
 
+  // PANNELLO amministrazione (azioni, colonne, bulk): dipende dal RUOLO.
   const isAdmin = ["admin","dev","direttore_generale","amministrativo","back_office_caller","back_office"].includes(role || "");
+  // AMBITO DATI: tutti i negozi solo se la fonte unica lo dice (l'amministrativo
+  // puo' essere ristretto dall'admin); il back office resta completo per ruolo.
+  const vedeTutti = (propSeesAll != null ? propSeesAll : isAdmin) || ["back_office_caller","back_office"].includes(role || "");
   // Anche l'amministrazione puo' creare un ordine: prima il tasto era riservato
   // allo Store Manager, quindi un admin vedeva tutti gli ordini ma non poteva
   // farne uno. Chi non ha un negozio proprio (es. admin) lo sceglie qui.
   const canCreateOrder = isStoreManager || isAdmin;
   const [orderStore, setOrderStore] = useState("");
-  const storeOrdine = myStore || orderStore;
+  // Un solo negozio -> automatico; piu' negozi (o nessuno, es. admin) -> scelta esplicita.
+  const storeOrdine = negoziMiei.length === 1 ? negoziMiei[0] : orderStore;
   const isStoreManager = role === "store_manager";
 
   /* ─── Filter logic ─── */
@@ -508,7 +517,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
-      if (!isAdmin && o.store !== myStore) return false;
+      if (!vedeTutti && !negoziMiei.some(st => sameStore(o.store, st))) return false;
       if (fStatus !== "tutti" && o.status !== fStatus) return false;
       if (fStore !== "tutti" && o.store !== fStore) return false;
       if (fCats.length > 0) {
@@ -521,11 +530,11 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
       }
       return true;
     });
-  }, [orders, isAdmin, myStore, fStatus, fStore, fCats, fSearch]);
+  }, [orders, vedeTutti, negoziMiei, fStatus, fStore, fCats, fSearch]);
 
   /* ─── Stats ─── */
   const stats = useMemo(() => {
-    const base = isAdmin ? orders : orders.filter(o => o.store === myStore);
+    const base = vedeTutti ? orders : orders.filter(o => negoziMiei.some(st => sameStore(o.store, st)));
     return {
       totale: base.length,
       nuovi: base.filter(o => o.status === "nuovo").length,
@@ -1388,15 +1397,15 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderTop: `1px solid ${C.border}` }}>
                   <span style={{ fontSize: 13, color: C.grayLight }}>
                     Negozio:{" "}
-                    {myStore ? (
-                      <strong style={{ color: C.text }}>{storeName(myStore)}</strong>
+                    {negoziMiei.length === 1 ? (
+                      <strong style={{ color: C.text }}>{storeName(negoziMiei[0])}</strong>
                     ) : (
-                      /* amministrazione: nessun negozio proprio, va scelto */
+                      /* piu' negozi in visibilita' (o nessuno, es. amministrazione): va scelto */
                       <select value={orderStore} onChange={e => setOrderStore(e.target.value)}
                         style={{ padding: "6px 10px", borderRadius: 6, fontSize: 13, background: C.grayBg,
                                  border: "1px solid " + (orderStore ? C.border : C.danger), color: C.text }}>
                         <option value="">— Seleziona negozio —</option>
-                        {storeList.map(st => <option key={st} value={st}>{st}</option>)}
+                        {(negoziMiei.length ? negoziMiei : storeList).map(st => <option key={st} value={st}>{st}</option>)}
                       </select>
                     )}
                   </span>
@@ -1697,7 +1706,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
       <div style={s.header}>
         <div>
           <h1 style={s.title}>📦 Ordine Merce</h1>
-          <p style={s.subtitle}>{isAdmin ? "Pannello Amministrazione — Tutti i negozi" : `Negozio: ${storeName(myStore)}`}</p>
+          <p style={s.subtitle}>{isAdmin ? `Pannello Amministrazione — ${vedeTutti ? "Tutti i negozi" : negoziMiei.join(", ")}` : `Negozio: ${negoziMiei.join(", ") || storeName(myStore)}`}</p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {!isControlled && (
@@ -1779,8 +1788,8 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
 
           {isAdmin && (
             <select style={s.select} value={fStore} onChange={e => setFStore(e.target.value)}>
-              <option value="tutti">Tutti i negozi</option>
-              {storeList.map(st => <option key={st} value={st}>{st}</option>)}
+              <option value="tutti">{vedeTutti ? "Tutti i negozi" : "Tutti i miei negozi"}</option>
+              {(vedeTutti ? storeList : negoziMiei).map(st => <option key={st} value={st}>{st}</option>)}
             </select>
           )}
           <span style={{ fontSize: 12, color: C.grayLight, marginLeft: "auto" }}>{filtered.length} ordini</span>

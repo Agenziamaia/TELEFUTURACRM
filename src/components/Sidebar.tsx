@@ -66,16 +66,16 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
         icon: UserCog,
         children: [
             { name: "Invia pda", href: "/pda/invia", icon: Send, roles: EVERYONE },
-            { name: "Gestione pda", href: "/gestione", icon: Database, roles: ADMINS },
+            { name: "Gestione pda", href: "/gestione", icon: Database, roles: [...ADMINS, "amministrativo", "direttore_ob", "agente"] },
         ],
     },
     {
         type: "group",
-        label: "Contratti",
+        label: "Vendite",
         icon: FileText,
         children: [
-            { name: "Registra Contratto", href: "/registra-contratto", icon: FilePlus, roles: EVERYONE },
-            { name: "Ricerca Contratto", href: "/ricerca-contratto", icon: Database, roles: EVERYONE },
+            { name: "Registra Vendita", href: "/registra-vendita", icon: FilePlus, roles: EVERYONE },
+            { name: "Ricerca Vendite", href: "/ricerca-vendite", icon: Database, roles: EVERYONE },
             { name: "Tracking pda", href: "/pda/tracking", icon: Navigation, roles: EVERYONE },
         ],
     },
@@ -119,7 +119,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
             { name: "Vodafone VND", sez: "vnd", color: "#ff6666" },
             { name: "Fastweb", sez: "fastweb", color: "#FFD800" },
             { name: "Sky", sez: "sky", color: "#0072C6" },
-            { name: "S4 Energy", sez: "s4", color: "#28a745" },
+            { name: "S4", sez: "s4", color: "#28a745" },
             { name: "TIM", sez: "tim", color: "#0050FF" },
             { name: "Dojo", sez: "dojo", color: "#14b8a6" },
         ],
@@ -135,6 +135,7 @@ const navigation: (NavGroup | NavItem | NavHub)[] = [
             { name: "Negozi", sez: "negozi", icon: StoreIcon },
             { name: "Costi condivisi", sez: "condivisi", icon: Building2 },
             { name: "Altri costi", sez: "altri", icon: Tag },
+            { name: "Marginalità", sez: "marginalita", icon: Package },
             { name: "Target", sez: "target", icon: ClipboardList },
         ],
     },
@@ -189,7 +190,11 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 
     const visibleItems = useMemo(() => {
         if (!user) return [];
+        // Il reparto OUTBOUND (agenti + direttore) non vede Vendite, Collaboratori
+        // e Negozio (regola Luca 25/07) — le rotte sono bloccate anche in AuthContext.
+        const isOutbound = user.role === "agente" || user.role === "direttore_ob";
         return navigation.filter((item) => {
+            if (isOutbound && "label" in item && ["Vendite", "Collaboratori", "Negozio"].includes(item.label)) return false;
             if (item.type === "link" || item.type === "hub") return canSee(item.roles, user.role);
             const children = item.children.filter((c) => canSee(c.roles, user.role));
             return children.length > 0;

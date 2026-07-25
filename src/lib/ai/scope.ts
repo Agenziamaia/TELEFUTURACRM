@@ -1,7 +1,6 @@
 // Ambito dati dell'utente che interroga l'assistente: quali negozi puo' vedere.
 // Riusa la logica ruoli esistente (src/lib/roles.ts) per restare coerente col resto del CRM.
 import { supabase } from "@/lib/supabaseClient";
-import { seesAllStores } from "@/lib/roles";
 
 export interface Scope {
   userId: string;
@@ -27,8 +26,11 @@ function sameStore(a: string, b: string): boolean {
 }
 
 /**
- * Risolve l'ambito a partire dall'id di app_users.
- * - admin / dev / direttore_generale / amministrativo => tutti i negozi
+ * Risolve l'ambito a partire dall'id di app_users. STESSA regola del client
+ * (src/lib/visibleStores.ts — tenerli allineati):
+ * - admin / dev / direttore_generale => tutti i negozi, sempre
+ * - amministrativo => tutti i negozi DI DEFAULT; se l'admin gli ha messo righe
+ *   esplicite in user_store_visibility, vale solo quella lista
  * - altrimenti: primary_store + user_stores + user_store_visibility
  */
 export async function getScope(userId: string): Promise<Scope | null> {
@@ -39,8 +41,8 @@ export async function getScope(userId: string): Promise<Scope | null> {
     .maybeSingle();
   if (error || !u || !u.active) return null;
 
-  const seesAll = seesAllStores(u.role) || u.role === "dev";
-  if (seesAll) {
+  const roleAll = u.role === "admin" || u.role === "dev" || u.role === "direttore_generale";
+  if (roleAll) {
     return { userId: u.id, fullName: u.full_name, role: u.role, seesAll: true, stores: [], negozi: [] };
   }
 
@@ -48,6 +50,11 @@ export async function getScope(userId: string): Promise<Scope | null> {
     supabase.from("user_stores").select("store_name").eq("user_id", userId),
     supabase.from("user_store_visibility").select("store_name").eq("user_id", userId),
   ]);
+
+  if (u.role === "amministrativo" && (vis || []).length === 0) {
+    // amministrativo senza restrizioni esplicite: vede tutto
+    return { userId: u.id, fullName: u.full_name, role: u.role, seesAll: true, stores: [], negozi: [] };
+  }
 
   const set = new Set<string>();
   if (u.primary_store) set.add(u.primary_store);

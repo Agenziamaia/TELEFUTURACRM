@@ -6,7 +6,9 @@ import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, categoriaDef, categoriaDi } from "@/lib/tassonomia";
+import { seesWholeStore } from "@/lib/roles";
+import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
 import { codiciPerBrand } from "@/lib/codiciInserimento";
 
 interface ContrattoRow {
@@ -102,7 +104,7 @@ const BRAND_LOGO: Record<string, string> = {
     "WindTre": "/windtre.png", "Vodafone": "/vodaphone - Copy.png", "Fastweb": "/fastweb.png",
     "Iliad": "/iliad.png", "Sky": "/sky.png", "Very Mobile": "/very-mobile.png", "Very": "/very-mobile.png",
     "Ho. Mobile": "/ho-mobile.png", "Ho": "/ho-mobile.png", "Kena Mobile": "/kena-mobile-v2.png", "Kena": "/kena-mobile-v2.png",
-    "Tim": "/tim-logo-v2.png", "TIM": "/tim-logo-v2.png", "Energy": "/energy - Copy.png",
+    "Tim": "/tim-logo-v2.png", "TIM": "/tim-logo-v2.png", "S4": "/energy - Copy.png", "Dojo": "/dojo - Copy.png",
 };
 
 const STATI = ["Attivo", "In lavorazione", "Attivato", "Sospeso", "Annullato"];
@@ -158,7 +160,7 @@ export default function RicercaContratto() {
     const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
 
     // Deep link dai tag in chat e dalla ricerca globale in alto:
-    // /ricerca-contratto?id=<id> apre il dettaglio del contratto.
+    // /ricerca-vendite?id=<id> apre il dettaglio del contratto.
     // Segnalazione 75: il contratto cercato puo' non essere nella pagina caricata,
     // quindi filtro subito per quell'id: cosi' c'e' di sicuro e il dettaglio si apre.
     const deepLinked = useRef(false);
@@ -211,7 +213,9 @@ export default function RicercaContratto() {
     // Ruoli reali (roles.ts): la vecchia lista era ancora quella del mock, quindi
     // dev/direttore_generale/amministrativo finivano filtrati sul proprio nome e
     // non vedevano NESSUN contratto.
-    const isGlobalView = seesAllStores(user?.role);
+    // Il "vede tutto" arriva dalla FONTE UNICA della visibilita': per l'amministrativo
+    // non basta piu' il ruolo (l'admin puo' restringergli i negozi visibili).
+    const { seesAll: isGlobalView, stores: visStores, loaded: visLoaded } = useVisibleStores();
     const wholeStore = seesWholeStore(user?.role);
     // Modifica contratto riservata allo Store Manager (+ superuser) — richiesta Luca #5.
     const canEditContract = ["store_manager", "admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
@@ -222,7 +226,11 @@ export default function RicercaContratto() {
     // negozio), quindi per lui il filtro non si applica.
     const isTecnico = user?.role === "tecnico";
     const [showExtra, setShowExtra] = useState(false);
-    const lockedStore = !isGlobalView ? user?.negozio : null;
+    const lockedStores = !isGlobalView && visStores.length ? negozioInValues(visStores) : null;
+    const visKey = (lockedStores || []).join("|");
+    // Finche' la lista visibilita' non e' arrivata NON si interroga (si eviterebbe
+    // un primo fetch senza filtro o filtrato male).
+    const visReady = isGlobalView || visLoaded;
     // Il tecnico vede tutte le vendite del proprio negozio (segn. 55), non solo
     // le proprie: quindi niente blocco sul nome, resta solo il blocco sul negozio.
     const lockedVenditore = (!isGlobalView && !wholeStore && user?.role !== "tecnico") ? user?.name : null;
@@ -242,11 +250,11 @@ export default function RicercaContratto() {
             // inserimento (dettagli['Cod.Ins.']), non piu' i codici contratto.
             let q = supabase.from("contracts").select("venditore, brand, prodotto, negozio, dettagli");
             if (!isGlobalView) {
-                if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
+                if (lockedStores) q = q.in("negozio", lockedStores);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
-            if (isTecnico) q = q.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
-            else if (!showExtra) q = q.not("brand", "ilike", "extra");
+            if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
+            else if (!showExtra) q = q.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             const { data } = await q;
             if (data) {
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
@@ -265,8 +273,8 @@ export default function RicercaContratto() {
                 setCodeByBrand(Object.fromEntries(Object.entries(cb).map(([k, v]) => [k, [...v].sort()])));
             }
         };
-        fetchFilters();
-    }, [isGlobalView, lockedStore, lockedVenditore, showExtra, isTecnico]);
+        if (visReady) fetchFilters();
+    }, [isGlobalView, visKey, visReady, lockedVenditore, showExtra, isTecnico]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Elenco venditori dagli account attivi, con il proprio team in cima.
     useEffect(() => {
@@ -276,11 +284,9 @@ export default function RicercaContratto() {
                 .select("full_name, primary_store")
                 .eq("active", true)
                 .order("full_name");
-            const mio = (user?.negozio || "").trim().toLowerCase();
-            const stessoNegozio = (st: string | null) => {
-                const x = (st || "").trim().toLowerCase();
-                return !!x && !!mio && (x === mio || x.startsWith(mio) || mio.startsWith(x));
-            };
+            // "Team" = colleghi di TUTTI i negozi visibili, non solo del principale.
+            const miei = visStores.length ? visStores : (user?.negozio ? [user.negozio] : []);
+            const stessoNegozio = (st: string | null) => miei.some((m) => sameStore(st, m));
             const team: string[] = [], altri: string[] = [];
             (data ?? []).forEach((u: Record<string, unknown>) => {
                 const nome = String(u.full_name || "").trim();
@@ -290,14 +296,18 @@ export default function RicercaContratto() {
             setVenditoriTeam(team);
             setVenditoriAltri(altri);
         })();
-    }, [user?.negozio]);
+    }, [user?.negozio, visKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const fetchData = async () => {
+        if (!visReady) return; // la lista dei negozi visibili non e' ancora arrivata
         setLoading(true);
         try {
             let query = supabase
                 .from("contracts")
-                .select("*, clients!inner(nome, cognome, ragione_sociale, cellulare)", { count: "exact" });
+                // Anagrafica COMPLETA anche dalla lista: il dettaglio aperto da qui
+                // mostrava "—" su tutti i campi non selezionati (il DB era pieno,
+                // la query portava solo i 4 campi delle colonne).
+                .select("*, clients!inner(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)", { count: "exact" });
 
             // Apply Server-side filters
             if (filterVenditore && filterVenditore !== "Tutti") query = query.eq("venditore", filterVenditore);
@@ -307,8 +317,8 @@ export default function RicercaContratto() {
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
             // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
             // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
-            if (isTecnico) query = query.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
-            else if (!showExtra) query = query.not("brand", "ilike", "extra");
+            if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
+            else if (!showExtra) query = query.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
             // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
             if (filterCodiceAttivazione) query = query.eq('dettagli->>"Cod.Ins."', filterCodiceAttivazione);
@@ -337,12 +347,10 @@ export default function RicercaContratto() {
                 }
             }
 
-            // RBAC
+            // RBAC: tutti i negozi visibili (negozioInValues include anche la radice
+            // legacy: i contratti storici salvavano "Magliana" senza suffisso).
             if (!isGlobalView) {
-                // I contratti storici non usano il nome esatto del negozio ("Magliana" vs
-                // "Magliana Multi"): con un match esatto lo staff non vedrebbe nulla.
-                // Confronto sulla radice del nome.
-                if (lockedStore) query = query.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
+                if (lockedStores) query = query.in("negozio", lockedStores);
                 if (lockedVenditore) query = query.eq("venditore", lockedVenditore);
             }
 
@@ -365,13 +373,14 @@ export default function RicercaContratto() {
     // Segnalazione 57: conteggio contratti per brand, rispettando RBAC e le date.
     useEffect(() => {
         (async () => {
+            if (!visReady) return;
             let q = supabase.from("contracts").select("brand, data_registrazione");
             if (!isGlobalView) {
-                if (lockedStore) q = q.ilike("negozio", `${String(lockedStore).split(" ")[0]}%`);
+                if (lockedStores) q = q.in("negozio", lockedStores);
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
-            if (isTecnico) q = q.or("brand.ilike.%extra%,prodotto.ilike.%sost%");
-            else if (!showExtra) q = q.not("brand", "ilike", "extra");
+            if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
+            else if (!showExtra) q = q.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             // Segnalazione 80: le tessere devono seguire GLI STESSI filtri data
             // dell'elenco. Prima guardavano solo le date di registrazione, quindi
             // filtrando per data di attivazione l'elenco cambiava e le tessere no.
@@ -384,7 +393,7 @@ export default function RicercaContratto() {
             (data ?? []).forEach((r: any) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
             setBrandCounts(Object.entries(m).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
         })();
-    }, [isGlobalView, lockedStore, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione, contractList.length]);
+    }, [isGlobalView, visKey, visReady, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
     // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
@@ -396,11 +405,11 @@ export default function RicercaContratto() {
         setPage(1);
     }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
 
-    // Debounced fetch
+    // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -614,7 +623,7 @@ export default function RicercaContratto() {
         return (
             <div className="w-full">
                 <div className="mb-8">
-                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Contratto</h2>
+                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Vendite</h2>
                     <p className="text-red-400">Errore caricamento: {loadError}</p>
                 </div>
             </div>
@@ -629,7 +638,7 @@ export default function RicercaContratto() {
         <div className="w-full">
             <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
                 <div>
-                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Contratto</h2>
+                    <h2 className="text-3xl font-bold text-white mb-2">Ricerca Vendite</h2>
                     <p className="text-slate-400">Ricerca e gestisci i contratti registrati a sistema</p>
                 </div>
                 {canApprove && (
@@ -664,7 +673,7 @@ export default function RicercaContratto() {
                     {brandCounts.map(({ brand, n }) => {
                         const active = filterBrand === brand;
                         const logo = BRAND_LOGO[brand];
-                        const isExtra = brand.toLowerCase() === "extra";
+                        const isExtra = ["extra", "marginalità", "marginalita"].includes(brand.toLowerCase());
                         return (
                             <button key={brand} onClick={() => { setFilterBrand(active ? "" : brand); setPage(1); }}
                                 className={cn("flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all",
@@ -794,7 +803,7 @@ export default function RicercaContratto() {
                     {!isTecnico && (
                         <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
                             <input type="checkbox" checked={showExtra} onChange={e => { setShowExtra(e.target.checked); setPage(1); }} className="w-4 h-4 accent-indigo-500" />
-                            Mostra anche i contratti Extra 💰
+                            Mostra anche la Marginalità 💰
                         </label>
                     )}
                 </div>
@@ -863,16 +872,18 @@ export default function RicercaContratto() {
                         )}
                     </div>
 
-                    {/* 6. Negozio di attivazione */}
+                    {/* 6. Negozio di attivazione — la tendina offre SOLO i negozi visibili
+                        all'utente (uniqueNegozi arriva dalla query gia' filtrata RBAC), quindi
+                        chi ha piu' negozi in visibilita' puo' passare dall'uno all'altro.
+                        Prima era disabled e inchiodata sul primary_store. */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Negozio di attivazione</label>
                         <select
-                            className="glass-input w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled={!isGlobalView}
-                            value={isGlobalView ? filterNegozio : (lockedStore || "Tutti")}
+                            className="glass-input w-full"
+                            value={filterNegozio}
                             onChange={e => setFilterNegozio(e.target.value)}
                         >
-                            <option value="Tutti">Tutti i negozi</option>
+                            <option value="Tutti">{isGlobalView ? "Tutti i negozi" : "Tutti i miei negozi"}</option>
                             {uniqueNegozi.map(n => <option key={n} value={n}>{n}</option>)}
                         </select>
                     </div>
@@ -953,6 +964,7 @@ export default function RicercaContratto() {
                                 <tr>
                                     <th className="px-4 py-4 font-semibold">Venditore</th>
                                     <th className="px-4 py-4 font-semibold">Brand</th>
+                                    <th className="px-4 py-4 font-semibold">Categoria</th>
                                     <th className="px-4 py-4 font-semibold">Prodotto</th>
                                     <th className="px-4 py-4 font-semibold">Cliente</th>
                                     <th className="px-4 py-4 font-semibold">Negozio</th>
@@ -960,7 +972,6 @@ export default function RicercaContratto() {
                                         contratto; prima di esso la colonna Codice ins. */}
                                     <th className="px-4 py-4 font-semibold">Codice ins.</th>
                                     <th className="px-4 py-4 font-semibold">Codice contratto</th>
-                                    <th className="px-4 py-4 font-semibold">Data Registrazione</th>
                                     <th className="px-4 py-4 font-semibold">Data Attivazione</th>
                                     <th className="px-4 py-4 font-semibold">Stato</th>
                                     <th className="px-4 py-4 w-32 text-center">Azioni</th>
@@ -971,14 +982,13 @@ export default function RicercaContratto() {
                                     <tr key={row.id} className="border-b border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-colors">
                                         <td className="px-4 py-3 text-slate-300">{row.venditore}</td>
                                         <td className="px-4 py-3 font-medium text-white">{row.brand}</td>
-                                        {/* Segnalazione 95: la colonna Prodotto mostra la CATEGORIA
-                                            (asse 2 del database), non piu' il prodotto (asse 3). */}
-                                        <td className="px-4 py-3 text-slate-300">{String(row.raw?.categoria || row.prodotto || "—")}</td>
+                                        {/* Segnalazione 95: colonna Categoria (badge, asse 2) + Prodotto (asse 3). */}
+                                        <td className="px-4 py-3">{(() => { const d = categoriaDef((row.raw?.categoria_macro as string) || categoriaDi(row.brand, row.raw?.categoria as string, row.prodotto)); return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border" style={{ color: d.color, borderColor: d.color + "55", backgroundColor: d.color + "18" }}>{d.label}</span>; })()}</td>
+                                        <td className="px-4 py-3 text-slate-300">{row.prodotto}</td>
                                         <td className="px-4 py-3 text-slate-300 font-medium">{row.cliente}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{row.negozio}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{codInsDi(row) || "—"}</td>
                                         <td className="px-4 py-3 text-slate-400 font-mono text-xs">{row.codice_attivazione}</td>
-                                        <td className="px-4 py-3 text-slate-500 text-xs">{row.data_registrazione}</td>
                                         <td className="px-4 py-3 text-slate-500 text-xs">{row.data_attivazione}</td>
                                         <td className="px-4 py-3">
                                             <span className={cn(
@@ -996,7 +1006,7 @@ export default function RicercaContratto() {
                                                     Segnalazione 64: va vista da tutti, non solo dallo
                                                     store manager, e non ha senso sulle vendite Extra,
                                                     che nel Tracking non compaiono. */}
-                                                {String(row.brand || "").trim().toLowerCase() !== "extra" && <button
+                                                {!["extra", "marginalità", "marginalita"].includes(String(row.brand || "").trim().toLowerCase()) && <button
                                                     onClick={() => {
                                                         const q = encodeURIComponent(row.cliente || "");
                                                         window.location.href = `/pda/tracking?q=${q}&id=${encodeURIComponent(row.id)}`;
@@ -1072,9 +1082,9 @@ export default function RicercaContratto() {
                 const optionsFor = (k: string): string[] | null => {
                     if (k === "contract::venditore") return [...venditoriTeam, ...venditoriAltri];
                     if (k === "contract::negozio") return uniqueNegozi;
-                    if (k === "contract::brand") return uniqueBrands;
+                    if (k === "contract::brand") return BRAND_CANONICI;  // lista ufficiale: un brand senza vendite (es. TIM) deve comunque esserci
                     if (k === "contract::prodotto") return uniqueProdotti;
-                    if (k === "contract::categoria") return Array.from(new Set(uniqueProdotti.length ? contractList.map(c => String(c.raw?.categoria || "")).filter(Boolean) : [])).sort();
+                    if (k === "contract::categoria") return CATEGORIE_CANONICHE;  // solo categorie ufficiali, mai valori grezzi tipo "SKY FIBRA"
                     // Segnalazione 71/68: il codice di inserimento va a tendina con i
                     // codici VERI del brand (elenco unico condiviso con Registra
                     // Contratto). Prima si ricavavano dai contratti gia' salvati,
@@ -1095,8 +1105,18 @@ export default function RicercaContratto() {
                             </div>
                         );
                     }
-                    const val = editValues[k] ?? "";
-                    const changed = (orig == null ? "" : String(orig)) !== val;
+                    let val = editValues[k] ?? "";
+                    // Categoria: i contratti storici hanno valori grezzi ("MOBILE", "SKY FIBRA");
+                    // nella tendina vanno tradotti nella canonica, cosi' la spunta cade sulla
+                    // voce giusta e non compare il doppione in fondo.
+                    if (k === "contract::categoria" && val && !CATEGORIE_CANONICHE.includes(val)) {
+                        val = CANONICA_BY_ID[categoriaDi(String(row.brand || ""), val, String(row.prodotto || ""))];
+                    }
+                    let origCmp = orig == null ? "" : String(orig);
+                    if (k === "contract::categoria" && origCmp && !CATEGORIE_CANONICHE.includes(origCmp)) {
+                        origCmp = CANONICA_BY_ID[categoriaDi(String(row.brand || ""), origCmp, String(row.prodotto || ""))];
+                    }
+                    const changed = origCmp !== val;
                     const cls = cn("glass-input w-full text-sm", changed && "border-amber-400/60 bg-amber-400/5");
                     const opts = optionsFor(k);
                     return (
@@ -1188,7 +1208,7 @@ export default function RicercaContratto() {
                                 )}
                                 {detailMode === "edit" && (
                                     <div className="rounded-xl border border-indigo-400/30 bg-indigo-400/10 px-4 py-3 text-xs text-indigo-200">
-                                        Le modifiche non sono immediate: vengono inviate come richiesta di approvazione all&apos;amministrazione (Sandra, Claudia, Marta, Franca, Luca).
+                                        Le modifiche non sono immediate: vengono inviate come richiesta di approvazione all&apos;amministrazione.
                                     </div>
                                 )}
 

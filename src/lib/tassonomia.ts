@@ -34,6 +34,7 @@ export type CategoriaId =
     | "fisso"
     | "energia"
     | "tv"
+    | "cb"
     | "digitale"
     | "multi_servizi"
     | "pos"
@@ -52,13 +53,37 @@ export const CATEGORIE: CategoriaDef[] = [
     { id: "fisso", label: "Fisso / Fibra", desc: "Linee fisse, fibra e FWA", color: "#0ea5e9", icon: "🏠" },
     { id: "energia", label: "Energia", desc: "Luce e gas", color: "#10b981", icon: "⚡" },
     { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "#ef4444", icon: "📺" },
-    { id: "digitale", label: "Soluzioni Digitali", desc: "Servizi digitali e cloud", color: "#22d3ee", icon: "💻" },
-    { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni e pacchetti multi-servizio", color: "#ec4899", icon: "🛡️" },
+    { id: "cb", label: "Customer Base", desc: "Lavorazioni sulla base clienti: cambi offerta, telefono incluso, add-on", color: "#8b5cf6", icon: "🔁" },
+    // "Soluzioni Digitali" NON e' una categoria (decisione Luca 25/07): i servizi
+    // digitali rientrano in Multi-Servizi e si distinguono a livello di PRODOTTO.
+    { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni, servizi digitali e pacchetti multi-servizio", color: "#ec4899", icon: "🛡️" },
     { id: "pos", label: "POS", desc: "Terminali di pagamento", color: "#f59e0b", icon: "🏧" },
-    { id: "extra", label: "Extra", desc: "Prodotti e servizi a marginalita'", color: "#94a3b8", icon: "💰" },
+    { id: "extra", label: "Marginalità", desc: "Prodotti e servizi a marginalita' (ex Extra)", color: "#94a3b8", icon: "💰" },
+];
+
+// Etichette canoniche per compilare/modificare la categoria di una vendita
+// (le uniche ammesse nelle tendine: mai piu' valori grezzi tipo "SKY FIBRA").
+export const CATEGORIE_CANONICHE: string[] = [
+    "Mobile", "Fisso", "Energia", "TV", "Customer Base", "Multi-Servizi", "POS", "Marginalità",
+];
+
+// Etichetta canonica per ogni categoria (per tradurre i valori grezzi storici
+// nella voce giusta della tendina: "MOBILE" -> "Mobile", "SKY FIBRA" -> "Fisso").
+export const CANONICA_BY_ID: Record<CategoriaId, string> = {
+    mobile: "Mobile", fisso: "Fisso", energia: "Energia", tv: "TV", cb: "Customer Base",
+    // "digitale" e' un id LEGACY: non viene piu' prodotto, ma i dati storici che
+    // lo portassero ancora devono tradurre in Multi-Servizi.
+    multi_servizi: "Multi-Servizi", pos: "POS", digitale: "Multi-Servizi", extra: "Marginalità",
+};
+
+// Lista ufficiale dei brand vendibili (asse 1 del flusso): le tendine brand
+// usano QUESTA, non i distinct dello storico (un brand senza vendite sparirebbe).
+export const BRAND_CANONICI: string[] = [
+    "WindTre", "Vodafone", "Fastweb", "Iliad", "Sky", "TIM", "Very Mobile", "Ho. Mobile", "Kena Mobile", "S4", "Dojo", "Marginalità",
 ];
 
 export function categoriaDef(id: string | null | undefined): CategoriaDef {
+    if (id === "digitale") id = "multi_servizi"; // id legacy: assorbito in Multi-Servizi
     return CATEGORIE.find((c) => c.id === id) ?? {
         id: "extra" as CategoriaId,
         label: String(id || "—"),
@@ -102,9 +127,9 @@ export function categoriaDi(
     const p = testo(prodotto);
     const tutto = `${c} ${p}`;
 
-    // Il brand "Extra" raccoglie le vendite a marginalita': accessori, SIM
-    // sciolte, riparazioni. Non e' una pratica da attivare, non entra nei target.
-    if (b === "extra" || c.startsWith("prodotto")) return "extra";
+    // Il brand "Marginalità" (ex "Extra") raccoglie le vendite a marginalita':
+    // accessori, SIM sciolte, riparazioni. Non e' una pratica da attivare.
+    if (b === "extra" || b === "marginalità" || b === "marginalita" || c.startsWith("prodotto")) return "extra";
 
     // POS: terminale di pagamento (metrica di target dedicata). Prima del mobile,
     // altrimenti "terminale" del telefono lo intercetterebbe.
@@ -113,13 +138,16 @@ export function categoriaDi(
     // Energia: piu' nomi per lo stesso servizio (LUCE E GAS / ENERGIA / S4 ENERGIA).
     if (/(luce|gas|energia|energy)/.test(tutto)) return "energia";
 
+    // Customer Base: lavorazioni sulla base clienti (prodotto "CB", "FISSO CB").
+    // Prima di fisso/mobile: un "FISSO CB" e' una lavorazione CB, non un fisso nuovo.
+    if (/\bcb\b|customer base/.test(tutto)) return "cb";
+
     // Fisso e fibra, compresa quella di Sky, che il brand chiama "SKY FIBRA".
     if (/(fisso|fibra|fwa)/.test(tutto)) return "fisso";
 
-    // Multi-servizi: assicurazioni, protezioni, pacchetti (WindTre "MULTI-SERVIZI").
-    if (/(multi.?serviz|assicura|polizza|kasko|protec)/.test(tutto)) return "multi_servizi";
-
-    if (/(digital|backup|cloud|security)/.test(tutto)) return "digitale";
+    // Multi-servizi: assicurazioni, protezioni, pacchetti (WindTre "MULTI-SERVIZI")
+    // e servizi DIGITALI (backup, cloud): non sono una categoria a parte.
+    if (/(multi.?serviz|assicura|polizza|kasko|protec|digital|backup|cloud|security)/.test(tutto)) return "multi_servizi";
 
     // Mobile, compreso "SKY MOBILE".
     if (/(mobile|sim)/.test(tutto)) return "mobile";

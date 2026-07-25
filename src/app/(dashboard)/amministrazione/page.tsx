@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { ToastHost, dbError, notify } from "./_views/toast";
 import { FixedStoreCosts, StoreAttachments } from "./_views/store-extra";
 import { TargetSection } from "./_views/target";
+import { MarginalitaView } from "./_views/marginalita";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
@@ -57,6 +58,7 @@ import {
     Trash2,
     ArrowLeft,
     Euro,
+    Package,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -154,6 +156,7 @@ const SEZIONI = [
     { id: "negozi", label: "Negozi", icon: StoreIcon, desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
     { id: "condivisi", label: "Costi condivisi", icon: Building2, desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
     { id: "altri", label: "Altri costi", icon: Tag, desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
+    { id: "marginalita", label: "Marginalità", icon: Package, desc: "Catalogo prodotti e servizi: IVA, costi e margini, valore visibile per le gare, legami coi brand." },
     { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
 ] as const;
 
@@ -432,6 +435,8 @@ function AmministrazioneInner() {
                         <AltriCostiView month={month} livePeople={livePeople} />
                     )}
                 </>
+            ) : sez === "marginalita" ? (
+                <MarginalitaView />
             ) : (
                 <TargetSection />
             )}
@@ -562,6 +567,14 @@ function UserCard({ u, rules, onOpen, onEdit }: { u: AppUser; rules: RoleCostRul
                         {negozi.length > 3 && (
                             <span className="text-[10px] px-1.5 py-0.5 text-slate-500">+{negozi.length - 3}</span>
                         )}
+                        {u.role === "amministrativo" && visibilita.length === 0 && (
+                            <span
+                                className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-emerald-500/30 text-emerald-300/80 flex items-center gap-1"
+                                title="Amministrativo: tutti i negozi visibili di default"
+                            >
+                                <Eye className="w-2.5 h-2.5" /> Tutti i negozi
+                            </span>
+                        )}
                         {visibilita.slice(0, 3).map((n) => (
                             <span
                                 key={`v-${n}`}
@@ -635,6 +648,24 @@ function UserForm({
             return { ...p, [key]: arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val] };
         });
 
+    // ── Visibilita' negozi (regole di Luca, 25/07) ────────────────────────────
+    // 1. I negozi di ATTRIBUZIONE COSTO sono sempre anche in visibilita' (auto,
+    //    non deselezionabili da qui: si tolgono togliendo il negozio di costo).
+    // 2. AMMINISTRATIVO: tutti i negozi visibili DI DEFAULT (nessuna riga a DB);
+    //    l'admin puo' toglierne alcuni — da li' in poi valgono le righe esplicite.
+    const allStoreNames = stores.map((s) => s.name);
+    const isAmmRole = f.role === "amministrativo";
+    const visEsplicita = (f.visibility as string[]) || [];
+    const visShown = isAmmRole && visEsplicita.length === 0 ? allStoreNames : visEsplicita;
+    const toggleVisibility = (val: string) =>
+        setF((p) => {
+            const espl = (p.visibility as string[]) || [];
+            // per l'amministrativo il default "tutti" si materializza al primo click
+            const base = p.role === "amministrativo" && espl.length === 0 ? allStoreNames : espl;
+            const next = base.includes(val) ? base.filter((x) => x !== val) : [...base, val];
+            return { ...p, visibility: next };
+        });
+
     const onRoleChange = (role: string) => {
         const g = gradesFor(role);
         setF((p) => ({ ...p, role, grade: g.length ? g[0].id : null }));
@@ -703,7 +734,14 @@ function UserForm({
         await supabase.from("user_store_visibility").delete().eq("user_id", userId);
         const st = (f.stores as string[]) || [];
         const br = (f.brands as string[]) || [];
-        const vis = (f.visibility as string[]) || [];
+        // Visibilita' effettiva = selezionate + negozi di costo (sempre inclusi).
+        // Amministrativo: form vuoto = default "tutti"; se copre TUTTI i negozi
+        // non si scrive nessuna riga (il default regge anche i negozi futuri).
+        const visEff = f.role === "amministrativo" && ((f.visibility as string[]) || []).length === 0
+            ? allStoreNames
+            : ((f.visibility as string[]) || []);
+        let vis = [...new Set([...visEff, ...st])];
+        if (f.role === "amministrativo" && allStoreNames.length > 0 && allStoreNames.every((n) => vis.includes(n))) vis = [];
         if (st.length)
             await supabase.from("user_stores").insert(st.map((store_name) => ({ user_id: userId, store_name })));
         if (br.length) await supabase.from("user_brands").insert(br.map((brand) => ({ user_id: userId, brand })));
@@ -918,27 +956,35 @@ function UserForm({
                         </div>
                     </Field>
 
-                    {/* Visibilità: cosa deve VEDERE, senza impatto sui costi */}
+                    {/* Visibilità: cosa deve VEDERE (apre negozio E collaboratori in tutto il CRM) */}
                     <Field label="Visibilità negozi (nessun costo)">
                         <p className="text-[10px] text-slate-500 mb-1.5">
-                            La persona vede target, avanzamenti e problemi di questi punti vendita; il suo costo NON pesa su di loro.
+                            La persona vede dati e collaboratori di questi punti vendita in TUTTO il CRM; il suo costo NON pesa su di loro.
+                            I negozi di attribuzione costo sono inclusi in automatico.
+                            {isAmmRole && " Ruolo amministrativo: tutti i negozi visibili di default — togli quelli da nascondere."}
                         </p>
                         <div className="flex flex-wrap gap-2">
                             {stores.map((s) => {
-                                const on = (f.visibility as string[]).includes(s.name);
+                                const daCosto = (f.stores as string[]).includes(s.name);
+                                const on = daCosto || visShown.includes(s.name);
                                 return (
                                     <button
                                         key={s.id}
                                         type="button"
-                                        onClick={() => toggleIn("visibility", s.name)}
+                                        disabled={daCosto}
+                                        title={daCosto ? "Incluso in automatico: è un negozio di attribuzione costo" : undefined}
+                                        onClick={() => toggleVisibility(s.name)}
                                         className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
-                                            on
-                                                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200"
-                                                : "bg-white/5 border-white/10 text-slate-400 hover:text-slate-200"
+                                            daCosto
+                                                ? "bg-emerald-500/25 border-emerald-500/50 text-emerald-100 cursor-default"
+                                                : on
+                                                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200"
+                                                  : "bg-white/5 border-white/10 text-slate-400 hover:text-slate-200"
                                         }`}
                                     >
                                         {on && <Eye className="w-3 h-3 inline mr-1" />}
                                         {s.name}
+                                        {daCosto && <span className="ml-1 opacity-70">· costo</span>}
                                     </button>
                                 );
                             })}
@@ -1137,6 +1183,11 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
                                 <Building2 className="w-3 h-3" /> {n}
                             </span>
                         ))}
+                        {u.role === "amministrativo" && visibilita.length === 0 && (
+                            <span className="text-xs px-2 py-1 rounded border border-dashed border-emerald-500/30 text-emerald-300/80 flex items-center gap-1" title="Amministrativo: tutti i negozi visibili di default">
+                                <Eye className="w-3 h-3" /> Tutti i negozi
+                            </span>
+                        )}
                         {visibilita.map((n) => (
                             <span key={`v-${n}`} className="text-xs px-2 py-1 rounded border border-dashed border-emerald-500/30 text-emerald-300/80 flex items-center gap-1" title="Visibilità (nessun costo)">
                                 <Eye className="w-3 h-3" /> {n}

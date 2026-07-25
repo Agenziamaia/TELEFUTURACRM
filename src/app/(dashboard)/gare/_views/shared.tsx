@@ -109,7 +109,7 @@ export const RAGAZZI_GARA: Record<string, { id: string; label: string; nota?: st
     vnd: { id: "vodafone", label: "Vodafone", nota: "Gara unica per Vodafone Store + VND: i ragazzi non vedono la distinzione." },
     fastweb: { id: "fastweb", label: "Fastweb" },
     sky: { id: "sky", label: "Sky" },
-    s4: { id: "s4", label: "S4 Energy" },
+    s4: { id: "s4", label: "S4" },
     tim: { id: "tim", label: "TIM" },
     dojo: { id: "dojo", label: "Dojo" },
 };

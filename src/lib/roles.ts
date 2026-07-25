@@ -61,7 +61,15 @@ export const ROLES: RoleDef[] = [
         ],
     },
     { id: "direttore_commerciale", label: "Direttore Commerciale", area: "pv", grades: [] },
-    { id: "tecnico", label: "Tecnico", area: "pv", grades: [] },
+    {
+        id: "tecnico",
+        label: "Tecnico",
+        area: "pv",
+        grades: [
+            { id: "tecnico", label: "Tecnico" },
+            { id: "tecnico_senior", label: "Tecnico Senior" },  // gestisce le fasi di laboratorio degli usati
+        ],
+    },
     {
         id: "caller",
         label: "Caller",
@@ -131,6 +139,9 @@ export function seesWholeStore(role: string | null | undefined): boolean {
     return [
         "store_manager", "direttore_commerciale", "direttore_cc", "direttore_ob",
         "back_office_caller", "supervisore", "back_office",
+        // l'amministrativo vede l'INTERO negozio (mai bloccato sul proprio nome):
+        // conta quando l'admin gli restringe la visibilita' ad alcuni negozi.
+        "amministrativo",
     ].includes(role || "");
 }
 

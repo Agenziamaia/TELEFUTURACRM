@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { Bell, CheckCircle, Package, AlertCircle } from "lucide-react";
 
 interface Notification {
@@ -15,6 +16,9 @@ interface Notification {
 
 export function NotificationCenter() {
     const { user } = useAuth();
+    // Negozi visibili dalla fonte unica: le notifiche ordini seguono la visibilita'.
+    const { seesAll, stores: visStores } = useVisibleStores();
+    const visKey = visStores.join("|");
     const [notifications, setNotifications] = useState<Notification[]>([]);
 
     useEffect(() => {
@@ -36,12 +40,11 @@ export function NotificationCenter() {
 
                     // Only notify if status changed
                     if (newOrder.status !== oldOrder.status) {
-                        // Check visibility: Admin sees everything, Store Manager sees their store
-                        const isAdmin = user.role === "admin" || user.role === "dev" || user.role === "back_office_caller";
-                        const isMyStore = user.negozio && newOrder.store.toLowerCase().includes(user.negozio.toLowerCase().split(" ").pop()?.toLowerCase() || "");
-
-                        // Heuristic for matching: user.negozio is "Store Roma Termini", newOrder.store is "roma_centro"
-                        // Let's refine the store check if needed, but for now we look for any match
+                        // Visibilita' dalla fonte unica: ruoli globali tutto, gli altri
+                        // gli ordini di QUALSIASI negozio visibile (non solo il principale).
+                        const isAdmin = seesAll || user.role === "back_office_caller";
+                        const miei = visStores.length ? visStores : (user.negozio ? [user.negozio] : []);
+                        const isMyStore = miei.some((st) => sameStore(newOrder.store, st));
                         const shouldNotify = isAdmin || isMyStore;
 
                         if (shouldNotify && newOrder.status === "evaso") {
@@ -67,7 +70,9 @@ export function NotificationCenter() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [user]);
+        // visKey nelle dipendenze: quando arriva la lista dei negozi visibili la
+        // sottoscrizione si ricrea, altrimenti il callback terrebbe la lista vuota.
+    }, [user, seesAll, visKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (notifications.length === 0) return null;
 

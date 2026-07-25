@@ -103,7 +103,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!user) return;
         const isAdmin = user.role === "admin" || user.role === "dev" || user.role === "direttore_generale";
         const adminOnly = ["/gestione", "/amministrazione", "/gare"];
-        if (!isAdmin && adminOnly.some((p) => pathname.startsWith(p))) {
+        // Gestione PDA: aperta anche al reparto Outbound (direttore + agenti) in
+        // SOLA LETTURA sulle proprie pratiche — il gating fine sta nella pagina.
+        const gestioneOutbound = pathname.startsWith("/gestione") && ["direttore_ob", "agente", "amministrativo"].includes(user.role);
+        if (!isAdmin && !gestioneOutbound && adminOnly.some((p) => pathname.startsWith(p))) {
+            router.push("/dashboard");
+        }
+        // Il reparto Outbound non accede a Vendite, Collaboratori e Negozio.
+        const outboundBlocked = ["/registra-vendita", "/ricerca-vendite", "/pda/tracking", "/collaboratori", "/usati", "/ordine-merce", "/chiusura", "/password-v2"];
+        if (["agente", "direttore_ob"].includes(user.role) && outboundBlocked.some((p) => pathname.startsWith(p))) {
             router.push("/dashboard");
         }
     }, [user, pathname, router]);

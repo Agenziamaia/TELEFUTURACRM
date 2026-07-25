@@ -7,6 +7,7 @@ import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
+import { useVisibleStores } from "@/lib/visibleStores";
 
 type TabId = "badge" | "ferie" | "malattia" | "ritardi";
 
@@ -1046,8 +1047,13 @@ function RitardiSection() {
     // vedevano la pagina filtrata sul proprio negozio (l'Ufficio) e non potevano
     // segnalare per altri. Ora vale la regola del CRM: chi vede tutti i negozi, piu'
     // il direttore commerciale.
-    const reportAll = seesAllStores(user?.role) || user?.role === "direttore_commerciale";
-    const isStoreMgr = user?.role === "store_manager";
+    // "vede tutto" dalla FONTE UNICA (amministrativo restringibile dall'admin);
+    // il direttore commerciale mantiene la vista completa per ruolo.
+    const { seesAll: seesAllVis, stores: myStores } = useVisibleStores();
+    const reportAll = seesAllVis || user?.role === "direttore_commerciale";
+    // L'amministrativo si comporta da manager sui negozi visibili: conta quando
+    // l'admin gli restringe la visibilita' (reportAll diventa false).
+    const isStoreMgr = user?.role === "store_manager" || user?.role === "amministrativo";
     const canReportOthers = reportAll || isStoreMgr;
 
     const [rows, setRows] = useState<RitardoRow[]>([]);
@@ -1067,17 +1073,6 @@ function RitardiSection() {
     // gestisce piu' punti vendita (es. Magliana Multi + Magliana W3) vedeva solo
     // quelli del negozio principale, quindi il ritardo appena creato per l'altro
     // negozio spariva e sembrava non salvato. Ora si usano TUTTI i propri negozi.
-    const [myStores, setMyStores] = useState<string[]>([]);
-    useEffect(() => {
-        if (!user?.id) return;
-        (async () => {
-            const { data } = await supabase.from("user_stores").select("store_name").eq("user_id", user.id);
-            const set = new Set<string>();
-            (data ?? []).forEach((r: any) => r.store_name && set.add(r.store_name));
-            if (user.negozio) set.add(user.negozio);
-            setMyStores([...set]);
-        })();
-    }, [user?.id, user?.negozio]);
 
     const fetchRows = useCallback(async () => {
         const { data } = await supabase.from("ritardi").select("*").order("date", { ascending: false });

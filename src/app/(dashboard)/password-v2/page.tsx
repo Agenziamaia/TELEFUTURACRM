@@ -50,7 +50,7 @@ const CATEGORIES: Record<BrandId, { id: string; name: string }[]> = {
         { id: "admin-dashboard", name: "Admin Dashboard" },
     ],
     energia: [
-        { id: "s4-energy", name: "S4 Energy Portal" },
+        { id: "s4-energy", name: "S4 Portal" },
         { id: "barton", name: "Barton Portal" },
         { id: "admin-dashboard", name: "Admin Dashboard" },
     ],

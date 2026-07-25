@@ -2,12 +2,15 @@
 
 import { useAuth } from "@/context/AuthContext";
 import OrdineMerceContent from "./OrdineMerceContent";
+import { useVisibleStores } from "@/lib/visibleStores";
 
 // ruoli reali: prima "dev"/"direttore_generale" restavano fuori dalla pagina
 const ALLOWED_ROLES = ["admin", "dev", "direttore_generale", "amministrativo", "store_manager", "direttore_commerciale", "back_office_caller", "back_office"];
 
 export default function OrdineMercePage() {
   const { user } = useAuth();
+  // Negozi visibili dalla fonte unica (primary + user_stores + user_store_visibility).
+  const { seesAll, stores: myStores } = useVisibleStores();
 
   if (!user) {
     return (
@@ -26,6 +29,6 @@ export default function OrdineMercePage() {
   // quindi ricadeva sempre sul primo negozio finto. Ora si passa direttamente il
   // negozio reale dell'utente (primary_store) e la pagina usa i negozi veri dal DB.
   return (
-    <OrdineMerceContent role={user.role} myStore={user.negozio || ""} />
+    <OrdineMerceContent role={user.role} myStore={user.negozio || ""} myStores={myStores} seesAll={seesAll} />
   );
 }

@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto)
 type AppointmentType = "incoming" | "outgoing" | "self_generated";
@@ -27,6 +28,8 @@ interface Appointment {
     notes: string;
     esitoNote?: string;
     status: AppointmentStatus;
+    /** chi ha FISSATO l'appuntamento (l'agente/consulente e' l'incaricato) */
+    createdBy?: string;
 }
 
 // --- AGENDA BLOCKS (agent-only; blocks telephone team from booking) ---
@@ -101,6 +104,7 @@ function mapAppointmentRow(r: Record<string, unknown>): Appointment {
         notes: (r.notes as string) ?? "",
         esitoNote: r.esito_note as string | undefined,
         status: r.status as AppointmentStatus,
+        createdBy: (r.created_by as string) || undefined,
     };
 }
 function mapTaskRow(r: Record<string, unknown>): CalendarTask {
@@ -286,22 +290,16 @@ export default function Calendario() {
     // altrimenti solo i colleghi del mio punto vendita. Il confronto e' sul
     // prefisso perche' i nomi non coincidono sempre ("Magliana" / "Magliana Multi").
     // Negozi di cui l'utente e' responsabile: puo' esserne piu' d'uno
-    // (segnalazione 62 — Emanuele: Magliana Multi + Magliana W3). Presi da
-    // user_stores oltre al negozio principale del login.
-    const [myStores, setMyStores] = useState<string[]>([]);
-    useEffect(() => {
-        if (!user?.id) return;
-        (async () => {
-            const { data } = await supabase.from("user_stores").select("store_name").eq("user_id", user.id);
-            const set = new Set<string>();
-            (data ?? []).forEach((r: any) => r.store_name && set.add(r.store_name));
-            if (user.negozio) set.add(user.negozio);
-            setMyStores([...set]);
-        })();
-    }, [user?.id, user?.negozio]);
+    // (segnalazione 62 — Emanuele: Magliana Multi + Magliana W3). Dalla FONTE
+    // UNICA della visibilita' (primary + user_stores + user_store_visibility):
+    // prima mancava user_store_visibility, quindi la visibilita' data dall'admin
+    // qui non valeva.
+    const { seesAll: seesAllVis, stores: myStores } = useVisibleStores();
+    // negozi di riferimento per i confronti (fallback sul primary se lista vuota)
+    const mieiNegozi = myStores.length ? myStores : (user?.negozio ? [user.negozio] : []);
 
     const assignableAgents = useMemo(() => {
-        if (seesAllStores(user?.role)) return agents;
+        if (seesAllVis) return agents;
         const mine = (myStores.length ? myStores : [user?.negozio || ""])
             .map(x => x.trim().toLowerCase()).filter(Boolean);
         if (!mine.length) return agents;
@@ -309,7 +307,7 @@ export default function Calendario() {
         return [...new Set(calendarOperators
             .filter(o => { const st = (o.store || "").trim().toLowerCase(); return !!st && same(st); })
             .map(o => o.name))].sort();
-    }, [agents, calendarOperators, user?.role, myStores, user?.negozio]);
+    }, [agents, calendarOperators, seesAllVis, myStores, user?.negozio]);
 
     useEffect(() => {
         let cancelled = false;
@@ -359,6 +357,13 @@ export default function Calendario() {
     // Admin Grid Filters State
     const [filterStore, setFilterStore] = useState("");
     const [filterAgent, setFilterAgent] = useState("");
+    // chi ha FISSATO l'appuntamento (non l'incaricato)
+    const [filterCreatedBy, setFilterCreatedBy] = useState("");
+    // Filtro CATEGORIE (i "pallini" in alto, cliccabili — per tutti i ruoli):
+    // vuoto = tutto; altrimenti si vede solo cio' che e' selezionato.
+    const [catFilter, setCatFilter] = useState<string[]>([]);
+    const toggleCat = (c: string) => setCatFilter((p) => p.includes(c) ? p.filter((x) => x !== c) : [...p, c]);
+    const catOn = (c: string) => catFilter.length === 0 || catFilter.includes(c);
     // (Dates aren't fully wired yet in the generic mock)
 
     // Outcome filters
@@ -374,16 +379,54 @@ export default function Calendario() {
         else setViewMonth(viewMonth + 1);
     };
 
+    // ── Vista MESE / SETTIMANA ────────────────────────────────────────────────
+    // La settimanale parte sempre dalla settimana in corso (lunedi'); i giorni
+    // mostrano gli impegni gia' espansi e cliccabili, il pannello a destra resta.
+    const [calView, setCalView] = useState<"month" | "week">("month");
+    const addDays = (dateStr: string, n: number) => {
+        const d = new Date(dateStr + "T12:00:00");
+        d.setDate(d.getDate() + n);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const mondayOf = (dateStr: string) => {
+        const d = new Date(dateStr + "T12:00:00");
+        const dow = (d.getDay() + 6) % 7; // 0 = lunedi'
+        return addDays(dateStr, -dow);
+    };
+    const [weekStart, setWeekStart] = useState(() => mondayOf(
+        `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`,
+    ));
+    const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    const weekLabel = (() => {
+        const a = new Date(weekStart + "T12:00:00"), b = new Date(addDays(weekStart, 6) + "T12:00:00");
+        const sameM = a.getMonth() === b.getMonth();
+        return `${a.getDate()}${sameM ? "" : " " + MONTHS_IT[a.getMonth()]} – ${b.getDate()} ${MONTHS_IT[b.getMonth()]} ${b.getFullYear()}`;
+    })();
+    // selezione giorno per data (usata dalla vista settimanale e dal pannello)
+    const selectDate = (dateStr: string) => {
+        setSelectedDate(dateStr);
+        setShowCreateModal(false);
+        setShowCreateTaskModal(false);
+        setShowCreateMeetingModal(false);
+        setSelectedAppointment(null);
+        setSelectedMeeting(null);
+        setShowModal(false);
+        setShowMeetingDetailModal(false);
+    };
+
     const daysInMonth = getDaysInMonth(viewYear, viewMonth);
     const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
 
-    const isCallCenter = user?.role === "admin" || user?.role === "dev"; // admin/dev = call center operator
+    // Pieni poteri calendario: admin, dev, direzione e AMMINISTRAZIONE — nessuna
+    // differenza tra admin e amministrativo (regola Luca 25/07): vedono tutti gli
+    // appuntamenti e usano tutti i filtri (punto vendita, consulente, fissato da).
+    const isCallCenter = ["admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
     // Segnalazione "Non posso assegnare task a nessun collaboratore": l'assegnazione
     // era legata a isCallCenter (solo admin/dev), quindi ogni store manager vedeva
     // una casella in sola lettura col proprio nome. Ora vale la regola del CRM:
     // dallo store manager in su si assegna, ma solo dentro il proprio team.
     const canAssignOthers = seesAllStores(user?.role) || seesWholeStore(user?.role);
-    const isAgent = user?.role !== "admin" && user?.role !== "dev";
+    const isAgent = !isCallCenter;
     const canCreateMeeting = seesAllStores(user?.role) || seesWholeStore(user?.role);
 
     const isDateBlocked = (dateStr: string) =>
@@ -391,16 +434,20 @@ export default function Calendario() {
 
     // Role-based visibility and Admin Grid Filter
     const visibleAppointments = appointments.filter(a => {
-        if (user?.role === "admin" || user?.role === "dev") {
+        // filtro categorie (pallini): vale per tutti i ruoli
+        if (!catOn(a.type)) return false;
+        if (isCallCenter) {
             if (filterStore && filterStore !== "Tutti" && a.store !== filterStore) return false;
             if (filterAgent && filterAgent !== "Tutti" && a.agente !== filterAgent) return false;
+            if (filterCreatedBy && filterCreatedBy !== "Tutti" && (a.createdBy || "") !== filterCreatedBy) return false;
             if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
             return true;
         }
         if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
         // Agent: own appointments, or inbound appointments for their store
         if (a.agente === user?.name) return true;
-        if (a.type === "incoming" && a.store && user?.negozio && (a.store === user.negozio || a.store.includes(user.negozio) || user.negozio.includes(a.store))) return true;
+        // Appuntamenti inbound di QUALSIASI negozio visibile (non solo il principale).
+        if (a.type === "incoming" && a.store && mieiNegozi.some((m) => sameStore(a.store, m))) return true;
         return false;
     });
 
@@ -408,6 +455,7 @@ export default function Calendario() {
         visibleAppointments.filter(a => a.date === dateStr);
 
     const tasksByDate = (dateStr: string) => {
+        if (!catOn("task")) return [];
         return tasks.filter(t => {
             if (t.date !== dateStr) return false;
             if (isCallCenter) {
@@ -418,8 +466,8 @@ export default function Calendario() {
             }
             // Agent: visible if assigned to me, or assigned to my store
             if (t.assignedToStore) {
-                const myStore = user?.negozio ?? "";
-                const storeMatch = myStore && (t.assignedToStore === myStore || myStore.includes(t.assignedToStore) || t.assignedToStore.includes(myStore));
+                // task assegnate a QUALSIASI negozio visibile
+                const storeMatch = mieiNegozi.some((m) => sameStore(t.assignedToStore, m));
                 if (!storeMatch) return false;
             } else {
                 if (!(t.assignedTo === user?.name || t.createdBy === user?.name)) return false;
@@ -429,18 +477,10 @@ export default function Calendario() {
         });
     };
 
-    const meetingsByDate = (dateStr: string) => meetings.filter(m => m.date === dateStr);
+    const meetingsByDate = (dateStr: string) => catOn("meeting") ? meetings.filter(m => m.date === dateStr) : [];
 
     const handleDayClick = (day: number) => {
-        const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        setSelectedDate(dateStr);
-        setShowCreateModal(false);
-        setShowCreateTaskModal(false);
-        setShowCreateMeetingModal(false);
-        setSelectedAppointment(null);
-        setSelectedMeeting(null);
-        setShowModal(false);
-        setShowMeetingDetailModal(false);
+        selectDate(`${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
     };
 
     const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -463,8 +503,14 @@ export default function Calendario() {
             cf_piva: newAppt.cfPiva || null,
             notes: newAppt.notes || "",
             status: "scheduled",
+            created_by: user?.name || "Sconosciuto",
         };
-        const { data, error } = await supabase.from("appointments").insert(payload).select().single();
+        let { data, error } = await supabase.from("appointments").insert(payload).select().single();
+        if (error && /created_by/.test(error.message)) {
+            // migrazione 083 non ancora applicata: si salva senza "fissato da"
+            const { created_by: _cb, ...senza } = payload;
+            ({ data, error } = await supabase.from("appointments").insert(senza).select().single());
+        }
         if (error) {
             alert("Errore salvataggio: " + error.message);
             return;
@@ -661,9 +707,9 @@ export default function Calendario() {
                     <h2 className="text-3xl font-bold text-white mb-2">Calendario Appuntamenti</h2>
                     <p className="text-slate-400">
                         {isCallCenter ? (
-                            (filterStore && filterStore !== "Tutti") || (filterAgent && filterAgent !== "Tutti")
-                                ? <span className="text-indigo-300 font-medium">Filtro attivo: {[filterStore && filterStore !== "Tutti" ? filterStore : null, filterAgent && filterAgent !== "Tutti" ? filterAgent : null].filter(Boolean).join(" · ")}</span>
-                                : "Visualizzazione completa — tutti gli agenti"
+                            (filterStore && filterStore !== "Tutti") || (filterAgent && filterAgent !== "Tutti") || (filterCreatedBy && filterCreatedBy !== "Tutti")
+                                ? <span className="text-indigo-300 font-medium">Filtro attivo: {[filterStore && filterStore !== "Tutti" ? filterStore : null, filterAgent && filterAgent !== "Tutti" ? filterAgent : null, filterCreatedBy && filterCreatedBy !== "Tutti" ? `fissato da ${filterCreatedBy}` : null].filter(Boolean).join(" · ")}</span>
+                                : "Visualizzazione completa — tutti i consulenti"
                         ) : `I tuoi appuntamenti — ${user?.name}`}
                     </p>
                 </div>
@@ -735,15 +781,29 @@ export default function Calendario() {
                         </select>
                     </div>
                     <div className="flex-1">
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Agente</label>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Consulente</label>
                         <select
                             className="glass-input w-full text-sm"
                             value={filterAgent}
                             onChange={(e) => setFilterAgent(e.target.value)}
                         >
-                            <option value="Tutti">Tutti gli agenti</option>
+                            <option value="Tutti">Tutti i consulenti</option>
                             {agents.map((a) => (
                                 <option key={a} value={a}>{a}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="flex-1">
+                        {/* chi ha PRENOTATO l'appuntamento, non l'incaricato */}
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Fissato da</label>
+                        <select
+                            className="glass-input w-full text-sm"
+                            value={filterCreatedBy}
+                            onChange={(e) => setFilterCreatedBy(e.target.value)}
+                        >
+                            <option value="Tutti">Chiunque</option>
+                            {Array.from(new Set(appointments.map((a) => a.createdBy).filter(Boolean))).sort().map((n) => (
+                                <option key={n} value={n}>{n}</option>
                             ))}
                         </select>
                     </div>
@@ -785,6 +845,48 @@ export default function Calendario() {
                         <option value="abbandonata">Abbandonata</option>
                     </select>
                 </div>
+            </div>
+
+            {/* Filtro CATEGORIE — i "pallini" del calendario, ora in alto e cliccabili
+                (per tutti i ruoli): click = mostra solo le categorie selezionate. */}
+            <div className="mb-6 flex flex-wrap items-center gap-2">
+                {([
+                    ["incoming", "Inbound", "bg-blue-400", "border-blue-500/40 bg-blue-500/15 text-blue-200"],
+                    ["outgoing", "Outbound", "bg-amber-400", "border-amber-500/40 bg-amber-500/15 text-amber-200"],
+                    ["self_generated", "Auto-Generato", "bg-purple-400", "border-purple-500/40 bg-purple-500/15 text-purple-200"],
+                    ["task", "Task", "bg-emerald-500", "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"],
+                    ["meeting", "Riunioni", "bg-sky-400", "border-sky-500/40 bg-sky-500/15 text-sky-200"],
+                ] as [string, string, string, string][]).map(([id, label, dot, activeCls]) => {
+                    const active = catFilter.includes(id);
+                    return (
+                        <button
+                            key={id}
+                            type="button"
+                            onClick={() => toggleCat(id)}
+                            className={cn(
+                                "flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors",
+                                active ? activeCls : "border-white/10 bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]",
+                            )}
+                        >
+                            <span className={cn("w-2 h-2 rounded-full", dot)} />
+                            {label}
+                        </button>
+                    );
+                })}
+                {catFilter.length > 0 && (
+                    <button
+                        type="button"
+                        onClick={() => setCatFilter([])}
+                        className="text-xs px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
+                    >
+                        ✕ Mostra tutto
+                    </button>
+                )}
+                {agendaBlocks.length > 0 && (
+                    <span className="flex items-center gap-1.5 text-xs text-slate-500 ml-auto">
+                        <Lock className="w-3 h-3 text-amber-400" /> Giorno bloccato
+                    </span>
+                )}
             </div>
 
             {/* Advanced Search Drawer */}
@@ -835,13 +937,13 @@ export default function Calendario() {
                         {/* 4. Agente (Admin Only) */}
                         {isCallCenter ? (
                             <div>
-                                <label className="block text-sm font-bold text-indigo-300 mb-2">Agente (Admin)</label>
+                                <label className="block text-sm font-bold text-indigo-300 mb-2">Consulente</label>
                                 <select
                                     className="glass-input w-full border-indigo-500/30 focus:border-indigo-500/50"
                                     value={searchAgent}
                                     onChange={(e) => setSearchAgent(e.target.value)}
                                 >
-                                    <option>Tutti gli agenti</option>
+                                    <option value="">Tutti i consulenti</option>
                                     {agents.map(agent => (
                                         <option key={agent} value={agent}>{agent}</option>
                                     ))}
@@ -927,19 +1029,40 @@ export default function Calendario() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Calendar Grid */}
                 <div className="lg:col-span-2 glass-card p-6">
-                    {/* Month navigation */}
-                    <div className="flex items-center justify-between mb-6">
-                        <button onClick={prevMonth} className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300">
+                    {/* Navigazione + selettore vista Mese/Settimana */}
+                    <div className="flex items-center justify-between mb-6 gap-3">
+                        <button
+                            onClick={calView === "month" ? prevMonth : () => setWeekStart(addDays(weekStart, -7))}
+                            className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300"
+                        >
                             <ChevronLeft className="w-5 h-5" />
                         </button>
-                        <h3 className="text-xl font-bold text-white">
-                            {MONTHS_IT[viewMonth]} {viewYear}
+                        <h3 className="text-xl font-bold text-white text-center flex-1 truncate">
+                            {calView === "month" ? `${MONTHS_IT[viewMonth]} ${viewYear}` : weekLabel}
                         </h3>
-                        <button onClick={nextMonth} className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300">
+                        <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 shrink-0">
+                            {([["month", "Mese"], ["week", "Settimana"]] as [typeof calView, string][]).map(([id, lab]) => (
+                                <button
+                                    key={id}
+                                    onClick={() => setCalView(id)}
+                                    className={cn(
+                                        "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                                        calView === id ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white",
+                                    )}
+                                >
+                                    {lab}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            onClick={calView === "month" ? nextMonth : () => setWeekStart(addDays(weekStart, 7))}
+                            className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300"
+                        >
                             <ChevronRight className="w-5 h-5" />
                         </button>
                     </div>
 
+                    {calView === "month" && (<>
                     {/* Day headers */}
                     <div className="grid grid-cols-7 mb-2">
                         {DAYS_IT.map(d => (
@@ -1014,15 +1137,84 @@ export default function Calendario() {
                         })}
                     </div>
 
-                    {/* Legend */}
-                    <div className="mt-4 pt-4 border-t border-white/8 flex flex-wrap gap-5 text-xs text-slate-500">
-                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-400" />Inbound</span>
-                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" />Outbound</span>
-                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-purple-400" />Auto-Generato</span>
-                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />Task</span>
-                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-sky-400" />Riunioni</span>
-                        {agendaBlocks.length > 0 && <span className="flex items-center gap-1.5"><Lock className="w-3 h-3 text-amber-400" />Giorno bloccato</span>}
-                    </div>
+                    </>)}
+
+                    {/* Vista SETTIMANALE: impegni gia' espansi sotto ogni giorno e
+                        cliccabili (l'appuntamento apre il suo dettaglio, la riunione il
+                        suo); il pannello a destra resta e segue il giorno selezionato. */}
+                    {calView === "week" && (
+                        <div className="grid grid-cols-7 gap-1.5">
+                            {weekDays.map((dateStr) => {
+                                const wd = new Date(dateStr + "T12:00:00");
+                                const dayAppts = apptsByDate(dateStr).slice().sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+                                const dayTasks = tasksByDate(dateStr);
+                                const dayMeetings = meetingsByDate(dateStr);
+                                const isToday = dateStr === todayStr;
+                                const isSelected = dateStr === selectedDate;
+                                const isBlocked = isDateBlocked(dateStr);
+                                return (
+                                    <div
+                                        key={dateStr}
+                                        className={cn(
+                                            "rounded-xl border flex flex-col min-h-[300px] max-h-[460px]",
+                                            isBlocked ? "bg-amber-500/10 border-amber-500/30" :
+                                                isSelected ? "border-indigo-500/50 bg-indigo-500/[0.07]" :
+                                                    isToday ? "border-white/15 bg-white/[0.04]" : "border-white/8 bg-white/[0.02]",
+                                        )}
+                                    >
+                                        <button
+                                            onClick={() => selectDate(dateStr)}
+                                            className="w-full pt-2 pb-1.5 border-b border-white/8 text-center hover:bg-white/[0.04] rounded-t-xl transition-colors"
+                                        >
+                                            <div className="text-[10px] uppercase tracking-wider text-slate-500">{DAYS_IT[(wd.getDay() + 6) % 7]}</div>
+                                            <div className={cn("text-base font-bold leading-tight", isToday ? "text-indigo-400" : "text-slate-200")}>{wd.getDate()}</div>
+                                            {isBlocked && <Lock className="w-3 h-3 text-amber-400 mx-auto mt-0.5" />}
+                                        </button>
+                                        <div className="flex-1 overflow-y-auto p-1 space-y-1 custom-scrollbar">
+                                            {dayAppts.map((a) => (
+                                                <button
+                                                    key={`a-${a.id}`}
+                                                    onClick={() => { selectDate(dateStr); setSelectedAppointment(a); setShowModal(true); }}
+                                                    className={cn(
+                                                        "w-full text-left px-1.5 py-1 rounded-lg border text-[10px] leading-tight transition-colors hover:bg-white/[0.08]",
+                                                        a.type === "incoming" ? "border-blue-500/30 bg-blue-500/10" :
+                                                            a.type === "self_generated" ? "border-purple-500/30 bg-purple-500/10" : "border-amber-500/30 bg-amber-500/10",
+                                                    )}
+                                                >
+                                                    <div className="font-semibold text-slate-200 truncate">{a.time} {a.customerName}</div>
+                                                    <div className="text-slate-400 truncate">{a.type === "incoming" ? (a.store || "Inbound") : (a.agente || "—")}</div>
+                                                </button>
+                                            ))}
+                                            {dayTasks.map((t) => (
+                                                <button
+                                                    key={`t-${t.id}`}
+                                                    onClick={() => selectDate(dateStr)}
+                                                    title="Apri il giorno: la task si gestisce dal pannello a destra"
+                                                    className="w-full text-left px-1.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
+                                                >
+                                                    <div className="font-semibold text-emerald-200 truncate">{t.time ? `${t.time} ` : ""}{t.title}</div>
+                                                    <div className="text-slate-400 truncate">{t.assignedToStore || t.assignedTo}</div>
+                                                </button>
+                                            ))}
+                                            {dayMeetings.map((m) => (
+                                                <button
+                                                    key={`m-${m.id}`}
+                                                    onClick={() => { selectDate(dateStr); setSelectedMeeting(m); setShowMeetingDetailModal(true); }}
+                                                    className="w-full text-left px-1.5 py-1 rounded-lg border border-sky-500/30 bg-sky-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
+                                                >
+                                                    <div className="font-semibold text-sky-200 truncate">{m.startTime} {m.title}</div>
+                                                    <div className="text-slate-400 truncate">{m.brand}</div>
+                                                </button>
+                                            ))}
+                                            {dayAppts.length === 0 && dayTasks.length === 0 && dayMeetings.length === 0 && (
+                                                <div className="text-center text-[10px] text-slate-600 pt-4">—</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
 
                 {/* Side panel */}
@@ -1535,7 +1727,7 @@ export default function Calendario() {
                                         <select className="glass-input w-full" value={newTask.assignedTo} onChange={e => setNewTask(p => ({ ...p, assignedTo: e.target.value }))} required>
                                             <option value="">Seleziona operatore...</option>
                                             <option value={user?.name}>{user?.name} (Tu)</option>
-                                            <optgroup label={seesAllStores(user?.role) ? "Altri" : `Team ${user?.negozio || ""}`}>
+                                            <optgroup label={seesAllVis ? "Altri" : `Team ${mieiNegozi.join(", ")}`}>
                                                 {assignableAgents.filter(a => a !== user?.name).map(a => <option key={a} value={a}>{a}</option>)}
                                             </optgroup>
                                         </select>
