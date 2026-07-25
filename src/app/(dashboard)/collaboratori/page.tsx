@@ -287,12 +287,16 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                             )}
                         </div>
                     </div>
+                    {user?.name && <StoricoPersonale nome={user.name} />}
                 </div>
 
                 {/* Dashboard admin/Team View */}
                 <div className="xl:col-span-8 flex flex-col gap-6 min-w-0">
                     {isAdminLike ? (
-                        <BadgeAdminDashboard onRefresh={async () => { await fetchActiveShift(); await fetchTeamStats(); }} />
+                        <>
+                            <BadgeAdminDashboard onRefresh={async () => { await fetchActiveShift(); await fetchTeamStats(); }} />
+                            <PresenzeAdmin />
+                        </>
                     ) : (
                         <div className="glass-card p-8 h-full flex flex-col items-center justify-center text-center">
                             <Shield className="w-16 h-16 text-slate-700 mb-6" />
@@ -1277,3 +1281,231 @@ function RitardiSection() {
     );
 }
 
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BADGE v2 (richiesta Luca 25/07)
+   - StoricoPersonale: per chi timbra (caller in primis) — storico badgiate del
+     mese + KPI: ore fatte, media giornaliera, proiezione a fine mese (giorni
+     lavorativi lun–ven rimasti), tasso di consistenza (regolarità delle ore).
+   - PresenzeAdmin: per amministrazione/direzione outbound — lista presenze con
+     filtri periodo+persona, export CSV e KPI col benchmark dei mesi passati.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function oreNette(s: ShiftRow): number {
+    if (!s.ended_at) return 0;
+    const ms = new Date(s.ended_at).getTime() - new Date(s.started_at).getTime();
+    return Math.max(0, ms / 3600000 - (s.total_pause_minutes || 0) / 60);
+}
+const fmtOre = (h: number) => `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2, "0")}m`;
+// giorni lavorativi = lun–ven, estremi inclusi
+function giorniLavorativi(from: Date, to: Date): number {
+    let n = 0;
+    const d = new Date(from); d.setHours(12, 0, 0, 0);
+    const fine = new Date(to); fine.setHours(13, 0, 0, 0);
+    while (d <= fine) { const g = d.getDay(); if (g >= 1 && g <= 5) n++; d.setDate(d.getDate() + 1); }
+    return n;
+}
+
+function KpiBox({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
+    return (
+        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/8 border-l-2" style={{ borderLeftColor: color }}>
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">{label}</div>
+            <div className="text-xl font-bold text-white mt-0.5">{value}</div>
+            {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
+        </div>
+    );
+}
+
+function StoricoPersonale({ nome }: { nome: string }) {
+    const [rows, setRows] = useState<ShiftRow[]>([]);
+    useEffect(() => {
+        const inizio = new Date(); inizio.setDate(1); inizio.setHours(0, 0, 0, 0);
+        supabase.from("shifts").select("*").eq("employee_name", nome)
+            .gte("started_at", inizio.toISOString()).order("started_at", { ascending: false }).limit(200)
+            .then(({ data }) => setRows((data ?? []) as ShiftRow[]));
+    }, [nome]);
+    if (rows.length === 0) return null;
+
+    const chiusi = rows.filter((r) => r.ended_at);
+    const perGiorno = new Map<string, number>();
+    chiusi.forEach((r) => { const g = r.started_at.slice(0, 10); perGiorno.set(g, (perGiorno.get(g) || 0) + oreNette(r)); });
+    const oreTot = [...perGiorno.values()].reduce((a, b) => a + b, 0);
+    const giorniFatti = perGiorno.size;
+    const media = giorniFatti ? oreTot / giorniFatti : 0;
+    const oggi = new Date();
+    const fineMese = new Date(oggi.getFullYear(), oggi.getMonth() + 1, 0);
+    const domani = new Date(oggi); domani.setDate(oggi.getDate() + 1);
+    const rimasti = domani <= fineMese ? giorniLavorativi(domani, fineMese) : 0;
+    const proiezione = oreTot + media * rimasti;
+    let consistenza: number | null = null;
+    if (perGiorno.size >= 2 && media > 0) {
+        const vals = [...perGiorno.values()];
+        const varz = vals.reduce((a, v) => a + (v - media) ** 2, 0) / vals.length;
+        consistenza = Math.max(0, Math.min(100, Math.round(100 - (Math.sqrt(varz) / media) * 100)));
+    }
+
+    return (
+        <div className="glass-card p-5 mt-6">
+            <h3 className="text-sm font-bold text-white mb-3">📊 Le tue timbrature — {oggi.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</h3>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+                <KpiBox label="Ore fatte" value={fmtOre(oreTot)} sub={`${giorniFatti} giorni lavorati`} color="#6366f1" />
+                <KpiBox label="Media giornaliera" value={fmtOre(media)} color="#0ea5e9" />
+                <KpiBox label="Proiezione fine mese" value={fmtOre(proiezione)} sub={`${rimasti} giorni lavorativi rimasti (lun–ven)`} color="#22c55e" />
+                <KpiBox label="Consistenza" value={consistenza != null ? `${consistenza}%` : "—"} sub="regolarità delle ore giornaliere" color="#f59e0b" />
+            </div>
+            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                {rows.map((r) => (
+                    <div key={r.id} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-white/[0.03] border border-white/5">
+                        <span className="text-slate-300 font-medium w-24 shrink-0">{new Date(r.started_at).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
+                        <span className="text-slate-400">{new Date(r.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>
+                        <span className="text-slate-600">→</span>
+                        {r.ended_at
+                            ? <span className="text-slate-400">{new Date(r.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>
+                            : <span className="text-emerald-400 font-bold">in corso</span>}
+                        {(r.total_pause_minutes || 0) > 0.5 && <span className="text-amber-400/80">⏸ {Math.round(r.total_pause_minutes)}m</span>}
+                        <span className="ml-auto font-bold text-slate-200">{r.ended_at ? fmtOre(oreNette(r)) : ""}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function PresenzeAdmin() {
+    const primoDelMese = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
+    const [da, setDa] = useState(primoDelMese());
+    const [a, setA] = useState(() => new Date().toISOString().slice(0, 10));
+    const [persona, setPersona] = useState("");
+    const [rows, setRows] = useState<ShiftRow[]>([]);
+    const [bench, setBench] = useState<{ label: string; ore: number }[]>([]);
+
+    useEffect(() => {
+        if (!da || !a) return;
+        supabase.from("shifts").select("*")
+            .gte("started_at", da + "T00:00:00").lte("started_at", a + "T23:59:59")
+            .not("ended_at", "is", null).order("started_at", { ascending: false }).limit(3000)
+            .then(({ data }) => setRows((data ?? []) as ShiftRow[]));
+    }, [da, a]);
+
+    // benchmark: ore totali degli ultimi 3 mesi (rispetta il filtro persona)
+    useEffect(() => {
+        (async () => {
+            const out: { label: string; ore: number }[] = [];
+            const now = new Date();
+            for (let i = 2; i >= 0; i--) {
+                const m0 = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const m1 = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+                let q = supabase.from("shifts").select("started_at,ended_at,total_pause_minutes")
+                    .gte("started_at", m0.toISOString()).lte("started_at", m1.toISOString())
+                    .not("ended_at", "is", null).limit(3000);
+                if (persona) q = q.eq("employee_name", persona);
+                const { data } = await q;
+                out.push({ label: m0.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }), ore: ((data ?? []) as ShiftRow[]).reduce((acc, x) => acc + oreNette(x), 0) });
+            }
+            setBench(out);
+        })();
+    }, [persona]);
+
+    const filtered = persona ? rows.filter((r) => r.employee_name === persona) : rows;
+    const persone = [...new Set(rows.map((r) => r.employee_name))].sort();
+    const oreTot = filtered.reduce((acc, x) => acc + oreNette(x), 0);
+    const giorniPresenza = new Set(filtered.map((r) => `${r.employee_name}|${r.started_at.slice(0, 10)}`)).size;
+    const personeAttive = new Set(filtered.map((r) => r.employee_name)).size;
+    const mediaGiorno = giorniPresenza ? oreTot / giorniPresenza : 0;
+    const pauseTot = filtered.reduce((acc, x) => acc + (x.total_pause_minutes || 0), 0);
+
+    const exportCsv = () => {
+        const righe = [["Data", "Persona", "Negozio", "Entrata", "Uscita", "Pausa (min)", "Ore nette"].join(";")];
+        filtered.forEach((x) => righe.push([
+            new Date(x.started_at).toLocaleDateString("it-IT"),
+            x.employee_name, x.store || "",
+            new Date(x.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }),
+            x.ended_at ? new Date(x.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "",
+            String(Math.round(x.total_pause_minutes || 0)),
+            oreNette(x).toFixed(2).replace(".", ","),
+        ].join(";")));
+        const blob = new Blob(["\uFEFF" + righe.join("\n")], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const el = document.createElement("a");
+        el.href = url;
+        el.download = `presenze_${da}_${a}${persona ? "_" + persona.replaceAll(" ", "_") : ""}.csv`;
+        el.click();
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <div className="glass-card p-6">
+            <div className="flex flex-wrap items-end gap-3 mb-4">
+                <h3 className="text-base font-bold text-white mr-auto">🗓 Presenze — periodo e persona</h3>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Dal</label>
+                    <input type="date" value={da} onChange={(e) => setDa(e.target.value)} className="glass-input text-xs py-1.5" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Al</label>
+                    <input type="date" value={a} onChange={(e) => setA(e.target.value)} className="glass-input text-xs py-1.5" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Persona</label>
+                    <select value={persona} onChange={(e) => setPersona(e.target.value)} className="glass-input text-xs py-1.5">
+                        <option value="">Tutte</option>
+                        {persone.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                </div>
+                <button onClick={exportCsv} disabled={filtered.length === 0}
+                    className="h-8 px-4 rounded-lg text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
+                    ⬇️ Esporta CSV
+                </button>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                <KpiBox label="Ore totali" value={fmtOre(oreTot)} sub={`${filtered.length} timbrature`} color="#6366f1" />
+                <KpiBox label="Giorni-presenza" value={String(giorniPresenza)} sub={`${personeAttive} person${personeAttive === 1 ? "a" : "e"}`} color="#0ea5e9" />
+                <KpiBox label="Media ore/giorno" value={fmtOre(mediaGiorno)} color="#22c55e" />
+                <KpiBox label="Pause totali" value={`${Math.round(pauseTot)}m`} color="#f59e0b" />
+            </div>
+
+            {/* benchmark mesi passati */}
+            <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Benchmark mensile{persona ? ` · ${persona}` : ""}:</span>
+                {bench.map((b, i) => (
+                    <span key={b.label} className={`px-2.5 py-1 rounded-lg border ${i === bench.length - 1 ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-200 font-bold" : "border-white/10 bg-white/[0.03] text-slate-400"}`}>
+                        {b.label}: {fmtOre(b.ore)}
+                    </span>
+                ))}
+            </div>
+
+            <div className="overflow-x-auto max-h-[420px] overflow-y-auto rounded-xl border border-white/8">
+                <table className="w-full text-xs">
+                    <thead className="bg-white/[0.04] text-slate-400 uppercase text-[10px] sticky top-0">
+                        <tr>
+                            <th className="px-3 py-2.5 text-left">Data</th>
+                            <th className="px-3 py-2.5 text-left">Persona</th>
+                            <th className="px-3 py-2.5 text-left">Negozio</th>
+                            <th className="px-3 py-2.5 text-right">Entrata</th>
+                            <th className="px-3 py-2.5 text-right">Uscita</th>
+                            <th className="px-3 py-2.5 text-right">Pausa</th>
+                            <th className="px-3 py-2.5 text-right">Ore nette</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filtered.length === 0 ? (
+                            <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500">Nessuna presenza nel periodo.</td></tr>
+                        ) : filtered.map((x) => (
+                            <tr key={x.id} className="border-t border-white/5 text-slate-300">
+                                <td className="px-3 py-2">{new Date(x.started_at).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}</td>
+                                <td className="px-3 py-2 font-medium text-white">{x.employee_name}</td>
+                                <td className="px-3 py-2 text-slate-400">{x.store || "—"}</td>
+                                <td className="px-3 py-2 text-right">{new Date(x.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</td>
+                                <td className="px-3 py-2 text-right">{x.ended_at ? new Date(x.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                                <td className="px-3 py-2 text-right text-amber-400/80">{Math.round(x.total_pause_minutes || 0)}m</td>
+                                <td className="px-3 py-2 text-right font-bold text-slate-100">{fmtOre(oreNette(x))}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
