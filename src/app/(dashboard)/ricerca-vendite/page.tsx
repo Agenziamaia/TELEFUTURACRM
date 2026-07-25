@@ -678,13 +678,13 @@ export default function RicercaContratto() {
                             <button key={brand} onClick={() => { setFilterBrand(active ? "" : brand); setPage(1); }}
                                 className={cn("flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all",
                                     active ? "border-indigo-400/60 bg-indigo-500/10" : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]")}>
-                                <span className="h-14 flex items-center justify-center">
-                                    {isExtra ? <span className="text-4xl">💰</span>
-                                        : logo ? <img src={logo} alt={brand} className="h-14 w-auto max-w-[140px] object-contain" />
+                                {/* Richiesta Luca 25/07: SOLO il logo (un filo piu' grande), niente
+                                    nome — il brand si riconosce dal marchio. Resta il conteggio. */}
+                                <span className="h-16 flex items-center justify-center" title={brand}>
+                                    {isExtra ? <span className="text-5xl">💰</span>
+                                        : logo ? <img src={logo} alt={brand} className="h-16 w-auto max-w-[160px] object-contain" />
                                             : <span className="text-lg font-bold text-slate-200">{brand}</span>}
                                 </span>
-                                {/* Segnalazione 94: nome brand piu' grande, numero contratti piccolo. */}
-                                <span className="text-base text-white uppercase tracking-wide font-bold">{brand}</span>
                                 <span className="text-xs text-slate-400 tabular-nums leading-none">{n} contratti</span>
                             </button>
                         );
