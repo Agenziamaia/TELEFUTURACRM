@@ -26,6 +26,9 @@ function parseDateSafe(val: string): Date | null {
     if (!val?.trim()) return null;
     const d = val.trim();
     if (d.includes("T")) return new Date(d);
+    // ISO aaaa-mm-gg digitato a mano: senza questo ramo verrebbe letto come
+    // giorno=2026 (l'ordine atteso sotto e' gg/mm/aaaa, il formato italiano).
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return new Date(d + "T00:00:00");
     const [day, month, year] = d.split(/[/-]/).map(Number);
     if (year && month && day) {
         const date = new Date(year, month - 1, day);
