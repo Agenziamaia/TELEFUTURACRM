@@ -8,6 +8,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 
 interface Cliente {
     id: string;
@@ -703,6 +704,17 @@ export default function ClientiPage() {
     const role = user?.role || "";
     const isOutbound = role === "agente" || role === "direttore_ob";
     const canApproveAccess = ["amministrativo", "admin", "dev", "direttore_generale"].includes(role);
+    // PUNTI VENDITA (regola Luca 25/07): vedono per intero i clienti ACQUISITI dal
+    // proprio negozio O GESTITI almeno una volta li' (una vendita in negozio);
+    // gli altri clienti restano oscurati con accesso su richiesta, ESATTAMENTE
+    // come per l'outbound. La ricerca continua a trovarli (riga oscurata): cosi'
+    // sanno che il dato appartiene a un cliente esistente.
+    const { seesAll: seesAllVis, stores: visStores } = useVisibleStores();
+    const isStoreScoped = !seesAllVis && !isOutbound && ["venditore", "store_manager", "tecnico", "direttore_commerciale"].includes(role);
+    const maskAttivo = isOutbound || isStoreScoped;
+    // Eliminazione anagrafiche: dall'amministrativo in su (cestino in tabella).
+    const canDelete = canApproveAccess;
+    const [delConfirm, setDelConfirm] = useState<string | null>(null);
     const [mieiClienti, setMieiClienti] = useState<Set<string> | null>(null);
     const [accessOk, setAccessOk] = useState<Set<string>>(new Set());
     const [accessPending, setAccessPending] = useState<Set<string>>(new Set());
@@ -736,6 +748,22 @@ export default function ClientiPage() {
                 setMieiClienti(new Set(((cs ?? []) as { client_id: string | null }[]).map((c) => c.client_id).filter(Boolean) as string[]));
                 await loadAccessi();
             }
+            if (isStoreScoped) {
+                const miei = visStores.length ? visStores : (user.negozio ? [user.negozio] : []);
+                // gestiti: almeno una vendita in uno dei negozi visibili
+                const { data: cs } = await supabase.from("contracts").select("client_id,negozio").limit(10000);
+                const set = new Set<string>();
+                ((cs ?? []) as { client_id: string | null; negozio: string | null }[]).forEach((c) => {
+                    if (c.client_id && miei.some((m) => sameStore(c.negozio, m))) set.add(c.client_id);
+                });
+                // acquisiti: anagrafiche nate in uno dei negozi visibili
+                const { data: acq } = await supabase.from("clients").select("id,acquisito_da").limit(5000);
+                ((acq ?? []) as { id: string; acquisito_da: string | null }[]).forEach((c) => {
+                    if (c.acquisito_da && miei.some((m) => sameStore(c.acquisito_da, m))) set.add(c.id);
+                });
+                setMieiClienti(set);
+                await loadAccessi();
+            }
             if (canApproveAccess) {
                 const { data: reqs, error } = await supabase.from("client_access_requests")
                     .select("*, clients(nome,cognome,ragione_sociale,tipo)").eq("status", "pending").order("created_at");
@@ -743,8 +771,8 @@ export default function ClientiPage() {
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, isOutbound, canApproveAccess, role]);
-    const oscurato = (c: Cliente) => isOutbound && (mieiClienti === null || (!mieiClienti.has(c.id) && !accessOk.has(c.id)));
+    }, [user?.id, isOutbound, isStoreScoped, visStores.join("|"), canApproveAccess, role]);
+    const oscurato = (c: Cliente) => maskAttivo && (mieiClienti === null || (!mieiClienti.has(c.id) && !accessOk.has(c.id)));
     const richiediAccesso = async (c: Cliente) => {
         setAccessMsg("");
         const { error } = await supabase.from("client_access_requests").insert({
@@ -753,6 +781,20 @@ export default function ClientiPage() {
         if (error) { setAccessMsg("⚠️ Invio non riuscito (funzione in attivazione): riprova più tardi."); return; }
         setAccessPending((p) => new Set([...p, c.id]));
         setAccessMsg("✅ Richiesta inviata all'amministrazione: vedrai i dati appena approvata.");
+    };
+    const eliminaCliente = async (c: Cliente) => {
+        setAccessMsg("");
+        const { count } = await supabase.from("contracts").select("id", { count: "exact", head: true }).eq("client_id", c.id);
+        if ((count ?? 0) > 0) {
+            setAccessMsg(`⚠️ "${c.tipo === "business" ? c.ragioneSociale : `${c.nome} ${c.cognome}`}" ha ${count} vendite registrate: non si può eliminare (perderebbero l'anagrafica).`);
+            setDelConfirm(null);
+            return;
+        }
+        const { error } = await supabase.from("clients").delete().eq("id", c.id);
+        if (error) { setAccessMsg("⚠️ Eliminazione non riuscita: " + error.message); setDelConfirm(null); return; }
+        setDelConfirm(null);
+        setAccessMsg("✅ Anagrafica eliminata.");
+        fetchClientList();
     };
     const decidiAccesso = async (id: string, approve: boolean) => {
         await supabase.from("client_access_requests").update({
@@ -869,7 +911,7 @@ export default function ClientiPage() {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight text-white">Clienti</h1>
-                        <p className="text-sm text-slate-400">{isOutbound ? "I tuoi clienti per intero; gli altri sono riservati — l'accesso si chiede all'amministrazione" : "Anagrafica completa dei clienti Consumer e Business"}</p>
+                        <p className="text-sm text-slate-400">{isOutbound ? "I tuoi clienti per intero; gli altri sono riservati — l'accesso si chiede all'amministrazione" : isStoreScoped ? "Per intero i clienti acquisiti o gestiti dal tuo negozio; gli altri sono riservati — la ricerca li trova, l'accesso si chiede all'amministrazione" : "Anagrafica completa dei clienti Consumer e Business"}</p>
                         {accessMsg && <p className={`text-sm mt-1 font-medium ${accessMsg.startsWith("✅") ? "text-emerald-400" : "text-amber-400"}`}>{accessMsg}</p>}
                         {canApproveAccess && richiesteAccesso.length > 0 && (
                             <div className="mt-3 p-3 rounded-xl bg-violet-500/10 border border-violet-500/30 space-y-2">
@@ -1056,18 +1098,19 @@ export default function ClientiPage() {
                                         <th className="px-6 py-4 font-semibold">Contatti</th>
                                         <th className="px-6 py-4 font-semibold">Indirizzo</th>
                                         <th className="px-6 py-4 font-semibold text-right">Identificativo</th>
+                                        {canDelete && <th className="px-4 py-4 w-14"></th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {loading ? (
                                         <tr>
-                                            <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
+                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-slate-400">
                                                 Caricamento clienti...
                                             </td>
                                         </tr>
                                     ) : loadError ? (
                                         <tr>
-                                            <td colSpan={4} className="px-6 py-12 text-center text-rose-400">
+                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-rose-400">
                                                 Errore: {loadError}
                                             </td>
                                         </tr>
@@ -1089,7 +1132,7 @@ export default function ClientiPage() {
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
                                                 <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
-                                                <td className="px-6 py-4 text-right">
+                                                <td className="px-6 py-4 text-right" colSpan={canDelete ? 2 : 1}>
                                                     {accessPending.has(cliente.id) ? (
                                                         <span className="text-xs px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium">⏳ In attesa di approvazione</span>
                                                     ) : (
@@ -1150,11 +1193,25 @@ export default function ClientiPage() {
                                                         {cliente.cf_piva || "—"}
                                                     </span>
                                                 </td>
+                                                {canDelete && (
+                                                    <td className="px-4 py-4 text-right">
+                                                        {delConfirm === cliente.id ? (
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <button onClick={() => eliminaCliente(cliente)} title="Conferma eliminazione"
+                                                                    className="text-[11px] px-2 py-1 rounded-md bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 font-bold">Elimina</button>
+                                                                <button onClick={() => setDelConfirm(null)} className="text-[11px] px-1.5 py-1 rounded-md text-slate-400 hover:text-white">✕</button>
+                                                            </span>
+                                                        ) : (
+                                                            <button onClick={() => setDelConfirm(cliente.id)} title="Elimina anagrafica"
+                                                                className="p-1.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors">🗑</button>
+                                                        )}
+                                                    </td>
+                                                )}
                                             </tr>
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
+                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-slate-500">
                                                 <div className="flex flex-col items-center justify-center gap-2">
                                                     <Search className="w-6 h-6 text-slate-600 mb-2" />
                                                     <p>Nessun cliente trovato con i filtri correnti.</p>
