@@ -722,7 +722,11 @@ export default function RicercaContratto() {
                                 onClick={() => { setOffBrands((p) => { const nx = new Set(p); if (nx.has(brand)) nx.delete(brand); else nx.add(brand); return nx; }); setPage(1); }}
                                 title={active ? "Attivo — clicca per nascondere questo brand" : "Nascosto — clicca per mostrarlo di nuovo"}
                                 className={cn("flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all",
-                                    active ? "border-indigo-400/60 bg-indigo-500/10" : "border-white/10 bg-white/[0.02] opacity-40 grayscale hover:opacity-70")}>
+                                    active
+                                        // accesa: ben luminosa — sfondo pieno, bordo brillante e bagliore
+                                        ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
+                                        // spenta: leggibile ma chiaramente disattivata (mai completamente buia)
+                                        : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]")}>
                                 {/* Richiesta Luca 25/07: SOLO il logo (un filo piu' grande), niente
                                     nome — il brand si riconosce dal marchio. Resta il conteggio. */}
                                 <span className="h-16 flex items-center justify-center" title={brand}>
