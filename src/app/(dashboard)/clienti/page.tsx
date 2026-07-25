@@ -9,6 +9,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { CAP_CLIENTI, capChoice } from "@/lib/capabilities";
 
 interface Cliente {
     id: string;
@@ -702,16 +704,17 @@ export default function ClientiPage() {
     // L'accesso completo si chiede all'amministrazione (client_access_requests).
     const { user } = useAuth();
     const role = user?.role || "";
-    const isOutbound = role === "agente" || role === "direttore_ob";
     const canApproveAccess = ["amministrativo", "admin", "dev", "direttore_generale"].includes(role);
-    // PUNTI VENDITA (regola Luca 25/07): vedono per intero i clienti ACQUISITI dal
-    // proprio negozio O GESTITI almeno una volta li' (una vendita in negozio);
-    // gli altri clienti restano oscurati con accesso su richiesta, ESATTAMENTE
-    // come per l'outbound. La ricerca continua a trovarli (riga oscurata): cosi'
-    // sanno che il dato appartiene a un cliente esistente.
+    // AMBITO CLIENTI dai PERMESSI (capacità cap:/clienti:*, amministrabile da
+    // Amministrazione → Utenti → Permessi): "tutti" | "negozi" | "propri".
+    // I default replicano il comportamento storico; la visibilità TOTALE a
+    // livello utente (seesAllVis) non viene mai ristretta dallo scope di ruolo.
+    const { perms: capPerms } = useRolePermissions(role);
+    const scopeClienti = capChoice(role, CAP_CLIENTI, capPerms);
     const { seesAll: seesAllVis, stores: visStores } = useVisibleStores();
-    const isStoreScoped = !seesAllVis && !isOutbound && ["venditore", "store_manager", "tecnico", "direttore_commerciale"].includes(role);
-    const maskAttivo = isOutbound || isStoreScoped;
+    const maskAttivo = scopeClienti !== "tutti" && !seesAllVis;
+    const isStoreScoped = maskAttivo && scopeClienti === "negozi";
+    const soloPropri = maskAttivo && scopeClienti === "propri";
     // Eliminazione anagrafiche: dall'amministrativo in su (cestino in tabella).
     const canDelete = canApproveAccess;
     const [delConfirm, setDelConfirm] = useState<string | null>(null);
@@ -732,16 +735,18 @@ export default function ClientiPage() {
     useEffect(() => {
         if (!user?.id) return;
         (async () => {
-            if (isOutbound) {
+            if (soloPropri) {
                 let nomi: string[] = [];
-                if (role === "agente") {
-                    const { data } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
-                    nomi = [data?.full_name, data?.match_name, user.name].filter(Boolean) as string[];
-                } else {
+                if (role === "direttore_ob") {
+                    // il direttore outbound vede i clienti di TUTTO il reparto
                     const { data } = await supabase.from("app_users").select("full_name,match_name")
                         .in("role", ["agente", "direttore_ob"]).eq("active", true);
                     nomi = ((data ?? []) as { full_name: string; match_name: string | null }[])
                         .flatMap((u) => [u.full_name, u.match_name]).filter(Boolean) as string[];
+                } else {
+                    // chiunque altro in modalità "propri": solo i clienti inseriti da lui
+                    const { data } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
+                    nomi = [data?.full_name, data?.match_name, user.name].filter(Boolean) as string[];
                 }
                 const { data: cs } = await supabase.from("contracts").select("client_id")
                     .in("venditore", nomi.length ? nomi : ["—"]).limit(10000);
@@ -771,7 +776,7 @@ export default function ClientiPage() {
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, isOutbound, isStoreScoped, visStores.join("|"), canApproveAccess, role]);
+    }, [user?.id, soloPropri, isStoreScoped, visStores.join("|"), canApproveAccess, role]);
     const oscurato = (c: Cliente) => maskAttivo && (mieiClienti === null || (!mieiClienti.has(c.id) && !accessOk.has(c.id)));
     const richiediAccesso = async (c: Cliente) => {
         setAccessMsg("");
@@ -911,7 +916,7 @@ export default function ClientiPage() {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight text-white">Clienti</h1>
-                        <p className="text-sm text-slate-400">{isOutbound ? "I tuoi clienti per intero; gli altri sono riservati — l'accesso si chiede all'amministrazione" : isStoreScoped ? "Per intero i clienti acquisiti o gestiti dal tuo negozio; gli altri sono riservati — la ricerca li trova, l'accesso si chiede all'amministrazione" : "Anagrafica completa dei clienti Consumer e Business"}</p>
+                        <p className="text-sm text-slate-400">{soloPropri ? "I tuoi clienti per intero; gli altri sono riservati — l'accesso si chiede all'amministrazione" : isStoreScoped ? "Per intero i clienti acquisiti o gestiti dal tuo negozio; gli altri sono riservati — la ricerca li trova, l'accesso si chiede all'amministrazione" : "Anagrafica completa dei clienti Consumer e Business"}</p>
                         {accessMsg && <p className={`text-sm mt-1 font-medium ${accessMsg.startsWith("✅") ? "text-emerald-400" : "text-amber-400"}`}>{accessMsg}</p>}
                         {canApproveAccess && richiesteAccesso.length > 0 && (
                             <div className="mt-3 p-3 rounded-xl bg-violet-500/10 border border-violet-500/30 space-y-2">

@@ -6,7 +6,9 @@ import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, His
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { seesAllStores, seesWholeStore, isAdminOrAbove, canUseBadge } from "@/lib/roles";
+import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, capAllowed } from "@/lib/capabilities";
 import { useVisibleStores } from "@/lib/visibleStores";
 
 type TabId = "badge" | "ferie" | "malattia" | "ritardi";
@@ -84,12 +86,13 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     const [teamStats, setTeamStats] = useState({ presenti: 0, totalMinutes: 0 });
     const [loading, setLoading] = useState(true);
 
-    // Il timer/inizia turno e' SOLO per il call center (regola Luca 25/07):
-    // chi supervisiona le presenze non timbra e la tabella prende tutto lo spazio.
-    const puoTimbrare = canUseBadge(user?.role);
-    // Il BACK OFFICE / CALLER timbra come un caller e NON ha il pannello team
-    // (regola Luca 25/07). Vale SOLO nel tab Badge: gli altri tab restano com'erano.
-    const vistaTeam = isAdminLike && user?.role !== "back_office_caller";
+    // MODALITÀ della sezione dai PERMESSI (capacità cap:/collaboratori?tab=badge:*,
+    // amministrabili da Amministrazione → Utenti → Permessi). Default storici:
+    // timbra = area call center; supervisione = ruoli manageriali tranne il
+    // Back Office/Caller, che timbra come un caller.
+    const { perms: capPerms } = useRolePermissions(user?.role);
+    const puoTimbrare = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TIMBRA, capPerms);
+    const vistaTeam = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TEAM, capPerms);
     const status: "off" | "running" | "paused" = !activeShift ? "off" : activeShift.pause_started_at ? "paused" : "running";
     const canStart = status === "off";
     const canPause = status === "running";
