@@ -65,6 +65,8 @@ export function PermessiView() {
     const [ruolo, setRuolo] = useState<string>("");
     const [righe, setRighe] = useState<PermMap>(new Map());
     const [busy, setBusy] = useState<string | null>(null);
+    // ⚙️ aperto: le opzioni di comportamento esplodono SOTTO la riga della sezione
+    const [capOpen, setCapOpen] = useState<string | null>(null);
     const gruppi = useMemo(catalogo, []);
 
     const load = async (r: string) => {
@@ -165,18 +167,38 @@ export function PermessiView() {
                                     // se il livello sopra e' spento, la voce interna non conta nulla
                                     const padreOff = !!v.padre && !g.voci.some((x) => x.href === v.padre &&
                                         effectiveAllowed(ruolo, x.href, x.defaultRoles, righe, x.gruppo));
+                                    // capacita' agganciate a QUESTA sezione: ingranaggio sulla riga
+                                    const capGroup = CAPABILITIES.find((cg) => cg.section === v.href);
                                     return (
-                                        <div key={v.href} className={`flex items-center gap-3 px-4 py-2.5 ${padreOff ? "opacity-40" : ""}`} style={{ paddingLeft: 16 + (v.livello || 0) * 26 }}>
-                                            {(v.livello || 0) > 0 && <span className="text-slate-600 text-xs shrink-0">└</span>}
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-medium text-white">{v.nome}</div>
-                                                <div className="text-[11px] text-slate-600 font-mono">{v.href}</div>
+                                        <div key={v.href}>
+                                            <div className={`flex items-center gap-3 px-4 py-2.5 ${padreOff ? "opacity-40" : ""}`} style={{ paddingLeft: 16 + (v.livello || 0) * 26 }}>
+                                                {(v.livello || 0) > 0 && <span className="text-slate-600 text-xs shrink-0">└</span>}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-sm font-medium text-white">{v.nome}</div>
+                                                    <div className="text-[11px] text-slate-600 font-mono">{v.href}</div>
+                                                </div>
+                                                {capGroup && (
+                                                    <button onClick={() => setCapOpen(capOpen === v.href ? null : v.href)}
+                                                        title="Comportamenti della sezione per questo ruolo"
+                                                        className={`p-1.5 rounded-lg border transition-colors shrink-0 ${capOpen === v.href ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-300" : "border-white/10 text-slate-400 hover:text-white hover:bg-white/5"}`}>
+                                                        ⚙️
+                                                    </button>
+                                                )}
+                                                <button onClick={() => toggle(v)} disabled={busy === v.href}
+                                                    className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"} ${busy === v.href ? "opacity-50" : ""}`}
+                                                    title={eff ? "Visibile — clicca per nascondere" : "Nascosta — clicca per concedere"}>
+                                                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${eff ? "left-6" : "left-0.5"}`} />
+                                                </button>
                                             </div>
-                                            <button onClick={() => toggle(v)} disabled={busy === v.href}
-                                                className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"} ${busy === v.href ? "opacity-50" : ""}`}
-                                                title={eff ? "Visibile — clicca per nascondere" : "Nascosta — clicca per concedere"}>
-                                                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${eff ? "left-6" : "left-0.5"}`} />
-                                            </button>
+                                            {capGroup && capOpen === v.href && (
+                                                <div className="pb-3 pr-4" style={{ paddingLeft: 16 + ((v.livello || 0) + 1) * 26 }}>
+                                                    <div className="rounded-lg border border-indigo-500/25 bg-indigo-500/[0.04] overflow-hidden">
+                                                        <CapOptions g={capGroup} ruolo={ruolo} righe={righe} busy={busy}
+                                                            onChoice={(id) => setCapChoice(capGroup as CapGroupChoice, id)}
+                                                            onFlag={(id, att) => toggleCapFlag(capGroup, id, att)} />
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -186,66 +208,58 @@ export function PermessiView() {
                 </div>
             )}
 
-            {/* ⚙️ COMPORTAMENTI: come si comporta una sezione per questo ruolo
-                (non SE la vede — quello sta sopra). Ogni personalizzazione
-                registrata nel catalogo CAPABILITIES appare qui da sola. */}
-            {ruolo && (
-                <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-white pt-2">⚙️ Comportamenti nelle sezioni</h3>
-                    {CAPABILITIES.map((g) => {
-                        return (
-                            <div key={g.section} className="rounded-xl bg-white/[0.02] border border-white/5 overflow-hidden">
-                                <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5 flex items-center gap-2">
-                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">⚙️ {g.sectionLabel}</span>
-                                </div>
-                                {g.mode === "choice" ? (
-                                    <div className="divide-y divide-white/5">
-                                        {[...g.caps.map((c) => ({ id: c.id, label: c.label, desc: c.desc })), g.fallback].map((opt) => {
-                                            const attiva = capChoice(ruolo, g, righe) === opt.id;
-                                            return (
-                                                <button key={opt.id} disabled={busy === "cap:" + g.section}
-                                                    onClick={() => {
-                                                        if (attiva) return;
-                                                        // scegliere il fallback = spegnere tutte le opzioni esplicite
-                                                        setCapChoice(g, opt.id);
-                                                    }}
-                                                    className={`w-full text-left px-4 py-3 flex items-start gap-3 transition-colors ${attiva ? "bg-emerald-500/[0.06]" : "hover:bg-white/[0.03]"}`}>
-                                                    <span className={`mt-0.5 w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${attiva ? "border-emerald-400" : "border-slate-600"}`}>
-                                                        {attiva && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
-                                                    </span>
-                                                    <span>
-                                                        <span className={`block text-sm font-medium ${attiva ? "text-emerald-200" : "text-slate-300"}`}>{opt.label}</span>
-                                                        <span className="block text-[11px] text-slate-500 mt-0.5">{opt.desc}</span>
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <div className="divide-y divide-white/5">
-                                        {g.caps.map((c) => {
-                                            const eff = capAllowed(ruolo, g.section, c, righe);
-                                            return (
-                                                <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="text-sm font-medium text-white">{c.label}</div>
-                                                        <div className="text-[11px] text-slate-500 mt-0.5">{c.desc}</div>
-                                                    </div>
-                                                    <button onClick={() => toggleCapFlag(g, c.id, eff)} disabled={busy === "cap:" + g.section + c.id}
-                                                        className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"}`}
-                                                        title={eff ? "Attivo — clicca per disattivare" : "Disattivo — clicca per attivare"}>
-                                                        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${eff ? "left-6" : "left-0.5"}`} />
-                                                    </button>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
+        </div>
+    );
+}
+
+
+/* Opzioni di comportamento di una sezione (choice = radio; flags = interruttori),
+   esplose sotto la riga della sezione al click sull'ingranaggio ⚙️. */
+function CapOptions({ g, ruolo, righe, busy, onChoice, onFlag }: {
+    g: CapGroup; ruolo: string; righe: PermMap; busy: string | null;
+    onChoice: (id: string) => void; onFlag: (id: string, attuale: boolean) => void;
+}) {
+    if (g.mode === "choice") {
+        const attivaId = capChoice(ruolo, g, righe);
+        return (
+            <div className="divide-y divide-white/5">
+                {[...g.caps.map((c) => ({ id: c.id, label: c.label, desc: c.desc })), g.fallback].map((opt) => {
+                    const attiva = attivaId === opt.id;
+                    return (
+                        <button key={opt.id} disabled={busy === "cap:" + g.section}
+                            onClick={() => { if (!attiva) onChoice(opt.id); }}
+                            className={`w-full text-left px-3 py-2.5 flex items-start gap-2.5 transition-colors ${attiva ? "bg-emerald-500/[0.06]" : "hover:bg-white/[0.03]"}`}>
+                            <span className={`mt-0.5 w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${attiva ? "border-emerald-400" : "border-slate-600"}`}>
+                                {attiva && <span className="w-2 h-2 rounded-full bg-emerald-400" />}
+                            </span>
+                            <span>
+                                <span className={`block text-sm font-medium ${attiva ? "text-emerald-200" : "text-slate-300"}`}>{opt.label}</span>
+                                <span className="block text-[11px] text-slate-500 mt-0.5">{opt.desc}</span>
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+        );
+    }
+    return (
+        <div className="divide-y divide-white/5">
+            {g.caps.map((c) => {
+                const eff = capAllowed(ruolo, g.section, c, righe);
+                return (
+                    <div key={c.id} className="flex items-center gap-3 px-3 py-2.5">
+                        <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-white">{c.label}</div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">{c.desc}</div>
+                        </div>
+                        <button onClick={() => onFlag(c.id, eff)} disabled={busy === "cap:" + g.section + c.id}
+                            className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"}`}
+                            title={eff ? "Attivo — clicca per disattivare" : "Disattivo — clicca per attivare"}>
+                            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${eff ? "left-6" : "left-0.5"}`} />
+                        </button>
+                    </div>
+                );
+            })}
         </div>
     );
 }
