@@ -98,6 +98,7 @@ interface Call {
     statoNew?: string;
     dataRichiamoNew?: string;
     dataAppuntamentoNew?: string;
+    negozioAppNew?: string;
     whatsappNew?: string;
     noteUpdate?: string;
     clienteRiconosciuto?: boolean;
@@ -471,6 +472,7 @@ export default function CallerPage() {
         copy.statoNew = "";
         copy.dataRichiamoNew = "";
         copy.dataAppuntamentoNew = "";
+        copy.negozioAppNew = call.negozio_appuntamento || "";
         copy.whatsappNew = "";
         copy.noteUpdate = "";
         setEditCall(copy);
@@ -647,6 +649,9 @@ export default function CallerPage() {
                 newStorico.push({ data: now, caller: currentCaller, campo: "Data appuntamento", da: "", a: formatDate(editCall.dataAppuntamentoNew) });
                 updates.data_appuntamento = editCall.dataAppuntamentoNew;
             }
+            if (APPUNTAMENTO_STATI.includes(editCall.statoNew) && editCall.negozioAppNew) {
+                updates.negozio_appuntamento = editCall.negozioAppNew;
+            }
             if (NR_STATI.includes(editCall.statoNew) && editCall.whatsappNew) {
                 newStorico.push({ data: now, caller: currentCaller, campo: "WhatsApp", da: "", a: editCall.whatsappNew });
             }
@@ -662,7 +667,11 @@ export default function CallerPage() {
             }
             if (APPUNTAMENTO_STATI.includes(editCall.statoNew)) {
                 await sincronizzaAppuntamento(
-                    { ...original, ...editCall, stato: editCall.statoNew, data_appuntamento: (updates.data_appuntamento as string) || original.data_appuntamento },
+                    {
+                        ...original, ...editCall, stato: editCall.statoNew,
+                        data_appuntamento: (updates.data_appuntamento as string) || original.data_appuntamento,
+                        negozio_appuntamento: (updates.negozio_appuntamento as string) || original.negozio_appuntamento,
+                    },
                     editCall.id,
                 );
             }
@@ -1697,9 +1706,18 @@ export default function CallerPage() {
                                             </FormGroup>
                                         )}
                                         {statoNewIsAppuntamento && (
-                                            <FormGroup label="Data e Ora Appuntamento">
-                                                <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.dataAppuntamentoNew || ""} onChange={(e) => updateField("dataAppuntamentoNew", e.target.value)} />
-                                            </FormGroup>
+                                            <>
+                                                <FormGroup label="Data e Ora Appuntamento">
+                                                    <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.dataAppuntamentoNew || ""} onChange={(e) => updateField("dataAppuntamentoNew", e.target.value)} />
+                                                </FormGroup>
+                                                <FormGroup label="Negozio Appuntamento">
+                                                    {/* senza negozio l'appuntamento NON arriva sul calendario del punto vendita */}
+                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.negozioAppNew || ""} onChange={(e) => updateField("negozioAppNew", e.target.value)}>
+                                                        <option value="">Seleziona negozio...</option>
+                                                        {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
+                                                    </select>
+                                                </FormGroup>
+                                            </>
                                         )}
                                         <FormGroup label="Nota di aggiornamento (opzionale)">
                                             <textarea className="glass-input rounded-lg py-2 w-full min-h-[60px]" value={editCall.noteUpdate || ""} onChange={(e) => updateField("noteUpdate", e.target.value)} placeholder="Es. Cliente ha chiesto di essere richiamato dopo le 18..." />
