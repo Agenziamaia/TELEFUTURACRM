@@ -10,7 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { CAP_CLIENTI, capChoice } from "@/lib/capabilities";
+import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, capChoice, capAllowed } from "@/lib/capabilities";
 
 interface Cliente {
     id: string;
@@ -95,6 +95,11 @@ const CATEGORIE_DOC = [
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
     const router = useRouter();
+    // Capacita' "Allegati del cliente" (ingranaggio Clienti in Permessi): senza,
+    // la sezione Documenti/PDA non compare proprio.
+    const { user: uAll } = useAuth();
+    const { perms: permAll } = useRolePermissions(uAll?.role);
+    const vedeAllegati = capAllowed(uAll?.role, "/clienti", CAP_CLIENTI_ALLEGATI, permAll);
     const [docs, setDocs] = useState<{ id: string; file_url: string; file_name: string; contract_id: string; file_type: string | null; created_at: string | null }[]>([]);
     // Immagine aperta a schermo (prima si apriva in una scheda nuova).
     const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
@@ -267,8 +272,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                         </div>
                     </div>
 
-                    {/* DOCUMENTI / PDA CARICATI */}
-                    <div className="space-y-4">
+                    {/* DOCUMENTI / PDA CARICATI — solo con la capacita' attiva */}
+                    {vedeAllegati && <div className="space-y-4">
                         <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                             <Paperclip className="w-3 h-3" /> Documenti e PDA caricati
                         </h3>
@@ -329,7 +334,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 })}
                             </div>
                         )}
-                    </div>
+                    </div>}
                 </div>
 
                 {/* MODAL FOOTER */}

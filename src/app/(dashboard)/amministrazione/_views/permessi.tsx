@@ -188,8 +188,9 @@ export function PermessiView() {
                                         if (!effectiveAllowed(ruolo, par.href, par.defaultRoles, righe, par.gruppo)) { padreOff = true; break; }
                                         ph = par.padre;
                                     }
-                                    // capacita' agganciate a QUESTA sezione: ingranaggio sulla riga
-                                    const capGroup = CAPABILITIES.find((cg) => cg.section === v.href);
+                                    // capacita' agganciate a QUESTA sezione (possono essere piu' gruppi)
+                                    const capGroups = CAPABILITIES.filter((cg) => cg.section === v.href);
+                                    const capGroup = capGroups[0];
                                     return (
                                         <div key={v.href}>
                                             <div className={`flex items-center gap-3 px-4 py-2.5 ${padreOff ? "opacity-40" : ""}`} style={{ paddingLeft: 16 + (v.livello || 0) * 26 }}>
@@ -212,12 +213,14 @@ export function PermessiView() {
                                                 </button>
                                             </div>
                                             {capGroup && capOpen === v.href && (
-                                                <div className="pb-3 pr-4" style={{ paddingLeft: 16 + ((v.livello || 0) + 1) * 26 }}>
-                                                    <div className="rounded-lg border border-indigo-500/25 bg-indigo-500/[0.04] overflow-hidden">
-                                                        <CapOptions g={capGroup} ruolo={ruolo} righe={righe} busy={busy}
-                                                            onChoice={(id) => setCapChoice(capGroup as CapGroupChoice, id)}
-                                                            onFlag={(id, att) => toggleCapFlag(capGroup, id, att)} />
-                                                    </div>
+                                                <div className="pb-3 pr-4 space-y-2" style={{ paddingLeft: 16 + ((v.livello || 0) + 1) * 26 }}>
+                                                    {capGroups.map((cg) => (
+                                                        <div key={cg.sectionLabel} className="rounded-lg border border-indigo-500/25 bg-indigo-500/[0.04] overflow-hidden">
+                                                            <CapOptions g={cg} ruolo={ruolo} righe={righe} busy={busy}
+                                                                onChoice={(id) => setCapChoice(cg as CapGroupChoice, id)}
+                                                                onFlag={(id, att) => toggleCapFlag(cg, id, att)} />
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             )}
                                         </div>

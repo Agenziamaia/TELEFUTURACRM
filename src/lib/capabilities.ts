@@ -116,5 +116,21 @@ export const CAP_BADGE: CapGroupFlags = {
     caps: [CAP_BADGE_TIMBRA, CAP_BADGE_TEAM],
 };
 
-/** Catalogo completo: la pagina Permessi lo rende amministrabile da solo. */
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_BADGE];
+// ─── CLIENTI: funzioni aggiuntive della scheda ───────────────────────────────
+export const CAP_CLIENTI_ALLEGATI: CapDef = {
+    id: "vede_allegati",
+    label: "Allegati del cliente",
+    desc: "Nella scheda cliente vede la sezione Documenti e PDA caricati (documenti, contratti, fatture).",
+    default: () => true,   // oggi la vede chiunque apra la scheda
+};
+export const CAP_CLIENTI_EXTRA: CapGroupFlags = {
+    mode: "flags",
+    section: "/clienti",
+    sectionLabel: "Clienti — funzioni",
+    caps: [CAP_CLIENTI_ALLEGATI],
+};
+
+/** Catalogo completo: la pagina Permessi lo rende amministrabile da solo.
+ *  Piu' gruppi possono condividere la stessa sezione: l'ingranaggio li mostra
+ *  impilati nello stesso pannello. */
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE];
