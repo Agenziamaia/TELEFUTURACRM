@@ -414,8 +414,12 @@ export default function CallerPage() {
        Vendite ma compatti): 4 gruppi con divisori. Gruppo NON toccato = valgono
        tutti; al primo click resta selezionato solo quello, poi si aggiungono/
        tolgono; click sul titolo del gruppo = si torna a "tutti". ── */
-    const CHIP_GROUPS: { key: "brand" | "provenienza" | "tipologia" | "obiettivo"; titolo: string; valori: { v: string; ic: string }[] }[] = [
-        { key: "brand", titolo: "Brand", valori: [{ v: "WindTre", ic: "🟠" }, { v: "Vodafone", ic: "🔴" }, { v: "Fastweb", ic: "🟡" }, { v: "Sky", ic: "🔵" }, { v: "Energia", ic: "⚡" }, { v: "Tim", ic: "🔷" }, { v: "Altro", ic: "▫️" }] },
+    // brand coi COLORI reali; gli altri gruppi con l'icona
+    const CHIP_GROUPS: { key: "brand" | "provenienza" | "tipologia" | "obiettivo"; titolo: string; grande?: boolean; valori: { v: string; ic?: string; color?: string }[] }[] = [
+        { key: "brand", titolo: "Brand", grande: true, valori: [
+            { v: "WindTre", color: "#FF6B00" }, { v: "Vodafone", color: "#E60000" }, { v: "Fastweb", color: "#FFD800" },
+            { v: "Sky", color: "#0072C6" }, { v: "Energia", color: "#22c55e" }, { v: "Tim", color: "#3b82f6" }, { v: "Altro", color: "#94a3b8" },
+        ] },
         { key: "provenienza", titolo: "Provenienza", valori: [{ v: "Interno", ic: "🏠" }, { v: "Esterno", ic: "🌐" }, { v: "Acquistato", ic: "💰" }, { v: "Marketing", ic: "📣" }, { v: "Segnalazione", ic: "🗣️" }] },
         { key: "tipologia", titolo: "Tipologia", valori: [{ v: "DTS", ic: "🏪" }, { v: "Outbound", ic: "🚗" }, { v: "Teleselling", ic: "☎️" }] },
         { key: "obiettivo", titolo: "Obiettivo", valori: [{ v: "Energia", ic: "⚡" }, { v: "Sky", ic: "📺" }, { v: "CB", ic: "🔁" }, { v: "Fisso", ic: "🏡" }, { v: "Mobile", ic: "📱" }, { v: "Appuntamento", ic: "📅" }] },
@@ -1114,29 +1118,41 @@ export default function CallerPage() {
                 </div>
             </header>
 
-            {/* CHIP-FILTRI: gruppo non toccato = tutti; primo click = solo quello */}
+            {/* CHIP-FILTRI su 4 RIGHE (richiesta Luca): brand grandi e colorati.
+                Gruppo non toccato = tutti; primo click = solo quello. */}
             {!isListeView && (
-                <div className="flex-none px-8 py-3 border-b border-white/5 bg-[#0d0f16]/60 flex items-center gap-4 flex-wrap">
-                    {CHIP_GROUPS.map((g, gi) => {
+                <div className="flex-none px-8 py-3 border-b border-white/5 bg-[#0d0f16]/60 space-y-2">
+                    {CHIP_GROUPS.map((g) => {
                         const sel = chipSel[g.key] || [];
                         const toccato = sel.length > 0;
                         return (
-                            <div key={g.key} className={`flex items-center gap-1.5 flex-wrap ${gi > 0 ? "pl-4 border-l border-white/10" : ""}`}>
+                            <div key={g.key} className="flex items-center gap-2 flex-wrap">
                                 <button onClick={() => setChipSel((p) => ({ ...p, [g.key]: [] }))}
                                     title={toccato ? "Torna a tutti" : "Tutti attivi (clicca un valore per filtrare)"}
-                                    className={`text-[9px] font-bold uppercase tracking-widest mr-0.5 ${toccato ? "text-violet-300 hover:text-white" : "text-slate-600"}`}>
+                                    className={`w-28 shrink-0 text-left text-[10px] font-bold uppercase tracking-widest ${toccato ? "text-violet-300 hover:text-white" : "text-slate-600"}`}>
                                     {g.titolo}{toccato && " ✕"}
                                 </button>
-                                {g.valori.map(({ v, ic }) => {
+                                {g.valori.map(({ v, ic, color }) => {
                                     const attivo = !toccato || sel.includes(v);
+                                    const base = g.grande
+                                        ? "px-4 py-2 rounded-xl text-sm font-bold border-2"
+                                        : "px-3 py-1.5 rounded-lg text-xs font-bold border";
+                                    let style: React.CSSProperties = {};
+                                    let cls = base + " flex items-center gap-2 transition-all ";
+                                    if (color) {
+                                        if (toccato && attivo) { style = { borderColor: color, background: color + "26", color: "#fff" }; }
+                                        else if (attivo) { style = { borderColor: "rgba(255,255,255,0.12)" }; cls += "bg-white/[0.04] text-slate-200 hover:brightness-125 "; }
+                                        else { style = { borderColor: "rgba(255,255,255,0.05)" }; cls += "text-slate-600 opacity-40 hover:opacity-90 "; }
+                                    } else {
+                                        cls += toccato && attivo ? "border-violet-400/70 bg-violet-500/20 text-violet-100 "
+                                            : attivo ? "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/25 "
+                                            : "border-white/5 bg-transparent text-slate-600 opacity-40 hover:opacity-90 ";
+                                    }
                                     return (
-                                        <button key={v} onClick={() => toccaChip(g.key, v, g.valori.length)}
-                                            title={!toccato ? `Filtra solo ${v}` : attivo ? `${v} attivo — clicca per togliere` : `Aggiungi ${v}`}
-                                            className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold transition-all ${
-                                                toccato && attivo ? "border-violet-400/70 bg-violet-500/20 text-violet-100"
-                                                : attivo ? "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/25"
-                                                : "border-white/5 bg-transparent text-slate-600 opacity-50 hover:opacity-90"}`}>
-                                            <span>{ic}</span>{v}
+                                        <button key={v} onClick={() => toccaChip(g.key, v, g.valori.length)} style={style} className={cls}
+                                            title={!toccato ? `Filtra solo ${v}` : attivo ? `${v} attivo — clicca per togliere` : `Aggiungi ${v}`}>
+                                            {color ? <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} /> : <span>{ic}</span>}
+                                            {v}
                                         </button>
                                     );
                                 })}
