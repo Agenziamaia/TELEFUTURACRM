@@ -638,6 +638,9 @@ export default function CallerPage() {
             updates.nome = editCall.nome; updates.cognome = editCall.cognome;
             updates.ragione_sociale = editCall.ragione_sociale;
             updates.cf = editCall.cf; updates.piva = editCall.piva;
+            // ...e con lei i Dettagli Chiamata (le 4 tendine dell'Inserimento Manuale)
+            updates.brand = editCall.brand; updates.obiettivo = editCall.obiettivo;
+            updates.provenienza = editCall.provenienza; updates.tipologia = editCall.tipologia;
 
             if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
                 newStorico.push({ data: now, caller: currentCaller, campo: "Data richiamo", da: "", a: formatDate(editCall.dataRichiamoNew) });
@@ -1464,6 +1467,34 @@ export default function CallerPage() {
                                                 <SummaryItem label="Recapito Cellulare" value={editCall.cellulare} />
                                             </div>
                                             {editCall.clienteRiconosciuto && <p className="text-[11px] text-emerald-400 font-bold">✓ Cliente riconosciuto in anagrafica: dati compilati automaticamente</p>}
+                                            {/* le stesse prime 4 tendine dell'Inserimento Manuale (Dettagli Chiamata) */}
+                                            <p className="text-[11px] font-bold text-amber-300 uppercase tracking-widest pt-1">Dettagli chiamata</p>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <FormGroup label="Brand">
+                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.brand} onChange={(e) => updateField("brand", e.target.value)}>
+                                                        <option value="">Seleziona...</option>
+                                                        {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                                                    </select>
+                                                </FormGroup>
+                                                <FormGroup label="Obiettivo">
+                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.obiettivo} onChange={(e) => updateField("obiettivo", e.target.value)}>
+                                                        <option value="">Seleziona...</option>
+                                                        {OBIETTIVI.map(o => <option key={o} value={o}>{o}</option>)}
+                                                    </select>
+                                                </FormGroup>
+                                                <FormGroup label="Provenienza">
+                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.provenienza} onChange={(e) => updateField("provenienza", e.target.value)}>
+                                                        <option value="">Seleziona...</option>
+                                                        {PROVENIENZE.map(pr => <option key={pr} value={pr}>{pr}</option>)}
+                                                    </select>
+                                                </FormGroup>
+                                                <FormGroup label="Tipologia">
+                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.tipologia} onChange={(e) => updateField("tipologia", e.target.value)}>
+                                                        <option value="">Seleziona...</option>
+                                                        {TIPOLOGIE.map(t => <option key={t} value={t}>{t}</option>)}
+                                                    </select>
+                                                </FormGroup>
+                                            </div>
                                         </div>
                                     ) : (
                                     <div className="grid grid-cols-2 gap-3 p-4 bg-violet-500/[0.04] border border-white/5 rounded-xl">
