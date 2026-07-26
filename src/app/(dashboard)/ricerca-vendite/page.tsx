@@ -261,10 +261,11 @@ export default function RicercaContratto() {
     // checkbox li mostra. Il ruolo Tecnico li vede sempre tutti (di tutto il
     // negozio), quindi per lui il filtro non si applica.
     const isTecnico = user?.role === "tecnico";
-    // Marginalità SEMPRE visibile (via il flag — regola Luca 25/07). Le tessere
-    // brand sono filtri MULTI-selezione: all'apertura tutte attive, si deflagga
-    // ciò che non interessa (offBrands = insieme dei brand spenti).
-    const [offBrands, setOffBrands] = useState<Set<string>>(new Set());
+    // Marginalità SEMPRE visibile (via il flag — regola Luca 25/07). Tessere
+    // brand a SELEZIONE POSITIVA (stessa logica del caller, 27/07): tutte
+    // attive per definizione; il click su una applica il filtro "solo quella",
+    // i successivi aggiungono/tolgono; tutte scelte o nessuna = tutte.
+    const [selBrands, setSelBrands] = useState<Set<string>>(new Set());  // vuoto = tutte
     const lockedStores = !isGlobalView && visStores.length ? negozioInValues(visStores) : null;
     const visKey = (lockedStores || []).join("|");
     // Finche' la lista visibilita' non e' arrivata NON si interroga (si eviterebbe
@@ -367,10 +368,9 @@ export default function RicercaContratto() {
             if (daDataAttivazione) query = query.gte("data_attivazione", dataIso(daDataAttivazione));
             if (aDataAttivazione) query = query.lte("data_attivazione", dataIso(aDataAttivazione));
 
-            // tessere brand: se qualcuna è spenta, si escludono quei brand
-            if (offBrands.size > 0) {
-                offBrands.forEach((b) => { query = query.neq("brand", b); });
-            }
+            // tessere brand a selezione positiva: con una selezione attiva
+            // passano SOLO i brand scelti
+            if (selBrands.size > 0) query = query.in("brand", Array.from(selBrands));
 
             if (filterCliente) {
                 const safe = filterCliente.trim().replace(/[",()]/g, "");
@@ -440,13 +440,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataAttivazione, aDataAttivazione]);
+    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataAttivazione, aDataAttivazione]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -725,31 +725,35 @@ export default function RicercaContratto() {
                 </div>
             )}
             {brandCounts.length > 0 && (
-                /* Segnalazione 57: tessere piu' grandi e centrate (richiesta Francesco). */
-                <div className="flex flex-wrap gap-4 mb-8 justify-center">
+                /* Tessere su UNA riga (si dividono lo spazio) a selezione POSITIVA —
+                   stessa logica della sezione caller (richiesta Luca 27/07). */
+                <div className="flex gap-3 mb-8">
                     {brandCounts.map(({ brand, n }) => {
-                        // multi-selezione: tutte ACCESE all'apertura, click = spegni/riaccendi
-                        const active = !offBrands.has(brand);
+                        const active = selBrands.size === 0 || selBrands.has(brand);
                         const logo = BRAND_LOGO[brand];
                         const isExtra = ["extra", "marginalità", "marginalita"].includes(brand.toLowerCase());
                         return (
                             <button key={brand}
-                                onClick={() => { setOffBrands((p) => { const nx = new Set(p); if (nx.has(brand)) nx.delete(brand); else nx.add(brand); return nx; }); setPage(1); }}
-                                title={active ? "Attivo — clicca per nascondere questo brand" : "Nascosto — clicca per mostrarlo di nuovo"}
-                                className={cn("flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all",
+                                onClick={() => {
+                                    setSelBrands((p) => {
+                                        if (p.size === 0) return new Set([brand]);       // primo click: solo lui
+                                        const nx = new Set(p);
+                                        if (nx.has(brand)) nx.delete(brand); else nx.add(brand);
+                                        return nx.size >= brandCounts.length ? new Set<string>() : nx;
+                                    });
+                                    setPage(1);
+                                }}
+                                title={selBrands.size === 0 ? `Filtra solo ${brand}` : active ? `${brand} nel filtro — clicca per toglierlo` : `Aggiungi ${brand} al filtro`}
+                                className={cn("flex-1 min-w-0 flex flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-4 transition-all",
                                     active
-                                        // accesa: ben luminosa — sfondo pieno, bordo brillante e bagliore
                                         ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
-                                        // spenta: leggibile ma chiaramente disattivata (mai completamente buia)
                                         : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]")}>
-                                {/* Richiesta Luca 25/07: SOLO il logo (un filo piu' grande), niente
-                                    nome — il brand si riconosce dal marchio. Resta il conteggio. */}
-                                <span className="h-16 flex items-center justify-center" title={brand}>
-                                    {isExtra ? <span className="text-5xl">💰</span>
-                                        : logo ? <img src={logo} alt={brand} className="h-16 w-auto max-w-[160px] object-contain" />
-                                            : <span className="text-lg font-bold text-slate-200">{brand}</span>}
+                                <span className="h-12 flex items-center justify-center" title={brand}>
+                                    {isExtra ? <span className="text-4xl">💰</span>
+                                        : logo ? <img src={logo} alt={brand} className="h-12 w-auto max-w-full object-contain" />
+                                            : <span className="text-base font-bold text-slate-200 truncate max-w-full">{brand}</span>}
                                 </span>
-                                <span className="text-xs text-slate-400 tabular-nums leading-none">{n} {isExtra ? "vendite" : "contratti"}</span>
+                                <span className="text-[11px] text-slate-400 tabular-nums leading-none">{n} {isExtra ? "vendite" : "contratti"}</span>
                             </button>
                         );
                     })}
