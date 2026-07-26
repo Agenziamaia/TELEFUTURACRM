@@ -462,7 +462,7 @@ export default function CallerPage() {
     /* ── Handlers ── */
 
     function openNew() {
-        setEditCall(blankCall(currentCaller, isDirector));
+        setEditCall(applicaSerie(blankCall(currentCaller, isDirector)));
         setModalMode("new");
         setModalOpen(true);
     }
@@ -475,7 +475,7 @@ export default function CallerPage() {
         copy.negozioAppNew = call.negozio_appuntamento || "";
         copy.whatsappNew = "";
         copy.noteUpdate = "";
-        setEditCall(copy);
+        setEditCall(applicaSerie(copy));
         setModalMode("detail");
         setModalOpen(true);
     }
@@ -711,6 +711,38 @@ export default function CallerPage() {
     }
 
     /* ── Lista wizard handlers ── */
+
+    /* ── LAVORAZIONE IN SERIE (richiesta Luca 26/07): il caller salva le 4 voci
+       (Brand/Obiettivo/Provenienza/Tipologia) e accende l'interruttore: finche'
+       e' ON, chiamate e inserimenti nascono gia' settati (anche lato server,
+       via ponte Aircall — tabella caller_presets, mig. 090). ── */
+    const [serieOpen, setSerieOpen] = useState(false);
+    const [serie, setSerie] = useState({ attivo: false, brand: "", obiettivo: "", provenienza: "", tipologia: "" });
+    const [serieBusy, setSerieBusy] = useState(false);
+    useEffect(() => {
+        if (!user?.id) return;
+        supabase.from("caller_presets").select("attivo,brand,obiettivo,provenienza,tipologia").eq("user_id", user.id).maybeSingle()
+            .then(({ data }) => { if (data) setSerie({ attivo: !!data.attivo, brand: data.brand || "", obiettivo: data.obiettivo || "", provenienza: data.provenienza || "", tipologia: data.tipologia || "" }); });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
+    async function salvaSerie(next: typeof serie) {
+        if (!user?.id || serieBusy) return;
+        setSerieBusy(true);
+        const { error } = await supabase.from("caller_presets").upsert({
+            user_id: user.id, ...next, updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        setSerieBusy(false);
+        if (error) { alert("Preset non salvato: " + error.message); return; }
+        setSerie(next);
+    }
+    // preset applicato ai campi VUOTI di una call (nuova o aperta in dettaglio)
+    const applicaSerie = (c: Call): Call => !serie.attivo ? c : ({
+        ...c,
+        brand: c.brand || serie.brand,
+        obiettivo: c.obiettivo || serie.obiettivo,
+        provenienza: c.provenienza || serie.provenienza,
+        tipologia: c.tipologia || serie.tipologia,
+    });
 
     /* ── Lista MANUALE (richiesta Luca 26/07): il direttore assegna numeri
        scritti a mano, senza Excel — perfetta anche per testare Aircall su
@@ -1015,6 +1047,15 @@ export default function CallerPage() {
                             </button>
                         </>
                     )}
+                    {!isListeView && (
+                        <button
+                            onClick={() => setSerieOpen(true)}
+                            title={serie.attivo ? `Lavorazione in serie ATTIVA: ${[serie.brand, serie.obiettivo, serie.provenienza, serie.tipologia].filter(Boolean).join(" · ")}` : "Imposta le 4 voci una volta sola e lavora in serie"}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-all ${serie.attivo ? "border-violet-400/70 bg-violet-500/20 text-violet-200" : "border-white/15 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200"}`}
+                        >
+                            🎯 Serie {serie.attivo ? "ON" : "OFF"}
+                        </button>
+                    )}
                     {!isListeView && (() => {
                         const daEsitare = calls.filter((c) => c.da_esitare && (isDirector || c.caller === currentCaller)).length;
                         // SOLO informativo (decisione Luca): le pratiche da esitare si
@@ -1271,6 +1312,60 @@ export default function CallerPage() {
                     )}
                 </div>
             </div>
+
+            {/* LAVORAZIONE IN SERIE: 4 voci impostate una volta, applicate a tutto */}
+            {serieOpen && (
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSerieOpen(false)}>
+                    <div className="glass-panel w-full max-w-md shadow-2xl border-white/10" onClick={(e) => e.stopPropagation()}>
+                        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+                            <h2 className="text-lg font-bold text-white uppercase tracking-tight">🎯 Lavorazione in serie</h2>
+                            <button onClick={() => setSerieOpen(false)} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-white/10 bg-white/[0.03]">
+                                <div>
+                                    <div className="text-sm font-bold text-white">Serie {serie.attivo ? "attiva" : "spenta"}</div>
+                                    <div className="text-[11px] text-slate-500 mt-0.5">Con la serie ATTIVA, chiamate e inserimenti nascono già con le 4 voci qui sotto (i campi già compilati non vengono mai sovrascritti).</div>
+                                </div>
+                                <button onClick={() => salvaSerie({ ...serie, attivo: !serie.attivo })} disabled={serieBusy}
+                                    className={`relative w-14 h-7 rounded-full transition-colors shrink-0 ${serie.attivo ? "bg-violet-500/80" : "bg-white/10"}`}>
+                                    <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white transition-all ${serie.attivo ? "left-7" : "left-0.5"}`} />
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <FormGroup label="Brand">
+                                    <select className="glass-input rounded-lg py-2 w-full" value={serie.brand} onChange={(e) => salvaSerie({ ...serie, brand: e.target.value })}>
+                                        <option value="">—</option>
+                                        {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
+                                    </select>
+                                </FormGroup>
+                                <FormGroup label="Obiettivo">
+                                    <select className="glass-input rounded-lg py-2 w-full" value={serie.obiettivo} onChange={(e) => salvaSerie({ ...serie, obiettivo: e.target.value })}>
+                                        <option value="">—</option>
+                                        {OBIETTIVI.map(o => <option key={o} value={o}>{o}</option>)}
+                                    </select>
+                                </FormGroup>
+                                <FormGroup label="Provenienza">
+                                    <select className="glass-input rounded-lg py-2 w-full" value={serie.provenienza} onChange={(e) => salvaSerie({ ...serie, provenienza: e.target.value })}>
+                                        <option value="">—</option>
+                                        {PROVENIENZE.map(pr => <option key={pr} value={pr}>{pr}</option>)}
+                                    </select>
+                                </FormGroup>
+                                <FormGroup label="Tipologia">
+                                    <select className="glass-input rounded-lg py-2 w-full" value={serie.tipologia} onChange={(e) => salvaSerie({ ...serie, tipologia: e.target.value })}>
+                                        <option value="">—</option>
+                                        {TIPOLOGIE.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                </FormGroup>
+                            </div>
+                            <p className="text-[11px] text-slate-500">Il preset è personale e salvato a sistema: vale anche per le pratiche create in automatico dalle tue chiamate Aircall.</p>
+                        </div>
+                        <div className="px-6 py-4 border-t border-white/10 bg-white/[0.02] flex justify-end">
+                            <button onClick={() => setSerieOpen(false)} className="px-6 py-2 rounded-xl text-sm font-bold bg-violet-600 hover:bg-violet-500 text-white">Fatto</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* LISTA MANUALE: numeri scritti a mano, assegnati a un caller */}
             {manOpen && (

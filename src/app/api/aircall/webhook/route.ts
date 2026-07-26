@@ -125,19 +125,28 @@ async function bridgeVersoCaller(p: {
     clientId: string | null; startedIso: string | null;
 }): Promise<string> {
     // chi ha gestito la chiamata, dal mapping identita' (fallback sul nome)
-    let callerName = ""; let callerRole = "";
+    let callerName = ""; let callerRole = ""; let callerId: string | null = null;
     if (p.aircallUserId) {
-        const { data: u } = await supabase.from("app_users").select("full_name,role").eq("aircall_user_id", p.aircallUserId).maybeSingle();
-        if (u) { callerName = u.full_name; callerRole = u.role; }
+        const { data: u } = await supabase.from("app_users").select("id,full_name,role").eq("aircall_user_id", p.aircallUserId).maybeSingle();
+        if (u) { callerName = u.full_name; callerRole = u.role; callerId = u.id; }
     }
     if (!callerName && p.agenteNome) {
-        const { data: u } = await supabase.from("app_users").select("full_name,role").ilike("full_name", p.agenteNome).maybeSingle();
-        if (u) { callerName = u.full_name; callerRole = u.role; }
+        const { data: u } = await supabase.from("app_users").select("id,full_name,role").ilike("full_name", p.agenteNome).maybeSingle();
+        if (u) { callerName = u.full_name; callerRole = u.role; callerId = u.id; }
     }
     if (!callerName) return "skip: agente non mappato";
     // area call center + admin/dev (cosi' anche i test di Luca creano la pratica);
     // i negozi e gli altri ruoli restano SOLO nel registro telefonico.
     if (areaOf(callerRole) !== "cc" && !["admin", "dev"].includes(callerRole)) return "skip: non call center";
+
+    // LAVORAZIONE IN SERIE (mig. 090): se il caller ha il preset ON, le 4 voci
+    // (brand/obiettivo/provenienza/tipologia) si applicano da sole — alla
+    // creazione, e sulle pratiche esistenti SOLO dove il campo e' vuoto.
+    let preset: { brand: string; obiettivo: string; provenienza: string; tipologia: string } | null = null;
+    if (callerId) {
+        const { data: pr } = await supabase.from("caller_presets").select("attivo,brand,obiettivo,provenienza,tipologia").eq("user_id", callerId).maybeSingle();
+        if (pr?.attivo) preset = { brand: pr.brand || "", obiettivo: pr.obiettivo || "", provenienza: pr.provenienza || "", tipologia: pr.tipologia || "" };
+    }
 
     const coda = codaNumero(p.clienteNum);
     if (coda.length < 6) return "skip: numero corto";
@@ -145,13 +154,13 @@ async function bridgeVersoCaller(p: {
     // trattini (inserimento umano / liste), secondo giro con le cifre
     // intervallate da % — "3 331 23 45 67" combacia lo stesso.
     let { data: prat } = await supabase.from("calls")
-        .select("id, stato, storico")
+        .select("id, stato, storico, brand, obiettivo, provenienza, tipologia")
         .or(`numero.ilike.%${coda}%,cellulare.ilike.%${coda}%`)
         .order("created_at", { ascending: false }).limit(1);
     if (!prat || !prat[0]) {
         const patt = coda.split("").join("%");
         ({ data: prat } = await supabase.from("calls")
-            .select("id, stato, storico")
+            .select("id, stato, storico, brand, obiettivo, provenienza, tipologia")
             .or(`numero.ilike.%${patt}%,cellulare.ilike.%${patt}%`)
             .order("created_at", { ascending: false }).limit(1));
     }
@@ -177,6 +186,14 @@ async function bridgeVersoCaller(p: {
         };
         if (!p.answered) upd.stato = prossimoNR(esistente.stato);
         else upd.da_esitare = true;
+        if (preset) {
+            // riempi SOLO i campi vuoti: mai sovrascrivere cio' che la lista o
+            // il caller hanno gia' impostato
+            if (!esistente.brand && preset.brand) upd.brand = preset.brand;
+            if (!esistente.obiettivo && preset.obiettivo) upd.obiettivo = preset.obiettivo;
+            if (!esistente.provenienza && preset.provenienza) upd.provenienza = preset.provenienza;
+            if (!esistente.tipologia && preset.tipologia) upd.tipologia = preset.tipologia;
+        }
         const { error } = await supabase.from("calls").update(upd).eq("id", esistente.id);
         return error ? "errore update: " + error.message : (p.answered ? "pratica aggiornata (da esitare)" : "pratica aggiornata (NR)");
     }
@@ -196,7 +213,7 @@ async function bridgeVersoCaller(p: {
         cf: tipo === "consumer" ? ((cli?.cf_piva as string) || "") : "",
         piva: tipo === "business" ? ((cli?.cf_piva as string) || "") : "",
         numero: p.clienteNum, cellulare: (cli?.cellulare as string) || soloCifre(p.clienteNum),
-        brand: "", provenienza: "Aircall", tipologia: "", obiettivo: "",
+        brand: preset?.brand || "", provenienza: preset?.provenienza || "Aircall", tipologia: preset?.tipologia || "", obiettivo: preset?.obiettivo || "",
         stato: p.answered ? "Nuovo" : "Cold NR1",
         data_chiamata: quando, caller: callerName,
         negozio_appuntamento: "", data_appuntamento: null, indirizzo: "", agente: "",
