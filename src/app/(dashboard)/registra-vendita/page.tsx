@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer,
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { categoriaDi, controlliDi, CANONICA_BY_ID } from "@/lib/tassonomia";
+import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { useAuth } from "@/context/AuthContext";
 const ReqCtx = createContext(null);
@@ -3812,6 +3813,10 @@ export default function CRM() {
   // due clic nello stesso tick leggerebbero entrambi lo stato ancora a false.
   const submitLock = useRef(false);
   const [submitting, setSubmitting] = useState(false);
+  // Univocita' cellulare (regola Luca): se il numero e' di un ALTRO cliente si
+  // sceglie se spostarlo qui o cambiarlo — stessa logica della sezione Clienti.
+  const [dupCellCliente, setDupCellCliente] = useState<{ id: string; label: string } | null>(null);
+  const spostaCellRef = useRef(false);
   const finalSubmit = async () => {
     if (submitLock.current) return;
     // auto-marginalità anche per il brand corrente non ancora "aggiunto al carrello"
@@ -3871,6 +3876,28 @@ export default function CRM() {
           : q.ilike("nome", (ana.nome || "").trim()).ilike("cognome", (ana.cognome || "").trim());
         const { data } = await q.limit(1);
         existingClient = data && data[0];
+      }
+
+      // UNIVOCITA' (regole Luca): se stiamo per creare un cliente NUOVO ma il
+      // cellulare appartiene gia' a un altro, ci si ferma e si sceglie:
+      // spostare il numero qui o inserirne un altro. L'email non blocca ma avvisa.
+      if (!existingClient && tel) {
+        const dup = await trovaDuplicati({ cellulare: tel });
+        if (dup.cellulare) {
+          if (spostaCellRef.current) {
+            await liberaCellulare(dup.cellulare.id);
+            spostaCellRef.current = false;
+          } else {
+            setDupCellCliente(dup.cellulare);
+            setShowCart(true);
+            sT("⚠️ Cellulare già associato a un altro cliente: scegli come procedere");
+            return false;
+          }
+        }
+      }
+      if ((ana.email || "").trim()) {
+        const dupM = await trovaDuplicati({ excludeId: existingClient?.id || null, email: ana.email });
+        if (dupM.email) sT(`ℹ️ Email già registrata sotto “${dupM.email.label}” — si prosegue comunque`);
       }
 
       const idBase = cfPiva || tel.replace(/\D/g, "") || "ND";
@@ -4107,6 +4134,13 @@ export default function CRM() {
         },{onConflict:"id"});
       }else{
         const tel=margSaveForm.tel.trim();
+        // univocita' cellulare anche qui: se e' di un altro cliente, fermati
+        const {data:own}=await supabase.from("clients").select("id,nome,cognome,ragione_sociale,tipo").eq("cellulare",tel)
+          .ilike("nome",margSaveForm.nome.trim()).ilike("cognome",margSaveForm.cognome.trim()).limit(1);
+        if(!(own&&own[0])){
+          const dup=await trovaDuplicati({cellulare:tel});
+          if(dup.cellulare){sT(`⚠️ Cellulare già associato a “${dup.cellulare.label}”: usa un altro numero o registra dalla sua scheda`);setMargSaving(false);return;}
+        }
         const {data:ex}=await supabase.from("clients").select("id")
           .eq("cellulare",tel).ilike("nome",margSaveForm.nome.trim())
           .ilike("cognome",margSaveForm.cognome.trim()).limit(1);
@@ -4286,6 +4320,13 @@ export default function CRM() {
           </div>
         </div>}
         {!onlyMarg&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
+        {dupCellCliente&&<div style={{marginTop:14,padding:"12px 16px",borderRadius:10,background:"rgba(245,158,11,0.10)",border:"1px solid rgba(245,158,11,0.45)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#fbbf24",marginBottom:8}}>📱 Questo cellulare è già associato al cliente “{dupCellCliente.label}” — è un dato univoco.</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>{spostaCellRef.current=true;setDupCellCliente(null);finalSubmit();}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(245,158,11,0.6)",background:"rgba(245,158,11,0.18)",color:"#fbbf24",fontSize:12,fontWeight:800,cursor:"pointer"}}>Sposta il numero su questo cliente</button>
+            <button onClick={()=>setDupCellCliente(null)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.05)",color:"#cbd5e1",fontSize:12,fontWeight:700,cursor:"pointer"}}>Inserisco un altro numero</button>
+          </div>
+        </div>}
         <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
           <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
           {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}

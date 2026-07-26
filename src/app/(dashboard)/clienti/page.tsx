@@ -7,6 +7,10 @@ import { supabase } from "@/lib/supabaseClient";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, capChoice, capAllowed } from "@/lib/capabilities";
 
 interface Cliente {
     id: string;
@@ -91,6 +95,11 @@ const CATEGORIE_DOC = [
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
     const router = useRouter();
+    // Capacita' "Allegati del cliente" (ingranaggio Clienti in Permessi): senza,
+    // la sezione Documenti/PDA non compare proprio.
+    const { user: uAll } = useAuth();
+    const { perms: permAll } = useRolePermissions(uAll?.role);
+    const vedeAllegati = capAllowed(uAll?.role, "/clienti", CAP_CLIENTI_ALLEGATI, permAll);
     const [docs, setDocs] = useState<{ id: string; file_url: string; file_name: string; contract_id: string; file_type: string | null; created_at: string | null }[]>([]);
     // Immagine aperta a schermo (prima si apriva in una scheda nuova).
     const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
@@ -263,8 +272,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                         </div>
                     </div>
 
-                    {/* DOCUMENTI / PDA CARICATI */}
-                    <div className="space-y-4">
+                    {/* DOCUMENTI / PDA CARICATI — solo con la capacita' attiva */}
+                    {vedeAllegati && <div className="space-y-4">
                         <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                             <Paperclip className="w-3 h-3" /> Documenti e PDA caricati
                         </h3>
@@ -325,7 +334,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 })}
                             </div>
                         )}
-                    </div>
+                    </div>}
                 </div>
 
                 {/* MODAL FOOTER */}
@@ -376,6 +385,14 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             .then(({ data }) => setStoreOptions((data ?? []).map((r: any) => r.name)));
     }, []);
 
+    // Univocita' (regole Luca): CF/P.IVA bloccanti, cellulare con scelta
+    // sposta/cambia, email solo segnalata.
+    const [dupCell, setDupCell] = useState<DupCliente | null>(null);
+    const [emailDup, setEmailDup] = useState<DupCliente | null>(null);
+    const spostaRef = useRef(false);
+    const checkEmail = async () => {
+        setEmailDup(email.trim() ? (await trovaDuplicati({ excludeId: cliente?.id || null, email })).email : null);
+    };
     const handleSave = async () => {
         // Richiesta Luca: se il codice fiscale non esiste si deve poter salvare
         // lo stesso; restano obbligatori solo nome, cognome e cellulare.
@@ -396,6 +413,14 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             setError("Seleziona da chi è stato acquisito il cliente (negozio o Agenzia).");
             return;
         }
+
+        const dup = await trovaDuplicati({ excludeId: cliente?.id || null, cellulare, cfPiva, email });
+        if (dup.cfPiva) {
+            setError(`${tipo === "business" ? "La Partita IVA è già associata" : "Il Codice Fiscale è già associato"} al cliente "${dup.cfPiva.label}": è un dato univoco, controlla o correggi.`);
+            return;
+        }
+        if (dup.cellulare && !spostaRef.current) { setDupCell(dup.cellulare); return; }
+        if (dup.cellulare && spostaRef.current) { await liberaCellulare(dup.cellulare.id); spostaRef.current = false; setDupCell(null); }
 
         setLoading(true);
         setError(null);
@@ -447,6 +472,21 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
+                    {dupCell && (
+                        <div className="mx-6 mb-2 p-4 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-2">
+                            <p className="text-sm text-amber-200 font-medium">📱 Questo cellulare è già associato al cliente <strong>“{dupCell.label}”</strong> — il numero è un dato univoco.</p>
+                            <div className="flex gap-2 flex-wrap">
+                                <button type="button" onClick={() => { spostaRef.current = true; handleSave(); }}
+                                    className="text-xs px-3 py-2 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-200 hover:bg-amber-500/30 font-bold">
+                                    Sposta il numero su questo cliente (lo toglie a “{dupCell.label}”)
+                                </button>
+                                <button type="button" onClick={() => setDupCell(null)}
+                                    className="text-xs px-3 py-2 rounded-lg bg-white/5 border border-white/15 text-slate-300 hover:bg-white/10 font-bold">
+                                    Inserisco un altro numero
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     {error && (
                         <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
                             {error}
@@ -526,9 +566,13 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
+                                    onBlur={checkEmail}
                                     className="w-full glass-input text-sm rounded-xl py-3"
                                     placeholder="mario.rossi@email.com"
                                 />
+                                {emailDup && (
+                                    <p className="text-xs text-amber-400">⚠️ Email già registrata sotto il cliente “{emailDup.label}” — si può salvare comunque.</p>
+                                )}
                             </div>
 
                             <div className="space-y-1.5">
@@ -665,8 +709,20 @@ export default function ClientiPage() {
     // L'accesso completo si chiede all'amministrazione (client_access_requests).
     const { user } = useAuth();
     const role = user?.role || "";
-    const isOutbound = role === "agente" || role === "direttore_ob";
     const canApproveAccess = ["amministrativo", "admin", "dev", "direttore_generale"].includes(role);
+    // AMBITO CLIENTI dai PERMESSI (capacità cap:/clienti:*, amministrabile da
+    // Amministrazione → Utenti → Permessi): "tutti" | "negozi" | "propri".
+    // I default replicano il comportamento storico; la visibilità TOTALE a
+    // livello utente (seesAllVis) non viene mai ristretta dallo scope di ruolo.
+    const { perms: capPerms } = useRolePermissions(role);
+    const scopeClienti = capChoice(role, CAP_CLIENTI, capPerms);
+    const { seesAll: seesAllVis, stores: visStores } = useVisibleStores();
+    const maskAttivo = scopeClienti !== "tutti" && !seesAllVis;
+    const isStoreScoped = maskAttivo && scopeClienti === "negozi";
+    const soloPropri = maskAttivo && scopeClienti === "propri";
+    // Eliminazione anagrafiche: dall'amministrativo in su (cestino in tabella).
+    const canDelete = canApproveAccess;
+    const [delConfirm, setDelConfirm] = useState<string | null>(null);
     const [mieiClienti, setMieiClienti] = useState<Set<string> | null>(null);
     const [accessOk, setAccessOk] = useState<Set<string>>(new Set());
     const [accessPending, setAccessPending] = useState<Set<string>>(new Set());
@@ -684,20 +740,38 @@ export default function ClientiPage() {
     useEffect(() => {
         if (!user?.id) return;
         (async () => {
-            if (isOutbound) {
+            if (soloPropri) {
                 let nomi: string[] = [];
-                if (role === "agente") {
-                    const { data } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
-                    nomi = [data?.full_name, data?.match_name, user.name].filter(Boolean) as string[];
-                } else {
+                if (role === "direttore_ob") {
+                    // il direttore outbound vede i clienti di TUTTO il reparto
                     const { data } = await supabase.from("app_users").select("full_name,match_name")
                         .in("role", ["agente", "direttore_ob"]).eq("active", true);
                     nomi = ((data ?? []) as { full_name: string; match_name: string | null }[])
                         .flatMap((u) => [u.full_name, u.match_name]).filter(Boolean) as string[];
+                } else {
+                    // chiunque altro in modalità "propri": solo i clienti inseriti da lui
+                    const { data } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
+                    nomi = [data?.full_name, data?.match_name, user.name].filter(Boolean) as string[];
                 }
                 const { data: cs } = await supabase.from("contracts").select("client_id")
                     .in("venditore", nomi.length ? nomi : ["—"]).limit(10000);
                 setMieiClienti(new Set(((cs ?? []) as { client_id: string | null }[]).map((c) => c.client_id).filter(Boolean) as string[]));
+                await loadAccessi();
+            }
+            if (isStoreScoped) {
+                const miei = visStores.length ? visStores : (user.negozio ? [user.negozio] : []);
+                // gestiti: almeno una vendita in uno dei negozi visibili
+                const { data: cs } = await supabase.from("contracts").select("client_id,negozio").limit(10000);
+                const set = new Set<string>();
+                ((cs ?? []) as { client_id: string | null; negozio: string | null }[]).forEach((c) => {
+                    if (c.client_id && miei.some((m) => sameStore(c.negozio, m))) set.add(c.client_id);
+                });
+                // acquisiti: anagrafiche nate in uno dei negozi visibili
+                const { data: acq } = await supabase.from("clients").select("id,acquisito_da").limit(5000);
+                ((acq ?? []) as { id: string; acquisito_da: string | null }[]).forEach((c) => {
+                    if (c.acquisito_da && miei.some((m) => sameStore(c.acquisito_da, m))) set.add(c.id);
+                });
+                setMieiClienti(set);
                 await loadAccessi();
             }
             if (canApproveAccess) {
@@ -707,8 +781,8 @@ export default function ClientiPage() {
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, isOutbound, canApproveAccess, role]);
-    const oscurato = (c: Cliente) => isOutbound && (mieiClienti === null || (!mieiClienti.has(c.id) && !accessOk.has(c.id)));
+    }, [user?.id, soloPropri, isStoreScoped, visStores.join("|"), canApproveAccess, role]);
+    const oscurato = (c: Cliente) => maskAttivo && (mieiClienti === null || (!mieiClienti.has(c.id) && !accessOk.has(c.id)));
     const richiediAccesso = async (c: Cliente) => {
         setAccessMsg("");
         const { error } = await supabase.from("client_access_requests").insert({
@@ -717,6 +791,20 @@ export default function ClientiPage() {
         if (error) { setAccessMsg("⚠️ Invio non riuscito (funzione in attivazione): riprova più tardi."); return; }
         setAccessPending((p) => new Set([...p, c.id]));
         setAccessMsg("✅ Richiesta inviata all'amministrazione: vedrai i dati appena approvata.");
+    };
+    const eliminaCliente = async (c: Cliente) => {
+        setAccessMsg("");
+        const { count } = await supabase.from("contracts").select("id", { count: "exact", head: true }).eq("client_id", c.id);
+        if ((count ?? 0) > 0) {
+            setAccessMsg(`⚠️ "${c.tipo === "business" ? c.ragioneSociale : `${c.nome} ${c.cognome}`}" ha ${count} vendite registrate: non si può eliminare (perderebbero l'anagrafica).`);
+            setDelConfirm(null);
+            return;
+        }
+        const { error } = await supabase.from("clients").delete().eq("id", c.id);
+        if (error) { setAccessMsg("⚠️ Eliminazione non riuscita: " + error.message); setDelConfirm(null); return; }
+        setDelConfirm(null);
+        setAccessMsg("✅ Anagrafica eliminata.");
+        fetchClientList();
     };
     const decidiAccesso = async (id: string, approve: boolean) => {
         await supabase.from("client_access_requests").update({
@@ -833,7 +921,7 @@ export default function ClientiPage() {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight text-white">Clienti</h1>
-                        <p className="text-sm text-slate-400">{isOutbound ? "I tuoi clienti per intero; gli altri sono riservati — l'accesso si chiede all'amministrazione" : "Anagrafica completa dei clienti Consumer e Business"}</p>
+                        <p className="text-sm text-slate-400">{soloPropri ? "I tuoi clienti per intero; gli altri sono riservati — l'accesso si chiede all'amministrazione" : isStoreScoped ? "Per intero i clienti acquisiti o gestiti dal tuo negozio; gli altri sono riservati — la ricerca li trova, l'accesso si chiede all'amministrazione" : "Anagrafica completa dei clienti Consumer e Business"}</p>
                         {accessMsg && <p className={`text-sm mt-1 font-medium ${accessMsg.startsWith("✅") ? "text-emerald-400" : "text-amber-400"}`}>{accessMsg}</p>}
                         {canApproveAccess && richiesteAccesso.length > 0 && (
                             <div className="mt-3 p-3 rounded-xl bg-violet-500/10 border border-violet-500/30 space-y-2">
@@ -1020,18 +1108,19 @@ export default function ClientiPage() {
                                         <th className="px-6 py-4 font-semibold">Contatti</th>
                                         <th className="px-6 py-4 font-semibold">Indirizzo</th>
                                         <th className="px-6 py-4 font-semibold text-right">Identificativo</th>
+                                        {canDelete && <th className="px-4 py-4 w-14"></th>}
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {loading ? (
                                         <tr>
-                                            <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
+                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-slate-400">
                                                 Caricamento clienti...
                                             </td>
                                         </tr>
                                     ) : loadError ? (
                                         <tr>
-                                            <td colSpan={4} className="px-6 py-12 text-center text-rose-400">
+                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-rose-400">
                                                 Errore: {loadError}
                                             </td>
                                         </tr>
@@ -1053,7 +1142,7 @@ export default function ClientiPage() {
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
                                                 <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
-                                                <td className="px-6 py-4 text-right">
+                                                <td className="px-6 py-4 text-right" colSpan={canDelete ? 2 : 1}>
                                                     {accessPending.has(cliente.id) ? (
                                                         <span className="text-xs px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium">⏳ In attesa di approvazione</span>
                                                     ) : (
@@ -1114,11 +1203,25 @@ export default function ClientiPage() {
                                                         {cliente.cf_piva || "—"}
                                                     </span>
                                                 </td>
+                                                {canDelete && (
+                                                    <td className="px-4 py-4 text-right">
+                                                        {delConfirm === cliente.id ? (
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <button onClick={() => eliminaCliente(cliente)} title="Conferma eliminazione"
+                                                                    className="text-[11px] px-2 py-1 rounded-md bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 font-bold">Elimina</button>
+                                                                <button onClick={() => setDelConfirm(null)} className="text-[11px] px-1.5 py-1 rounded-md text-slate-400 hover:text-white">✕</button>
+                                                            </span>
+                                                        ) : (
+                                                            <button onClick={() => setDelConfirm(cliente.id)} title="Elimina anagrafica"
+                                                                className="p-1.5 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors">🗑</button>
+                                                        )}
+                                                    </td>
+                                                )}
                                             </tr>
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
+                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-slate-500">
                                                 <div className="flex flex-col items-center justify-center gap-2">
                                                     <Search className="w-6 h-6 text-slate-600 mb-2" />
                                                     <p>Nessun cliente trovato con i filtri correnti.</p>

@@ -8,6 +8,11 @@ import { ToastHost, dbError, notify } from "./_views/toast";
 import { FixedStoreCosts, StoreAttachments } from "./_views/store-extra";
 import { TargetSection } from "./_views/target";
 import { MarginalitaView } from "./_views/marginalita";
+import { PermessiView } from "./_views/permessi";
+import { RuoliView } from "./_views/ruoli";
+import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { useRoles } from "@/lib/useRoles";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
@@ -152,7 +157,7 @@ export default function AmministrazionePage() {
 
 // Sezioni del hub Amministrazione: ogni card apre la sua pagina piena (?sez=)
 const SEZIONI = [
-    { id: "utenti", label: "Utenti", icon: Users, desc: "Anagrafica completa: ruoli e gradi, negozi e brand, contratti, costi e allegati." },
+    { id: "utenti", label: "Utenti", icon: Users, desc: "Lista utenti con costi e allegati; permessi di visibilità per ruolo; ruoli e organigramma." },
     { id: "negozi", label: "Negozi", icon: StoreIcon, desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
     { id: "condivisi", label: "Costi condivisi", icon: Building2, desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
     { id: "altri", label: "Altri costi", icon: Tag, desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
@@ -165,12 +170,26 @@ function AmministrazioneInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const sez = searchParams.get("sez");
+    // Utenti e' un GRUPPO (Luca 25/07): Lista utenti / Permessi (solo admin) / Ruoli
+    const utTab = searchParams.get("tab") || "lista";
     const go = (s?: string) => router.push(s ? `/amministrazione?sez=${s}` : "/amministrazione");
-    // amministrativo e direttore_generale: SOLO la sezione Utenti, con funzioni
-    // ridotte (niente costi/visibilita'/brand nel form; le gestisce l'admin).
-    const soloUtenti = ["amministrativo", "direttore_generale"].includes(user?.role || "");
-    const sezioniVisibili = soloUtenti ? SEZIONI.filter((s) => s.id === "utenti") : SEZIONI;
-    const current = SEZIONI.find((s) => s.id === (soloUtenti && sez && sez !== "utenti" ? "utenti" : sez));
+    // GATING DAI PERMESSI (nav.ts + role_permissions): ogni sezione dell'hub e
+    // ogni funzione di Utenti si concede una a una dalla pagina Permessi.
+    const { perms } = useRolePermissions(user?.role);
+    // ruoli FUSI codice+DB: i ruoli creati da UI compaiono in filtri e form
+    const { roles: allRoles } = useRoles();
+    const hubAmm = hubByHref("/amministrazione")!;
+    const sezOk = (id: string) => {
+        const child = hubAmm.children.find((c) => c.sez === id);
+        return child ? effectiveAllowed(user?.role, hubChildKey(hubAmm, child), child.roles ?? hubAmm.roles, perms) : true;
+    };
+    const tabOk = (id: string) => {
+        const child = hubAmm.children.find((c) => c.sez === "utenti");
+        const sub = child?.subs?.find((x) => x.id === id);
+        return child && sub ? effectiveAllowed(user?.role, hubSubKey(hubAmm, child, id), sub.roles, perms) : true;
+    };
+    const sezioniVisibili = SEZIONI.filter((s) => sezOk(s.id));
+    const current = SEZIONI.find((s) => s.id === sez && sezOk(s.id));
     const [users, setUsers] = useState<AppUser[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [loading, setLoading] = useState(true);
@@ -252,7 +271,9 @@ function AmministrazioneInner() {
         return map;
     }, [filteredUsers]);
 
-    if (user && user.role !== "admin" && user.role !== "dev") {
+    // amministrativo e direttore_generale entrano per la SOLA sezione Utenti
+    // (sezioniVisibili sopra); tutti gli altri ruoli restano fuori.
+    if (user && !["admin", "dev", "amministrativo", "direttore_generale"].includes(user.role)) {
         return (
             <div className="glass-panel p-10 text-center max-w-lg mx-auto mt-10">
                 <Shield className="w-10 h-10 text-rose-400 mx-auto mb-4" />
@@ -291,7 +312,7 @@ function AmministrazioneInner() {
                         {current ? current.desc : "Il governo della piattaforma: scegli una sezione."}
                     </p>
                 </div>
-                {sez === "utenti" && !tableMissing && (
+                {sez === "utenti" && utTab === "lista" && !tableMissing && (
                     <div className="flex gap-2">
                         <button
                             onClick={() => setShowRoleCosts(true)}
@@ -342,6 +363,21 @@ function AmministrazioneInner() {
                 </div>
             ) : tableMissing ? null : sez === "utenti" ? (
                 <>
+                    {/* Il gruppo Utenti: tre funzioni sotto lo stesso tetto */}
+                    <div className="flex gap-2 flex-wrap">
+                        {([["lista", "👥 Lista utenti", tabOk("lista")], ["permessi", "🔐 Permessi", tabOk("permessi")], ["ruoli", "🏷️ Ruoli", tabOk("ruoli")]] as [string, string, boolean][])
+                            .filter(([, , vis]) => vis)
+                            .map(([id, label]) => (
+                                <button key={id} onClick={() => router.push(`/amministrazione?sez=utenti&tab=${id}`)}
+                                    className={`text-sm px-4 py-2 rounded-lg border transition-colors ${utTab === id ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-200 font-bold" : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-slate-200"}`}>
+                                    {label}
+                                </button>
+                            ))}
+                    </div>
+                    {utTab === "permessi" && tabOk("permessi") ? <PermessiView /> : utTab === "ruoli" && tabOk("ruoli") ? <RuoliView /> : !tabOk("lista") ? (
+                        <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Funzione non abilitata per il tuo ruolo.</div>
+                    ) : (
+                    <>
                     {/* Filtri */}
                     <div className="glass-panel p-4 flex flex-wrap gap-3 items-center">
                         <div className="relative flex-1 min-w-[220px]">
@@ -363,7 +399,7 @@ function AmministrazioneInner() {
                         </select>
                         <select className="glass-input w-auto" value={fRole} onChange={(e) => setFRole(e.target.value)}>
                             <option value="">Tutti i ruoli</option>
-                            {ROLES.map((r) => (
+                            {allRoles.map((r) => (
                                 <option key={r.id} value={r.id}>
                                     {r.label}
                                 </option>
@@ -410,6 +446,8 @@ function AmministrazioneInner() {
                                 </div>
                             </div>
                         ))
+                    )}
+                    </>
                     )}
                 </>
             ) : sez === "negozi" ? (
@@ -630,6 +668,7 @@ function UserForm({
     onSaved: () => void;
 }) {
     const formRules = useRoleCosts();
+    const { roles: allRoles, gradesOf } = useRoles();
     // amministrativo/direttore_generale: creano utenti con campi (quasi) tutti
     // OBBLIGATORI (IBAN escluso) e SENZA le sezioni costo/visibilita'/brand,
     // che restano all'admin: alla creazione gli parte una task urgente.
@@ -647,7 +686,7 @@ function UserForm({
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState("");
 
-    const grades = gradesFor(f.role || "");
+    const grades = gradesOf(f.role || "");
 
     const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
 
@@ -676,7 +715,7 @@ function UserForm({
         });
 
     const onRoleChange = (role: string) => {
-        const g = gradesFor(role);
+        const g = gradesOf(role);
         setF((p) => ({ ...p, role, grade: g.length ? g[0].id : null }));
     };
 
@@ -824,7 +863,7 @@ function UserForm({
                             <select className="glass-input w-full" value={f.role} onChange={(e) => onRoleChange(e.target.value)}>
                                 {AREAS.map((a) => (
                                     <optgroup key={a.id} label={a.label}>
-                                        {ROLES.filter((r) => r.area === a.id).map((r) => (
+                                        {allRoles.filter((r) => r.area === a.id).map((r) => (
                                             <option key={r.id} value={r.id}>
                                                 {r.label}
                                             </option>

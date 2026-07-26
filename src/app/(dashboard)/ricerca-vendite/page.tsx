@@ -151,10 +151,15 @@ export default function RicercaContratto() {
     const [filterCellulare, setFilterCellulare] = useState("");
     const [filterImei, setFilterImei] = useState("");
     const [filterTableSearch, setFilterTableSearch] = useState("");
+    // Solo la DATA DI ATTIVAZIONE (regola Luca 25/07: coppia "registrazione" tolta).
+    // Il picker emette gg/mm/aaaa mentre il DB confronta testo ISO aaaa-mm-gg:
+    // senza conversione il filtro non trovava MAI nulla ("non funziona").
     const [daDataAttivazione, setDaDataAttivazione] = useState("");
     const [aDataAttivazione, setADataAttivazione] = useState("");
-    const [daDataRegistrazione, setDaDataRegistrazione] = useState("");
-    const [aDataRegistrazione, setADataRegistrazione] = useState("");
+    const dataIso = (v: string) => {
+        const m = (v || "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        return m ? `${m[3]}-${m[2]}-${m[1]}` : (v || "").trim();
+    };
 
     const [selectedContract, setSelectedContract] = useState<ContrattoRow | null>(null);
     const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
@@ -221,11 +226,45 @@ export default function RicercaContratto() {
     const canEditContract = ["store_manager", "admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
     // Approvazione modifiche = amministrazione (Sandra, Claudia, Marta, Franca, Luca).
     const canApprove = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    // Cestino contratto (regola Luca 25/07): bottone dallo store manager in su.
+    // Eliminano DIRETTAMENTE amministrazione, admin e direzione commerciale
+    // (+ direzione generale); lo store manager invia la richiesta e serve
+    // l'approvazione dell'amministrazione, come per le modifiche.
+    const canDeleteDirect = ["amministrativo", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
+    const canDeleteButton = canDeleteDirect || user?.role === "store_manager";
+    const [delTarget, setDelTarget] = useState<any>(null);
+    const [delMotivo, setDelMotivo] = useState("");
+    const [delBusy, setDelBusy] = useState(false);
+    const [delMsg, setDelMsg] = useState("");
+    const eseguiEliminazione = async () => {
+        if (!delTarget || delBusy) return;
+        setDelBusy(true); setDelMsg("");
+        if (canDeleteDirect) {
+            // gli allegati cadono in CASCADE; le richieste restano per lo storico
+            const { error } = await supabase.from("contracts").delete().eq("id", delTarget.id);
+            if (error) { setDelMsg("⚠️ Eliminazione non riuscita: " + error.message); setDelBusy(false); return; }
+            await supabase.from("contract_change_requests").update({ status: "rejected", review_note: "Contratto eliminato", reviewed_by_name: user?.name || "—", reviewed_at: new Date().toISOString() }).eq("contract_id", delTarget.id).eq("status", "pending");
+            setDelBusy(false); setDelTarget(null);
+            fetchData();
+        } else {
+            if (!delMotivo.trim()) { setDelMsg("Spiega il motivo dell'eliminazione."); setDelBusy(false); return; }
+            const { error } = await supabase.from("contract_change_requests").insert({
+                contract_id: delTarget.id, requested_by: user?.id || null, requested_by_name: user?.name || "—",
+                changes: { __delete: true, __meta: { note: delMotivo.trim(), origine: "ricerca_vendite" } },
+            });
+            if (error) { setDelMsg("⚠️ Invio non riuscito: " + error.message); setDelBusy(false); return; }
+            setDelBusy(false); setDelMsg("✅ Richiesta inviata all'amministrazione: la pratica sarà eliminata solo dopo l'approvazione.");
+            setTimeout(() => { setDelTarget(null); setDelMotivo(""); setDelMsg(""); }, 1800);
+        }
+    };
     // Segnalazione 55: i contratti brand Extra sono nascosti di default; un
     // checkbox li mostra. Il ruolo Tecnico li vede sempre tutti (di tutto il
     // negozio), quindi per lui il filtro non si applica.
     const isTecnico = user?.role === "tecnico";
-    const [showExtra, setShowExtra] = useState(false);
+    // Marginalità SEMPRE visibile (via il flag — regola Luca 25/07). Le tessere
+    // brand sono filtri MULTI-selezione: all'apertura tutte attive, si deflagga
+    // ciò che non interessa (offBrands = insieme dei brand spenti).
+    const [offBrands, setOffBrands] = useState<Set<string>>(new Set());
     const lockedStores = !isGlobalView && visStores.length ? negozioInValues(visStores) : null;
     const visKey = (lockedStores || []).join("|");
     // Finche' la lista visibilita' non e' arrivata NON si interroga (si eviterebbe
@@ -254,7 +293,6 @@ export default function RicercaContratto() {
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
             if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
-            else if (!showExtra) q = q.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             const { data } = await q;
             if (data) {
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
@@ -274,7 +312,7 @@ export default function RicercaContratto() {
             }
         };
         if (visReady) fetchFilters();
-    }, [isGlobalView, visKey, visReady, lockedVenditore, showExtra, isTecnico]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Elenco venditori dagli account attivi, con il proprio team in cima.
     useEffect(() => {
@@ -318,7 +356,6 @@ export default function RicercaContratto() {
             // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
             // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
             if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
-            else if (!showExtra) query = query.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
             // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
             if (filterCodiceAttivazione) query = query.eq('dettagli->>"Cod.Ins."', filterCodiceAttivazione);
@@ -327,10 +364,13 @@ export default function RicercaContratto() {
             // ricerca (li usava solo il conteggio delle tessere brand): si sceglieva
             // una data e l'elenco restava identico. Le date sono in formato
             // AAAA-MM-GG, quindi il confronto e' diretto.
-            if (daDataRegistrazione) query = query.gte("data_registrazione", daDataRegistrazione);
-            if (aDataRegistrazione) query = query.lte("data_registrazione", aDataRegistrazione);
-            if (daDataAttivazione) query = query.gte("data_attivazione", daDataAttivazione);
-            if (aDataAttivazione) query = query.lte("data_attivazione", aDataAttivazione);
+            if (daDataAttivazione) query = query.gte("data_attivazione", dataIso(daDataAttivazione));
+            if (aDataAttivazione) query = query.lte("data_attivazione", dataIso(aDataAttivazione));
+
+            // tessere brand: se qualcuna è spenta, si escludono quei brand
+            if (offBrands.size > 0) {
+                offBrands.forEach((b) => { query = query.neq("brand", b); });
+            }
 
             if (filterCliente) {
                 const safe = filterCliente.trim().replace(/[",()]/g, "");
@@ -380,20 +420,17 @@ export default function RicercaContratto() {
                 if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
             }
             if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
-            else if (!showExtra) q = q.not("brand", "ilike", "extra").not("brand", "ilike", "marginal%");
             // Segnalazione 80: le tessere devono seguire GLI STESSI filtri data
             // dell'elenco. Prima guardavano solo le date di registrazione, quindi
             // filtrando per data di attivazione l'elenco cambiava e le tessere no.
-            if (daDataRegistrazione) q = q.gte("data_registrazione", daDataRegistrazione);
-            if (aDataRegistrazione) q = q.lte("data_registrazione", aDataRegistrazione);
-            if (daDataAttivazione) q = q.gte("data_attivazione", daDataAttivazione);
-            if (aDataAttivazione) q = q.lte("data_attivazione", aDataAttivazione);
+            if (daDataAttivazione) q = q.gte("data_attivazione", dataIso(daDataAttivazione));
+            if (aDataAttivazione) q = q.lte("data_attivazione", dataIso(aDataAttivazione));
             const { data } = await q;
             const m: Record<string, number> = {};
             (data ?? []).forEach((r: any) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
             setBrandCounts(Object.entries(m).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
         })();
-    }, [isGlobalView, visKey, visReady, lockedVenditore, showExtra, isTecnico, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, aDataAttivazione, daDataAttivazione, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
     // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
@@ -403,13 +440,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
+    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataAttivazione, aDataAttivazione]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, showExtra, daDataRegistrazione, aDataRegistrazione, daDataAttivazione, aDataAttivazione]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(offBrands).join("|"), daDataAttivazione, aDataAttivazione]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -472,6 +509,17 @@ export default function RicercaContratto() {
         return Object.entries(d as Record<string, unknown>);
     };
 
+    // Apre il contratto della richiesta anche se NON e' nella pagina corrente
+    // (lo carica dal DB): nel dettaglio i campi richiesti sono evidenziati.
+    const openContractById = async (id: string) => {
+        const hit = contractList.find(c => c.id === id);
+        if (hit) { openContract(hit, "view"); return; }
+        const { data } = await supabase.from("contracts")
+            .select("*, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
+            .eq("id", id).maybeSingle();
+        if (!data) { alert("Contratto " + id + " non trovato."); return; }
+        openContract(mapContractToRow(data as any, (data as any).clients), "view");
+    };
     const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
         const vals: Record<string, string> = {};
         CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
@@ -535,6 +583,9 @@ export default function RicercaContratto() {
 
     const submitChangeRequest = async () => {
         if (!selectedContract || Object.keys(pendingChanges).length === 0) return;
+        // Regola Luca 25/07: OGNI richiesta che prevede autorizzazione DEVE avere
+        // il motivo compilato — senza, non parte.
+        if (!reqNote.trim()) { setReqMsg("Il motivo della modifica è obbligatorio: spiega cosa correggi e perché."); return; }
         setSaving(true);
         const payload: Record<string, unknown> = { ...pendingChanges };
         if (reqNote.trim()) payload.__meta = { note: reqNote.trim() };
@@ -553,7 +604,13 @@ export default function RicercaContratto() {
 
     const decideRequest = async (req: any, approve: boolean, note?: string) => {
         setReqBusy(req.id);
-        if (approve) {
+        // Richiesta di CANCELLAZIONE (changes.__delete): approvare = eliminare la
+        // pratica (gli allegati cadono in cascata; la richiesta resta per lo storico).
+        if (approve && (req.changes || {}).__delete) {
+            const { error: dErr } = await supabase.from("contracts").delete().eq("id", req.contract_id);
+            if (dErr) { setReqBusy(null); alert("Contratto NON eliminato: " + dErr.message); return; }
+            await supabase.from("contract_change_requests").update({ status: "rejected", review_note: "Contratto eliminato", reviewed_by_name: user?.name || "—", reviewed_at: new Date().toISOString() }).eq("contract_id", req.contract_id).eq("status", "pending").neq("id", req.id);
+        } else if (approve) {
             const { data: c } = await supabase.from("contracts").select("*").eq("id", req.contract_id).single();
             if (c) {
                 const contractPatch: Record<string, unknown> = {};
@@ -662,7 +719,7 @@ export default function RicercaContratto() {
             {/* Segnalazione 80: se il periodo scelto non ha contratti, le tessere
                 sparivano del tutto e sembrava che i loghi non comparissero. Ora
                 si spiega il motivo invece di lasciare il vuoto. */}
-            {brandCounts.length === 0 && (daDataRegistrazione || aDataRegistrazione || daDataAttivazione || aDataAttivazione) && (
+            {brandCounts.length === 0 && (daDataAttivazione || aDataAttivazione) && (
                 <div className="mb-8 text-center text-sm text-slate-500">
                     Nessun contratto nel periodo selezionato: per questo non compare nessun brand.
                 </div>
@@ -671,24 +728,66 @@ export default function RicercaContratto() {
                 /* Segnalazione 57: tessere piu' grandi e centrate (richiesta Francesco). */
                 <div className="flex flex-wrap gap-4 mb-8 justify-center">
                     {brandCounts.map(({ brand, n }) => {
-                        const active = filterBrand === brand;
+                        // multi-selezione: tutte ACCESE all'apertura, click = spegni/riaccendi
+                        const active = !offBrands.has(brand);
                         const logo = BRAND_LOGO[brand];
                         const isExtra = ["extra", "marginalità", "marginalita"].includes(brand.toLowerCase());
                         return (
-                            <button key={brand} onClick={() => { setFilterBrand(active ? "" : brand); setPage(1); }}
+                            <button key={brand}
+                                onClick={() => { setOffBrands((p) => { const nx = new Set(p); if (nx.has(brand)) nx.delete(brand); else nx.add(brand); return nx; }); setPage(1); }}
+                                title={active ? "Attivo — clicca per nascondere questo brand" : "Nascosto — clicca per mostrarlo di nuovo"}
                                 className={cn("flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all",
-                                    active ? "border-indigo-400/60 bg-indigo-500/10" : "border-white/10 bg-white/[0.02] hover:bg-white/[0.05]")}>
-                                <span className="h-14 flex items-center justify-center">
-                                    {isExtra ? <span className="text-4xl">💰</span>
-                                        : logo ? <img src={logo} alt={brand} className="h-14 w-auto max-w-[140px] object-contain" />
+                                    active
+                                        // accesa: ben luminosa — sfondo pieno, bordo brillante e bagliore
+                                        ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
+                                        // spenta: leggibile ma chiaramente disattivata (mai completamente buia)
+                                        : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]")}>
+                                {/* Richiesta Luca 25/07: SOLO il logo (un filo piu' grande), niente
+                                    nome — il brand si riconosce dal marchio. Resta il conteggio. */}
+                                <span className="h-16 flex items-center justify-center" title={brand}>
+                                    {isExtra ? <span className="text-5xl">💰</span>
+                                        : logo ? <img src={logo} alt={brand} className="h-16 w-auto max-w-[160px] object-contain" />
                                             : <span className="text-lg font-bold text-slate-200">{brand}</span>}
                                 </span>
-                                {/* Segnalazione 94: nome brand piu' grande, numero contratti piccolo. */}
-                                <span className="text-base text-white uppercase tracking-wide font-bold">{brand}</span>
-                                <span className="text-xs text-slate-400 tabular-nums leading-none">{n} contratti</span>
+                                <span className="text-xs text-slate-400 tabular-nums leading-none">{n} {isExtra ? "vendite" : "contratti"}</span>
                             </button>
                         );
                     })}
+                </div>
+            )}
+
+            {/* Cestino contratto: conferma (diretta) o richiesta (store manager) */}
+            {delTarget && (
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+                    <div className="glass-card w-full max-w-md shadow-2xl">
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2"><Trash2 className="w-5 h-5 text-rose-400" /> {canDeleteDirect ? "Elimina contratto" : "Richiesta di eliminazione"}</h3>
+                            <button onClick={() => setDelTarget(null)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <div className="text-sm text-slate-300">
+                                <span className="font-mono text-indigo-300">{delTarget.id}</span> · <b className="text-white">{delTarget.brand}</b> · {delTarget.prodotto} · {delTarget.cliente || "—"}
+                            </div>
+                            {canDeleteDirect ? (
+                                <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">Azione definitiva: la pratica sparisce da Ricerca e Tracking insieme ai suoi allegati. Non si può annullare.</p>
+                            ) : (
+                                <>
+                                    <label className="block text-sm font-medium text-slate-300">Motivo dell&apos;eliminazione <span className="text-rose-400">*</span></label>
+                                    <textarea className="glass-input w-full min-h-[90px] resize-y text-sm" placeholder="Es. pratica duplicata / inserita per errore…"
+                                        value={delMotivo} onChange={e => setDelMotivo(e.target.value)} />
+                                    <p className="text-xs text-slate-500">La pratica sarà eliminata solo dopo l&apos;approvazione dell&apos;amministrazione (arriva anche nel fulmine ⚡).</p>
+                                </>
+                            )}
+                            {delMsg && <div className={cn("text-sm font-medium", delMsg.startsWith("✅") ? "text-emerald-400" : "text-rose-300")}>{delMsg}</div>}
+                        </div>
+                        <div className="p-5 border-t border-white/10 flex justify-end gap-3">
+                            <button onClick={() => setDelTarget(null)} className="px-5 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10">Annulla</button>
+                            <button onClick={eseguiEliminazione} disabled={delBusy}
+                                className="px-6 py-2 rounded-lg text-sm font-bold bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 disabled:opacity-50">
+                                {delBusy ? "Attendere…" : canDeleteDirect ? "Elimina definitivamente" : "Invia richiesta"}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -707,13 +806,11 @@ export default function RicercaContratto() {
                                 <div key={r.id} className="rounded-xl bg-white/5 border border-white/10 p-4">
                                     <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
                                         <div className="text-sm text-slate-300">
-                                            <b className="text-white">{r.requested_by_name || "\u2014"}</b> chiede di modificare il contratto{" "}
+                                            <b className="text-white">{r.requested_by_name || "\u2014"}</b> chiede di {(r.changes || {}).__delete ? <b className="text-rose-300">ELIMINARE</b> : "modificare"} il contratto{" "}
                                             <button className="font-mono text-indigo-300 hover:underline"
-                                                onClick={() => {
-                                                    const hit = contractList.find(c => c.id === r.contract_id);
-                                                    if (hit) openContract(hit, "view");
-                                                }}>{r.contract_id}</button>
-                                            <span className="text-slate-500"> \u00b7 {new Date(r.created_at).toLocaleString("it-IT")}</span>
+                                                onClick={() => openContractById(r.contract_id)}
+                                                title="Apri il contratto (i campi richiesti sono evidenziati)">{r.contract_id}</button>
+                                            <span className="text-slate-500"> · {new Date(r.created_at).toLocaleString("it-IT")}</span>
                                         </div>
                                         <div className="flex gap-2">
                                             <button disabled={reqBusy === r.id} onClick={() => decideRequest(r, true)}
@@ -727,9 +824,24 @@ export default function RicercaContratto() {
                                         </div>
                                     </div>
                                     <div className="space-y-1">
+                                        {(r.changes || {}).__delete && (
+                                            <div className="text-xs font-bold text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
+                                                ❌ Richiesta di CANCELLAZIONE della pratica{(r.changes?.__meta?.note) ? ` — motivo: “${r.changes.__meta.note}”` : ""} · approvare = eliminare definitivamente
+                                            </div>
+                                        )}
+                                        {!(r.changes || {}).__delete && r.changes?.__meta?.note && (
+                                            <div className="text-xs text-slate-300 bg-white/[0.04] border border-white/10 rounded-lg px-3 py-2">
+                                                📝 <b>Motivo:</b> “{r.changes.__meta.note}”
+                                            </div>
+                                        )}
                                         {Object.entries(r.changes || {}).filter(([k]) => !k.startsWith("__")).map(([k, c]: any) => (
-                                            <div key={k} className="text-xs text-slate-400">
-                                                <b className="text-slate-200">{c.label}</b>: <span className="text-slate-500">{fmtVal(c.da)}</span> \u2192 <span className="text-amber-300">{fmtVal(c.a)}</span>
+                                            <div key={k} className="text-xs">
+                                                <span className="inline-flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300">Campo</span>
+                                                    <b className="text-white">{c.label}</b>
+                                                    <span className="text-slate-500">da</span> <span className="text-slate-300">{fmtVal(c.da)}</span>
+                                                    <span className="text-slate-500">a</span> <span className="text-amber-300 font-bold">{fmtVal(c.a)}</span>
+                                                </span>
                                             </div>
                                         ))}
                                     </div>
@@ -741,7 +853,7 @@ export default function RicercaContratto() {
                                     </button>
                                     {openReqId === r.id && (() => {
                                         const row = contractList.find(x => x.id === r.contract_id);
-                                        if (!row) return <p className="mt-2 text-xs text-slate-500">Contratto non presente nella pagina corrente: aprilo da Ricerca per il dettaglio completo.</p>;
+                                        if (!row) return <button onClick={() => openContractById(r.contract_id)} className="mt-2 text-xs font-bold text-indigo-300 hover:text-indigo-200 hover:underline">Apri il contratto completo (con i campi richiesti in evidenza) →</button>;
                                         const changed = Object.entries(r.changes || {}).filter(([k]) => !k.startsWith("__"));
                                         const detail: [string, unknown][] = [
                                             ...CONTRACT_FIELDS.map(f => [f.label, row.raw?.[f.key]] as [string, unknown]),
@@ -800,12 +912,6 @@ export default function RicercaContratto() {
                         <Search className="w-5 h-5 text-indigo-400" />
                         Filtri di ricerca
                     </h3>
-                    {!isTecnico && (
-                        <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer select-none">
-                            <input type="checkbox" checked={showExtra} onChange={e => { setShowExtra(e.target.checked); setPage(1); }} className="w-4 h-4 accent-indigo-500" />
-                            Mostra anche la Marginalità 💰
-                        </label>
-                    )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 
@@ -927,19 +1033,11 @@ export default function RicercaContratto() {
                         <label className="block text-sm font-medium text-slate-300 mb-2">A data attivazione</label>
                         <DatePickerInput id="a_data_attivazione" value={aDataAttivazione} onChange={setADataAttivazione} placeholder="Seleziona data" />
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Da data registrazione</label>
-                        <DatePickerInput id="da_data_registrazione" value={daDataRegistrazione} onChange={setDaDataRegistrazione} placeholder="Seleziona data" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">A data registrazione</label>
-                        <DatePickerInput id="a_data_registrazione" value={aDataRegistrazione} onChange={setADataRegistrazione} placeholder="Seleziona data" />
-                    </div>
                 </div>
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setFilterTableSearch(""); setDaDataAttivazione(""); setADataAttivazione(""); setDaDataRegistrazione(""); setADataRegistrazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setFilterTableSearch(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportCsv}>
                         Scarica CSV
                     </button>
@@ -1018,6 +1116,13 @@ export default function RicercaContratto() {
                                                 {canEditContract && (
                                                     <button onClick={() => openContract(row, "edit")} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Modifica (richiede approvazione amministrazione)"><Edit className="w-4 h-4" /></button>
                                                 )}
+                                                {canDeleteButton && (
+                                                    <button onClick={() => { setDelTarget(row); setDelMotivo(""); setDelMsg(""); }}
+                                                        className="p-1.5 rounded bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 transition-colors"
+                                                        title={canDeleteDirect ? "Elimina contratto" : "Richiedi eliminazione (approvazione amministrazione)"}>
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -1070,7 +1175,10 @@ export default function RicercaContratto() {
                 // esclusa dai "Dettagli" per non averla due volte
                 const detEditable = det.filter(([k, v]) => k !== codInsKey && (v === null || typeof v !== "object"));
                 const detReadonly = det.filter(([, v]) => v !== null && typeof v === "object");
-                const pendingForThis = contractReqs.filter(r => r.status === "pending");
+                // SOLO le richieste di QUESTO contratto (prima contava tutte le pendenti)
+                const pendingForThis = contractReqs.filter(r => r.status === "pending" && r.contract_id === row.id);
+                // campi con richiesta in corso -> evidenziati nel dettaglio
+                const pendingKeys = pendingForThis.flatMap(r => Object.keys(r.changes || {}).filter(k => !k.startsWith("__")));
                 const nChanges = Object.keys(pendingChanges).length;
 
                 // Segnalazione 71: il campo era un componente definito nel render,
@@ -1097,10 +1205,11 @@ export default function RicercaContratto() {
                 };
                 const renderField = (k: string, label: string, kind?: string) => {
                     const orig = originalOf(row, k);
+                    const inRichiesta = pendingKeys.includes(k);
                     if (detailMode === "view") {
                         return (
-                            <div>
-                                <span className="text-[11px] uppercase tracking-wider text-slate-500">{label}</span>
+                            <div className={inRichiesta ? "rounded-lg ring-2 ring-amber-400/60 bg-amber-400/10 px-2 py-1.5 -mx-2" : undefined}>
+                                <span className="text-[11px] uppercase tracking-wider text-slate-500">{label}{inRichiesta && <span className="ml-1.5 text-amber-300 font-bold normal-case">· modifica richiesta</span>}</span>
                                 <p className="text-white text-sm break-words">{fmtVal(orig)}</p>
                             </div>
                         );
@@ -1201,9 +1310,17 @@ export default function RicercaContratto() {
                                 {pendingForThis.length > 0 && (
                                     <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-200 flex items-start gap-2">
                                         <Clock className="w-4 h-4 mt-0.5 shrink-0" />
-                                        <span>
-                                            {pendingForThis.length === 1 ? "C'è una richiesta di modifica" : `Ci sono ${pendingForThis.length} richieste di modifica`} in attesa di approvazione dall&apos;amministrazione.
-                                        </span>
+                                        <div className="space-y-1.5">
+                                            <span>
+                                                {pendingForThis.length === 1 ? "C'è una richiesta di modifica" : `Ci sono ${pendingForThis.length} richieste di modifica`} in attesa di approvazione — i campi interessati sono evidenziati qui sotto.
+                                            </span>
+                                            {pendingForThis.map((pr: any) => (
+                                                <div key={pr.id} className="text-xs text-amber-100/90">
+                                                    <b>{pr.requested_by_name || "—"}</b>{pr.changes?.__meta?.note ? ` · “${pr.changes.__meta.note}”` : ""}:{" "}
+                                                    {Object.entries(pr.changes || {}).filter(([k]) => !k.startsWith("__")).map(([k, c]: any) => `${c.label}: ${fmtVal(c.da)} → ${fmtVal(c.a)}`).join(" · ") || (pr.changes?.__delete ? "richiesta di cancellazione" : "")}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                                 {detailMode === "edit" && (
@@ -1248,7 +1365,7 @@ export default function RicercaContratto() {
                                 {detailMode === "edit" && (
                                     <div className="pt-4 border-t border-white/10 space-y-3">
                                         <div>
-                                            <label className="block text-xs font-semibold text-slate-400 mb-1">Motivo della modifica (facoltativo)</label>
+                                            <label className="block text-xs font-semibold text-slate-400 mb-1">Motivo della modifica <span className="text-rose-400">* obbligatorio</span></label>
                                             <textarea rows={2} className="glass-input w-full text-sm" value={reqNote} onChange={e => setReqNote(e.target.value)}
                                                 placeholder="Es. correzione ICCID comunicata dal cliente" />
                                         </div>

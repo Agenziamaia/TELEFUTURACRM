@@ -7,6 +7,8 @@ import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, capAllowed } from "@/lib/capabilities";
 import { useVisibleStores } from "@/lib/visibleStores";
 
 type TabId = "badge" | "ferie" | "malattia" | "ritardi";
@@ -80,10 +82,17 @@ type ShiftRow = { id: number; employee_name: string; store: string; started_at: 
 function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     const { user } = useAuth();
     const [activeShift, setActiveShift] = useState<ShiftRow | null>(null);
-    const [todayMinutes, setTodayMinutes] = useState(0);
+        const [todaySeconds, setTodaySeconds] = useState(0);
     const [teamStats, setTeamStats] = useState({ presenti: 0, totalMinutes: 0 });
     const [loading, setLoading] = useState(true);
 
+    // MODALITÀ della sezione dai PERMESSI (capacità cap:/collaboratori?tab=badge:*,
+    // amministrabili da Amministrazione → Utenti → Permessi). Default storici:
+    // timbra = area call center; supervisione = ruoli manageriali tranne il
+    // Back Office/Caller, che timbra come un caller.
+    const { perms: capPerms } = useRolePermissions(user?.role);
+    const puoTimbrare = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TIMBRA, capPerms);
+    const vistaTeam = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TEAM, capPerms);
     const status: "off" | "running" | "paused" = !activeShift ? "off" : activeShift.pause_started_at ? "paused" : "running";
     const canStart = status === "off";
     const canPause = status === "running";
@@ -100,7 +109,7 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     }, [user?.name]);
 
     const fetchTeamStats = useCallback(async () => {
-        if (!isAdminLike) return;
+        if (!vistaTeam) return;
         const today = new Date().toISOString().slice(0, 10);
         const { count: presenti } = await supabase.from("shifts").select("*", { count: 'exact', head: true }).is("ended_at", null);
         const { data: todayShifts } = await supabase.from("shifts").select("*").gte("started_at", today);
@@ -112,7 +121,7 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
             totalMins += Math.max(0, (end - start) / 60000 - pause);
         });
         setTeamStats({ presenti: presenti || 0, totalMinutes: Math.floor(totalMins) });
-    }, [isAdminLike]);
+    }, [vistaTeam]);
 
     useEffect(() => {
         (async () => {
@@ -123,18 +132,20 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
 
     useEffect(() => {
         if (!activeShift) {
-            setTodayMinutes(0);
+            setTodaySeconds(0);
             return;
         }
+        // Il timer contava (e si aggiornava) solo al MINUTO: sembrava fermo.
+        // Ora conta i SECONDI e batte ogni secondo (i secondi si mostrano piccoli).
         const compute = () => {
-            const start = new Date(activeShift.started_at).getTime() / 60000;
-            const now = Date.now() / 60000;
-            let pause = Number(activeShift.total_pause_minutes) || 0;
-            if (activeShift.pause_started_at) pause += (now - new Date(activeShift.pause_started_at).getTime() / 60000);
-            setTodayMinutes(Math.max(0, Math.floor(now - start - pause)));
+            const start = new Date(activeShift.started_at).getTime() / 1000;
+            const now = Date.now() / 1000;
+            let pauseSec = (Number(activeShift.total_pause_minutes) || 0) * 60;
+            if (activeShift.pause_started_at) pauseSec += (now - new Date(activeShift.pause_started_at).getTime() / 1000);
+            setTodaySeconds(Math.max(0, Math.floor(now - start - pauseSec)));
         };
         compute();
-        const t = setInterval(compute, 60000);
+        const t = setInterval(compute, 1000);
         return () => clearInterval(t);
     }, [activeShift]);
 
@@ -183,11 +194,11 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                 <div className="glass-panel p-5 border-l-4 border-l-emerald-500">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Tempo Oggi</p>
                     <p className="text-2xl font-black text-white">
-                        {Math.floor(todayMinutes / 60)}h <span className="text-emerald-400">{String(todayMinutes % 60).padStart(2, "0")}m</span>
+                        {Math.floor(todaySeconds / 3600)}h <span className="text-emerald-400">{String(Math.floor(todaySeconds / 60) % 60).padStart(2, "0")}m</span> <span className="text-sm text-slate-400">{String(todaySeconds % 60).padStart(2, "0")}s</span>
                     </p>
                 </div>
 
-                {isAdminLike && (
+                {vistaTeam && (
                     <>
                         <div className="glass-panel p-5 border-l-4 border-l-sky-500">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Presenti Ora</p>
@@ -204,8 +215,8 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                {/* Badge Action Card */}
-                <div className="xl:col-span-4 glass-card p-8 flex flex-col items-center text-center relative overflow-hidden group">
+                {/* Badge Action Card — solo call center */}
+                {puoTimbrare && <div className="xl:col-span-4 glass-card p-8 flex flex-col items-center text-center relative overflow-hidden group">
                     {/* Decorative background logo icon */}
                     <Clock className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 text-white/5 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700" />
 
@@ -220,8 +231,9 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                         <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl border border-white/5 p-6 mb-8 shadow-inner">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 italic">Timer Real-time</p>
                             <p className="text-5xl font-black text-white tracking-tighter tabular-nums drop-shadow-[0_0_10px_rgba(99,102,241,0.3)]">
-                                {Math.floor(todayMinutes / 60).toString().padStart(2, "0")}:
-                                {String(todayMinutes % 60).padStart(2, "0")}
+                                {Math.floor(todaySeconds / 3600).toString().padStart(2, "0")}:
+                                {String(Math.floor(todaySeconds / 60) % 60).padStart(2, "0")}
+                                <span className="text-2xl text-slate-400 align-baseline">:{String(todaySeconds % 60).padStart(2, "0")}</span>
                             </p>
                         </div>
 
@@ -287,18 +299,24 @@ function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                             )}
                         </div>
                     </div>
-                </div>
+                    {user?.name && <StoricoPersonale nome={user.name} parte="kpi" />}
+                </div>}
 
-                {/* Dashboard admin/Team View */}
-                <div className="xl:col-span-8 flex flex-col gap-6 min-w-0">
-                    {isAdminLike ? (
-                        <BadgeAdminDashboard onRefresh={async () => { await fetchActiveShift(); await fetchTeamStats(); }} />
+                {/* Dashboard admin/Team View: senza card timbratura occupa TUTTA la larghezza */}
+                <div className={cn(puoTimbrare ? "xl:col-span-8" : "xl:col-span-12", "flex flex-col gap-6 min-w-0")}>
+                    {vistaTeam ? (
+                        <>
+                            <BadgeAdminDashboard onRefresh={async () => { await fetchActiveShift(); await fetchTeamStats(); }} />
+                            <PresenzeAdmin />
+                        </>
+                    ) : puoTimbrare && user?.name ? (
+                        <StoricoPersonale nome={user.name} parte="storico" />
                     ) : (
                         <div className="glass-card p-8 h-full flex flex-col items-center justify-center text-center">
-                            <Shield className="w-16 h-16 text-slate-700 mb-6" />
-                            <h3 className="text-lg font-bold text-slate-300">Vista Team Riservata</h3>
+                            <Clock className="w-16 h-16 text-slate-700 mb-6" />
+                            <h3 className="text-lg font-bold text-slate-300">Timbratura riservata al call center</h3>
                             <p className="text-sm text-slate-500 mt-2 max-w-sm">
-                                Solo gli amministratori e i manager possono visualizzare in tempo reale lo stato degli altri collaboratori.
+                                I ruoli di negozio non usano il badge: per presenze e turni parla col tuo responsabile.
                             </p>
                         </div>
                     )}
@@ -319,9 +337,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
         setLoading(true);
         // Prendi tutti i turni non chiusi (active) e gli ultimi 50 chiusi
         const { data: activeData } = await supabase.from("shifts").select("*").is("ended_at", null).order("started_at", { ascending: false });
-        const { data: historyData } = await supabase.from("shifts").select("*").not("ended_at", "is", null).order("ended_at", { ascending: false }).limit(50);
-
-        setShifts([...(activeData || []), ...(historyData || [])] as ShiftRow[]);
+        setShifts((activeData || []) as ShiftRow[]);
         setLoading(false);
     }, []);
 
@@ -330,17 +346,24 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
     }, [fetchShifts]);
 
     const activeShifts = shifts.filter(s => !s.ended_at);
-    const historyShifts = shifts.filter(s => !!s.ended_at);
+    // Chiusura FORZATA di un turno rimasto aperto: solo pack amministrazione.
+    const canForce = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    const [forceId, setForceId] = useState<number | null>(null);
+    const forzaChiusura = async (sh: ShiftRow) => {
+        const now = new Date();
+        let pause = Number(sh.total_pause_minutes) || 0;
+        if (sh.pause_started_at) pause += Math.max(0, (now.getTime() - new Date(sh.pause_started_at).getTime()) / 60000);
+        await supabase.from("shifts").update({ ended_at: now.toISOString(), pause_started_at: null, total_pause_minutes: pause }).eq("id", sh.id);
+        setForceId(null);
+        await fetchShifts();
+        onRefresh();
+    };
 
     const filteredActive = activeShifts.filter(s =>
         s.employee_name.toLowerCase().includes(filterPerson.toLowerCase()) &&
         s.store.toLowerCase().includes(filterStore.toLowerCase())
     );
 
-    const filteredHistory = historyShifts.filter(s =>
-        s.employee_name.toLowerCase().includes(filterPerson.toLowerCase()) &&
-        s.store.toLowerCase().includes(filterStore.toLowerCase())
-    );
 
     const formatTime = (iso: string | null) => {
         if (!iso) return "--:--";
@@ -490,6 +513,21 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                                         <span className="text-xs font-medium text-amber-500/70">{Math.floor(Number(s.total_pause_minutes) || 0)}m</span>
                                     </div>
                                 </div>
+                                {canForce && (
+                                    <div className="relative z-10">
+                                        {forceId === s.id ? (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => forzaChiusura(s)} className="flex-1 text-[11px] py-1.5 rounded-lg bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 font-bold">Conferma chiusura</button>
+                                                <button onClick={() => setForceId(null)} className="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-white text-[11px]">✕</button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setForceId(s.id)} title="Chiude il turno adesso (per turni dimenticati aperti)"
+                                                className="w-full text-[11px] py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-slate-400 hover:text-rose-300 hover:border-rose-500/40 font-bold transition-colors">
+                                                ⛔ Forza chiusura
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -501,53 +539,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                 )}
             </div>
 
-            {/* Recent History Table */}
-            <div className="space-y-3">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">Storico Recente (Ultimi 50)</p>
-                <div className="glass-card overflow-hidden">
-                    <div className="overflow-x-auto custom-scrollbar">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-white/[0.02] border-b border-white/5">
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Collaboratore</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Negozio</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Entrata</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Uscita</th>
-                                    <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Totale</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {filteredHistory.map(s => {
-                                    const start = new Date(s.started_at).getTime();
-                                    const end = s.ended_at ? new Date(s.ended_at).getTime() : 0;
-                                    const totalMins = end > 0 ? (end - start) / 60000 - (Number(s.total_pause_minutes) || 0) : 0;
-
-                                    return (
-                                        <tr key={s.id} className="hover:bg-white/[0.01] transition-colors group">
-                                            <td className="px-5 py-4 text-xs font-medium text-slate-400 capitalize">{formatDateShort(s.started_at)}</td>
-                                            <td className="px-5 py-4 text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">{s.employee_name}</td>
-                                            <td className="px-5 py-4 text-xs text-slate-500">{s.store}</td>
-                                            <td className="px-5 py-4 text-xs text-slate-400 text-center">{formatTime(s.started_at)}</td>
-                                            <td className="px-5 py-4 text-xs text-slate-400 text-center">{formatTime(s.ended_at)}</td>
-                                            <td className="px-5 py-4 text-sm font-black text-white text-right tracking-tight">
-                                                <span className="text-emerald-500/80">{minsToHours(totalMins)}</span>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                                {filteredHistory.length === 0 && (
-                                    <tr>
-                                        <td colSpan={6} className="px-5 py-12 text-center text-slate-500 text-sm italic">
-                                            Nessun dato storico trovato
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+            {/* Lo storico vive nel pannello Presenze qui sotto (filtri periodo/persona/negozio + export) */}
         </div>
     );
 }
@@ -556,6 +548,9 @@ type VacationRequest = { id: number; employee_name: string; store: string; date_
 
 function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const { user } = useAuth();
+    // Regola Luca 25/07: la RICHIESTA ferie e' per tutti (store manager compreso)
+    // TRANNE dall'amministrativo in su, che le ferie le approva e basta.
+    const puoRichiedere = !["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
     const [reason, setReason] = useState("");
@@ -630,9 +625,9 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                 </div>
             )}
 
-            <div className={cn("grid grid-cols-1 gap-6", isAdminLike ? "xl:grid-cols-1" : "xl:grid-cols-12")}>
+            <div className={cn("grid grid-cols-1 gap-6", puoRichiedere ? "xl:grid-cols-12" : "xl:grid-cols-1")}>
                 {/* Form Richiesta */}
-                {!isAdminLike && showForm && (
+                {puoRichiedere && showForm && (
                     <div className="xl:col-span-4 space-y-6 animate-in slide-in-from-left-4 duration-300">
                         <div className="glass-card p-6 border-indigo-500/30">
                             <div className="flex items-center justify-between mb-6">
@@ -688,7 +683,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                 )}
 
                 {/* Tabella Richieste */}
-                <div className={cn(isAdminLike ? "xl:col-span-1" : showForm ? "xl:col-span-8" : "xl:col-span-12", "space-y-4")}>
+                <div className={cn(!puoRichiedere ? "xl:col-span-1" : showForm ? "xl:col-span-8" : "xl:col-span-12", "space-y-4")}>
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-1">
                         <div className="space-y-0.5">
                             <h3 className="text-lg font-bold text-white uppercase tracking-tight">
@@ -697,7 +692,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             <p className="text-xs text-slate-500">Monitoraggio e gestione dello stato approvazioni</p>
                         </div>
 
-                        {!isAdminLike && !showForm && (
+                        {puoRichiedere && !showForm && (
                             <button
                                 onClick={() => setShowForm(true)}
                                 className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-500/25 flex items-center gap-2 active:scale-[0.98]"
@@ -1277,3 +1272,294 @@ function RitardiSection() {
     );
 }
 
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BADGE v2 (richiesta Luca 25/07)
+   - StoricoPersonale: per chi timbra (caller in primis) — storico badgiate del
+     mese + KPI: ore fatte, media giornaliera, proiezione a fine mese (giorni
+     lavorativi lun–ven rimasti), tasso di consistenza (regolarità delle ore).
+   - PresenzeAdmin: per amministrazione/direzione outbound — lista presenze con
+     filtri periodo+persona, export CSV e KPI col benchmark dei mesi passati.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function oreNette(s: ShiftRow): number {
+    if (!s.ended_at) return 0;
+    const ms = new Date(s.ended_at).getTime() - new Date(s.started_at).getTime();
+    return Math.max(0, ms / 3600000 - (s.total_pause_minutes || 0) / 60);
+}
+const fmtOre = (h: number) => `${Math.floor(h)}h ${String(Math.round((h % 1) * 60)).padStart(2, "0")}m`;
+// giorni lavorativi = lun–ven, estremi inclusi
+function giorniLavorativi(from: Date, to: Date): number {
+    let n = 0;
+    const d = new Date(from); d.setHours(12, 0, 0, 0);
+    const fine = new Date(to); fine.setHours(13, 0, 0, 0);
+    while (d <= fine) { const g = d.getDay(); if (g >= 1 && g <= 5) n++; d.setDate(d.getDate() + 1); }
+    return n;
+}
+
+function KpiBox({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
+    return (
+        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/8 border-l-2" style={{ borderLeftColor: color }}>
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">{label}</div>
+            <div className="text-xl font-bold text-white mt-0.5">{value}</div>
+            {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
+        </div>
+    );
+}
+
+function StoricoPersonale({ nome, parte = "tutto" }: { nome: string; parte?: "kpi" | "storico" | "tutto" }) {
+    const [rows, setRows] = useState<ShiftRow[]>([]);
+    useEffect(() => {
+        const inizio = new Date(); inizio.setDate(1); inizio.setHours(0, 0, 0, 0);
+        supabase.from("shifts").select("*").eq("employee_name", nome)
+            .gte("started_at", inizio.toISOString()).order("started_at", { ascending: false }).limit(200)
+            .then(({ data }) => setRows((data ?? []) as ShiftRow[]));
+    }, [nome]);
+    if (rows.length === 0) {
+        // il riquadro storico esiste anche vuoto (spiega cosa arrivera' li')
+        if (parte === "storico") return (
+            <div className="glass-card p-8 h-full flex flex-col items-center justify-center text-center">
+                <Clock className="w-12 h-12 text-slate-700 mb-4" />
+                <h3 className="text-base font-bold text-slate-300">Nessuna badgiata questo mese</h3>
+                <p className="text-sm text-slate-500 mt-2 max-w-sm">Qui vedrai lo storico delle tue timbrature: entrata, uscita, pause e ore nette.</p>
+            </div>
+        );
+        return null;
+    }
+
+    const chiusi = rows.filter((r) => r.ended_at);
+    const perGiorno = new Map<string, number>();
+    chiusi.forEach((r) => { const g = r.started_at.slice(0, 10); perGiorno.set(g, (perGiorno.get(g) || 0) + oreNette(r)); });
+    const oreTot = [...perGiorno.values()].reduce((a, b) => a + b, 0);
+    const giorniFatti = perGiorno.size;
+    const media = giorniFatti ? oreTot / giorniFatti : 0;
+    const oggi = new Date();
+    const fineMese = new Date(oggi.getFullYear(), oggi.getMonth() + 1, 0);
+    const domani = new Date(oggi); domani.setDate(oggi.getDate() + 1);
+    const rimasti = domani <= fineMese ? giorniLavorativi(domani, fineMese) : 0;
+    const proiezione = oreTot + media * rimasti;
+    let consistenza: number | null = null;
+    if (perGiorno.size >= 2 && media > 0) {
+        const vals = [...perGiorno.values()];
+        const varz = vals.reduce((a, v) => a + (v - media) ** 2, 0) / vals.length;
+        consistenza = Math.max(0, Math.min(100, Math.round(100 - (Math.sqrt(varz) / media) * 100)));
+    }
+
+    const mese = oggi.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+    const kpiBlock = (
+        <div className="grid grid-cols-2 gap-2">
+            <KpiBox label="Ore fatte" value={fmtOre(oreTot)} sub={`${giorniFatti} giorni lavorati`} color="#6366f1" />
+            <KpiBox label="Media giornaliera" value={fmtOre(media)} color="#0ea5e9" />
+            <KpiBox label="Proiezione fine mese" value={fmtOre(proiezione)} sub={`${rimasti} giorni lavorativi rimasti (lun–ven)`} color="#22c55e" />
+            <KpiBox label="Consistenza" value={consistenza != null ? `${consistenza}%` : "—"} sub="regolarità delle ore giornaliere" color="#f59e0b" />
+        </div>
+    );
+    const listaBlock = (
+        <div className={cn("space-y-1.5 overflow-y-auto pr-1", parte === "storico" ? "max-h-[560px]" : "max-h-64")}>
+            {rows.map((r) => (
+                <div key={r.id} className="flex items-center gap-2 text-xs p-2 rounded-lg bg-white/[0.03] border border-white/5">
+                    <span className="text-slate-300 font-medium w-24 shrink-0">{new Date(r.started_at).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" })}</span>
+                    <span className="text-slate-400">{new Date(r.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="text-slate-600">→</span>
+                    {r.ended_at
+                        ? <span className="text-slate-400">{new Date(r.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>
+                        : <span className="text-emerald-400 font-bold">in corso</span>}
+                    {(r.total_pause_minutes || 0) > 0.5 && <span className="text-amber-400/80">⏸ {Math.round(r.total_pause_minutes)}m</span>}
+                    <span className="ml-auto font-bold text-slate-200">{r.ended_at ? fmtOre(oreNette(r)) : ""}</span>
+                </div>
+            ))}
+        </div>
+    );
+
+    // "kpi" = sotto il tasto Inizia turno; "storico" = riquadro a destra
+    if (parte === "kpi") return (
+        <div className="glass-card p-5 mt-6 text-left">
+            <h3 className="text-sm font-bold text-white mb-3">📊 I tuoi KPI — {mese}</h3>
+            {kpiBlock}
+        </div>
+    );
+    if (parte === "storico") return (
+        <div className="glass-card p-6 h-full text-left">
+            <h3 className="text-sm font-bold text-white mb-3">🗂 Storico badgiate — {mese}</h3>
+            {listaBlock}
+        </div>
+    );
+    return (
+        <div className="glass-card p-5 mt-6 text-left">
+            <h3 className="text-sm font-bold text-white mb-3">📊 Le tue timbrature — {mese}</h3>
+            <div className="mb-4">{kpiBlock}</div>
+            {listaBlock}
+        </div>
+    );
+}
+
+function PresenzeAdmin() {
+    // Cancellare una timbratura dallo storico: SOLO l'admin (regola Luca 25/07).
+    const { user } = useAuth();
+    const canDeleteShift = ["admin", "dev"].includes(user?.role || "");
+    const [delId, setDelId] = useState<number | null>(null);
+    const eliminaTimbratura = async (id: number) => {
+        await supabase.from("shifts").delete().eq("id", id);
+        setDelId(null);
+        setRows((prev) => prev.filter((r) => r.id !== id));
+    };
+    const primoDelMese = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
+    const [da, setDa] = useState(primoDelMese());
+    const [a, setA] = useState(() => new Date().toISOString().slice(0, 10));
+    const [persona, setPersona] = useState("");
+    const [negozio, setNegozio] = useState("");
+    const [rows, setRows] = useState<ShiftRow[]>([]);
+    const [bench, setBench] = useState<{ label: string; ore: number }[]>([]);
+
+    useEffect(() => {
+        if (!da || !a) return;
+        supabase.from("shifts").select("*")
+            .gte("started_at", da + "T00:00:00").lte("started_at", a + "T23:59:59")
+            .not("ended_at", "is", null).order("started_at", { ascending: false }).limit(3000)
+            .then(({ data }) => setRows((data ?? []) as ShiftRow[]));
+    }, [da, a]);
+
+    // benchmark: ore totali degli ultimi 3 mesi (rispetta il filtro persona)
+    useEffect(() => {
+        (async () => {
+            const out: { label: string; ore: number }[] = [];
+            const now = new Date();
+            for (let i = 2; i >= 0; i--) {
+                const m0 = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const m1 = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+                let q = supabase.from("shifts").select("started_at,ended_at,total_pause_minutes")
+                    .gte("started_at", m0.toISOString()).lte("started_at", m1.toISOString())
+                    .not("ended_at", "is", null).limit(3000);
+                if (persona) q = q.eq("employee_name", persona);
+                const { data } = await q;
+                out.push({ label: m0.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }), ore: ((data ?? []) as ShiftRow[]).reduce((acc, x) => acc + oreNette(x), 0) });
+            }
+            setBench(out);
+        })();
+    }, [persona]);
+
+    const filtered = rows.filter((r) => (!persona || r.employee_name === persona) && (!negozio || r.store === negozio));
+    const persone = [...new Set(rows.map((r) => r.employee_name))].sort();
+    const negozi = [...new Set(rows.map((r) => r.store).filter(Boolean))].sort();
+    const oreTot = filtered.reduce((acc, x) => acc + oreNette(x), 0);
+    const giorniPresenza = new Set(filtered.map((r) => `${r.employee_name}|${r.started_at.slice(0, 10)}`)).size;
+    const personeAttive = new Set(filtered.map((r) => r.employee_name)).size;
+    const mediaGiorno = giorniPresenza ? oreTot / giorniPresenza : 0;
+    const pauseTot = filtered.reduce((acc, x) => acc + (x.total_pause_minutes || 0), 0);
+
+    const exportCsv = () => {
+        const righe = [["Data", "Persona", "Negozio", "Entrata", "Uscita", "Pausa (min)", "Ore nette"].join(";")];
+        filtered.forEach((x) => righe.push([
+            new Date(x.started_at).toLocaleDateString("it-IT"),
+            x.employee_name, x.store || "",
+            new Date(x.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }),
+            x.ended_at ? new Date(x.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "",
+            String(Math.round(x.total_pause_minutes || 0)),
+            oreNette(x).toFixed(2).replace(".", ","),
+        ].join(";")));
+        const blob = new Blob(["\uFEFF" + righe.join("\n")], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const el = document.createElement("a");
+        el.href = url;
+        el.download = `presenze_${da}_${a}${persona ? "_" + persona.replaceAll(" ", "_") : ""}.csv`;
+        el.click();
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <div className="glass-card p-6">
+            <div className="flex flex-wrap items-end gap-3 mb-4">
+                <h3 className="text-base font-bold text-white mr-auto">🗓 Storico presenze</h3>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Dal</label>
+                    <input type="date" value={da} onChange={(e) => setDa(e.target.value)} className="glass-input text-xs py-1.5" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Al</label>
+                    <input type="date" value={a} onChange={(e) => setA(e.target.value)} className="glass-input text-xs py-1.5" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Persona</label>
+                    <select value={persona} onChange={(e) => setPersona(e.target.value)} className="glass-input text-xs py-1.5">
+                        <option value="">Tutte</option>
+                        {persone.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Negozio</label>
+                    <select value={negozio} onChange={(e) => setNegozio(e.target.value)} className="glass-input text-xs py-1.5">
+                        <option value="">Tutti</option>
+                        {negozi.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                </div>
+                <button onClick={exportCsv} disabled={filtered.length === 0}
+                    className="h-8 px-4 rounded-lg text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
+                    ⬇️ Esporta CSV
+                </button>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                <KpiBox label="Ore totali" value={fmtOre(oreTot)} sub={`${filtered.length} timbrature`} color="#6366f1" />
+                <KpiBox label="Giorni-presenza" value={String(giorniPresenza)} sub={`${personeAttive} person${personeAttive === 1 ? "a" : "e"}`} color="#0ea5e9" />
+                <KpiBox label="Media ore/giorno" value={fmtOre(mediaGiorno)} color="#22c55e" />
+                <KpiBox label="Pause totali" value={`${Math.round(pauseTot)}m`} color="#f59e0b" />
+            </div>
+
+            {/* benchmark mesi passati */}
+            <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Benchmark mensile{persona ? ` · ${persona}` : ""}:</span>
+                {bench.map((b, i) => (
+                    <span key={b.label} className={`px-2.5 py-1 rounded-lg border ${i === bench.length - 1 ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-200 font-bold" : "border-white/10 bg-white/[0.03] text-slate-400"}`}>
+                        {b.label}: {fmtOre(b.ore)}
+                    </span>
+                ))}
+            </div>
+
+            <div className="overflow-x-auto max-h-[420px] overflow-y-auto rounded-xl border border-white/8">
+                <table className="w-full text-xs">
+                    <thead className="bg-white/[0.04] text-slate-400 uppercase text-[10px] sticky top-0">
+                        <tr>
+                            <th className="px-3 py-2.5 text-left">Data</th>
+                            <th className="px-3 py-2.5 text-left">Persona</th>
+                            <th className="px-3 py-2.5 text-left">Negozio</th>
+                            <th className="px-3 py-2.5 text-right">Entrata</th>
+                            <th className="px-3 py-2.5 text-right">Uscita</th>
+                            <th className="px-3 py-2.5 text-right">Pausa</th>
+                            <th className="px-3 py-2.5 text-right">Ore nette</th>
+                            {canDeleteShift && <th className="px-3 py-2.5 w-16"></th>}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filtered.length === 0 ? (
+                            <tr><td colSpan={canDeleteShift ? 8 : 7} className="px-3 py-8 text-center text-slate-500">Nessuna presenza nel periodo.</td></tr>
+                        ) : filtered.map((x) => (
+                            <tr key={x.id} className="border-t border-white/5 text-slate-300">
+                                <td className="px-3 py-2">{new Date(x.started_at).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}</td>
+                                <td className="px-3 py-2 font-medium text-white">{x.employee_name}</td>
+                                <td className="px-3 py-2 text-slate-400">{x.store || "—"}</td>
+                                <td className="px-3 py-2 text-right">{new Date(x.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</td>
+                                <td className="px-3 py-2 text-right">{x.ended_at ? new Date(x.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                                <td className="px-3 py-2 text-right text-amber-400/80">{Math.round(x.total_pause_minutes || 0)}m</td>
+                                <td className="px-3 py-2 text-right font-bold text-slate-100">{fmtOre(oreNette(x))}</td>
+                                {canDeleteShift && (
+                                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                                        {delId === x.id ? (
+                                            <span className="inline-flex items-center gap-1">
+                                                <button onClick={() => eliminaTimbratura(x.id)} className="text-[10px] px-2 py-1 rounded-md bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 font-bold">Elimina</button>
+                                                <button onClick={() => setDelId(null)} className="text-[10px] px-1.5 py-1 rounded-md text-slate-400 hover:text-white">✕</button>
+                                            </span>
+                                        ) : (
+                                            <button onClick={() => setDelId(x.id)} title="Elimina timbratura (solo admin)"
+                                                className="p-1 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors">🗑</button>
+                                        )}
+                                    </td>
+                                )}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+}
