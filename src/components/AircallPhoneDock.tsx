@@ -19,6 +19,7 @@ export function AircallPhoneDock() {
     const [open, setOpen] = useState(false);
     const [avviato, setAvviato] = useState(false);
     const [connesso, setConnesso] = useState(false);
+    const [errore, setErrore] = useState("");
     const phoneRef = useRef<{ send: (e: string, p?: unknown, cb?: (ok: boolean, d?: unknown) => void) => void } | null>(null);
 
     const visibile = !!user && (areaOf(user.role) === "cc" || ["admin", "dev"].includes(user.role));
@@ -29,15 +30,22 @@ export function AircallPhoneDock() {
         if (!open || avviato) return;
         setAvviato(true);
         (async () => {
-            const mod = await import("aircall-everywhere");
-            const AircallPhone = mod.default;
-            const phone = new AircallPhone({
-                domToLoadPhone: "#aircall-phone-container",
-                onLogin: () => setConnesso(true),
-                onLogout: () => setConnesso(false),
-            });
-            phoneRef.current = phone;
-            registraTelefono((numero, cb) => phone.send("dial_number", { phone_number: numero }, cb));
+            try {
+                // v2 del pacchetto: l'opzione si chiama domToLoadWorkspace (il vecchio
+                // domToLoadPhone veniva ignorato -> iframe mai creato, pannello nero).
+                const mod = await import("aircall-everywhere");
+                const AircallWorkspace = mod.default;
+                const phone = new AircallWorkspace({
+                    domToLoadWorkspace: "#aircall-phone-container",
+                    onLogin: () => setConnesso(true),
+                    onLogout: () => setConnesso(false),
+                });
+                phoneRef.current = phone;
+                registraTelefono((numero, cb) => phone.send("dial_number", { phone_number: numero }, cb));
+                setErrore("");
+            } catch (e) {
+                setErrore(e instanceof Error ? e.message : "Telefono non caricato");
+            }
         })();
     }, [open, avviato]);
 
@@ -60,6 +68,15 @@ export function AircallPhoneDock() {
                     <span className="text-xs font-bold text-slate-300">☎ Telefono Aircall {connesso ? "· connesso" : "· accedi con le tue credenziali Aircall"}</span>
                     <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-white text-sm">✕</button>
                 </div>
+                {errore && (
+                    <div className="p-4 text-xs text-rose-300 space-y-2">
+                        <p>Telefono non caricato: {errore}</p>
+                        <button onClick={() => window.open("https://phone.aircall.io", "aircall", "width=420,height=680")}
+                            className="px-3 py-1.5 rounded-lg border border-white/15 text-slate-200 hover:bg-white/10 font-bold">
+                            Apri il telefono in una finestra →
+                        </button>
+                    </div>
+                )}
                 <div id="aircall-phone-container" style={{ width: "100%", height: "calc(100% - 36px)" }} />
             </div>
         </>
