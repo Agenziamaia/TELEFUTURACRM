@@ -557,7 +557,7 @@ export default function CallerPage() {
     async function sincronizzaAppuntamento(c: Call, callId: string) {
         if (!APPUNTAMENTO_STATI.includes(c.stato)) return;
         const dt = (c.data_appuntamento || "").trim();
-        if (!dt) return;
+        if (!dt) { alert("Appuntamento NON portato in calendario: manca la data e ora."); return; }
         const [dataApp, oraApp] = dt.includes("T") ? dt.split("T") : [dt, "10:00"];
         const inNegozio = !!c.negozio_appuntamento;
         if (!inNegozio && !c.agente) {
@@ -625,6 +625,15 @@ export default function CallerPage() {
         } else {
             // Detail mode: update only stato and append history
             if (!editCall.statoNew) { closeModal(); return; }
+            // esito APPUNTAMENTO: senza data e senza negozio (o agente) il
+            // calendario non si puo' popolare — meglio fermarsi e dirlo subito
+            // (prima il ponte falliva in silenzio: caso del test di Luca).
+            if (APPUNTAMENTO_STATI.includes(editCall.statoNew)) {
+                const dataOk = editCall.dataAppuntamentoNew || editCall.data_appuntamento;
+                const luogoOk = editCall.negozioAppNew || editCall.negozio_appuntamento || editCall.agente;
+                if (!dataOk) { alert("Per fissare l'appuntamento serve la DATA E ORA: compilala e risalva."); return; }
+                if (!luogoOk) { alert("Per fissare l'appuntamento serve il NEGOZIO (o l'agente): selezionalo e risalva."); return; }
+            }
             const original = calls.find(c => c.id === editCall.id);
             if (!original) return;
             const newStorico: StoricoEntry[] = [
@@ -1707,10 +1716,10 @@ export default function CallerPage() {
                                         )}
                                         {statoNewIsAppuntamento && (
                                             <>
-                                                <FormGroup label="Data e Ora Appuntamento">
+                                                <FormGroup label="Data e Ora Appuntamento *">
                                                     <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.dataAppuntamentoNew || ""} onChange={(e) => updateField("dataAppuntamentoNew", e.target.value)} />
                                                 </FormGroup>
-                                                <FormGroup label="Negozio Appuntamento">
+                                                <FormGroup label="Negozio Appuntamento *">
                                                     {/* senza negozio l'appuntamento NON arriva sul calendario del punto vendita */}
                                                     <select className="glass-input rounded-lg py-2 w-full" value={editCall.negozioAppNew || ""} onChange={(e) => updateField("negozioAppNew", e.target.value)}>
                                                         <option value="">Seleziona negozio...</option>
