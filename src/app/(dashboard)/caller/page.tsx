@@ -410,15 +410,15 @@ export default function CallerPage() {
     }, []);
 
     /* ── Filtering ── */
-    /* ── TESSERE BRAND in testa (richiesta Luca 27/07): SOLO i brand, stesso
-       stile e comportamento di Ricerca Vendite — tutte accese all'apertura,
-       click = spegni/riaccendi. Provenienza/Tipologia/Obiettivo tornano a
-       tendina nel pannello filtri. ── */
+    /* ── TESSERE BRAND in testa (richiesta Luca 27/07): SOLO i brand, stile
+       Ricerca Vendite ma a SELEZIONE POSITIVA — tutte attive per definizione;
+       il click su una applica il filtro "solo quella", i successivi aggiungono
+       o tolgono; tutte selezionate (o nessuna) = nessun filtro. ── */
     const BRAND_LOGO: Record<string, string> = {
         "WindTre": "/windtre.png", "Vodafone": "/vodaphone - Copy.png", "Fastweb": "/fastweb.png",
         "Sky": "/sky.png", "Energia": "/energy - Copy.png", "Tim": "/tim-logo-v2.png",
     };
-    const [offBrands, setOffBrands] = useState<Set<string>>(new Set());
+    const [selBrands, setSelBrands] = useState<Set<string>>(new Set());  // vuoto = tutte
     const brandCounts = useMemo(() => {
         const scoped = calls.filter((c) => isDirector || c.caller === currentCaller);
         return BRANDS.map((b) => ({ brand: b as string, n: scoped.filter((c) => c.brand === b).length }));
@@ -437,13 +437,13 @@ export default function CallerPage() {
         if (fDataChiamata && !c.data_chiamata.startsWith(fDataChiamata)) return false;
         if (fStato && c.stato !== fStato) return false;
         if (fCaller && c.caller !== fCaller) return false;
-        if (c.brand && offBrands.has(c.brand)) return false;
+        if (selBrands.size > 0 && !selBrands.has(c.brand)) return false;
         if (fProvenienza && c.provenienza !== fProvenienza) return false;
         if (fTipologia && c.tipologia !== fTipologia) return false;
         if (fObiettivo && c.obiettivo !== fObiettivo) return false;
         if (fLista && (!c.lista_origine || !c.lista_origine.toLowerCase().includes(fLista.toLowerCase()))) return false;
         return true;
-    }), [calls, isDirector, currentCaller, fCf, fNome, fNegozio, fDataApp, fDataChiamata, fStato, fCaller, offBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
+    }), [calls, isDirector, currentCaller, fCf, fNome, fNegozio, fDataApp, fDataChiamata, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
 
     function listaBrandLabel(l: ListaAssegnata): string {
         if (l.provenienza === "Acquistato") return l.brandAcq || "—";
@@ -710,7 +710,7 @@ export default function CallerPage() {
             fStato: "", fCaller: "", fBrand: "", fProvenienza: "", fTipologia: "",
             fObiettivo: "", fLista: ""
         }));
-        setOffBrands(new Set());
+        setSelBrands(new Set());
     }
 
     function resetFiltriListe() {
@@ -1119,25 +1119,30 @@ export default function CallerPage() {
                     {/* ── CALLS VIEW ── */}
                     {!isListeView && (
                         <>
-                            {/* Tessere brand — stesso stile di Ricerca Vendite: tutte accese,
-                                click per spegnere/riaccendere. Le righe ancora senza brand
-                                (da esitare) passano sempre. */}
-                            <div className="flex flex-wrap gap-4 justify-center">
+                            {/* Tessere brand su UNA riga (si dividono lo spazio): tutte attive
+                                per definizione; il click su una = filtro SOLO quella, i click
+                                successivi aggiungono/tolgono; tutte scelte o nessuna = tutte. */}
+                            <div className="flex gap-3">
                                 {brandCounts.map(({ brand, n }) => {
-                                    const active = !offBrands.has(brand);
+                                    const active = selBrands.size === 0 || selBrands.has(brand);
                                     const logo = BRAND_LOGO[brand];
                                     return (
                                         <button key={brand}
-                                            onClick={() => setOffBrands((p) => { const nx = new Set(p); if (nx.has(brand)) nx.delete(brand); else nx.add(brand); return nx; })}
-                                            title={active ? "Attivo — clicca per nascondere questo brand" : "Nascosto — clicca per mostrarlo di nuovo"}
-                                            className={`flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all ${active
+                                            onClick={() => setSelBrands((p) => {
+                                                if (p.size === 0) return new Set([brand]);       // primo click: solo lui
+                                                const nx = new Set(p);
+                                                if (nx.has(brand)) nx.delete(brand); else nx.add(brand);
+                                                return nx.size >= BRANDS.length ? new Set<string>() : nx;
+                                            })}
+                                            title={selBrands.size === 0 ? `Filtra solo ${brand}` : active ? `${brand} nel filtro — clicca per toglierlo` : `Aggiungi ${brand} al filtro`}
+                                            className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-4 transition-all ${active
                                                 ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
                                                 : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]"}`}>
-                                            <span className="h-16 flex items-center justify-center" title={brand}>
-                                                {logo ? <img src={logo} alt={brand} className="h-16 w-auto max-w-[160px] object-contain" />
-                                                    : <span className="text-lg font-bold text-slate-200">{brand}</span>}
+                                            <span className="h-12 flex items-center justify-center" title={brand}>
+                                                {logo ? <img src={logo} alt={brand} className="h-12 w-auto max-w-full object-contain" />
+                                                    : <span className="text-base font-bold text-slate-200">{brand}</span>}
                                             </span>
-                                            <span className="text-xs text-slate-400 tabular-nums leading-none">{n} call</span>
+                                            <span className="text-[11px] text-slate-400 tabular-nums leading-none">{n} call</span>
                                         </button>
                                     );
                                 })}
