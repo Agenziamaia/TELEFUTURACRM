@@ -310,8 +310,6 @@ export default function CallerPage() {
     // nello storico a una persona inesistente.
     const { user } = useAuth();
     const currentCaller = user?.name || "";
-    // coda "da esitare": chiamate Aircall risposte in attesa dell'esito del caller
-    const [fDaEsitare, setFDaEsitare] = useState(false);
     const roleFromSession: Role =
         ["admin", "dev", "direttore_generale"].includes(user?.role || "") ? "admin"
       : ["direttore_cc", "direttore_ob", "direttore_commerciale", "store_manager", "amministrativo"].includes(user?.role || "") ? "direttore"
@@ -412,7 +410,6 @@ export default function CallerPage() {
 
     /* ── Filtering ── */
     const filtered = useMemo(() => calls.filter((c) => {
-        if (fDaEsitare && !c.da_esitare) return false;
         if (!isDirector && c.caller !== currentCaller) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
         if (fNome) {
@@ -697,6 +694,55 @@ export default function CallerPage() {
 
     /* ── Lista wizard handlers ── */
 
+    /* ── Lista MANUALE (richiesta Luca 26/07): il direttore assegna numeri
+       scritti a mano, senza Excel — perfetta anche per testare Aircall su
+       numeri veri. Crea la lista e le pratiche reali coi numeri digitati. ── */
+    const [manOpen, setManOpen] = useState(false);
+    const [manNome, setManNome] = useState("");
+    const [manTipo, setManTipo] = useState<TipoCliente>("consumer");
+    const [manCaller, setManCaller] = useState("");
+    const [manRows, setManRows] = useState<{ numero: string; nome: string; cognome: string }[]>([{ numero: "", nome: "", cognome: "" }]);
+    const [manBusy, setManBusy] = useState(false);
+    const manValide = manRows.filter((r) => r.numero.replace(/\D/g, "").length >= 6);
+    const manOk = !!manNome.trim() && !!manCaller && manValide.length > 0;
+
+    async function salvaListaManuale() {
+        if (!manOk || manBusy) return;
+        setManBusy(true);
+        const dataAssegnazione = new Date().toISOString().slice(0, 16);
+        const nome = manNome.trim();
+        const { error: le } = await supabase.from("liste").insert({
+            nome, data: dataAssegnazione, tipo: manTipo, provenienza: "Manuale",
+            segnalatore: "", campagna: "", brand_acq: "", obiettivo_mkt: "",
+            interno_rows: [], file_name: "inserimento manuale", file_path: "",
+            num_cols: 0, mappa: {}, totale: manValide.length,
+            splits: [{ caller: manCaller, quantita: manValide.length }], lavorate: 0,
+        });
+        if (le) { alert("Errore creazione lista: " + le.message); setManBusy(false); return; }
+        const payloads = manValide.map((r) => ({
+            tipo_cliente: manTipo,
+            nome: manTipo === "consumer" ? r.nome.trim() : "",
+            cognome: manTipo === "consumer" ? r.cognome.trim() : "",
+            ragione_sociale: manTipo === "business" ? r.nome.trim() : "",
+            cf: "", piva: "",
+            numero: r.numero.trim(), cellulare: r.numero.replace(/\D/g, ""),
+            brand: "", provenienza: "", tipologia: "", obiettivo: "",
+            stato: "Nuovo", data_chiamata: dataAssegnazione, caller: manCaller,
+            negozio_appuntamento: "", data_appuntamento: null, indirizzo: "", agente: "",
+            segnalatore: "", campagna: "", negozio_provenienza: "", mese_provenienza: "", anno_provenienza: "",
+            whatsapp: "", note: `Da lista: ${nome}`, data_richiamo: null,
+            lista_origine: nome,
+            storico: [{ data: dataAssegnazione, caller: currentCaller, campo: "Assegnazione lista", da: "", a: `Nuovo (lista manuale: ${nome})` }],
+        }));
+        const { error: ce } = await supabase.from("calls").insert(payloads);
+        setManBusy(false);
+        if (ce) { alert("Errore creazione pratiche: " + ce.message); return; }
+        await Promise.all([fetchCalls(), fetchListe()]);
+        setManOpen(false);
+        setManNome(""); setManCaller(""); setManRows([{ numero: "", nome: "", cognome: "" }]);
+        alert(`Lista "${nome}" assegnata a ${manCaller}: ${payloads.length} numeri`);
+    }
+
     function openLista() {
         setListaStep(1);
         setListaTipo("consumer");
@@ -935,23 +981,33 @@ export default function CallerPage() {
                         </button>
                     )}
                     {isDirector && !isListeView && (
-                        <button
-                            onClick={openLista}
-                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 text-xs font-bold uppercase tracking-widest transition-all"
-                        >
-                            <FileSpreadsheet className="w-4 h-4" /> Assegna Liste
-                        </button>
+                        <>
+                            <button
+                                onClick={() => setManOpen(true)}
+                                title="Assegna una lista scrivendo i numeri a mano (senza Excel)"
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 text-xs font-bold uppercase tracking-widest transition-all"
+                            >
+                                ✍️ Lista Manuale
+                            </button>
+                            <button
+                                onClick={openLista}
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 text-xs font-bold uppercase tracking-widest transition-all"
+                            >
+                                <FileSpreadsheet className="w-4 h-4" /> Assegna Liste
+                            </button>
+                        </>
                     )}
                     {!isListeView && (() => {
                         const daEsitare = calls.filter((c) => c.da_esitare && (isDirector || c.caller === currentCaller)).length;
+                        // SOLO informativo (decisione Luca): le pratiche da esitare si
+                        // riconoscono in lista dal pallino ambra pulsante.
                         return daEsitare > 0 ? (
-                            <button
-                                onClick={() => setFDaEsitare(!fDaEsitare)}
-                                title="Chiamate risposte in attesa del tuo esito"
-                                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-all ${fDaEsitare ? "border-amber-400/70 bg-amber-500/20 text-amber-200" : "border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"}`}
+                            <span
+                                title="Chiamate risposte in attesa dell'esito: in lista hanno il pallino ambra pulsante"
+                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 text-xs font-bold uppercase tracking-widest cursor-default"
                             >
-                                ☎️ Da esitare: {daEsitare}{fDaEsitare ? " ✓" : ""}
-                            </button>
+                                ☎️ Da esitare: {daEsitare}
+                            </span>
                         ) : null;
                     })()}
                     {!isListeView && (
@@ -1197,6 +1253,76 @@ export default function CallerPage() {
                     )}
                 </div>
             </div>
+
+            {/* LISTA MANUALE: numeri scritti a mano, assegnati a un caller */}
+            {manOpen && (
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setManOpen(false)}>
+                    <div className="glass-panel w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border-white/10" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex-none px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+                            <h2 className="text-lg font-bold text-white uppercase tracking-tight">✍️ Lista Manuale</h2>
+                            <button onClick={() => setManOpen(false)} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] text-slate-500 uppercase tracking-widest">Nome lista <span className="text-rose-400">*</span></label>
+                                    <input className="glass-input w-full rounded-lg py-2 mt-1" value={manNome} onChange={(e) => setManNome(e.target.value)} placeholder="Es. Test Aircall Luglio" />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] text-slate-500 uppercase tracking-widest">Assegna a <span className="text-rose-400">*</span></label>
+                                    <select className="glass-input w-full rounded-lg py-2 mt-1" value={manCaller} onChange={(e) => setManCaller(e.target.value)}>
+                                        <option value="">Seleziona caller...</option>
+                                        {CALLERS.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                {(["consumer", "business"] as const).map((t) => (
+                                    <button key={t} onClick={() => setManTipo(t)}
+                                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-colors ${manTipo === t ? "border-violet-400/70 bg-violet-500/20 text-violet-200" : "border-white/10 text-slate-400 hover:text-slate-200"}`}>
+                                        {t === "consumer" ? "● Consumer" : "■ Business"}{manTipo === t ? " ✓" : ""}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-[10px] text-slate-500 uppercase tracking-widest">Numeri da chiamare ({manValide.length} validi)</label>
+                                {manRows.map((r, i) => (
+                                    <div key={i} className="flex gap-2 items-center">
+                                        <input className="glass-input rounded-lg py-2 flex-1 font-mono" value={r.numero}
+                                            onChange={(e) => setManRows((p) => p.map((x, j) => j === i ? { ...x, numero: e.target.value } : x))}
+                                            placeholder="Numero (es. 3331234567)" />
+                                        {manTipo === "consumer" ? (
+                                            <>
+                                                <input className="glass-input rounded-lg py-2 flex-1" value={r.nome}
+                                                    onChange={(e) => setManRows((p) => p.map((x, j) => j === i ? { ...x, nome: e.target.value } : x))}
+                                                    placeholder="Nome (facolt.)" />
+                                                <input className="glass-input rounded-lg py-2 flex-1" value={r.cognome}
+                                                    onChange={(e) => setManRows((p) => p.map((x, j) => j === i ? { ...x, cognome: e.target.value } : x))}
+                                                    placeholder="Cognome (facolt.)" />
+                                            </>
+                                        ) : (
+                                            <input className="glass-input rounded-lg py-2 flex-[2]" value={r.nome}
+                                                onChange={(e) => setManRows((p) => p.map((x, j) => j === i ? { ...x, nome: e.target.value } : x))}
+                                                placeholder="Ragione sociale (facolt.)" />
+                                        )}
+                                        <button onClick={() => setManRows((p) => p.length > 1 ? p.filter((_, j) => j !== i) : p)}
+                                            className="text-rose-400 hover:text-rose-300 font-bold px-2 shrink-0">✕</button>
+                                    </div>
+                                ))}
+                                <button onClick={() => setManRows((p) => [...p, { numero: "", nome: "", cognome: "" }])}
+                                    className="text-xs px-3 py-1.5 rounded-lg border border-white/15 text-slate-300 hover:bg-white/5 font-bold">+ Aggiungi numero</button>
+                            </div>
+                        </div>
+                        <div className="flex-none px-6 py-4 border-t border-white/10 bg-white/[0.02] flex justify-end gap-3">
+                            <button onClick={() => setManOpen(false)} className="px-5 py-2 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/10">Annulla</button>
+                            <button onClick={salvaListaManuale} disabled={!manOk || manBusy}
+                                className="px-6 py-2 rounded-xl text-sm font-bold bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-40">
+                                {manBusy ? "Creo..." : `Assegna ${manValide.length} numer${manValide.length === 1 ? "o" : "i"}`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ════════════════════════════════════════════════════════════════
                 CALL MODAL (Nuova / Dettaglio)
