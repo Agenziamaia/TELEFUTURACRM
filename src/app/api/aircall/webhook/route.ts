@@ -135,7 +135,9 @@ async function bridgeVersoCaller(p: {
         if (u) { callerName = u.full_name; callerRole = u.role; }
     }
     if (!callerName) return "skip: agente non mappato";
-    if (areaOf(callerRole) !== "cc") return "skip: non call center";
+    // area call center + admin/dev (cosi' anche i test di Luca creano la pratica);
+    // i negozi e gli altri ruoli restano SOLO nel registro telefonico.
+    if (areaOf(callerRole) !== "cc" && !["admin", "dev"].includes(callerRole)) return "skip: non call center";
 
     const coda = codaNumero(p.clienteNum);
     if (coda.length < 6) return "skip: numero corto";
