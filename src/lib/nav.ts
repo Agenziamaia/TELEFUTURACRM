@@ -19,7 +19,7 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy,
+    ClipboardList, Trophy, Layers,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -128,6 +128,7 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Costi condivisi", sez: "condivisi", icon: Building2, roles: ["admin", "dev"] },
             { name: "Altri costi", sez: "altri", icon: Tag, roles: ["admin", "dev"] },
             { name: "Marginalità", sez: "marginalita", icon: Package, roles: ["admin", "dev"] },
+            { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
             { name: "Target", sez: "target", icon: ClipboardList, roles: ["admin", "dev"] },
         ],
     },

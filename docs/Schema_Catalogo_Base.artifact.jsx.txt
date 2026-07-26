@@ -1,0 +1,1787 @@
+import { useState } from "react";
+
+// ================================================================
+//  SCHEMA CATALOGO - BASE DI LAVORO
+//  Gerarchia: 1 Brand -> 2 Tipo Cliente -> 3 Categoria -> 4 Prodotto -> 5 Offerta -> 6 Opzioni
+//
+//  Struttura del blocco CATALOGO:
+//     CATALOGO[brandId][tipoCliente][categoria] = [
+//       { nome: "Prodotto", offerte: [
+//           "Offerta semplice",
+//           { nome: "Offerta con opzioni", opzioni: ["Opzione A", "Opzione B"] }
+//       ] },
+//       ...
+//     ]
+//  Se un brand non ha un tipo cliente o una categoria, semplicemente
+//  non si scrive la chiave (es. Dojo ha solo Business > POS).
+//  Prodotti e offerte scritti come semplici stringhe sono comunque
+//  accettati (trattati come privi di offerte / opzioni).
+//  Le opzioni (Livello 6) sono a SELEZIONE MULTIPLA sulla singola offerta,
+//  a differenza dei livelli superiori che sono a selezione singola.
+//  Un'opzione puo' anche essere { nome, tipo: "numero" }: quando viene
+//  selezionata chiede una quantita' (es. Stanze Aggiuntive su Sky TV Hotel).
+// ================================================================
+
+const CATEGORIE = ["Mobile Wallet", "Mobile Ric. Auto", "Telefono a Rate", "Sostituzione SIM", "Fisso", "Energia", "TV", "Multi-Servizi", "POS", "Customer Base"];
+const TIPI = ["Consumer", "Business"];
+
+const BRANDS = [
+  { id: "windtre", nome: "WindTre", c1: "#ff7a00", c2: "#ffb347" },
+  { id: "vodafone", nome: "Vodafone", c1: "#e60000", c2: "#ff5c5c" },
+  { id: "fastweb", nome: "Fastweb", c1: "#f5c400", c2: "#ffe066" },
+  { id: "iliad", nome: "Iliad", c1: "#ff0032", c2: "#ff5c7a" },
+  { id: "sky", nome: "Sky", c1: "#0072c9", c2: "#4da6e8" },
+  { id: "dojo", nome: "Dojo", c1: "#00b389", c2: "#3ddbb4" },
+  { id: "s4", nome: "S4", c1: "#22c55e", c2: "#6ee7a0" },
+  { id: "tim", nome: "TIM", c1: "#0a4d9e", c2: "#4d86d0" },
+  { id: "ho", nome: "Ho Mobile", c1: "#7b2ff7", c2: "#a877ff" },
+  { id: "very", nome: "Very", c1: "#84cc16", c2: "#c3f53c" },
+  { id: "kena", nome: "Kena", c1: "#00a89c", c2: "#4dd0c7" }
+];
+
+// ================================================================
+//  Le liste WindTre vivono inline nel CATALOGO qui sotto
+//  (fonte: file compilato da Emanuele il 26-07).
+// ================================================================
+function conOpzioni(nomi, opzioni) {
+  return nomi.map(function (n) { return { nome: n, opzioni: opzioni }; });
+}
+
+// ================================================================
+//  OFFERTE E OPZIONI - FASTWEB / SKY / S4
+//  (dal file compilato dai manager il 26-07)
+// ================================================================
+const FW_MOB_CONS = ["Start", "Pro", "Power", "Ultra"];
+const FW_MOB_BIZ = ["Fastweb Mobile Business", "Fastweb Mobile Freedom", "Fastweb Mobile Business Unlimited"];
+const SKY_MOB = ["Start", "Pro", "Power", "Ultra"];
+const SKY_OPZ_FISSO = ["Extender", "Chiamate Estero", "GNP"];
+const S4_OPZ = ["RID", "Bollettino", "Subentro", "Voltura", "Nuova Posa"];
+
+// ================================================================
+//  OFFERTE E OPZIONI - ILIAD / TIM
+//  (dai file compilati da Gianluca il 26-07)
+// ================================================================
+const SOST_SIM_TIPI = ["Furto/Smarrimento", "Danneggiata", "Esim", "Volontaria"];
+const IL_MOB_GA = ["Iliad Voce", "Iliad Giga 150GB", "Iliad Giga 200GB", "Iliad Giga 250GB", "Iliad Top 30 Mondo", "Iliad Dati 350GB", "Iliad Domotica"];
+const IL_MOB_MNP = ["Iliad Voce", "Iliad Giga 150GB", "Iliad Giga 200GB", "Iliad Giga 250GB", "Iliad Top 30 Mondo"];
+const TIM_OPZ_MOB = ["Tim Navigazione Sicura", "Tim Navigazione Sicura 360", "Tim Pec", "Google One", "TimFin S-M", "TimFin L-XL"];
+const TIM_OPZ_MOB_ASS = ["Tim Protezione Casa", "Tim Protezione Cyber Deluxe", "Tim Salute"].concat(TIM_OPZ_MOB);
+const TIM_OPZ_DATI = ["Tim Navigazione Sicura", "Tim Navigazione Sicura 360", "Tim Pec", "Google One"];
+const TIM_OPZ_FISSO = ["Tim Unica", "Assicurazione Casa", "Assicurazione Salute", "Sicurezza Digitale", "Tim Pec", "Google One", "TimFin S-M", "TimFin L-XL", "Proponi", "Convergente"];
+const TIM_OPZ_TV = ["Tim Vision Box", "Rientro", "Proponi", "Contestuale Fibra", "Contestuale Mobile"];
+const TIM_MOB_GA = [
+  { nome: "Tim Cross Voce", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim Mobile Assicurazione", opzioni: TIM_OPZ_MOB_ASS },
+  { nome: "Tim Mobile 200GB - Dati", opzioni: TIM_OPZ_DATI },
+  { nome: "Tim Mobile 300GB - Dati", opzioni: TIM_OPZ_DATI },
+  { nome: "Tim Mobile 200GB 1 Anno - Dati", opzioni: [] },
+  { nome: "Tim Mobile Al-Mnp", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim Mobile Al-Mnp Easy", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim International", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim International Easy", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim International Special", opzioni: TIM_OPZ_MOB }
+];
+const TIM_MOB_MNP = [
+  { nome: "Tim Power Famiglia", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim Cross Steel", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim Power Supreme", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim Cross Gold", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim Cross", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim Cross Voce", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim Mobile Assicurazione", opzioni: TIM_OPZ_MOB_ASS },
+  { nome: "Tim Mobile Al-Mnp", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim Mobile Al-Mnp Easy", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim International", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim International Easy", opzioni: TIM_OPZ_MOB },
+  { nome: "Tim International Special", opzioni: TIM_OPZ_MOB }
+];
+
+// Ho Mobile (file Gianluca 26-07): stesse liste per Wallet e Ric. Auto, 14,95 solo su GA
+const HO_MOB_GA = ["Ho 5,95", "Ho 6,95", "Ho 8,95", "Ho 9,95", "Ho 11,95", "Ho 14,95"];
+const HO_MOB_MNP = ["Ho 5,95", "Ho 6,95", "Ho 8,95", "Ho 9,95", "Ho 11,95"];
+
+// Dojo: stesse offerte per tutti i prodotti POS, a scaglioni di fatturato
+const DOJO_OFF = ["Fatturato 0-100K", "Fatturato 100K-200K", "Fatturato 200-500K", "Fatturato Over 500K"];
+
+// Kena (file Gianluca 26-07): stesse liste per Wallet e Ric. Auto, GA e MNP diverse
+const KENA_MOB_GA = ["Domo Kena 1GB", "4,99 Voce 10GB Top", "5,99 100GB 5G Top", "7,99 250GB 5G Top", "9,99 350GB 5G Top", "Kena Dati Promo", "Kena Pack", "Kena Your Home", "Kena Easy Europe", "Kena Easy Europe Plus"];
+const KENA_MOB_MNP = ["Kena Your Home", "4,99 Voce 10GB Top", "5,99 100GB 5G Top", "7,99 250GB 5G Top", "9,99 350GB 5G Top", "Special 5,99 2 Mesi Gratis", "Kena Pack", "Kena 7,99 Flash Smart 150", "Kena 7,99 Flash Star", "11,99 200GB 5G Top"];
+
+// Very (file Gianluca 26-07): opzioni Very Plus / Very Protetti; SMS IOT sui tagli 1,99 e 3,99
+const VERY_OPZ = ["Very Plus", "Very Protetti"];
+const VERY_OPZ_IOT = ["Very SMS IOT", "Very Protetti"];
+const VERY_OPZ_IOT_RA = ["Very Plus", "Very SMS IOT", "Very Protetti"];
+const VERY_WALLET_GA = conOpzioni(["Very 5,99", "Very 6,99", "Very 8,99", "Very 9,99", "Very 500 Giga", "Very 1000 Giga"], VERY_OPZ).concat([
+  { nome: "Very 1,99", opzioni: VERY_OPZ_IOT },
+  { nome: "Very 3,99", opzioni: VERY_OPZ_IOT }
+], conOpzioni(["Very 7,99"], VERY_OPZ));
+const VERY_WALLET_MNP = conOpzioni(["Very 4,99", "Very 5,99", "Very 6,99", "Very 7,99", "Very 8,99", "Very 9,99", "Very 11,99", "Very 12,99", "Very 13,99"], VERY_OPZ);
+const VERY_RA_GA = conOpzioni(["Very 1000 Giga Ricarica Automatica", "Very Giga Illimitati"], VERY_OPZ).concat([
+  { nome: "Very 1,99 Ricarica Automatica", opzioni: VERY_OPZ_IOT_RA },
+  { nome: "Very 3,99 Ricarica Automatica", opzioni: VERY_OPZ_IOT_RA }
+], conOpzioni(["Very 5,99", "Very 6,99", "Very 8,99", "Very 9,99", "Very 500 Giga", "Very 1000 Giga", "Very 7,99"], VERY_OPZ));
+const VERY_RA_MNP = conOpzioni(["Very 5,99 Ricarica Automatica", "Very 6,99 Ricarica Automatica", "Very 4,99", "Very 7,99", "Very 8,99", "Very 9,99", "Very 11,99", "Very 12,99", "Very 13,99"], VERY_OPZ);
+
+const CATALOGO = {
+  windtre: {
+    Consumer: {
+      "Mobile Wallet": [
+        { nome: "Mobile GA", offerte: [
+          { nome: "Special 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Start 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Voce 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Super 5G Under 14+", opzioni: ["Security", "Security Pro"] },
+          { nome: "Super 5G Under 14", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family Unlimited 100", opzioni: ["Security", "Security Pro"] },
+          { nome: "Giga 250 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Giga 150 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Super Internet Card 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Unlimited 5G Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Multiservice 5G - Energia", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Unlimited Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Multiservice 5G - Energia Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Smart Security", opzioni: ["Security", "Security Pro"] },
+          { nome: "Offerta Speciale (Disabili)", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Unlimited Full", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Special Unlimited World", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Plus", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family 9.99 Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family 7.99 Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family CYC 9.99 Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family CYC 7.99 Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Multiservice Energia 7.99", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Multiservice Energia 9.99", opzioni: ["Security", "Security Pro"] }
+        ] },
+        { nome: "Mobile MNP", offerte: [
+          { nome: "Underground 4,99", opzioni: ["Security", "Security Pro"] },
+          { nome: "Underground 5,99", opzioni: ["Security", "Security Pro"] },
+          { nome: "Underground 6,99", opzioni: ["Security", "Security Pro"] },
+          { nome: "Underground 7,99", opzioni: ["Security", "Security Pro"] },
+          { nome: "Underground 8,99", opzioni: ["Security", "Security Pro"] },
+          { nome: "Underground 9,99", opzioni: ["Security", "Security Pro"] },
+          { nome: "Underground 10,99", opzioni: ["Security", "Security Pro"] },
+          { nome: "Special 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Start 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Voce 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Super 5G Under 14+", opzioni: ["Security", "Security Pro"] },
+          { nome: "Super 5G Under 14", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family Unlimited 100", opzioni: ["Security", "Security Pro"] },
+          { nome: "Giga 250 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Giga 150 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Super Internet Card 5G", opzioni: ["Security", "Security Pro"] },
+          { nome: "Unlimited 5G Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Multiservice 5G - Energia", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Unlimited Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Multiservice 5G - Energia Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Smart Security", opzioni: ["Security", "Security Pro"] },
+          { nome: "Offerta Speciale (Disabili)", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Unlimited Full", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Special Unlimited World", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Plus", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family 9.99 Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family 7.99 Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family CYC 9.99 Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "Family CYC 7.99 Con Super Fibra", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Multiservice Energia 7.99", opzioni: ["Security", "Security Pro"] },
+          { nome: "CYC Multiservice Energia 9.99", opzioni: ["Security", "Security Pro"] }
+        ] }
+      ],
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: [
+          { nome: "Unlimited Pro 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Start Unlimited 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Unlimited 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Special 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Super 5G Under 14", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Voce 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Super 5G Under 14+", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Unlimited Full 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Unlimited Plus", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Unlimited Special World", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Unlimited 5G Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Multiservice 5G - Energia", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Multiservice 5G - Energia Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Multiservice 5G - Assicurazioni Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Unlimited 5G Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Multiservice 5G - Energia", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Multiservice 5G - Protetti Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Giga Special", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Multiservice 5G - Energia Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Family Con Super Fibra 9.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Family Con Super Fibra 7.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Family Con Super Fibra 9.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Family Con Super Fibra 7.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Giga 150 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Giga 250 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Giga Start & Stop 5G", opzioni: ["7gg Unlimited", "1 Mese Unlimited", "3 Mesi Unlimited", "Security", "Security Pro", "Cloud"] },
+          { nome: "Super Internet Unlimited 5G 23.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Offerta Speciale (Disabili) 4.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Offerta Speciale (Disabili) 8.00", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Super Internet Unlimited 5G 2° Casa", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] }
+        ] },
+        { nome: "Mobile MNP", offerte: [
+          { nome: "Underground 4,99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Underground 5.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Underground 6.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Underground 7.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Underground 8.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Underground 9.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Underground 10.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Unlimited Pro 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Start Unlimited 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Unlimited 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Special 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Super 5G Under 14", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Voce 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Super 5G Under 14+", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Unlimited Full 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Unlimited Plus", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Unlimited Special World", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Unlimited 5G Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Multiservice 5G - Energia", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Multiservice 5G - Energia Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Multiservice 5G - Assicurazioni Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Unlimited 5G Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Multiservice 5G - Energia", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Multiservice 5G - Protetti Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Giga Special", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Multiservice 5G - Energia Con Super Fibra", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Family Con Super Fibra 9.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Family Con Super Fibra 7.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Family Con Super Fibra 9.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CYC Family Con Super Fibra 7.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Giga 150 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Giga 250 5G", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Giga Start & Stop 5G", opzioni: ["7gg Unlimited", "1 Mese Unlimited", "3 Mesi Unlimited", "Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Super Internet Unlimited 5G 23.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Offerta Speciale (Disabili) 4.99", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Offerta Speciale (Disabili) 8.00", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] }
+        ] }
+      ],
+      "Telefono a Rate": [
+        { nome: "Finanziato", offerte: [
+          { nome: "Findomestic 0", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic > 600€", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic < 600€", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic 0 Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic > 600€ Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic < 600€ Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass 0", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass > 600€", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass < 600€", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass 0 Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass > 600€ Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass < 600€ Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] }
+        ] },
+        { nome: "Finanziato CB", offerte: [
+          { nome: "Findomestic 0", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic > 600€", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic < 600€", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic 0 Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic > 600€ Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Findomestic < 600€ Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass 0", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass > 600€", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass < 600€", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass 0 Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass > 600€ Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Compass < 600€ Rata Smart", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] }
+        ] },
+        { nome: "Tel. Rate", offerte: [
+          { nome: "Rata 0", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Rata 0 5G", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Rata > 0", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Rata > 0 5G", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] }
+        ] },
+        { nome: "Tel. Rate CB", offerte: [
+          { nome: "Rata 0", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Rata >0", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Rata 5G", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] },
+          { nome: "Rata > 0 5G", opzioni: ["Reload", "Reload Plus", "Reload Exchange", "Reload EU"] }
+        ] }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: [
+          "Sostituzione SIM"
+        ] }
+      ],
+      Fisso: [
+        { nome: "Fisso", offerte: [
+          { nome: "Fisso", opzioni: ["Netflix", "Home Protect", "Chiamate Illimitate", "CYC Home", "CB", "GNP", "FTTH", "FTTH Extra", "Rame 100/200", "Cloud"] },
+          { nome: "Fisso Conv", opzioni: ["Netflix", "Home Protect", "Chiamate Illimitate", "CYC Home", "CB", "GNP", "FTTH", "FTTH Extra", "Rame 100/200", "Cloud"] },
+          { nome: "Voce Casa", opzioni: ["Home Protect", "CB", "GNP", "CYC Home"] }
+        ] },
+        { nome: "FWA", offerte: [
+          { nome: "Super Internet Casa Outdoor 5G", opzioni: ["Netflix", "Home Protect", "Chiamate Illimitate", "CYC Home", "CB", "GNP", "Cloud"] },
+          { nome: "Super Internet Casa Outdoor 5G Conv", opzioni: ["Netflix", "Home Protect", "Chiamate Illimitate", "CYC Home", "CB", "GNP", "Cloud"] },
+          { nome: "Super Internet Casa Indoor 5G", opzioni: ["Netflix", "Home Protect", "Chiamate Illimitate", "CYC Home", "CB", "GNP", "Cloud"] },
+          { nome: "Super Internet Casa Indoor 5G Conv", opzioni: ["Netflix", "Home Protect", "Chiamate Illimitate", "CYC Home", "CB", "GNP", "Cloud"] }
+        ] }
+      ],
+      Energia: [
+        { nome: "Luce", offerte: [
+          { nome: "New Start Casa", opzioni: ["Bollettino", "RID"] },
+          { nome: "New Start Casa Sconto Multiservice", opzioni: ["Bollettino", "RID"] },
+          { nome: "Smartphone Pack - New Start Casa Sconto Multiservice", opzioni: ["Bollettino", "RID"] }
+        ] },
+        { nome: "Gas", offerte: [
+          { nome: "New Start Casa", opzioni: ["Bollettino", "RID"] },
+          { nome: "New Start Casa Sconto Multiservice", opzioni: ["Bollettino", "RID"] },
+          { nome: "Smartphone Pack - New Start Casa Sconto Multiservice", opzioni: ["Bollettino", "RID"] }
+        ] }
+      ],
+      "Multi-Servizi": [
+        { nome: "Assicurazioni", offerte: [
+          { nome: "Casa Start", opzioni: ["Carta Di Credito", "RID", "Immediato"] },
+          { nome: "Casa Plus", opzioni: ["Carta Di Credito", "RID", "Immediato"] },
+          { nome: "Casa Full", opzioni: ["Carta Di Credito", "RID", "Immediato"] },
+          { nome: "Sport", opzioni: ["Carta Di Credito", "RID", "Immediato"] },
+          { nome: "Micio e Fido", opzioni: ["Carta Di Credito", "RID", "Immediato"] },
+          { nome: "Viaggi", opzioni: ["Carta Di Credito", "RID", "Immediato"] },
+          { nome: "Sport Famiglia", opzioni: ["Carta Di Credito", "RID", "Immediato"] },
+          { nome: "Elettrodomestici", opzioni: ["Carta Di Credito", "RID", "Immediato"] },
+          { nome: "Giro X Il Mondo", opzioni: ["Carta Di Credito", "RID", "Immediato"] }
+        ] },
+        { nome: "Protecta", offerte: [
+          { nome: "Protecta", opzioni: ["Kit Base", "Kit Plus"] },
+          { nome: "Protecta Conv", opzioni: ["Kit Base", "Kit Plus"] }
+        ] }
+      ],
+      "Customer Base": [
+        { nome: "Cambio Offerta", offerte: [
+          { nome: "Caring", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CL0", opzioni: ["Security", "Security Pro", "Reload Forever"] },
+          { nome: "CL1", opzioni: ["Security", "Security Pro", "Reload Forever"] },
+          { nome: "CL1 EP", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CL2", opzioni: ["Security", "Security Pro", "Reload Forever"] },
+          { nome: "CL2 EP", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "CL3", opzioni: ["Security", "Security Pro", "Reload Forever"] },
+          { nome: "CL3 EP", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] },
+          { nome: "Migrazione FTTH", opzioni: ["Cloud", "Home Protect"] },
+          { nome: "Special SOS", opzioni: ["Security", "Security Pro", "Reload Forever", "Cloud"] }
+        ] },
+        { nome: "Add-On", offerte: [
+          { nome: "Mobili", opzioni: ["Security", "Security Pro", "Reload Forever", "Travel Pass", "International Plus", "CYC", "Cloud"] },
+          { nome: "Fissi", opzioni: ["In Vista", "Chiamate Illimitate", "CYC Home", "Netflix", "Cloud"] }
+        ] }
+      ]
+    },
+    Business: {
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: [
+          { nome: "Professional Country", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional Full", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional Staff", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional Special", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional Flex", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional World", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional Data 60 Gb 5.99", opzioni: ["Security", "Cloud"] },
+          { nome: "Professional Data 60 Gb 8.99", opzioni: ["Security", "Cloud"] },
+          { nome: "Professional Data 10 Gb 4.99", opzioni: ["Security", "Cloud"] },
+          { nome: "Professional Data 100 Gb 9.99", opzioni: ["Security", "Cloud"] },
+          { nome: "Professional Data 100 Gb 13.99", opzioni: ["Security", "Cloud"] },
+          { nome: "Super Internet Wifi Pro 5G", opzioni: ["Security", "Cloud"] }
+        ] },
+        { nome: "Mobile MNP", offerte: [
+          { nome: "Professional Country", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional Full", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional Staff", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional Special", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional Flexy", opzioni: ["Security", "Reload Open", "Cloud"] },
+          { nome: "Professional World", opzioni: ["Security", "Reload Open", "Cloud"] }
+        ] }
+      ],
+      "Telefono a Rate": [
+        { nome: "Tel. Rate", offerte: [
+          { nome: "Rata", opzioni: ["Reload"] },
+          { nome: "Rata 5G", opzioni: ["Reload"] }
+        ] },
+        { nome: "Tel. Rate CB", offerte: [
+          { nome: "Rata", opzioni: ["Reload"] },
+          { nome: "Rata 5G", opzioni: ["Reload"] }
+        ] }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: [
+          "Sostituzione SIM"
+        ] }
+      ],
+      Fisso: [
+        { nome: "Fisso", offerte: [
+          { nome: "Super Fibra", opzioni: ["Più Sicuri Ufficio", "DNS Dinamico", "2°Linea", "FTTH", "FTTH Extra", "Cloud"] },
+          { nome: "Super Fibra Conv", opzioni: ["Più Sicuri Ufficio", "DNS Dinamico", "2°Linea", "FTTH", "FTTH Extra", "Cloud"] },
+          { nome: "Super Fibra Professional Box", opzioni: ["Più Sicuri Ufficio", "FTTH", "FTTH Extra", "Cloud"] },
+          { nome: "Super Fibra Professional Box Conv", opzioni: ["Più Sicuri Ufficio", "FTTH", "FTTH Extra", "Cloud"] }
+        ] },
+        { nome: "Fisso CB", offerte: [] },
+        { nome: "FWA", offerte: [
+          { nome: "Super Internet Professional 5G", opzioni: ["Più Sicuri Ufficio", "DNS Dinamico", "2°Linea"] },
+          { nome: "Super Internet Professional 5G Conv", opzioni: ["Più Sicuri Ufficio", "DNS Dinamico", "2°Linea"] },
+          { nome: "Super Internet Professional 5G Box", opzioni: ["Più Sicuri Ufficio", "Cloud"] },
+          { nome: "Super Internet Professional 5G Box Conv", opzioni: ["Più Sicuri Ufficio", "Cloud"] }
+        ] }
+      ],
+      Energia: [
+        { nome: "Luce", offerte: [
+          { nome: "New Start Pro", opzioni: ["Bollettino", "RID"] },
+          { nome: "New Start Pro Sconto", opzioni: ["Bollettino", "RID"] },
+          { nome: "Smartphone Pack - New Start Pro Sconto", opzioni: ["Bollettino", "RID"] }
+        ] },
+        { nome: "Gas", offerte: [
+          { nome: "New Start Pro", opzioni: ["Bollettino", "RID"] },
+          { nome: "New Start Pro Sconto", opzioni: ["Bollettino", "RID"] },
+          { nome: "Smartphone Pack - New Start Pro Sconto", opzioni: ["Bollettino", "RID"] }
+        ] }
+      ],
+      "Multi-Servizi": [
+        { nome: "Assicurazioni", offerte: [
+          { nome: "Protezione Pro Negozi - Affittuario", opzioni: ["Base", "Cibo E Bevande", "Elettro"] },
+          { nome: "Protezione Pro Negozi - Proprietario", opzioni: ["Base", "Cibo E Bevande", "Elettro"] }
+        ] },
+        { nome: "Protecta", offerte: [
+          { nome: "Protecta", opzioni: ["Kit Base", "Kit Base Convergente", "Kit Base Special", "Kit Base + Nebbiogeno", "Kit Base + Nebbiogeno Conv"] }
+        ] }
+      ],
+      "Customer Base": [
+        { nome: "Cambio Offerta", offerte: [
+          { nome: "Caring", opzioni: ["Security", "Cloud"] },
+          { nome: "CL0", opzioni: ["Security", "Cloud"] },
+          { nome: "CL1", opzioni: ["Security", "Cloud"] },
+          { nome: "CL2", opzioni: ["Security", "Cloud"] },
+          { nome: "CL3", opzioni: ["Security", "Cloud"] }
+        ] },
+        { nome: "Add-On", offerte: [
+          { nome: "Add-On", opzioni: ["Reload Open", "Cloud"] }
+        ] }
+      ]
+    }
+  },
+  vodafone: {
+    Consumer: {
+      "Mobile Wallet": [
+        { nome: "Mobile GA", offerte: [
+          { nome: "Ric Dati", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Start 14.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Pro 19.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Plus 24.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Ultra 24.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Young", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Start Under 18", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Call Power Wallet", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Call Max Wallet", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Start Wallet", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Pro Wallet", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          "Ultra Wallet",
+          { nome: "Easy Control", opzioni: ["Rete Sicura", "Vodafone Club"] }
+        ] },
+        { nome: "Mobile MNP", offerte: [
+          { nome: "Ric Dati", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Start 14.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Pro 19.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Call Power Wallet", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Plus 24.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Call Max Wallet", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Start Wallet", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Ultra 24.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Young", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Start Under 18", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Pro Wallet", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          "Ultra Wallet",
+          { nome: "Easy Control", opzioni: ["Rete Sicura", "Vodafone Club"] }
+        ] }
+      ],
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: [
+          { nome: "Abbonamento Dati", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Start 14.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Pro 19.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Plus 24.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Dolce Vita Ultra 24.95", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Call Power", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Call Max", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Start", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Pro", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          "Ultra",
+          { nome: "Young", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Start Under 18", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Mobile Power", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Easy Control", opzioni: ["Rete Sicura", "Vodafone Club"] }
+        ] },
+        { nome: "Mobile MNP", offerte: [
+          { nome: "Call Power", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Call Max", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Start", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Pro", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          "Ultra",
+          { nome: "Young", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Start Under 18", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Mobile Power", opzioni: ["Rete Sicura", "Vodafone Club"] },
+          { nome: "Easy Control", opzioni: ["Rete Sicura"] }
+        ] }
+      ],
+      "Telefono a Rate": [
+        { nome: "Finanziato", offerte: [
+          { nome: "Compass Flexypay S-M", opzioni: ["Bundle 39.99", "Bundle 54.99", "Bundle 69.99", "Bundle 99.99", "Kasko", "Accessorio"] },
+          { nome: "Compass Flexypay L-XL", opzioni: ["Bundle 39.99", "Bundle 54.99", "Bundle 69.99", "Bundle 99.99", "Kasko", "Accessorio"] },
+          { nome: "Smartphone Easy S-M", opzioni: ["Bundle 39.99", "Bundle 54.99", "Bundle 69.99", "Bundle 99.99", "Kasko", "Accessorio", "Forward"] },
+          { nome: "Smartphone Easy L-XL", opzioni: ["Bundle 39.99", "Bundle 54.99", "Bundle 69.99", "Bundle 99.99", "Kasko", "Accessorio", "Forward"] }
+        ] },
+        { nome: "Finanziato CB", offerte: [
+          { nome: "Compass Flexypay S-M CB", opzioni: ["Bundle 39.99", "Bundle 54.99", "Bundle 69.99", "Bundle 99.99", "Kasko", "Accessorio", "Forward"] },
+          { nome: "Compass Flexypay L-XL CB", opzioni: ["Bundle 39.99", "Bundle 54.99", "Bundle 69.99", "Bundle 99.99", "Kasko", "Accessorio", "Forward"] },
+          { nome: "Smartphone Easy S-M CB", opzioni: ["Bundle 39.99", "Bundle 54.99", "Bundle 69.99", "Bundle 99.99", "Kasko", "Accessorio", "Forward"] },
+          { nome: "Smartphone Easy L-XL CB", opzioni: ["Bundle 39.99", "Bundle 54.99", "Bundle 69.99", "Bundle 99.99", "Kasko", "Accessorio", "Forward"] }
+        ] },
+        { nome: "Tel. Rate", offerte: [
+          "TNP XS-M",
+          "TNP L-XL"
+        ] },
+        { nome: "Tel. Rate CB", offerte: [
+          "TNP XS-M",
+          "TNP L-XL"
+        ] }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: [] }
+      ],
+      Fisso: [
+        { nome: "Fisso", offerte: [
+          { nome: "Casa Start Conv", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Pet", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] },
+          { nome: "Casa Pro Conv", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Pet", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] },
+          { nome: "Casa Ultra Conv", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Pet", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] },
+          { nome: "Casa Start Lock In", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] },
+          { nome: "Casa Pro Lock In", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] },
+          { nome: "Casa Ultra Lock In", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] },
+          { nome: "Casa Start Mass Market", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] },
+          { nome: "Casa Pro Mass Market", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] },
+          { nome: "Casa Ultra Mass Market", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] }
+        ] },
+        { nome: "FWA", offerte: [
+          { nome: "Casa FWA Light", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] },
+          { nome: "Casa FWA Pro", opzioni: ["Rete Sicura Family/150GB", "Extender", "Chiamate Nazionali", "Chiamate Internazionali", "Quixa Casa", "Vodafone Club", "Power Control", "5G Priority Access Family", "GNP"] }
+        ] }
+      ],
+      "Multi-Servizi": [
+        { nome: "Verisure", offerte: [] },
+        { nome: "Vodafone Care", offerte: [] },
+        { nome: "Kasko Facile", offerte: [
+          "Kasko Smart",
+          "Kasko Comfort",
+          "Kasko Extra"
+        ] }
+      ],
+      "Customer Base": [
+        { nome: "Cambio Offerta", offerte: [
+          "MM4M Start",
+          "MM4M Pro",
+          "MM4M Ultra",
+          "Rete Sicura CB",
+          "Vodafone Club",
+          "Extender",
+          "Chiamate Nazionali",
+          "Chiamate Internazionali",
+          "Mop + Ar",
+          "Rete Sicura Family/150GB",
+          "Migrazione FTTH",
+          "Vodafone Care"
+        ] },
+        { nome: "Traslochi", offerte: [
+          "Trasloco"
+        ] },
+        { nome: "Rete Sicura", offerte: [] }
+      ]
+    },
+    Business: {
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: [
+          "Mobile Smart",
+          "Mobile Comfort",
+          "Mobile Extra",
+          "One Business Smart Mobile",
+          "One Business Comfort Mobile",
+          "Dati Smart",
+          "Dati Comfort",
+          "Red Data Now"
+        ] },
+        { nome: "Mobile MNP", offerte: [
+          "Mobile Smart",
+          "Mobile Comfort",
+          "Mobile Extra",
+          "One Business Smart Mobile",
+          "One Business Comfort Mobile",
+          "Dati Smart",
+          "Dati Comfort",
+          "Red Data Now"
+        ] }
+      ],
+      "Telefono a Rate": [
+        { nome: "Tel. Rate", offerte: [
+          "Easy Rent",
+          "Rata"
+        ] }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: [] }
+      ],
+      Fisso: [
+        { nome: "Fisso", offerte: [
+          "Fissa Smart",
+          "Fissa Comfort",
+          "Fissa Extra",
+          "Onpi TW Plus",
+          "Onpi Premium",
+          "One Biz"
+        ] },
+        { nome: "FWA", offerte: [
+          "Fissa Wireless 5G"
+        ] }
+      ],
+      "Multi-Servizi": [
+        { nome: "Soluzioni Digitali", offerte: [
+          "Backup Facile",
+          "Worry Free",
+          "Secure Drive",
+          "AI Essential",
+          "AI Standard"
+        ] },
+        { nome: "Verisure", offerte: [] },
+        { nome: "Kasko Facile", offerte: [
+          "Kasko Smart",
+          "Kasko Comfort",
+          "Kasko Extra"
+        ] },
+        { nome: "Vodafone Care", offerte: [] }
+      ],
+      "Customer Base": [
+        { nome: "Cambio Offerta", offerte: [] }
+      ]
+    }
+  },
+  fastweb: {
+    Consumer: {
+      "Mobile Wallet": [
+        { nome: "Mobile GA", offerte: conOpzioni(FW_MOB_CONS, ["Protect"]) },
+        { nome: "Mobile MNP", offerte: conOpzioni(FW_MOB_CONS, ["Protect"]) }
+      ],
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: conOpzioni(FW_MOB_CONS, ["Protect"]) },
+        { nome: "Mobile MNP", offerte: conOpzioni(FW_MOB_CONS, ["Protect"]) }
+      ],
+      "Telefono a Rate": [
+        { nome: "Finanziato", offerte: ["Finanziamento"] }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: ["Sostituzione SIM"] }
+      ],
+      Fisso: [
+        { nome: "Fisso", offerte: [
+          { nome: "Casa Start", opzioni: ["Chiamate Estero", "GNP", "Protect"] },
+          { nome: "Casa Pro", opzioni: ["Chiamate Estero", "GNP", "Protect"] },
+          { nome: "Casa Ultra", opzioni: ["Chiamate Estero", "GNP"] }
+        ] },
+        { nome: "FWA", offerte: [
+          { nome: "Casa FWA Light", opzioni: ["GNP", "Protect"] }
+        ] }
+      ],
+      Energia: [
+        { nome: "Luce", offerte: ["Energy Flex", "Energy Core", "Energy Fix"] },
+        { nome: "Gas", offerte: ["Gas"] }
+      ]
+    },
+    Business: {
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: conOpzioni(FW_MOB_BIZ, ["Protect"]) },
+        { nome: "Mobile MNP", offerte: conOpzioni(FW_MOB_BIZ, ["Protect"]) }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: ["Sostituzione SIM"] }
+      ],
+      Energia: [
+        { nome: "Luce", offerte: ["Energy Flex", "Energy Fix"] },
+        { nome: "Gas", offerte: [] }
+      ],
+      Fisso: [
+        { nome: "Fisso", offerte: [
+          { nome: "Fastweb Business Light", opzioni: ["Protect", "Linea Aggiuntiva", "IP Pubblico", "Opzione Plus", "Booster Aggiuntivo"] },
+          { nome: "Fastweb Business", opzioni: ["Protect", "Linea Aggiuntiva", "Opzione Plus", "IP Pubblico", "Servizio Backup", "Booster Seven Aggiuntivo"] },
+          { nome: "Fastweb Business Plus", opzioni: ["Linea Aggiuntiva"] },
+          { nome: "Fastweb Business Pro", opzioni: [] },
+          { nome: "Fastweb Business Unlimited SME", opzioni: [] }
+        ] },
+        { nome: "Fisso SME", offerte: [] }
+      ]
+    }
+  },
+  iliad: {
+    Consumer: {
+      "Mobile Wallet": [
+        { nome: "Mobile GA", offerte: IL_MOB_GA },
+        { nome: "Mobile MNP", offerte: IL_MOB_MNP }
+      ],
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: IL_MOB_GA },
+        { nome: "Mobile MNP", offerte: IL_MOB_MNP }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: SOST_SIM_TIPI }
+      ],
+      Fisso: [
+        { nome: "Fisso", offerte: [
+          { nome: "Iliad Box", opzioni: ["Iliad WiFi Extender", "Antivirus McAfee"] },
+          { nome: "Iliad Box Super", opzioni: [] }
+        ] },
+        { nome: "FWA", offerte: [
+          { nome: "5G Box Casa", opzioni: ["Antivirus McAfee"] }
+        ] }
+      ]
+    },
+    Business: {
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: [
+          { nome: "Business Giga300", opzioni: ["Antivirus McAfee"] },
+          { nome: "Business Dati180", opzioni: ["Antivirus McAfee"] }
+        ] },
+        { nome: "Mobile MNP", offerte: [
+          { nome: "Business Giga300", opzioni: ["Antivirus McAfee"] }
+        ] }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: SOST_SIM_TIPI }
+      ]
+    }
+  },
+  sky: {
+    Consumer: {
+      "Mobile Wallet": [
+        { nome: "Mobile GA", offerte: SKY_MOB },
+        { nome: "Mobile MNP", offerte: SKY_MOB }
+      ],
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: SKY_MOB },
+        { nome: "Mobile MNP", offerte: SKY_MOB }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: ["Sostituzione SIM"] }
+      ],
+      Fisso: [
+        { nome: "3P", offerte: [{ nome: "3P", opzioni: SKY_OPZ_FISSO }] },
+        { nome: "Fisso", offerte: [{ nome: "Sky Fibra", opzioni: SKY_OPZ_FISSO }] },
+        { nome: "4P", offerte: [{ nome: "4P", opzioni: SKY_OPZ_FISSO }] },
+        { nome: "3P 35,80", offerte: [{ nome: "3P 35,80", opzioni: SKY_OPZ_FISSO }] }
+      ],
+      TV: [
+        { nome: "TV", offerte: ["TV", "TV 14,90"] },
+        { nome: "Sky Glass", offerte: ["Sky Glass"] }
+      ]
+    },
+    Business: {
+      Fisso: [
+        { nome: "Fisso", offerte: [{ nome: "Sky Fibra", opzioni: ["GNP"] }] }
+      ],
+      TV: [
+        { nome: "TV Ufficio", offerte: ["TV Ufficio"] },
+        { nome: "TV Bar", offerte: ["TV Bar 199€", "TV Bar 249€", "TV Bar 299€"] },
+        { nome: "TV Hotel", offerte: [
+          "Da 0 a 3 Stanze",
+          { nome: "Over 4 Stanze", opzioni: [{ nome: "Stanze Aggiuntive", tipo: "numero" }] }
+        ] }
+      ]
+    }
+  },
+  dojo: {
+    Business: {
+      POS: [
+        { nome: "Dojo Pocket", offerte: DOJO_OFF },
+        { nome: "Dojo Wired", offerte: DOJO_OFF },
+        { nome: "Dojo Go", offerte: DOJO_OFF }
+      ]
+    }
+  },
+  s4: {
+    Consumer: {
+      Energia: [
+        { nome: "Luce", offerte: [{ nome: "Domestici Smart", opzioni: S4_OPZ }] },
+        { nome: "Gas", offerte: [{ nome: "Domestici Smart", opzioni: S4_OPZ }] }
+      ]
+    },
+    Business: {
+      Energia: [
+        { nome: "Luce", offerte: [{ nome: "Altri Usi Smart", opzioni: S4_OPZ }] },
+        { nome: "Gas", offerte: [{ nome: "Altri Usi Smart", opzioni: S4_OPZ }] }
+      ]
+    }
+  },
+  tim: {
+    Consumer: {
+      "Mobile Wallet": [
+        { nome: "Mobile GA", offerte: TIM_MOB_GA },
+        { nome: "Mobile MNP", offerte: TIM_MOB_MNP }
+      ],
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: TIM_MOB_GA },
+        { nome: "Mobile MNP", offerte: TIM_MOB_MNP }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: SOST_SIM_TIPI }
+      ],
+      Fisso: [
+        { nome: "Fisso", offerte: [{ nome: "Tim Wifi Casa", opzioni: TIM_OPZ_FISSO }] },
+        { nome: "FWA", offerte: [{ nome: "Tim Wifi FWA", opzioni: TIM_OPZ_FISSO }] }
+      ],
+      TV: [
+        { nome: "TV", offerte: [
+          { nome: "TimVision S", opzioni: TIM_OPZ_TV },
+          { nome: "TimVision M", opzioni: TIM_OPZ_TV },
+          { nome: "TimVision L", opzioni: TIM_OPZ_TV },
+          { nome: "TimVision XS", opzioni: TIM_OPZ_TV }
+        ] }
+      ],
+      "Multi-Servizi": [
+        { nome: "Telepass", offerte: [
+          { nome: "Telepass", opzioni: ["Telepass Base", "Telepass Sempre", "Assistenza Stradale", "Twin"] }
+        ] }
+      ]
+    }
+  },
+  ho: {
+    Consumer: {
+      "Mobile Wallet": [
+        { nome: "Mobile GA", offerte: HO_MOB_GA },
+        { nome: "Mobile MNP", offerte: HO_MOB_MNP }
+      ],
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: HO_MOB_GA },
+        { nome: "Mobile MNP", offerte: HO_MOB_MNP }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: SOST_SIM_TIPI }
+      ]
+    }
+  },
+  very: {
+    Consumer: {
+      "Mobile Wallet": [
+        { nome: "Mobile GA", offerte: VERY_WALLET_GA },
+        { nome: "Mobile MNP", offerte: VERY_WALLET_MNP }
+      ],
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: VERY_RA_GA },
+        { nome: "Mobile MNP", offerte: VERY_RA_MNP }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: SOST_SIM_TIPI }
+      ]
+    }
+  },
+  kena: {
+    Consumer: {
+      "Mobile Wallet": [
+        { nome: "Mobile GA", offerte: KENA_MOB_GA },
+        { nome: "Mobile MNP", offerte: KENA_MOB_MNP }
+      ],
+      "Mobile Ric. Auto": [
+        { nome: "Mobile GA", offerte: KENA_MOB_GA },
+        { nome: "Mobile MNP", offerte: KENA_MOB_MNP }
+      ],
+      "Sostituzione SIM": [
+        { nome: "Sostituzione SIM", offerte: SOST_SIM_TIPI }
+      ]
+    }
+  }
+};
+
+// ---------------------------------------------------------------
+//  Helpers (nessun optional chaining, controlli espliciti)
+// ---------------------------------------------------------------
+function getRamo(brandId, tipo) {
+  const b = CATALOGO[brandId];
+  if (!b) return null;
+  const t = b[tipo];
+  return t ? t : null;
+}
+
+function tipoDisponibile(brandId, tipo) {
+  return getRamo(brandId, tipo) !== null;
+}
+
+function brandHaCategoria(brandId, tipo, categoria) {
+  const ramo = getRamo(brandId, tipo);
+  if (!ramo) return false;
+  const arr = ramo[categoria];
+  return arr && arr.length > 0 ? true : false;
+}
+
+function getProdotti(brandId, tipo, categoria) {
+  const ramo = getRamo(brandId, tipo);
+  if (!ramo) return [];
+  const out = [];
+  CATEGORIE.forEach(function (c) {
+    if (categoria && c !== categoria) return;
+    const arr = ramo[c];
+    if (arr) {
+      arr.forEach(function (p) {
+        if (typeof p === "string") {
+          out.push({ categoria: c, nome: p, offerte: [] });
+        } else {
+          const offGrezze = p.offerte ? p.offerte : [];
+          const offNorm = offGrezze.map(function (o) {
+            if (typeof o === "string") return { nome: o, opzioni: [] };
+            const opzGrezze = o.opzioni ? o.opzioni : [];
+            const opzNorm = opzGrezze.map(function (op) {
+              if (typeof op === "string") return { nome: op, tipo: null };
+              return { nome: op.nome, tipo: op.tipo ? op.tipo : null };
+            });
+            return { nome: o.nome, opzioni: opzNorm };
+          });
+          out.push({ categoria: c, nome: p.nome, offerte: offNorm });
+        }
+      });
+    }
+  });
+  return out;
+}
+
+function contaProdotti(brandId, tipo, categoria) {
+  return getProdotti(brandId, tipo, categoria).length;
+}
+
+function contaOfferte(brandId, tipo, categoria) {
+  const ps = getProdotti(brandId, tipo, categoria);
+  let n = 0;
+  ps.forEach(function (p) { n = n + p.offerte.length; });
+  return n;
+}
+
+function chiaveProdotto(p) {
+  return p.categoria + "|" + p.nome;
+}
+
+// ---------------------------------------------------------------
+//  STRATO DATI - Campi da compilare (non un settimo livello)
+//  Regole estratte dal CRM live (crm.telefuturasrl.com):
+//  data la selezione (categoria, prodotto, offerta, opzioni ATTIVE)
+//  producono l'elenco dei campi che il Registra Vendita richiederà.
+//  Una regola si applica se TUTTE le sue condizioni valgono;
+//  condizioni disponibili: brand, tipo, categoria, prodotto,
+//  offertaContiene, offertaNon (esclude per nome esatto), opzioni (attive).
+//  i campi risultanti si sommano, senza duplicati.
+//  tipo campo: "testo" | "numero" | "data" | "scelta"
+//  conferma: true = campo dedotto, in attesa di conferma di G.
+// ---------------------------------------------------------------
+function campo(nome, tipoCampo, nota, conferma) {
+  return { nome: nome, tipo: tipoCampo, nota: nota || "", conferma: conferma === true };
+}
+
+const CAMPI_REGOLE = [
+  { campi: [campo("Codice Inserimento", "testo")] },
+  { brand: ["windtre"], categoria: ["Mobile Wallet", "Mobile Ric. Auto", "Telefono a Rate", "Fisso", "Energia", "Multi-Servizi"], campi: [campo("Codice Contratto", "testo")] },
+  { categoria: ["Mobile Wallet", "Mobile Ric. Auto"], prodotto: ["Mobile GA"], campi: [campo("Numero di Cellulare", "testo"), campo("Seriale SIM (ICCID)", "testo", "19 cifre")] },
+  { categoria: ["Mobile Wallet", "Mobile Ric. Auto"], prodotto: ["Mobile MNP"], campi: [campo("Numero Provvisorio", "testo"), campo("Numero Definitivo", "testo", "il numero che si porta"), campo("Operatore di Provenienza", "scelta"), campo("Seriale SIM (ICCID)", "testo", "19 cifre")] },
+  { categoria: ["Telefono a Rate"], campi: [campo("Numero di Cellulare", "testo"), campo("IMEI", "testo", "15 cifre"), campo("Modello Terminale", "testo"), campo("Importo Rata", "numero", "in euro", true)] },
+  { categoria: ["Telefono a Rate"], prodotto: ["Finanziato", "Finanziato CB"], campi: [campo("Codice Pratica Finanziamento", "testo")] },
+  { categoria: ["Fisso"], campi: [campo("Numero Fisso Provvisorio", "testo"), campo("Numero Fisso Definitivo", "testo")] },
+  { categoria: ["Fisso"], prodotto: ["FWA"], campi: [campo("Seriale SIM (ICCID)", "testo", "19 cifre, SIM del router")] },
+  { offertaContiene: ["Indoor"], campi: [campo("IMEI", "testo", "15 cifre, dispositivo FWA")] },
+  { offertaContiene: ["Conv", "Con Super Fibra"], campi: [campo("Numero Fisso di Convergenza", "testo")] },
+  { opzioni: ["GNP"], campi: [campo("Operatore GNP", "scelta"), campo("Numero Fisso da Portare", "testo")] },
+  { opzioni: ["Linea Aggiuntiva"], campi: [campo("N. Fisso Portabilità 2° Linea", "testo")] },
+  { categoria: ["Energia"], campi: [campo("Operatore di Provenienza", "scelta")] },
+  { categoria: ["Energia"], prodotto: ["Luce"], campi: [campo("POD", "testo", "codice punto di prelievo")] },
+  { categoria: ["Energia"], prodotto: ["Gas"], campi: [campo("PDR", "testo", "14 cifre")] },
+  { opzioni: ["RID"], campi: [campo("IBAN", "testo")] },
+  { categoria: ["Sostituzione SIM"], campi: [campo("Numero di Cellulare", "testo"), campo("ICCID Nuova SIM", "testo", "19 cifre"), campo("Codice Contratto", "testo")] },
+  { categoria: ["TV"], campi: [campo("Codice Contratto", "testo")] },
+  { categoria: ["Customer Base"], campi: [campo("Numero di Cellulare", "testo")] },
+  { tipo: ["Consumer"], categoria: ["Customer Base"], offertaNon: ["CL0", "CL1", "CL2", "CL3"], campi: [campo("Codice Contratto", "testo")] },
+  { tipo: ["Business"], categoria: ["Customer Base"], campi: [campo("Codice Contratto", "testo")] },
+  { opzioni: ["Reload Open"], campi: [campo("IMEI", "testo", "15 cifre")] },
+  { prodotto: ["Kasko Facile"], campi: [campo("Seriale Kasko", "testo"), campo("IMEI Dispositivo", "testo", "15 cifre"), campo("Modello Terminale", "testo"), campo("Numero di Cellulare", "testo")] },
+  { prodotto: ["Verisure", "Vodafone Care"], campi: [campo("Numero di Telefono", "testo")] },
+  { prodotto: ["Telepass"], campi: [campo("Seriale Telepass", "testo"), campo("Recapito", "testo")] },
+  { opzioni: ["Twin"], campi: [campo("Seriale Telepass Twin", "testo", "", true)] },
+  { categoria: ["POS"], campi: [campo("Matricola POS", "testo", "", true), campo("IBAN di Accredito", "testo", "", true)] },
+  { prodotto: ["Assicurazioni"], campi: [campo("Data Decorrenza", "data", "", true)] }
+];
+
+function risolviCampi(brandId, tipoCliente, categoria, prodottoNome, offertaNome, opzNomi) {
+  const out = [];
+  const visti = {};
+  CAMPI_REGOLE.forEach(function (r) {
+    if (r.brand && r.brand.indexOf(brandId) === -1) return;
+    if (r.tipo && r.tipo.indexOf(tipoCliente) === -1) return;
+    if (r.categoria && r.categoria.indexOf(categoria) === -1) return;
+    if (r.prodotto && r.prodotto.indexOf(prodottoNome) === -1) return;
+    if (r.offertaNon && r.offertaNon.indexOf(offertaNome) !== -1) return;
+    if (r.offertaContiene) {
+      const low = offertaNome.toLowerCase();
+      const trovato = r.offertaContiene.some(function (s) { return low.indexOf(s.toLowerCase()) !== -1; });
+      if (!trovato) return;
+    }
+    if (r.opzioni) {
+      const attiva = r.opzioni.some(function (o) { return opzNomi.indexOf(o) !== -1; });
+      if (!attiva) return;
+    }
+    r.campi.forEach(function (cmp) {
+      if (visti[cmp.nome]) return;
+      visti[cmp.nome] = true;
+      out.push(cmp);
+    });
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------
+//  Componente
+// ---------------------------------------------------------------
+export default function SchemaCatalogo() {
+  const [vista, setVista] = useState("esplora");
+  const [brandId, setBrandId] = useState("windtre");
+  const [tipo, setTipo] = useState("Consumer");
+  const [categoria, setCategoria] = useState(null);
+  const [prodSel, setProdSel] = useState(null);
+  const [offSel, setOffSel] = useState(null);
+  const [opzSel, setOpzSel] = useState([]);
+  const [tipoMatrice, setTipoMatrice] = useState("Tutti");
+
+  const brand = BRANDS.find(function (b) { return b.id === brandId; });
+  const prodotti = getProdotti(brandId, tipo, categoria);
+  const totOfferte = contaOfferte(brandId, tipo, categoria);
+
+  const trovato = prodSel === null
+    ? null
+    : prodotti.find(function (p) { return chiaveProdotto(p) === prodSel; });
+  const prodottoSel = trovato ? trovato : null;
+
+  let offertaSel = null;
+  if (prodottoSel !== null && offSel !== null && prodottoSel.offerte[offSel]) {
+    offertaSel = prodottoSel.offerte[offSel];
+  }
+
+  // cambiando un livello si azzerano le selezioni dei livelli inferiori
+  function azzeraGiu() {
+    setProdSel(null);
+    setOffSel(null);
+    setOpzSel([]);
+  }
+  function selBrand(id) {
+    // un brand privo del tipo cliente corrente non e' selezionabile
+    // (es. in Business, Ho Mobile e Kena sono disabilitati; in Consumer lo e' Dojo)
+    if (!tipoDisponibile(id, tipo)) return;
+    setBrandId(id);
+    azzeraGiu();
+  }
+  function selTipo(t) {
+    if (!tipoDisponibile(brandId, t)) return;
+    setTipo(t);
+    azzeraGiu();
+  }
+  function selCategoria(c) { setCategoria(c); azzeraGiu(); }
+  function selProdotto(k) {
+    setProdSel(prodSel === k ? null : k);
+    setOffSel(null);
+    setOpzSel([]);
+  }
+  function selOfferta(i) {
+    setOffSel(offSel === i ? null : i);
+    setOpzSel([]);
+  }
+  function toggleOpzione(i) {
+    if (opzSel.indexOf(i) === -1) {
+      setOpzSel(opzSel.concat([i]));
+    } else {
+      setOpzSel(opzSel.filter(function (x) { return x !== i; }));
+    }
+  }
+
+  function apriCella(bId, cat) {
+    let t = tipoMatrice;
+    if (t === "Tutti") {
+      t = contaProdotti(bId, "Consumer", cat) > 0 ? "Consumer" : "Business";
+    }
+    setBrandId(bId);
+    setTipo(t);
+    setCategoria(cat);
+    azzeraGiu();
+    setVista("esplora");
+  }
+
+  // ------- stili di base -------
+  const txtMuted = "#8b93a7";
+  const bordo = "1px solid rgba(255,255,255,0.08)";
+  const etich = {
+    fontSize: 10,
+    fontWeight: 700,
+    color: txtMuted,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8
+  };
+  const miniBase = { fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 99 };
+  const miniC = { ...miniBase, background: "rgba(139,92,246,0.18)", color: "#c4b5fd" };
+  const miniB = { ...miniBase, background: "rgba(56,189,248,0.15)", color: "#7dd3fc" };
+
+  // ------- barra dei livelli (pipeline della gerarchia) -------
+  const valOfferte = offertaSel
+    ? offertaSel.nome
+    : prodottoSel
+      ? prodottoSel.offerte.length + (prodottoSel.offerte.length === 1 ? " offerta" : " offerte")
+      : totOfferte + " totali";
+  const valOpzioni = offertaSel
+    ? opzSel.length + " di " + offertaSel.opzioni.length + " selez."
+    : "\u2014";
+
+  const livelli = [
+    { n: "1", label: "Brand", val: brand.nome, on: true },
+    { n: "2", label: "Tipo Cliente", val: tipo, on: true },
+    { n: "3", label: "Categoria", val: categoria ? categoria : "Tutte", on: true },
+    { n: "4", label: "Prodotto", val: prodottoSel ? prodottoSel.nome : prodotti.length + (prodotti.length === 1 ? " voce" : " voci"), on: true },
+    { n: "5", label: "Offerta", val: valOfferte, on: true },
+    { n: "6", label: "Opzioni", val: valOpzioni, on: offertaSel !== null }
+  ];
+
+  const livelliUI = (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+      {livelli.map(function (l, i) {
+        const pill = (
+          <div key={l.n} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{
+              padding: "6px 12px",
+              borderRadius: 10,
+              border: l.on ? "1px solid rgba(139,92,246,0.35)" : bordo,
+              background: l.on ? "rgba(139,92,246,0.08)" : "rgba(255,255,255,0.02)",
+              opacity: l.on ? 1 : 0.45,
+              display: "flex",
+              alignItems: "baseline",
+              gap: 8
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "#a78bfa" }}>{l.n}</span>
+              <span style={{ fontSize: 10, color: txtMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>{l.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>{l.val}</span>
+            </div>
+            {i < livelli.length - 1 ? <span style={{ color: "#3a4056", fontSize: 12 }}>&rarr;</span> : null}
+          </div>
+        );
+        return pill;
+      })}
+    </div>
+  );
+
+  // ------- Livello 1: griglia brand -------
+  const brandGridUI = (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
+      {BRANDS.map(function (b) {
+        const sel = b.id === brandId;
+        const dispTipo = tipoDisponibile(b.id, tipo);
+        const dimCat = categoria !== null && !brandHaCategoria(b.id, tipo, categoria);
+        const hasC = tipoDisponibile(b.id, "Consumer");
+        const hasB = tipoDisponibile(b.id, "Business");
+        const card = (
+          <div
+            key={b.id}
+            title={dispTipo ? undefined : "Non disponibile in " + tipo}
+            onClick={dispTipo ? function () { selBrand(b.id); } : undefined}
+            style={{
+              padding: "11px 13px",
+              borderRadius: 12,
+              cursor: dispTipo ? "pointer" : "not-allowed",
+              border: sel ? "1px solid " + b.c1 : bordo,
+              background: sel
+                ? "linear-gradient(135deg, " + b.c1 + "26, rgba(255,255,255,0.02))"
+                : "rgba(255,255,255,0.03)",
+              opacity: dispTipo ? (dimCat ? 0.3 : 1) : 0.25,
+              transition: "all .15s ease",
+              display: "flex",
+              alignItems: "center",
+              gap: 10
+            }}
+          >
+            <span style={{
+              width: 10, height: 10, borderRadius: 99, flexShrink: 0,
+              background: "linear-gradient(135deg, " + b.c1 + ", " + b.c2 + ")"
+            }} />
+            <span style={{ fontWeight: 600, fontSize: 13, flex: 1, whiteSpace: "nowrap" }}>{b.nome}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: hasC ? txtMuted : "rgba(255,255,255,0.12)" }}>C</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: hasB ? txtMuted : "rgba(255,255,255,0.12)" }}>B</span>
+          </div>
+        );
+        return card;
+      })}
+    </div>
+  );
+
+  // ------- Livello 2: tipo cliente -------
+  const tipoUI = (
+    <div style={{ display: "flex", gap: 8 }}>
+      {TIPI.map(function (t) {
+        const sel = tipo === t;
+        const disp = tipoDisponibile(brandId, t);
+        const btn = (
+          <button
+            key={t}
+            disabled={!disp}
+            title={disp ? undefined : "Non disponibile per " + brand.nome}
+            onClick={function () { selTipo(t); }}
+            style={{
+              padding: "8px 20px",
+              borderRadius: 10,
+              border: sel ? "1px solid " + brand.c1 : bordo,
+              background: sel ? brand.c1 + "22" : "transparent",
+              color: sel ? "#ffffff" : disp ? "#c6cbd8" : "rgba(255,255,255,0.22)",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: disp ? "pointer" : "not-allowed",
+              fontFamily: "inherit"
+            }}
+          >
+            {t}
+          </button>
+        );
+        return btn;
+      })}
+    </div>
+  );
+
+  // ------- Livello 3: categorie (chip filtro) -------
+  const chips = [null].concat(CATEGORIE);
+  const chipsUI = (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {chips.map(function (c) {
+        const isAll = c === null;
+        const sel = categoria === c;
+        const avail = isAll
+          ? contaProdotti(brandId, tipo, null) > 0
+          : brandHaCategoria(brandId, tipo, c);
+        const n = contaProdotti(brandId, tipo, c);
+        const chip = (
+          <button
+            key={isAll ? "tutte" : c}
+            onClick={function () { selCategoria(c); }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "7px 12px",
+              borderRadius: 999,
+              border: sel ? "1px solid " + brand.c1 : bordo,
+              background: sel ? brand.c1 + "22" : "rgba(255,255,255,0.02)",
+              color: sel ? "#ffffff" : avail ? "#c6cbd8" : "rgba(255,255,255,0.22)",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "inherit"
+            }}
+          >
+            {isAll ? "Tutte" : c}
+            {avail ? (
+              <span style={{
+                fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 99,
+                background: "rgba(255,255,255,0.08)",
+                color: sel ? "#ffffff" : txtMuted
+              }}>{n}</span>
+            ) : null}
+          </button>
+        );
+        return chip;
+      })}
+    </div>
+  );
+
+  // ------- Livello 4: prodotti (selezionabili) -------
+  const gruppi = [];
+  CATEGORIE.forEach(function (cat) {
+    const items = prodotti.filter(function (p) { return p.categoria === cat; });
+    if (items.length > 0) gruppi.push({ cat: cat, items: items });
+  });
+
+  const briciole = brand.nome + " \u00b7 " + tipo + (categoria ? " \u00b7 " + categoria : "");
+
+  let listaUI = null;
+  if (prodotti.length === 0) {
+    listaUI = (
+      <div style={{ padding: "30px 16px", textAlign: "center", color: txtMuted, fontSize: 13 }}>
+        Nessun prodotto per <b style={{ color: "#e8eaf0" }}>{briciole}</b>: combinazione non prevista o ancora da compilare.
+      </div>
+    );
+  } else {
+    listaUI = (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {gruppi.map(function (g) {
+          const blocco = (
+            <div key={g.cat}>
+              {categoria === null ? (
+                <div style={{
+                  fontSize: 10, fontWeight: 700, color: txtMuted,
+                  textTransform: "uppercase", letterSpacing: 1, margin: "2px 0 6px"
+                }}>{g.cat}</div>
+              ) : null}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 6 }}>
+                {g.items.map(function (p) {
+                  const k = chiaveProdotto(p);
+                  const selP = prodSel === k;
+                  const nOff = p.offerte.length;
+                  const riga = (
+                    <div
+                      key={k}
+                      onClick={function () { selProdotto(k); }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        padding: "10px 12px", borderRadius: 10,
+                        cursor: "pointer",
+                        background: selP ? brand.c1 + "1c" : "rgba(255,255,255,0.03)",
+                        border: selP ? "1px solid " + brand.c1 : "1px solid rgba(255,255,255,0.06)",
+                        transition: "all .15s ease"
+                      }}
+                    >
+                      <span style={{
+                        width: 3, height: 16, borderRadius: 2, flexShrink: 0,
+                        background: "linear-gradient(180deg, " + brand.c1 + ", " + brand.c2 + ")"
+                      }} />
+                      <span style={{ fontSize: 13, flex: 1 }}>{p.nome}</span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 99,
+                        background: selP ? brand.c1 + "33" : "rgba(255,255,255,0.07)",
+                        color: nOff === 0 ? "#f5c400" : selP ? "#ffffff" : txtMuted
+                      }}>{nOff}</span>
+                    </div>
+                  );
+                  return riga;
+                })}
+              </div>
+            </div>
+          );
+          return blocco;
+        })}
+      </div>
+    );
+  }
+
+  const prodottiUI = (
+    <div style={{ background: "#141826", border: bordo, borderRadius: 14, padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ ...etich, marginBottom: 0 }}>Livello 4 &middot; Prodotti</div>
+        <div style={{ fontSize: 12, color: txtMuted }}>{briciole} &middot; {prodotti.length} {prodotti.length === 1 ? "prodotto" : "prodotti"}</div>
+      </div>
+      {listaUI}
+      {prodSel === null && prodotti.length > 0 ? (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: "#5c657c" }}>
+          Clic su un prodotto per aprire il Livello 5 &middot; Offerte. Il numero sul badge indica quante offerte contiene.
+        </div>
+      ) : null}
+    </div>
+  );
+
+  // ------- Livello 5: offerte del prodotto selezionato -------
+  let offerteUI = null;
+  if (prodottoSel !== null) {
+    const briciole5 = briciole + " \u00b7 " + prodottoSel.nome;
+    let corpoOff = null;
+    if (prodottoSel.offerte.length === 0) {
+      corpoOff = (
+        <div style={{ padding: "26px 16px", textAlign: "center", color: txtMuted, fontSize: 13 }}>
+          Nessuna offerta per <b style={{ color: "#e8eaf0" }}>{prodottoSel.nome}</b>: da compilare.
+        </div>
+      );
+    } else {
+      corpoOff = (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 6 }}>
+          {prodottoSel.offerte.map(function (o, i) {
+            const selO = offSel === i;
+            const nOpz = o.opzioni.length;
+            const rigaOff = (
+              <div
+                key={i}
+                onClick={function () { selOfferta(i); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "9px 12px", borderRadius: 10,
+                  cursor: "pointer",
+                  background: selO ? brand.c1 + "1c" : "rgba(255,255,255,0.03)",
+                  border: selO ? "1px solid " + brand.c1 : "1px solid rgba(255,255,255,0.06)",
+                  transition: "all .15s ease"
+                }}
+              >
+                <span style={{
+                  width: 7, height: 7, borderRadius: 99, flexShrink: 0,
+                  border: "2px solid " + brand.c1
+                }} />
+                <span style={{ fontSize: 13, flex: 1 }}>{o.nome}</span>
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 99,
+                  background: selO ? brand.c1 + "33" : "rgba(255,255,255,0.07)",
+                  color: nOpz === 0 ? "#f5c400" : selO ? "#ffffff" : txtMuted
+                }}>{nOpz}</span>
+              </div>
+            );
+            return rigaOff;
+          })}
+        </div>
+      );
+    }
+    offerteUI = (
+      <div style={{ background: "#141826", border: "1px solid " + brand.c1 + "55", borderRadius: 14, padding: 16 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ ...etich, marginBottom: 0 }}>Livello 5 &middot; Offerte</div>
+          <div style={{ fontSize: 12, color: txtMuted }}>{briciole5} &middot; {prodottoSel.offerte.length} {prodottoSel.offerte.length === 1 ? "offerta" : "offerte"}</div>
+        </div>
+        {corpoOff}
+        {offSel === null && prodottoSel.offerte.length > 0 ? (
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: "#5c657c" }}>
+            Clic su un'offerta per aprire il Livello 6 &middot; Opzioni. Il badge indica quante opzioni contiene.
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  // ------- Livello 6: opzioni dell'offerta selezionata (multiselezione) -------
+  let opzioniUI = null;
+  if (offertaSel !== null) {
+    const briciole6 = briciole + " \u00b7 " + prodottoSel.nome + " \u00b7 " + offertaSel.nome;
+    let corpoOpz = null;
+    if (offertaSel.opzioni.length === 0) {
+      corpoOpz = (
+        <div style={{ padding: "26px 16px", textAlign: "center", color: txtMuted, fontSize: 13 }}>
+          Nessuna opzione per <b style={{ color: "#e8eaf0" }}>{offertaSel.nome}</b>: da compilare.
+        </div>
+      );
+    } else {
+      corpoOpz = (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {offertaSel.opzioni.map(function (op, i) {
+            const selOp = opzSel.indexOf(i) !== -1;
+            const chipOp = (
+              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <button
+                  onClick={function () { toggleOpzione(i); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "8px 14px", borderRadius: 10,
+                    border: selOp ? "1px solid " + brand.c1 : bordo,
+                    background: selOp ? brand.c1 + "22" : "rgba(255,255,255,0.02)",
+                    color: selOp ? "#ffffff" : "#c6cbd8",
+                    fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit"
+                  }}
+                >
+                  <span style={{
+                    width: 14, height: 14, borderRadius: 4, flexShrink: 0,
+                    border: selOp ? "1px solid " + brand.c1 : "1px solid rgba(255,255,255,0.25)",
+                    background: selOp ? brand.c1 : "transparent",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 10, color: "#ffffff", fontWeight: 800
+                  }}>{selOp ? "\u2713" : ""}</span>
+                  {op.nome}
+                  {op.tipo === "numero" ? (
+                    <span style={{
+                      fontSize: 9, fontWeight: 800, padding: "1px 5px", borderRadius: 99,
+                      background: "rgba(255,255,255,0.1)", color: selOp ? "#ffffff" : txtMuted
+                    }}>n\u00b0</span>
+                  ) : null}
+                </button>
+                {selOp && op.tipo === "numero" ? (
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="quante?"
+                    style={{
+                      width: 78, background: "rgba(255,255,255,0.06)",
+                      border: "1px solid " + brand.c1, borderRadius: 8,
+                      color: "#ffffff", fontSize: 12, padding: "6px 8px", fontFamily: "inherit"
+                    }}
+                  />
+                ) : null}
+              </span>
+            );
+            return chipOp;
+          })}
+        </div>
+      );
+    }
+    opzioniUI = (
+      <div style={{ background: "#141826", border: "1px solid " + brand.c1 + "55", borderRadius: 14, padding: 16 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ ...etich, marginBottom: 0 }}>Livello 6 &middot; Opzioni</div>
+          <div style={{ fontSize: 12, color: txtMuted }}>{briciole6} &middot; {opzSel.length} su {offertaSel.opzioni.length} selezionate</div>
+        </div>
+        {corpoOpz}
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: "#5c657c" }}>
+          A differenza dei livelli precedenti, qui la selezione è multipla: più opzioni possono essere attive sulla stessa offerta.
+        </div>
+      </div>
+    );
+  }
+
+  // ------- Strato dati: campi da compilare per la selezione corrente -------
+  let campiUI = null;
+  if (offertaSel !== null) {
+    const opzNomi = opzSel.map(function (i) { return offertaSel.opzioni[i].nome; });
+    const campi = risolviCampi(brandId, tipo, prodottoSel.categoria, prodottoSel.nome, offertaSel.nome, opzNomi);
+    const coloriTipo = { testo: "#8b93a7", numero: "#2dd4bf", data: "#f5c400", scelta: "#a78bfa" };
+    const righeCampi = campi.map(function (cmp, i) {
+      const riga = (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", padding: "3px 8px", borderRadius: 99, background: "rgba(255,255,255,0.06)", color: coloriTipo[cmp.tipo] ? coloriTipo[cmp.tipo] : "#8b93a7", flexShrink: 0, width: 52, textAlign: "center" }}>{cmp.tipo}</span>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{cmp.nome}</span>
+          {cmp.nota ? <span style={{ fontSize: 11, color: txtMuted }}>{cmp.nota}</span> : null}
+          <span style={{ flex: 1 }} />
+          {cmp.conferma ? (
+            <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 99, background: "rgba(255,159,28,0.15)", color: "#ffbe66" }}>da confermare</span>
+          ) : null}
+        </div>
+      );
+      return riga;
+    });
+    campiUI = (
+      <div style={{ background: "#10141f", border: "1px dashed rgba(255,255,255,0.2)", borderRadius: 14, padding: 16 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ ...etich, marginBottom: 0 }}>Dati da Compilare</div>
+          <div style={{ fontSize: 12, color: txtMuted }}>{campi.length} campi per questa combinazione di offerta e opzioni</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{righeCampi}</div>
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: "#5c657c" }}>
+          Non è un settimo livello di selezione: sono i campi che il Registra Vendita chiederà per la combinazione scelta. Attiva o disattiva le opzioni qui sopra per vederli cambiare (es. GNP, RID, Reload Open).
+        </div>
+      </div>
+    );
+  }
+
+  // ------- Vista Esplora -------
+  const esploraUI = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {livelliUI}
+      <div>
+        <div style={etich}>Livello 1 &middot; Brand</div>
+        {brandGridUI}
+      </div>
+      <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div>
+          <div style={etich}>Livello 2 &middot; Tipo Cliente</div>
+          {tipoUI}
+        </div>
+        <div style={{ flex: 1, minWidth: 320 }}>
+          <div style={etich}>Livello 3 &middot; Categoria (anche filtro trasversale)</div>
+          {chipsUI}
+        </div>
+      </div>
+      {prodottiUI}
+      {offerteUI}
+      {opzioniUI}
+      {campiUI}
+    </div>
+  );
+
+  // ------- Vista Matrice -------
+  const filtroTipi = ["Tutti"].concat(TIPI);
+  const thStyle = {
+    padding: "10px 8px",
+    fontSize: 10,
+    fontWeight: 700,
+    color: txtMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    textAlign: "center",
+    borderBottom: bordo,
+    whiteSpace: "nowrap"
+  };
+
+  const matriceUI = (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          {filtroTipi.map(function (t) {
+            const sel = tipoMatrice === t;
+            const btn = (
+              <button
+                key={t}
+                onClick={function () { setTipoMatrice(t); }}
+                style={{
+                  padding: "7px 16px",
+                  borderRadius: 10,
+                  border: sel ? "1px solid rgba(139,92,246,0.6)" : bordo,
+                  background: sel ? "rgba(139,92,246,0.15)" : "transparent",
+                  color: sel ? "#c4b5fd" : txtMuted,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "inherit"
+                }}
+              >
+                {t}
+              </button>
+            );
+            return btn;
+          })}
+        </div>
+        <div style={{ fontSize: 11, color: txtMuted, display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={miniC}>C</span> Consumer
+          <span style={miniB}>B</span> Business
+          <span style={{ marginLeft: 8 }}>Conteggio prodotti &middot; clic su una cella per aprirla in Esplora</span>
+        </div>
+      </div>
+
+      <div style={{ background: "#141826", border: bordo, borderRadius: 14, overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1080 }}>
+          <thead>
+            <tr>
+              <th style={{ ...thStyle, textAlign: "left", paddingLeft: 16 }}>Brand</th>
+              {CATEGORIE.map(function (c) {
+                const h = <th key={c} style={thStyle}>{c}</th>;
+                return h;
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {BRANDS.map(function (b) {
+              const row = (
+                <tr key={b.id}>
+                  <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)", whiteSpace: "nowrap" }}>
+                    <span style={{
+                      display: "inline-block", width: 8, height: 8, borderRadius: 99, marginRight: 8,
+                      background: "linear-gradient(135deg, " + b.c1 + ", " + b.c2 + ")"
+                    }} />
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{b.nome}</span>
+                  </td>
+                  {CATEGORIE.map(function (c) {
+                    const nC = contaProdotti(b.id, "Consumer", c);
+                    const nB = contaProdotti(b.id, "Business", c);
+                    let attivo = false;
+                    let contenuto = null;
+                    if (tipoMatrice === "Tutti") {
+                      attivo = nC + nB > 0;
+                      contenuto = attivo ? (
+                        <span style={{ display: "inline-flex", gap: 4 }}>
+                          {nC > 0 ? <span style={miniC}>C {nC}</span> : null}
+                          {nB > 0 ? <span style={miniB}>B {nB}</span> : null}
+                        </span>
+                      ) : (
+                        <span style={{ color: "rgba(255,255,255,0.12)" }}>&mdash;</span>
+                      );
+                    } else {
+                      const n = tipoMatrice === "Consumer" ? nC : nB;
+                      attivo = n > 0;
+                      contenuto = attivo ? (
+                        <span style={miniC}>{n}</span>
+                      ) : (
+                        <span style={{ color: "rgba(255,255,255,0.12)" }}>&mdash;</span>
+                      );
+                    }
+                    const cella = (
+                      <td
+                        key={c}
+                        onClick={attivo ? function () { apriCella(b.id, c); } : undefined}
+                        style={{
+                          padding: "8px 6px",
+                          textAlign: "center",
+                          borderBottom: "1px solid rgba(255,255,255,0.05)",
+                          cursor: attivo ? "pointer" : "default"
+                        }}
+                      >
+                        {contenuto}
+                      </td>
+                    );
+                    return cella;
+                  })}
+                </tr>
+              );
+              return row;
+            })}
+            <tr>
+              <td style={{
+                padding: "10px 16px", fontSize: 10, fontWeight: 700,
+                color: txtMuted, textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap"
+              }}>Brand attivi</td>
+              {CATEGORIE.map(function (c) {
+                let n = 0;
+                BRANDS.forEach(function (b) {
+                  if (tipoMatrice === "Tutti") {
+                    if (contaProdotti(b.id, "Consumer", c) + contaProdotti(b.id, "Business", c) > 0) n = n + 1;
+                  } else if (contaProdotti(b.id, tipoMatrice, c) > 0) {
+                    n = n + 1;
+                  }
+                });
+                const tot = (
+                  <td key={c} style={{
+                    padding: "10px 6px", textAlign: "center", fontSize: 12, fontWeight: 700,
+                    color: n > 0 ? "#c4b5fd" : "rgba(255,255,255,0.12)"
+                  }}>
+                    {n > 0 ? n : "\u2014"}
+                  </td>
+                );
+                return tot;
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  // ------- Assemblaggio -------
+  let corpoUI = null;
+  if (vista === "esplora") {
+    corpoUI = esploraUI;
+  } else {
+    corpoUI = matriceUI;
+  }
+
+  const tabs = [
+    { id: "esplora", label: "Esplora" },
+    { id: "matrice", label: "Matrice" }
+  ];
+
+  const tabsUI = (
+    <div style={{ display: "flex", gap: 6 }}>
+      {tabs.map(function (t) {
+        const sel = vista === t.id;
+        const el = (
+          <button
+            key={t.id}
+            onClick={function () { setVista(t.id); }}
+            style={{
+              padding: "8px 18px",
+              borderRadius: 10,
+              border: sel ? "1px solid rgba(139,92,246,0.6)" : bordo,
+              background: sel ? "rgba(139,92,246,0.15)" : "transparent",
+              color: sel ? "#c4b5fd" : txtMuted,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "inherit"
+            }}
+          >
+            {t.label}
+          </button>
+        );
+        return el;
+      })}
+    </div>
+  );
+
+  const ui = (
+    <div style={{
+      minHeight: "100vh",
+      background: "#0b0e14",
+      color: "#e8eaf0",
+      fontFamily: "'Segoe UI', system-ui, -apple-system, sans-serif",
+      padding: "24px 28px",
+      boxSizing: "border-box"
+    }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18, flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: 0.2 }}>Schema Catalogo</div>
+            <div style={{ fontSize: 12, color: txtMuted, marginTop: 4 }}>
+              Brand &rarr; Tipo Cliente &rarr; Categoria &rarr; Prodotto &rarr; Offerta &rarr; Opzioni
+              <span style={{
+                marginLeft: 10, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
+                background: "rgba(245,196,0,0.12)", color: "#f5c400", letterSpacing: 0.5
+              }}>OFFERTE DA COMPILARE</span>
+            </div>
+          </div>
+          {tabsUI}
+        </div>
+        {corpoUI}
+      </div>
+    </div>
+  );
+  return ui;
+}
