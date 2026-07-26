@@ -633,6 +633,11 @@ export default function CallerPage() {
                 { data: now, caller: currentCaller, campo: "Stato", da: original.stato, a: editCall.statoNew }
             ];
             const updates: Record<string, unknown> = { stato: editCall.statoNew, storico: newStorico, da_esitare: false };
+            // post-chiamata: l'anagrafica completata dal caller viaggia con l'esito
+            updates.tipo_cliente = editCall.tipo_cliente;
+            updates.nome = editCall.nome; updates.cognome = editCall.cognome;
+            updates.ragione_sociale = editCall.ragione_sociale;
+            updates.cf = editCall.cf; updates.piva = editCall.piva;
 
             if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
                 newStorico.push({ data: now, caller: currentCaller, campo: "Data richiamo", da: "", a: formatDate(editCall.dataRichiamoNew) });
@@ -947,11 +952,14 @@ export default function CallerPage() {
                         ) : null;
                     })()}
                     {!isListeView && (
+                        /* Azione SECONDARIA di emergenza: la via normale e' il telefono
+                           verde in basso a destra (gerarchia decisa da Luca 26/07). */
                         <button
                             onClick={openNew}
-                            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs uppercase tracking-widest transition-all shadow-lg shadow-violet-500/20 active:scale-95"
+                            title="Procedura manuale di emergenza — usala solo se Aircall non è disponibile"
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/15 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200 text-xs font-bold uppercase tracking-widest transition-colors"
                         >
-                            <Plus className="w-4 h-4" /> Nuova Call
+                            <Plus className="w-4 h-4" /> Inserimento Manuale
                         </button>
                     )}
                     {isListeView && isDirector && (
@@ -1194,7 +1202,7 @@ export default function CallerPage() {
                 <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={closeModal}>
                     <div className="glass-panel w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border-white/10" onClick={(e) => e.stopPropagation()}>
                         <div className="flex-none px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-                            <h2 className="text-lg font-bold text-white uppercase tracking-tight">{modalMode === "new" ? "Nuova Call" : "Dettaglio Call"}</h2>
+                            <h2 className="text-lg font-bold text-white uppercase tracking-tight">{modalMode === "new" ? "Inserimento Manuale (emergenza)" : "Dettaglio Call"}</h2>
                             <button onClick={closeModal} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
                         </div>
 
@@ -1409,6 +1417,55 @@ export default function CallerPage() {
                                     )}
 
                                     <SectionTitle>Anagrafica Cliente <span className="ml-2 text-[10px] text-slate-500">{editCall.tipo_cliente === "business" ? "■ Business" : "● Consumer"}</span></SectionTitle>
+                                    {editCall.da_esitare ? (
+                                        /* POST-CHIAMATA (richiesta Luca 26/07): oltre all'esito, il caller
+                                           completa i dati del cliente con tutto cio' che ha raccolto —
+                                           tipo, nome/ragione sociale, CF o P.IVA (con autocompletamento
+                                           dall'anagrafica se il codice e' gia' nostro). */
+                                        <div className="p-4 bg-amber-500/[0.06] border border-amber-500/30 rounded-xl space-y-3">
+                                            <p className="text-[11px] font-bold text-amber-300 uppercase tracking-widest">Completa i dati del cliente raccolti in chiamata</p>
+                                            <div className="flex gap-2">
+                                                {(["consumer", "business"] as const).map((t) => (
+                                                    <button key={t} onClick={() => updateField("tipo_cliente", t)}
+                                                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-colors ${editCall.tipo_cliente === t ? "border-amber-400/70 bg-amber-500/20 text-amber-200" : "border-white/10 text-slate-400 hover:text-slate-200"}`}>
+                                                        {t === "consumer" ? "● Consumer" : "■ Business"}{editCall.tipo_cliente === t ? " ✓" : ""}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {editCall.tipo_cliente === "business" ? (
+                                                    <>
+                                                        <div className="col-span-2">
+                                                            <label className="text-[10px] text-slate-500 uppercase tracking-widest">Ragione Sociale</label>
+                                                            <input className="glass-input w-full rounded-lg py-2 mt-1" value={editCall.ragione_sociale} onChange={(e) => updateField("ragione_sociale", e.target.value)} placeholder="Es. Rossi SRL" />
+                                                        </div>
+                                                        <div className="col-span-2">
+                                                            <label className="text-[10px] text-slate-500 uppercase tracking-widest">Partita IVA</label>
+                                                            <input className="glass-input w-full rounded-lg py-2 mt-1 font-mono" value={editCall.piva} onChange={(e) => handleIdentificativoChange("piva", e.target.value.toUpperCase())} placeholder="11 cifre" />
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <div>
+                                                            <label className="text-[10px] text-slate-500 uppercase tracking-widest">Nome</label>
+                                                            <input className="glass-input w-full rounded-lg py-2 mt-1" value={editCall.nome} onChange={(e) => updateField("nome", e.target.value)} placeholder="Nome" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[10px] text-slate-500 uppercase tracking-widest">Cognome</label>
+                                                            <input className="glass-input w-full rounded-lg py-2 mt-1" value={editCall.cognome} onChange={(e) => updateField("cognome", e.target.value)} placeholder="Cognome" />
+                                                        </div>
+                                                        <div className="col-span-2">
+                                                            <label className="text-[10px] text-slate-500 uppercase tracking-widest">Codice Fiscale</label>
+                                                            <input className="glass-input w-full rounded-lg py-2 mt-1 font-mono" value={editCall.cf} onChange={(e) => handleIdentificativoChange("cf", e.target.value.toUpperCase())} placeholder="16 caratteri" />
+                                                        </div>
+                                                    </>
+                                                )}
+                                                <SummaryItem label="Numero" value={editCall.numero} />
+                                                <SummaryItem label="Recapito Cellulare" value={editCall.cellulare} />
+                                            </div>
+                                            {editCall.clienteRiconosciuto && <p className="text-[11px] text-emerald-400 font-bold">✓ Cliente riconosciuto in anagrafica: dati compilati automaticamente</p>}
+                                        </div>
+                                    ) : (
                                     <div className="grid grid-cols-2 gap-3 p-4 bg-violet-500/[0.04] border border-white/5 rounded-xl">
                                         {editCall.tipo_cliente === "business" ? (
                                             <SummaryItem label="Ragione Sociale" value={editCall.ragione_sociale} />
@@ -1419,6 +1476,7 @@ export default function CallerPage() {
                                         <SummaryItem label="Numero" value={editCall.numero} />
                                         <SummaryItem label="Recapito Cellulare" value={editCall.cellulare} />
                                     </div>
+                                    )}
 
                                     <SectionTitle>Dettagli Call</SectionTitle>
                                     <div className="grid grid-cols-2 gap-3 p-4 bg-violet-500/[0.04] border border-white/5 rounded-xl">

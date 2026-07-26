@@ -52,12 +52,18 @@ export function AircallPhoneDock() {
     if (!visibile) return null;
     return (
         <>
+            {/* AZIONE PRIMARIA della pagina (gerarchia Luca 26/07): il telefono.
+                Sempre verde, ben ancorato in basso a destra; il pallino dice se
+                la sessione Aircall e' connessa. */}
             <button
                 onClick={() => setOpen(!open)}
-                title={open ? "Chiudi il telefono" : "Apri il telefono Aircall"}
-                className={`fixed bottom-5 right-5 z-[900] w-13 h-13 p-3.5 rounded-full shadow-2xl border transition-all ${open ? "bg-rose-500/90 border-rose-400 text-white" : connesso ? "bg-emerald-500/90 border-emerald-400 text-white" : "bg-indigo-600 border-indigo-400 text-white hover:scale-105"}`}
+                title={open ? "Chiudi il telefono" : connesso ? "Telefono Aircall — connesso" : "Apri il telefono Aircall per chiamare"}
+                className={`fixed bottom-6 right-6 z-[900] w-14 h-14 rounded-full flex items-center justify-center border transition-all ring-1 ring-white/15 ${open ? "bg-rose-500 hover:bg-rose-400 border-rose-300/60 shadow-xl shadow-rose-500/30" : "bg-emerald-500 hover:bg-emerald-400 border-emerald-300/60 shadow-2xl shadow-emerald-500/40 hover:scale-105"} text-white`}
             >
-                <span className="text-xl leading-none">{open ? "✕" : "☎"}</span>
+                <span className="text-2xl leading-none">{open ? "✕" : "☎"}</span>
+                {!open && (
+                    <span className={`absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0a0c10] ${connesso ? "bg-emerald-300 animate-pulse" : "bg-slate-500"}`} title={connesso ? "Connesso" : "Accedi al primo utilizzo"} />
+                )}
             </button>
             {/* pannello sempre montato dopo il primo avvio: si nasconde, non si smonta */}
             <div
