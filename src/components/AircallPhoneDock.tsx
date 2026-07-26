@@ -58,7 +58,7 @@ export function AircallPhoneDock() {
             <button
                 onClick={() => setOpen(!open)}
                 title={open ? "Chiudi il telefono" : connesso ? "Telefono Aircall — connesso" : "Apri il telefono Aircall per chiamare"}
-                className={`fixed bottom-6 right-6 z-[900] w-14 h-14 rounded-full flex items-center justify-center border transition-all ring-1 ring-white/15 ${open ? "bg-rose-500 hover:bg-rose-400 border-rose-300/60 shadow-xl shadow-rose-500/30" : "bg-emerald-500 hover:bg-emerald-400 border-emerald-300/60 shadow-2xl shadow-emerald-500/40 hover:scale-105"} text-white`}
+                className={`fixed bottom-6 right-6 z-[900] w-14 h-14 rounded-full flex items-center justify-center border transition-all ring-1 ring-white/10 ${open ? "bg-rose-600/90 hover:bg-rose-500 border-rose-400/40 shadow-lg shadow-rose-900/40" : "bg-gradient-to-br from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 border-white/15 shadow-lg shadow-indigo-950/60 hover:scale-105"} text-white`}
             >
                 <span className="text-2xl leading-none">{open ? "✕" : "☎"}</span>
                 {!open && (
