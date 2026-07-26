@@ -11,6 +11,7 @@ import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientCh
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, capChoice, capAllowed } from "@/lib/capabilities";
+import { chiamaAircall } from "@/lib/dialer";
 
 interface Cliente {
     id: string;
@@ -161,7 +162,16 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 <FileText className="w-3 h-3" /> Anagrafica Cliente
                             </h3>
                             <div className="grid grid-cols-1 gap-3">
-                                <InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono />
+                                <div className="flex items-center gap-2">
+                                    <div className="flex-1 min-w-0"><InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono /></div>
+                                    {cliente.cellulare && (
+                                        <button
+                                            onClick={async () => { const r = await chiamaAircall(cliente.cellulare, uAll?.id); alert(r.msg); }}
+                                            title="Chiama con Aircall (es. richiamare un cliente che non è venuto in negozio)"
+                                            className="px-2.5 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-sm shrink-0"
+                                        >📞</button>
+                                    )}
+                                </div>
                                 <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} />
                                 <InfoItem icon={<FileText className="w-4 h-4" />} label={cliente.tipo === 'business' ? 'Partita IVA' : 'Codice Fiscale'} value={cliente.cf_piva || "—"} mono />
                                 <InfoItem icon={<MapPin className="w-4 h-4" />} label="Indirizzo" value={`${cliente.indirizzo}, ${cliente.citta}`} />

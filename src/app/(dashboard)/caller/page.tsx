@@ -10,6 +10,7 @@ import {
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { chiamaAircall } from "@/lib/dialer";
 import { useStores, useSellers } from "@/lib/org";
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -90,6 +91,7 @@ interface Call {
     note: string;
     data_richiamo: string;
     lista_origine?: string | null;
+    da_esitare?: boolean;
     storico: StoricoEntry[];
     // Detail-mode only working fields
     statoNew?: string;
@@ -182,6 +184,7 @@ function mapRowToCall(row: Record<string, unknown>): Call {
         note: (row.note as string) || "",
         data_richiamo: (row.data_richiamo as string) || "",
         lista_origine: (row.lista_origine as string) || null,
+        da_esitare: !!row.da_esitare,
         storico: (row.storico as StoricoEntry[]) || [],
     };
 }
@@ -306,6 +309,8 @@ export default function CallerPage() {
     // nello storico a una persona inesistente.
     const { user } = useAuth();
     const currentCaller = user?.name || "";
+    // coda "da esitare": chiamate Aircall risposte in attesa dell'esito del caller
+    const [fDaEsitare, setFDaEsitare] = useState(false);
     const roleFromSession: Role =
         ["admin", "dev", "direttore_generale"].includes(user?.role || "") ? "admin"
       : ["direttore_cc", "direttore_ob", "direttore_commerciale", "store_manager", "amministrativo"].includes(user?.role || "") ? "direttore"
@@ -406,6 +411,7 @@ export default function CallerPage() {
 
     /* ── Filtering ── */
     const filtered = useMemo(() => calls.filter((c) => {
+        if (fDaEsitare && !c.da_esitare) return false;
         if (!isDirector && c.caller !== currentCaller) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
         if (fNome) {
@@ -625,7 +631,7 @@ export default function CallerPage() {
                 ...(original.storico || []),
                 { data: now, caller: currentCaller, campo: "Stato", da: original.stato, a: editCall.statoNew }
             ];
-            const updates: Record<string, unknown> = { stato: editCall.statoNew, storico: newStorico };
+            const updates: Record<string, unknown> = { stato: editCall.statoNew, storico: newStorico, da_esitare: false };
 
             if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
                 newStorico.push({ data: now, caller: currentCaller, campo: "Data richiamo", da: "", a: formatDate(editCall.dataRichiamoNew) });
@@ -923,6 +929,18 @@ export default function CallerPage() {
                             <FileSpreadsheet className="w-4 h-4" /> Assegna Liste
                         </button>
                     )}
+                    {!isListeView && (() => {
+                        const daEsitare = calls.filter((c) => c.da_esitare && (isDirector || c.caller === currentCaller)).length;
+                        return daEsitare > 0 ? (
+                            <button
+                                onClick={() => setFDaEsitare(!fDaEsitare)}
+                                title="Chiamate risposte in attesa del tuo esito"
+                                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-all ${fDaEsitare ? "border-amber-400/70 bg-amber-500/20 text-amber-200" : "border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"}`}
+                            >
+                                ☎️ Da esitare: {daEsitare}{fDaEsitare ? " ✓" : ""}
+                            </button>
+                        ) : null;
+                    })()}
                     {!isListeView && (
                         <button
                             onClick={openNew}
@@ -1045,7 +1063,17 @@ export default function CallerPage() {
                                                 className={`border-b border-white/5 cursor-pointer transition-colors ${hoverRow === c.id ? "bg-white/[0.04]" : ""}`}
                                             >
                                                 <td className="px-4 py-3">
-                                                    <div className="font-semibold text-white">{clientLabel(c)}</div>
+                                                    <div className="font-semibold text-white flex items-center gap-2">
+                                                        {clientLabel(c)}
+                                                        {c.da_esitare && <span title="Chiamata risposta: esito da inserire" className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />}
+                                                        {(c.cellulare || c.numero) && (
+                                                            <button
+                                                                onClick={async (e) => { e.stopPropagation(); const r = await chiamaAircall(c.cellulare || c.numero, user?.id); alert(r.msg); }}
+                                                                title="Chiama con Aircall"
+                                                                className="p-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-[11px] leading-none shrink-0"
+                                                            >📞</button>
+                                                        )}
+                                                    </div>
                                                     <div className="text-[11px] text-slate-500 mt-0.5">{c.tipo_cliente === "business" ? "■ Business" : "● Consumer"}</div>
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-300">{c.brand || "—"}</td>
