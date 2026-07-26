@@ -3,7 +3,6 @@
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ChatToaster } from "@/components/ChatToaster";
-import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { PageBackProvider } from "@/context/PageBackContext";
 import { PresenceProvider } from "@/context/PresenceContext";
 import { useState } from "react";
@@ -27,7 +26,6 @@ export default function AuthLayout({
                     </main>
                 </div>
                 <ChatToaster />
-                <AircallPhoneDock />
             </PresenceProvider>
         </PageBackProvider>
     );

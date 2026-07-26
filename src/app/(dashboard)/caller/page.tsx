@@ -11,6 +11,7 @@ import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
+import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { useStores, useSellers } from "@/lib/org";
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -881,6 +882,10 @@ export default function CallerPage() {
 
     return (
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0a0c10]">
+            {/* Telefono Aircall: la bolla ☎ vive SOLO nella sezione Caller (richiesta
+                Luca 26/07). Il login Aircall resta in cookie: uscendo e rientrando
+                dalla pagina non viene richiesto di nuovo. */}
+            <AircallPhoneDock />
             {/* HEADER */}
             <header className="flex-none flex flex-wrap items-center justify-between gap-4 px-8 py-6 border-b border-white/5 bg-[#0f111a]/50 backdrop-blur-xl">
                 <div className="flex items-center gap-3">
