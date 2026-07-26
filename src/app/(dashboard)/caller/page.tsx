@@ -410,32 +410,19 @@ export default function CallerPage() {
     }, []);
 
     /* ── Filtering ── */
-    /* ── CHIP-FILTRI in testa (richiesta Luca 26/07, come le tessere di Ricerca
-       Vendite ma compatti): 4 gruppi con divisori. Gruppo NON toccato = valgono
-       tutti; al primo click resta selezionato solo quello, poi si aggiungono/
-       tolgono; click sul titolo del gruppo = si torna a "tutti". ── */
-    // brand coi COLORI reali; gli altri gruppi con l'icona
-    const CHIP_GROUPS: { key: "brand" | "provenienza" | "tipologia" | "obiettivo"; titolo: string; grande?: boolean; valori: { v: string; ic?: string; color?: string }[] }[] = [
-        { key: "brand", titolo: "Brand", grande: true, valori: [
-            { v: "WindTre", color: "#FF6B00" }, { v: "Vodafone", color: "#E60000" }, { v: "Fastweb", color: "#FFD800" },
-            { v: "Sky", color: "#0072C6" }, { v: "Energia", color: "#22c55e" }, { v: "Tim", color: "#3b82f6" }, { v: "Altro", color: "#94a3b8" },
-        ] },
-        { key: "provenienza", titolo: "Provenienza", valori: [{ v: "Interno", ic: "🏠" }, { v: "Esterno", ic: "🌐" }, { v: "Acquistato", ic: "💰" }, { v: "Marketing", ic: "📣" }, { v: "Segnalazione", ic: "🗣️" }] },
-        { key: "tipologia", titolo: "Tipologia", valori: [{ v: "DTS", ic: "🏪" }, { v: "Outbound", ic: "🚗" }, { v: "Teleselling", ic: "☎️" }] },
-        { key: "obiettivo", titolo: "Obiettivo", valori: [{ v: "Energia", ic: "⚡" }, { v: "Sky", ic: "📺" }, { v: "CB", ic: "🔁" }, { v: "Fisso", ic: "🏡" }, { v: "Mobile", ic: "📱" }, { v: "Appuntamento", ic: "📅" }] },
-    ];
-    const [chipSel, setChipSel] = useState<Record<string, string[]>>({ brand: [], provenienza: [], tipologia: [], obiettivo: [] });
-    const toccaChip = (gruppo: string, v: string, tot: number) => {
-        setChipSel((prev) => {
-            const cur = prev[gruppo] || [];
-            let next: string[];
-            if (cur.length === 0) next = [v];                       // primo tocco: solo lui
-            else if (cur.includes(v)) next = cur.filter((x) => x !== v);
-            else next = [...cur, v];
-            if (next.length >= tot) next = [];                      // tutti scelti = nessun filtro
-            return { ...prev, [gruppo]: next };
-        });
+    /* ── TESSERE BRAND in testa (richiesta Luca 27/07): SOLO i brand, stesso
+       stile e comportamento di Ricerca Vendite — tutte accese all'apertura,
+       click = spegni/riaccendi. Provenienza/Tipologia/Obiettivo tornano a
+       tendina nel pannello filtri. ── */
+    const BRAND_LOGO: Record<string, string> = {
+        "WindTre": "/windtre.png", "Vodafone": "/vodaphone - Copy.png", "Fastweb": "/fastweb.png",
+        "Sky": "/sky.png", "Energia": "/energy - Copy.png", "Tim": "/tim-logo-v2.png",
     };
+    const [offBrands, setOffBrands] = useState<Set<string>>(new Set());
+    const brandCounts = useMemo(() => {
+        const scoped = calls.filter((c) => isDirector || c.caller === currentCaller);
+        return BRANDS.map((b) => ({ brand: b as string, n: scoped.filter((c) => c.brand === b).length }));
+    }, [calls, isDirector, currentCaller]);
 
     const filtered = useMemo(() => calls.filter((c) => {
         if (!isDirector && c.caller !== currentCaller) return false;
@@ -450,13 +437,13 @@ export default function CallerPage() {
         if (fDataChiamata && !c.data_chiamata.startsWith(fDataChiamata)) return false;
         if (fStato && c.stato !== fStato) return false;
         if (fCaller && c.caller !== fCaller) return false;
-        if (chipSel.brand.length && !chipSel.brand.includes(c.brand)) return false;
-        if (chipSel.provenienza.length && !chipSel.provenienza.includes(c.provenienza)) return false;
-        if (chipSel.tipologia.length && !chipSel.tipologia.includes(c.tipologia)) return false;
-        if (chipSel.obiettivo.length && !chipSel.obiettivo.includes(c.obiettivo)) return false;
+        if (c.brand && offBrands.has(c.brand)) return false;
+        if (fProvenienza && c.provenienza !== fProvenienza) return false;
+        if (fTipologia && c.tipologia !== fTipologia) return false;
+        if (fObiettivo && c.obiettivo !== fObiettivo) return false;
         if (fLista && (!c.lista_origine || !c.lista_origine.toLowerCase().includes(fLista.toLowerCase()))) return false;
         return true;
-    }), [calls, isDirector, currentCaller, fCf, fNome, fNegozio, fDataApp, fDataChiamata, fStato, fCaller, chipSel, fLista]);
+    }), [calls, isDirector, currentCaller, fCf, fNome, fNegozio, fDataApp, fDataChiamata, fStato, fCaller, offBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
 
     function listaBrandLabel(l: ListaAssegnata): string {
         if (l.provenienza === "Acquistato") return l.brandAcq || "—";
@@ -723,6 +710,7 @@ export default function CallerPage() {
             fStato: "", fCaller: "", fBrand: "", fProvenienza: "", fTipologia: "",
             fObiettivo: "", fLista: ""
         }));
+        setOffBrands(new Set());
     }
 
     function resetFiltriListe() {
@@ -1118,50 +1106,6 @@ export default function CallerPage() {
                 </div>
             </header>
 
-            {/* CHIP-FILTRI su 4 RIGHE (richiesta Luca): brand grandi e colorati.
-                Gruppo non toccato = tutti; primo click = solo quello. */}
-            {!isListeView && (
-                <div className="flex-none px-8 py-3 border-b border-white/5 bg-[#0d0f16]/60 space-y-2">
-                    {CHIP_GROUPS.map((g) => {
-                        const sel = chipSel[g.key] || [];
-                        const toccato = sel.length > 0;
-                        return (
-                            <div key={g.key} className="flex items-center gap-2 flex-wrap">
-                                <button onClick={() => setChipSel((p) => ({ ...p, [g.key]: [] }))}
-                                    title={toccato ? "Torna a tutti" : "Tutti attivi (clicca un valore per filtrare)"}
-                                    className={`w-28 shrink-0 text-left text-[10px] font-bold uppercase tracking-widest ${toccato ? "text-violet-300 hover:text-white" : "text-slate-600"}`}>
-                                    {g.titolo}{toccato && " ✕"}
-                                </button>
-                                {g.valori.map(({ v, ic, color }) => {
-                                    const attivo = !toccato || sel.includes(v);
-                                    const base = g.grande
-                                        ? "px-4 py-2 rounded-xl text-sm font-bold border-2"
-                                        : "px-3 py-1.5 rounded-lg text-xs font-bold border";
-                                    let style: React.CSSProperties = {};
-                                    let cls = base + " flex items-center gap-2 transition-all ";
-                                    if (color) {
-                                        if (toccato && attivo) { style = { borderColor: color, background: color + "26", color: "#fff" }; }
-                                        else if (attivo) { style = { borderColor: "rgba(255,255,255,0.12)" }; cls += "bg-white/[0.04] text-slate-200 hover:brightness-125 "; }
-                                        else { style = { borderColor: "rgba(255,255,255,0.05)" }; cls += "text-slate-600 opacity-40 hover:opacity-90 "; }
-                                    } else {
-                                        cls += toccato && attivo ? "border-violet-400/70 bg-violet-500/20 text-violet-100 "
-                                            : attivo ? "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/25 "
-                                            : "border-white/5 bg-transparent text-slate-600 opacity-40 hover:opacity-90 ";
-                                    }
-                                    return (
-                                        <button key={v} onClick={() => toccaChip(g.key, v, g.valori.length)} style={style} className={cls}
-                                            title={!toccato ? `Filtra solo ${v}` : attivo ? `${v} attivo — clicca per togliere` : `Aggiungi ${v}`}>
-                                            {color ? <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} /> : <span>{ic}</span>}
-                                            {v}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
             {loadError && (
                 <div className="px-8 py-3 bg-red-500/10 border-b border-red-500/20 text-red-300 text-sm flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4" /> {loadError}
@@ -1175,6 +1119,30 @@ export default function CallerPage() {
                     {/* ── CALLS VIEW ── */}
                     {!isListeView && (
                         <>
+                            {/* Tessere brand — stesso stile di Ricerca Vendite: tutte accese,
+                                click per spegnere/riaccendere. Le righe ancora senza brand
+                                (da esitare) passano sempre. */}
+                            <div className="flex flex-wrap gap-4 justify-center">
+                                {brandCounts.map(({ brand, n }) => {
+                                    const active = !offBrands.has(brand);
+                                    const logo = BRAND_LOGO[brand];
+                                    return (
+                                        <button key={brand}
+                                            onClick={() => setOffBrands((p) => { const nx = new Set(p); if (nx.has(brand)) nx.delete(brand); else nx.add(brand); return nx; })}
+                                            title={active ? "Attivo — clicca per nascondere questo brand" : "Nascosto — clicca per mostrarlo di nuovo"}
+                                            className={`flex flex-col items-center justify-center gap-2.5 rounded-2xl border px-8 py-6 min-w-[168px] transition-all ${active
+                                                ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
+                                                : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]"}`}>
+                                            <span className="h-16 flex items-center justify-center" title={brand}>
+                                                {logo ? <img src={logo} alt={brand} className="h-16 w-auto max-w-[160px] object-contain" />
+                                                    : <span className="text-lg font-bold text-slate-200">{brand}</span>}
+                                            </span>
+                                            <span className="text-xs text-slate-400 tabular-nums leading-none">{n} call</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
                             {/* Filter bar */}
                             <div className="glass-panel p-5">
                                 <div className="flex items-center justify-between mb-4">
@@ -1200,6 +1168,24 @@ export default function CallerPage() {
                                         <select className="glass-input text-sm rounded-lg py-2 w-full" value={fStato} onChange={(e) => setFStato(e.target.value)}>
                                             <option value="">Tutti</option>
                                             {STATI.map(s => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </FilterField>
+                                    <FilterField label="Provenienza">
+                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fProvenienza} onChange={(e) => setFProvenienza(e.target.value)}>
+                                            <option value="">Tutte</option>
+                                            {PROVENIENZE.map(p => <option key={p} value={p}>{p}</option>)}
+                                        </select>
+                                    </FilterField>
+                                    <FilterField label="Tipologia">
+                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fTipologia} onChange={(e) => setFTipologia(e.target.value)}>
+                                            <option value="">Tutte</option>
+                                            {TIPOLOGIE.map(t => <option key={t} value={t}>{t}</option>)}
+                                        </select>
+                                    </FilterField>
+                                    <FilterField label="Obiettivo">
+                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fObiettivo} onChange={(e) => setFObiettivo(e.target.value)}>
+                                            <option value="">Tutti</option>
+                                            {OBIETTIVI.map(o => <option key={o} value={o}>{o}</option>)}
                                         </select>
                                     </FilterField>
                                     {isDirector && (
