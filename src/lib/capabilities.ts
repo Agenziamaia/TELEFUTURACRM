@@ -69,6 +69,8 @@ export function capChoice(role: string | null | undefined, group: CapGroupChoice
 // reparto — dettaglio che resta nel codice della pagina).
 const RUOLI_NEGOZIO_CLIENTI = ["venditore", "store_manager", "tecnico", "direttore_commerciale"];
 const RUOLI_PROPRI_CLIENTI = ["agente", "direttore_ob"];
+// Il CALLER vede i clienti solo tramite gli appuntamenti che ha preso (Luca 26/07).
+const RUOLI_APPUNTAMENTI_CLIENTI = ["caller"];
 
 export const CAP_CLIENTI: CapGroupChoice = {
     mode: "choice",
@@ -79,13 +81,19 @@ export const CAP_CLIENTI: CapGroupChoice = {
             id: "tutti",
             label: "Tutti i clienti",
             desc: "Anagrafica completa, nessun cliente oscurato.",
-            default: (r) => !RUOLI_NEGOZIO_CLIENTI.includes(r) && !RUOLI_PROPRI_CLIENTI.includes(r),
+            default: (r) => !RUOLI_NEGOZIO_CLIENTI.includes(r) && !RUOLI_PROPRI_CLIENTI.includes(r) && !RUOLI_APPUNTAMENTI_CLIENTI.includes(r),
         },
         {
             id: "negozi",
             label: "Clienti dei negozi in visibilità",
             desc: "Per intero i clienti acquisiti o gestiti dai negozi visibili all'utente; gli altri oscurati con accesso su richiesta.",
             default: (r) => RUOLI_NEGOZIO_CLIENTI.includes(r),
+        },
+        {
+            id: "appuntamenti",
+            label: "Clienti con appuntamento preso",
+            desc: "Per intero solo i clienti per cui l'utente ha FISSATO un appuntamento (aggancio per CF o cellulare); gli altri oscurati con accesso su richiesta.",
+            default: (r) => RUOLI_APPUNTAMENTI_CLIENTI.includes(r),
         },
     ],
     fallback: {

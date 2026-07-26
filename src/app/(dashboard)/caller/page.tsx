@@ -540,6 +540,53 @@ export default function CallerPage() {
     }
 
     /* ── Save ── */
+    // ── PONTE Caller → Calendario (conferma Luca 26/07) ──────────────────────
+    // Stati 1°/2°/3° Appuntamento e DTS: l'appuntamento va nel calendario che il
+    // negozio guarda. ATTENZIONE ai tipi: negozio_appuntamento compilato →
+    // "incoming" (cliente in negozio); altrimenti agente+indirizzo → "outgoing"
+    // (agente a domicilio). "Appuntamento telefonico" NON va in calendario: è un
+    // richiamo del caller. Al ri-fissaggio (2°/3°) si AGGIORNA lo stesso evento
+    // (collegamento calls.appointment_id, mig. 088); created_by = il caller, che
+    // alimenta anche la visibilità clienti "con appuntamento preso".
+    async function sincronizzaAppuntamento(c: Call, callId: string) {
+        if (!APPUNTAMENTO_STATI.includes(c.stato)) return;
+        const dt = (c.data_appuntamento || "").trim();
+        if (!dt) return;
+        const [dataApp, oraApp] = dt.includes("T") ? dt.split("T") : [dt, "10:00"];
+        const inNegozio = !!c.negozio_appuntamento;
+        if (!inNegozio && !c.agente) {
+            alert("Appuntamento salvato sulla pratica ma NON portato in calendario: indica il negozio dell'appuntamento oppure l'agente.");
+            return;
+        }
+        const payload: Record<string, unknown> = {
+            date: dataApp,
+            time: oraApp || "10:00",
+            type: inNegozio ? "incoming" : "outgoing",
+            store: inNegozio ? c.negozio_appuntamento : null,
+            agente: inNegozio ? "" : c.agente,
+            customer_address: inNegozio ? null : (c.indirizzo || null),
+            customer_name: c.tipo_cliente === "business" ? (c.ragione_sociale || `${c.nome} ${c.cognome}`.trim()) : `${c.nome} ${c.cognome}`.trim(),
+            customer_phone: c.cellulare || c.numero || "",
+            cf_piva: c.cf || c.piva || null,
+            notes: ["Fissato dal call center", c.note].filter(Boolean).join(" — "),
+            status: "scheduled",
+            created_by: c.caller || currentCaller,
+        };
+        const { data: linked } = await supabase.from("calls").select("appointment_id").eq("id", callId).maybeSingle();
+        const existing = linked?.appointment_id as number | null | undefined;
+        if (existing) {
+            const { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            if (error) alert("Appuntamento in calendario NON aggiornato: " + error.message);
+            return;
+        }
+        const { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        if (error) { alert("Appuntamento NON portato in calendario: " + error.message); return; }
+        if (ins?.id) {
+            const { error: linkErr } = await supabase.from("calls").update({ appointment_id: ins.id }).eq("id", callId);
+            if (linkErr) console.warn("collegamento appuntamento non salvato (mig. 088):", linkErr.message);
+        }
+    }
+
     async function saveCall() {
         if (!editCall) return;
         const now = new Date().toISOString().slice(0, 16);
@@ -562,11 +609,12 @@ export default function CallerPage() {
                 lista_origine: newCall.lista_origine,
                 storico: newCall.storico,
             };
-            const { error } = await supabase.from("calls").insert(payload);
+            const { data: creata, error } = await supabase.from("calls").insert(payload).select("id").single();
             if (error) {
                 alert("Errore salvataggio: " + error.message);
                 return;
             }
+            if (creata?.id) await sincronizzaAppuntamento(newCall, String(creata.id));
             await fetchCalls();
         } else {
             // Detail mode: update only stato and append history
@@ -599,6 +647,12 @@ export default function CallerPage() {
             if (error) {
                 alert("Errore aggiornamento: " + error.message);
                 return;
+            }
+            if (APPUNTAMENTO_STATI.includes(editCall.statoNew)) {
+                await sincronizzaAppuntamento(
+                    { ...original, ...editCall, stato: editCall.statoNew, data_appuntamento: (updates.data_appuntamento as string) || original.data_appuntamento },
+                    editCall.id,
+                );
             }
             await fetchCalls();
         }

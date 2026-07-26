@@ -720,6 +720,7 @@ export default function ClientiPage() {
     const maskAttivo = scopeClienti !== "tutti" && !seesAllVis;
     const isStoreScoped = maskAttivo && scopeClienti === "negozi";
     const soloPropri = maskAttivo && scopeClienti === "propri";
+    const soloAppuntamenti = maskAttivo && scopeClienti === "appuntamenti";
     // Eliminazione anagrafiche: dall'amministrativo in su (cestino in tabella).
     const canDelete = canApproveAccess;
     const [delConfirm, setDelConfirm] = useState<string | null>(null);
@@ -758,6 +759,31 @@ export default function ClientiPage() {
                 setMieiClienti(new Set(((cs ?? []) as { client_id: string | null }[]).map((c) => c.client_id).filter(Boolean) as string[]));
                 await loadAccessi();
             }
+            if (soloAppuntamenti) {
+                // CALLER (Luca 26/07): interi solo i clienti per cui HA FISSATO un
+                // appuntamento (appointments.created_by = lui, dal ponte Caller o
+                // dal Calendario); aggancio per CF o cellulare normalizzato.
+                const { data: me } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
+                const nomi = [me?.full_name, me?.match_name, user.name].filter(Boolean) as string[];
+                const { data: apps } = await supabase.from("appointments").select("cf_piva,customer_phone")
+                    .in("created_by", nomi.length ? nomi : ["—"]).limit(5000);
+                const cfSet = new Set<string>(); const telSet = new Set<string>();
+                ((apps ?? []) as { cf_piva: string | null; customer_phone: string | null }[]).forEach((a) => {
+                    const cf = String(a.cf_piva || "").toUpperCase().trim();
+                    if (cf) cfSet.add(cf);
+                    const t = String(a.customer_phone || "").replace(/\D/g, "");
+                    if (t) telSet.add(t);
+                });
+                const { data: cls } = await supabase.from("clients").select("id,cf_piva,cellulare").limit(5000);
+                const set = new Set<string>();
+                ((cls ?? []) as { id: string; cf_piva: string | null; cellulare: string | null }[]).forEach((c) => {
+                    const cf = String(c.cf_piva || "").toUpperCase().trim();
+                    const t = String(c.cellulare || "").replace(/\D/g, "");
+                    if ((cf && cfSet.has(cf)) || (t && telSet.has(t))) set.add(c.id);
+                });
+                setMieiClienti(set);
+                await loadAccessi();
+            }
             if (isStoreScoped) {
                 const miei = visStores.length ? visStores : (user.negozio ? [user.negozio] : []);
                 // gestiti: almeno una vendita in uno dei negozi visibili
@@ -781,7 +807,7 @@ export default function ClientiPage() {
             }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, soloPropri, isStoreScoped, visStores.join("|"), canApproveAccess, role]);
+    }, [user?.id, soloPropri, soloAppuntamenti, isStoreScoped, visStores.join("|"), canApproveAccess, role]);
     const oscurato = (c: Cliente) => maskAttivo && (mieiClienti === null || (!mieiClienti.has(c.id) && !accessOk.has(c.id)));
     const richiediAccesso = async (c: Cliente) => {
         setAccessMsg("");
@@ -921,7 +947,7 @@ export default function ClientiPage() {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight text-white">Clienti</h1>
-                        <p className="text-sm text-slate-400">{soloPropri ? "I tuoi clienti per intero; gli altri sono riservati — l'accesso si chiede all'amministrazione" : isStoreScoped ? "Per intero i clienti acquisiti o gestiti dal tuo negozio; gli altri sono riservati — la ricerca li trova, l'accesso si chiede all'amministrazione" : "Anagrafica completa dei clienti Consumer e Business"}</p>
+                        <p className="text-sm text-slate-400">{soloAppuntamenti ? "Per intero i clienti con un appuntamento fissato da te; gli altri sono riservati — l'accesso si chiede all'amministrazione" : soloPropri ? "I tuoi clienti per intero; gli altri sono riservati — l'accesso si chiede all'amministrazione" : isStoreScoped ? "Per intero i clienti acquisiti o gestiti dal tuo negozio; gli altri sono riservati — la ricerca li trova, l'accesso si chiede all'amministrazione" : "Anagrafica completa dei clienti Consumer e Business"}</p>
                         {accessMsg && <p className={`text-sm mt-1 font-medium ${accessMsg.startsWith("✅") ? "text-emerald-400" : "text-amber-400"}`}>{accessMsg}</p>}
                         {canApproveAccess && richiesteAccesso.length > 0 && (
                             <div className="mt-3 p-3 rounded-xl bg-violet-500/10 border border-violet-500/30 space-y-2">
