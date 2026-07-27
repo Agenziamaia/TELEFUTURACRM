@@ -37,6 +37,7 @@ import {
     Tag,
     ClipboardList,
     Trophy,
+Pin, PinOff,
 } from "lucide-react";
 
 // Struttura menù + logica permessi: fonte unica in src/lib/nav.ts
@@ -47,10 +48,16 @@ import { useRolePermissions } from "@/lib/usePermissions";
 interface SidebarProps {
     isOpen?: boolean;
     setIsOpen?: (val: boolean) => void;
+    /** menù a scomparsa (richiesta Luca 28/07): true = si nasconde da solo e
+        ricompare avvicinando il mouse al bordo; false = bloccato aperto. */
+    autoHide?: boolean;
+    setAutoHide?: (val: boolean) => void;
 }
 
-export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
+export function Sidebar({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps) {
     const pathname = usePathname();
+    // auto-nascondi: "peek" = ricomparsa temporanea perche' il mouse e' sul bordo
+    const [peek, setPeek] = useState(false);
     const searchParams = useSearchParams();
     // Voce attiva anche con la query: due voci sulla stessa rotta (es. hub
     // Call Center: /caller e /caller?tab=badge) si distinguono per ?tab=.
@@ -122,10 +129,18 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                     onClick={() => setIsOpen?.(false)}
                 />
             )}
-            <aside className={cn(
-                "fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-[#0f111a]/95 backdrop-blur-xl border-r border-white/5 transition-transform duration-300 lg:translate-x-0",
-                isOpen ? "translate-x-0" : "-translate-x-full"
-            )}>
+            {/* striscia invisibile sul bordo: col menu' nascosto, avvicinando il
+                mouse il menu' RICOMPARE (richiesta Luca 28/07) */}
+            {autoHide && !peek && (
+                <div className="hidden lg:block fixed inset-y-0 left-0 w-3 z-40" onMouseEnter={() => setPeek(true)} />
+            )}
+            <aside
+                onMouseLeave={() => { if (autoHide) setPeek(false); }}
+                className={cn(
+                    "fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-[#0f111a]/95 backdrop-blur-xl border-r border-white/5 transition-transform duration-300",
+                    isOpen ? "translate-x-0" : "-translate-x-full",
+                    autoHide ? (peek ? "lg:translate-x-0 lg:shadow-2xl lg:shadow-black/60" : "lg:-translate-x-full") : "lg:translate-x-0"
+                )}>
                 <div className="flex-none h-16 flex items-center justify-center border-b border-white/5">
                     <div className="text-xl font-bold tracking-tight text-white flex items-center gap-2.5">
                         {/* file statico diretto: niente ottimizzatore Next per un logo da 5KB */}
@@ -136,9 +151,18 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                 </div>
                 <div className="flex-1 flex flex-col justify-between overflow-y-auto">
                     <nav className="flex-1 space-y-1 p-4">
-                        <p className="px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
-                            Menu
-                        </p>
+                        <div className="px-4 mb-4 flex items-center justify-between">
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Menu</p>
+                            {setAutoHide && (
+                                <button
+                                    onClick={() => { setAutoHide(!autoHide); setPeek(true); }}
+                                    title={autoHide ? "Menù a scomparsa attivo — clicca per bloccarlo aperto" : "Menù bloccato aperto — clicca per farlo scomparire da solo (ricompare avvicinando il mouse al bordo)"}
+                                    className={cn("hidden lg:flex p-1.5 rounded-lg transition-colors", autoHide ? "text-violet-300 bg-violet-500/15 hover:bg-violet-500/25" : "text-slate-500 hover:text-white hover:bg-white/10")}
+                                >
+                                    {autoHide ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+                                </button>
+                            )}
+                        </div>
                         {visibleItems.map((item) => {
                             if (item.type === "link") {
                                 const isActive = attivo(item.href);
