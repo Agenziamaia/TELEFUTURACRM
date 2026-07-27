@@ -1087,6 +1087,16 @@ export default function GestioneUsati() {
   // i negozi arrivano in modo asincrono: alla prima load seleziona tutto
   const storesInit = useRef(false);
   useEffect(() => { if (!storesInit.current && NEGOZI.length) { storesInit.current = true; setSelectedStores([...NEGOZI]); } }, [NEGOZI]);
+  const { user } = useAuth();
+  // Segnalazione 101: da store manager in giu' i filtri si riducono a Negozio,
+  // Stato e Reset (+ tasto rapido "Mostra i miei" = solo il proprio negozio).
+  // Da direttore commerciale in su restano TUTTI i filtri.
+  const filtriCompleti = ["direttore_commerciale", "direttore_generale", "amministrativo", "admin", "dev"].includes(user?.role || "");
+  const mostraImiei = () => {
+    const mio = user?.negozio || "";
+    const match = NEGOZI.filter(n => n && mio && (n === mio || n.startsWith(mio) || mio.startsWith(n)));
+    setSelectedStores(match.length ? match : (mio ? [mio] : [...NEGOZI]));
+  };
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([...STATUS_KEYS]);
   const [dateField, setDateField] = useState("created_at");
   const [dateFrom, setDateFrom] = useState("");
@@ -1249,8 +1259,15 @@ export default function GestioneUsati() {
         {/* Filters row — bigger controls */}
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 px-4 sm:px-6 pb-4">
           <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
+          {!filtriCompleti && (
+            <button onClick={mostraImiei} title="Mostra solo i terminali del mio negozio"
+              className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-sm text-purple-200 font-semibold hover:bg-purple-500/25 transition-all">
+              <Building2 size={14} /> Mostra i miei
+            </button>
+          )}
           <MultiSelect label="Stato" options={STATUS_KEYS} selected={selectedStatuses} onChange={setSelectedStatuses}
             renderOpt={o => <span className="flex items-center gap-1.5">{statusMap[o as UsatoStatus]?.icon} {statusMap[o as UsatoStatus]?.label}</span>} />
+          {filtriCompleti && (<>
           <select value={dateField} onChange={e => setDateField(e.target.value)}
             className="col-span-2 sm:col-span-1 w-full sm:w-auto px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all">
             {DATE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
@@ -1267,6 +1284,7 @@ export default function GestioneUsati() {
             <option value="da_effettuare">Da Effettuare</option>
             <option value="effettuato">Effettuato</option>
           </select>
+          </>)}
           <button onClick={resetFilters} className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 hover:bg-white/10 transition-all">
             <RotateCcw size={14} /> Reset
           </button>
@@ -1287,7 +1305,9 @@ export default function GestioneUsati() {
             ))}
           </div>
         </div>
-        {/* Search bar — end of sticky area */}
+        {/* Search bar — end of sticky area. Segnalazione 101: nascosta da store
+            manager in giu' (restano solo Negozio, Stato, Reset e "Mostra i miei"). */}
+        {filtriCompleti && (
         <div className="px-4 sm:px-6 pb-5">
           <div className="relative w-full">
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -1295,6 +1315,7 @@ export default function GestioneUsati() {
               className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-base text-slate-300 outline-none focus:border-white/20 transition-all" />
           </div>
         </div>
+        )}
       </div>
 
       {/*  Device List — scrollable; header above stays fixed  */}

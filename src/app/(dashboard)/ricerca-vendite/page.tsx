@@ -166,9 +166,17 @@ export default function RicercaContratto() {
     // senza conversione il filtro non trovava MAI nulla ("non funziona").
     const [daDataAttivazione, setDaDataAttivazione] = useState("");
     const [aDataAttivazione, setADataAttivazione] = useState("");
+    // gg/mm/aaaa -> aaaa-mm-gg. Segnalazione 80: mentre si DIGITA la data il
+    // picker manda testo parziale ("27/0"): prima passava tale e quale al filtro
+    // (>= "27/0") e la lista/le tessere si svuotavano ("filtro non funziona").
+    // Ora una data incompleta/non valida ritorna "" e il filtro semplicemente
+    // non si applica finche' non e' completa.
     const dataIso = (v: string) => {
-        const m = (v || "").trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-        return m ? `${m[3]}-${m[2]}-${m[1]}` : (v || "").trim();
+        const s = (v || "").trim();
+        const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+        return "";
     };
 
     const [selectedContract, setSelectedContract] = useState<ContrattoRow | null>(null);
@@ -419,8 +427,9 @@ export default function RicercaContratto() {
             // ricerca (li usava solo il conteggio delle tessere brand): si sceglieva
             // una data e l'elenco restava identico. Le date sono in formato
             // AAAA-MM-GG, quindi il confronto e' diretto.
-            if (daDataAttivazione) query = query.gte("data_attivazione", dataIso(daDataAttivazione));
-            if (aDataAttivazione) query = query.lte("data_attivazione", dataIso(aDataAttivazione));
+            const _daIso = dataIso(daDataAttivazione), _aIso = dataIso(aDataAttivazione);
+            if (_daIso) query = query.gte("data_attivazione", _daIso);
+            if (_aIso) query = query.lte("data_attivazione", _aIso);
 
             // tessere brand a selezione positiva: con una selezione attiva
             // passano SOLO i brand scelti; nello stato di default (nessuna
@@ -479,8 +488,9 @@ export default function RicercaContratto() {
             // Segnalazione 80: le tessere devono seguire GLI STESSI filtri data
             // dell'elenco. Prima guardavano solo le date di registrazione, quindi
             // filtrando per data di attivazione l'elenco cambiava e le tessere no.
-            if (daDataAttivazione) q = q.gte("data_attivazione", dataIso(daDataAttivazione));
-            if (aDataAttivazione) q = q.lte("data_attivazione", dataIso(aDataAttivazione));
+            const _daIso = dataIso(daDataAttivazione), _aIso = dataIso(aDataAttivazione);
+            if (_daIso) q = q.gte("data_attivazione", _daIso);
+            if (_aIso) q = q.lte("data_attivazione", _aIso);
             const { data } = await q;
             const m: Record<string, number> = {};
             (data ?? []).forEach((r: any) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
