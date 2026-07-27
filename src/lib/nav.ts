@@ -132,6 +132,8 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "lista", name: "Lista utenti", roles: [...ADMINS, "amministrativo"] },
                     { id: "permessi", name: "Permessi", roles: ["admin", "dev"] },
                     { id: "ruoli", name: "Ruoli", roles: [...ADMINS, "amministrativo"] },
+                    // permessi "di capacità": funzioni designate a persone (es. ferie)
+                    { id: "incarichi", name: "Incarichi", roles: ["admin", "dev"] },
                 ],
             },
             { name: "Negozi", sez: "negozi", icon: Store, roles: ["admin", "dev"] },

@@ -11,6 +11,7 @@ import { MarginalitaView } from "./_views/marginalita";
 import { PermessiView } from "./_views/permessi";
 import { RuoliView } from "./_views/ruoli";
 import { CatalogoView } from "./_views/catalogo";
+import { IncarichiView } from "./_views/incarichi";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -372,7 +373,7 @@ function AmministrazioneInner() {
                 <>
                     {/* Il gruppo Utenti: tre funzioni sotto lo stesso tetto */}
                     <div className="flex gap-2 flex-wrap">
-                        {([["lista", "👥 Lista utenti", tabOk("lista")], ["permessi", "🔐 Permessi", tabOk("permessi")], ["ruoli", "🏷️ Ruoli", tabOk("ruoli")]] as [string, string, boolean][])
+                        {([["lista", "👥 Lista utenti", tabOk("lista")], ["permessi", "🔐 Permessi", tabOk("permessi")], ["ruoli", "🏷️ Ruoli", tabOk("ruoli")], ["incarichi", "🎯 Incarichi", tabOk("incarichi")]] as [string, string, boolean][])
                             .filter(([, , vis]) => vis)
                             .map(([id, label]) => (
                                 <button key={id} onClick={() => router.push(`/amministrazione?sez=utenti&tab=${id}`)}
@@ -381,7 +382,7 @@ function AmministrazioneInner() {
                                 </button>
                             ))}
                     </div>
-                    {utTab === "permessi" && tabOk("permessi") ? <PermessiView /> : utTab === "ruoli" && tabOk("ruoli") ? <RuoliView /> : !tabOk("lista") ? (
+                    {utTab === "permessi" && tabOk("permessi") ? <PermessiView /> : utTab === "ruoli" && tabOk("ruoli") ? <RuoliView /> : utTab === "incarichi" && tabOk("incarichi") ? <IncarichiView /> : !tabOk("lista") ? (
                         <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Funzione non abilitata per il tuo ruolo.</div>
                     ) : (
                     <>

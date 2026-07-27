@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
@@ -54,6 +55,33 @@ interface SidebarProps {
     setAutoHide?: (val: boolean) => void;
 }
 
+/** Pallino FERIE (Luca 29/07): richieste in attesa, visibile ai DESIGNATI
+    dell'incarico 'ferie' (Amministrazione → Utenti → Incarichi); se nessun
+    designato, a tutto il pack che approva (amministrativo in su). */
+function useFeriePendenti(userId: string | undefined, role: string | undefined): number {
+    const [n, setN] = useState(0);
+    useEffect(() => {
+        if (!userId) { setN(0); return; }
+        let vivo = true;
+        const load = async () => {
+            try {
+                const [inc, pend] = await Promise.all([
+                    supabase.from("incarichi").select("assegnatari").eq("chiave", "ferie").maybeSingle(),
+                    supabase.from("vacation_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
+                ]);
+                if (!vivo) return;
+                const ass = (inc.data?.assegnatari ?? []) as string[];
+                const designato = ass.length ? ass.includes(userId) : ["amministrativo", "admin", "dev", "direttore_generale"].includes(role || "");
+                setN(designato ? (pend.count ?? 0) : 0);
+            } catch { /* pallino best-effort */ }
+        };
+        load();
+        const t = setInterval(load, 90000);
+        return () => { vivo = false; clearInterval(t); };
+    }, [userId, role]);
+    return n;
+}
+
 function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps) {
     const pathname = usePathname();
     // auto-nascondi: "peek" = ricomparsa temporanea perche' il mouse e' sul bordo
@@ -71,6 +99,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
     // override per ruolo dal DB (Amministrazione → Permessi); default = codice
     const { perms } = useRolePermissions(user?.role);
     const vede = (href: string, roles: string[], group?: string) => effectiveAllowed(user?.role, href, roles, perms, group);
+    const feriePendenti = useFeriePendenti(user?.id, user?.role);
 
     // Totale messaggi chat non letti -> badge sulla voce "Chat"
     const [chatUnread, setChatUnread] = useState(0);
@@ -258,6 +287,9 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                                     >
                                                         <ChildIcon className={cn("w-4 h-4", isActive ? "text-indigo-400" : "text-slate-500")} />
                                                         {child.name}
+                                                        {child.href === "/collaboratori?tab=ferie" && feriePendenti > 0 && (
+                                                            <span title={`${feriePendenti} richieste ferie in attesa`} className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-black text-[10px] font-black flex items-center justify-center animate-pulse">{feriePendenti}</span>
+                                                        )}
                                                     </Link>
                                                 );
                                             })}
