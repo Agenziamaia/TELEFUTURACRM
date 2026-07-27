@@ -75,7 +75,7 @@ export default function CollaboratoriPage() {
     );
 }
 
-type VacationRequest = { id: number; employee_name: string; store: string; date_from: string; date_to: string; reason: string | null; status: string; admin_note: string | null; created_at: string };
+type VacationRequest = { id: number; employee_name: string; store: string; date_from: string; date_to: string; reason: string | null; status: string; admin_note: string | null; created_at: string; half_day?: string | null };
 
 function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const { user } = useAuth();
@@ -85,6 +85,9 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
     const [reason, setReason] = useState("");
+    // MEZZA GIORNATA (Luca 29/07): solo su giorno SINGOLO, con fascia oraria
+    const [halfDay, setHalfDay] = useState<"" | "mattina" | "pomeriggio">("");
+    const giornoSingolo = !!dateFrom && !!dateTo && dateFrom === dateTo;
     const [submitting, setSubmitting] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [requests, setRequests] = useState<VacationRequest[]>([]);
@@ -120,7 +123,8 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
             date_from: dateFrom,
             date_to: dateTo,
             reason: reason || null,
-            status: "pending"
+            status: "pending",
+            half_day: giornoSingolo && halfDay ? halfDay : null,
         });
         // FULMINE ai DESIGNATI (incarico 'ferie', se il flag è attivo): task ⚡
         // indirizzato solo a loro; il pallino sulla sezione arriva comunque.
@@ -143,6 +147,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
         setDateFrom("");
         setDateTo("");
         setReason("");
+        setHalfDay("");
         setSubmitting(false);
     };
 
@@ -227,6 +232,26 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                         <input type="date" required value={dateTo} onChange={e => setDateTo(e.target.value)} className="glass-input !h-10 text-xs w-full" />
                                     </div>
                                 </div>
+                                <div className={cn("rounded-xl border p-3 space-y-2 transition-all", giornoSingolo ? "border-amber-500/30 bg-amber-500/[0.04]" : "border-white/5 bg-white/[0.02] opacity-50")}>
+                                    <label className={cn("flex items-center gap-2 text-xs font-bold", giornoSingolo ? "text-slate-200 cursor-pointer" : "text-slate-600 cursor-not-allowed")}>
+                                        <input type="checkbox" disabled={!giornoSingolo} checked={giornoSingolo && !!halfDay}
+                                            onChange={e => setHalfDay(e.target.checked ? "mattina" : "")}
+                                            className="accent-amber-500 w-4 h-4" />
+                                        Mezza giornata
+                                        {!giornoSingolo && <span className="font-normal normal-case text-[10px]">(disponibile solo su un giorno singolo)</span>}
+                                    </label>
+                                    {giornoSingolo && !!halfDay && (
+                                        <div className="flex gap-2">
+                                            {([["mattina", "☀️ Mattina"], ["pomeriggio", "🌇 Pomeriggio"]] as const).map(([k, lab]) => (
+                                                <button key={k} type="button" onClick={() => setHalfDay(k)}
+                                                    className={cn("flex-1 px-3 py-2 rounded-lg border text-xs font-bold transition-all",
+                                                        halfDay === k ? "border-amber-400/70 bg-amber-500/20 text-amber-200" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                                    {lab}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Motivazione</label>
                                     <textarea placeholder="Esempio: Ferie estive..." value={reason} onChange={e => setReason(e.target.value)} className="glass-input min-h-[80px] py-3 text-xs w-full resize-none" />
@@ -276,6 +301,27 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             </button>
                         )}
 
+                        {isAdminLike && (
+                            <button onClick={() => {
+                                const giorni = (r: VacationRequest) => r.half_day ? 0.5 : (Math.round((new Date(r.date_to).getTime() - new Date(r.date_from).getTime()) / 86400000) + 1);
+                                const righe = [["Collaboratore", "Negozio", "Dal", "Al", "Giorni", "Mezza giornata", "Stato", "Motivazione", "Nota amministrazione"].join(";")];
+                                filteredRequests.forEach(r => righe.push([
+                                    r.employee_name, r.store, formatDate(r.date_from), formatDate(r.date_to),
+                                    String(giorni(r)).replace(".", ","),
+                                    r.half_day ? (r.half_day === "mattina" ? "Mattina" : "Pomeriggio") : "",
+                                    r.status === "approved" ? "Approvata" : r.status === "rejected" ? "Rifiutata" : "In attesa",
+                                    (r.reason || "").replaceAll(";", ","), (r.admin_note || "").replaceAll(";", ","),
+                                ].join(";")));
+                                const blob = new Blob(["\uFEFF" + righe.join("\n")], { type: "text/csv;charset=utf-8" });
+                                const url = URL.createObjectURL(blob);
+                                const el = document.createElement("a");
+                                el.href = url; el.download = `ferie_${fDa || "inizio"}_${fA || "oggi"}.csv`; el.click();
+                                URL.revokeObjectURL(url);
+                            }} disabled={filteredRequests.length === 0}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
+                                ⬇️ Excel commercialista
+                            </button>
+                        )}
                         {isAdminLike && (
                             <div className="flex items-center gap-1 rounded-xl border border-white/10 p-1 bg-white/[0.03]">
                                 {(["registro", "calendario"] as const).map(v => (
@@ -378,7 +424,13 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                                     <span className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">
                                                         {formatDate(r.date_from)}
                                                     </span>
-                                                    <span className="text-[10px] text-slate-500">al {formatDate(r.date_to)}</span>
+                                                    {r.half_day ? (
+                                                        <span className="mt-0.5 inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase tracking-tight">
+                                                            {r.half_day === "mattina" ? "☀️" : "🌇"} ½ giornata · {r.half_day}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] text-slate-500">al {formatDate(r.date_to)}</span>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-5 py-4">
@@ -508,7 +560,7 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
                                     <div key={r.id} title={`${r.employee_name} (${r.store}) — ${r.status === "approved" ? "approvata" : "in attesa"}${r.reason ? `: ${r.reason}` : ""}`}
                                         className={cn("truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight",
                                             r.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200")}>
-                                        {nomeCorto(r.employee_name)}
+                                        {r.half_day ? (r.half_day === "mattina" ? "½☀️ " : "½🌇 ") : ""}{nomeCorto(r.employee_name)}
                                     </div>
                                 ))}
                                 {rr.length > 3 && <div className="text-[9px] text-slate-500 px-1">+{rr.length - 3} altre</div>}

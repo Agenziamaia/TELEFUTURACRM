@@ -13,7 +13,7 @@ import { cn } from "@/utils";
 import { Loader2, Zap, Users } from "lucide-react";
 import { notify, dbError } from "./toast";
 
-interface Incarico { chiave: string; titolo: string; descrizione: string; assegnatari: string[]; fulmine: boolean }
+interface Incarico { chiave: string; titolo: string; descrizione: string; assegnatari: string[]; fulmine: boolean; whatsapp?: string | null }
 interface Persona { id: string; full_name: string; role: string }
 
 export function IncarichiView() {
@@ -76,12 +76,21 @@ export function IncarichiView() {
                             <h3 className="text-base font-bold text-white flex items-center gap-2"><Users className="w-4 h-4 text-violet-400" /> {inc.titolo}</h3>
                             <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">{inc.descrizione}</p>
                         </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">WhatsApp incaricato <span className="normal-case font-normal">(per i messaggi automatici, es. bonifico istantaneo)</span></label>
+                            <input defaultValue={inc.whatsapp || ""} placeholder="es. 333 1234567" inputMode="tel"
+                                onBlur={(e) => { const v = e.target.value.trim(); if (v !== (inc.whatsapp || "")) salva(inc.chiave, { whatsapp: v }); }}
+                                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                className="glass-input !h-9 text-xs w-44 font-mono" />
+                        </div>
                         <button onClick={() => salva(inc.chiave, { fulmine: !inc.fulmine })}
                             title="Con il fulmine attivo, ogni nuova richiesta genera anche un task ⚡ indirizzato ai designati"
                             className={cn("flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-bold transition-all",
                                 inc.fulmine ? "border-amber-400/70 bg-amber-500/15 text-amber-200" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25")}>
                             <Zap className="w-4 h-4" /> Task nel fulmine: {inc.fulmine ? "ATTIVO" : "spento"}
                         </button>
+                        </div>
                     </div>
                     <div>
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">

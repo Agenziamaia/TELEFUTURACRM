@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
 import {
   Smartphone, Tablet, Laptop, Watch,
   Calendar, Search, User, Building2, CalendarDays,
@@ -14,6 +14,7 @@ import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores, useSellers } from "@/lib/org";
 import { useAuth } from "@/context/AuthContext";
+import { useSearchParams } from "next/navigation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UsatoStatus =
@@ -31,6 +32,8 @@ interface Ricambio {
 
 interface Pagamento {
   metodo: "contanti" | "buono" | "bonifico";
+  bonifico_tipo?: "ordinario" | "istantaneo" | null;
+  bonifico_stato?: "da_fare" | "stampato" | "fatto" | null;
   iban: string;
   bonifico_effettuato: boolean | null;
   bonifico_operatore: string | null;
@@ -727,6 +730,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const [extraMargineImporto, setExtraMargineImporto] = useState("");
   const [metodoPagamento, setMetodoPagamento] = useState<"contanti" | "buono" | "bonifico" | "">("");
   const [ibanPag, setIbanPag] = useState("");
+  const [tipoBonifico, setTipoBonifico] = useState<"ordinario" | "istantaneo">("ordinario");
   const [allegDoc, setAllegDoc] = useState<File | null>(null);
   const [allegDich, setAllegDich] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -793,6 +797,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
         prezzoAcquisto: parseFloat(prezzoAcquisto) || 0, gradoUsura,
         extraMargine: hasExtraMargine ? { importo: parseFloat(extraMargineImporto) || 0, venditore } : null,
         metodoPagamento, iban: metodoPagamento === "bonifico" ? ibanPag : null,
+        tipoBonifico: metodoPagamento === "bonifico" ? tipoBonifico : null,
         allegato_documento: docPath,
         allegato_dichiarazione: dichPath
       });
@@ -956,6 +961,25 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
             </div>
           ))}
         </div>
+        {metodoPagamento === "bonifico" && (
+          <div className="space-y-2">
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tipologia bonifico</div>
+            <div className="grid grid-cols-2 gap-3">
+              {([["ordinario", "Ordinario", "il bonifico segue i tempi normali"], ["istantaneo", "🚨 Istantaneo", "SOLO PER URGENZE: costa di più e avvisa subito l'incaricato"]] as const).map(([k, lab, desc]) => (
+                <div key={k} onClick={() => setTipoBonifico(k)}
+                  className={`p-3 rounded-xl border cursor-pointer transition-all ${tipoBonifico === k ? (k === "istantaneo" ? "bg-amber-500/10 border-amber-500/50" : "bg-purple-500/10 border-purple-500/40") : "bg-white/[0.02] border-white/5 hover:border-white/10"}`}>
+                  <div className={`text-sm font-bold ${tipoBonifico === k ? (k === "istantaneo" ? "text-amber-300" : "text-purple-300") : "text-white"}`}>{lab}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">{desc}</div>
+                </div>
+              ))}
+            </div>
+            {tipoBonifico === "istantaneo" && (
+              <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg px-3 py-2">
+                ⚠️ L&apos;istantaneo è riservato alle URGENZE: è più costoso per l&apos;azienda. L&apos;incaricato riceve subito il task ⚡ e un messaggio WhatsApp.
+              </p>
+            )}
+          </div>
+        )}
         {metodoPagamento === "bonifico" && <div>
           <label className={lbl}>IBAN *</label>
           <div className="flex gap-2">
@@ -1078,7 +1102,8 @@ function AnaFields({ tipoCliente, ana, setAna, inp, lbl }: any) {
 }
 
 //  Main Page -
-export default function GestioneUsati() {
+function GestioneUsatiInner() {
+  const { user } = useAuth();
   const NEGOZI = useStores();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1097,8 +1122,18 @@ export default function GestioneUsati() {
   const [sortKey, setSortKey] = useState<keyof Device | "">("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [ricambiFilter, setRicambiFilter] = useState<string[]>([]);
-  const [bonificoFilter, setBonificoFilter] = useState("");
   const [activeKpi, setActiveKpi] = useState<string | null>(null);
+  // pannello BONIFICI (al posto del filtro) + deep-link ?id= dai task ⚡
+  const [showBonifici, setShowBonifici] = useState(false);
+  const [mostraFatti, setMostraFatti] = useState(false);
+  const searchParams = useSearchParams();
+  const _deepDone = useRef(false);
+  useEffect(() => {
+    const id = searchParams.get("id");
+    if (!id || _deepDone.current || !devices.length) return;
+    const d = devices.find(x => String(x.id) === String(id));
+    if (d) { _deepDone.current = true; setSelectedDevice(d); }
+  }, [devices, searchParams]);
 
   const fetchDevices = useCallback(async () => {
     setLoading(true);
@@ -1126,10 +1161,8 @@ export default function GestioneUsati() {
     if (dateTo) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) > dateTo) return false; }
     if (searchText) { const q = searchText.toLowerCase(); if (!d.model.toLowerCase().includes(q) && !d.imei.includes(q)) return false; }
     if (ricambiFilter.length > 0) { if (!d.ricambi.some(r => ricambiFilter.includes(r.stato))) return false; }
-    if (bonificoFilter === "da_effettuare") { if (!d.pagamento || d.pagamento.metodo !== "bonifico" || d.pagamento.bonifico_effettuato !== false) return false; }
-    if (bonificoFilter === "effettuato") { if (!d.pagamento || d.pagamento.metodo !== "bonifico" || d.pagamento.bonifico_effettuato !== true) return false; }
     return true;
-  }), [devices, selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, ricambiFilter, bonificoFilter]);
+  }), [devices, selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, ricambiFilter]);
 
   const inCirculation = useMemo(() => devices.filter(d => d.status !== "venduto" && d.status !== "ko"), [devices]);
   const inventoryValue = useMemo(() => inCirculation.filter(d => d.sale_price > 0).reduce((s, d) => s + d.sale_price, 0), [inCirculation]);
@@ -1168,19 +1201,41 @@ export default function GestioneUsati() {
     }
   };
 
-  const resetFilters = () => { setSelectedStores([...NEGOZI]); setSelectedStatuses([...STATUS_KEYS]); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setRicambiFilter([]); setBonificoFilter(""); setActiveKpi(null); };
+  const resetFilters = () => { setSelectedStores([...NEGOZI]); setSelectedStatuses([...STATUS_KEYS]); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setRicambiFilter([]); setActiveKpi(null); };
 
   const handleSaveDevice = useCallback(async (u: Device) => {
     const row = deviceToRow(u);
+    const prima = devices.find(d => d.id === u.id);
     const { error: e } = await supabase.from("usati").update(row).eq("id", u.id);
     if (!e) setDevices(p => p.map(d => d.id === u.id ? u : d));
-  }, []);
+    // ── RICAMBI DA ORDINARE (Luca 29/07): task ⚡ ai designati dell'incarico
+    //    per ogni ricambio NUOVO in stato "da ordinare" (non già segnalato) ──
+    if (!e) {
+      try {
+        const eraDaOrdinare = new Set((prima?.ricambi ?? []).filter(r => r.stato === "da_ordinare").map(r => r.name));
+        const nuovi = u.ricambi.filter(r => r.stato === "da_ordinare" && !eraDaOrdinare.has(r.name));
+        if (nuovi.length) {
+          const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine").eq("chiave", "ricambi").maybeSingle();
+          const ass = (inc?.assegnatari ?? []) as string[];
+          if (ass.length && inc?.fulmine) {
+            await supabase.from("admin_tasks").insert(ass.map((uid) => ({
+              tipo: "ricambio_da_ordinare",
+              titolo: `🔧 Ricambi da ordinare: ${u.model} — ${nuovi.map(r => r.name).join(", ")}`,
+              dettaglio: `${u.store} · IMEI ${u.imei}. Apri la scheda del telefono per i dettagli.`,
+              link: `/usati?id=${u.id}`,
+              target_role: "admin", created_by: user?.name || "—", target_user_id: uid,
+            })));
+          }
+        }
+      } catch { /* best-effort */ }
+    }
+  }, [devices, user?.name]);
 
   const handleRegistra = useCallback(async (data: {
     venditore: string; negozio: string; tipoCliente?: string; anagrafica?: unknown;
     tipoProdotto?: string; brand?: string; model?: string; capacita?: string; colore?: string;
     imei: string; prezzoAcquisto: number; gradoUsura: string; extraMargine?: { importo: number; venditore: string };
-    metodoPagamento: "contanti" | "buono" | "bonifico"; iban?: string; provenienzaSubito?: boolean;
+    metodoPagamento: "contanti" | "buono" | "bonifico"; iban?: string; tipoBonifico?: "ordinario" | "istantaneo" | null; provenienzaSubito?: boolean;
     allegato_documento?: string | null; allegato_dichiarazione?: string | null;
   }) => {
     const modelName = [data.brand, data.model].filter(Boolean).join(" ") || "Modello non specificato";
@@ -1201,7 +1256,7 @@ export default function GestioneUsati() {
       status_history: { acquistato: { date: now.toISOString(), operatore: data.venditore } },
       provenienza_subito: !!data.provenienzaSubito,
       extra_margine: data.extraMargine ? { importo: data.extraMargine.importo, venditore: data.extraMargine.venditore, confermato: false, conferma_operatore: null, conferma_date: null } : null,
-      pagamento: { metodo: data.metodoPagamento, iban: data.iban || "", bonifico_effettuato: data.metodoPagamento === "bonifico" ? false : null, bonifico_operatore: null, bonifico_date: null },
+      pagamento: { metodo: data.metodoPagamento, iban: data.iban || "", bonifico_effettuato: data.metodoPagamento === "bonifico" ? false : null, bonifico_operatore: null, bonifico_date: null, bonifico_tipo: data.metodoPagamento === "bonifico" ? (data.tipoBonifico || "ordinario") : null, bonifico_stato: data.metodoPagamento === "bonifico" ? "da_fare" : null },
       grado_usura: data.gradoUsura || "",
       allegato_documento: data.allegato_documento || null,
       allegato_dichiarazione: data.allegato_dichiarazione || null,
@@ -1209,6 +1264,34 @@ export default function GestioneUsati() {
     const { data: inserted, error: e } = await supabase.from("usati").insert(insertRow).select().single();
     if (e) return;
     setDevices(p => [rowToDevice(inserted as UsatiRow), ...p]);
+    // ── NOTIFICHE INCARICHI (Luca 29/07) — best-effort, l'acquisto è già salvo ──
+    if (data.metodoPagamento === "bonifico") {
+      try {
+        const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine,whatsapp").eq("chiave", "bonifici").maybeSingle();
+        const ass = (inc?.assegnatari ?? []) as string[];
+        const istantaneo = (data.tipoBonifico || "ordinario") === "istantaneo";
+        // task ⚡: sempre per l'istantaneo; per l'ordinario solo col fulmine attivo
+        if (ass.length && (istantaneo || inc?.fulmine)) {
+          await supabase.from("admin_tasks").insert(ass.map((uid) => ({
+            tipo: "bonifico_usato",
+            titolo: `${istantaneo ? "🚨 BONIFICO ISTANTANEO" : "🏦 Bonifico"} usato: ${modelName} (€${Number(data.prezzoAcquisto) || 0})`,
+            dettaglio: `${data.negozio} · IMEI ${data.imei} · registrato da ${data.venditore}. Apri la scheda per documenti e IBAN.`,
+            link: `/usati?id=${(inserted as { id: string | number }).id}`,
+            target_role: "admin", created_by: data.venditore, target_user_id: uid,
+          })));
+        }
+        // WhatsApp SOLO per l'istantaneo, sul numero personale dell'incarico
+        if (istantaneo && String(inc?.whatsapp || "").replace(/\D/g, "").length >= 6) {
+          fetch("/api/whatsapp/notify", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              number: inc!.whatsapp,
+              text: `🚨 BONIFICO ISTANTANEO da fare — ${modelName} €${Number(data.prezzoAcquisto) || 0}\nNegozio ${data.negozio} · IMEI ${data.imei} · registrato da ${data.venditore}.\nApri il CRM → Gestione Usati per i dettagli.`,
+            }),
+          }).catch(() => {});
+        }
+      } catch { /* notifiche best-effort */ }
+    }
   }, []);
 
   const thCls = "px-4 py-3 text-left text-[11px] text-slate-500 uppercase font-semibold tracking-wide border-b border-white/5 bg-[#161b22] sticky top-0 cursor-pointer select-none hover:text-slate-300 transition-colors whitespace-nowrap";
@@ -1240,6 +1323,11 @@ export default function GestioneUsati() {
                 <div className="text-xs text-slate-600">{devices.filter(d => d.status === "in_vendita").length} disp.</div>
               </div>
             </div>
+            <button onClick={() => setShowBonifici(true)}
+              className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-blue-500/15 text-blue-300 border border-blue-500/40 text-sm font-semibold hover:bg-blue-500/25 transition-all">
+              🏦 Bonifici
+              {(() => { const n = devices.filter(d => d.pagamento?.metodo === "bonifico" && (d.pagamento.bonifico_stato || (d.pagamento.bonifico_effettuato ? "fatto" : "da_fare")) !== "fatto").length; return n > 0 ? <span className="min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-black text-[11px] font-black flex items-center justify-center">{n}</span> : null; })()}
+            </button>
             <button onClick={() => setShowRegistra(true)}
               className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 text-sm font-semibold hover:bg-purple-500/30 transition-all">
               <Plus size={18} /> <span className="hidden xs:inline">Registra</span> Usato
@@ -1261,12 +1349,6 @@ export default function GestioneUsati() {
             className="w-full sm:w-36 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 outline-none hover:bg-white/10 transition-all min-w-0" />
           <MultiSelect label="Ricambi" options={RICAMBIO_STATE_KEYS} selected={ricambiFilter} onChange={setRicambiFilter}
             renderOpt={o => <span>{RICAMBIO_STATES.find(s => s.key === o)?.label || o}</span>} />
-          <select value={bonificoFilter} onChange={e => setBonificoFilter(e.target.value)}
-            className="w-full sm:w-auto px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all">
-            <option value="">Bonifici (Tutti)</option>
-            <option value="da_effettuare">Da Effettuare</option>
-            <option value="effettuato">Effettuato</option>
-          </select>
           <button onClick={resetFilters} className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 hover:bg-white/10 transition-all">
             <RotateCcw size={14} /> Reset
           </button>
@@ -1380,6 +1462,81 @@ export default function GestioneUsati() {
       {/* Modals */}
       {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { handleSaveDevice(u); setSelectedDevice(u); }} />}
       {showRegistra && <RegistraUsatoPanel onClose={() => setShowRegistra(false)} onSave={handleRegistra} />}
+
+      {/* ── PANNELLO BONIFICI (Luca 29/07): al posto del vecchio filtro. Nasce
+          sui DA FARE (con 🚨 per gli istantanei); "Stampato" = passato a chi
+          esegue, resta in lista col badge; "Fatto" = sparisce nello storico
+          (visibile col toggle). Click sul telefono = apre la scheda. ── */}
+      {showBonifici && (() => {
+        const conStato = (d: Device) => (d.pagamento.bonifico_stato || (d.pagamento.bonifico_effettuato ? "fatto" : "da_fare")) as "da_fare" | "stampato" | "fatto";
+        const tutti = devices.filter(d => d.pagamento?.metodo === "bonifico");
+        const daFare = tutti.filter(d => conStato(d) !== "fatto").sort((a, b) => (b.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0) - (a.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0));
+        const fatti = tutti.filter(d => conStato(d) === "fatto");
+        const setStatoBon = async (d: Device, stato: "stampato" | "fatto") => {
+          const pag = { ...d.pagamento, bonifico_stato: stato, bonifico_effettuato: stato === "fatto", bonifico_operatore: stato === "fatto" ? (user?.name || "—") : d.pagamento.bonifico_operatore, bonifico_date: stato === "fatto" ? new Date() : d.pagamento.bonifico_date };
+          const upd = { ...d, pagamento: pag };
+          await handleSaveDevice(upd);
+        };
+        const Riga = ({ d, storico }: { d: Device; storico?: boolean }) => {
+          const st = conStato(d);
+          return (
+            <div className="flex items-center gap-3 flex-wrap rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+              {d.pagamento.bonifico_tipo === "istantaneo" && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">🚨 istantaneo</span>}
+              <button onClick={() => { setSelectedDevice(d); setShowBonifici(false); }} className="text-sm font-bold text-white hover:text-blue-300 text-left">
+                {d.model} <span className="text-slate-500 font-mono text-xs">· {d.imei}</span>
+              </button>
+              <span className="text-xs text-slate-500">{d.store}</span>
+              <span className="text-xs font-bold text-emerald-300">€{d.purchase_price}</span>
+              {d.pagamento.iban && <span className="text-[11px] font-mono text-slate-500">{d.pagamento.iban}</span>}
+              <span className="ml-auto flex items-center gap-2">
+                {st === "stampato" && !storico && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-sky-500/15 text-sky-300">🖨 stampato</span>}
+                {storico ? (
+                  <span className="text-[11px] text-slate-500">fatto {d.pagamento.bonifico_date ? new Date(d.pagamento.bonifico_date).toLocaleDateString("it-IT") : ""} · {d.pagamento.bonifico_operatore || "—"}</span>
+                ) : (
+                  <>
+                    {st !== "stampato" && <button onClick={() => setStatoBon(d, "stampato")} title="Stampato e passato a chi esegue il bonifico"
+                      className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/25 text-xs font-bold">🖨 Stampato</button>}
+                    <button onClick={() => setStatoBon(d, "fatto")} title="Bonifico eseguito: va nello storico"
+                      className="px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-xs font-bold">✓ Fatto</button>
+                  </>
+                )}
+              </span>
+            </div>
+          );
+        };
+        return (
+          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setShowBonifici(false)}>
+            <div className="glass-panel w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl border-white/10" onClick={e => e.stopPropagation()}>
+              <div className="flex-none px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-white">🏦 Bonifici acquisto usato</h3>
+                <button onClick={() => setShowBonifici(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X size={20} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Da effettuare ({daFare.length})</h4>
+                  {daFare.length === 0 && <p className="text-sm text-slate-600">Nessun bonifico in attesa. 👌</p>}
+                  <div className="space-y-2">{daFare.map(d => <Riga key={String(d.id)} d={d} />)}</div>
+                </div>
+                <button onClick={() => setMostraFatti(v => !v)} className="text-xs font-bold text-slate-400 hover:text-white uppercase tracking-widest">
+                  {mostraFatti ? "▾ Nascondi lo storico" : `▸ Mostra anche i bonifici fatti (${fatti.length})`}
+                </button>
+                {mostraFatti && (
+                  <div className="space-y-2">{fatti.map(d => <Riga key={String(d.id)} d={d} storico />)}</div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
+  );
+}
+
+/* useSearchParams richiede Suspense in fase di build (lezione 502). */
+export default function GestioneUsati() {
+  return (
+    <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin" /></div>}>
+      <GestioneUsatiInner />
+    </Suspense>
   );
 }
