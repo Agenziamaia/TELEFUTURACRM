@@ -611,7 +611,10 @@ function PresenzeAdmin() {
     const primoDelMese = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
     const [da, setDa] = useState(primoDelMese());
     const [a, setA] = useState(() => new Date().toISOString().slice(0, 10));
-    const [persona, setPersona] = useState("");
+    // filtro persone MULTIPLO (Luca 29/07): vuoto = tutte; click per
+    // aggiungere/togliere più caller contemporaneamente
+    const [personeSel, setPersoneSel] = useState<string[]>([]);
+    const togPersona = (n: string) => setPersoneSel((p) => p.includes(n) ? p.filter((x) => x !== n) : [...p, n]);
     const [negozio, setNegozio] = useState("");
     const [rows, setRows] = useState<ShiftRow[]>([]);
     const [bench, setBench] = useState<{ label: string; ore: number }[]>([]);
@@ -635,15 +638,15 @@ function PresenzeAdmin() {
                 let q = supabase.from("shifts").select("started_at,ended_at,total_pause_minutes")
                     .gte("started_at", m0.toISOString()).lte("started_at", m1.toISOString())
                     .not("ended_at", "is", null).limit(3000);
-                if (persona) q = q.eq("employee_name", persona);
+                if (personeSel.length) q = q.in("employee_name", personeSel);
                 const { data } = await q;
                 out.push({ label: m0.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }), ore: ((data ?? []) as ShiftRow[]).reduce((acc, x) => acc + oreNette(x), 0) });
             }
             setBench(out);
         })();
-    }, [persona]);
+    }, [personeSel.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const filtered = rows.filter((r) => (!persona || r.employee_name === persona) && (!negozio || r.store === negozio));
+    const filtered = rows.filter((r) => (!personeSel.length || personeSel.includes(r.employee_name)) && (!negozio || r.store === negozio));
     const persone = [...new Set(rows.map((r) => r.employee_name))].sort();
     const negozi = [...new Set(rows.map((r) => r.store).filter(Boolean))].sort();
     const oreTot = filtered.reduce((acc, x) => acc + oreNette(x), 0);
@@ -666,7 +669,7 @@ function PresenzeAdmin() {
         const url = URL.createObjectURL(blob);
         const el = document.createElement("a");
         el.href = url;
-        el.download = `presenze_${da}_${a}${persona ? "_" + persona.replaceAll(" ", "_") : ""}.csv`;
+        el.download = `presenze_${da}_${a}${personeSel.length ? "_" + personeSel.map((x) => x.replaceAll(" ", "_")).join("+") : ""}.csv`;
         el.click();
         URL.revokeObjectURL(url);
     };
@@ -683,12 +686,22 @@ function PresenzeAdmin() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Al</label>
                     <input type="date" value={a} onChange={(e) => setA(e.target.value)} className="glass-input text-xs py-1.5" />
                 </div>
-                <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Persona</label>
-                    <select value={persona} onChange={(e) => setPersona(e.target.value)} className="glass-input text-xs py-1.5">
-                        <option value="">Tutte</option>
-                        {persone.map((n) => <option key={n} value={n}>{n}</option>)}
-                    </select>
+                <div className="max-w-xl">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Persone <span className="normal-case font-normal">(clicca per sommarle; nessuna = tutte)</span></label>
+                    <div className="flex flex-wrap gap-1.5">
+                        <button type="button" onClick={() => setPersoneSel([])}
+                            className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all",
+                                personeSel.length === 0 ? "border-indigo-400/70 bg-indigo-500/15 text-indigo-200" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                            Tutte
+                        </button>
+                        {persone.map((n) => (
+                            <button key={n} type="button" onClick={() => togPersona(n)}
+                                className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all",
+                                    personeSel.includes(n) ? "border-indigo-400/70 bg-indigo-500/20 text-indigo-100" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                {personeSel.includes(n) ? "✓ " : ""}{n}
+                            </button>
+                        ))}
+                    </div>
                 </div>
                 <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Negozio</label>
