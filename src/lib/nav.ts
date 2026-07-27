@@ -41,7 +41,18 @@ export const OUTBOUND_NAV = ["agente", "direttore_ob", "direttore_commerciale", 
 export const NAVIGATION: NavEntry[] = [
     { type: "link", name: "Home", href: "/dashboard", icon: Home, roles: EVERYONE },
     { type: "link", name: "Clienti", href: "/clienti", icon: Users, roles: EVERYONE },
-    { type: "link", name: "Caller", href: "/caller", icon: Phone, roles: CALLCENTER },
+    {
+        // CALL CENTER e' un GRUPPO (Luca 28/07): dentro la vecchia sezione Caller
+        // e il BADGE, SPOSTATO da Collaboratori (permessi e capacita' migrati
+        // con la mig. 096: chi vedeva/faceva prima, vede/fa uguale ora).
+        type: "group",
+        label: "Call Center",
+        icon: Phone,
+        children: [
+            { name: "Caller", href: "/caller", icon: Phone, roles: CALLCENTER },
+            { name: "Badge", href: "/caller?tab=badge", icon: Clock, roles: EVERYONE },
+        ],
+    },
     {
         type: "group",
         label: "Agenti",
@@ -67,7 +78,6 @@ export const NAVIGATION: NavEntry[] = [
         label: "Collaboratori",
         icon: Users,
         children: [
-            { name: "Badge", href: "/collaboratori?tab=badge", icon: Clock, roles: EVERYONE },
             { name: "Ferie", href: "/collaboratori?tab=ferie", icon: CalendarDays, roles: EVERYONE },
             { name: "Malattia", href: "/collaboratori?tab=malattia", icon: Shield, roles: MANAGERS },
             { name: "Ritardi", href: "/collaboratori?tab=ritardi", icon: Clock3, roles: EVERYONE },
@@ -147,6 +157,10 @@ export const hubByHref = (href: string): NavHub | undefined =>
 
 // gruppi nascosti di default al reparto outbound (salvo riga esplicita)
 export const OUTBOUND_HIDDEN_GROUPS = ["Vendite", "Collaboratori", "Negozio"];
+// link nascosti di default al reparto outbound anche FUORI dai gruppi qui
+// sopra (il Badge stava in Collaboratori: spostandolo nel gruppo Call Center
+// non deve comparire all'outbound, che prima non lo vedeva).
+export const OUTBOUND_HIDDEN_LINKS = ["/caller?tab=badge"];
 
 export const canSeeDefault = (roles: string[], role?: string | null) =>
     roles.includes("*") || (!!role && roles.includes(role));
@@ -166,6 +180,7 @@ export function effectiveAllowed(
     const row = perms?.get(href);
     if (row !== undefined) return row;
     if ((role === "agente" || role === "direttore_ob") && groupLabel && OUTBOUND_HIDDEN_GROUPS.includes(groupLabel)) return false;
+    if ((role === "agente" || role === "direttore_ob") && OUTBOUND_HIDDEN_LINKS.includes(href)) return false;
     return canSeeDefault(defaultRoles, role);
 }
 

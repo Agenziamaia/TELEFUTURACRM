@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
     Phone, Plus, X, Search, RefreshCw, Filter, FileSpreadsheet,
     ClipboardList, ArrowLeft, ArrowRight, Check, Download, Upload,
@@ -13,6 +15,10 @@ import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
 import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { useStores, useSellers } from "@/lib/org";
+import { seesAllStores, seesWholeStore } from "@/lib/roles";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { effectiveAllowed, EVERYONE } from "@/lib/nav";
+import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 
 /* ─────────────────────────────────────────────────────────────────────
    CONSTANTS
@@ -299,7 +305,7 @@ const defaultCallerView = {
    MAIN PAGE
    ───────────────────────────────────────────────────────────────────── */
 
-export default function CallerPage() {
+function CallerPageInner() {
     const NEGOZI = useStores();
     const VENDITORI = useSellers();
     const AGENTI = VENDITORI;
@@ -310,6 +316,21 @@ export default function CallerPage() {
     // ruolo "caller"): le chiamate venivano filtrate e soprattutto ATTRIBUITE
     // nello storico a una persona inesistente.
     const { user } = useAuth();
+    // ── hub Call Center: sezione corrente + pillole + visibilita' Badge ──
+    const searchParams = useSearchParams();
+    const hubTab = searchParams.get("tab") === "badge" ? "badge" : "caller";
+    const { perms: hubPerms } = useRolePermissions(user?.role);
+    const badgeVisibile = effectiveAllowed(user?.role, "/caller?tab=badge", EVERYONE, hubPerms, "Call Center");
+    const hubPills = (
+        <div className="flex items-center gap-2">
+            {[{ id: "caller", l: "📞 Caller", href: "/caller" }, ...(badgeVisibile ? [{ id: "badge", l: "🕒 Badge", href: "/caller?tab=badge" }] : [])].map(t => (
+                <Link key={t.id} href={t.href}
+                    className={`px-4 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all ${hubTab === t.id ? "border-violet-400/70 bg-violet-500/15 text-violet-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25"}`}>
+                    {t.l}
+                </Link>
+            ))}
+        </div>
+    );
     const currentCaller = user?.name || "";
     const roleFromSession: Role =
         ["admin", "dev", "direttore_generale"].includes(user?.role || "") ? "admin"
@@ -999,6 +1020,21 @@ export default function CallerPage() {
        RENDER
        ════════════════════════════════════════════════════════════════ */
 
+    // ── vista BADGE dell'hub (spostata da Collaboratori) ──
+    if (hubTab === "badge") return (
+        <div className="h-full flex flex-col overflow-y-auto">
+            <div className="flex-none px-8 pt-6 pb-2 flex items-center justify-between gap-3 flex-wrap">
+                {hubPills}
+                <h1 className="text-xl font-black text-white tracking-tight">🕒 Badge — presenze e timbrature</h1>
+            </div>
+            <div className="flex-1 p-4 md:p-8 pt-2">
+                <div className="max-w-7xl mx-auto">
+                    <BadgeAndDashboard isAdminLike={!!user && (seesAllStores(user.role) || seesWholeStore(user.role))} />
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0a0c10]">
             {/* Telefono Aircall: la bolla ☎ vive SOLO nella sezione Caller (richiesta
@@ -1105,6 +1141,12 @@ export default function CallerPage() {
                     )}
                 </div>
             </header>
+
+            {/* hub Call Center: pillole sezione + widget badge rapido (solo chi timbra) */}
+            <div className="flex-none px-8 pt-3 flex items-center gap-3 flex-wrap">
+                {hubPills}
+                <div className="flex-1 min-w-[280px]"><BadgeWidget /></div>
+            </div>
 
             {loadError && (
                 <div className="px-8 py-3 bg-red-500/10 border-b border-red-500/20 text-red-300 text-sm flex items-center gap-2">
@@ -1540,10 +1582,24 @@ export default function CallerPage() {
 
                                     <div className="grid grid-cols-2 gap-3">
                                         <FormGroup label="Numero (attività)">
-                                            <input className="glass-input rounded-lg py-2 w-full" value={editCall.numero} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("numero", e.target.value)} placeholder="333 123 4567" />
+                                            <div className="flex gap-1.5">
+                                                <input className="glass-input rounded-lg py-2 w-full" value={editCall.numero} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("numero", e.target.value)} placeholder="333 123 4567" />
+                                                {String(editCall.numero || "").replace(/\D/g, "").length >= 6 && (
+                                                    <button type="button" title="Chiama questo numero con Aircall"
+                                                        onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
+                                                        className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
+                                                )}
+                                            </div>
                                         </FormGroup>
                                         <FormGroup label="Recapito Cellulare">
-                                            <input className="glass-input rounded-lg py-2 w-full" value={editCall.cellulare} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("cellulare", e.target.value)} placeholder="Se diverso" />
+                                            <div className="flex gap-1.5">
+                                                <input className="glass-input rounded-lg py-2 w-full" value={editCall.cellulare} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("cellulare", e.target.value)} placeholder="Se diverso" />
+                                                {String(editCall.cellulare || "").replace(/\D/g, "").length >= 6 && (
+                                                    <button type="button" title="Chiama questo numero con Aircall"
+                                                        onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
+                                                        className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
+                                                )}
+                                            </div>
                                         </FormGroup>
                                     </div>
 
@@ -2279,5 +2335,15 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</span>
             <span className={`text-sm font-semibold ${isEmpty ? "text-slate-600 italic" : "text-white"}`}>{isEmpty ? "—" : value}</span>
         </div>
+    );
+}
+
+/* HUB CALL CENTER (Luca 28/07): /caller = sezione Caller, /caller?tab=badge =
+   Badge (spostato da Collaboratori). Suspense obbligatoria per useSearchParams. */
+export default function CallerPage() {
+    return (
+        <Suspense fallback={<div className="w-full h-screen flex items-center justify-center"><div className="w-8 h-8 border-4 border-violet-500/20 border-t-violet-500 rounded-full animate-spin" /></div>}>
+            <CallerPageInner />
+        </Suspense>
     );
 }

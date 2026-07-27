@@ -104,7 +104,9 @@ export const CAP_CLIENTI: CapGroupChoice = {
 };
 
 // ─── BADGE (Collaboratori): modalità della sezione ───────────────────────────
-export const BADGE_SECTION = "/collaboratori?tab=badge";
+// SPOSTATA da /collaboratori?tab=badge all'hub Call Center (Luca 28/07):
+// le righe cap:* esistenti sono state MIGRATE alla nuova chiave (mig. 096).
+export const BADGE_SECTION = "/caller?tab=badge";
 export const CAP_BADGE_TIMBRA: CapDef = {
     id: "timbra",
     label: "Timbratura",
@@ -120,7 +122,7 @@ export const CAP_BADGE_TEAM: CapDef = {
 export const CAP_BADGE: CapGroupFlags = {
     mode: "flags",
     section: BADGE_SECTION,
-    sectionLabel: "Badge (Collaboratori)",
+    sectionLabel: "Badge (Call Center)",
     caps: [CAP_BADGE_TIMBRA, CAP_BADGE_TEAM],
 };
 
