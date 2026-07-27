@@ -98,6 +98,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const [meseCal, setMeseCal] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
     const [rifiutoId, setRifiutoId] = useState<number | null>(null);
     const [rifiutoNota, setRifiutoNota] = useState("");
+    const [qPersona, setQPersona] = useState("");   // ricerca a scrittura nel filtro persone
     const canDeleteRow = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
 
     const fetchRequests = useCallback(async () => {
@@ -297,15 +298,45 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                 <input type="date" value={fA} onChange={e => setFA(e.target.value)} className="glass-input !h-8 text-xs" />
                                 {(fDa || fA) && <button onClick={() => { setFDa(""); setFA(""); }} className="text-[10px] font-bold text-slate-500 hover:text-white">✕ azzera</button>}
                             </div>
+                            {/* PERSONE: ricerca a scrittura (Luca 29/07 — "saranno tantissime"):
+                                scrivi il nome, lo selezioni, ne scrivi un altro; i selezionati
+                                restano come chip rimovibili. Invio = primo suggerimento. */}
                             <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest w-16">Persone</span>
-                                <button onClick={() => setFPersone([])} className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border", !fPersone.length ? "border-indigo-400/70 bg-indigo-500/15 text-indigo-200" : "border-white/10 text-slate-400 hover:border-white/25")}>Tutte</button>
-                                {persone.map(n => (
-                                    <button key={n} onClick={() => setFPersone(p => p.includes(n) ? p.filter(x => x !== n) : [...p, n])}
-                                        className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border", fPersone.includes(n) ? "border-indigo-400/70 bg-indigo-500/20 text-indigo-100" : "border-white/10 text-slate-400 hover:border-white/25")}>
-                                        {fPersone.includes(n) ? "✓ " : ""}{n}
-                                    </button>
+                                <div className="relative">
+                                    <input value={qPersona} onChange={e => setQPersona(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                const primo = persone.filter(n => !fPersone.includes(n) && n.toLowerCase().includes(qPersona.trim().toLowerCase()))[0];
+                                                if (qPersona.trim() && primo) { setFPersone(p => [...p, primo]); setQPersona(""); }
+                                            }
+                                        }}
+                                        placeholder="Scrivi un nome…" className="glass-input !h-8 text-xs w-44" />
+                                    {qPersona.trim() && (
+                                        <div className="absolute z-40 mt-1 w-56 rounded-lg border border-white/10 bg-[#0f111a] shadow-2xl overflow-hidden">
+                                            {persone.filter(n => !fPersone.includes(n) && n.toLowerCase().includes(qPersona.trim().toLowerCase())).slice(0, 8).map(n => (
+                                                <button key={n} onClick={() => { setFPersone(p => [...p, n]); setQPersona(""); }}
+                                                    className="block w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-indigo-500/15">
+                                                    {n}
+                                                </button>
+                                            ))}
+                                            {persone.filter(n => !fPersone.includes(n) && n.toLowerCase().includes(qPersona.trim().toLowerCase())).length === 0 && (
+                                                <p className="px-3 py-1.5 text-xs text-slate-600">Nessun nome corrispondente</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                {fPersone.map(n => (
+                                    <span key={n} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border border-indigo-400/70 bg-indigo-500/20 text-indigo-100">
+                                        {n}
+                                        <button onClick={() => setFPersone(p => p.filter(x => x !== n))} className="opacity-70 hover:opacity-100">✕</button>
+                                    </span>
                                 ))}
+                                {fPersone.length > 0 && (
+                                    <button onClick={() => setFPersone([])} className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest">✕ tutte</button>
+                                )}
+                                {fPersone.length === 0 && <span className="text-[11px] text-slate-600">tutte le persone</span>}
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest w-16">Negozi</span>
