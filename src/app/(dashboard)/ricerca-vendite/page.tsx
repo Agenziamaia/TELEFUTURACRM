@@ -145,6 +145,16 @@ export default function RicercaContratto() {
     // Filtro prodotto multiplo (richiesta Luca #7): piu' prodotti dello stesso brand insieme.
     const [filterProdotti, setFilterProdotti] = useState<string[]>([]);
     const [prodPick, setProdPick] = useState("");
+    // ── FILTRI DAL CATALOGO (regole Luca 28/07): categoria sempre filtrabile;
+    //    prodotto e offerta SOLO con un brand solo selezionato dalle tessere
+    //    (altrimenti "milioni di variabili"); entrambi MULTI-selezione.
+    //    Le liste arrivano da catalog_* (incluse le voci spente: lo storico
+    //    le contiene), non piu' dai distinct dello storico.
+    const [filterCategoria, setFilterCategoria] = useState("");
+    const [filterOfferte, setFilterOfferte] = useState<string[]>([]);
+    const [offPick, setOffPick] = useState("");
+    const [catalogoBrand, setCatalogoBrand] = useState<{ slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[] } | null>(null);
+    const _catFiltroCache = useRef<Record<string, { slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[] }>>({});
     const [filterNegozio, setFilterNegozio] = useState("");
     const [filterCodiceAttivazione, setFilterCodiceAttivazione] = useState("");
     const [filterCliente, setFilterCliente] = useState("");
@@ -266,6 +276,45 @@ export default function RicercaContratto() {
     // attive per definizione; il click su una applica il filtro "solo quella",
     // i successivi aggiungono/tolgono; tutte scelte o nessuna = tutte.
     const [selBrands, setSelBrands] = useState<Set<string>>(new Set());  // vuoto = tutte
+    const LABEL_SLUG: Record<string, string> = { "WindTre": "windtre", "Vodafone": "vodafone", "Fastweb": "fastweb", "Iliad": "iliad", "Sky": "sky", "TIM": "tim", "Tim": "tim", "S4": "s4", "Dojo": "dojo", "Very Mobile": "very", "Very": "very", "Ho. Mobile": "ho", "Ho Mobile": "ho", "Kena Mobile": "kena", "Kena": "kena" };
+    // un solo brand attivo dalle tessere (o unico brand presente) = si puo' filtrare per prodotto/offerta
+    const soloBrandLabel = selBrands.size === 1 ? Array.from(selBrands)[0] : (selBrands.size === 0 && brandCounts.length === 1 ? brandCounts[0].brand : null);
+    const soloSlug = soloBrandLabel ? (LABEL_SLUG[soloBrandLabel] || null) : null;
+    const _prevSlug = useRef<string | null>(null);
+    useEffect(() => {
+        if (_prevSlug.current !== soloSlug) {
+            _prevSlug.current = soloSlug;
+            setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick("");
+        }
+        if (!soloSlug) { setCatalogoBrand(null); return; }
+        const hit = _catFiltroCache.current[soloSlug];
+        if (hit) { setCatalogoBrand(hit); return; }
+        let alive = true;
+        (async () => {
+            const rp = await supabase.from("catalog_prodotti").select("id, nome").eq("brand_id", soloSlug);
+            const prods = rp.data ?? [];
+            let offs: { prodotto_id: string; nome: string }[] = [];
+            if (prods.length) {
+                const ro = await supabase.from("catalog_offerte").select("prodotto_id, nome").in("prodotto_id", prods.map((x: { id: string }) => x.id));
+                offs = (ro.data ?? []) as { prodotto_id: string; nome: string }[];
+            }
+            const nomeById: Record<string, string> = {}; prods.forEach((x: { id: string; nome: string }) => { nomeById[x.id] = x.nome; });
+            const offByProd: Record<string, string[]> = {};
+            offs.forEach((o) => { const pn = nomeById[o.prodotto_id]; if (!pn) return; (offByProd[pn] = offByProd[pn] || []).push(o.nome); });
+            Object.keys(offByProd).forEach((k) => { offByProd[k] = Array.from(new Set(offByProd[k])).sort(); });
+            const t = { slug: soloSlug, prodNames: Array.from(new Set(prods.map((x: { nome: string }) => x.nome))).sort() as string[], offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort() };
+            _catFiltroCache.current[soloSlug] = t;
+            if (alive) setCatalogoBrand(t);
+        })();
+        return () => { alive = false; };
+    }, [soloSlug]); // eslint-disable-line react-hooks/exhaustive-deps
+    const offerteDisponibili = useMemo(() => {
+        if (!catalogoBrand) return [];
+        if (!filterProdotti.length) return catalogoBrand.offNames;
+        const set = new Set<string>();
+        filterProdotti.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
+        return Array.from(set).sort();
+    }, [catalogoBrand, filterProdotti]);
     const lockedStores = !isGlobalView && visStores.length ? negozioInValues(visStores) : null;
     const visKey = (lockedStores || []).join("|");
     // Finche' la lista visibilita' non e' arrivata NON si interroga (si eviterebbe
@@ -354,6 +403,8 @@ export default function RicercaContratto() {
             if (filterCodice) query = query.ilike("id", `%${filterCodice}%`);
             if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
+            if (filterOfferte.length > 0) query = query.in("offerta", filterOfferte);
+            if (filterCategoria) query = query.eq("categoria", filterCategoria);
             // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
             // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
             if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
@@ -440,13 +491,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione]);
+    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -957,13 +1008,23 @@ export default function RicercaContratto() {
                     {/* Filtro Brand rimosso: sostituito dalle tessere brand (segn.57).
                         filterBrand resta pilotato dalle tessere. */}
 
-                    {/* 5. Prodotto (multiplo, con tasto +) */}
+                    {/* 4-bis. Categoria (tassonomia canonica): filtrabile sempre */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto</label>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Categoria</label>
+                        <select className="glass-input w-full" value={filterCategoria} onChange={e => setFilterCategoria(e.target.value)}>
+                            <option value="">Tutte le categorie</option>
+                            {CATEGORIE_CANONICHE.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                    </div>
+
+                    {/* 5. Prodotto (multiplo, dal CATALOGO): serve UN solo brand attivo
+                        dalle tessere, altrimenti le variabili esplodono (regola Luca). */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
                         <div className="flex gap-2">
-                            <select className="glass-input w-full" value={prodPick} onChange={e => setProdPick(e.target.value)}>
-                                <option value="">{filterProdotti.length ? "Aggiungi prodotto…" : "Tutti i prodotti"}</option>
-                                {(filterBrand ? (prodByBrand[filterBrand] || []) : uniqueProdotti).filter(p => !filterProdotti.includes(p)).map(p => <option key={p} value={p}>{p}</option>)}
+                            <select className="glass-input w-full disabled:opacity-50" value={prodPick} onChange={e => setProdPick(e.target.value)} disabled={!catalogoBrand}>
+                                <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : filterProdotti.length ? "Aggiungi prodotto…" : "Tutti i prodotti"}</option>
+                                {(catalogoBrand?.prodNames || []).filter(p => !filterProdotti.includes(p)).map(p => <option key={p} value={p}>{p}</option>)}
                             </select>
                             <button type="button" title="Aggiungi prodotto al filtro"
                                 onClick={() => { if (prodPick) { setFilterProdotti(prev => prev.includes(prodPick) ? prev : [...prev, prodPick]); setProdPick(""); } }}
@@ -976,6 +1037,32 @@ export default function RicercaContratto() {
                                     <span key={p} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-indigo-500/15 text-indigo-200 border border-indigo-500/30">
                                         {p}
                                         <button type="button" onClick={() => setFilterProdotti(prev => prev.filter(x => x !== p))} className="opacity-70 hover:opacity-100">✕</button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 5-bis. Offerta (multiplo, dal CATALOGO): stessa regola del prodotto;
+                        se ci sono prodotti selezionati offre solo le loro offerte. */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Offerta {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
+                        <div className="flex gap-2">
+                            <select className="glass-input w-full disabled:opacity-50" value={offPick} onChange={e => setOffPick(e.target.value)} disabled={!catalogoBrand}>
+                                <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : filterOfferte.length ? "Aggiungi offerta…" : "Tutte le offerte"}</option>
+                                {offerteDisponibili.filter(o => !filterOfferte.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                            <button type="button" title="Aggiungi offerta al filtro"
+                                onClick={() => { if (offPick) { setFilterOfferte(prev => prev.includes(offPick) ? prev : [...prev, offPick]); setOffPick(""); } }}
+                                disabled={!offPick}
+                                className="shrink-0 w-10 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+                        </div>
+                        {filterOfferte.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                {filterOfferte.map(o => (
+                                    <span key={o} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-amber-500/15 text-amber-200 border border-amber-500/30">
+                                        {o}
+                                        <button type="button" onClick={() => setFilterOfferte(prev => prev.filter(x => x !== o))} className="opacity-70 hover:opacity-100">✕</button>
                                     </span>
                                 ))}
                             </div>
@@ -1041,7 +1128,7 @@ export default function RicercaContratto() {
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setFilterTableSearch(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterCategoria(""); setFilterOfferte([]); setOffPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setFilterTableSearch(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportCsv}>
                         Scarica CSV
                     </button>
