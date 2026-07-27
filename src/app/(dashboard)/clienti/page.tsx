@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
-import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink } from "lucide-react";
+import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
+import { seesWholeStore, seesAllStores } from "@/lib/roles";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -111,18 +112,47 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
 
     // Documenti caricati: allegati dei contratti (PDA) di questo cliente.
-    useEffect(() => {
+    const reloadDocs = async () => {
         const ids = contratti.map((c) => c.id);
         if (ids.length === 0) { setDocs([]); return; }
-        (async () => {
-            const { data } = await supabase
-                .from("contract_attachments")
-                .select("id, file_url, file_name, contract_id, file_type, created_at")
-                .in("contract_id", ids)
-                .order("created_at", { ascending: false });
-            setDocs((data ?? []) as any);
-        })();
-    }, [contratti]);
+        const { data } = await supabase
+            .from("contract_attachments")
+            .select("id, file_url, file_name, contract_id, file_type, created_at")
+            .in("contract_id", ids)
+            .order("created_at", { ascending: false });
+        setDocs((data ?? []) as any);
+    };
+    useEffect(() => { reloadDocs(); /* eslint-disable-next-line */ }, [contratti]);
+
+    // Segnalazione 114: caricamento documenti/PDA DOPO la registrazione. Puo' farlo
+    // il creatore del contratto (venditore) e lo store manager (che vede il negozio).
+    const nomeUguale = (a?: string | null, b?: string | null) => { const x = (a || "").trim().toLowerCase(), y = (b || "").trim().toLowerCase(); return !!x && x === y; };
+    const isManagerDoc = seesWholeStore(uAll?.role) || seesAllStores(uAll?.role);
+    const contrattiCaricabili = isManagerDoc ? contratti : contratti.filter((c) => nomeUguale(c.venditore, uAll?.name));
+    const puoCaricareDoc = vedeAllegati && contrattiCaricabili.length > 0;
+    const [caricaOpen, setCaricaOpen] = useState(false);
+    const [upContract, setUpContract] = useState("");
+    const [upType, setUpType] = useState("documento");
+    const [upFile, setUpFile] = useState<File | null>(null);
+    const [upBusy, setUpBusy] = useState(false);
+    const caricaDocumento = async () => {
+        if (!upContract || !upFile || upBusy) return;
+        setUpBusy(true);
+        try {
+            const ext = (upFile.name.split(".").pop() || "bin");
+            const path = `${cliente.id}/${cliente.id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+            const { error: upErr } = await supabase.storage.from("contracts").upload(path, upFile);
+            if (upErr) throw upErr;
+            const { data: pub } = supabase.storage.from("contracts").getPublicUrl(path);
+            const { error: insErr } = await supabase.from("contract_attachments").insert({
+                contract_id: upContract, file_url: pub.publicUrl, file_name: upFile.name, file_type: upType,
+            });
+            if (insErr) throw insErr;
+            setCaricaOpen(false); setUpFile(null); setUpContract(""); setUpType("documento");
+            await reloadDocs();
+        } catch (e: any) { alert("Caricamento non riuscito: " + (e?.message || e)); }
+        finally { setUpBusy(false); }
+    };
 
     const [showStorico, setShowStorico] = useState(false);
     // Click su una vendita -> apre il dettaglio in Ricerca Contratto (deep link ?id=).
@@ -312,9 +342,43 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
 
                     {/* DOCUMENTI / PDA CARICATI — solo con la capacita' attiva */}
                     {vedeAllegati && <div className="space-y-4">
-                        <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                            <Paperclip className="w-3 h-3" /> Documenti e PDA caricati
-                        </h3>
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
+                                <Paperclip className="w-3 h-3" /> Documenti e PDA caricati
+                            </h3>
+                            {puoCaricareDoc && !caricaOpen && (
+                                <button onClick={() => { setCaricaOpen(true); setUpContract(contrattiCaricabili[0]?.id || ""); }}
+                                    className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/25 flex items-center gap-1.5">
+                                    <Plus className="w-3.5 h-3.5" /> Carica documento
+                                </button>
+                            )}
+                        </div>
+                        {/* Segnalazione 114: carica un documento/PDA dimenticato su un contratto esistente */}
+                        {caricaOpen && (
+                            <div className="bg-white/[0.02] border border-indigo-500/20 rounded-2xl p-4 space-y-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Contratto</label>
+                                        <select value={upContract} onChange={e => setUpContract(e.target.value)} className="w-full mt-1 bg-[#0f111a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                                            {contrattiCaricabili.map(c => <option key={c.id} value={c.id}>{c.brand} · {c.categoria}{c.data ? " · " + new Date(c.data).toLocaleDateString("it-IT") : ""}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tipo</label>
+                                        <select value={upType} onChange={e => setUpType(e.target.value)} className="w-full mt-1 bg-[#0f111a] border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                                            {CATEGORIE_DOC.map(cat => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                <input type="file" onChange={e => setUpFile(e.target.files?.[0] || null)} className="block w-full text-xs text-slate-400 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-white/10 file:text-slate-200 file:text-xs file:font-semibold" />
+                                <div className="flex gap-2">
+                                    <button onClick={caricaDocumento} disabled={!upContract || !upFile || upBusy} className="flex-1 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white text-sm font-semibold flex items-center justify-center gap-2">
+                                        {upBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Carica
+                                    </button>
+                                    <button onClick={() => { setCaricaOpen(false); setUpFile(null); }} className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm">Annulla</button>
+                                </div>
+                            </div>
+                        )}
                         {docs.length === 0 ? (
                             <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-6 text-center text-xs text-slate-600">
                                 Nessun documento caricato per i contratti di questo cliente.
