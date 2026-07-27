@@ -24,6 +24,18 @@ interface Brand { id: string; nome: string; colore1: string; colore2: string; or
 interface Prod { id: string; brand_id: string; tipo_cliente: string; categoria_id: string; nome: string; ordine: number; attivo: boolean }
 interface Off { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean }
 interface Opz { id: string; offerta_id: string; nome: string; tipo: string | null; gruppo_singolo: string | null; ordine: number; attivo: boolean }
+interface CampoRegola { nome: string; tipo: string; nota: string; conferma: boolean; attivo?: boolean }
+interface RegolaCampi { id?: string; etichetta: string; condizioni: Record<string, string[]>; campi: CampoRegola[]; ordine: number; attivo: boolean }
+const COND_KEYS: { k: string; label: string; hint: string }[] = [
+    { k: "brand", label: "Brand", hint: "slug: windtre, vodafone, s4…" },
+    { k: "tipo", label: "Tipo cliente", hint: "Consumer, Business" },
+    { k: "categoria", label: "Categoria", hint: "es. Fisso, Energia" },
+    { k: "prodotto", label: "Prodotto", hint: "es. Mobile MNP" },
+    { k: "offertaContiene", label: "Offerta contiene", hint: "es. Conv, Indoor" },
+    { k: "offertaNon", label: "Offerta esclusa", hint: "nome esatto" },
+    { k: "opzioni", label: "Opzione attiva", hint: "es. RID, GNP" },
+];
+const TIPI_CAMPO = ["testo", "numero", "data", "scelta"];
 
 const byOrd = <T extends { ordine: number; nome: string }>(a: T, b: T) => a.ordine - b.ordine || a.nome.localeCompare(b.nome);
 
@@ -41,19 +53,26 @@ export function CatalogoView() {
     const [prodSel, setProdSel] = useState<string>("");
     const [offSel, setOffSel] = useState<string>("");
     const [gestCat, setGestCat] = useState(false);
+    // ── STRATO DATI (mig. 094): regole dei campi vendita, amministrabili qui.
+    //    Regola d'oro: mai eliminare campi usati in passato — si NASCONDONO.
+    const [vista, setVista] = useState<"catalogo" | "campi">("catalogo");
+    const [regole, setRegole] = useState<RegolaCampi[]>([]);
+    const [regEdit, setRegEdit] = useState<RegolaCampi | null>(null);   // editor aperto
 
     // editor inline: una sola riga in modifica per volta
     const [edit, setEdit] = useState<{ table: string; id: string; nome: string } | null>(null);
     const [busy, setBusy] = useState(false);
 
     const loadBase = useCallback(async () => {
-        const [c, b] = await Promise.all([
+        const [c, b, rg] = await Promise.all([
             supabase.from("catalog_categorie").select("*").order("ordine"),
             supabase.from("catalog_brands").select("*").order("ordine"),
+            supabase.from("catalog_campi_regole").select("*").order("ordine"),
         ]);
         if (dbError("Caricamento categorie", c.error) || dbError("Caricamento brand", b.error)) return;
         setCats((c.data ?? []) as Cat[]);
         setBrands((b.data ?? []) as Brand[]);
+        if (!rg.error) setRegole((rg.data ?? []) as RegolaCampi[]);
         return b.data as Brand[];
     }, []);
 
@@ -175,6 +194,42 @@ export function CatalogoView() {
         if (catSel === c.id) setCatSel("");
     };
 
+    /* ── STRATO DATI: mutazioni regole campi ── */
+    const salvaRegola = async () => {
+        if (!regEdit) return;
+        const cond: Record<string, string[]> = {};
+        COND_KEYS.forEach(({ k }) => { const v = regEdit.condizioni[k]; if (v && v.length) cond[k] = v; });
+        const campi = (regEdit.campi || []).filter((c) => c.nome.trim());
+        if (!campi.length) { notify("Una regola deve avere almeno un campo"); return; }
+        const body = { etichetta: regEdit.etichetta.trim() || "Regola senza nome", condizioni: cond, campi, ordine: regEdit.ordine, attivo: regEdit.attivo };
+        const ok = await run("Salvataggio regola", () =>
+            regEdit.id ? supabase.from("catalog_campi_regole").update(body).eq("id", regEdit.id)
+                : supabase.from("catalog_campi_regole").insert(body), "Regola salvata ✓");
+        if (ok) setRegEdit(null);
+    };
+    const toggleRegola = (r: RegolaCampi) =>
+        run("Regola attiva/nascosta", () => supabase.from("catalog_campi_regole").update({ attivo: !r.attivo }).eq("id", r.id!));
+    const toggleCampo = (r: RegolaCampi, idx: number) => {
+        const campi = r.campi.map((c, i) => i === idx ? { ...c, attivo: c.attivo === false ? true : false } : c);
+        return run("Campo visibile/nascosto", () => supabase.from("catalog_campi_regole").update({ campi }).eq("id", r.id!));
+    };
+    const moveRegola = (r: RegolaCampi, dir: -1 | 1) => {
+        const lista = [...regole].sort((a, b) => a.ordine - b.ordine);
+        const i = lista.findIndex((x) => x.id === r.id); const j = i + dir;
+        if (i < 0 || j < 0 || j >= lista.length) return;
+        const a = lista[i], b = lista[j];
+        return run("Riordino regole", async () => {
+            const r1 = await supabase.from("catalog_campi_regole").update({ ordine: b.ordine === a.ordine ? a.ordine + dir : b.ordine }).eq("id", a.id!);
+            if (r1.error) return r1;
+            return supabase.from("catalog_campi_regole").update({ ordine: a.ordine }).eq("id", b.id!);
+        });
+    };
+    const delRegola = async (r: RegolaCampi) => {
+        if (!window.confirm(`Eliminare la regola "${r.etichetta}"?\n\nATTENZIONE: se i suoi campi sono stati usati in vendite passate è meglio NASCONDERLA (interruttore), non eliminarla. Eliminare comunque?`)) return;
+        await run("Eliminazione regola", () => supabase.from("catalog_campi_regole").delete().eq("id", r.id!), "Regola eliminata");
+    };
+    const nuovaRegola = () => setRegEdit({ etichetta: "", condizioni: {}, campi: [{ nome: "", tipo: "testo", nota: "", conferma: false, attivo: true }], ordine: (regole.reduce((m, r) => Math.max(m, r.ordine), -1) + 1), attivo: true });
+
     /* ── input "aggiungi" per colonna ── */
     const [newProd, setNewProd] = useState("");
     const [newOff, setNewOff] = useState("");
@@ -225,6 +280,21 @@ export function CatalogoView() {
                     </div>
                 </div>
 
+                {/* vista: catalogo (6 livelli) o campi vendita (strato dati) */}
+                <div className="flex gap-2 mt-4">
+                    <button onClick={() => setVista("catalogo")}
+                        className={cn("px-4 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all",
+                            vista === "catalogo" ? "border-violet-400/70 bg-violet-500/15 text-violet-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25")}>
+                        📦 Catalogo
+                    </button>
+                    <button onClick={() => setVista("campi")}
+                        className={cn("px-4 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all",
+                            vista === "campi" ? "border-violet-400/70 bg-violet-500/15 text-violet-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25")}>
+                        🧾 Campi vendita <span className="opacity-60 normal-case tracking-normal">({regole.length} regole)</span>
+                    </button>
+                </div>
+
+                {vista === "catalogo" && (<>
                 {/* brand */}
                 <div className="flex flex-wrap gap-2 mt-4">
                     {brands.map((b) => (
@@ -249,9 +319,109 @@ export function CatalogoView() {
                         </button>
                     ))}
                 </div>
+                </>)}
             </div>
 
+            {/* ── STRATO DATI: regole dei campi vendita ── */}
+            {vista === "campi" && (
+                <div className="glass-card p-4 space-y-2">
+                    <div className="flex items-center justify-between px-1">
+                        <p className="text-sm text-slate-400 max-w-3xl">
+                            Ogni regola dice QUALI CASELLE compila il venditore quando la selezione
+                            corrisponde alle condizioni. I campi si sommano tra le regole che scattano.
+                            <b className="text-slate-300"> Mai eliminare un campo usato in passato:</b> usa
+                            l&apos;occhio per NASCONDERLO — i dati già salvati nelle vendite restano intatti.
+                        </p>
+                        <button onClick={nuovaRegola} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shrink-0"><Plus className="w-4 h-4" /> Nuova regola</button>
+                    </div>
+                    {[...regole].sort((a, b) => a.ordine - b.ordine).map((r) => (
+                        <div key={r.id} className={cn("rounded-xl border border-white/10 bg-white/[0.03] p-3", !r.attivo && "opacity-50")}>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                    <span className="text-sm font-bold text-white">{r.etichetta}</span>
+                                    {!r.attivo && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-white/10 text-slate-400">nascosta</span>}
+                                    {Object.keys(r.condizioni || {}).length === 0 && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300">sempre</span>}
+                                    {COND_KEYS.filter(({ k }) => (r.condizioni || {})[k]?.length).map(({ k, label }) => (
+                                        <span key={k} className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-300">{label}: <b>{(r.condizioni[k] || []).join(", ")}</b></span>
+                                    ))}
+                                </div>
+                                <span className="flex items-center gap-1 shrink-0">
+                                    <button title="Modifica" onClick={() => setRegEdit(JSON.parse(JSON.stringify(r)))} className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10"><Pencil className="w-4 h-4" /></button>
+                                    <button title="Su" onClick={() => moveRegola(r, -1)} className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10"><ChevronUp className="w-4 h-4" /></button>
+                                    <button title="Giù" onClick={() => moveRegola(r, 1)} className="p-1 rounded text-slate-400 hover:text-white hover:bg-white/10"><ChevronDown className="w-4 h-4" /></button>
+                                    <button title={r.attivo ? "Nascondi regola (i dati storici restano)" : "Riattiva regola"} onClick={() => toggleRegola(r)} className={cn("p-1 rounded hover:bg-white/10", r.attivo ? "text-emerald-400" : "text-slate-600")}><Power className="w-4 h-4" /></button>
+                                    <button title="Elimina (sconsigliato: meglio nascondere)" onClick={() => delRegola(r)} className="p-1 rounded text-rose-400/70 hover:text-rose-300 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button>
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                {(r.campi || []).map((c, i) => (
+                                    <span key={i} className={cn("inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg border", c.attivo === false ? "border-white/5 text-slate-600 line-through" : "border-white/10 bg-white/[0.04] text-slate-200")}>
+                                        {c.nome}
+                                        <i className="not-italic text-[9px] uppercase text-slate-500">{c.tipo}</i>
+                                        {c.conferma && <i className="not-italic text-[9px] uppercase px-1 rounded bg-amber-500/20 text-amber-300" title="Campo dedotto: da confermare">?</i>}
+                                        <button title={c.attivo === false ? "Rendi di nuovo visibile" : "Nascondi campo (i dati storici restano)"} onClick={() => toggleCampo(r, i)} className="text-slate-500 hover:text-white">{c.attivo === false ? "🙈" : "👁"}</button>
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* editor regola */}
+            {regEdit && (
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setRegEdit(null)}>
+                    <div className="glass-card w-full max-w-2xl shadow-2xl max-h-[88vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-base font-bold text-white">{regEdit.id ? "Modifica regola campi" : "Nuova regola campi"}</h3>
+                            <button onClick={() => setRegEdit(null)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Nome della regola</label>
+                                <input value={regEdit.etichetta} onChange={(e) => setRegEdit({ ...regEdit, etichetta: e.target.value })} placeholder="es. Energia — dati fornitura" className="glass-input text-sm rounded-lg py-2 px-3 w-full" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Condizioni <span className="normal-case font-normal text-slate-500">(vuoto = vale sempre; più valori separati da virgola)</span></label>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {COND_KEYS.map(({ k, label, hint }) => (
+                                        <div key={k}>
+                                            <div className="text-[10px] text-slate-500 mb-0.5">{label} <i>({hint})</i></div>
+                                            <input value={(regEdit.condizioni[k] || []).join(", ")}
+                                                onChange={(e) => { const v = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); setRegEdit({ ...regEdit, condizioni: { ...regEdit.condizioni, [k]: v } }); }}
+                                                className="glass-input text-xs rounded-lg py-1.5 px-2 w-full" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Campi richiesti</label>
+                                <div className="space-y-1.5">
+                                    {regEdit.campi.map((c, i) => (
+                                        <div key={i} className="flex items-center gap-1.5 flex-wrap">
+                                            <input value={c.nome} onChange={(e) => { const campi = [...regEdit.campi]; campi[i] = { ...c, nome: e.target.value }; setRegEdit({ ...regEdit, campi }); }} placeholder="Nome campo" className="glass-input text-xs rounded-lg py-1.5 px-2 flex-1 min-w-[160px]" />
+                                            <select value={c.tipo} onChange={(e) => { const campi = [...regEdit.campi]; campi[i] = { ...c, tipo: e.target.value }; setRegEdit({ ...regEdit, campi }); }} className="glass-input text-xs rounded-lg py-1.5 px-2">
+                                                {TIPI_CAMPO.map((t) => <option key={t} value={t}>{t}</option>)}
+                                            </select>
+                                            <input value={c.nota} onChange={(e) => { const campi = [...regEdit.campi]; campi[i] = { ...c, nota: e.target.value }; setRegEdit({ ...regEdit, campi }); }} placeholder="nota (es. 19 cifre)" className="glass-input text-xs rounded-lg py-1.5 px-2 w-40" />
+                                            <button title={c.attivo === false ? "Nascosto — clicca per mostrare" : "Visibile — clicca per nascondere"} onClick={() => { const campi = [...regEdit.campi]; campi[i] = { ...c, attivo: c.attivo === false ? true : false }; setRegEdit({ ...regEdit, campi }); }} className="text-sm">{c.attivo === false ? "🙈" : "👁"}</button>
+                                            <button title="Togli riga (solo per campi mai usati)" onClick={() => setRegEdit({ ...regEdit, campi: regEdit.campi.filter((_, x) => x !== i) })} className="p-1 rounded text-rose-400/70 hover:text-rose-300"><X className="w-3.5 h-3.5" /></button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={() => setRegEdit({ ...regEdit, campi: [...regEdit.campi, { nome: "", tipo: "testo", nota: "", conferma: false, attivo: true }] })} className="mt-2 flex items-center gap-1 text-xs font-bold text-violet-300 hover:text-white"><Plus className="w-3.5 h-3.5" /> Aggiungi campo</button>
+                            </div>
+                            <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+                                <button onClick={() => setRegEdit(null)} className="px-4 py-2 rounded-lg border border-white/15 text-slate-300 text-sm hover:bg-white/5">Annulla</button>
+                                <button onClick={salvaRegola} className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold flex items-center gap-1.5"><Check className="w-4 h-4" /> Salva regola</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* colonne a cascata */}
+            {vista === "catalogo" && (
             <div className="grid grid-cols-12 gap-4 items-start">
                 {/* ── CATEGORIE ── */}
                 <div className="col-span-12 md:col-span-3 lg:col-span-2 glass-card p-3">
@@ -406,6 +576,7 @@ export function CatalogoView() {
                     )}
                 </div>
             </div>
+            )}
         </div>
     );
 }

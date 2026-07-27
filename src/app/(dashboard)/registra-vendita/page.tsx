@@ -4,7 +4,8 @@ import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer,
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
-import { risolviCampi, SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
+import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
+import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { useAuth } from "@/context/AuthContext";
@@ -3751,6 +3752,12 @@ export default function CRM() {
   //    i vecchi getW3/getVF/... restano nel file solo come riferimento storico.
   const [catTree,setCatTree]=useState(null);
   const _catCacheRef=useRef({});
+  // Regole CAMPI amministrabili (mig. 094): caricate una volta; finché non
+  // arrivano vale il generato dall'artifatto, quindi mai senza campi.
+  useEffect(()=>{(async()=>{try{
+    const {data}=await supabase.from("catalog_campi_regole").select("*").order("ordine");
+    if(data&&data.length)impostaRegoleCampi(data);
+  }catch(e){/* fallback al generato */}})();},[]);
   useEffect(()=>{let al=true;const slug=brand?SLUG_CATALOGO[brand]:null;
     if(!slug){setCatTree(null);return;}
     const hit=_catCacheRef.current[slug];
