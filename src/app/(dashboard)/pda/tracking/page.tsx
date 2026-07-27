@@ -28,7 +28,9 @@ import {
   isDaLavorareRow,
   isMalusRow,
   calcolaMalus,
+  impostaRegoleTracking,
 } from "./trackingHelpers";
+import { RegoleTracking } from "./RegoleTracking";
 
 type RawRow = Record<string, unknown> & {
   clients?: Record<string, unknown> | null;
@@ -1315,6 +1317,15 @@ export default function TrackingPdaPage() {
   const [escludiConfermati, setEscludiConfermati] = useState(false);
   const [escludiCompletati, setEscludiCompletati] = useState(false);
   const [showRegole, setShowRegole] = useState(false);
+  // regole del tracking dal DB (mig. 098): senza righe valgono i default in
+  // codice; regoleV forza il ricalcolo di fasce e KPI dopo un salvataggio
+  const [regoleV, setRegoleV] = useState(0);
+  useEffect(() => {
+    (async () => {
+      const { data: rg } = await supabase.from("tracking_regole").select("*");
+      if (rg && rg.length) { impostaRegoleTracking(rg as never); setRegoleV((v) => v + 1); }
+    })();
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -1502,7 +1513,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id, venditoreSel, negozioSel]);
+  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id, venditoreSel, negozioSel, regoleV]);
 
   const filteredPerKpi = useMemo(() => {
     return data.filter((row) => {
@@ -1542,7 +1553,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, escludiConfermati, escludiCompletati, negozioSel]);
+  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, escludiConfermati, escludiCompletati, negozioSel, regoleV]);
 
   // Delega la verifica di una pratica a un collaboratore (o rimuove la delega).
   const handleDelegate = useCallback(async (rowId: string, toId: string | null) => {
@@ -1652,62 +1663,22 @@ export default function TrackingPdaPage() {
             aria-label="Regole di Ingaggio"
           >
             <div
-              className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-[820px] max-h-[88vh] overflow-y-auto shadow-2xl"
+              className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-[980px] max-h-[88vh] overflow-y-auto shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between py-5 px-7 border-b border-slate-700">
                 <div>
                   <div className="text-lg font-extrabold text-slate-100">📋 Regole di Ingaggio — Tracking PDA</div>
-                  <div className="text-xs text-slate-500 mt-0.5">Soglie temporali per evitare Da Lavorare, Warning e Malus</div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    Giorni LAVORATIVI (lun–sab) · fasce mutuamente esclusive: 🔴 Malus &gt; ⚠️ Warning &gt; ⚡ Da Lavorare
+                    {["admin", "dev"].includes(user?.role || "") ? " · clicca sui numeri per modificarli" : ""}
+                  </div>
                 </div>
                 <button type="button" onClick={() => setShowRegole(false)} className="bg-transparent border-none text-slate-500 text-xl cursor-pointer leading-none p-0">
                   ✕
                 </button>
               </div>
-              <div className="mx-7 mt-4 py-2.5 px-3.5 bg-slate-900 rounded-lg text-xs text-slate-400">
-                <strong className="text-slate-100">Come funziona: </strong>
-                tutti i giorni sono <strong className="text-slate-100">lavorativi (lun–sab)</strong>.
-                I filtri sono mutualmente esclusivi: 🔴 Malus &gt; ⚠️ Warning &gt; ⚡ Da Lavorare. Le pratiche completate non appaiono in nessun filtro.
-              </div>
-              <div className="p-5">
-                {[
-                  { cat: "MNP", color: "#38bdf8", dl: ["≥ 2 gg senza aggiornamento storico"], warn: ["≥ 5 gg senza aggiornamento storico", "Non completata (≠ Completato / Re-Inserita) da ≥ 5 gg"], malus: ["≥ 6 gg senza aggiornamento storico → €5/gg"] },
-                  { cat: "Fisso", color: "#818cf8", dl: ["≥ 5 gg senza aggiornamento storico"], warn: ["≥ 10 gg senza aggiornamento storico", "Non completata (≠ Completato) da ≥ 20 gg"], malus: ["≥ 15 gg senza aggiornamento storico → €10/gg"] },
-                  { cat: "Finanziamento", color: "#f59e0b", dl: ["≥ 2 gg senza aggiornamento storico"], warn: ["≥ 4 gg senza aggiornamento storico"], malus: ["≥ 6 gg senza aggiornamento storico → €10/gg"] },
-                  { cat: "P.IVA", color: "#a78bfa", dl: ["≥ 2 gg senza aggiornamento storico", "Sempre se stato = Cliente Irreperibile"], warn: ["≥ 4 gg senza aggiornamento storico", "Non completata da ≥ 10 gg", "Cliente Irreperibile non aggiornato da > 2 gg"], malus: ["Soglia non ancora definita (non attivo)"] },
-                  { cat: "Energia", color: "#22c55e", dl: ["≥ 5 gg senza aggiornamento storico"], warn: ["≥ 10 gg senza aggiornamento storico"], malus: ["≥ 15 gg senza aggiornamento storico → €10/gg"] },
-                  { cat: "Sky", color: "#6366f1", dl: ["Stato Nuovo da ≥ 2 gg dall'inserimento", "Sempre in stato WM Sospetta", "Attesa Matricola senza aggiornamento da ≥ 5 gg", "Aperto Sparks senza aggiornamento da ≥ 3 gg"], warn: ["Stato Nuovo da ≥ 4 gg dall'inserimento", "≥ 10 gg senza aggiornamento (qualsiasi stato)"], malus: ["Soddisfa Warning + ≥ 2 gg ulteriori senza aggiornamento → €5/gg"] },
-                ].map((r) => (
-                  <div key={r.cat} className="mb-4 rounded-xl border border-slate-700 overflow-hidden">
-                    <div className="flex items-center gap-2.5 py-2.5 px-4 bg-slate-900 border-b border-slate-700">
-                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: r.color }} />
-                      <div className="text-[13px] font-extrabold" style={{ color: r.color }}>{r.cat}</div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3">
-                      {[
-                        { label: "⚡ Da Lavorare", rules: r.dl, col: "#eab308", bg: "#1c1708" },
-                        { label: "⚠️ Warning", rules: r.warn, col: "#f97316", bg: "#1c0e05" },
-                        { label: "🔴 Malus", rules: r.malus, col: "#ef4444", bg: "#1c0505" },
-                      ].map((col, ci) => (
-                        <div key={ci} className="p-3 border-b sm:border-b-0 sm:border-r border-slate-700 last:border-r-0" style={{ background: col.bg }}>
-                          <div className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: col.col }}>{col.label}</div>
-                          {col.rules.map((rule, ri) => (
-                            <div key={ri} className="flex gap-1.5 mb-1 items-start">
-                              <span className="flex-shrink-0 mt-0.5 text-[10px]" style={{ color: col.col }}>•</span>
-                              <span className="text-[11px] text-slate-200 leading-snug">{rule}</span>
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="py-3.5 px-7 border-t border-slate-700 flex justify-end">
-                <button type="button" onClick={() => setShowRegole(false)} className="bg-indigo-600 border-none rounded-lg text-white text-[13px] font-bold py-2 px-5 cursor-pointer">
-                  Chiudi
-                </button>
-              </div>
+              <RegoleTracking admin={["admin", "dev"].includes(user?.role || "")} onSalvate={() => setRegoleV((v) => v + 1)} />
             </div>
           </div>
         )}
