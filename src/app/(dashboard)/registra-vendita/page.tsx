@@ -3753,7 +3753,8 @@ export default function CRM() {
   const openQr = async (type) => {
     try {
       const token = (window.crypto?.randomUUID?.() || (Date.now() + "-" + Math.random().toString(36).slice(2)));
-      const kind = type === "documento" ? "foto" : "pdf";
+      // documento = solo foto (una o piu'); contratti/altro = foto o scansione PDF
+      const kind = type === "documento" ? "foto" : "doc";
       const { error } = await supabase.from("qr_uploads").insert({ token, box_type: type, kind, status: "attesa" });
       if (error) { alert("QR non generato: " + error.message); return; }
       const url = `${window.location.origin}/m/u/${token}`;
@@ -3766,21 +3767,26 @@ export default function CRM() {
     if (!qrToken) return;
     let alive = true;
     const t = setInterval(async () => {
-      const { data } = await supabase.from("qr_uploads").select("status,file_url,file_name,file_mime").eq("token", qrToken).maybeSingle();
+      const { data } = await supabase.from("qr_uploads").select("status,files").eq("token", qrToken).maybeSingle();
       if (!alive || !data) return;
-      if (data.status === "caricato" && data.file_url) {
+      const files = Array.isArray(data.files) ? data.files : [];
+      if (data.status === "caricato" && files.length) {
         clearInterval(t);
         try {
-          const resp = await fetch(data.file_url);
-          const blob = await resp.blob();
-          const file = new File([blob], data.file_name || "allegato", { type: data.file_mime || blob.type });
-          setAttachments(p => [...p, { file, name: file.name, type: qrBox }]);
-          setQrRecv({ name: data.file_name });
+          for (const f of files) {
+            const resp = await fetch(f.url);
+            const blob = await resp.blob();
+            const file = new File([blob], f.name || "allegato", { type: f.mime || blob.type });
+            setAttachments(p => [...p, { file, name: file.name, type: qrBox }]);
+          }
+          setQrRecv({ n: files.length });
         } catch (e) { alert("Ricezione file non riuscita: " + (e?.message || e)); }
-        // pulizia: rimuovi file di staging + riga sessione
+        // pulizia: rimuovi i file di staging + riga sessione
         try {
-          const marker = "/qr-uploads/"; const i = String(data.file_url).indexOf(marker);
-          if (i >= 0) await supabase.storage.from("qr-uploads").remove([decodeURIComponent(String(data.file_url).slice(i + marker.length))]);
+          for (const f of files) {
+            const marker = "/qr-uploads/"; const i = String(f.url).indexOf(marker);
+            if (i >= 0) await supabase.storage.from("qr-uploads").remove([decodeURIComponent(String(f.url).slice(i + marker.length))]);
+          }
         } catch { }
         try { await supabase.from("qr_uploads").delete().eq("token", qrToken); } catch { }
         setTimeout(() => { if (alive) closeQr(); }, 1600);
@@ -4608,7 +4614,7 @@ export default function CRM() {
               <button onClick={closeQr} style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}}>✕</button>
             </div>
             {qrRecv?(
-              <div style={{padding:"22px 0"}}><div style={{fontSize:48,marginBottom:8}}>✅</div><div style={{fontSize:16,fontWeight:800,color:"#34d399"}}>Ricevuto!</div><div style={{fontSize:12,color:"#94a3b8",marginTop:6,wordBreak:"break-all"}}>{qrRecv.name}</div><div style={{fontSize:11,color:"#64748b",marginTop:4}}>Aggiunto agli allegati.</div></div>
+              <div style={{padding:"22px 0"}}><div style={{fontSize:48,marginBottom:8}}>✅</div><div style={{fontSize:16,fontWeight:800,color:"#34d399"}}>Ricevuto!</div><div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>{qrRecv.n} file aggiunt{qrRecv.n===1?"o":"i"} agli allegati.</div></div>
             ):(<>
               <div style={{fontSize:12,color:"#94a3b8",marginBottom:14}}>Inquadra il QR con la fotocamera del telefono e carica {qrBox==="documento"?"la foto del documento (PNG/JPEG)":"il PDF — se scansioni più pagine verranno unite in un unico file"}.</div>
               {qrImg?<img src={qrImg} alt="QR" style={{width:216,height:216,borderRadius:12,background:"#fff",padding:8,boxSizing:"border-box"}}/>:<div style={{width:216,height:216,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b"}}>Genero…</div>}
