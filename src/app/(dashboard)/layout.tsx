@@ -5,7 +5,8 @@ import { Header } from "@/components/Header";
 import { ChatToaster } from "@/components/ChatToaster";
 import { PageBackProvider } from "@/context/PageBackContext";
 import { PresenceProvider } from "@/context/PresenceContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { cn } from "@/utils";
 
 // This layout will wrap all authenticated routes (dashboard, pda, documenti, ecc)
 export default function AuthLayout({
@@ -14,12 +15,34 @@ export default function AuthLayout({
     children: React.ReactNode;
 }) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    // menù a scomparsa (pin nella sidebar): preferenza ricordata sul dispositivo
+    const [autoHide, setAutoHide] = useState(false);
+    useEffect(() => { try { setAutoHide(localStorage.getItem("crm_menu_autohide") === "1"); } catch { } }, []);
+    const cambiaAutoHide = (v: boolean) => { setAutoHide(v); try { localStorage.setItem("crm_menu_autohide", v ? "1" : "0"); } catch { } };
+    // AUTO-RIPRISTINO dopo i deploy: se un pezzo dell'app non esiste piu' sul
+    // server (chunk vecchio in un tab rimasto aperto), si ricarica UNA volta da
+    // soli invece di mostrare il "codice di errore" (caso Utenti, Luca 28/07).
+    useEffect(() => {
+        const h = (e: ErrorEvent | PromiseRejectionEvent) => {
+            const msg = String((e as ErrorEvent)?.message || ((e as PromiseRejectionEvent)?.reason as Error)?.message || "");
+            if (/Loading chunk|ChunkLoadError|dynamically imported module|Importing a module script failed/i.test(msg)) {
+                if (!sessionStorage.getItem("crm_chunk_reload")) {
+                    sessionStorage.setItem("crm_chunk_reload", "1");
+                    window.location.reload();
+                }
+            }
+        };
+        window.addEventListener("error", h);
+        window.addEventListener("unhandledrejection", h);
+        const ok = setTimeout(() => sessionStorage.removeItem("crm_chunk_reload"), 15000);
+        return () => { window.removeEventListener("error", h); window.removeEventListener("unhandledrejection", h); clearTimeout(ok); };
+    }, []);
 
     return (
         <PageBackProvider>
             <PresenceProvider>
-                <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} />
-                <div className="flex-1 lg:ml-64 flex flex-col min-h-screen overflow-x-hidden">
+                <Sidebar isOpen={isSidebarOpen} setIsOpen={setIsSidebarOpen} autoHide={autoHide} setAutoHide={cambiaAutoHide} />
+                <div className={cn("flex-1 flex flex-col min-h-screen overflow-x-hidden transition-[margin] duration-300", autoHide ? "lg:ml-0" : "lg:ml-64")}>
                     <Header onMenuClick={() => setIsSidebarOpen(true)} />
                     <main className="flex-1 w-full min-w-0 p-4 sm:p-6 md:p-8">
                         {children}
