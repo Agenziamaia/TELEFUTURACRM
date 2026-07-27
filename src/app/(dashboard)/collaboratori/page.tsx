@@ -7,7 +7,9 @@ import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, His
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
+import { isAdminOrAbove } from "@/lib/roles";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { FERIE_SECTION, CAP_FERIE_GESTIONE, capAllowed } from "@/lib/capabilities";
 import { useVisibleStores } from "@/lib/visibleStores";
 
 // Il tab BADGE e' stato SPOSTATO nell'hub Call Center (/caller?tab=badge, Luca 28/07):
@@ -19,7 +21,12 @@ function CollaboratoriPageContent() {
     const searchParams = useSearchParams();
     const tab = (searchParams.get("tab") as TabId) || "ferie";
 
-    const isAdminLike = !!user && (seesAllStores(user.role) || seesWholeStore(user.role));
+    // MASCHERA FERIE dai PERMESSI (cap:/collaboratori?tab=ferie:gestione_team,
+    // rotellina in Amministrazione → Utenti → Permessi). Luca 27/07: store manager
+    // e direttore commerciale NON gestiscono il team — vedono la maschera del
+    // consulente (solo le proprie richieste), salvo riaccenderla per ruolo.
+    const { perms: capPerms } = useRolePermissions(user?.role);
+    const gestioneFerie = !!user && capAllowed(user.role, FERIE_SECTION, CAP_FERIE_GESTIONE, capPerms);
 
     const sectionInfo = {
         ferie: { label: "Ferie", icon: CalendarDays, desc: "Pianificazione, richieste e approvazione ferie" },
@@ -49,7 +56,7 @@ function CollaboratoriPageContent() {
             </div>
 
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                {tab === "ferie" && <FerieSection isAdminLike={!!isAdminLike} />}
+                {tab === "ferie" && <FerieSection isAdminLike={gestioneFerie} />}
                 {tab === "malattia" && isAdminOrAbove(user?.role) && <MalattiaSection />}
                 {tab === "malattia" && !isAdminOrAbove(user?.role) && (
                     <div className="glass-card p-12 text-center">

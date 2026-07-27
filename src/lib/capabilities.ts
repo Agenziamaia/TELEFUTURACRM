@@ -140,7 +140,26 @@ export const CAP_CLIENTI_EXTRA: CapGroupFlags = {
     caps: [CAP_CLIENTI_ALLEGATI],
 };
 
+// ─── FERIE (Collaboratori): maschera della sezione ───────────────────────────
+// Luca 27/07: store manager e direttore commerciale vedevano la maschera del
+// team; devono avere quella del consulente (solo le PROPRIE richieste). Qui il
+// default NON fotografa il codice storico ma la nuova regola: gestione al solo
+// pacchetto approvatori — ogni altro ruolo si riaccende dalla rotellina.
+export const FERIE_SECTION = "/collaboratori?tab=ferie";
+export const CAP_FERIE_GESTIONE: CapDef = {
+    id: "gestione_team",
+    label: "Gestione team",
+    desc: "Registro richieste di tutto il team, calendario ferie, filtri, approva/rifiuta ed export per il commercialista. Spenta: il ruolo vede e fa solo le proprie richieste.",
+    default: (r) => ["amministrativo", "admin", "dev", "direttore_generale"].includes(r),
+};
+export const CAP_FERIE: CapGroupFlags = {
+    mode: "flags",
+    section: FERIE_SECTION,
+    sectionLabel: "Ferie",
+    caps: [CAP_FERIE_GESTIONE],
+};
+
 /** Catalogo completo: la pagina Permessi lo rende amministrabile da solo.
  *  Piu' gruppi possono condividere la stessa sezione: l'ingranaggio li mostra
  *  impilati nello stesso pannello. */
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_FERIE];
