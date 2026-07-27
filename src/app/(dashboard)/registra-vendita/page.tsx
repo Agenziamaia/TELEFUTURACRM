@@ -3,7 +3,8 @@
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
-import { categoriaDi, controlliDi, CANONICA_BY_ID } from "@/lib/tassonomia";
+import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
+import { risolviCampi, SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { useAuth } from "@/context/AuthContext";
@@ -2758,11 +2759,94 @@ const _vfCompassOk=(it)=>{if(!_NE(it.codicePratica))return false;if(it.bundleOn|
 const _vfSlotOk=(s)=>{if(!s||!s.tipo)return false;if(TNP_TAGLIA_OPTS.indexOf(s.tipo)>=0)return _NE(s.modello)&&_NE(s.imei);if(COMPASS_OPTS.indexOf(s.tipo)>=0||s.tipo==="Forward"){const items=(s.compassItems&&s.compassItems.length)?s.compassItems:[];if(!items.length)return false;return items.every(_vfCompassOk);}return true;};
 const _vfTnpListOk=(list)=>Array.isArray(list)&&list.length>0&&list.every(_vfSlotOk);
 const _vfStartedSlotsOk=(list)=>!Array.isArray(list)||list.filter(s=>s&&s.tipo).every(_vfSlotOk);
+// ══ FLUSSO CATALOGO A 6 LIVELLI (aggancio 27/07): UN componente per TUTTI i
+// brand al posto degli 11 flussi cablati. Brand > Tipo Cliente > Categoria >
+// Prodotto arrivano dai gruppi (tabelle catalog_*); qui si scelgono Offerta
+// (una sola) e Opzioni (multiple; gruppo "¹" = una sola del gruppo, es.
+// Reload; opzioni a quantità), poi i CAMPI dallo strato dati dell'artifatto
+// (risolviCampi). Grafica: gli stessi TF/DD/SCd del flusso storico.
+const _sesRef={v:""}; // codice sessione corrente (per il fallback Cod.Ins. in subComplete)
+const _codiciDi=(pageBrand)=>pageBrand==="vodafone"?VF_CODICI_NEGOZIO:pageBrand==="fastweb"?FW_CODICI_NEGOZIO:pageBrand==="iliad"?IL_CODICI_NEGOZIO:pageBrand==="energy"?EN_CODICI_NEGOZIO:pageBrand==="tim"?TIM_CODICI_NEGOZIO:pageBrand==="very"?VERY_CODICI_NEGOZIO:pageBrand==="ho"?HO_CODICI_NEGOZIO:pageBrand==="kena"?KENA_CODICI_NEGOZIO:pageBrand==="dojo"?DOJO_CODICI_NEGOZIO:pageBrand==="sky"?SKY_CODICI_NEGOZIO:codiciW3;
+const _sceltaVals=(nome,categoria)=>{
+  if(nome==="Operatore di Provenienza")return categoria==="Energia"?opProv:brandMNP;
+  if(nome==="Operatore GNP")return GNP_FISSO_BRANDS;
+  return [];
+};
+const CatalogoSub=({sub,sd,uF,gid,si,sc,color})=>{
+  const f=sd.fields||{};
+  const off=f["Offerta"]||"";
+  const offerte=sub.catOfferte||[];
+  const offSel=offerte.find(o=>o.nome===off)||null;
+  const opz=f.__opzioni||{};
+  const attive=Object.keys(opz).filter(k=>opz[k]);
+  const setF=(k,v)=>uF(gid,si,sub.id,k,v);
+  const pickOff=(v)=>{setF("Offerta",v);setF("__opzioni",{});};
+  const togOpz=(o)=>{const cur=!!opz[o.nome];const next={...opz};
+    if(cur){delete next[o.nome];}
+    else{if(o.gruppo){(offSel?offSel.opzioni:[]).forEach(x=>{if(x.gruppo===o.gruppo)delete next[x.nome];});}
+      next[o.nome]=o.tipo==="numero"?1:true;}
+    setF("__opzioni",next);};
+  const campi=risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,off,attive);
+  const pageBrand=sub.catBrand==="s4"?"energy":sub.catBrand;
+  const codici=_codiciDi(pageBrand);
+  return (<div>
+    {offerte.length>0&&(
+      offerte.length>10
+        ? <div style={{marginTop:6,maxWidth:420}}><DD l="Offerta" r v={off} o={pickOff} vals={offerte.map(o=>o.nome)}/></div>
+        : <div style={{marginTop:6}}>
+            <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:4}}>Offerta <span style={{color:"#dc3545"}}>*</span></div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {offerte.map(o=><button key={o.nome} onClick={()=>pickOff(off===o.nome?"":o.nome)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",border:off===o.nome?"2px solid "+color:"2px solid rgba(255,255,255,0.1)",background:off===o.nome?color:"rgba(255,255,255,0.04)",color:off===o.nome?"#fff":"#8892b0",fontSize:12,fontWeight:600}}>{o.nome}</button>)}
+            </div>
+          </div>
+    )}
+    {offSel&&offSel.opzioni.length>0&&(
+      <div style={{marginTop:10}}>
+        <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:4}}>Opzioni <span style={{fontWeight:400,color:"#64748b"}}>(facoltative{offSel.opzioni.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span></div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {offSel.opzioni.map(o=>{const on=!!opz[o.nome];return(
+            <span key={o.nome} style={{display:"inline-flex",alignItems:"center",gap:6}}>
+              <button onClick={()=>togOpz(o)} style={{padding:"6px 12px",borderRadius:999,cursor:"pointer",border:on?"2px solid "+color:"1px solid rgba(255,255,255,0.15)",background:on?color+"26":"rgba(255,255,255,0.03)",color:on?"#fff":"#8892b0",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
+              {on&&o.tipo==="numero"&&<input type="number" min="1" value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{const q=Math.max(1,parseInt(e.target.value||"1",10)||1);setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",fontSize:12,background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>}
+            </span>);})}
+        </div>
+      </div>
+    )}
+    {(offerte.length===0||off)&&campi.length>0&&(
+      <div style={{marginTop:10,padding:10,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)"}}>
+        <div style={{fontSize:11,fontWeight:700,color,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px"}}>
+          {campi.map(cmp=>{
+            if(cmp.nome==="Codice Inserimento")return <SCd key={cmp.nome} session={sc} codici={codici} val={f[cmp.nome]||""} onCh={v=>setF(cmp.nome,v)}/>;
+            if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
+            if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{cmp.nome} <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>{cmp.nota&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{cmp.nota}</div>}</div>);
+            return <TF key={cmp.nome} l={cmp.nome} r v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p={cmp.nota||""}/>;
+          })}
+        </div>
+      </div>
+    )}
+  </div>);
+};
+
 const subComplete=(sub,d)=>{
   if(!d)return false;
   const F=(k)=>_NE(d[k]);
   const C=d.contract||{};
   const CF=(k)=>_NE(C[k]);
+  // CATALOGO 6 LIVELLI: offerta obbligatoria (se il prodotto ne ha) + tutti i
+  // campi dello strato dati; Cod.Ins. soddisfatto anche dal codice sessione.
+  if(sub.isCatalogo){
+    const f=d.fields||{};
+    if((sub.catOfferte||[]).length&&!_NE(f["Offerta"]))return false;
+    const _opz=f.__opzioni||{};
+    const _att=Object.keys(_opz).filter(k=>_opz[k]);
+    const _campi=risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,f["Offerta"]||"",_att);
+    for(const cmp of _campi){
+      if(cmp.nome==="Codice Inserimento"){if(!_NE(f[cmp.nome])&&!_NE(_sesRef.v))return false;}
+      else if(!_NE(f[cmp.nome]))return false;
+    }
+    return true;
+  }
   // VODAFONE privato GA
   if(sub.isVFMobile){
     if(!F("vfOffer"))return false;
@@ -2946,6 +3030,8 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
         <div style={{fontSize:11,fontWeight:700,color:group.color}}>{sub.title}</div>
         {_bd&&<span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999,background:_bd.bg,color:_bd.fg,whiteSpace:"nowrap"}}>{_bd.label}</span>}
       </div>
+
+      {sub.isCatalogo&&<CatalogoSub sub={sub} sd={sd} uF={uF} gid={group.id} si={si} sc={sessionCode} color={group.color}/>}
 
       {/* MOBILE flow: Tipologia → MNP → EasyPay → Dropdown */}
       {sub.isMobile&&(
@@ -3660,6 +3746,35 @@ export default function CRM() {
   const [sesCode,setSesCode]=useState("");
   const [cart,setCart]=useState([]);
 
+  // ── CATALOGO A 6 LIVELLI: albero del brand selezionato (tabelle catalog_*,
+  //    solo voci attive), con cache per sessione. È LA fonte di voci e livelli:
+  //    i vecchi getW3/getVF/... restano nel file solo come riferimento storico.
+  const [catTree,setCatTree]=useState(null);
+  const _catCacheRef=useRef({});
+  useEffect(()=>{let al=true;const slug=brand?SLUG_CATALOGO[brand]:null;
+    if(!slug){setCatTree(null);return;}
+    const hit=_catCacheRef.current[slug];
+    if(hit){setCatTree(hit);return;}
+    (async()=>{try{
+      const [rc,rp]=await Promise.all([
+        supabase.from("catalog_categorie").select("*").eq("attivo",true).order("ordine"),
+        supabase.from("catalog_prodotti").select("*").eq("brand_id",slug).eq("attivo",true),
+      ]);
+      if(rc.error||rp.error)throw (rc.error||rp.error);
+      const prods=rp.data||[];
+      let offs=[];
+      if(prods.length){
+        const ro=await supabase.from("catalog_offerte").select("*, catalog_opzioni(*)").in("prodotto_id",prods.map(x=>x.id)).eq("attivo",true);
+        if(ro.error)throw ro.error;
+        offs=ro.data||[];
+      }
+      const t={categorie:rc.data||[],prodotti:prods,offerte:offs};
+      _catCacheRef.current[slug]=t;
+      if(al)setCatTree(t);
+    }catch(e){if(al){setCatTree({categorie:[],prodotti:[],offerte:[]});sT("⚠️ Catalogo non raggiungibile: "+String((e&&e.message)||e));}}})();
+    return()=>{al=false};
+  },[brand]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Venditore e Negozio: precompilati dal login (prima erano fissi "Alberto"/"Magliana").
   const { user } = useAuth();
   const [selVend,setSelVend]=useState("");
@@ -3676,12 +3791,29 @@ export default function CRM() {
   const [vfQtyModal,setVfQtyModal]=useState(null);
 
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
-  const cats=(brand==="windtre"?getW3(tipoCliente):brand==="vodafone"?getVF(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):brand==="dojo"?getDOJO():[]);
-  // Segnalazione 84: con un contratto energia (di qualsiasi brand) serve una
-  // cartella "Fattura" per la bolletta del vecchio operatore.
-  const _blEnergia=(BRANDS.find(b=>b.id===brand)||{}).label||"";
-  const haEnergia=cats.some(g=>(sales[g.id]||[]).some(sale=>g.subs.some(sub=>
-    sale&&sale[sub.id]&&sale[sub.id].active&&categoriaDi(_blEnergia,g.title,sub.title)==="energia")));
+  // GRUPPI DAL CATALOGO (stessa forma dei vecchi getXX, per TUTTI i brand,
+  // Sky compreso): una card per CATEGORIA con i PRODOTTI del tipo cliente.
+  const cats=useMemo(()=>{
+    if(!brand||!catTree)return [];
+    const tipoCat=tipoCliente==="business"?"Business":"Consumer";
+    const slug=SLUG_CATALOGO[brand];
+    const offByProd={};
+    (catTree.offerte||[]).forEach(o=>{(offByProd[o.prodotto_id]=offByProd[o.prodotto_id]||[]).push(o);});
+    return (catTree.categorie||[]).map(cat=>{
+      const prods=(catTree.prodotti||[]).filter(x=>x.categoria_id===cat.id&&x.tipo_cliente===tipoCat).sort((a,b)=>a.ordine-b.ordine||a.nome.localeCompare(b.nome));
+      if(!prods.length)return null;
+      const macro=CAT_MACRO_ID[cat.nome]||"extra";
+      const def=categoriaDef(macro);
+      return {id:"cat_"+cat.id,title:cat.nome.toUpperCase(),icon:def.icon,color:def.color,radio:true,catMacro:macro,subs:prods.map(x=>({
+        id:"p_"+x.id,title:x.nome,isCatalogo:true,hasContract:false,ct:"cat",fields:[],
+        catBrand:slug,catTipo:tipoCat,catCategoria:cat.nome,catProdotto:x.nome,
+        catOfferte:(offByProd[x.id]||[]).sort((a,b)=>a.ordine-b.ordine||a.nome.localeCompare(b.nome)).map(o=>({nome:o.nome,opzioni:((o.catalog_opzioni||[]).filter(k=>k.attivo)).sort((a,b)=>a.ordine-b.ordine).map(k=>({nome:k.nome,tipo:k.tipo,gruppo:k.gruppo_singolo}))})),
+      }))};
+    }).filter(Boolean);
+  },[brand,catTree,tipoCliente]);
+  _sesRef.v=sesCode; // per il fallback Cod.Ins. dentro subComplete
+  // Segnalazione 84: con un contratto energia serve la cartella "Fattura".
+  const haEnergia=cats.some(g=>g.catMacro==="energia"&&(sales[g.id]||[]).some(sale=>sale&&g.subs.some(sub=>sale[sub.id]&&sale[sub.id].active)));
   const sT=m=>{setToast(m);setTimeout(()=>setToast(null),3500)};
   const uA=(k,v)=>setAna(p=>({...p,[k]:v}));
   const gS=catId=>sales[catId]||[{}];
@@ -3713,11 +3845,32 @@ export default function CRM() {
   const confirmVFQty=()=>{if(!vfQtyModal)return;const{catId,si,subId,offer,tempQty}=vfQtyModal;const cur=((sales[catId]||[{}])[si]||{})[subId];const baseO=(cur&&cur.vfOffers)||{};const newVfOffers={...baseO};if(tempQty>0)newVfOffers[offer]=tempQty;else delete newVfOffers[offer];const existC=(cur&&cur.vfContratti&&cur.vfContratti[offer])||[];const newC=Array.from({length:tempQty},(_,i)=>existC[i]||{codIns:"",codContratto:"",numProv:"",iccid:""});const newVfC={...((cur&&cur.vfContratti)||{}),[offer]:newC};uP(catId,si,subId,"vfOffers",newVfOffers);uP(catId,si,subId,"vfContratti",newVfC);setVfQtyModal(null);};
 
   const colItems=useCallback(()=>{
+    // Carrello dal flusso catalogo: dettagli = Offerta + Opzioni + campi dello
+    // strato dati (Cod.Ins. col fallback sessione, ICCID normalizzato); MNP e
+    // Tipo TNP scritti nei dettagli così controlliDi/Tracking/auto-marginalità
+    // continuano a funzionare come prima.
     const items=[];
-    if(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"){const getCats=brand==="windtre"?getW3(tipoCliente):brand==="fastweb"?getFW(tipoCliente):brand==="iliad"?getIL(tipoCliente):brand==="energy"?getEN(tipoCliente):brand==="tim"?getTIM(tipoCliente):brand==="very"?getVERY(tipoCliente):brand==="ho"?getHO(tipoCliente):brand==="kena"?getKena(tipoCliente):brand==="dojo"?getDOJO():getVF(tipoCliente);getCats.forEach(g=>{(sales[g.id]||[{}]).forEach((sale,si)=>{g.subs.forEach(sub=>{const d=sale[sub.id];if(d&&d.active){const det={...(d.fields||{}),...(d.contract||{}),hasContract:!!sub.hasContract};const _ed=extractDetails(d);for(const _k in _ed)det[_k]=_ed[_k];items.push({macro:g.title,macroColor:g.color,macroIcon:g.icon,sub:sub.title,saleNum:si+1,details:det})}})})})
-    }else if(brand==="sky"){skyS.forEach((s,si)=>{if(s.tvSel)items.push({macro:"SKY TV",macroColor:"#0072C6",macroIcon:"📺",sub:s.tvSel,saleNum:si+1,details:{hasContract:true,"Codice Contratto":s.tvCC||"","Cod.Ins.":s.tvCodIns||sesCode||""}});if(s.fibraSel){const det={hasContract:true,"Codice Contratto":s.fibraCC||"","Cod.Ins.":s.fibraCodIns||sesCode||"","GNP":s.fibraGnp==="Sì"?"Sì":"No"};if(s.fibraGnp==="Sì"){det["Brand GNP"]=s.fibraGnpBrand||"";det["N.Fisso Portabilità"]=s.fibraGnpNum||""}items.push({macro:"SKY FIBRA",macroColor:"#0072C6",macroIcon:"🌐",sub:s.fibraSel,saleNum:si+1,details:det})}if(s.mobileSel){const det={hasContract:false,"Cod.Ins.":s.mobCodIns||sesCode||"","MNP":s.mobMnp==="Sì"?"Sì":"No"};if(s.mobMnp==="Sì"){det["N.Provvisorio"]=s.mobNumProv||"";det["N.Definitivo"]=s.mobNumDef||"";det["Brand MNP"]=s.mobBrandMnp||"";det["ICCID"]=s.mobIccid||""}else if(s.mobMnp==="No"){det["Numero"]=s.mobNum||"";det["ICCID"]=s.mobIccidNo||""}if(s.mobTied)det["TIED"]=s.mobTied;items.push({macro:"SKY MOBILE",macroColor:"#0072C6",macroIcon:"📱",sub:"Sky Mobile",saleNum:si+1,details:det})}});}
+    cats.forEach(g=>{(sales[g.id]||[{}]).forEach((sale,si)=>{if(!sale)return;g.subs.forEach(sub=>{const d=sale[sub.id];if(!(d&&d.active))return;
+      const f=d.fields||{};
+      const det={};
+      if((sub.catOfferte||[]).length)det["Offerta"]=f["Offerta"]||"";
+      const opz=f.__opzioni||{};
+      const attive=Object.keys(opz).filter(k=>opz[k]);
+      if(attive.length)det["Opzioni"]=attive.map(k=>opz[k]===true?k:k+" ("+opz[k]+")").join(", ");
+      if(/\bMNP\b/i.test(sub.catProdotto))det["MNP"]="Sì";
+      if(sub.catCategoria==="Telefono a Rate")det["Tipo TNP"]=/finanziato/i.test(sub.catProdotto)?"Finanziamento":"Rata";
+      risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,f["Offerta"]||"",attive).forEach(cmp=>{
+        const raw=f[cmp.nome];
+        if(cmp.nome==="Codice Inserimento")det["Cod.Ins."]=raw||sesCode||"";
+        else if(cmp.nome==="Seriale SIM (ICCID)")det["ICCID"]=raw||"";
+        else det[cmp.nome]=raw||"";
+      });
+      items.push({macro:g.title,macroColor:g.color,macroIcon:g.icon,sub:sub.title,saleNum:si+1,details:det,
+        catalogo:{tipo:sub.catTipo,categoria:sub.catCategoria,prodotto:sub.catProdotto,offerta:f["Offerta"]||null,
+          opzioni:attive.map(k=>({nome:k,quantita:opz[k]===true?null:opz[k]})),macro:g.catMacro}});
+    });});});
     return items;
-  },[brand,sales,skyS,tipoCliente]);
+  },[cats,sales,sesCode]);
 
   const podPdrMap=(()=>{const map={};const scan=(so)=>{if(!so)return;Object.keys(so).forEach(cat=>{(so[cat]||[]).forEach(row=>{if(!row||typeof row!=="object")return;Object.keys(row).forEach(sid=>{const d=row[sid];if(!d||typeof d!=="object")return;const add=(t,val)=>{if(val&&String(val).trim()){const k=t+":"+String(val).trim().toUpperCase();map[k]=(map[k]||0)+1;}};add("POD",d.fwPod);add("PDR",d.fwPdr);add("POD",d.enPod);add("PDR",d.enPdr);// Codice contratto ripetuto fra piu' prodotti dello stesso brand (segnalazione 17):
                      // prima passava senza alcun avviso.
@@ -3750,7 +3903,7 @@ export default function CRM() {
   })();
   const blockSave=hasDupPodPdr||hasDupCodContr||hasInvalidNumIccid;
   const hasIncomplete=(()=>{let bad=false;cats.forEach(g=>{(sales[g.id]||[]).forEach((row,si)=>{if(!row)return;g.subs.forEach(s=>{const d=row[s.id];if(d&&d.active){const b=subBadge(d,dupCheck,s,_reqMissing(g.id+"-"+si+"-"+s.id));if(b&&b.st!=="ok")bad=true;}});});});return bad;})();
-  const skyIncomplete=brand==="sky"&&skyS.some(s=>{const t=skyTv(s),f=skyFib(s),m=skyMob(s);return (t.sel&&!t.ok)||(f.sel&&!f.ok)||(m.sel&&!m.ok);});
+  const skyIncomplete=false; // Sky ora passa dal flusso catalogo (macchinario skyS dormiente)
   const blockSaveAll=blockSave||hasIncomplete||skyIncomplete;
   const addCart=()=>{
     const items=colItems();
@@ -4003,7 +4156,9 @@ export default function CRM() {
           // Tassonomia unica: in `categoria` va l'ETICHETTA CANONICA (Mobile, Fisso,
           // Energia, ...) — mai piu' il titolo del menu' del brand, che resta nei
           // dettagli (menu_brand) per non perdere nulla. Layer 1 del flusso (Luca 25/07).
-          const macroId = categoriaDi(group.brandLabel, item.macro, item.sub);
+          // Vendite dal flusso catalogo: macro-categoria ESPLICITA (perimetro
+          // chiuso, niente inferenza); il legacy resta per il carrello storico.
+          const macroId = item.catalogo ? (item.catalogo.macro || "extra") : categoriaDi(group.brandLabel, item.macro, item.sub);
           // Segnalazione 91: una pratica MOBILE senza finanziamento e senza MNP
           // non e' da lavorare nel Tracking, quindi nasce gia' Attiva (come Extra
           // e Sostituzioni). Esempi: francesca iossa, Alberto Franzini.
@@ -4019,6 +4174,10 @@ export default function CRM() {
             categoria_macro: macroId,
             controlli: controlliDi(item.details),
             prodotto: item.sub,
+            // 6 LIVELLI (mig. 093): tipo cliente, offerta e opzioni della vendita.
+            tipo_cliente: item.catalogo ? item.catalogo.tipo : null,
+            offerta: item.catalogo ? item.catalogo.offerta : null,
+            opzioni: item.catalogo ? item.catalogo.opzioni : null,
             // Segnalazione 52: Extra e Sostituzione SIM nascono gia' attivi
             // (Completato nel Tracking), non "Nuovo".
             stato: giaAttivo ? "Attivo" : "Nuovo",
@@ -4570,7 +4729,9 @@ export default function CRM() {
         </div>
       )}
 
-      {showAna&&showStep4&&brand==="sky"&&(()=>{
+      {/* SKY LEGACY: disattivato — Sky passa dal flusso catalogo come gli altri
+          brand (aggancio 27/07). Il blocco resta come riferimento storico. */}
+      {showAna&&showStep4&&brand==="__sky_legacy__"&&(()=>{
         const SKY_COLOR="#0072C6";
         const btnSky=(label,active,onClick)=><button onClick={onClick} style={{padding:"10px 18px",borderRadius:8,cursor:"pointer",border:active?"2px solid "+SKY_COLOR:"2px solid rgba(255,255,255,0.1)",background:active?SKY_COLOR:"rgba(255,255,255,0.04)",color:active?"#fff":"#8892b0",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{label}</button>;
         const ynSky=(val,onYes,onNo)=><div style={{display:"flex",gap:6}}>{[{v:"Sì",fn:onYes},{v:"No",fn:onNo}].map(({v,fn})=><button key={v} onClick={fn} style={{padding:"7px 22px",borderRadius:8,border:val===v?"2px solid "+SKY_COLOR:"2px solid rgba(255,255,255,0.1)",background:val===v?SKY_COLOR:"rgba(255,255,255,0.04)",color:val===v?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{v}</button>)}</div>;

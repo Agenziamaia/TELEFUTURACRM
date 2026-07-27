@@ -50,9 +50,14 @@ Registra Vendita si aggancerà al catalogo.
 2. **Mai** modificare a mano le righe `catalog_*` in produzione: si fa da
    Amministrazione → Catalogo (admin). Le vostre migrazioni non devono
    toccare il contenuto di queste tabelle.
-3. Il Registra Vendita attuale usa ancora i flussi hardcoded per brand:
-   l'aggancio al catalogo è un passaggio esplicito concordato con Luca —
-   non anticipatelo in modo parziale.
+3. Il Registra Vendita è AGGANCIATO al catalogo (27/07): i gruppi/prodotti/
+   offerte/opzioni del flusso arrivano da `catalog_*` per TUTTI i brand
+   (Sky compreso) e i campi da compilare da `src/lib/catalogoVendita.ts`
+   (`risolviCampi`, generato dall'artifatto — non modificarlo a mano).
+   Le vendite nuove scrivono anche `contracts.tipo_cliente / offerta /
+   opzioni` (mig. 093). I vecchi flussi per brand (getW3, getVF, FWMobile,
+   blocco Sky…) restano nel file SOLO come riferimento storico: non
+   ricollegarli e non aggiungere liste hardcoded.
 4. Le vendite storiche in `contracts` verranno MAPPATE sul nuovo sistema in
    modo additivo (colonne/tabella di mappatura): non riscrivere mai
    `brand`/`prodotto` legacy.
