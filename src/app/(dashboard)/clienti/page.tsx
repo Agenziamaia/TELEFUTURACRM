@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import Link from "next/link";
 import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink } from "lucide-react";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
@@ -9,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, capChoice, capAllowed } from "@/lib/capabilities";
 import { chiamaAircall } from "@/lib/dialer";
@@ -119,6 +121,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         })();
     }, [contratti]);
 
+    const [showStorico, setShowStorico] = useState(false);
     // Click su una vendita -> apre il dettaglio in Ricerca Contratto (deep link ?id=).
     const openContract = (id: string) => { onClose(); router.push(`/ricerca-vendite?id=${encodeURIComponent(id)}`); };
 
@@ -147,10 +150,20 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             </div>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
-                        <X className="w-6 h-6" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* STORICO CONVERSAZIONI (Luca 29/07): tutte le chiamate col
+                            cliente, inbound e outbound, con le registrazioni Aircall
+                            ascoltabili e scaricabili direttamente dal CRM. */}
+                        <button onClick={() => setShowStorico(true)}
+                            className="px-3 py-2 rounded-xl border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/25 text-xs font-bold flex items-center gap-1.5">
+                            📞 Storico chiamate
+                        </button>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
                 </div>
+                {showStorico && <StoricoChiamateCliente cliente={cliente} onClose={() => setShowStorico(false)} />}
 
                 {/* MODAL BODY */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
@@ -163,14 +176,22 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             </h3>
                             <div className="grid grid-cols-1 gap-3">
                                 <div className="flex items-center gap-2">
-                                    <div className="flex-1 min-w-0"><InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono /></div>
-                                    {cliente.cellulare && (
+                                    {/* campo più stretto: un cellulare non ha bisogno di tutta la riga
+                                        (Luca 29/07) — lo spazio va alle azioni rapide */}
+                                    <div className="max-w-[240px] flex-1 min-w-0"><InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono /></div>
+                                    {cliente.cellulare && (<>
                                         <button
                                             onClick={async () => { const r = await chiamaAircall(cliente.cellulare, uAll?.id); alert(r.msg); }}
                                             title="Chiama con Aircall (es. richiamare un cliente che non è venuto in negozio)"
                                             className="px-2.5 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-sm shrink-0"
                                         >📞</button>
-                                    )}
+                                        <Link
+                                            href={"/chat?wa=" + String(cliente.cellulare).replace(/\D/g, "")}
+                                            title="Scrivi su WhatsApp dal CRM: apre la chat col numero del cliente già caricato"
+                                            className="px-2.5 py-2 rounded-lg text-white text-sm shrink-0 hover:brightness-110"
+                                            style={{ background: "#25D366" }}
+                                        >💬</Link>
+                                    </>)}
                                 </div>
                                 <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} />
                                 <InfoItem icon={<FileText className="w-4 h-4" />} label={cliente.tipo === 'business' ? 'Partita IVA' : 'Codice Fiscale'} value={cliente.cf_piva || "—"} mono />
@@ -725,107 +746,41 @@ export default function ClientiPage() {
     // I default replicano il comportamento storico; la visibilità TOTALE a
     // livello utente (seesAllVis) non viene mai ristretta dallo scope di ruolo.
     const { perms: capPerms } = useRolePermissions(role);
+    // ── VISIBILITÀ CLIENTI: FONTE UNICA condivisa con Registra Vendita
+    //    (src/lib/clientiVisibili — Luca 28/07: mai più logiche divergenti).
     const scopeClienti = capChoice(role, CAP_CLIENTI, capPerms);
     const { seesAll: seesAllVis, stores: visStores } = useVisibleStores();
-    const maskAttivo = scopeClienti !== "tutti" && !seesAllVis;
+    const visCli = useClientiVisibili();
+    const maskAttivo = visCli.maskAttivo;
     const isStoreScoped = maskAttivo && scopeClienti === "negozi";
     const soloPropri = maskAttivo && scopeClienti === "propri";
     const soloAppuntamenti = maskAttivo && scopeClienti === "appuntamenti";
     // Eliminazione anagrafiche: dall'amministrativo in su (cestino in tabella).
     const canDelete = canApproveAccess;
     const [delConfirm, setDelConfirm] = useState<string | null>(null);
-    const [mieiClienti, setMieiClienti] = useState<Set<string> | null>(null);
-    const [accessOk, setAccessOk] = useState<Set<string>>(new Set());
-    const [accessPending, setAccessPending] = useState<Set<string>>(new Set());
+    const mieiClienti = visCli.mieiClienti;
+    const accessOk = visCli.accessOk;
+    const accessPending = visCli.accessPending;
     const [richiesteAccesso, setRichiesteAccesso] = useState<Record<string, unknown>[]>([]);
     const [accessMsg, setAccessMsg] = useState("");
-    const loadAccessi = async () => {
-        if (!user?.id) return;
-        const { data: reqs, error } = await supabase.from("client_access_requests")
-            .select("client_id,status").eq("requested_by", user.id);
-        if (!error) {
-            setAccessOk(new Set((reqs ?? []).filter((r) => r.status === "approved").map((r) => String(r.client_id))));
-            setAccessPending(new Set((reqs ?? []).filter((r) => r.status === "pending").map((r) => String(r.client_id))));
-        }
-    };
+    const loadAccessi = visCli.ricaricaAccessi;
     useEffect(() => {
-        if (!user?.id) return;
+        if (!user?.id || !canApproveAccess) return;
         (async () => {
-            if (soloPropri) {
-                let nomi: string[] = [];
-                if (role === "direttore_ob") {
-                    // il direttore outbound vede i clienti di TUTTO il reparto
-                    const { data } = await supabase.from("app_users").select("full_name,match_name")
-                        .in("role", ["agente", "direttore_ob"]).eq("active", true);
-                    nomi = ((data ?? []) as { full_name: string; match_name: string | null }[])
-                        .flatMap((u) => [u.full_name, u.match_name]).filter(Boolean) as string[];
-                } else {
-                    // chiunque altro in modalità "propri": solo i clienti inseriti da lui
-                    const { data } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
-                    nomi = [data?.full_name, data?.match_name, user.name].filter(Boolean) as string[];
-                }
-                const { data: cs } = await supabase.from("contracts").select("client_id")
-                    .in("venditore", nomi.length ? nomi : ["—"]).limit(10000);
-                setMieiClienti(new Set(((cs ?? []) as { client_id: string | null }[]).map((c) => c.client_id).filter(Boolean) as string[]));
-                await loadAccessi();
-            }
-            if (soloAppuntamenti) {
-                // CALLER (Luca 26/07): interi solo i clienti per cui HA FISSATO un
-                // appuntamento (appointments.created_by = lui, dal ponte Caller o
-                // dal Calendario); aggancio per CF o cellulare normalizzato.
-                const { data: me } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
-                const nomi = [me?.full_name, me?.match_name, user.name].filter(Boolean) as string[];
-                const { data: apps } = await supabase.from("appointments").select("cf_piva,customer_phone")
-                    .in("created_by", nomi.length ? nomi : ["—"]).limit(5000);
-                const cfSet = new Set<string>(); const telSet = new Set<string>();
-                ((apps ?? []) as { cf_piva: string | null; customer_phone: string | null }[]).forEach((a) => {
-                    const cf = String(a.cf_piva || "").toUpperCase().trim();
-                    if (cf) cfSet.add(cf);
-                    const t = String(a.customer_phone || "").replace(/\D/g, "");
-                    if (t) telSet.add(t);
-                });
-                const { data: cls } = await supabase.from("clients").select("id,cf_piva,cellulare").limit(5000);
-                const set = new Set<string>();
-                ((cls ?? []) as { id: string; cf_piva: string | null; cellulare: string | null }[]).forEach((c) => {
-                    const cf = String(c.cf_piva || "").toUpperCase().trim();
-                    const t = String(c.cellulare || "").replace(/\D/g, "");
-                    if ((cf && cfSet.has(cf)) || (t && telSet.has(t))) set.add(c.id);
-                });
-                setMieiClienti(set);
-                await loadAccessi();
-            }
-            if (isStoreScoped) {
-                const miei = visStores.length ? visStores : (user.negozio ? [user.negozio] : []);
-                // gestiti: almeno una vendita in uno dei negozi visibili
-                const { data: cs } = await supabase.from("contracts").select("client_id,negozio").limit(10000);
-                const set = new Set<string>();
-                ((cs ?? []) as { client_id: string | null; negozio: string | null }[]).forEach((c) => {
-                    if (c.client_id && miei.some((m) => sameStore(c.negozio, m))) set.add(c.client_id);
-                });
-                // acquisiti: anagrafiche nate in uno dei negozi visibili
-                const { data: acq } = await supabase.from("clients").select("id,acquisito_da").limit(5000);
-                ((acq ?? []) as { id: string; acquisito_da: string | null }[]).forEach((c) => {
-                    if (c.acquisito_da && miei.some((m) => sameStore(c.acquisito_da, m))) set.add(c.id);
-                });
-                setMieiClienti(set);
-                await loadAccessi();
-            }
-            if (canApproveAccess) {
-                const { data: reqs, error } = await supabase.from("client_access_requests")
-                    .select("*, clients(nome,cognome,ragione_sociale,tipo)").eq("status", "pending").order("created_at");
-                if (!error) setRichiesteAccesso((reqs ?? []) as Record<string, unknown>[]);
-            }
+            const { data: reqs, error } = await supabase.from("client_access_requests")
+                .select("*, clients(nome,cognome,ragione_sociale,tipo)").eq("status", "pending").order("created_at");
+            if (!error) setRichiesteAccesso((reqs ?? []) as Record<string, unknown>[]);
         })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, soloPropri, soloAppuntamenti, isStoreScoped, visStores.join("|"), canApproveAccess, role]);
-    const oscurato = (c: Cliente) => maskAttivo && (mieiClienti === null || (!mieiClienti.has(c.id) && !accessOk.has(c.id)));
+    }, [user?.id, canApproveAccess]);
+    const oscurato = (c: Cliente) => !visCli.visibile(c.id);
+
     const richiediAccesso = async (c: Cliente) => {
         setAccessMsg("");
         const { error } = await supabase.from("client_access_requests").insert({
             client_id: c.id, requested_by: user?.id || null, requested_by_name: user?.name || "—",
         });
         if (error) { setAccessMsg("⚠️ Invio non riuscito (funzione in attivazione): riprova più tardi."); return; }
-        setAccessPending((p) => new Set([...p, c.id]));
+        visCli.segnaPending(c.id);
         setAccessMsg("✅ Richiesta inviata all'amministrazione: vedrai i dati appena approvata.");
     };
     const eliminaCliente = async (c: Cliente) => {
@@ -1357,6 +1312,110 @@ export default function ClientiPage() {
                     onSave={fetchClientList}
                 />
             )}
+        </div>
+    );
+}
+
+/* ── STORICO CONVERSAZIONI COL CLIENTE (Luca 29/07) ──
+   Due fonti, stessa finestra:
+   - call_events = OGNI chiamata Aircall (inbound e outbound), agganciata per
+     client_id o per coda di cifre del cellulare, con durata e REGISTRAZIONE
+     (il webhook salva recording_url quando Aircall la fornisce): si ascolta
+     nel CRM o si scarica con un click;
+   - calls = le pratiche del call center (esiti: NR, appuntamenti, ecc.),
+     agganciate per CF/P.IVA o per numero. */
+function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; cellulare?: string | null; cf_piva?: string | null; nome?: string | null; cognome?: string | null; ragioneSociale?: string | null; tipo?: string | null }; onClose: () => void }) {
+    const [eventi, setEventi] = useState<Record<string, unknown>[]>([]);
+    const [pratiche, setPratiche] = useState<Record<string, unknown>[]>([]);
+    const [caricoStorico, setCaricoStorico] = useState(true);
+    useEffect(() => {
+        (async () => {
+            const dig = String(cliente.cellulare || "").replace(/\D/g, "");
+            const coda = dig.slice(-9);
+            const patt = coda ? "%" + coda.split("").join("%") + "%" : "";
+            // Aircall: per client_id e per numero (formati con spazi inclusi)
+            const [perId, perNum] = await Promise.all([
+                supabase.from("call_events").select("*").eq("client_id", cliente.id).order("started_at", { ascending: false }).limit(200),
+                patt ? supabase.from("call_events").select("*").ilike("cliente_num", patt).order("started_at", { ascending: false }).limit(200) : Promise.resolve({ data: [] }),
+            ]);
+            const visti = new Set<string>();
+            const ev: Record<string, unknown>[] = [];
+            [...(perId.data ?? []), ...((perNum as { data?: Record<string, unknown>[] }).data ?? [])].forEach((e) => {
+                const k = String((e as { id?: unknown }).id);
+                if (!visti.has(k)) { visti.add(k); ev.push(e as Record<string, unknown>); }
+            });
+            ev.sort((a, b) => String(b.started_at || "").localeCompare(String(a.started_at || "")));
+            setEventi(ev);
+            // pratiche caller: per CF/P.IVA o numero
+            const idf = String(cliente.cf_piva || "").trim();
+            const cond: string[] = [];
+            if (idf) { cond.push(`cf.ilike.${idf}`); cond.push(`piva.ilike.${idf}`); }
+            if (coda) cond.push(`cellulare.ilike.%25${coda}%25`.replace(/%25/g, "%"));
+            if (cond.length) {
+                const { data: pr } = await supabase.from("calls").select("id,stato,caller,data_chiamata,lista_origine,note,numero").or(cond.join(",")).order("data_chiamata", { ascending: false }).limit(100);
+                setPratiche((pr ?? []) as Record<string, unknown>[]);
+            }
+            setCaricoStorico(false);
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cliente.id]);
+    const quando = (iso: unknown) => { const d = new Date(String(iso || "")); return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("it-IT") + " " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }); };
+    const durata = (sec: unknown) => { const n = Number(sec) || 0; return n ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}` : "—"; };
+    return (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+            <div className="glass-panel w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl border-white/10" onClick={(e) => e.stopPropagation()}>
+                <div className="flex-none px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-white">📞 Storico chiamate — {cliente.tipo === "business" ? cliente.ragioneSociale : `${cliente.nome || ""} ${cliente.cognome || ""}`}</h3>
+                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                    {caricoStorico && <div className="text-center text-slate-500 py-8">Caricamento storico…</div>}
+                    {!caricoStorico && (
+                        <>
+                            <div>
+                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Chiamate Aircall ({eventi.length})</h4>
+                                {eventi.length === 0 && <p className="text-sm text-slate-600">Nessuna chiamata Aircall registrata con questo cliente.</p>}
+                                <div className="space-y-2">
+                                    {eventi.map((e) => (
+                                        <div key={String(e.id)} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                                            <div className="flex items-center gap-3 flex-wrap text-sm">
+                                                <span title={e.direction === "inbound" ? "Il cliente ha chiamato noi" : "Noi abbiamo chiamato il cliente"}>{e.direction === "inbound" ? "📥" : "📤"}</span>
+                                                <span className="text-white font-semibold">{quando(e.started_at)}</span>
+                                                <span className="text-slate-400">{String(e.agente_nome || "—")}</span>
+                                                {e.missed ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-300">persa</span>
+                                                    : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">risposta · {durata(e.duration_sec)}</span>}
+                                                <span className="ml-auto text-xs text-slate-500 font-mono">{String(e.cliente_num || "")}</span>
+                                            </div>
+                                            {!!e.recording_url && (
+                                                <div className="mt-2 flex items-center gap-3">
+                                                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                                                    <audio controls preload="none" src={String(e.recording_url)} className="h-8 flex-1 min-w-0" />
+                                                    <a href={String(e.recording_url)} target="_blank" rel="noreferrer" download
+                                                        className="text-xs font-bold text-sky-300 hover:text-white shrink-0">⬇ Scarica</a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Esiti del call center ({pratiche.length})</h4>
+                                {pratiche.length === 0 && <p className="text-sm text-slate-600">Nessuna pratica del call center su questo cliente.</p>}
+                                <div className="space-y-1.5">
+                                    {pratiche.map((c) => (
+                                        <div key={String(c.id)} className="flex items-center gap-3 flex-wrap rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm">
+                                            <span className="text-white">{quando(c.data_chiamata)}</span>
+                                            <span className="px-2 py-0.5 rounded bg-violet-500/15 text-violet-200 text-[11px] font-bold">{String(c.stato || "—")}</span>
+                                            <span className="text-slate-400 text-xs">{String(c.caller || "—")}</span>
+                                            {!!c.lista_origine && <span className="text-slate-600 text-xs">lista: {String(c.lista_origine)}</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }

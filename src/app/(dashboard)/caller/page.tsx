@@ -504,6 +504,12 @@ function CallerPageInner() {
 
     function openDetail(call: Call) {
         const copy: Call = JSON.parse(JSON.stringify(call));
+        // niente doppioni a video: se il recapito è lo stesso numero, il campo
+        // resta vuoto (al salvataggio le cifre per l'aggancio Aircall si
+        // ripristinano da sole dal numero)
+        const _d = (x: unknown) => String(x || "").replace(/\D/g, "");
+        if (_d(copy.cellulare) && _d(copy.cellulare) === _d(copy.numero)) copy.cellulare = "";
+        if (!copy.numero && copy.cellulare) { copy.numero = copy.cellulare; copy.cellulare = ""; }
         copy.statoNew = "";
         copy.dataRichiamoNew = "";
         copy.dataAppuntamentoNew = "";
@@ -544,8 +550,9 @@ function CallerPageInner() {
             nome: data.nome,
             cognome: data.cognome,
             ragione_sociale: data.ragione_sociale,
+            // solo il NUMERO: il recapito resta per un secondo numero DIVERSO
             numero: data.cellulare,
-            cellulare: data.cellulare,
+            cellulare: "",
         };
     }
 
@@ -628,11 +635,52 @@ function CallerPageInner() {
         }
     }
 
+    // ANAGRAFICA SEMPRE OBBLIGATORIA (Luca 29/07): anche sui "Non risponde" —
+    // nome/cognome (o ragione sociale) + CF/P.IVA. Così l'anagrafica del
+    // cliente nasce subito e lo storico chiamate si traccia per cliente.
+    function anagraficaObbligatoriaOk(c: Call): boolean {
+        if (!c.tipo_cliente) { alert("Seleziona il TIPO cliente (Consumer o Business): è obbligatorio anche se non risponde."); return false; }
+        if (c.tipo_cliente === "business") {
+            if (!String(c.ragione_sociale || "").trim()) { alert("RAGIONE SOCIALE obbligatoria (anche sui Non risponde): è il cliente che stiamo lavorando."); return false; }
+            if (!String(c.piva || "").trim()) { alert("P.IVA obbligatoria: crea l'anagrafica del cliente e traccia lo storico delle chiamate."); return false; }
+        } else {
+            if (!String(c.nome || "").trim() || !String(c.cognome || "").trim()) { alert("NOME e COGNOME obbligatori (anche sui Non risponde): è il cliente che stiamo lavorando."); return false; }
+            if (!String(c.cf || "").trim()) { alert("CODICE FISCALE obbligatorio: crea l'anagrafica del cliente e traccia lo storico delle chiamate."); return false; }
+        }
+        return true;
+    }
+    // Se il CF/P.IVA non esiste in anagrafica, il cliente NASCE qui (senza
+    // rubare cellulari già assegnati ad altri: in quel caso nasce senza numero).
+    async function creaAnagraficaSeManca(c: Call) {
+        const idf = String((c.tipo_cliente === "business" ? c.piva : c.cf) || "").trim().toUpperCase();
+        if (!idf) return;
+        try {
+            const { data: ex } = await supabase.from("clients").select("id").ilike("cf_piva", idf).limit(1);
+            if (ex && ex.length) return;
+            let cel = String(c.numero || "").replace(/\D/g, "") || String(c.cellulare || "").replace(/\D/g, "");
+            if (cel) {
+                const { data: dup } = await supabase.from("clients").select("id").ilike("cellulare", cel).limit(1);
+                if (dup && dup.length) cel = "";
+            }
+            const { error } = await supabase.from("clients").insert({
+                // stesso set di campi del Registra Vendita: clients ha molte
+                // colonne NOT NULL senza default (id, email, indirizzo, ...)
+                id: `CL-${idf.replace(/\s/g, "")}-${Date.now()}`,
+                tipo: c.tipo_cliente, cf_piva: idf,
+                nome: c.nome || "", cognome: c.cognome || "", ragione_sociale: c.ragione_sociale || "",
+                cellulare: cel || "", email: "", indirizzo: "", cap: "", citta: "", iban: "",
+                nome_ref: "", cognome_ref: "",
+            });
+            if (error) alert("Esito salvato, ma anagrafica NON creata: " + error.message);
+        } catch { /* l'esito resta salvato comunque */ }
+    }
     async function saveCall() {
         if (!editCall) return;
         const now = new Date().toISOString().slice(0, 16);
         if (modalMode === "new") {
+            if (!anagraficaObbligatoriaOk(editCall)) return;
             const newCall: Call = { ...editCall };
+            if (!String(newCall.cellulare || "").trim()) newCall.cellulare = String(newCall.numero || "").replace(/\D/g, "");
             newCall.storico = [{ data: newCall.data_chiamata, caller: newCall.caller, campo: "Creazione", da: "", a: newCall.stato }];
             const payload: Record<string, unknown> = {
                 tipo_cliente: newCall.tipo_cliente,
@@ -656,6 +704,7 @@ function CallerPageInner() {
                 return;
             }
             if (creata?.id) await sincronizzaAppuntamento(newCall, String(creata.id));
+            await creaAnagraficaSeManca(newCall);
             await fetchCalls();
         } else {
             // Detail mode: update only stato and append history
@@ -669,6 +718,7 @@ function CallerPageInner() {
                 if (!dataOk) { alert("Per fissare l'appuntamento serve la DATA E ORA: compilala e risalva."); return; }
                 if (!luogoOk) { alert("Per fissare l'appuntamento serve il NEGOZIO (o l'agente): selezionalo e risalva."); return; }
             }
+            if (!anagraficaObbligatoriaOk(editCall)) return;
             const original = calls.find(c => c.id === editCall.id);
             if (!original) return;
             const newStorico: StoricoEntry[] = [
@@ -681,6 +731,8 @@ function CallerPageInner() {
             updates.nome = editCall.nome; updates.cognome = editCall.cognome;
             updates.ragione_sociale = editCall.ragione_sociale;
             updates.cf = editCall.cf; updates.piva = editCall.piva;
+            updates.numero = editCall.numero;
+            updates.cellulare = String(editCall.cellulare || "").trim() || String(editCall.numero || "").replace(/\D/g, "");
             // ...e con lei i Dettagli Chiamata (le 4 tendine dell'Inserimento Manuale)
             updates.brand = editCall.brand; updates.obiettivo = editCall.obiettivo;
             updates.provenienza = editCall.provenienza; updates.tipologia = editCall.tipologia;
@@ -709,6 +761,7 @@ function CallerPageInner() {
                 alert("Errore aggiornamento: " + error.message);
                 return;
             }
+            await creaAnagraficaSeManca(editCall);
             if (APPUNTAMENTO_STATI.includes(editCall.statoNew)) {
                 await sincronizzaAppuntamento(
                     {
@@ -1584,21 +1637,29 @@ function CallerPageInner() {
                                         <FormGroup label="Numero (attività)">
                                             <div className="flex gap-1.5">
                                                 <input className="glass-input rounded-lg py-2 w-full" value={editCall.numero} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("numero", e.target.value)} placeholder="333 123 4567" />
-                                                {String(editCall.numero || "").replace(/\D/g, "").length >= 6 && (
+                                                {String(editCall.numero || "").replace(/\D/g, "").length >= 6 && (<>
                                                     <button type="button" title="Chiama questo numero con Aircall"
                                                         onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                )}
+                                                    <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                        className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
+                                                        <MessageSquare className="w-4 h-4" />
+                                                    </Link>
+                                                </>)}
                                             </div>
                                         </FormGroup>
                                         <FormGroup label="Recapito Cellulare">
                                             <div className="flex gap-1.5">
                                                 <input className="glass-input rounded-lg py-2 w-full" value={editCall.cellulare} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("cellulare", e.target.value)} placeholder="Se diverso" />
-                                                {String(editCall.cellulare || "").replace(/\D/g, "").length >= 6 && (
+                                                {String(editCall.cellulare || "").replace(/\D/g, "").length >= 6 && (<>
                                                     <button type="button" title="Chiama questo numero con Aircall"
                                                         onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                )}
+                                                    <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                        className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
+                                                        <MessageSquare className="w-4 h-4" />
+                                                    </Link>
+                                                </>)}
                                             </div>
                                         </FormGroup>
                                     </div>
