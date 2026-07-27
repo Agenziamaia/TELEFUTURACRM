@@ -725,7 +725,7 @@ function PresenzeAdmin() {
 
             {/* benchmark mesi passati */}
             <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
-                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Benchmark mensile{persona ? ` · ${persona}` : ""}:</span>
+                <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">Benchmark mensile{personeSel.length ? ` · ${personeSel.join(", ")}` : ""}:</span>
                 {bench.map((b, i) => (
                     <span key={b.label} className={`px-2.5 py-1 rounded-lg border ${i === bench.length - 1 ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-200 font-bold" : "border-white/10 bg-white/[0.03] text-slate-400"}`}>
                         {b.label}: {fmtOre(b.ore)}
