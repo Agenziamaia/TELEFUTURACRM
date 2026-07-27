@@ -95,7 +95,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const saved = localStorage.getItem("crm_session");
         if (saved) {
             try { setUser(JSON.parse(saved)); } catch { localStorage.removeItem("crm_session"); }
-        } else if (pathname !== "/") {
+        } else if (pathname !== "/" && !pathname.startsWith("/m/")) {
+            // /m/* = pagine pubbliche (es. upload da telefono via QR): niente login
             router.push("/");
         }
     }, [pathname, router]);

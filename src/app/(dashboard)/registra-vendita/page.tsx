@@ -9,6 +9,7 @@ import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { useAuth } from "@/context/AuthContext";
+import QRCode from "qrcode";
 const ReqCtx = createContext(null);
 const SubKeyCtx = createContext(null);
 let _FUID = 0;
@@ -3732,6 +3733,52 @@ export default function CRM() {
     const dt = e.dataTransfer;
     if (dt && dt.files && dt.files.length) addFiles(dt.files, t);
   };
+  // ── Carica dal telefono via QR ─────────────────────────────────────
+  // Crea una sessione effimera, mostra un QR; il telefono apre /m/u/<token>,
+  // carica il file (foto per Documento, PDF per gli altri) e il desktop lo tira
+  // dentro `attachments` come un normale allegato (stesso salvataggio al submit).
+  const [qrBox, setQrBox] = useState(null);     // tipo casella con QR aperto
+  const [qrToken, setQrToken] = useState(null);
+  const [qrImg, setQrImg] = useState(null);     // dataURL del QR
+  const [qrRecv, setQrRecv] = useState(null);   // {name} a ricezione avvenuta
+  const openQr = async (type) => {
+    try {
+      const token = (window.crypto?.randomUUID?.() || (Date.now() + "-" + Math.random().toString(36).slice(2)));
+      const kind = type === "documento" ? "foto" : "pdf";
+      const { error } = await supabase.from("qr_uploads").insert({ token, box_type: type, kind, status: "attesa" });
+      if (error) { alert("QR non generato: " + error.message); return; }
+      const url = `${window.location.origin}/m/u/${token}`;
+      const img = await QRCode.toDataURL(url, { width: 240, margin: 1 });
+      setQrBox(type); setQrToken(token); setQrImg(img); setQrRecv(null);
+    } catch (e) { alert("QR non generato: " + (e?.message || e)); }
+  };
+  const closeQr = () => { setQrBox(null); setQrToken(null); setQrImg(null); setQrRecv(null); };
+  useEffect(() => {
+    if (!qrToken) return;
+    let alive = true;
+    const t = setInterval(async () => {
+      const { data } = await supabase.from("qr_uploads").select("status,file_url,file_name,file_mime").eq("token", qrToken).maybeSingle();
+      if (!alive || !data) return;
+      if (data.status === "caricato" && data.file_url) {
+        clearInterval(t);
+        try {
+          const resp = await fetch(data.file_url);
+          const blob = await resp.blob();
+          const file = new File([blob], data.file_name || "allegato", { type: data.file_mime || blob.type });
+          setAttachments(p => [...p, { file, name: file.name, type: qrBox }]);
+          setQrRecv({ name: data.file_name });
+        } catch (e) { alert("Ricezione file non riuscita: " + (e?.message || e)); }
+        // pulizia: rimuovi file di staging + riga sessione
+        try {
+          const marker = "/qr-uploads/"; const i = String(data.file_url).indexOf(marker);
+          if (i >= 0) await supabase.storage.from("qr-uploads").remove([decodeURIComponent(String(data.file_url).slice(i + marker.length))]);
+        } catch { }
+        try { await supabase.from("qr_uploads").delete().eq("token", qrToken); } catch { }
+        setTimeout(() => { if (alive) closeQr(); }, 1600);
+      }
+    }, 2000);
+    return () => { alive = false; clearInterval(t); };
+  }, [qrToken, qrBox]);
   const [draftLoaded,setDraftLoaded]=useState(false);
   const [showCart,setShowCart]=useState(false);
   const [toast,setToast]=useState(null);
@@ -4466,9 +4513,24 @@ export default function CRM() {
             {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
               onDragOver={e=>onBoxDragOver(e,a.t)} onDragEnter={e=>onBoxDragOver(e,a.t)}
               onDragLeave={onBoxDragLeave} onDrop={e=>onBoxDrop(e,a.t)}
-              style={{display:"block",border:"2px dashed "+(over?"#17a2b8":(cnt>0?"rgba(23,162,184,0.55)":"rgba(255,255,255,0.1)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"rgba(255,255,255,0.03)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:700}}>Carica</div><div style={{fontSize:9,color:"#64748b",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"#17a2b8",fontWeight:700}}>{cnt} file</div>}</label>;})}
+              style={{display:"block",border:"2px dashed "+(over?"#17a2b8":(cnt>0?"rgba(23,162,184,0.55)":"rgba(255,255,255,0.1)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"rgba(255,255,255,0.03)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-flex",gap:6,alignItems:"center",justifyContent:"center"}}><span style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:700}}>Carica</span><button type="button" onClick={e=>{e.preventDefault();e.stopPropagation();openQr(a.t);}} title="Carica dal telefono via QR" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,background:"rgba(23,162,184,0.12)",border:"1px solid rgba(23,162,184,0.5)",color:"#5fd3e6",fontSize:10,fontWeight:700,cursor:"pointer"}}>📱 QR</button></div><div style={{fontSize:9,color:"#64748b",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"#17a2b8",fontWeight:700}}>{cnt} file</div>}</label>;})}
           </div>
           {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid rgba(255,255,255,0.05)":"none"}}><div style={{fontSize:11,color:"#f8fafc"}}>{file.name} <span style={{color:"#64748b",fontSize:10}}>· {file.type}</span></div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
+        </div>}
+        {qrBox&&<div onClick={closeQr} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#11141d",border:"1px solid rgba(255,255,255,.08)",borderRadius:16,width:"100%",maxWidth:360,padding:24,margin:"0 16px",textAlign:"center"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:16,color:"#f8fafc"}}>📱 Carica dal telefono</div>
+              <button onClick={closeQr} style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}}>✕</button>
+            </div>
+            {qrRecv?(
+              <div style={{padding:"22px 0"}}><div style={{fontSize:48,marginBottom:8}}>✅</div><div style={{fontSize:16,fontWeight:800,color:"#34d399"}}>Ricevuto!</div><div style={{fontSize:12,color:"#94a3b8",marginTop:6,wordBreak:"break-all"}}>{qrRecv.name}</div><div style={{fontSize:11,color:"#64748b",marginTop:4}}>Aggiunto agli allegati.</div></div>
+            ):(<>
+              <div style={{fontSize:12,color:"#94a3b8",marginBottom:14}}>Inquadra il QR con la fotocamera del telefono e carica {qrBox==="documento"?"la foto del documento (PNG/JPEG)":"il PDF — se scansioni più pagine verranno unite in un unico file"}.</div>
+              {qrImg?<img src={qrImg} alt="QR" style={{width:216,height:216,borderRadius:12,background:"#fff",padding:8,boxSizing:"border-box"}}/>:<div style={{width:216,height:216,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b"}}>Genero…</div>}
+              <div style={{fontSize:11,color:"#f59e0b",marginTop:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{width:8,height:8,borderRadius:4,background:"#f59e0b",display:"inline-block"}}/>In attesa della scansione…</div>
+            </>)}
+          </div>
         </div>}
         {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745"}}>
           <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Step 6 — Attribuzione</div>
