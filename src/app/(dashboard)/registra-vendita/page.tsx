@@ -4618,7 +4618,7 @@ export default function CRM() {
               <div style={{padding:"22px 0"}}><div style={{fontSize:48,marginBottom:8}}>✅</div><div style={{fontSize:16,fontWeight:800,color:"#34d399"}}>Ricevuto!</div><div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>{qrRecv.n} file aggiunt{qrRecv.n===1?"o":"i"} agli allegati.</div></div>
             ):(<>
               <div style={{fontSize:12,color:"#94a3b8",marginBottom:14}}>Inquadra il QR con la fotocamera del telefono e carica {qrBox==="documento"?"la foto del documento (PNG/JPEG)":"il PDF — se scansioni più pagine verranno unite in un unico file"}.</div>
-              {qrImg?<img src={qrImg} alt="QR" style={{width:216,height:216,borderRadius:12,background:"#fff",padding:8,boxSizing:"border-box"}}/>:<div style={{width:216,height:216,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b"}}>Genero…</div>}
+              {qrImg?<img src={qrImg} alt="QR" style={{width:216,height:216,borderRadius:12,background:"#fff",padding:8,boxSizing:"border-box",display:"block",margin:"0 auto"}}/>:<div style={{width:216,height:216,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b"}}>Genero…</div>}
               <div style={{fontSize:11,color:"#f59e0b",marginTop:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{width:8,height:8,borderRadius:4,background:"#f59e0b",display:"inline-block"}}/>In attesa della scansione…</div>
             </>)}
           </div>
