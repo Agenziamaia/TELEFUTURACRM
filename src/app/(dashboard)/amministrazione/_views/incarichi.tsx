@@ -21,6 +21,7 @@ export function IncarichiView() {
     const [incarichi, setIncarichi] = useState<Incarico[]>([]);
     const [persone, setPersone] = useState<Persona[]>([]);
     const [busy, setBusy] = useState(false);
+    const [q, setQ] = useState<Record<string, string>>({});   // ricerca risorsa per incarico
 
     const carica = async () => {
         const [inc, pers] = await Promise.all([
@@ -86,16 +87,43 @@ export function IncarichiView() {
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
                             Designati <span className="normal-case font-normal">({inc.assegnatari.length || "nessuno — vale il comportamento standard"})</span>
                         </p>
-                        <div className="flex flex-wrap gap-1.5">
-                            {ordinate.map((p) => (
-                                <button key={p.id} onClick={() => togAssegnatario(inc, p.id)}
-                                    className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all",
-                                        inc.assegnatari.includes(p.id)
-                                            ? "border-violet-400/70 bg-violet-500/20 text-violet-100"
-                                            : "border-white/10 text-slate-400 hover:border-white/25")}>
-                                    {inc.assegnatari.includes(p.id) ? "✓ " : ""}{p.full_name}
-                                </button>
-                            ))}
+                        {/* RICERCA A SCRITTURA (Luca 29/07): scrivi la risorsa e la selezioni —
+                            con più incarichi la lista completa farebbe solo disordine. */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            <div className="relative">
+                                <input value={q[inc.chiave] || ""} onChange={(e) => setQ((prev) => ({ ...prev, [inc.chiave]: e.target.value }))}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            const cerca = (q[inc.chiave] || "").trim().toLowerCase();
+                                            const primo = ordinate.filter((p) => !inc.assegnatari.includes(p.id) && p.full_name.toLowerCase().includes(cerca))[0];
+                                            if (cerca && primo) { togAssegnatario(inc, primo.id); setQ((prev) => ({ ...prev, [inc.chiave]: "" })); }
+                                        }
+                                    }}
+                                    placeholder="Scrivi la risorsa…" className="glass-input !h-8 text-xs w-48" />
+                                {(q[inc.chiave] || "").trim() && (
+                                    <div className="absolute z-40 mt-1 w-64 rounded-lg border border-white/10 bg-[#0f111a] shadow-2xl overflow-hidden">
+                                        {ordinate.filter((p) => !inc.assegnatari.includes(p.id) && p.full_name.toLowerCase().includes((q[inc.chiave] || "").trim().toLowerCase())).slice(0, 8).map((p) => (
+                                            <button key={p.id} onClick={() => { togAssegnatario(inc, p.id); setQ((prev) => ({ ...prev, [inc.chiave]: "" })); }}
+                                                className="block w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-violet-500/15">
+                                                {p.full_name} <span className="text-slate-500">· {p.role}</span>
+                                            </button>
+                                        ))}
+                                        {ordinate.filter((p) => !inc.assegnatari.includes(p.id) && p.full_name.toLowerCase().includes((q[inc.chiave] || "").trim().toLowerCase())).length === 0 && (
+                                            <p className="px-3 py-1.5 text-xs text-slate-600">Nessuna risorsa corrispondente</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            {inc.assegnatari.map((id) => {
+                                const p = persone.find((x) => x.id === id);
+                                return (
+                                    <span key={id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border border-violet-400/70 bg-violet-500/20 text-violet-100">
+                                        {p?.full_name || id}
+                                        <button onClick={() => togAssegnatario(inc, id)} className="opacity-70 hover:opacity-100" title="Rimuovi designato">✕</button>
+                                    </span>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
