@@ -1,7 +1,9 @@
 // @ts-nocheck
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
 import {
@@ -58,7 +60,7 @@ function lastSeen(s) {
   return `ultimo accesso ${d.toLocaleDateString("it-IT")}`;
 }
 
-export default function ChatPage() {
+function ChatPageInner() {
   const { user } = useAuth();
   const meId = user?.id;
   const isAdmin = !!user && (seesAllStores(user.role) || user.role === "dev");
@@ -69,8 +71,12 @@ export default function ChatPage() {
 
   // Interruttore Chat interna <-> WhatsApp (stessa pagina, nessuna voce di menu).
   // La scelta resta memorizzata tra una visita e l'altra.
+  // deep-link: /chat?wa=<numero> apre direttamente WhatsApp sul cliente
+  const searchParams = useSearchParams();
+  const waParam = searchParams.get("wa");
   const [mode, setMode] = useState<"chat" | "whatsapp">(() => {
     if (typeof window === "undefined") return "chat";
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("wa")) return "whatsapp";
     return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp") || "chat";
   });
   useEffect(() => { try { localStorage.setItem("crm_chat_mode", mode); } catch { } }, [mode]);
@@ -244,7 +250,7 @@ export default function ChatPage() {
       </div>
 
       {mode === "whatsapp" ? (
-        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded /></div>
+        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={waParam} /></div>
       ) : (
       <div className="flex-1 min-h-0 flex overflow-hidden">
       {/* ── LEFT: conversation list ─────────────────────────────── */}
@@ -617,4 +623,13 @@ export default function ChatPage() {
       )}
     </div>
   );
+}
+
+/* useSearchParams richiede Suspense in fase di build (lezione 502). */
+export default function ChatPage() {
+    return (
+        <Suspense fallback={<div className="w-full h-full flex items-center justify-center"><div className="w-8 h-8 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" /></div>}>
+            <ChatPageInner />
+        </Suspense>
+    );
 }

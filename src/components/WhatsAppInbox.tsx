@@ -18,7 +18,7 @@ type Msg = { id: string; direction: string; body: string | null; status: string 
 
 const api = (body: unknown) => fetch("/api/whatsapp/instance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
 
-export function WhatsAppInbox({ embedded = false }: { embedded?: boolean }) {
+export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedded?: boolean; apriNumero?: string | null }) {
     const { user } = useAuth();
     const [instances, setInstances] = useState<Instance[]>([]);
     const [selInst, setSelInst] = useState<string | null>(null);
@@ -123,6 +123,39 @@ export function WhatsAppInbox({ embedded = false }: { embedded?: boolean }) {
     }, [selConv?.id]);
 
     useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs]);
+
+    // ── DEEP-LINK (Luca 29/07): /chat?wa=<numero> apre la chat col cliente
+    //    precaricata. Cerca la conversazione tra i numeri visibili (aggancio
+    //    per coda di cifre, come il ponte Aircall); se non esiste la CREA
+    //    sull'istanza selezionata (o la prima visibile).
+    const _apriFatto = useRef<string | null>(null);
+    useEffect(() => {
+        const dig = String(apriNumero || "").replace(/\D/g, "");
+        if (!dig || dig.length < 6 || _apriFatto.current === dig) return;
+        if (!visibleInstances.length) return;    // istanze non ancora arrivate
+        _apriFatto.current = dig;
+        (async () => {
+            const coda = dig.slice(-9);
+            const ids = visibleInstances.map(i => i.id);
+            const patt = "%" + coda.split("").join("%") + "%";
+            const { data: trovate } = await supabase.from("wa_conversations")
+                .select("*").in("instance_id", ids).ilike("customer_number", patt)
+                .order("last_message_at", { ascending: false }).limit(1);
+            let conv = (trovate && trovate[0]) as Conv | undefined;
+            if (!conv) {
+                const inst = visibleInstances.find(i => i.id === selInst) || visibleInstances[0];
+                const numero = dig.length === 10 && dig.startsWith("3") ? "39" + dig : dig;
+                const { data: creata, error } = await supabase.from("wa_conversations")
+                    .insert({ instance_id: inst.id, customer_number: numero, unread: 0 })
+                    .select("*").maybeSingle();
+                if (error || !creata) { alert("Chat non aperta: " + (error?.message || "conversazione non creata")); return; }
+                conv = creata as Conv;
+            }
+            setSelInst(conv.instance_id);
+            setSelConv(conv);
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apriNumero, visibleInstances.map(i => i.id).join("|")]);
 
     const invia = async () => {
         if (!selConv || !text.trim() || sending) return;

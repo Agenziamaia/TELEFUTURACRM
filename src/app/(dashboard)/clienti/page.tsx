@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import Link from "next/link";
 import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink } from "lucide-react";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
@@ -120,6 +121,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         })();
     }, [contratti]);
 
+    const [showStorico, setShowStorico] = useState(false);
     // Click su una vendita -> apre il dettaglio in Ricerca Contratto (deep link ?id=).
     const openContract = (id: string) => { onClose(); router.push(`/ricerca-vendite?id=${encodeURIComponent(id)}`); };
 
@@ -148,10 +150,20 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             </div>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
-                        <X className="w-6 h-6" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {/* STORICO CONVERSAZIONI (Luca 29/07): tutte le chiamate col
+                            cliente, inbound e outbound, con le registrazioni Aircall
+                            ascoltabili e scaricabili direttamente dal CRM. */}
+                        <button onClick={() => setShowStorico(true)}
+                            className="px-3 py-2 rounded-xl border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/25 text-xs font-bold flex items-center gap-1.5">
+                            📞 Storico chiamate
+                        </button>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
                 </div>
+                {showStorico && <StoricoChiamateCliente cliente={cliente} onClose={() => setShowStorico(false)} />}
 
                 {/* MODAL BODY */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
@@ -164,14 +176,22 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             </h3>
                             <div className="grid grid-cols-1 gap-3">
                                 <div className="flex items-center gap-2">
-                                    <div className="flex-1 min-w-0"><InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono /></div>
-                                    {cliente.cellulare && (
+                                    {/* campo più stretto: un cellulare non ha bisogno di tutta la riga
+                                        (Luca 29/07) — lo spazio va alle azioni rapide */}
+                                    <div className="max-w-[240px] flex-1 min-w-0"><InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono /></div>
+                                    {cliente.cellulare && (<>
                                         <button
                                             onClick={async () => { const r = await chiamaAircall(cliente.cellulare, uAll?.id); alert(r.msg); }}
                                             title="Chiama con Aircall (es. richiamare un cliente che non è venuto in negozio)"
                                             className="px-2.5 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-sm shrink-0"
                                         >📞</button>
-                                    )}
+                                        <Link
+                                            href={"/chat?wa=" + String(cliente.cellulare).replace(/\D/g, "")}
+                                            title="Scrivi su WhatsApp dal CRM: apre la chat col numero del cliente già caricato"
+                                            className="px-2.5 py-2 rounded-lg text-white text-sm shrink-0 hover:brightness-110"
+                                            style={{ background: "#25D366" }}
+                                        >💬</Link>
+                                    </>)}
                                 </div>
                                 <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} />
                                 <InfoItem icon={<FileText className="w-4 h-4" />} label={cliente.tipo === 'business' ? 'Partita IVA' : 'Codice Fiscale'} value={cliente.cf_piva || "—"} mono />
@@ -1292,6 +1312,110 @@ export default function ClientiPage() {
                     onSave={fetchClientList}
                 />
             )}
+        </div>
+    );
+}
+
+/* ── STORICO CONVERSAZIONI COL CLIENTE (Luca 29/07) ──
+   Due fonti, stessa finestra:
+   - call_events = OGNI chiamata Aircall (inbound e outbound), agganciata per
+     client_id o per coda di cifre del cellulare, con durata e REGISTRAZIONE
+     (il webhook salva recording_url quando Aircall la fornisce): si ascolta
+     nel CRM o si scarica con un click;
+   - calls = le pratiche del call center (esiti: NR, appuntamenti, ecc.),
+     agganciate per CF/P.IVA o per numero. */
+function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; cellulare?: string | null; cf_piva?: string | null; nome?: string | null; cognome?: string | null; ragioneSociale?: string | null; tipo?: string | null }; onClose: () => void }) {
+    const [eventi, setEventi] = useState<Record<string, unknown>[]>([]);
+    const [pratiche, setPratiche] = useState<Record<string, unknown>[]>([]);
+    const [caricoStorico, setCaricoStorico] = useState(true);
+    useEffect(() => {
+        (async () => {
+            const dig = String(cliente.cellulare || "").replace(/\D/g, "");
+            const coda = dig.slice(-9);
+            const patt = coda ? "%" + coda.split("").join("%") + "%" : "";
+            // Aircall: per client_id e per numero (formati con spazi inclusi)
+            const [perId, perNum] = await Promise.all([
+                supabase.from("call_events").select("*").eq("client_id", cliente.id).order("started_at", { ascending: false }).limit(200),
+                patt ? supabase.from("call_events").select("*").ilike("cliente_num", patt).order("started_at", { ascending: false }).limit(200) : Promise.resolve({ data: [] }),
+            ]);
+            const visti = new Set<string>();
+            const ev: Record<string, unknown>[] = [];
+            [...(perId.data ?? []), ...((perNum as { data?: Record<string, unknown>[] }).data ?? [])].forEach((e) => {
+                const k = String((e as { id?: unknown }).id);
+                if (!visti.has(k)) { visti.add(k); ev.push(e as Record<string, unknown>); }
+            });
+            ev.sort((a, b) => String(b.started_at || "").localeCompare(String(a.started_at || "")));
+            setEventi(ev);
+            // pratiche caller: per CF/P.IVA o numero
+            const idf = String(cliente.cf_piva || "").trim();
+            const cond: string[] = [];
+            if (idf) { cond.push(`cf.ilike.${idf}`); cond.push(`piva.ilike.${idf}`); }
+            if (coda) cond.push(`cellulare.ilike.%25${coda}%25`.replace(/%25/g, "%"));
+            if (cond.length) {
+                const { data: pr } = await supabase.from("calls").select("id,stato,caller,data_chiamata,lista_origine,note,numero").or(cond.join(",")).order("data_chiamata", { ascending: false }).limit(100);
+                setPratiche((pr ?? []) as Record<string, unknown>[]);
+            }
+            setCaricoStorico(false);
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cliente.id]);
+    const quando = (iso: unknown) => { const d = new Date(String(iso || "")); return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("it-IT") + " " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }); };
+    const durata = (sec: unknown) => { const n = Number(sec) || 0; return n ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}` : "—"; };
+    return (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+            <div className="glass-panel w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl border-white/10" onClick={(e) => e.stopPropagation()}>
+                <div className="flex-none px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-white">📞 Storico chiamate — {cliente.tipo === "business" ? cliente.ragioneSociale : `${cliente.nome || ""} ${cliente.cognome || ""}`}</h3>
+                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                    {caricoStorico && <div className="text-center text-slate-500 py-8">Caricamento storico…</div>}
+                    {!caricoStorico && (
+                        <>
+                            <div>
+                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Chiamate Aircall ({eventi.length})</h4>
+                                {eventi.length === 0 && <p className="text-sm text-slate-600">Nessuna chiamata Aircall registrata con questo cliente.</p>}
+                                <div className="space-y-2">
+                                    {eventi.map((e) => (
+                                        <div key={String(e.id)} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                                            <div className="flex items-center gap-3 flex-wrap text-sm">
+                                                <span title={e.direction === "inbound" ? "Il cliente ha chiamato noi" : "Noi abbiamo chiamato il cliente"}>{e.direction === "inbound" ? "📥" : "📤"}</span>
+                                                <span className="text-white font-semibold">{quando(e.started_at)}</span>
+                                                <span className="text-slate-400">{String(e.agente_nome || "—")}</span>
+                                                {e.missed ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-300">persa</span>
+                                                    : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">risposta · {durata(e.duration_sec)}</span>}
+                                                <span className="ml-auto text-xs text-slate-500 font-mono">{String(e.cliente_num || "")}</span>
+                                            </div>
+                                            {!!e.recording_url && (
+                                                <div className="mt-2 flex items-center gap-3">
+                                                    {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                                                    <audio controls preload="none" src={String(e.recording_url)} className="h-8 flex-1 min-w-0" />
+                                                    <a href={String(e.recording_url)} target="_blank" rel="noreferrer" download
+                                                        className="text-xs font-bold text-sky-300 hover:text-white shrink-0">⬇ Scarica</a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Esiti del call center ({pratiche.length})</h4>
+                                {pratiche.length === 0 && <p className="text-sm text-slate-600">Nessuna pratica del call center su questo cliente.</p>}
+                                <div className="space-y-1.5">
+                                    {pratiche.map((c) => (
+                                        <div key={String(c.id)} className="flex items-center gap-3 flex-wrap rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm">
+                                            <span className="text-white">{quando(c.data_chiamata)}</span>
+                                            <span className="px-2 py-0.5 rounded bg-violet-500/15 text-violet-200 text-[11px] font-bold">{String(c.stato || "—")}</span>
+                                            <span className="text-slate-400 text-xs">{String(c.caller || "—")}</span>
+                                            {!!c.lista_origine && <span className="text-slate-600 text-xs">lista: {String(c.lista_origine)}</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }
