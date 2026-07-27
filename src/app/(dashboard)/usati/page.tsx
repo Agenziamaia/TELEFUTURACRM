@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
+import { SelectPersona } from "@/components/SelectPersona";
 import {
   Smartphone, Tablet, Laptop, Watch,
   Calendar, Search, User, Building2, CalendarDays,
@@ -820,10 +821,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       <div className="space-y-5">
         <div className="grid grid-cols-2 gap-4">
           <div><label className={lbl}>Venditore *</label>
-            <select value={venditore} onChange={e => setVenditore(e.target.value)} className={inp}>
-              <option value="">Seleziona venditore...</option>
-              {VENDITORI.map(v => <option key={v} value={v}>{v}</option>)}
-            </select>
+            <SelectPersona value={venditore} onChange={setVenditore} opzioni={VENDITORI} placeholder="Scrivi il venditore…" className={inp} />
           </div>
           <div><label className={lbl}>Negozio *</label>
             <select value={negozio} onChange={e => setNegozio(e.target.value)} className={inp}>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { SelectPersona } from "@/components/SelectPersona";
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2 } from "lucide-react";
 import { cn } from "@/utils";
@@ -783,10 +784,9 @@ function MalattiaSection() {
                         <form onSubmit={handleCreate} className="space-y-4">
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
-                                <select required value={newEmployee} onChange={e => { setNewEmployee(e.target.value); const st = staff.find(x => x.name === e.target.value)?.store; if (st) setNewStore(st); }} className="glass-input !h-10 text-xs w-full">
-                                    <option value="">— Seleziona —</option>
-                                    {staff.map(x => <option key={x.name} value={x.name}>{x.name}</option>)}
-                                </select>
+                                <SelectPersona value={newEmployee} opzioni={staff.map(x => x.name)} placeholder="Scrivi il collaboratore…"
+                                    onChange={(v) => { setNewEmployee(v); const st = staff.find(x => x.name === v)?.store; if (st) setNewStore(st); }}
+                                    className="glass-input !h-10 text-xs w-full" />
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Punto Vendita</label>
@@ -1034,10 +1034,8 @@ function RitardiSection() {
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
                                     {/* Dropdown dei collaboratori del negozio del login (niente campo negozio: deriva dal collaboratore). */}
-                                    <select required value={newEmployee} onChange={(e) => setNewEmployee(e.target.value)} className="glass-input !h-10 text-xs w-full">
-                                        <option value="">— Seleziona collaboratore —</option>
-                                        {storeStaff.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-                                    </select>
+                                    <SelectPersona value={newEmployee} opzioni={storeStaff.map((s) => s.name)} placeholder="Scrivi il collaboratore…"
+                                        onChange={setNewEmployee} className="glass-input !h-10 text-xs w-full" />
                                     {isStoreMgr && !reportAll && <p className="text-[10px] text-slate-600 ml-1">Collaboratori del tuo punto vendita.</p>}
                                 </div>
                             )}

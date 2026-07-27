@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, Suspense } from "react";
+import { SelectPersona } from "@/components/SelectPersona";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -1297,10 +1298,7 @@ function CallerPageInner() {
                                     </FilterField>
                                     {isDirector && (
                                         <FilterField label="Caller">
-                                            <select className="glass-input text-sm rounded-lg py-2 w-full" value={fCaller} onChange={(e) => setFCaller(e.target.value)}>
-                                                <option value="">Tutti</option>
-                                                {CALLERS.map(c => <option key={c} value={c}>{c}</option>)}
-                                            </select>
+                                            <SelectPersona value={fCaller} onChange={setFCaller} opzioni={CALLERS} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                         </FilterField>
                                     )}
                                     <FilterField label="Lista Origine"><input className="glass-input text-sm rounded-lg py-2 w-full" value={fLista} onChange={(e) => setFLista(e.target.value)} placeholder="Nome lista..." /></FilterField>
@@ -1523,10 +1521,7 @@ function CallerPageInner() {
                                 </div>
                                 <div>
                                     <label className="text-[10px] text-slate-500 uppercase tracking-widest">Assegna a <span className="text-rose-400">*</span></label>
-                                    <select className="glass-input w-full rounded-lg py-2 mt-1" value={manCaller} onChange={(e) => setManCaller(e.target.value)}>
-                                        <option value="">Seleziona caller...</option>
-                                        {CALLERS.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </select>
+                                    <SelectPersona value={manCaller} onChange={setManCaller} opzioni={CALLERS} placeholder="Scrivi il caller…" className="glass-input w-full rounded-lg py-2 mt-1" />
                                 </div>
                             </div>
                             <div className="flex gap-2">
@@ -1706,10 +1701,7 @@ function CallerPageInner() {
 
                                         {isSegnalazione && (
                                             <FormGroup label="Segnalatore">
-                                                <select className="glass-input rounded-lg py-2 w-full" value={editCall.segnalatore} onChange={(e) => updateField("segnalatore", e.target.value)}>
-                                                    <option value="">Seleziona venditore...</option>
-                                                    {VENDITORI.map(v => <option key={v} value={v}>{v}</option>)}
-                                                </select>
+                                                <SelectPersona value={editCall.segnalatore} onChange={(v) => updateField("segnalatore", v)} opzioni={VENDITORI} placeholder="Scrivi il venditore…" className="glass-input rounded-lg py-2 w-full" />
                                             </FormGroup>
                                         )}
                                         {isMarketing && (
@@ -1754,10 +1746,7 @@ function CallerPageInner() {
                                                     <input className="glass-input rounded-lg py-2 w-full" value={editCall.indirizzo} onChange={(e) => updateField("indirizzo", e.target.value)} placeholder="Via, Città..." />
                                                 </FormGroup>
                                                 <FormGroup label="Agente Assegnato">
-                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.agente} onChange={(e) => updateField("agente", e.target.value)}>
-                                                        <option value="">Seleziona agente...</option>
-                                                        {AGENTI.map(a => <option key={a} value={a}>{a}</option>)}
-                                                    </select>
+                                                    <SelectPersona value={editCall.agente} onChange={(v) => updateField("agente", v)} opzioni={AGENTI} placeholder="Scrivi l'agente…" className="glass-input rounded-lg py-2 w-full" />
                                                 </FormGroup>
                                             </>
                                         )}
@@ -2197,10 +2186,7 @@ function CallerPageInner() {
                                     <p className="text-xs text-slate-500 mb-4">Suddividi le {listaRows} righe tra i caller. Stato iniziale: <strong className="text-blue-300">Nuovo</strong>.</p>
                                     {listaSplits.map((split, idx) => (
                                         <div key={idx} className="flex gap-2 items-center">
-                                            <select className="glass-input rounded-lg py-2 flex-[2]" value={split.caller} onChange={(e) => updateSplit(idx, "caller", e.target.value)}>
-                                                <option value="">Seleziona caller...</option>
-                                                {CALLERS.map(c => <option key={c} value={c}>{c}</option>)}
-                                            </select>
+                                            <div className="flex-[2]"><SelectPersona value={split.caller} onChange={(v) => updateSplit(idx, "caller", v)} opzioni={CALLERS} placeholder="Scrivi il caller…" className="glass-input rounded-lg py-2 w-full" /></div>
                                             <input type="number" min={0} className="glass-input rounded-lg py-2 max-w-[100px]" value={split.quantita} onChange={(e) => updateSplit(idx, "quantita", e.target.value)} placeholder="Qta" />
                                             {listaSplits.length > 1 && (
                                                 <button onClick={() => removeSplit(idx)} className="p-2 rounded-lg border border-white/10 text-slate-400 hover:text-white"><Trash2 className="w-4 h-4" /></button>

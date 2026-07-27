@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { SelectPersona } from "@/components/SelectPersona";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video } from "lucide-react";
 import { cn } from "@/utils";
 import { usePageView } from "@/lib/pageView";
@@ -782,30 +783,24 @@ export default function Calendario() {
                     </div>
                     <div className="flex-1">
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Consulente</label>
-                        <select
+                        <SelectPersona
                             className="glass-input w-full text-sm"
-                            value={filterAgent}
-                            onChange={(e) => setFilterAgent(e.target.value)}
-                        >
-                            <option value="Tutti">Tutti i consulenti</option>
-                            {agents.map((a) => (
-                                <option key={a} value={a}>{a}</option>
-                            ))}
-                        </select>
+                            value={filterAgent === "Tutti" ? "" : filterAgent}
+                            onChange={(v) => setFilterAgent(v || "Tutti")}
+                            opzioni={agents}
+                            placeholder="Tutti — scrivi per filtrare"
+                        />
                     </div>
                     <div className="flex-1">
                         {/* chi ha PRENOTATO l'appuntamento, non l'incaricato */}
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Fissato da</label>
-                        <select
+                        <SelectPersona
                             className="glass-input w-full text-sm"
-                            value={filterCreatedBy}
-                            onChange={(e) => setFilterCreatedBy(e.target.value)}
-                        >
-                            <option value="Tutti">Chiunque</option>
-                            {Array.from(new Set(appointments.map((a) => a.createdBy).filter(Boolean))).sort().map((n) => (
-                                <option key={n} value={n}>{n}</option>
-                            ))}
-                        </select>
+                            value={filterCreatedBy === "Tutti" ? "" : filterCreatedBy}
+                            onChange={(v) => setFilterCreatedBy(v || "Tutti")}
+                            opzioni={Array.from(new Set(appointments.map((a) => a.createdBy).filter(Boolean))).sort() as string[]}
+                            placeholder="Chiunque — scrivi per filtrare"
+                        />
                     </div>
                 </div>
             )}
@@ -938,16 +933,13 @@ export default function Calendario() {
                         {isCallCenter ? (
                             <div>
                                 <label className="block text-sm font-bold text-indigo-300 mb-2">Consulente</label>
-                                <select
+                                <SelectPersona
                                     className="glass-input w-full border-indigo-500/30 focus:border-indigo-500/50"
                                     value={searchAgent}
-                                    onChange={(e) => setSearchAgent(e.target.value)}
-                                >
-                                    <option value="">Tutti i consulenti</option>
-                                    {agents.map(agent => (
-                                        <option key={agent} value={agent}>{agent}</option>
-                                    ))}
-                                </select>
+                                    onChange={setSearchAgent}
+                                    opzioni={agents}
+                                    placeholder="Tutti — scrivi per filtrare"
+                                />
                             </div>
                         ) : (
                             // Space preserver for layout on non-admin
@@ -1614,10 +1606,8 @@ export default function Calendario() {
                                     isCallCenter ? (
                                         <div>
                                             <label className="block text-xs font-medium text-slate-400 mb-1.5">Agente *</label>
-                                            <select className="glass-input w-full" value={newAppt.agente} onChange={e => setNewAppt(p => ({ ...p, agente: e.target.value }))} required>
-                                                <option value="">Seleziona...</option>
-                                                {agents.map(a => <option key={a} value={a}>{a}</option>)}
-                                            </select>
+                                            <SelectPersona value={newAppt.agente} opzioni={agents} placeholder="Scrivi l'agente…"
+                                                onChange={(v) => setNewAppt(p => ({ ...p, agente: v }))} className="glass-input w-full" />
                                         </div>
                                     ) : (
                                         <div>
