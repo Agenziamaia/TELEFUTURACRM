@@ -3821,6 +3821,17 @@ export default function CRM() {
   _sesRef.v=sesCode; // per il fallback Cod.Ins. dentro subComplete
   // Segnalazione 84: con un contratto energia serve la cartella "Fattura".
   const haEnergia=cats.some(g=>g.catMacro==="energia"&&(sales[g.id]||[]).some(sale=>sale&&g.subs.some(sub=>sale[sub.id]&&sale[sub.id].active)));
+  // FISARMONICA CATEGORIE (Luca 28/07): tutte esplose SOLO alla prima entrata
+  // (nessun prodotto ancora selezionato); appena si seleziona un prodotto, le
+  // categorie senza selezione si RACCOLGONO nel solo titolo cliccabile
+  // (esplodi/chiudi a piacere), per dare spazio alla compilazione. Vale per
+  // ogni brand e tipo cliente. Cambio brand/tipo = si riparte da tutte aperte.
+  const [catOpen,setCatOpen]=useState({});
+  useEffect(()=>{setCatOpen({});},[brand,tipoCliente]);
+  const catHaSelezione=(g)=>(sales[g.id]||[]).some(row=>row&&g.subs.some(sub=>row[sub.id]&&row[sub.id].active));
+  const nessunaSelezione=!cats.some(catHaSelezione);
+  const catAperta=(g)=>catOpen[g.id]!==undefined?catOpen[g.id]:(nessunaSelezione||catHaSelezione(g));
+  const togCat=(g)=>setCatOpen(p=>{const cur=p[g.id]!==undefined?p[g.id]:(nessunaSelezione||catHaSelezione(g));return {...p,[g.id]:!cur};});
   const sT=m=>{setToast(m);setTimeout(()=>setToast(null),3500)};
   const uA=(k,v)=>setAna(p=>({...p,[k]:v}));
   const gS=catId=>sales[catId]||[{}];
@@ -4687,9 +4698,9 @@ export default function CRM() {
           <span style={{fontSize:11,fontWeight:700,color:"#1B3A5C"}}>Codice inserimento:</span>
           <select value={sesCode} onChange={e=>setSesCode(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid rgba(0,114,198,0.18)",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.02)",minWidth:140}}><option value="">— Seleziona —</option>{(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="dojo"?DOJO_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=><option key={c} value={c}>{c}</option>)}</select>
         </div>
-        {cats.map(group=>{const cc=catCounts(group.id,group.subs);return <div key={group.id} style={{marginBottom:16}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:16}}>{group.icon}</span><span style={{fontSize:13,fontWeight:700,color:group.color,textTransform:"uppercase"}}>{group.title}</span>{cc.tot>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:"#8892b0",background:"transparent",borderRadius:999,padding:"2px 10px"}}>{cc.tot} {cc.tot===1?"vendita":"vendite"}{cc.ok>0&&<span style={{color:"#28a745"}}>· {cc.ok} ✓</span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>· {cc.warn} ⚠</span>}{cc.empty>0&&<span style={{color:"#64748b"}}>· {cc.empty} ●</span>}</span>}</div>
-          {gS(group.id).map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+group.color}}>
+        {cats.map(group=>{const cc=catCounts(group.id,group.subs);const aperta=catAperta(group);return <div key={group.id} style={{marginBottom:aperta?16:6}}>
+          <div onClick={()=>togCat(group)} title={aperta?"Chiudi la categoria":"Esplodi la categoria"} style={{display:"flex",alignItems:"center",gap:8,marginBottom:aperta?8:0,cursor:"pointer",userSelect:"none",padding:aperta?0:"8px 12px",borderRadius:8,background:aperta?"transparent":"rgba(255,255,255,0.03)",border:aperta?"none":"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:11,color:"#64748b"}}>{aperta?"▾":"▸"}</span><span style={{fontSize:16}}>{group.icon}</span><span style={{fontSize:13,fontWeight:700,color:group.color,textTransform:"uppercase"}}>{group.title}</span>{cc.tot>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:"#8892b0",background:"transparent",borderRadius:999,padding:"2px 10px"}}>{cc.tot} {cc.tot===1?"vendita":"vendite"}{cc.ok>0&&<span style={{color:"#28a745"}}>· {cc.ok} ✓</span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>· {cc.warn} ⚠</span>}{cc.empty>0&&<span style={{color:"#64748b"}}>· {cc.empty} ●</span>}</span>}</div>
+          {aperta&&gS(group.id).map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+group.color}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
               <span style={{fontSize:11,fontWeight:700,color:group.color}}>Vendita #{si+1}</span>
               <div style={{display:"flex",gap:6}}>
