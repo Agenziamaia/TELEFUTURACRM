@@ -7,7 +7,7 @@ import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/ta
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
-import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { useAuth } from "@/context/AuthContext";
 const ReqCtx = createContext(null);
@@ -4401,7 +4401,7 @@ export default function CRM() {
   //    clienti IN VISIBILITÀ (acquisiti/gestiti nei negozi visibili; sede e
   //    direzione vedono tutto). Il CF esatto resta invece GLOBALE: digitare
   //    il codice è la prova di conoscere il cliente. ──
-  const visNeg=useVisibleStores();
+  const visCli=useClientiVisibili();   // FONTE UNICA: stessa regola della pagina Clienti (accessi concessi compresi)
   const [sugg,setSugg]=useState([]);
   const _suggTO=useRef(null);
   useEffect(()=>{
@@ -4414,19 +4414,18 @@ export default function CRM() {
       const chiave=[...termini].sort((a,b)=>b.length-a.length)[0].replace(/[,()%]/g,"");
       if(!chiave){setSugg([]);return;}
       const {data}=await supabase.from("clients")
-        .select("id,nome,cognome,ragione_sociale,cf_piva,cellulare,tipo,contracts(negozio)")
+        .select("id,nome,cognome,ragione_sociale,cf_piva,cellulare,tipo")
         .or(`nome.ilike.%${chiave}%,cognome.ilike.%${chiave}%,ragione_sociale.ilike.%${chiave}%`)
         .limit(25);
       const rows=(data||[]).filter(c=>{
         const full=`${c.nome||""} ${c.cognome||""} ${c.ragione_sociale||""}`.toLowerCase();
         if(!termini.every(t=>full.includes(t)))return false;
-        if(visNeg.seesAll)return true;
-        return (c.contracts||[]).some(x=>visNeg.stores.some(sN=>sameStore(x.negozio,sN)));
+        return visCli.visibile(c.id);
       }).slice(0,6);
       setSugg(rows);
     },350);
     return()=>{if(_suggTO.current)clearTimeout(_suggTO.current);};
-  },[lookupValue,visNeg.seesAll,visNeg.stores.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+  },[lookupValue,visCli.visibile]); // eslint-disable-line react-hooks/exhaustive-deps
   const scegliSugg=async(r)=>{
     setSugg([]);
     const {data}=await supabase.from("clients").select("*").eq("id",r.id).maybeSingle();

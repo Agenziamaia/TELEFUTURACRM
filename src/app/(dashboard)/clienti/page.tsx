@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, capChoice, capAllowed } from "@/lib/capabilities";
 import { chiamaAircall } from "@/lib/dialer";
@@ -725,107 +726,41 @@ export default function ClientiPage() {
     // I default replicano il comportamento storico; la visibilità TOTALE a
     // livello utente (seesAllVis) non viene mai ristretta dallo scope di ruolo.
     const { perms: capPerms } = useRolePermissions(role);
+    // ── VISIBILITÀ CLIENTI: FONTE UNICA condivisa con Registra Vendita
+    //    (src/lib/clientiVisibili — Luca 28/07: mai più logiche divergenti).
     const scopeClienti = capChoice(role, CAP_CLIENTI, capPerms);
     const { seesAll: seesAllVis, stores: visStores } = useVisibleStores();
-    const maskAttivo = scopeClienti !== "tutti" && !seesAllVis;
+    const visCli = useClientiVisibili();
+    const maskAttivo = visCli.maskAttivo;
     const isStoreScoped = maskAttivo && scopeClienti === "negozi";
     const soloPropri = maskAttivo && scopeClienti === "propri";
     const soloAppuntamenti = maskAttivo && scopeClienti === "appuntamenti";
     // Eliminazione anagrafiche: dall'amministrativo in su (cestino in tabella).
     const canDelete = canApproveAccess;
     const [delConfirm, setDelConfirm] = useState<string | null>(null);
-    const [mieiClienti, setMieiClienti] = useState<Set<string> | null>(null);
-    const [accessOk, setAccessOk] = useState<Set<string>>(new Set());
-    const [accessPending, setAccessPending] = useState<Set<string>>(new Set());
+    const mieiClienti = visCli.mieiClienti;
+    const accessOk = visCli.accessOk;
+    const accessPending = visCli.accessPending;
     const [richiesteAccesso, setRichiesteAccesso] = useState<Record<string, unknown>[]>([]);
     const [accessMsg, setAccessMsg] = useState("");
-    const loadAccessi = async () => {
-        if (!user?.id) return;
-        const { data: reqs, error } = await supabase.from("client_access_requests")
-            .select("client_id,status").eq("requested_by", user.id);
-        if (!error) {
-            setAccessOk(new Set((reqs ?? []).filter((r) => r.status === "approved").map((r) => String(r.client_id))));
-            setAccessPending(new Set((reqs ?? []).filter((r) => r.status === "pending").map((r) => String(r.client_id))));
-        }
-    };
+    const loadAccessi = visCli.ricaricaAccessi;
     useEffect(() => {
-        if (!user?.id) return;
+        if (!user?.id || !canApproveAccess) return;
         (async () => {
-            if (soloPropri) {
-                let nomi: string[] = [];
-                if (role === "direttore_ob") {
-                    // il direttore outbound vede i clienti di TUTTO il reparto
-                    const { data } = await supabase.from("app_users").select("full_name,match_name")
-                        .in("role", ["agente", "direttore_ob"]).eq("active", true);
-                    nomi = ((data ?? []) as { full_name: string; match_name: string | null }[])
-                        .flatMap((u) => [u.full_name, u.match_name]).filter(Boolean) as string[];
-                } else {
-                    // chiunque altro in modalità "propri": solo i clienti inseriti da lui
-                    const { data } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
-                    nomi = [data?.full_name, data?.match_name, user.name].filter(Boolean) as string[];
-                }
-                const { data: cs } = await supabase.from("contracts").select("client_id")
-                    .in("venditore", nomi.length ? nomi : ["—"]).limit(10000);
-                setMieiClienti(new Set(((cs ?? []) as { client_id: string | null }[]).map((c) => c.client_id).filter(Boolean) as string[]));
-                await loadAccessi();
-            }
-            if (soloAppuntamenti) {
-                // CALLER (Luca 26/07): interi solo i clienti per cui HA FISSATO un
-                // appuntamento (appointments.created_by = lui, dal ponte Caller o
-                // dal Calendario); aggancio per CF o cellulare normalizzato.
-                const { data: me } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
-                const nomi = [me?.full_name, me?.match_name, user.name].filter(Boolean) as string[];
-                const { data: apps } = await supabase.from("appointments").select("cf_piva,customer_phone")
-                    .in("created_by", nomi.length ? nomi : ["—"]).limit(5000);
-                const cfSet = new Set<string>(); const telSet = new Set<string>();
-                ((apps ?? []) as { cf_piva: string | null; customer_phone: string | null }[]).forEach((a) => {
-                    const cf = String(a.cf_piva || "").toUpperCase().trim();
-                    if (cf) cfSet.add(cf);
-                    const t = String(a.customer_phone || "").replace(/\D/g, "");
-                    if (t) telSet.add(t);
-                });
-                const { data: cls } = await supabase.from("clients").select("id,cf_piva,cellulare").limit(5000);
-                const set = new Set<string>();
-                ((cls ?? []) as { id: string; cf_piva: string | null; cellulare: string | null }[]).forEach((c) => {
-                    const cf = String(c.cf_piva || "").toUpperCase().trim();
-                    const t = String(c.cellulare || "").replace(/\D/g, "");
-                    if ((cf && cfSet.has(cf)) || (t && telSet.has(t))) set.add(c.id);
-                });
-                setMieiClienti(set);
-                await loadAccessi();
-            }
-            if (isStoreScoped) {
-                const miei = visStores.length ? visStores : (user.negozio ? [user.negozio] : []);
-                // gestiti: almeno una vendita in uno dei negozi visibili
-                const { data: cs } = await supabase.from("contracts").select("client_id,negozio").limit(10000);
-                const set = new Set<string>();
-                ((cs ?? []) as { client_id: string | null; negozio: string | null }[]).forEach((c) => {
-                    if (c.client_id && miei.some((m) => sameStore(c.negozio, m))) set.add(c.client_id);
-                });
-                // acquisiti: anagrafiche nate in uno dei negozi visibili
-                const { data: acq } = await supabase.from("clients").select("id,acquisito_da").limit(5000);
-                ((acq ?? []) as { id: string; acquisito_da: string | null }[]).forEach((c) => {
-                    if (c.acquisito_da && miei.some((m) => sameStore(c.acquisito_da, m))) set.add(c.id);
-                });
-                setMieiClienti(set);
-                await loadAccessi();
-            }
-            if (canApproveAccess) {
-                const { data: reqs, error } = await supabase.from("client_access_requests")
-                    .select("*, clients(nome,cognome,ragione_sociale,tipo)").eq("status", "pending").order("created_at");
-                if (!error) setRichiesteAccesso((reqs ?? []) as Record<string, unknown>[]);
-            }
+            const { data: reqs, error } = await supabase.from("client_access_requests")
+                .select("*, clients(nome,cognome,ragione_sociale,tipo)").eq("status", "pending").order("created_at");
+            if (!error) setRichiesteAccesso((reqs ?? []) as Record<string, unknown>[]);
         })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id, soloPropri, soloAppuntamenti, isStoreScoped, visStores.join("|"), canApproveAccess, role]);
-    const oscurato = (c: Cliente) => maskAttivo && (mieiClienti === null || (!mieiClienti.has(c.id) && !accessOk.has(c.id)));
+    }, [user?.id, canApproveAccess]);
+    const oscurato = (c: Cliente) => !visCli.visibile(c.id);
+
     const richiediAccesso = async (c: Cliente) => {
         setAccessMsg("");
         const { error } = await supabase.from("client_access_requests").insert({
             client_id: c.id, requested_by: user?.id || null, requested_by_name: user?.name || "—",
         });
         if (error) { setAccessMsg("⚠️ Invio non riuscito (funzione in attivazione): riprova più tardi."); return; }
-        setAccessPending((p) => new Set([...p, c.id]));
+        visCli.segnaPending(c.id);
         setAccessMsg("✅ Richiesta inviata all'amministrazione: vedrai i dati appena approvata.");
     };
     const eliminaCliente = async (c: Cliente) => {
