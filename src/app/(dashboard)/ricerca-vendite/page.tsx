@@ -275,7 +275,10 @@ export default function RicercaContratto() {
     // brand a SELEZIONE POSITIVA (stessa logica del caller, 27/07): tutte
     // attive per definizione; il click su una applica il filtro "solo quella",
     // i successivi aggiungono/tolgono; tutte scelte o nessuna = tutte.
-    const [selBrands, setSelBrands] = useState<Set<string>>(new Set());  // vuoto = tutte
+    // vuoto = stato di DEFAULT: tutte le tessere accese TRANNE la Marginalità
+    // (richiesta Luca 28/07); il click mantiene la selezione positiva di sempre.
+    const [selBrands, setSelBrands] = useState<Set<string>>(new Set());
+    const _isExtraBrand = (b: string) => ["extra", "marginalità", "marginalita"].includes(String(b || "").toLowerCase());
     const LABEL_SLUG: Record<string, string> = { "WindTre": "windtre", "Vodafone": "vodafone", "Fastweb": "fastweb", "Iliad": "iliad", "Sky": "sky", "TIM": "tim", "Tim": "tim", "S4": "s4", "Dojo": "dojo", "Very Mobile": "very", "Very": "very", "Ho. Mobile": "ho", "Ho Mobile": "ho", "Kena Mobile": "kena", "Kena": "kena" };
     // un solo brand attivo dalle tessere (o unico brand presente) = si puo' filtrare per prodotto/offerta
     const soloBrandLabel = selBrands.size === 1 ? Array.from(selBrands)[0] : (selBrands.size === 0 && brandCounts.length === 1 ? brandCounts[0].brand : null);
@@ -420,8 +423,10 @@ export default function RicercaContratto() {
             if (aDataAttivazione) query = query.lte("data_attivazione", dataIso(aDataAttivazione));
 
             // tessere brand a selezione positiva: con una selezione attiva
-            // passano SOLO i brand scelti
+            // passano SOLO i brand scelti; nello stato di default (nessuna
+            // selezione) la MARGINALITÀ resta esclusa — si vede solo cliccandola.
             if (selBrands.size > 0) query = query.in("brand", Array.from(selBrands));
+            else query = query.neq("brand", "Marginalità").neq("brand", "Extra");
 
             if (filterCliente) {
                 const safe = filterCliente.trim().replace(/[",()]/g, "");
@@ -780,9 +785,9 @@ export default function RicercaContratto() {
                    stessa logica della sezione caller (richiesta Luca 27/07). */
                 <div className="flex gap-3 mb-8">
                     {brandCounts.map(({ brand, n }) => {
-                        const active = selBrands.size === 0 || selBrands.has(brand);
+                        const isExtra = _isExtraBrand(brand);
+                        const active = selBrands.size === 0 ? !isExtra : selBrands.has(brand);
                         const logo = BRAND_LOGO[brand];
-                        const isExtra = ["extra", "marginalità", "marginalita"].includes(brand.toLowerCase());
                         return (
                             <button key={brand}
                                 onClick={() => {
@@ -790,7 +795,10 @@ export default function RicercaContratto() {
                                         if (p.size === 0) return new Set([brand]);       // primo click: solo lui
                                         const nx = new Set(p);
                                         if (nx.has(brand)) nx.delete(brand); else nx.add(brand);
-                                        return nx.size >= brandCounts.length ? new Set<string>() : nx;
+                                        // selezione identica al default (tutte le non-extra) → torna al default
+                                        const nonExtra = brandCounts.map((b) => b.brand).filter((b) => !_isExtraBrand(b));
+                                        if (nx.size === nonExtra.length && nonExtra.every((b) => nx.has(b))) return new Set<string>();
+                                        return nx;
                                     });
                                     setPage(1);
                                 }}
