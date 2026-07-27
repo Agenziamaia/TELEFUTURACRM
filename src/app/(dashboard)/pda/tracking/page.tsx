@@ -332,6 +332,9 @@ function FilterBar({
   venditoreSel,
   setVenditoreSel,
   venditori,
+  negozioSel,
+  setNegozioSel,
+  negozi,
 }: {
   catSel: string[];
   setCatSel: (v: string[]) => void;
@@ -348,6 +351,9 @@ function FilterBar({
   venditoreSel: string;
   setVenditoreSel: (v: string) => void;
   venditori: string[];
+  negozioSel: string;
+  setNegozioSel: (v: string) => void;
+  negozi: string[];
 }) {
   const [statoOpen, setStatoOpen] = useState(false);
 
@@ -455,6 +461,43 @@ function FilterBar({
           </button>
         )}
       </div>
+      {/* Filtro NEGOZIO (richiesta Luca 28/07): visibile dall'amministrativa in
+          su (chi vede tutti i negozi); stessi chip cliccabili degli altri filtri. */}
+      {negozi.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <span className="text-xs text-slate-400 font-semibold mr-1">NEGOZIO</span>
+          <button
+            type="button"
+            onClick={() => setNegozioSel("")}
+            className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
+            style={{
+              borderColor: negozioSel === "" ? "#6366f1" : "#334155",
+              background: negozioSel === "" ? "#6366f133" : "transparent",
+              color: negozioSel === "" ? "#818cf8" : "#94a3b8",
+            }}
+          >
+            Tutti
+          </button>
+          {negozi.map((n) => {
+            const sel = negozioSel === n;
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setNegozioSel(sel ? "" : n)}
+                className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
+                style={{
+                  borderColor: sel ? "#6366f1" : "#334155",
+                  background: sel ? "#6366f133" : "transparent",
+                  color: sel ? "#818cf8" : "#94a3b8",
+                }}
+              >
+                {n}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {/* Segnalazione 54: filtro Venditore come ultimo, con pulsanti cliccabili
           (come Categoria e Brand) invece della tendina. "Tutti" + i nomi dei
           collaboratori del negozio, manager compreso. Visibile allo store manager. */}
@@ -1264,6 +1307,8 @@ export default function TrackingPdaPage() {
   // Segnalazione 54: filtro Venditore (dallo store manager in su) per vedere
   // solo le pratiche da verificare di un singolo collaboratore del team.
   const [venditoreSel, setVenditoreSel] = useState<string>("");
+  // filtro NEGOZIO per chi vede tutto (amministrativa in su): opzioni dai dati
+  const [negozioSel, setNegozioSel] = useState<string>("");
 
   const [selected, setSelected] = useState<TrackingRow | null>(null);
   const [kpiFilter, setKpiFilter] = useState<string | null>(null);
@@ -1427,6 +1472,7 @@ export default function TrackingPdaPage() {
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
+      if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
         const rowDate = parseDataRiga(row.dataInserimento);
@@ -1456,7 +1502,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id, venditoreSel]);
+  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id, venditoreSel, negozioSel]);
 
   const filteredPerKpi = useMemo(() => {
     return data.filter((row) => {
@@ -1465,6 +1511,7 @@ export default function TrackingPdaPage() {
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
+      if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
       if (periodoDA || periodoA) {
         const parti = row.dataInserimento.split("/");
@@ -1495,7 +1542,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, escludiConfermati, escludiCompletati]);
+  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, escludiConfermati, escludiCompletati, negozioSel]);
 
   // Delega la verifica di una pratica a un collaboratore (o rimuove la delega).
   const handleDelegate = useCallback(async (rowId: string, toId: string | null) => {
@@ -1700,6 +1747,9 @@ export default function TrackingPdaPage() {
               venditoreSel={venditoreSel}
               setVenditoreSel={setVenditoreSel}
               venditori={seesWhole && !seesAll ? members.map((m) => m.full_name) : []}
+              negozioSel={negozioSel}
+              setNegozioSel={setNegozioSel}
+              negozi={seesAll ? Array.from(new Set(data.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort() : []}
             />
             <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} />
           </>
