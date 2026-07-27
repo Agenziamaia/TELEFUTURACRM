@@ -158,7 +158,7 @@ function readDocViewFromStorage(): { brandId: string | null; catId: string | nul
     }
 }
 
-type DocEntry = { id: number; name: string; type: string; size: string; date: string; fillable: boolean; file_path?: string | null; archived?: boolean };
+type DocEntry = { id: number; name: string; type: string; size: string; date: string; fillable: boolean; file_path?: string | null; archived?: boolean; folder_id?: number | null };
 
 function formatBytes(bytes: number): string {
     if (bytes < 1024) return bytes + " B";
@@ -176,10 +176,10 @@ export default function DocumentazionePage() {
     const [view, setView] = useState<{ brandId: string | null; catId: string | null }>({ brandId: null, catId: null });
     const didRestore = useRef(false);
     const skipNextSave = useRef(true);
-    const [docList, setDocList] = useState<{ id: number; brand_id: string; category_id: string; name: string; type: string; size: string | null; date: string | null; fillable: boolean; file_path?: string | null; archived?: boolean }[]>([]);
+    const [docList, setDocList] = useState<{ id: number; brand_id: string; category_id: string; name: string; type: string; size: string | null; date: string | null; fillable: boolean; file_path?: string | null; archived?: boolean; folder_id?: number | null }[]>([]);
 
     const fetchDocs = useCallback(async () => {
-        const { data, error } = await supabase.from("documentation").select("id, brand_id, category_id, name, type, size, date, fillable, file_path, archived").order("brand_id").order("category_id");
+        const { data, error } = await supabase.from("documentation").select("id, brand_id, category_id, name, type, size, date, fillable, file_path, archived, folder_id").order("brand_id").order("category_id");
         if (!error && data) setDocList(data as typeof docList);
     }, []);
 
@@ -201,6 +201,7 @@ export default function DocumentazionePage() {
                 fillable: d.fillable,
                 file_path: d.file_path ?? undefined,
                 archived: !!d.archived,
+                folder_id: d.folder_id ?? null,
             });
         });
         return m;
@@ -237,7 +238,6 @@ export default function DocumentazionePage() {
     }, [view]);
 
     const brandId = view.brandId && BRANDS.some((b) => b.id === view.brandId) ? view.brandId : null;
-    const catId = view.catId && CATEGORIES.some((c) => c.id === view.catId) ? view.catId : null;
 
     // Solo Direttore Commerciale (e superuser) puo' modificare i file (richiesta Luca #14).
     const { user } = useAuth();
@@ -253,6 +253,10 @@ export default function DocumentazionePage() {
         if (data) setDbCats(data as typeof dbCats);
     }, []);
     useEffect(() => { fetchCats(); }, [fetchCats]);
+    // Segnalazione 104: una sezione e' apribile se e' una delle 3 storiche O una
+    // creata a DB. Prima si accettavano SOLO le 3 storiche, quindi le sezioni
+    // nuove (es. "Listini Terminali" WindTre) si creavano ma NON si aprivano.
+    const catId = view.catId && (CATEGORIES.some((c) => c.id === view.catId) || dbCats.some((c) => c.cat_key === view.catId)) ? view.catId : null;
     // Gestione inline (niente prompt del browser: input dentro la pagina).
     const [addingCat, setAddingCat] = useState(false);
     const [newCatName, setNewCatName] = useState("");
@@ -278,6 +282,37 @@ export default function DocumentazionePage() {
         await supabase.from("doc_categories").update({ archived: true }).eq("id", dbId);
         fetchCats();
     }, [fetchCats]);
+
+    // ── Sotto-cartelle dentro una sezione (segnalazione 104) ──────────
+    const [folderId, setFolderId] = useState<number | null>(null);   // cartella corrente (null = radice sezione)
+    const [folders, setFolders] = useState<{ id: number; brand_id: string | null; category_id: string; parent_id: number | null; name: string }[]>([]);
+    const fetchFolders = useCallback(async () => {
+        if (!brandId || !catId) { setFolders([]); return; }
+        const { data } = await supabase.from("doc_folders").select("id, brand_id, category_id, parent_id, name").eq("category_id", catId).eq("archived", false).order("sort").order("name");
+        setFolders((data ?? []).filter((f: any) => f.brand_id === null || f.brand_id === brandId) as typeof folders);
+    }, [brandId, catId]);
+    useEffect(() => { fetchFolders(); }, [fetchFolders]);
+    useEffect(() => { setFolderId(null); }, [brandId, catId]);   // esci dalle cartelle cambiando sezione/brand
+    const folderPath = useMemo(() => {
+        const byId = new Map(folders.map(f => [f.id, f]));
+        const path: typeof folders = []; let cur: number | null = folderId;
+        while (cur != null) { const f: any = byId.get(cur); if (!f) break; path.unshift(f); cur = f.parent_id; }
+        return path;
+    }, [folderId, folders]);
+    const subFolders = useMemo(() => folders.filter(f => f.parent_id === folderId), [folders, folderId]);
+    const [addingFolder, setAddingFolder] = useState(false);
+    const [newFolderName, setNewFolderName] = useState("");
+    const addFolder = useCallback(async () => {
+        const nm = newFolderName.trim(); if (!nm || !catId) return;
+        await supabase.from("doc_folders").insert({ brand_id: brandId, category_id: catId, parent_id: folderId, name: nm });
+        setAddingFolder(false); setNewFolderName(""); fetchFolders();
+    }, [newFolderName, catId, brandId, folderId, fetchFolders]);
+    const archiveFolder = useCallback(async (id: number) => {
+        await supabase.from("doc_folders").update({ archived: true }).eq("id", id);
+        if (folderId === id) setFolderId(null);
+        fetchFolders();
+    }, [folderId, fetchFolders]);
+
     const [previewDoc, setPreviewDoc] = useState<DocEntry | null>(null);
     const [fillDoc, setFillDoc] = useState<DocEntry | null>(null);
     const [showUpload, setShowUpload] = useState(false);
@@ -305,8 +340,10 @@ export default function DocumentazionePage() {
     // I documenti archiviati (OLD) sono nascosti finche' non si sceglie di mostrarli.
     // Segnalazione 79: i documenti nuovi restano sempre in vista; quelli
     // archiviati finiscono in una sezione OLD a parte, in fondo all'elenco.
-    const docsCorrenti = allDocs.filter((d) => !d.archived);
-    const docsOld = allDocs.filter((d) => d.archived);
+    // Mostra solo i documenti della cartella corrente (radice = folder_id null).
+    const inFolder = (d: DocEntry) => (d.folder_id ?? null) === folderId;
+    const docsCorrenti = allDocs.filter((d) => !d.archived && inFolder(d));
+    const docsOld = allDocs.filter((d) => d.archived && inFolder(d));
     const docs = showArchived ? [...docsCorrenti, ...docsOld] : docsCorrenti;
     const archivedCount = allDocs.filter((d) => d.archived).length;
 
@@ -581,6 +618,50 @@ export default function DocumentazionePage() {
                                 </button>
                             )}
                         </div>
+
+                        {/* Sotto-cartelle (segnalazione 104): breadcrumb + cartelle del livello corrente */}
+                        {(subFolders.length > 0 || folderPath.length > 0 || isAdmin) && (
+                            <div className="px-4 py-3 border-b border-white/10 bg-[#0f111a]/30">
+                                <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-3 flex-wrap">
+                                    <button onClick={() => setFolderId(null)} className={cn("hover:text-white transition-colors flex items-center gap-1", folderId === null && "text-white font-semibold")}>
+                                        <Folder className="w-3.5 h-3.5" />{cat.name}
+                                    </button>
+                                    {folderPath.map((f) => (
+                                        <span key={f.id} className="flex items-center gap-1.5">
+                                            <ChevronRight className="w-3.5 h-3.5" />
+                                            <button onClick={() => setFolderId(f.id)} className={cn("hover:text-white transition-colors", folderId === f.id && "text-white font-semibold")}>{f.name}</button>
+                                        </span>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                                    {subFolders.map((f) => (
+                                        <div key={f.id} className="group relative">
+                                            <button onClick={() => setFolderId(f.id)} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/10 hover:border-indigo-500/40 hover:bg-white/[0.06] text-left transition-all">
+                                                <Folder className="w-4 h-4 text-indigo-400 shrink-0" />
+                                                <span className="text-sm text-white truncate">{f.name}</span>
+                                            </button>
+                                            {isAdmin && (
+                                                <button onClick={() => { if (window.confirm(`Rimuovere la cartella "${f.name}"? I documenti al suo interno restano nella sezione.`)) archiveFolder(f.id); }} title="Rimuovi cartella"
+                                                    className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 transition-opacity"><Trash2 className="w-3.5 h-3.5" /></button>
+                                            )}
+                                        </div>
+                                    ))}
+                                    {isAdmin && (addingFolder ? (
+                                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/[0.03] border border-indigo-500/30">
+                                            <input autoFocus value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
+                                                onKeyDown={e => { if (e.key === "Enter") addFolder(); if (e.key === "Escape") { setAddingFolder(false); setNewFolderName(""); } }}
+                                                placeholder="Nome cartella" className="flex-1 min-w-0 bg-transparent text-white text-sm outline-none placeholder:text-slate-500" />
+                                            <button onClick={addFolder} className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400"><ChevronRight className="w-4 h-4" /></button>
+                                            <button onClick={() => { setAddingFolder(false); setNewFolderName(""); }} className="p-1 rounded-lg text-slate-400 hover:bg-white/10"><X className="w-4 h-4" /></button>
+                                        </div>
+                                    ) : (
+                                        <button onClick={() => setAddingFolder(true)} className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-white/15 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-300 transition-all">
+                                            <Plus className="w-4 h-4" /><span className="text-sm font-medium">Nuova cartella</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="overflow-x-auto">
                             <table className="w-full text-left text-sm whitespace-nowrap">
@@ -909,6 +990,7 @@ export default function DocumentazionePage() {
                                             date: formatDateForDoc(new Date()),
                                             fillable: uploadFillable,
                                             file_path: storagePath,
+                                            folder_id: folderId,   // segn.104: carica nella cartella corrente
                                         });
                                         if (dbErr) throw new Error(dbErr.message);
                                         await fetchDocs();
