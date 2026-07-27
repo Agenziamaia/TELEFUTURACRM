@@ -200,7 +200,9 @@ export default function MobileUploadPage() {
         finally { setBusy(""); }
     };
 
-    const wrap = { minHeight: "100dvh", background: "#0b0d14", color: "#e2e8f0", fontFamily: "system-ui,sans-serif", padding: "22px 16px", boxSizing: "border-box" };
+    // flex:1 + width:100% -> il layout radice avvolge tutto in un flex-row; senza
+    // questo la pagina resta larga quanto il contenuto e a destra si vede lo sfondo.
+    const wrap = { flex: 1, width: "100%", minHeight: "100dvh", background: "#0b0d14", color: "#e2e8f0", fontFamily: "system-ui,sans-serif", padding: "22px 16px", boxSizing: "border-box" };
     if (loading) return <div style={{ ...wrap, display: "flex", alignItems: "center", justifyContent: "center" }}>Carico…</div>;
     if (err) return <div style={wrap}><div style={{ maxWidth: 420, margin: "40px auto", textAlign: "center" }}><div style={{ fontSize: 42, marginBottom: 12 }}>⚠️</div><div style={{ fontSize: 16, fontWeight: 700 }}>{err}</div></div></div>;
     if (done) return <div style={wrap}><div style={{ maxWidth: 420, margin: "60px auto", textAlign: "center" }}><div style={{ fontSize: 56, marginBottom: 12 }}>✅</div><div style={{ fontSize: 20, fontWeight: 800, color: "#34d399" }}>Inviato!</div><div style={{ fontSize: 14, color: "#94a3b8", marginTop: 8 }}>Torna al computer: l'allegato è nel form.<br />Puoi chiudere questa pagina.</div></div></div>;
@@ -309,7 +311,7 @@ function CornerEditor({ editing, setEditing, onConfirm, busy }) {
     const poly = corners.map(c => `${c.x * 100}% ${c.y * 100}%`).join(", ");
     const pts = corners.map(c => `${c.x * 100},${c.y * 100}`).join(" ");
     return (
-        <div style={{ minHeight: "100dvh", background: "#0b0d14", color: "#e2e8f0", padding: "18px 14px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
+        <div style={{ flex: 1, width: "100%", minHeight: "100dvh", background: "#0b0d14", color: "#e2e8f0", padding: "18px 14px", boxSizing: "border-box", fontFamily: "system-ui,sans-serif" }}>
             <div style={{ maxWidth: 460, margin: "0 auto" }}>
                 <div style={{ textAlign: "center", fontSize: 15, fontWeight: 800, marginBottom: 4 }}>Regola i bordi del foglio</div>
                 <div style={{ textAlign: "center", fontSize: 12, color: "#94a3b8", marginBottom: 12 }}>Trascina i 4 pallini sugli angoli del documento.</div>

@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use client";
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
@@ -4589,7 +4590,7 @@ export default function CRM() {
           </div>
           {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid rgba(255,255,255,0.05)":"none"}}><div style={{fontSize:11,color:"#f8fafc"}}><span onClick={()=>apriAnteprima(file)} title="Anteprima" style={{cursor:"pointer",textDecoration:"underline",textDecorationColor:"rgba(255,255,255,0.3)",textUnderlineOffset:2}}>{file.name}</span> <span style={{color:"#64748b",fontSize:10}}>· {file.type}</span></div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
         </div>}
-        {preview&&<div onClick={chiudiAnteprima} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
+        {preview&&createPortal(<div onClick={chiudiAnteprima} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"#11141d",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,width:"100%",maxWidth:840,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
               <div style={{fontSize:13,fontWeight:700,color:"#f8fafc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{preview.name}</div>
@@ -4606,8 +4607,8 @@ export default function CRM() {
                   : <div style={{padding:40,color:"#94a3b8",textAlign:"center"}}>Anteprima non disponibile.<br/><a href={preview.url} target="_blank" rel="noreferrer" style={{color:"#5fd3e6"}}>Scarica il file</a></div>}
             </div>
           </div>
-        </div>}
-        {qrBox&&<div onClick={closeQr} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
+        </div>, document.body)}
+        {qrBox&&createPortal(<div onClick={closeQr} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"#11141d",border:"1px solid rgba(255,255,255,.08)",borderRadius:16,width:"100%",maxWidth:360,padding:24,margin:"0 16px",textAlign:"center"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div style={{fontWeight:800,fontSize:16,color:"#f8fafc"}}>📱 Carica dal telefono</div>
@@ -4621,7 +4622,7 @@ export default function CRM() {
               <div style={{fontSize:11,color:"#f59e0b",marginTop:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{width:8,height:8,borderRadius:4,background:"#f59e0b",display:"inline-block"}}/>In attesa della scansione…</div>
             </>)}
           </div>
-        </div>}
+        </div>, document.body)}
         {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745"}}>
           <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Step 6 — Attribuzione</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
