@@ -33,13 +33,15 @@ export function UrgentTasks() {
         const load = async () => {
             const targets = isAdmin ? ["admin", "direzione"] : ["direzione"];
             const [t, ccr, car] = await Promise.all([
-                supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at")
+                supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at,target_user_id")
                     .in("target_role", targets).eq("done", false).order("created_at", { ascending: false }),
                 supabase.from("contract_change_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
                 supabase.from("client_access_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
             ]);
             if (!vivo) return;
-            const list: Task[] = (t.data ?? []) as Task[];
+            // task INDIRIZZATI: se hanno un destinatario, li vede solo lui
+            const list: Task[] = ((t.data ?? []) as (Task & { target_user_id?: string | null })[])
+                .filter((x) => !x.target_user_id || x.target_user_id === user?.id);
             if ((ccr.count ?? 0) > 0) list.push({
                 id: "__ccr", synthetic: true, created_at: new Date().toISOString(), link: "/ricerca-vendite",
                 titolo: `${ccr.count} richiest${ccr.count === 1 ? "a" : "e"} di modifica contratto da approvare`,

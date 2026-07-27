@@ -1333,7 +1333,7 @@ export default function TrackingPdaPage() {
     try {
       // Left join clients so contracts without a matching client still appear (avoids 0 rows).
       const selectCols =
-        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, categoria_macro, controlli, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
+        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, categoria_macro, controlli, tipo_cliente, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
       const { data: baseData, error: baseErr } = await supabase
         .from("contracts")
         .select(selectCols)
@@ -1389,7 +1389,14 @@ export default function TrackingPdaPage() {
         const ctrl = (Array.isArray(r.controlli) && r.controlli.length)
           ? (r.controlli as string[])
           : controlliDi((r.dettagli as Record<string, unknown>) || {});
-        if (macro === "mobile" && !ctrl.includes("mnp") && !ctrl.includes("finanziamento")) return false;
+        // PERIMETRO (Luca 29/07): nel Tracking entrano SOLO le categorie
+        // monitorate dalle regole — SIM/MNP e finanziamenti (mobile), fissi di
+        // ogni operatore (Sky fibra inclusa → Fisso), contratti P.IVA (mobile
+        // business), energia di ogni operatore, Sky TV. FUORI: Customer Base,
+        // Multi-Servizi, POS (oltre a marginalità e sostituzioni qui sopra).
+        if (["cb", "multi_servizi", "pos", "extra", "digitale"].includes(macro)) return false;
+        const business = String(r.tipo_cliente || "").toLowerCase() === "business";
+        if (macro === "mobile" && !business && !ctrl.includes("mnp") && !ctrl.includes("finanziamento")) return false;
         return true;
       });
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
@@ -1433,7 +1440,13 @@ export default function TrackingPdaPage() {
     const out: TrackingRow[] = [];
     rawList.forEach((r) => {
       const base = mapContractToTrackingRow(r, r.clients as Record<string, unknown> | null, (r.dettagli as Record<string, unknown>) || null);
-      const cats = righeTracking(base.categoria as never, (base.controlli || []) as never);
+      const cats = (() => {
+        // Sky TV usa le regole "sky"; i fissi Sky sono già macro fisso.
+        if (base.categoria === "tv") return ["sky"];
+        // contratti P.IVA: il mobile business segue le regole "piva"
+        if (base.categoria === "mobile" && String(r.tipo_cliente || "").toLowerCase() === "business") return ["piva"];
+        return righeTracking(base.categoria as never, (base.controlli || []) as never);
+      })();
       // Segnalazione 66: ogni riga ha il proprio esito. Quello della categoria e'
       // in stati_categoria; se manca si eredita da stato_negozio, cosi' le
       // pratiche gia' lavorate non perdono lo stato.

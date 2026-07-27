@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { SelectPersona } from "@/components/SelectPersona";
 import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation, FileText } from "lucide-react";
 import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
@@ -991,24 +992,14 @@ export default function RicercaContratto() {
                     {/* 1. Venditore */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Venditore</label>
-                        <select
-                            className="glass-input w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                        <SelectPersona
                             disabled={!canPickVenditore}
-                            value={canPickVenditore ? filterVenditore : (lockedVenditore || "Tutti")}
-                            onChange={e => setFilterVenditore(e.target.value)}
-                        >
-                            <option value="Tutti">Tutti i venditori</option>
-                            {venditoriTeam.length > 0 && (
-                                <optgroup label={`Team ${user?.negozio || "punto vendita"}`}>
-                                    {venditoriTeam.map(v => <option key={v} value={v}>{v}</option>)}
-                                </optgroup>
-                            )}
-                            {venditoriAltri.length > 0 && (
-                                <optgroup label="Altri consulenti">
-                                    {venditoriAltri.map(v => <option key={v} value={v}>{v}</option>)}
-                                </optgroup>
-                            )}
-                        </select>
+                            value={canPickVenditore ? (filterVenditore === "Tutti" ? "" : filterVenditore) : (lockedVenditore || "")}
+                            onChange={(v) => setFilterVenditore(v || "Tutti")}
+                            opzioni={[...venditoriTeam, ...venditoriAltri]}
+                            placeholder="Tutti — scrivi per filtrare"
+                            className="glass-input w-full"
+                        />
                     </div>
 
                     {/* 2. Codice contratto */}

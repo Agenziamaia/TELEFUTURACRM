@@ -1,12 +1,15 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import { SelectPersona } from "@/components/SelectPersona";
 import { Suspense, useState, useEffect, useCallback } from "react";
-import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download } from "lucide-react";
+import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2 } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
+import { isAdminOrAbove } from "@/lib/roles";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { FERIE_SECTION, CAP_FERIE_GESTIONE, capAllowed } from "@/lib/capabilities";
 import { useVisibleStores } from "@/lib/visibleStores";
 
 // Il tab BADGE e' stato SPOSTATO nell'hub Call Center (/caller?tab=badge, Luca 28/07):
@@ -18,7 +21,12 @@ function CollaboratoriPageContent() {
     const searchParams = useSearchParams();
     const tab = (searchParams.get("tab") as TabId) || "ferie";
 
-    const isAdminLike = !!user && (seesAllStores(user.role) || seesWholeStore(user.role));
+    // MASCHERA FERIE dai PERMESSI (cap:/collaboratori?tab=ferie:gestione_team,
+    // rotellina in Amministrazione → Utenti → Permessi). Luca 27/07: store manager
+    // e direttore commerciale NON gestiscono il team — vedono la maschera del
+    // consulente (solo le proprie richieste), salvo riaccenderla per ruolo.
+    const { perms: capPerms } = useRolePermissions(user?.role);
+    const gestioneFerie = !!user && capAllowed(user.role, FERIE_SECTION, CAP_FERIE_GESTIONE, capPerms);
 
     const sectionInfo = {
         ferie: { label: "Ferie", icon: CalendarDays, desc: "Pianificazione, richieste e approvazione ferie" },
@@ -48,7 +56,7 @@ function CollaboratoriPageContent() {
             </div>
 
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                {tab === "ferie" && <FerieSection isAdminLike={!!isAdminLike} />}
+                {tab === "ferie" && <FerieSection isAdminLike={gestioneFerie} />}
                 {tab === "malattia" && isAdminOrAbove(user?.role) && <MalattiaSection />}
                 {tab === "malattia" && !isAdminOrAbove(user?.role) && (
                     <div className="glass-card p-12 text-center">
@@ -75,7 +83,7 @@ export default function CollaboratoriPage() {
     );
 }
 
-type VacationRequest = { id: number; employee_name: string; store: string; date_from: string; date_to: string; reason: string | null; status: string; admin_note: string | null; created_at: string };
+type VacationRequest = { id: number; employee_name: string; store: string; date_from: string; date_to: string; reason: string | null; status: string; admin_note: string | null; created_at: string; half_day?: string | null };
 
 function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const { user } = useAuth();
@@ -85,11 +93,24 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const [dateFrom, setDateFrom] = useState("");
     const [dateTo, setDateTo] = useState("");
     const [reason, setReason] = useState("");
+    // MEZZA GIORNATA (Luca 29/07): solo su giorno SINGOLO, con fascia oraria
+    const [halfDay, setHalfDay] = useState<"" | "mattina" | "pomeriggio">("");
+    const giornoSingolo = !!dateFrom && !!dateTo && dateFrom === dateTo;
     const [submitting, setSubmitting] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [requests, setRequests] = useState<VacationRequest[]>([]);
-    const [filterPerson, setFilterPerson] = useState("");
-    const [filterStore, setFilterStore] = useState("");
+    // FILTRI (Luca 29/07): persone e negozi MULTI + periodo — valgono sia sul
+    // registro sia sul calendario dedicato; vista commutabile per chi approva.
+    const [fPersone, setFPersone] = useState<string[]>([]);
+    const [fNegozi, setFNegozi] = useState<string[]>([]);
+    const [fDa, setFDa] = useState("");
+    const [fA, setFA] = useState("");
+    const [vista, setVista] = useState<"registro" | "calendario">("registro");
+    const [meseCal, setMeseCal] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+    const [rifiutoId, setRifiutoId] = useState<number | null>(null);
+    const [rifiutoNota, setRifiutoNota] = useState("");
+    const [qPersona, setQPersona] = useState("");   // ricerca a scrittura nel filtro persone
+    const canDeleteRow = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
 
     const fetchRequests = useCallback(async () => {
         const { data } = await supabase.from("vacation_requests").select("*").order("created_at", { ascending: false });
@@ -110,17 +131,49 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
             date_from: dateFrom,
             date_to: dateTo,
             reason: reason || null,
-            status: "pending"
+            status: "pending",
+            half_day: giornoSingolo && halfDay ? halfDay : null,
         });
+        // FULMINE ai DESIGNATI (incarico 'ferie', se il flag è attivo): task ⚡
+        // indirizzato solo a loro; il pallino sulla sezione arriva comunque.
+        try {
+            const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine").eq("chiave", "ferie").maybeSingle();
+            const ass = (inc?.assegnatari ?? []) as string[];
+            if (inc?.fulmine && ass.length) {
+                await supabase.from("admin_tasks").insert(ass.map((uid) => ({
+                    tipo: "ferie_richiesta",
+                    titolo: `🏖 Richiesta ferie: ${user.name} (${dateFrom.split("-").reverse().join("/")} → ${dateTo.split("-").reverse().join("/")})`,
+                    dettaglio: reason || "Senza motivazione.",
+                    link: "/collaboratori?tab=ferie",
+                    target_role: "admin",
+                    created_by: user.name,
+                    target_user_id: uid,
+                })));
+            }
+        } catch { /* la richiesta resta salvata comunque */ }
         await fetchRequests();
         setDateFrom("");
         setDateTo("");
         setReason("");
+        setHalfDay("");
         setSubmitting(false);
     };
 
-    const setStatus = async (id: number, status: "approved" | "rejected") => {
-        await supabase.from("vacation_requests").update({ status }).eq("id", id);
+    const approva = async (id: number) => {
+        await supabase.from("vacation_requests").update({ status: "approved" }).eq("id", id);
+        await fetchRequests();
+    };
+    // RIFIUTO CON NOTA (Luca 29/07): la nota la vede il collaboratore in riga
+    const confermaRifiuto = async () => {
+        if (rifiutoId == null) return;
+        await supabase.from("vacation_requests").update({ status: "rejected", admin_note: rifiutoNota.trim() || null }).eq("id", rifiutoId);
+        setRifiutoId(null); setRifiutoNota("");
+        await fetchRequests();
+    };
+    // CESTINO (amministrativo in su): per le righe di prova o gli errori
+    const eliminaRiga = async (id: number) => {
+        if (!window.confirm("Eliminare questa riga di ferie dal registro? L'operazione è definitiva.")) return;
+        await supabase.from("vacation_requests").delete().eq("id", id);
         await fetchRequests();
     };
 
@@ -129,9 +182,12 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const inAttesa = requests.filter(r => r.status === "pending").length;
 
     const filteredRequests = requests.filter(r =>
-        r.employee_name.toLowerCase().includes(filterPerson.toLowerCase()) &&
-        r.store.toLowerCase().includes(filterStore.toLowerCase())
+        (!fPersone.length || fPersone.includes(r.employee_name)) &&
+        (!fNegozi.length || fNegozi.includes(r.store)) &&
+        (!fDa || r.date_to >= fDa) && (!fA || r.date_from <= fA)
     );
+    const persone = [...new Set(requests.map(r => r.employee_name))].sort();
+    const negozi = [...new Set(requests.map(r => r.store).filter(Boolean))].sort();
 
     const formatDate = (iso: string) => {
         return new Date(iso).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -184,6 +240,26 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                         <input type="date" required value={dateTo} onChange={e => setDateTo(e.target.value)} className="glass-input !h-10 text-xs w-full" />
                                     </div>
                                 </div>
+                                <div className={cn("rounded-xl border p-3 space-y-2 transition-all", giornoSingolo ? "border-amber-500/30 bg-amber-500/[0.04]" : "border-white/5 bg-white/[0.02] opacity-50")}>
+                                    <label className={cn("flex items-center gap-2 text-xs font-bold", giornoSingolo ? "text-slate-200 cursor-pointer" : "text-slate-600 cursor-not-allowed")}>
+                                        <input type="checkbox" disabled={!giornoSingolo} checked={giornoSingolo && !!halfDay}
+                                            onChange={e => setHalfDay(e.target.checked ? "mattina" : "")}
+                                            className="accent-amber-500 w-4 h-4" />
+                                        Mezza giornata
+                                        {!giornoSingolo && <span className="font-normal normal-case text-[10px]">(disponibile solo su un giorno singolo)</span>}
+                                    </label>
+                                    {giornoSingolo && !!halfDay && (
+                                        <div className="flex gap-2">
+                                            {([["mattina", "☀️ Mattina"], ["pomeriggio", "🌇 Pomeriggio"]] as const).map(([k, lab]) => (
+                                                <button key={k} type="button" onClick={() => setHalfDay(k)}
+                                                    className={cn("flex-1 px-3 py-2 rounded-lg border text-xs font-bold transition-all",
+                                                        halfDay === k ? "border-amber-400/70 bg-amber-500/20 text-amber-200" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                                    {lab}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Motivazione</label>
                                     <textarea placeholder="Esempio: Ferie estive..." value={reason} onChange={e => setReason(e.target.value)} className="glass-input min-h-[80px] py-3 text-xs w-full resize-none" />
@@ -234,25 +310,109 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                         )}
 
                         {isAdminLike && (
-                            <div className="flex gap-2 w-full md:w-auto">
-                                <input
-                                    type="text"
-                                    placeholder="Nome..."
-                                    value={filterPerson}
-                                    onChange={e => setFilterPerson(e.target.value)}
-                                    className="glass-input !h-9 px-3 text-xs w-full sm:w-28"
-                                />
-                                <input
-                                    type="text"
-                                    placeholder="Negozio..."
-                                    value={filterStore}
-                                    onChange={e => setFilterStore(e.target.value)}
-                                    className="glass-input !h-9 px-3 text-xs w-full sm:w-28"
-                                />
+                            <button onClick={() => {
+                                const giorni = (r: VacationRequest) => r.half_day ? 0.5 : (Math.round((new Date(r.date_to).getTime() - new Date(r.date_from).getTime()) / 86400000) + 1);
+                                const righe = [["Collaboratore", "Negozio", "Dal", "Al", "Giorni", "Mezza giornata", "Stato", "Motivazione", "Nota amministrazione"].join(";")];
+                                filteredRequests.forEach(r => righe.push([
+                                    r.employee_name, r.store, formatDate(r.date_from), formatDate(r.date_to),
+                                    String(giorni(r)).replace(".", ","),
+                                    r.half_day ? (r.half_day === "mattina" ? "Mattina" : "Pomeriggio") : "",
+                                    r.status === "approved" ? "Approvata" : r.status === "rejected" ? "Rifiutata" : "In attesa",
+                                    (r.reason || "").replaceAll(";", ","), (r.admin_note || "").replaceAll(";", ","),
+                                ].join(";")));
+                                const blob = new Blob(["\uFEFF" + righe.join("\n")], { type: "text/csv;charset=utf-8" });
+                                const url = URL.createObjectURL(blob);
+                                const el = document.createElement("a");
+                                el.href = url; el.download = `ferie_${fDa || "inizio"}_${fA || "oggi"}.csv`; el.click();
+                                URL.revokeObjectURL(url);
+                            }} disabled={filteredRequests.length === 0}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
+                                ⬇️ Excel commercialista
+                            </button>
+                        )}
+                        {isAdminLike && (
+                            <div className="flex items-center gap-1 rounded-xl border border-white/10 p-1 bg-white/[0.03]">
+                                {(["registro", "calendario"] as const).map(v => (
+                                    <button key={v} onClick={() => setVista(v)}
+                                        className={cn("px-3.5 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-colors",
+                                            vista === v ? "bg-indigo-500/25 text-indigo-200" : "text-slate-500 hover:text-slate-300")}>
+                                        {v === "registro" ? "📋 Registro" : "🗓 Calendario"}
+                                    </button>
+                                ))}
                             </div>
                         )}
                     </div>
 
+                    {isAdminLike && (
+                        <div className="glass-card p-4 space-y-2.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest w-16">Periodo</span>
+                                <input type="date" value={fDa} onChange={e => setFDa(e.target.value)} className="glass-input !h-8 text-xs" />
+                                <span className="text-slate-600 text-xs">→</span>
+                                <input type="date" value={fA} onChange={e => setFA(e.target.value)} className="glass-input !h-8 text-xs" />
+                                {(fDa || fA) && <button onClick={() => { setFDa(""); setFA(""); }} className="text-[10px] font-bold text-slate-500 hover:text-white">✕ azzera</button>}
+                            </div>
+                            {/* PERSONE: ricerca a scrittura (Luca 29/07 — "saranno tantissime"):
+                                scrivi il nome, lo selezioni, ne scrivi un altro; i selezionati
+                                restano come chip rimovibili. Invio = primo suggerimento. */}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest w-16">Persone</span>
+                                <div className="relative">
+                                    <input value={qPersona} onChange={e => setQPersona(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                const primo = persone.filter(n => !fPersone.includes(n) && n.toLowerCase().includes(qPersona.trim().toLowerCase()))[0];
+                                                if (qPersona.trim() && primo) { setFPersone(p => [...p, primo]); setQPersona(""); }
+                                            }
+                                        }}
+                                        placeholder="Scrivi un nome…" className="glass-input !h-8 text-xs w-44" />
+                                    {qPersona.trim() && (
+                                        <div className="absolute z-40 mt-1 w-56 rounded-lg border border-white/10 bg-[#0f111a] shadow-2xl overflow-hidden">
+                                            {persone.filter(n => !fPersone.includes(n) && n.toLowerCase().includes(qPersona.trim().toLowerCase())).slice(0, 8).map(n => (
+                                                <button key={n} onClick={() => { setFPersone(p => [...p, n]); setQPersona(""); }}
+                                                    className="block w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-indigo-500/15">
+                                                    {n}
+                                                </button>
+                                            ))}
+                                            {persone.filter(n => !fPersone.includes(n) && n.toLowerCase().includes(qPersona.trim().toLowerCase())).length === 0 && (
+                                                <p className="px-3 py-1.5 text-xs text-slate-600">Nessun nome corrispondente</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                {fPersone.map(n => (
+                                    <span key={n} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border border-indigo-400/70 bg-indigo-500/20 text-indigo-100">
+                                        {n}
+                                        <button onClick={() => setFPersone(p => p.filter(x => x !== n))} className="opacity-70 hover:opacity-100">✕</button>
+                                    </span>
+                                ))}
+                                {fPersone.length > 0 && (
+                                    <button onClick={() => setFPersone([])} className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest">✕ tutte</button>
+                                )}
+                                {fPersone.length === 0 && <span className="text-[11px] text-slate-600">tutte le persone</span>}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest w-16">Negozi</span>
+                                <button onClick={() => setFNegozi([])} className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border", !fNegozi.length ? "border-sky-400/70 bg-sky-500/15 text-sky-200" : "border-white/10 text-slate-400 hover:border-white/25")}>Tutti</button>
+                                {negozi.map(n => (
+                                    <button key={n} onClick={() => setFNegozi(p => p.includes(n) ? p.filter(x => x !== n) : [...p, n])}
+                                        className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border", fNegozi.includes(n) ? "border-sky-400/70 bg-sky-500/20 text-sky-100" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                        {fNegozi.includes(n) ? "✓ " : ""}{n}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {isAdminLike && vista === "calendario" && (
+                        <CalendarioFerie
+                            richieste={filteredRequests.filter(r => r.status !== "rejected")}
+                            mese={meseCal}
+                            setMese={setMeseCal}
+                        />
+                    )}
+
+                    {(!isAdminLike || vista === "registro") && (
                     <div className="glass-card overflow-hidden">
                         <div className="overflow-x-auto custom-scrollbar">
                             <table className="w-full text-left border-collapse">
@@ -272,7 +432,13 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                                     <span className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">
                                                         {formatDate(r.date_from)}
                                                     </span>
-                                                    <span className="text-[10px] text-slate-500">al {formatDate(r.date_to)}</span>
+                                                    {r.half_day ? (
+                                                        <span className="mt-0.5 inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase tracking-tight">
+                                                            {r.half_day === "mattina" ? "☀️" : "🌇"} ½ giornata · {r.half_day}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] text-slate-500">al {formatDate(r.date_to)}</span>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-5 py-4">
@@ -288,28 +454,39 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                                 )}>
                                                     {r.status === "approved" ? "Approvata" : r.status === "rejected" ? "Rifiutata" : "In Attesa"}
                                                 </span>
+                                                {r.admin_note && (
+                                                    <p className="text-[10px] text-rose-300/90 mt-1.5 max-w-[240px] mx-auto leading-snug">📝 {r.admin_note}</p>
+                                                )}
                                             </td>
                                             <td className="px-5 py-4 text-right">
-                                                {isAdminLike && r.status === "pending" ? (
-                                                    <div className="flex justify-end gap-2">
-                                                        <button
-                                                            onClick={() => setStatus(r.id, "approved")}
-                                                            className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-lg transition-colors"
-                                                            title="Approva"
-                                                        >
-                                                            <Clock className="w-4 h-4" />
+                                                <div className="flex justify-end items-center gap-2">
+                                                    {isAdminLike && r.status === "pending" ? (
+                                                        <>
+                                                            <button
+                                                                onClick={() => approva(r.id)}
+                                                                className="p-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-lg transition-colors"
+                                                                title="Approva"
+                                                            >
+                                                                <Check className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => { setRifiutoId(r.id); setRifiutoNota(""); }}
+                                                                className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/20 rounded-lg transition-colors"
+                                                                title="Rifiuta (con nota per il collaboratore)"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-xs text-slate-600 font-medium italic">Gestita</span>
+                                                    )}
+                                                    {canDeleteRow && (
+                                                        <button onClick={() => eliminaRiga(r.id)} title="Elimina riga (es. inserita per prova)"
+                                                            className="p-1.5 bg-white/[0.03] hover:bg-rose-500/15 text-slate-500 hover:text-rose-300 border border-white/10 rounded-lg transition-colors">
+                                                            <Trash2 className="w-4 h-4" />
                                                         </button>
-                                                        <button
-                                                            onClick={() => setStatus(r.id, "rejected")}
-                                                            className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-500/20 rounded-lg transition-colors"
-                                                            title="Rifiuta"
-                                                        >
-                                                            <X className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-xs text-slate-600 font-medium italic">Gestita</span>
-                                                )}
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -322,7 +499,87 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             </table>
                         </div>
                     </div>
+                    )}
                 </div>
+            </div>
+
+            {/* modale NOTA DI RIFIUTO: il collaboratore la vedrà sulla sua riga */}
+            {rifiutoId != null && (
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setRifiutoId(null)}>
+                    <div className="glass-card w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-white">Rifiuta la richiesta</h3>
+                            <button onClick={() => setRifiutoId(null)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-5 space-y-3">
+                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest">Nota per il collaboratore <span className="normal-case font-normal">(facoltativa — la vedrà accanto alla sua richiesta)</span></label>
+                            <textarea value={rifiutoNota} onChange={e => setRifiutoNota(e.target.value)} rows={3}
+                                placeholder="Es. Periodo già coperto da altre ferie del negozio: proponi date alternative."
+                                className="glass-input w-full text-sm py-2 resize-none" />
+                            <div className="flex justify-end gap-2 pt-1">
+                                <button onClick={() => setRifiutoId(null)} className="px-4 py-2 rounded-lg border border-white/15 text-slate-300 text-sm hover:bg-white/5">Annulla</button>
+                                <button onClick={confermaRifiuto} className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold">Rifiuta richiesta</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* ── CALENDARIO FERIE dedicato (Luca 29/07) — per chi approva: mese navigabile
+   con i periodi APPROVATI (verde) e IN ATTESA (ambra), per vedere al volo le
+   sovrapposizioni prima di autorizzare. Rispetta i filtri persone/negozi. ── */
+function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequest[]; mese: Date; setMese: (d: Date) => void }) {
+    const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+    const primo = new Date(mese.getFullYear(), mese.getMonth(), 1);
+    const inizio = new Date(primo);
+    inizio.setDate(primo.getDate() - ((primo.getDay() + 6) % 7));   // lunedì della prima settimana
+    const giorni: Date[] = Array.from({ length: 42 }, (_, i) => { const d = new Date(inizio); d.setDate(inizio.getDate() + i); return d; });
+    const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const delGiorno = (d: Date) => { const k = iso(d); return richieste.filter(r => r.date_from <= k && r.date_to >= k); };
+    const nomeCorto = (n: string) => { const p = n.trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[1][0]}.` : p[0]; };
+    return (
+        <div className="glass-card p-4">
+            <div className="flex items-center justify-between mb-3">
+                <button onClick={() => setMese(new Date(mese.getFullYear(), mese.getMonth() - 1, 1))} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">‹</button>
+                <div className="flex items-center gap-3">
+                    <h4 className="text-base font-black text-white capitalize">{mese.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</h4>
+                    <button onClick={() => { const d = new Date(); setMese(new Date(d.getFullYear(), d.getMonth(), 1)); }} className="text-[10px] font-bold uppercase tracking-widest text-indigo-300 hover:text-white">Oggi</button>
+                </div>
+                <button onClick={() => setMese(new Date(mese.getFullYear(), mese.getMonth() + 1, 1))} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">›</button>
+            </div>
+            <div className="grid grid-cols-7 gap-px text-center mb-1">
+                {["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"].map(g => <div key={g} className="text-[10px] font-bold text-slate-500 uppercase tracking-widest py-1">{g}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-px bg-white/5 rounded-xl overflow-hidden">
+                {giorni.map((d, i) => {
+                    const fuoriMese = d.getMonth() !== mese.getMonth();
+                    const isOggi = d.getTime() === oggi.getTime();
+                    const rr = delGiorno(d);
+                    return (
+                        <div key={i} className={cn("min-h-[86px] p-1.5 bg-[#0f111a]", fuoriMese && "opacity-40")}>
+                            <div className={cn("text-[11px] font-bold mb-1", isOggi ? "text-indigo-300" : "text-slate-500")}>
+                                {isOggi ? <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/25">{d.getDate()}</span> : d.getDate()}
+                            </div>
+                            <div className="space-y-0.5">
+                                {rr.slice(0, 3).map(r => (
+                                    <div key={r.id} title={`${r.employee_name} (${r.store}) — ${r.status === "approved" ? "approvata" : "in attesa"}${r.reason ? `: ${r.reason}` : ""}`}
+                                        className={cn("truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight",
+                                            r.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200")}>
+                                        {r.half_day ? (r.half_day === "mattina" ? "½☀️ " : "½🌇 ") : ""}{nomeCorto(r.employee_name)}
+                                    </div>
+                                ))}
+                                {rr.length > 3 && <div className="text-[9px] text-slate-500 px-1">+{rr.length - 3} altre</div>}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="flex items-center gap-4 mt-3 text-[11px] text-slate-400">
+                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500/40" /> Approvate</span>
+                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-500/40" /> In attesa</span>
             </div>
         </div>
     );
@@ -331,6 +588,14 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
 type SicknessRow = { id: number; employee_name: string; store: string; date_from: string; date_to: string; certificate_number: string | null; created_at: string };
 
 function MalattiaSection() {
+    const { user: userMal } = useAuth();
+    // CESTINO (Luca 29/07): dall'amministrativo in su, per gli errori di battitura
+    const canDeleteMal = ["amministrativo", "admin", "dev", "direttore_generale"].includes(userMal?.role || "");
+    const eliminaAssenza = async (id: number) => {
+        if (!window.confirm("Eliminare questa riga di malattia? L'operazione è definitiva.")) return;
+        await supabase.from("sickness_absences").delete().eq("id", id);
+        await fetchAbsences();
+    };
     const [absences, setAbsences] = useState<SicknessRow[]>([]);
     const [showNewModal, setShowNewModal] = useState(false);
     const [filterPerson, setFilterPerson] = useState("");
@@ -485,7 +750,15 @@ function MalattiaSection() {
                                                 <span className="text-[10px] font-mono text-slate-500">{a.certificate_number || "—"}</span>
                                             </td>
                                             <td className="px-5 py-4 text-right">
-                                                <span className="text-xs font-black text-rose-500/80">{days}gg</span>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <span className="text-xs font-black text-rose-500/80">{days}gg</span>
+                                                    {canDeleteMal && (
+                                                        <button onClick={() => eliminaAssenza(a.id)} title="Elimina riga (errore di inserimento)"
+                                                            className="p-1.5 bg-white/[0.03] hover:bg-rose-500/15 text-slate-500 hover:text-rose-300 border border-white/10 rounded-lg transition-colors">
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -518,10 +791,9 @@ function MalattiaSection() {
                         <form onSubmit={handleCreate} className="space-y-4">
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
-                                <select required value={newEmployee} onChange={e => { setNewEmployee(e.target.value); const st = staff.find(x => x.name === e.target.value)?.store; if (st) setNewStore(st); }} className="glass-input !h-10 text-xs w-full">
-                                    <option value="">— Seleziona —</option>
-                                    {staff.map(x => <option key={x.name} value={x.name}>{x.name}</option>)}
-                                </select>
+                                <SelectPersona value={newEmployee} opzioni={staff.map(x => x.name)} placeholder="Scrivi il collaboratore…"
+                                    onChange={(v) => { setNewEmployee(v); const st = staff.find(x => x.name === v)?.store; if (st) setNewStore(st); }}
+                                    className="glass-input !h-10 text-xs w-full" />
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Punto Vendita</label>
@@ -769,10 +1041,8 @@ function RitardiSection() {
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
                                     {/* Dropdown dei collaboratori del negozio del login (niente campo negozio: deriva dal collaboratore). */}
-                                    <select required value={newEmployee} onChange={(e) => setNewEmployee(e.target.value)} className="glass-input !h-10 text-xs w-full">
-                                        <option value="">— Seleziona collaboratore —</option>
-                                        {storeStaff.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-                                    </select>
+                                    <SelectPersona value={newEmployee} opzioni={storeStaff.map((s) => s.name)} placeholder="Scrivi il collaboratore…"
+                                        onChange={setNewEmployee} className="glass-input !h-10 text-xs w-full" />
                                     {isStoreMgr && !reportAll && <p className="text-[10px] text-slate-600 ml-1">Collaboratori del tuo punto vendita.</p>}
                                 </div>
                             )}
