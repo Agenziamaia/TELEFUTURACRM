@@ -51,6 +51,15 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     const pathname = usePathname();
+    const searchParams = useSearchParams();
+    // Voce attiva anche con la query: due voci sulla stessa rotta (es. hub
+    // Call Center: /caller e /caller?tab=badge) si distinguono per ?tab=.
+    const attivo = (href: string) => {
+        const [base, q] = href.split("?");
+        if (pathname !== base) return false;
+        const wantTab = q ? new URLSearchParams(q).get("tab") : null;
+        return (searchParams.get("tab") ?? null) === wantTab;
+    };
     const { user, logout } = useAuth();
     // override per ruolo dal DB (Amministrazione → Permessi); default = codice
     const { perms } = useRolePermissions(user?.role);
@@ -132,7 +141,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                         </p>
                         {visibleItems.map((item) => {
                             if (item.type === "link") {
-                                const isActive = pathname === item.href;
+                                const isActive = attivo(item.href);
                                 return (
                                     <Link
                                         key={item.name}
@@ -209,7 +218,7 @@ export function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                                     {isExpanded && (
                                         <div className="pl-4 ml-2 border-l border-white/10 space-y-0.5">
                                             {visibleChildren.map((child) => {
-                                                const isActive = pathname === child.href;
+                                                const isActive = attivo(child.href);
                                                 const ChildIcon = child.icon;
                                                 return (
                                                     <Link
