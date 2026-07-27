@@ -26,7 +26,8 @@ interface Cliente {
     cognomeRef?: string;
     cellulare: string;
     email: string;
-    cf_piva: string | null;   // facoltativo dalla migrazione 065
+    cf_piva: string | null;
+    data_nascita?: string | null;   // facoltativo dalla migrazione 065
     iban?: string | null;
     acquisito_da?: string | null;
     intestatario_diverso?: boolean;
@@ -62,6 +63,7 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
         cellulare: row.cellulare as string,
         email: row.email as string,
         cf_piva: (row.cf_piva as string | null) ?? null,
+        data_nascita: (row.data_nascita as string | null) ?? null,
         iban: (row.iban as string | null) ?? null,
         acquisito_da: (row.acquisito_da as string | null) ?? null,
         intestatario_diverso: !!row.intestatario_diverso,
