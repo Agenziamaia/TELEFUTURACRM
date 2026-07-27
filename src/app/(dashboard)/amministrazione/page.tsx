@@ -11,6 +11,7 @@ import { MarginalitaView } from "./_views/marginalita";
 import { PermessiView } from "./_views/permessi";
 import { RuoliView } from "./_views/ruoli";
 import { CatalogoView } from "./_views/catalogo";
+import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { useRoles } from "@/lib/useRoles";
@@ -75,6 +76,8 @@ interface AppUser {
     match_name: string | null;
     email: string | null;
     pec: string | null;
+    codice_fiscale?: string | null;
+    data_nascita?: string | null;
     phone: string | null;
     role: string;
     grade: string | null;
@@ -116,6 +119,7 @@ const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[]; visib
     match_name: "",
     email: "",
     pec: "",
+    codice_fiscale: "",
     phone: "",
     role: "venditore",
     grade: "apprendista",
@@ -746,6 +750,9 @@ function UserForm({
             match_name: (f.match_name || f.full_name).trim(),
             email: f.email?.trim() || null,
             pec: f.pec?.trim() || null,
+            // CF facoltativo; la data di nascita si DERIVA da lui (mai chiesta)
+            codice_fiscale: f.codice_fiscale?.trim().toUpperCase() || null,
+            data_nascita: dataNascitaDaCF(f.codice_fiscale),
             phone: f.phone?.trim() || null,
             role: f.role,
             grade: grades.length ? f.grade : null,
@@ -853,6 +860,10 @@ function UserForm({
                         </Field>
                         <Field label="PEC">
                             <input className="glass-input w-full" value={f.pec || ""} onChange={(e) => set("pec", e.target.value)} placeholder="nome@pec.it" />
+                        </Field>
+                        <Field label="Codice fiscale (facoltativo — compila da solo la data di nascita)">
+                            <input className="glass-input w-full font-mono" value={f.codice_fiscale || ""} onChange={(e) => set("codice_fiscale", e.target.value.toUpperCase())} placeholder="RSSMRA80A01H501Z" />
+                            {dataNascitaDaCF(f.codice_fiscale) && <p className="text-[11px] text-emerald-400 mt-1">🎂 Data di nascita: {new Date(String(dataNascitaDaCF(f.codice_fiscale))).toLocaleDateString("it-IT")} ({etaDa(dataNascitaDaCF(f.codice_fiscale))} anni)</p>}
                         </Field>
                         <Field label="Telefono">
                             <input className="glass-input w-full" value={f.phone || ""} onChange={(e) => set("phone", e.target.value)} />

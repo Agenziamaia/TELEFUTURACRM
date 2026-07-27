@@ -13,6 +13,7 @@ import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
+import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { useStores, useSellers } from "@/lib/org";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
@@ -670,6 +671,7 @@ function CallerPageInner() {
                 nome: c.nome || "", cognome: c.cognome || "", ragione_sociale: c.ragione_sociale || "",
                 cellulare: cel || "", email: "", indirizzo: "", cap: "", citta: "", iban: "",
                 nome_ref: "", cognome_ref: "",
+                data_nascita: dataNascitaDaCF(idf),
             });
             if (error) alert("Esito salvato, ma anagrafica NON creata: " + error.message);
         } catch { /* l'esito resta salvato comunque */ }

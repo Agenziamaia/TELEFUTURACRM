@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
+import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
@@ -4157,6 +4158,8 @@ export default function CRM() {
         cellulare: keep(ana.cellulare || ana.recapito, "cellulare"),
         email: keep(ana.email, "email"),
         cf_piva: cfPiva || null,
+        // data di nascita derivata dal CF; se il CF manca resta quella nota
+        data_nascita: dataNascitaDaCF(cfPiva) || ((prev.data_nascita as string | null) ?? null),
         // Segnalazioni 19 e 20: l'IBAN veniva raccolto dal form e poi scartato,
         // perche' la colonna non esisteva (migrazione 066).
         iban: keep(ana.iban, "iban") || null,

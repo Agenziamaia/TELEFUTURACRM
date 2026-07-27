@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
+import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, capChoice, capAllowed } from "@/lib/capabilities";
 import { chiamaAircall } from "@/lib/dialer";
@@ -195,6 +196,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 </div>
                                 <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} />
                                 <InfoItem icon={<FileText className="w-4 h-4" />} label={cliente.tipo === 'business' ? 'Partita IVA' : 'Codice Fiscale'} value={cliente.cf_piva || "—"} mono />
+                                {(cliente as { data_nascita?: string | null }).data_nascita && (
+                                    <InfoItem icon={<Calendar className="w-4 h-4" />} label="Data di nascita"
+                                        value={`${new Date(String((cliente as { data_nascita?: string | null }).data_nascita)).toLocaleDateString("it-IT")}${etaDa((cliente as { data_nascita?: string | null }).data_nascita) != null ? ` (${etaDa((cliente as { data_nascita?: string | null }).data_nascita)} anni)` : ""}`} />
+                                )}
                                 <InfoItem icon={<MapPin className="w-4 h-4" />} label="Indirizzo" value={`${cliente.indirizzo}, ${cliente.citta}`} />
                             </div>
                         </div>
@@ -466,6 +471,8 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             cellulare,
             email,
             cf_piva: cfPiva.trim() || null,
+            // data di nascita DERIVATA dal CF (mai chiesta nel form)
+            data_nascita: dataNascitaDaCF(cfPiva),
             indirizzo,
             cap,
             citta,
