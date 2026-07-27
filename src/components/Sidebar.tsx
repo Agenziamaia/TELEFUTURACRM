@@ -54,7 +54,7 @@ interface SidebarProps {
     setAutoHide?: (val: boolean) => void;
 }
 
-export function Sidebar({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps) {
+function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps) {
     const pathname = usePathname();
     // auto-nascondi: "peek" = ricomparsa temporanea perche' il mouse e' sul bordo
     const [peek, setPeek] = useState(false);
@@ -323,5 +323,16 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                 );
             })}
         </div>
+    );
+}
+
+/* useSearchParams richiede un confine Suspense in fase di build (il dev server
+   non lo segnala): senza, `next build` fallisce e il deploy resta giu' (502
+   del 28/07). Il fallback nullo dura solo il primo istante di idratazione. */
+export function Sidebar(props: SidebarProps) {
+    return (
+        <Suspense fallback={null}>
+            <SidebarInner {...props} />
+        </Suspense>
     );
 }

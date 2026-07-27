@@ -1354,7 +1354,7 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
                                     </div>
                                     {showPw && pw && (
                                         <p className="text-[11px] text-amber-400/80">
-                                            Invia questa password all&apos;utente via email. Dovrà cambiarla al primo accesso (quando il login sarà attivo).
+                                            Comunica questa password temporanea all&apos;utente: al primo accesso dovrà cambiarla. Le richieste dalla schermata di login arrivano nel fulmine ⚡.
                                         </p>
                                     )}
                                 </div>
