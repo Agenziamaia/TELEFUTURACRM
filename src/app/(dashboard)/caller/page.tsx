@@ -674,6 +674,11 @@ function CallerPageInner() {
             if (error) alert("Esito salvato, ma anagrafica NON creata: " + error.message);
         } catch { /* l'esito resta salvato comunque */ }
     }
+    // riga da segnalare (pallino ambra): esito mancante O anagrafica incompleta
+    function anagraficaIncompleta(c: Call): boolean {
+        if (c.tipo_cliente === "business") return !String(c.ragione_sociale || "").trim() || !String(c.piva || "").trim();
+        return !String(c.nome || "").trim() || !String(c.cognome || "").trim() || !String(c.cf || "").trim();
+    }
     async function saveCall() {
         if (!editCall) return;
         const now = new Date().toISOString().slice(0, 16);
@@ -1329,7 +1334,7 @@ function CallerPageInner() {
                                                 <td className="px-4 py-3">
                                                     <div className="font-semibold text-white flex items-center gap-2">
                                                         {clientLabel(c)}
-                                                        {c.da_esitare && <span title="Chiamata risposta: esito da inserire" className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />}
+                                                        {(c.da_esitare || anagraficaIncompleta(c)) && <span title={c.da_esitare ? "Chiamata risposta: esito da inserire" : "Anagrafica incompleta: nome/cognome e CF da inserire"} className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />}
                                                         {(c.cellulare || c.numero) && (
                                                             <button
                                                                 onClick={async (e) => { e.stopPropagation(); const r = await chiamaAircall(c.cellulare || c.numero, user?.id); alert(r.msg); }}
@@ -1814,13 +1819,13 @@ function CallerPageInner() {
                                     )}
 
                                     <SectionTitle>Anagrafica Cliente <span className="ml-2 text-[10px] text-slate-500">{editCall.tipo_cliente === "business" ? "■ Business" : "● Consumer"}</span></SectionTitle>
-                                    {editCall.da_esitare ? (
-                                        /* POST-CHIAMATA (richiesta Luca 26/07): oltre all'esito, il caller
-                                           completa i dati del cliente con tutto cio' che ha raccolto —
-                                           tipo, nome/ragione sociale, CF o P.IVA (con autocompletamento
-                                           dall'anagrafica se il codice e' gia' nostro). */
+                                    {/* ANAGRAFICA SEMPRE EDITABILE (Luca 29/07): prima il blocco
+                                        compariva solo sulle pratiche "da esitare" (chiamate risposte),
+                                        quindi sui Non risponde non c'era NIENTE da compilare — mentre
+                                        nome/cognome e CF ora sono obbligatori a ogni esito. */}
+                                    {(
                                         <div className="p-4 bg-amber-500/[0.06] border border-amber-500/30 rounded-xl space-y-3">
-                                            <p className="text-[11px] font-bold text-amber-300 uppercase tracking-widest">Completa i dati del cliente raccolti in chiamata</p>
+                                            <p className="text-[11px] font-bold text-amber-300 uppercase tracking-widest">{editCall.da_esitare ? "Completa i dati del cliente raccolti in chiamata" : "Anagrafica del cliente — obbligatoria a ogni esito (anche Non risponde)"}</p>
                                             <div className="flex gap-2">
                                                 {(["consumer", "business"] as const).map((t) => (
                                                     <button key={t} onClick={() => updateField("tipo_cliente", t)}
@@ -1857,8 +1862,36 @@ function CallerPageInner() {
                                                         </div>
                                                     </>
                                                 )}
-                                                <SummaryItem label="Numero" value={editCall.numero} />
-                                                <SummaryItem label="Recapito Cellulare" value={editCall.cellulare} />
+                                                <div>
+                                                    <label className="text-[10px] text-slate-500 uppercase tracking-widest">Numero</label>
+                                                    <div className="flex gap-1.5 mt-1">
+                                                        <input className="glass-input w-full rounded-lg py-2" value={editCall.numero} onChange={(e) => updateField("numero", e.target.value)} placeholder="333 123 4567" />
+                                                        {String(editCall.numero || "").replace(/\D/g, "").length >= 6 && (<>
+                                                            <button type="button" title="Richiama con Aircall"
+                                                                onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
+                                                                className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
+                                                            <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                                className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
+                                                                <MessageSquare className="w-4 h-4" />
+                                                            </Link>
+                                                        </>)}
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] text-slate-500 uppercase tracking-widest">Recapito Cellulare <span className="normal-case">(solo se diverso)</span></label>
+                                                    <div className="flex gap-1.5 mt-1">
+                                                        <input className="glass-input w-full rounded-lg py-2" value={editCall.cellulare} onChange={(e) => updateField("cellulare", e.target.value)} placeholder="Secondo numero" />
+                                                        {String(editCall.cellulare || "").replace(/\D/g, "").length >= 6 && (<>
+                                                            <button type="button" title="Richiama con Aircall"
+                                                                onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
+                                                                className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
+                                                            <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                                className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
+                                                                <MessageSquare className="w-4 h-4" />
+                                                            </Link>
+                                                        </>)}
+                                                    </div>
+                                                </div>
                                             </div>
                                             {editCall.clienteRiconosciuto && <p className="text-[11px] text-emerald-400 font-bold">✓ Cliente riconosciuto in anagrafica: dati compilati automaticamente</p>}
                                             {/* le stesse prime 4 tendine dell'Inserimento Manuale (Dettagli Chiamata) */}
@@ -1890,17 +1923,6 @@ function CallerPageInner() {
                                                 </FormGroup>
                                             </div>
                                         </div>
-                                    ) : (
-                                    <div className="grid grid-cols-2 gap-3 p-4 bg-violet-500/[0.04] border border-white/5 rounded-xl">
-                                        {editCall.tipo_cliente === "business" ? (
-                                            <SummaryItem label="Ragione Sociale" value={editCall.ragione_sociale} />
-                                        ) : (
-                                            <SummaryItem label="Nome e Cognome" value={`${editCall.nome} ${editCall.cognome}`.trim()} />
-                                        )}
-                                        <SummaryItem label={editCall.tipo_cliente === "business" ? "Partita IVA" : "Codice Fiscale"} value={editCall.tipo_cliente === "business" ? editCall.piva : editCall.cf} />
-                                        <SummaryItem label="Numero" value={editCall.numero} />
-                                        <SummaryItem label="Recapito Cellulare" value={editCall.cellulare} />
-                                    </div>
                                     )}
 
                                     <SectionTitle>Dettagli Call</SectionTitle>
