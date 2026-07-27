@@ -8,8 +8,6 @@ import {
   STATI_NEGOZIO_ENERGIA,
   STATI_NEGOZIO_SKY,
   STATI_ADMIN,
-  MALUS_SOGLIE,
-  MALUS_IMPORTO,
   type StoriaEvent,
   type TrackingRow,
 } from "./trackingConstants";
@@ -128,108 +126,105 @@ const STATI_COMPLETATI: Record<string, string[]> = {
   sky: ["completo_sky", "attivo_sky"],
 };
 
-export function isAttenzioneRow(row: TrackingRow): boolean {
-  const completatiCat = STATI_COMPLETATI[row.categoria] || ["attivato"];
-  if (completatiCat.includes(row.statoNegozio)) return false;
-  if (isMalusRow(row)) return false;
-
+/* ── REGOLE AMMINISTRABILI (tabella tracking_regole, mig. 098 — Luca 29/07) ──
+   Tre variabili per categoria, soglie in giorni LAVORATIVI per fascia:
+     senza_* : pratica MAI aggiornata   (giorni dall'inserimento)
+     succ_*  : ferma DOPO un aggiornamento (giorni dall'ultimo evento)
+     compl_* : NON completata           (giorni dall'inserimento)
+   NULL = quella variabile non fa scattare quella fascia. Il malus vale
+   (giorni oltre soglia + 1) × malus_euro sulla variabile più "in ritardo".
+   Nessuna riga a DB = questi DEFAULT, che fotografano le regole storiche.
+   Le regole SPECIALI per stato (P.IVA irreperibile, stati Sky, stati
+   critici delle categorie fuori tracking) restano qui sotto, fisse. */
+export interface RegolaTracking {
+  categoria: string;
+  senza_lavorare: number | null; senza_warning: number | null; senza_malus: number | null;
+  succ_lavorare: number | null;  succ_warning: number | null;  succ_malus: number | null;
+  compl_lavorare: number | null; compl_warning: number | null; compl_malus: number | null;
+  malus_euro: number;
+}
+export const REGOLE_TRACKING_DEFAULT: RegolaTracking[] = [
+  { categoria: "mnp",           senza_lavorare: 2, senza_warning: 5,  senza_malus: 6,  succ_lavorare: 2,    succ_warning: 5,  succ_malus: 6,  compl_lavorare: null, compl_warning: 5,    compl_malus: null, malus_euro: 5 },
+  { categoria: "fisso",         senza_lavorare: 5, senza_warning: 10, senza_malus: 15, succ_lavorare: 5,    succ_warning: 10, succ_malus: 15, compl_lavorare: null, compl_warning: 20,   compl_malus: null, malus_euro: 10 },
+  { categoria: "finanziamento", senza_lavorare: 2, senza_warning: 4,  senza_malus: 6,  succ_lavorare: 2,    succ_warning: 4,  succ_malus: 6,  compl_lavorare: null, compl_warning: null, compl_malus: null, malus_euro: 10 },
+  { categoria: "piva",          senza_lavorare: 2, senza_warning: 4,  senza_malus: 6,  succ_lavorare: 2,    succ_warning: 4,  succ_malus: 6,  compl_lavorare: null, compl_warning: 10,   compl_malus: null, malus_euro: 5 },
+  { categoria: "energia",       senza_lavorare: 5, senza_warning: 10, senza_malus: 15, succ_lavorare: 5,    succ_warning: 10, succ_malus: 15, compl_lavorare: null, compl_warning: null, compl_malus: null, malus_euro: 10 },
+  { categoria: "sky",           senza_lavorare: 2, senza_warning: 4,  senza_malus: 4,  succ_lavorare: null, succ_warning: 10, succ_malus: 10, compl_lavorare: null, compl_warning: null, compl_malus: null, malus_euro: 5 },
+];
+let REGOLE_ATTIVE: Record<string, RegolaTracking> | null = null;
+export function impostaRegoleTracking(rows: RegolaTracking[] | null | undefined) {
+  REGOLE_ATTIVE = rows && rows.length ? Object.fromEntries(rows.map((r) => [r.categoria, r])) : null;
+}
+function regolaDi(categoria: string): RegolaTracking | undefined {
+  const base = REGOLE_ATTIVE ?? Object.fromEntries(REGOLE_TRACKING_DEFAULT.map((r) => [r.categoria, r]));
+  return base[categoria];
+}
+function misure(row: TrackingRow) {
   const gg = giorniLavorativiDa(row.dataInserimento);
-  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
-
-  if (row.categoria === "mnp") {
-    if (ggAgg >= 5) return true;
-    if (gg >= 5 && row.statoNegozio !== "attivato" && row.statoNegozio !== "re_inserita") return true;
-  } else if (row.categoria === "fisso") {
-    if (ggAgg >= 10) return true;
-    if (gg >= 20 && row.statoNegozio !== "attivato") return true;
-  } else if (row.categoria === "finanziamento") {
-    if (ggAgg >= 4) return true;
-  } else if (row.categoria === "piva") {
-    if (ggAgg >= 4) return true;
-    if (gg >= 10 && row.statoNegozio !== "attivato") return true;
-    if (row.statoNegozio === "cliente_irreperibile" && ggAgg >= 2) return true;
-  } else if (row.categoria === "energia") {
-    if (ggAgg >= 10) return true;
+  const haStoria = !!(row.storia && row.storia.length > 0);
+  const ggUltimo = haStoria ? giorniLavorativiDa(row.storia[row.storia.length - 1].data) : null;
+  return {
+    gg,
+    ggSenza: haStoria ? null : gg,
+    ggSucc: ggUltimo,
+    ggAgg: haStoria ? (ggUltimo as number) : gg,
+  };
+}
+const _hit = (soglia: number | null | undefined, valore: number | null) =>
+  soglia != null && valore != null && valore >= soglia;
+/** 0 = in regola · 1 = da lavorare · 2 = warning · 3 = malus */
+function livelloRegole(row: TrackingRow): 0 | 1 | 2 | 3 {
+  const completatiCat = STATI_COMPLETATI[row.categoria] || ["attivato"];
+  if (completatiCat.includes(row.statoNegozio)) return 0;
+  const m = misure(row);
+  const r = regolaDi(row.categoria);
+  let speciale: 0 | 1 | 2 | 3 = 0;
+  if (row.categoria === "piva") {
+    if (row.statoNegozio === "cliente_irreperibile") {
+      if (m.ggAgg > 4) speciale = 3;
+      else if (m.ggAgg >= 2) speciale = 2;
+      else speciale = 1;
+    }
   } else if (row.categoria === "sky") {
-    if (row.statoNegozio === "nuovo" && gg >= 4) return true;
-    if (ggAgg >= 10) return true;
-  } else {
-    // Unknown categoria (DevSpec/JSX): only statiCritici → Warning; no ggAgg/gg thresholds
+    if (row.statoNegozio === "wm_sospetta") speciale = 1;
+    if (row.statoNegozio === "attesa_matricola" && m.ggAgg >= 5) speciale = 1;
+    if (row.statoNegozio === "aperto_sparks" && m.ggAgg >= 3) speciale = 1;
+  } else if (!r) {
     const statiCritici = ["contattare_cliente", "contattare_supporto", "doc_mancante", "ricaduta", "ko_reinserito"];
-    if (statiCritici.includes(row.statoNegozio)) return true;
+    if (statiCritici.includes(row.statoNegozio)) speciale = 2;
   }
-  return false;
+  if (!r) return speciale;
+  let lv: 0 | 1 | 2 | 3 = 0;
+  if (_hit(r.senza_malus, m.ggSenza) || _hit(r.succ_malus, m.ggSucc) || _hit(r.compl_malus, m.gg)) lv = 3;
+  else if (_hit(r.senza_warning, m.ggSenza) || _hit(r.succ_warning, m.ggSucc) || _hit(r.compl_warning, m.gg)) lv = 2;
+  else if (_hit(r.senza_lavorare, m.ggSenza) || _hit(r.succ_lavorare, m.ggSucc) || _hit(r.compl_lavorare, m.gg)) lv = 1;
+  return (lv >= speciale ? lv : speciale) as 0 | 1 | 2 | 3;
+}
+
+export function isAttenzioneRow(row: TrackingRow): boolean {
+  return livelloRegole(row) === 2;
 }
 
 export function isDaLavorareRow(row: TrackingRow): boolean {
-  if (isAttenzioneRow(row)) return false;
-  const completatiCat = STATI_COMPLETATI[row.categoria] || ["attivato"];
-  if (completatiCat.includes(row.statoNegozio)) return false;
-
-  const gg = giorniLavorativiDa(row.dataInserimento);
-  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
-
-  if (row.categoria === "mnp") {
-    if (ggAgg >= 2) return true;
-  } else if (row.categoria === "fisso") {
-    if (ggAgg >= 5) return true;
-  } else if (row.categoria === "finanziamento") {
-    if (ggAgg >= 2) return true;
-  } else if (row.categoria === "piva") {
-    if (ggAgg >= 2) return true;
-    if (row.statoNegozio === "cliente_irreperibile") return true;
-  } else if (row.categoria === "energia") {
-    if (ggAgg >= 5) return true;
-  } else if (row.categoria === "sky") {
-    if (row.statoNegozio === "nuovo" && gg >= 2) return true;
-    if (row.statoNegozio === "wm_sospetta") return true;
-    if (row.statoNegozio === "attesa_matricola" && ggAgg >= 5) return true;
-    if (row.statoNegozio === "aperto_sparks" && ggAgg >= 3) return true;
-  }
-  // Unknown categoria (JSX): no branch → never Da Lavorare
-  return false;
+  return livelloRegole(row) === 1;
 }
 
 export function isMalusRow(row: TrackingRow): boolean {
-  const completatiCat = STATI_COMPLETATI[row.categoria] || ["attivato"];
-  if (completatiCat.includes(row.statoNegozio)) return false;
-
-  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
-
-  if (row.categoria === "mnp") return ggAgg >= 6;
-  if (row.categoria === "fisso") return ggAgg >= 15;
-  if (row.categoria === "finanziamento") return ggAgg >= 6;
-  if (row.categoria === "piva") {
-    if (ggAgg >= 6) return true;
-    if (row.statoNegozio === "cliente_irreperibile" && ggAgg > 4) return true;
-    return false;
-  }
-  if (row.categoria === "energia") return ggAgg >= 15;
-  if (row.categoria === "sky") {
-    const gg = giorniLavorativiDa(row.dataInserimento);
-    const skyWarn = (row.statoNegozio === "nuovo" && gg >= 4) || ggAgg >= 10;
-    return skyWarn && ggAgg >= 2;
-  }
-  // Unknown categoria (JSX): no branch → never Malus
-  return false;
+  return livelloRegole(row) === 3;
 }
 
 export function calcolaMalus(row: TrackingRow): number {
-  if (!isMalusRow(row)) return 0;
-  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
-
-  if (row.categoria === "piva") {
-    let totale = 0;
-    if (ggAgg >= 6) totale += Math.max(0, ggAgg - 6 + 1) * 5;
-    if (row.statoNegozio === "cliente_irreperibile" && ggAgg > 4) {
-      totale += Math.max(0, ggAgg - 4) * 5;
-    }
-    return totale;
-  }
-
-  const soglia = MALUS_SOGLIE[row.categoria] ?? 0;
-  const importo = MALUS_IMPORTO[row.categoria] ?? 0;
-  return Math.max(0, ggAgg - soglia + 1) * importo;
+  if (livelloRegole(row) !== 3) return 0;
+  const r = regolaDi(row.categoria);
+  const m = misure(row);
+  if (!r) return 0;
+  let ecc = 0;
+  if (_hit(r.senza_malus, m.ggSenza)) ecc = Math.max(ecc, (m.ggSenza as number) - (r.senza_malus as number) + 1);
+  if (_hit(r.succ_malus, m.ggSucc)) ecc = Math.max(ecc, (m.ggSucc as number) - (r.succ_malus as number) + 1);
+  if (_hit(r.compl_malus, m.gg)) ecc = Math.max(ecc, m.gg - (r.compl_malus as number) + 1);
+  if (row.categoria === "piva" && row.statoNegozio === "cliente_irreperibile" && m.ggAgg > 4)
+    ecc = Math.max(ecc, m.ggAgg - 4);
+  return ecc * (Number(r.malus_euro) || 0);
 }
 
 /**
