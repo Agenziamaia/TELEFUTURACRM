@@ -7,6 +7,7 @@ import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/ta
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { useAuth } from "@/context/AuthContext";
 const ReqCtx = createContext(null);
@@ -4358,10 +4359,29 @@ export default function CRM() {
     setClienteFound(false);setLookupDone(true);
     setShowAna(true);setShowStep4(false);
   };
+  // Compila l'anagrafica da una riga clients (usata dal CF esatto e dai
+  // suggerimenti per nome) e sblocca il passo successivo.
+  const applicaCliente=(c)=>{
+    setClienteFound(true);
+    setLookupDone(true);
+    setShowAna(true);setShowStep4(false);
+    setAna({
+      nome:c.nome||"",cognome:c.cognome||"",cellulare:c.cellulare||"",email:c.email||"",
+      via:c.indirizzo||"",cap:c.cap||"",citta:c.citta||"",iban:c.iban||"",
+      intDiverso:!!c.intestatario_diverso,intNome:c.intestatario_nome||"",
+      intCognome:c.intestatario_cognome||"",intCf:c.intestatario_cf||"",
+      ragioneSociale:c.ragione_sociale||"",nomeRef:c.nome_ref||"",cognomeRef:c.cognome_ref||"",
+      recapito:c.cellulare||"",
+    });
+    if(c.tipo==="business"&&tipoCliente!=="business")setTipoCliente("business");
+    if(c.tipo==="consumer"&&tipoCliente!=="privato")setTipoCliente("privato");
+  };
   const doLookup=async()=>{
     const v=(lookupValue||"").trim();
     if(lookupBusy)return;
     if(!v){skipLookup();return;}
+    // se sto cercando per NOME e c'è un solo suggerimento, Invio lo seleziona
+    if(sugg.length===1){await scegliSugg(sugg[0]);return;}
     setLookupBusy(true);
     try{
       const {data}=await supabase.from("clients").select("*").ilike("cf_piva",v).limit(1);
@@ -4373,18 +4393,44 @@ export default function CRM() {
         setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
         return;
       }
-      setClienteFound(true);
-      setAna({
-        nome:c.nome||"",cognome:c.cognome||"",cellulare:c.cellulare||"",email:c.email||"",
-        via:c.indirizzo||"",cap:c.cap||"",citta:c.citta||"",iban:c.iban||"",
-        intDiverso:!!c.intestatario_diverso,intNome:c.intestatario_nome||"",
-        intCognome:c.intestatario_cognome||"",intCf:c.intestatario_cf||"",
-        ragioneSociale:c.ragione_sociale||"",nomeRef:c.nome_ref||"",cognomeRef:c.cognome_ref||"",
-        recapito:c.cellulare||"",
-      });
-      if(c.tipo==="business"&&tipoCliente!=="business")setTipoCliente("business");
-      if(c.tipo==="consumer"&&tipoCliente!=="privato")setTipoCliente("privato");
+      applicaCliente(c);
     }finally{setLookupBusy(false);}
+  };
+
+  // ── RICERCA PER NOME nel campo CF (Luca 28/07): suggerimenti live tra i
+  //    clienti IN VISIBILITÀ (acquisiti/gestiti nei negozi visibili; sede e
+  //    direzione vedono tutto). Il CF esatto resta invece GLOBALE: digitare
+  //    il codice è la prova di conoscere il cliente. ──
+  const visNeg=useVisibleStores();
+  const [sugg,setSugg]=useState([]);
+  const _suggTO=useRef(null);
+  useEffect(()=>{
+    const v=(lookupValue||"").trim();
+    if(_suggTO.current)clearTimeout(_suggTO.current);
+    const nomeMode=v.length>=3&&/[A-ZÀ-Ù]/i.test(v)&&(v.includes(" ")||/^[A-ZÀ-Ù' ]+$/i.test(v));
+    if(!nomeMode){setSugg([]);return;}
+    _suggTO.current=setTimeout(async()=>{
+      const termini=v.toLowerCase().split(/\s+/).filter(Boolean);
+      const chiave=[...termini].sort((a,b)=>b.length-a.length)[0].replace(/[,()%]/g,"");
+      if(!chiave){setSugg([]);return;}
+      const {data}=await supabase.from("clients")
+        .select("id,nome,cognome,ragione_sociale,cf_piva,cellulare,tipo,contracts(negozio)")
+        .or(`nome.ilike.%${chiave}%,cognome.ilike.%${chiave}%,ragione_sociale.ilike.%${chiave}%`)
+        .limit(25);
+      const rows=(data||[]).filter(c=>{
+        const full=`${c.nome||""} ${c.cognome||""} ${c.ragione_sociale||""}`.toLowerCase();
+        if(!termini.every(t=>full.includes(t)))return false;
+        if(visNeg.seesAll)return true;
+        return (c.contracts||[]).some(x=>visNeg.stores.some(sN=>sameStore(x.negozio,sN)));
+      }).slice(0,6);
+      setSugg(rows);
+    },350);
+    return()=>{if(_suggTO.current)clearTimeout(_suggTO.current);};
+  },[lookupValue,visNeg.seesAll,visNeg.stores.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+  const scegliSugg=async(r)=>{
+    setSugg([]);
+    const {data}=await supabase.from("clients").select("*").eq("id",r.id).maybeSingle();
+    if(data){setLookupValue(data.cf_piva||"");applicaCliente(data);}
   };
 
 
@@ -4653,10 +4699,25 @@ export default function CRM() {
         {tipoCliente&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:14,position:"relative"}}>
           <div style={{fontSize:12,fontWeight:600,color:"#8892b0",marginBottom:8}}>{tipoCliente==="privato"?"Codice Fiscale":"Partita IVA"}</div>
           <div style={{display:"flex",gap:8}}>
-            <input placeholder={tipoCliente==="privato"?"RSSMRA80A01H501Z":"12345678901"} value={lookupValue} onChange={e=>setLookupValue(e.target.value.toUpperCase())} style={{flex:1,padding:"10px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontFamily:"monospace",letterSpacing:1.2}}/>
+            <input placeholder={tipoCliente==="privato"?"RSSMRA80A01H501Z — oppure nome e cognome":"12345678901 — oppure ragione sociale"} value={lookupValue} onChange={e=>setLookupValue(e.target.value.toUpperCase())} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();doLookup();}}} style={{flex:1,padding:"10px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontFamily:"monospace",letterSpacing:1.2}}/>
             <button onClick={doLookup} style={{padding:"10px 18px",borderRadius:8,border:"none",background:"#6f42c1",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔍 Cerca</button>
             <button onClick={skipLookup} title="Il cliente non ha un codice fiscale a disposizione" style={{padding:"10px 16px",borderRadius:8,border:"1px solid rgba(255,255,255,0.18)",background:"rgba(255,255,255,0.04)",color:"#cbd5e1",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Prosegui senza CF →</button>
           </div>
+          {sugg.length>0&&(
+            <div style={{marginTop:8,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(15,17,26,0.98)",overflow:"hidden"}}>
+              <div style={{padding:"6px 12px",fontSize:10,fontWeight:700,color:"#8892b0",textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>Clienti in visibilità</div>
+              {sugg.map(r=>(
+                <button key={r.id} onClick={()=>scegliSugg(r)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"9px 12px",background:"transparent",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",color:"#f8fafc"}}
+                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(111,66,193,0.14)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
+                  <span style={{fontSize:15}}>{r.tipo==="business"?"🏢":"👤"}</span>
+                  <span style={{fontSize:13,fontWeight:700}}>{r.tipo==="business"?(r.ragione_sociale||"—"):`${r.nome||""} ${r.cognome||""}`.trim()||"—"}</span>
+                  <span style={{fontSize:11,color:"#8892b0",fontFamily:"monospace"}}>{r.cf_piva||"senza CF"}</span>
+                  {r.cellulare&&<span style={{fontSize:11,color:"#64748b"}}>· {r.cellulare}</span>}
+                  <span style={{marginLeft:"auto",fontSize:11,color:"#6f42c1",fontWeight:700}}>Usa →</span>
+                </button>
+              ))}
+            </div>
+          )}
           {lookupDone&&(clienteFound?<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#28a745"}}>✅ Cliente trovato in anagrafica</div>:<div style={{marginTop:10,background:"rgba(245,158,11,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#f59e0b"}}>⚠ Cliente non presente in anagrafica — compila i dati a mano (bastano nome, cognome e cellulare)</div>)}
         </div>}
       </div>}
