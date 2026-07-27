@@ -1110,10 +1110,9 @@ function GestioneUsatiInner() {
   // i negozi arrivano in modo asincrono: alla prima load seleziona tutto
   const storesInit = useRef(false);
   useEffect(() => { if (!storesInit.current && NEGOZI.length) { storesInit.current = true; setSelectedStores([...NEGOZI]); } }, [NEGOZI]);
-  const { user } = useAuth();
   // Segnalazione 101: da store manager in giu' i filtri si riducono a Negozio,
   // Stato e Reset (+ tasto rapido "Mostra i miei" = solo il proprio negozio).
-  // Da direttore commerciale in su restano TUTTI i filtri.
+  // Da direttore commerciale in su restano TUTTI i filtri. (user gia' sopra)
   const filtriCompleti = ["direttore_commerciale", "direttore_generale", "amministrativo", "admin", "dev"].includes(user?.role || "");
   const mostraImiei = () => {
     const mio = user?.negozio || "";
