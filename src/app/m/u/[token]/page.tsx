@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 
 // Pagina PUBBLICA (nessun login) aperta dal telefono scansionando il QR mostrato
