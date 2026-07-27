@@ -15,7 +15,9 @@ import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle } from "lucide-react";
+import { WhatsAppInbox } from "@/components/WhatsAppInbox";
+import { cn } from "@/utils";
 
 // Segnalazione 74: testo breve del messaggio citato (i tag @[tipo:id|etichetta]
 // diventano la loro etichetta, altrimenti si vedrebbe il token grezzo).
@@ -64,6 +66,14 @@ export default function ChatPage() {
   // store manager, direzioni di area e chi vede tutti i negozi.
   const canSeeMembers = !!user && (seesWholeStore(user.role) || seesAllStores(user.role));
   const [showMembers, setShowMembers] = useState(false);
+
+  // Interruttore Chat interna <-> WhatsApp (stessa pagina, nessuna voce di menu).
+  // La scelta resta memorizzata tra una visita e l'altra.
+  const [mode, setMode] = useState<"chat" | "whatsapp">(() => {
+    if (typeof window === "undefined") return "chat";
+    return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp") || "chat";
+  });
+  useEffect(() => { try { localStorage.setItem("crm_chat_mode", mode); } catch { } }, [mode]);
 
   const onDeleteConversation = async () => {
     if (!selId || !isAdmin) return;
@@ -218,7 +228,25 @@ export default function ChatPage() {
   let lastDay = null;
 
   return (
-    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex overflow-hidden">
+    <div className="-m-4 sm:-m-6 md:-m-8 h-[calc(100dvh-4rem)] flex flex-col overflow-hidden">
+      {/* interruttore: Chat interna <-> WhatsApp (stessa pagina) */}
+      <div className="h-12 shrink-0 flex items-center gap-1 px-3 border-b border-white/5 bg-[#0f111a]/70">
+        <button onClick={() => setMode("chat")}
+          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+            mode === "chat" ? "bg-indigo-500/15 text-indigo-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+          <MessageSquare className="w-4 h-4" /> Chat interna
+        </button>
+        <button onClick={() => setMode("whatsapp")}
+          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+            mode === "whatsapp" ? "bg-emerald-500/15 text-emerald-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+          <MessageCircle className="w-4 h-4" /> WhatsApp
+        </button>
+      </div>
+
+      {mode === "whatsapp" ? (
+        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded /></div>
+      ) : (
+      <div className="flex-1 min-h-0 flex overflow-hidden">
       {/* ── LEFT: conversation list ─────────────────────────────── */}
       <aside className="w-full sm:w-80 lg:w-96 shrink-0 flex flex-col border-r border-white/5 bg-[#0f111a]/60">
         <div className="flex items-center justify-between px-4 h-14 border-b border-white/5">
@@ -516,6 +544,8 @@ export default function ChatPage() {
           </>
         )}
       </section>
+      </div>
+      )}
 
       {showTag && (
         <TagPicker onClose={() => setShowTag(false)}
