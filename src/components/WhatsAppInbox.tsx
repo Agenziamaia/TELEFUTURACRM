@@ -39,15 +39,16 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
     // Modello "un numero per caller": ognuno vede i PROPRI numeri. Eccezioni:
     //  - admin/dev/amministrativo -> tutti i numeri
     //  - store_manager            -> i numeri del proprio negozio
-    // SICUREZZA: chi vede TUTTI i numeri. NON dev (ruolo tecnico) ne' amministrativo:
-    // un numero WhatsApp puo' essere personale, quindi lo vede solo il proprietario,
-    // lo store manager del suo negozio e l'admin (direzione). (rivisto 28/07)
+    // SICUREZZA (deciso 28/07): SOLO Luca vede tutti i numeri — non un ruolo
+    // generico (un secondo admin non vedrebbe tutto), non il dev, non l'amministrativo.
+    // I numeri WhatsApp possono essere personali. Legato all'ID reale, cosi' con il
+    // "guarda come" Luca vede comunque la vista ristretta dell'utente simulato.
+    const LUCA_ID = "0355d28b-968f-4089-93b7-b8b5eeeda40c";
     const waScope: "all" | "store" | "own" = useMemo(() => {
-        const role = user?.role || "";
-        if (role === "admin") return "all";
-        if (role === "store_manager") return "store";
+        if (user?.id === LUCA_ID) return "all";
+        if (user?.role === "store_manager") return "store";
         return "own";
-    }, [user?.role]);
+    }, [user?.id, user?.role]);
     const visibleInstances = useMemo(() => {
         if (waScope === "all") return instances;
         if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id);
