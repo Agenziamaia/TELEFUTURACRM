@@ -27,6 +27,7 @@ interface Appointment {
     customerName: string;
     customerPhone: string;
     cfPiva?: string;
+    tipoCliente?: string;   // consumer | business (etichetta CF vs P.IVA)
     notes: string;
     esitoNote?: string;
     status: AppointmentStatus;
@@ -103,6 +104,7 @@ function mapAppointmentRow(r: Record<string, unknown>): Appointment {
         customerName: r.customer_name as string,
         customerPhone: r.customer_phone as string,
         cfPiva: r.cf_piva as string | undefined,
+        tipoCliente: (r.tipo_cliente as string | undefined) || undefined,
         notes: (r.notes as string) ?? "",
         esitoNote: r.esito_note as string | undefined,
         status: r.status as AppointmentStatus,
@@ -240,6 +242,7 @@ export default function Calendario() {
         customerName: "",
         customerPhone: "",
         cfPiva: "",
+        tipoCliente: "consumer" as "consumer" | "business",
         notes: "",
     });
 
@@ -511,10 +514,12 @@ export default function Calendario() {
             type: newAppt.type,
             agente: newAppt.type === "incoming" ? "" : newAppt.agente,
             store: newAppt.type === "incoming" ? newAppt.store : null,
-            customer_address: newAppt.type === "outgoing" ? newAppt.customerAddress : null,
+            // la via vale anche per gli AUTOGENERATI (prima veniva scartata, Luca 29/07)
+            customer_address: newAppt.type !== "incoming" ? (newAppt.customerAddress || null) : null,
             customer_name: newAppt.customerName,
             customer_phone: newAppt.customerPhone,
             cf_piva: newAppt.cfPiva || null,
+            tipo_cliente: newAppt.tipoCliente,
             notes: newAppt.notes || "",
             status: "scheduled",
             created_by: user?.name || "Sconosciuto",
@@ -531,7 +536,7 @@ export default function Calendario() {
         }
         setAppointments(prev => [...prev, mapAppointmentRow(data)]);
         setShowCreateModal(false);
-        setNewAppt({ time: "10:00", type: "incoming", agente: "", store: "", customerAddress: "", customerName: "", customerPhone: "", cfPiva: "", notes: "" });
+        setNewAppt({ time: "10:00", type: "incoming", agente: "", store: "", customerAddress: "", customerName: "", customerPhone: "", cfPiva: "", tipoCliente: "consumer", notes: "" });
     };
 
     const handleCreateTaskSubmit = async (e: React.FormEvent) => {
@@ -1623,8 +1628,16 @@ export default function Calendario() {
                                 <div className="flex items-center gap-2 text-slate-300"><Clock className="w-4 h-4 text-slate-500" />{selectedAppointment.date} alle {selectedAppointment.time}</div>
                                 <div className="flex items-center gap-2 text-slate-300"><User className="w-4 h-4 text-slate-500" />{selectedAppointment.customerName}</div>
                                 <div className="flex items-center gap-2 text-slate-300"><Phone className="w-4 h-4 text-slate-500" />{selectedAppointment.customerPhone}</div>
-                                {selectedAppointment.cfPiva && <div className="flex items-center gap-2 text-slate-300 font-mono"><Search className="w-4 h-4 text-slate-500" />{selectedAppointment.cfPiva}</div>}
-                                <div className="flex items-center gap-2 text-slate-300"><MapPin className="w-4 h-4 text-slate-500" />{selectedAppointment.store || selectedAppointment.customerAddress}</div>
+                                {selectedAppointment.cfPiva && <div className="flex items-center gap-2 text-slate-300 font-mono"><Search className="w-4 h-4 text-slate-500" /><span className="text-[10px] uppercase text-slate-500 font-sans">{selectedAppointment.tipoCliente === "business" ? "P.IVA" : "C.F."}</span>{selectedAppointment.cfPiva}</div>}
+                                <div className="flex items-center gap-2 text-slate-300">
+                                    <MapPin className="w-4 h-4 text-slate-500" />{selectedAppointment.store || selectedAppointment.customerAddress}
+                                    {selectedAppointment.customerAddress && (
+                                        <a href={"https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(selectedAppointment.customerAddress)}
+                                            target="_blank" rel="noopener noreferrer"
+                                            title="Vedi su Google Maps dove si trova"
+                                            className="px-2 py-0.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-xs shrink-0">🗺 Maps</a>
+                                    )}
+                                </div>
                                 <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />{selectedAppointment.type === "incoming" && selectedAppointment.store ? `Punto vendita: ${selectedAppointment.store}` : `Agente: ${selectedAppointment.agente || "—"}`}</div>
                             </div>
                             {selectedAppointment.notes && (
@@ -1737,17 +1750,44 @@ export default function Calendario() {
                                     <p className="text-xs text-slate-500 mt-1">Per gli appuntamenti inbound si seleziona solo il punto vendita.</p>
                                 </div>
                             )}
-                            {newAppt.type === "outgoing" && (
+                            {/* VIA anche per gli AUTOGENERATI (Luca 29/07): autocomplete con
+                                CAP/zona compilati dalla lista + bottone 🗺 che apre Maps. */}
+                            {newAppt.type !== "incoming" && (
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Indirizzo cliente *</label>
-                                    <IndirizzoAutocomplete value={newAppt.customerAddress} onChange={v => setNewAppt(p => ({ ...p, customerAddress: v }))} onPick={s => setNewAppt(p => ({ ...p, customerAddress: s.completo }))} className="glass-input w-full" placeholder="Via e civico: scegli dalla lista" />
+                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Indirizzo cliente {newAppt.type === "outgoing" ? "*" : ""}</label>
+                                    <div className="flex gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <IndirizzoAutocomplete value={newAppt.customerAddress} onChange={v => setNewAppt(p => ({ ...p, customerAddress: v }))} onPick={s => setNewAppt(p => ({ ...p, customerAddress: s.completo }))} className="glass-input w-full" placeholder="Via e civico: scegli dalla lista" />
+                                        </div>
+                                        {newAppt.customerAddress.trim() && (
+                                            <a href={"https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(newAppt.customerAddress)}
+                                                target="_blank" rel="noopener noreferrer"
+                                                title="Vedi su Google Maps dove si trova"
+                                                className="shrink-0 px-3 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-sm">🗺</a>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
-
+                            {/* CONSUMER/BUSINESS (Luca 29/07): il flag decide cosa chiede
+                                il campo — Codice Fiscale o Partita IVA. */}
                             <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Codice Fiscale / Partita IVA *</label>
-                                <input type="text" className="glass-input w-full font-mono uppercase" placeholder="es. RSSMRA80A01H501U" value={newAppt.cfPiva} onChange={e => setNewAppt(p => ({ ...p, cfPiva: e.target.value.toUpperCase() }))} required />
+                                <div className="flex gap-2 mb-1.5">
+                                    {([["consumer", "👤 Consumer"], ["business", "🏢 Business"]] as const).map(([id, lab]) => (
+                                        <button key={id} type="button"
+                                            onClick={() => setNewAppt(p => ({ ...p, tipoCliente: id }))}
+                                            className={cn("px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all",
+                                                newAppt.tipoCliente === id ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]")}>
+                                            {lab}
+                                        </button>
+                                    ))}
+                                </div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">{newAppt.tipoCliente === "business" ? "Partita IVA *" : "Codice Fiscale *"}</label>
+                                <input type="text" className="glass-input w-full font-mono uppercase"
+                                    placeholder={newAppt.tipoCliente === "business" ? "es. 01234567890" : "es. RSSMRA80A01H501U"}
+                                    maxLength={newAppt.tipoCliente === "business" ? 11 : 16}
+                                    value={newAppt.cfPiva}
+                                    onChange={e => setNewAppt(p => ({ ...p, cfPiva: p.tipoCliente === "business" ? e.target.value.replace(/\D/g, "") : e.target.value.toUpperCase() }))} required />
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -1977,14 +2017,7 @@ export default function Calendario() {
                             {newMeeting.type === "in_person" && (
                                 <div>
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Indirizzo riunione *</label>
-                                    <input
-                                        type="text"
-                                        className="glass-input w-full"
-                                        placeholder="Via, numero civico, città"
-                                        value={newMeeting.location}
-                                        onChange={e => setNewMeeting(p => ({ ...p, location: e.target.value }))}
-                                        required
-                                    />
+                                    <IndirizzoAutocomplete value={newMeeting.location} onChange={v => setNewMeeting(p => ({ ...p, location: v }))} onPick={s => setNewMeeting(p => ({ ...p, location: s.completo }))} className="glass-input w-full" placeholder="Via e civico: scegli dalla lista" />
                                 </div>
                             )}
 
