@@ -161,7 +161,6 @@ export default function RicercaContratto() {
     const [filterCliente, setFilterCliente] = useState("");
     const [filterCellulare, setFilterCellulare] = useState("");
     const [filterImei, setFilterImei] = useState("");
-    const [filterTableSearch, setFilterTableSearch] = useState("");
     // Solo la DATA DI ATTIVAZIONE (regola Luca 25/07: coppia "registrazione" tolta).
     // Il picker emette gg/mm/aaaa mentre il DB confronta testo ISO aaaa-mm-gg:
     // senza conversione il filtro non trovava MAI nulla ("non funziona").
@@ -535,14 +534,10 @@ export default function RicercaContratto() {
         return () => { supabase.removeChannel(ch); };
     }, []);
 
-    const visibleData = useMemo(() => {
-        const q = filterTableSearch.trim().toLowerCase();
-        if (!q) return contractList;
-        return contractList.filter(r => [
-            r.venditore, r.brand, r.prodotto, r.cliente, r.cellulare, r.negozio,
-            r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato, r.id,
-        ].some(v => String(v ?? "").toLowerCase().includes(q)));
-    }, [contractList, filterTableSearch]);
+    // Il "Filtra risultati..." sopra la tabella è stato RIMOSSO (Luca 28/07):
+    // filtrava solo la pagina caricata, non le successive — ingannevole.
+    // La ricerca vera è nei filtri in alto, che interrogano il database.
+    const visibleData = contractList;
 
     const handleExportCsv = () => {
         if (visibleData.length === 0) return;
@@ -1137,7 +1132,7 @@ export default function RicercaContratto() {
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterCategoria(""); setFilterOfferte([]); setOffPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setFilterTableSearch(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterCategoria(""); setFilterOfferte([]); setOffPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportCsv}>
                         Scarica CSV
                     </button>
@@ -1146,13 +1141,6 @@ export default function RicercaContratto() {
 
             {/* Results Table */}
             <div className="glass-card overflow-hidden">
-                <div className="p-4 border-b border-white/5 flex gap-4 bg-white/[0.02]">
-                    <div className="relative flex-1 max-w-sm">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                        <input type="text" placeholder="Filtra risultati..." className="glass-input w-full pl-10" value={filterTableSearch} onChange={e => setFilterTableSearch(e.target.value)} />
-                    </div>
-                </div>
-
                 {loading ? (
                     <div className="p-8 text-center text-slate-400">Caricamento contratti...</div>
                 ) : (
