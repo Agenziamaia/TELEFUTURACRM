@@ -154,13 +154,17 @@ export default function RicercaContratto() {
     const [filterCategoria, setFilterCategoria] = useState("");
     const [filterOfferte, setFilterOfferte] = useState<string[]>([]);
     const [offPick, setOffPick] = useState("");
+    // OPZIONI (Luca 28/07): quarto anello della catena — si sbloccano dopo
+    // l'offerta; multi, match sul jsonb contracts.opzioni [{nome,quantita}].
+    const [filterOpzioni, setFilterOpzioni] = useState<string[]>([]);
+    const [opzPick, setOpzPick] = useState("");
     // catNames = categorie del CATALOGO che il brand vende davvero (in ordine
     // di catalogo, Wallet e Ric. Auto SEPARATE — Luca 28/07: non c'è altro modo
     // di distinguere un'offerta wallet da una a ricarica automatica). Il filtro
     // interroga dettagli->>categoria_catalogo (scritto dal registra e
     // backfillato sullo storico); le vendite mobile vecchie SENZA il dato
     // stanno nella voce dedicata "Mobile (storico)".
-    type CatFiltro = { slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[]; catNames: string[]; prodsByCat: Record<string, string[]>; offsByCat: Record<string, string[]> };
+    type CatFiltro = { slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[]; catNames: string[]; prodsByCat: Record<string, string[]>; offsByCat: Record<string, string[]>; opzByOff: Record<string, string[]> };
     const [catalogoBrand, setCatalogoBrand] = useState<CatFiltro | null>(null);
     const _catFiltroCache = useRef<Record<string, CatFiltro>>({});
     const _catNomi = useRef<{ id: string; nome: string }[] | null>(null);
@@ -327,7 +331,7 @@ export default function RicercaContratto() {
             _prevSlug.current = soloSlug;
             // cambio brand = si riparte: anche la CATEGORIA, che in modalità
             // catalogo elenca voci specifiche del brand (conseguenzialità).
-            setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterCategoria("");
+            setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); setFilterCategoria("");
         }
         if (!soloSlug) { setCatalogoBrand(null); return; }
         const hit = _catFiltroCache.current[soloSlug];
@@ -340,11 +344,21 @@ export default function RicercaContratto() {
             }
             const rp = await supabase.from("catalog_prodotti").select("id, nome, categoria_id").eq("brand_id", soloSlug);
             const prods = rp.data ?? [];
-            let offs: { prodotto_id: string; nome: string }[] = [];
+            let offs: { id: string; prodotto_id: string; nome: string }[] = [];
+            let opzs: { offerta_id: string; nome: string }[] = [];
             if (prods.length) {
-                const ro = await supabase.from("catalog_offerte").select("prodotto_id, nome").in("prodotto_id", prods.map((x: { id: string }) => x.id));
-                offs = (ro.data ?? []) as { prodotto_id: string; nome: string }[];
+                const ro = await supabase.from("catalog_offerte").select("id, prodotto_id, nome").in("prodotto_id", prods.map((x: { id: string }) => x.id));
+                offs = (ro.data ?? []) as { id: string; prodotto_id: string; nome: string }[];
+                if (offs.length) {
+                    const rz = await supabase.from("catalog_opzioni").select("offerta_id, nome").in("offerta_id", offs.map((o) => o.id));
+                    opzs = (rz.data ?? []) as { offerta_id: string; nome: string }[];
+                }
             }
+            // opzioni per NOME offerta (la stessa offerta può vivere in più categorie)
+            const offNomeById: Record<string, string> = {}; offs.forEach((o) => { offNomeById[o.id] = o.nome; });
+            const opzByOff: Record<string, string[]> = {};
+            opzs.forEach((z) => { const on = offNomeById[z.offerta_id]; if (!on) return; (opzByOff[on] = opzByOff[on] || []).push(z.nome); });
+            Object.keys(opzByOff).forEach((k) => { opzByOff[k] = Array.from(new Set(opzByOff[k])).sort(); });
             const nomeById: Record<string, string> = {}; prods.forEach((x: { id: string; nome: string }) => { nomeById[x.id] = x.nome; });
             const offByProd: Record<string, string[]> = {};
             offs.forEach((o) => { const pn = nomeById[o.prodotto_id]; if (!pn) return; (offByProd[pn] = offByProd[pn] || []).push(o.nome); });
@@ -360,7 +374,7 @@ export default function RicercaContratto() {
                 const ids = new Set(suoiProds.map((p: { id: string }) => p.id));
                 offsByCat[c.nome] = Array.from(new Set(offs.filter((o) => ids.has(o.prodotto_id)).map((o) => o.nome))).sort();
             });
-            const t: CatFiltro = { slug: soloSlug, prodNames: Array.from(new Set(prods.map((x: { nome: string }) => x.nome))).sort() as string[], offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat, offsByCat };
+            const t: CatFiltro = { slug: soloSlug, prodNames: Array.from(new Set(prods.map((x: { nome: string }) => x.nome))).sort() as string[], offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat, offsByCat, opzByOff };
             _catFiltroCache.current[soloSlug] = t;
             if (alive) setCatalogoBrand(t);
         })();
@@ -382,6 +396,13 @@ export default function RicercaContratto() {
         if (inCat) { const s2 = new Set(inCat); set = new Set(Array.from(set).filter((o) => s2.has(o))); }
         return Array.from(set).sort();
     }, [catalogoBrand, filterProdotti, filterCategoria]);
+    // le OPZIONI si sbloccano con almeno un'offerta scelta: unione delle loro
+    const opzioniDisponibili = useMemo(() => {
+        if (!catalogoBrand || !filterOfferte.length) return [];
+        const set = new Set<string>();
+        filterOfferte.forEach((on) => (catalogoBrand.opzByOff[on] || []).forEach((z) => set.add(z)));
+        return Array.from(set).sort();
+    }, [catalogoBrand, filterOfferte]);
     // Sola tessera Marginalità attiva → si accendono i due layer dedicati.
     const soloMarg = !!soloBrandLabel && ["marginalità", "marginalita"].includes(soloBrandLabel.toLowerCase());
     useEffect(() => {
@@ -499,6 +520,8 @@ export default function RicercaContratto() {
             if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
             if (filterOfferte.length > 0) query = query.in("offerta", filterOfferte);
+            // opzioni selezionate: la vendita deve contenerle TUTTE (@> sul jsonb)
+            if (filterOpzioni.length > 0) query = query.contains("opzioni", filterOpzioni.map(o => ({ nome: o })));
             // CATEGORIA = sempre quella FINE del catalogo, con uno o più brand
             // (Luca 28/07): dettagli->>categoria_catalogo copre il 100% dello
             // storico dopo il backfill (regola pagamento per i mobile vecchi).
@@ -603,13 +626,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|")]);
+    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|"), filterOpzioni.join("|")]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|"), (margListino ?? []).length, catalogoBrand?.slug ?? ""]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|"), filterOpzioni.join("|"), (margListino ?? []).length, catalogoBrand?.slug ?? ""]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -1109,6 +1132,54 @@ export default function RicercaContratto() {
                     {/* Filtro Brand rimosso: sostituito dalle tessere brand (segn.57).
                         filterBrand resta pilotato dalle tessere. */}
 
+                    {/* 6. Negozio di attivazione — la tendina offre SOLO i negozi visibili
+                        all'utente (uniqueNegozi arriva dalla query gia' filtrata RBAC), quindi
+                        chi ha piu' negozi in visibilita' puo' passare dall'uno all'altro.
+                        Prima era disabled e inchiodata sul primary_store. */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Negozio di attivazione</label>
+                        <select
+                            className="glass-input w-full"
+                            value={filterNegozio}
+                            onChange={e => setFilterNegozio(e.target.value)}
+                        >
+                            <option value="Tutti">{isGlobalView ? "Tutti i negozi" : "Tutti i miei negozi"}</option>
+                            {uniqueNegozi.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                    </div>
+
+                    {/* 7. Codice di inserimento */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Codice di inserimento</label>
+                        {/* Segnalazione 53: tendina dei codici di inserimento (Cod.Ins.),
+                            suddivisi per brand; se un brand e' selezionato mostra solo i suoi. */}
+                        <select className="glass-input w-full" value={filterCodiceAttivazione} onChange={e => setFilterCodiceAttivazione(e.target.value)}>
+                            <option value="">Tutti i codici</option>
+                            {(filterBrand ? [[filterBrand, codeByBrand[filterBrand] || []] as [string, string[]]] : Object.entries(codeByBrand))
+                                .map(([b, codes]) => codes.length ? (
+                                    <optgroup key={b} label={b}>
+                                        {codes.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </optgroup>
+                                ) : null)}
+                        </select>
+                    </div>
+
+                    {/* 8. Cliente */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Cliente</label>
+                        <input type="text" placeholder="Nome, C.F. o P.IVA" className="glass-input w-full" value={filterCliente} onChange={e => setFilterCliente(e.target.value)} />
+                    </div>
+
+                    {/* 9. Numero di cellulare */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Numero di cellulare</label>
+                        <input type="text" placeholder="Es. 3331234567" className="glass-input w-full" value={filterCellulare} onChange={e => setFilterCellulare(e.target.value)} />
+                    </div>
+                </div>
+
+                {/* FILA CATALOGO (Luca 28/07): categoria → prodotto → offerta → opzioni
+                    su una riga tutta loro — sono filtri in successione. */}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mt-6 pt-6 border-t border-white/5">
                     {/* 4-bis. Categoria (tassonomia canonica): filtrabile sempre —
                         TRANNE con la sola Marginalità, dove è tutta una categoria
                         e al suo posto valgono i due layer dedicati. */}
@@ -1117,7 +1188,7 @@ export default function RicercaContratto() {
                         {/* CONSEGUENZIALITÀ: cambiare categoria azzera prodotti e
                             offerte (che si restringono alla nuova categoria). */}
                         <select className="glass-input w-full" value={filterCategoria}
-                            onChange={e => { setFilterCategoria(e.target.value); setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); }}>
+                            onChange={e => { setFilterCategoria(e.target.value); setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); }}>
                             <option value="">Tutte le categorie</option>
                             {(catalogoBrand ? catalogoBrand.catNames : catNomiAll).map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
@@ -1203,50 +1274,26 @@ export default function RicercaContratto() {
                             </div>
                         )}
                     </div>}
-
-                    {/* 6. Negozio di attivazione — la tendina offre SOLO i negozi visibili
-                        all'utente (uniqueNegozi arriva dalla query gia' filtrata RBAC), quindi
-                        chi ha piu' negozi in visibilita' puo' passare dall'uno all'altro.
-                        Prima era disabled e inchiodata sul primary_store. */}
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Negozio di attivazione</label>
-                        <select
-                            className="glass-input w-full"
-                            value={filterNegozio}
-                            onChange={e => setFilterNegozio(e.target.value)}
-                        >
-                            <option value="Tutti">{isGlobalView ? "Tutti i negozi" : "Tutti i miei negozi"}</option>
-                            {uniqueNegozi.map(n => <option key={n} value={n}>{n}</option>)}
+                    {/* OPZIONI (Luca 28/07): si sbloccano dopo l'offerta; multi. */}
+                    {!soloMarg && <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Opzioni {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
+                        <select className="glass-input w-full disabled:opacity-50" value={opzPick}
+                            onChange={e => { const v = e.target.value; if (v) setFilterOpzioni(prev => prev.includes(v) ? prev : [...prev, v]); setOpzPick(""); }}
+                            disabled={!catalogoBrand || !filterOfferte.length}>
+                            <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : !filterOfferte.length ? "Prima scegli un'offerta" : filterOpzioni.length ? "Aggiungi opzione…" : "Tutte le opzioni"}</option>
+                            {opzioniDisponibili.filter(z => !filterOpzioni.includes(z)).map(z => <option key={z} value={z}>{z}</option>)}
                         </select>
-                    </div>
-
-                    {/* 7. Codice di inserimento */}
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Codice di inserimento</label>
-                        {/* Segnalazione 53: tendina dei codici di inserimento (Cod.Ins.),
-                            suddivisi per brand; se un brand e' selezionato mostra solo i suoi. */}
-                        <select className="glass-input w-full" value={filterCodiceAttivazione} onChange={e => setFilterCodiceAttivazione(e.target.value)}>
-                            <option value="">Tutti i codici</option>
-                            {(filterBrand ? [[filterBrand, codeByBrand[filterBrand] || []] as [string, string[]]] : Object.entries(codeByBrand))
-                                .map(([b, codes]) => codes.length ? (
-                                    <optgroup key={b} label={b}>
-                                        {codes.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </optgroup>
-                                ) : null)}
-                        </select>
-                    </div>
-
-                    {/* 8. Cliente */}
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Cliente</label>
-                        <input type="text" placeholder="Nome, C.F. o P.IVA" className="glass-input w-full" value={filterCliente} onChange={e => setFilterCliente(e.target.value)} />
-                    </div>
-
-                    {/* 9. Numero di cellulare */}
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Numero di cellulare</label>
-                        <input type="text" placeholder="Es. 3331234567" className="glass-input w-full" value={filterCellulare} onChange={e => setFilterCellulare(e.target.value)} />
-                    </div>
+                        {filterOpzioni.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                {filterOpzioni.map(z => (
+                                    <span key={z} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-violet-500/15 text-violet-200 border border-violet-500/30">
+                                        {z}
+                                        <button type="button" onClick={() => setFilterOpzioni(prev => prev.filter(x => x !== z))} className="opacity-70 hover:opacity-100">✕</button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>}
                 </div>
 
                 {/* Date Ranges Row */}
@@ -1263,7 +1310,7 @@ export default function RicercaContratto() {
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterCategoria(""); setFilterOfferte([]); setOffPick(""); setMargTipo(""); setMargArticoli([]); setMargPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterCategoria(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); setMargTipo(""); setMargArticoli([]); setMargPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportCsv}>
                         Scarica CSV
                     </button>
