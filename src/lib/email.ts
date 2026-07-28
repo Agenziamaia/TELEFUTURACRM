@@ -25,20 +25,24 @@ export function decifra(b64: string): string {
 
 // ── impostazioni provider (auto dall'indirizzo) ───────────────────────
 const PRESET: Record<string, { imap_host: string; imap_port: number; smtp_host: string; smtp_port: number }> = {
-    "gmail.com": { imap_host: "imap.gmail.com", imap_port: 993, smtp_host: "smtp.gmail.com", smtp_port: 465 },
-    "googlemail.com": { imap_host: "imap.gmail.com", imap_port: 993, smtp_host: "smtp.gmail.com", smtp_port: 465 },
+    // Caselle dei negozi (impostazioni Luca 28/07): host = dominio nudo, IMAP 993.
+    // SMTP su 587 con STARTTLS: dal VPS la 465 e' bloccata in uscita (anti-spam
+    // Hetzner), la 587 e' aperta. NB: host = telefuturasrl.com, NON mail.*.
+    "telefuturasrl.com": { imap_host: "telefuturasrl.com", imap_port: 993, smtp_host: "telefuturasrl.com", smtp_port: 587 },
+    "gmail.com": { imap_host: "imap.gmail.com", imap_port: 993, smtp_host: "smtp.gmail.com", smtp_port: 587 },
+    "googlemail.com": { imap_host: "imap.gmail.com", imap_port: 993, smtp_host: "smtp.gmail.com", smtp_port: 587 },
     "outlook.com": { imap_host: "outlook.office365.com", imap_port: 993, smtp_host: "smtp.office365.com", smtp_port: 587 },
     "hotmail.com": { imap_host: "outlook.office365.com", imap_port: 993, smtp_host: "smtp.office365.com", smtp_port: 587 },
-    "aruba.it": { imap_host: "imaps.aruba.it", imap_port: 993, smtp_host: "smtps.aruba.it", smtp_port: 465 },
-    "libero.it": { imap_host: "imapmail.libero.it", imap_port: 993, smtp_host: "smtp.libero.it", smtp_port: 465 },
-    "virgilio.it": { imap_host: "in.virgilio.it", imap_port: 993, smtp_host: "out.virgilio.it", smtp_port: 465 },
+    "aruba.it": { imap_host: "imaps.aruba.it", imap_port: 993, smtp_host: "smtps.aruba.it", smtp_port: 587 },
+    "libero.it": { imap_host: "imapmail.libero.it", imap_port: 993, smtp_host: "smtp.libero.it", smtp_port: 587 },
+    "virgilio.it": { imap_host: "in.virgilio.it", imap_port: 993, smtp_host: "out.virgilio.it", smtp_port: 587 },
 };
 /** IMAP/SMTP consigliati per un indirizzo. Domini noti -> preset; altrimenti la
  *  convenzione cPanel/SiteGround `mail.<dominio>` (che copre @telefuturasrl.com). */
 export function impostazioniPer(email: string): { imap_host: string; imap_port: number; smtp_host: string; smtp_port: number } {
     const dom = (String(email).split("@")[1] || "").toLowerCase().trim();
     if (PRESET[dom]) return PRESET[dom];
-    return { imap_host: `mail.${dom}`, imap_port: 993, smtp_host: `mail.${dom}`, smtp_port: 465 };
+    return { imap_host: `mail.${dom}`, imap_port: 993, smtp_host: `mail.${dom}`, smtp_port: 587 };
 }
 
 type Account = { email_address: string; display_name?: string | null; username: string; pass_enc: string; imap_host: string; imap_port: number; smtp_host: string; smtp_port: number; last_uid?: number };
@@ -52,8 +56,10 @@ function imapClient(a: Account): ImapFlow {
     } as any);
 }
 function smtpTransport(a: Account) {
+    const secure = a.smtp_port === 465;
     return nodemailer.createTransport({
-        host: a.smtp_host, port: a.smtp_port, secure: a.smtp_port === 465,
+        host: a.smtp_host, port: a.smtp_port, secure,
+        requireTLS: !secure,   // 587 -> STARTTLS obbligatorio
         auth: { user: a.username, pass: decifra(a.pass_enc) },
         tls: { rejectUnauthorized: false },
     });
