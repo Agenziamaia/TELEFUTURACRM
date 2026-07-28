@@ -67,6 +67,9 @@ async function pollAccount(accId: string) {
             await supabase.from("email_conversations").update({
                 last_message_at: m.date ? new Date(m.date).toISOString() : new Date().toISOString(),
                 last_preview: preview, subject: m.subject, unread: (conv?.unread || 0) + 1,
+                // una nuova risposta del cliente riporta il thread in Posta in arrivo
+                // (come Gmail); lo Spam resta Spam.
+                trashed: false, archived: false,
             }).eq("id", convId);
         }
     }
