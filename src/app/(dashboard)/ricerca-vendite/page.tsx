@@ -309,8 +309,19 @@ export default function RicercaContratto() {
     const soloBrandLabel = selBrands.size === 1 ? Array.from(selBrands)[0] : (selBrands.size === 0 && brandCounts.length === 1 ? brandCounts[0].brand : null);
     const soloSlug = soloBrandLabel ? (LABEL_SLUG[soloBrandLabel] || null) : null;
     const _prevSlug = useRef<string | null>(null);
-    // voce per le vendite mobile vecchie in cui wallet/ric.auto non fu registrato
-    const CAT_MOBILE_STORICO = "Mobile (storico)";
+    // CATEGORIE FINI anche con più brand (Luca 28/07): la tendina elenca sempre
+    // le categorie del catalogo — lo storico è al 100% classificato (backfill
+    // completato con la regola pagamento: EasyPay/IBAN → Ric. Auto, niente → Wallet).
+    const [catNomiAll, setCatNomiAll] = useState<string[]>([]);
+    useEffect(() => {
+        (async () => {
+            if (!_catNomi.current) {
+                const rc = await supabase.from("catalog_categorie").select("id, nome");
+                _catNomi.current = (rc.data ?? []) as { id: string; nome: string }[];
+            }
+            setCatNomiAll((_catNomi.current || []).map((c) => c.nome));
+        })();
+    }, []);
     useEffect(() => {
         if (_prevSlug.current !== soloSlug) {
             _prevSlug.current = soloSlug;
@@ -349,11 +360,6 @@ export default function RicercaContratto() {
                 const ids = new Set(suoiProds.map((p: { id: string }) => p.id));
                 offsByCat[c.nome] = Array.from(new Set(offs.filter((o) => ids.has(o.prodotto_id)).map((o) => o.nome))).sort();
             });
-            // le vendite mobile STORICHE senza wallet/ric.auto (il dato non esiste)
-            if (catNames.includes("Mobile Wallet") || catNames.includes("Mobile Ric. Auto")) {
-                catNames.push(CAT_MOBILE_STORICO);
-                prodsByCat[CAT_MOBILE_STORICO] = Array.from(new Set([...(prodsByCat["Mobile Wallet"] || []), ...(prodsByCat["Mobile Ric. Auto"] || [])])).sort();
-            }
             const t: CatFiltro = { slug: soloSlug, prodNames: Array.from(new Set(prods.map((x: { nome: string }) => x.nome))).sort() as string[], offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat, offsByCat };
             _catFiltroCache.current[soloSlug] = t;
             if (alive) setCatalogoBrand(t);
@@ -493,23 +499,10 @@ export default function RicercaContratto() {
             if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
             if (filterOfferte.length > 0) query = query.in("offerta", filterOfferte);
-            // CATEGORIA: in modalità catalogo (un solo brand) la voce è la
-            // categoria FINE del catalogo → si filtra su dettagli->>categoria_
-            // catalogo (Wallet e Ric. Auto separate, Luca 28/07; scritto dal
-            // registra e backfillato). "Mobile (storico)" = vendite mobile
-            // vecchie SENZA il dato. Con più brand resta la macro canonica.
-            if (filterCategoria && !soloMarg) {
-                if (catalogoBrand) {
-                    if (filterCategoria === CAT_MOBILE_STORICO) {
-                        const prods = catalogoBrand.prodsByCat[CAT_MOBILE_STORICO] || [];
-                        if (prods.length) query = query.in("prodotto", prods).is("dettagli->>categoria_catalogo", null);
-                    } else {
-                        query = query.eq("dettagli->>categoria_catalogo", filterCategoria);
-                    }
-                } else {
-                    query = query.eq("categoria", filterCategoria);
-                }
-            }
+            // CATEGORIA = sempre quella FINE del catalogo, con uno o più brand
+            // (Luca 28/07): dettagli->>categoria_catalogo copre il 100% dello
+            // storico dopo il backfill (regola pagamento per i mobile vecchi).
+            if (filterCategoria && !soloMarg) query = query.eq("dettagli->>categoria_catalogo", filterCategoria);
             // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
             // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
             if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
@@ -1126,7 +1119,7 @@ export default function RicercaContratto() {
                         <select className="glass-input w-full" value={filterCategoria}
                             onChange={e => { setFilterCategoria(e.target.value); setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); }}>
                             <option value="">Tutte le categorie</option>
-                            {(catalogoBrand ? catalogoBrand.catNames : CATEGORIE_CANONICHE).map(c => <option key={c} value={c}>{c}</option>)}
+                            {(catalogoBrand ? catalogoBrand.catNames : catNomiAll).map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                     </div>}
 
