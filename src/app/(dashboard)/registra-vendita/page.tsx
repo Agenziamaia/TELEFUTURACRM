@@ -35,6 +35,22 @@ const vICCID=(v)=>{if(!v)return null;const d=v.replace(/\D/g,"");if(!d.length)re
 const vCF=(v)=>{if(!v)return null;const u=v.toUpperCase().replace(/\s/g,"");if(!u.length)return null;if(u.length===11&&/^\d{11}$/.test(u))return{ok:true,msg:"P.IVA"};if(u.length!==16)return{ok:false,msg:`${u.length}/16`};return{ok:/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/.test(u),msg:u.length===16?"✓":"err"}};
 
 // ── MARGINALITÀ DATA ──
+// #102 (Francesco): logo del brand per ogni SIM + raggruppamento per brand nel
+// picker "Registra Prodotto". SimL e Subentro/Reale Util. = logo Telefutura
+// (sono prodotti nostri, non di un operatore).
+const SIM_BRANDS={
+  windtre:   {logo:"/windtre.png",         label:"WindTre",     color:"#FF6B00"},
+  vodafone:  {logo:"/vodaphone - Copy.png", label:"Vodafone",    color:"#E60000"},
+  fastweb:   {logo:"/fastweb.png",          label:"Fastweb",     color:"#CC9900"},
+  tim:       {logo:"/tim-logo-v2.png",      label:"TIM",         color:"#0050FF"},
+  iliad:     {logo:"/iliad.png",            label:"Iliad",       color:"#C00028"},
+  sky:       {logo:"/sky.png",              label:"Sky",         color:"#0072C6"},
+  ho:        {logo:"/ho-mobile.png",        label:"Ho. Mobile",  color:"#E6007E"},
+  very:      {logo:"/very-mobile.png",      label:"Very Mobile", color:"#1FA300"},
+  kena:      {logo:"/kena-mobile-v2.png",   label:"Kena Mobile", color:"#F5A623"},
+  telefutura:{logo:"/logo-crm.png",         label:"Telefutura",  color:"#6f42c1"},
+};
+const SIM_BRAND_ORDER=["windtre","vodafone","fastweb","tim","iliad","sky","ho","very","kena","telefutura"];
 const MARG_PRODUCTS=[
   {cat:"📦 Prodotti",items:[{id:"accessori",name:"Accessori",price:null,pctMargin:24.59,hasQty:true,icon:"🎧",type:"pct"},{id:"tel_senior",name:"Telefoni Senior",price:null,pctMargin:12.30,needsModel:true,icon:"📱",type:"pct"},{id:"earbuds",name:"Ear Buds",price:null,pctMargin:40.98,icon:"🎵",type:"pct"},{id:"vendita_usato",name:"Vendita Usato",price:null,pctMargin:13.00,needsModel:true,needsImei:true,icon:"♻️",type:"pct"},
     {id:"plx",name:"PLX",price:null,fixedMargin:8,hasQty:true,icon:"📦",type:"fixed"},
@@ -63,30 +79,30 @@ const MARG_PRODUCTS=[
     {id:"plkasko",name:"PLKasko",price:null,pctMargin:60.00,icon:"🏷️",type:"pct"},
     {id:"kasko_sv",name:"Kasko SV",price:null,pctMargin:60.00,icon:"🔖",type:"pct"},
   ]},
-  {cat:"📶 SIM",items:[
-    
-    {id:"sim_w3",name:"Sim Wind3",price:null,fixedMargin:-5,linked:true,icon:"📶",type:"fixed"},{id:"sim_vf",name:"Sim Vodafone",price:null,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},
-    {id:"sim_fw",name:"Sim Fastweb",price:0,fixedMargin:-23,linked:true,icon:"📶",type:"fixed"},
-    {id:"sost_fw",name:"Sost Fastweb",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
-    {id:"sim_iliad",name:"Sim Iliad",price:0,fixedMargin:-10,linked:true,icon:"📶",type:"fixed"},
-    {id:"sim_sky",name:"Sim Sky",price:0,fixedMargin:0,linked:true,icon:"📶",type:"fixed"},
-    {id:"sim_ho",name:"Sim Ho.",price:0,fixedMargin:0,linked:true,icon:"📶",type:"fixed"},
-    {id:"sim_tim",name:"Sim TIM",price:0,fixedMargin:0,linked:true,icon:"📶",type:"fixed"},
-    {id:"sost_tim",name:"Sost TIM",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
-    {id:"sost_vod",name:"Sost Vodafone",price:0,fixedMargin:-10,linked:true,icon:"🔄",type:"fixed"},
-    {id:"sost_w3",name:"Sost Wind3",price:0,fixedMargin:-15,linked:true,icon:"🔄",type:"fixed"},
-    {id:"sim_very",name:"Sim Very",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed"},{id:"sim_kena",name:"Sim Kena",price:null,fixedMargin:0,linked:true,icon:"📶",type:"fixed"},
-    {id:"sost_very",name:"Sost Very",price:0,fixedMargin:-7,linked:true,icon:"🔄",type:"fixed"},
-    {id:"sim_l",name:"Sim L",price:0,fixedMargin:-15,linked:true,icon:"📶",type:"fixed"},
-    
-    {id:"subentro",name:"Subentro/Reale Util.",price:0,fixedMargin:-10,linked:true,icon:"🔄",type:"fixed"},
+  {cat:"📶 SIM",grouped:true,items:[
+    {id:"sim_w3",name:"Sim Wind3",price:null,fixedMargin:-5,linked:true,icon:"📶",type:"fixed",brand:"windtre"},
+    {id:"sost_w3",name:"Sost Wind3",price:0,fixedMargin:-15,linked:true,icon:"🔄",type:"fixed",brand:"windtre"},
+    {id:"sim_vf",name:"Sim Vodafone",price:null,fixedMargin:-7,linked:true,icon:"📶",type:"fixed",brand:"vodafone"},
+    {id:"sost_vod",name:"Sost Vodafone",price:0,fixedMargin:-10,linked:true,icon:"🔄",type:"fixed",brand:"vodafone"},
+    {id:"sim_fw",name:"Sim Fastweb",price:0,fixedMargin:-23,linked:true,icon:"📶",type:"fixed",brand:"fastweb"},
+    {id:"sost_fw",name:"Sost Fastweb",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed",brand:"fastweb"},
+    {id:"sim_tim",name:"Sim TIM",price:0,fixedMargin:0,linked:true,icon:"📶",type:"fixed",brand:"tim"},
+    {id:"sost_tim",name:"Sost TIM",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed",brand:"tim"},
+    {id:"sim_iliad",name:"Sim Iliad",price:0,fixedMargin:-10,linked:true,icon:"📶",type:"fixed",brand:"iliad"},
+    {id:"sim_sky",name:"Sim Sky",price:0,fixedMargin:0,linked:true,icon:"📶",type:"fixed",brand:"sky"},
+    {id:"sim_ho",name:"Sim Ho.",price:0,fixedMargin:0,linked:true,icon:"📶",type:"fixed",brand:"ho"},
+    {id:"sim_very",name:"Sim Very",price:0,fixedMargin:-7,linked:true,icon:"📶",type:"fixed",brand:"very"},
+    {id:"sost_very",name:"Sost Very",price:0,fixedMargin:-7,linked:true,icon:"🔄",type:"fixed",brand:"very"},
+    {id:"sim_kena",name:"Sim Kena",price:null,fixedMargin:0,linked:true,icon:"📶",type:"fixed",brand:"kena"},
+    {id:"sim_l",name:"Sim L",price:0,fixedMargin:-15,linked:true,icon:"📶",type:"fixed",brand:"telefutura"},
+    {id:"subentro",name:"Subentro/Reale Util.",price:0,fixedMargin:-10,linked:true,icon:"🔄",type:"fixed",brand:"telefutura"},
   ]},
-  {cat:"📲 ESIM",items:[
-    {id:"esim_vod",name:"ESIM Vodafone",price:0,fixedMargin:0,linked:true,icon:"📲",type:"fixed"},
-    {id:"esim_fw",name:"ESIM Fastweb",price:0,fixedMargin:0,linked:true,icon:"📲",type:"fixed"},
-    {id:"esim_sost_fw",name:"ESIM Sost Fastweb",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
-    {id:"esim_w3",name:"ESIM Windtre",price:0,fixedMargin:0,linked:true,icon:"📲",type:"fixed"},
-    {id:"esim_sost_w3",name:"ESIM Sost Windtre",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed"},
+  {cat:"📲 ESIM",grouped:true,items:[
+    {id:"esim_w3",name:"ESIM Windtre",price:0,fixedMargin:0,linked:true,icon:"📲",type:"fixed",brand:"windtre"},
+    {id:"esim_sost_w3",name:"ESIM Sost Windtre",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed",brand:"windtre"},
+    {id:"esim_vod",name:"ESIM Vodafone",price:0,fixedMargin:0,linked:true,icon:"📲",type:"fixed",brand:"vodafone"},
+    {id:"esim_fw",name:"ESIM Fastweb",price:0,fixedMargin:0,linked:true,icon:"📲",type:"fixed",brand:"fastweb"},
+    {id:"esim_sost_fw",name:"ESIM Sost Fastweb",price:0,fixedMargin:0,linked:true,icon:"🔄",type:"fixed",brand:"fastweb"},
   ]},
   // 6a categoria (richiesta Luca #10): registra IMEI + € (ricavo), margine 4%,
   // conta come +1 telefono venduto (countsPhone).
@@ -195,15 +211,34 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
         {MARG_PRODUCTS.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null)}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:selCat===ci?"rgba(111,66,193,0.12)":"rgba(255,255,255,0.04)",color:selCat===ci?"#6f42c1":"#8892b0"}}>{cat.cat}</button>))}
       </div>
       <div style={{flex:1,overflow:"auto",padding:16}}>
-        {!selProd?(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
+        {!selProd?(MARG_PRODUCTS[selCat].grouped?(
+          // #102: SIM/ESIM raggruppate per brand, logo del brand su ogni tipologia
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {SIM_BRAND_ORDER.filter(bk=>MARG_PRODUCTS[selCat].items.some(p=>p.brand===bk)).map(bk=>{
+              const info=SIM_BRANDS[bk];
+              return (<div key={bk}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,paddingBottom:6,borderBottom:`1px solid ${info.color}22`}}>
+                  <img src={info.logo} alt={info.label} style={{height:20,width:"auto",maxWidth:74,objectFit:"contain"}}/>
+                  <span style={{fontSize:12,fontWeight:800,color:info.color,letterSpacing:0.3}}>{info.label}</span>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
+                  {MARG_PRODUCTS[selCat].items.filter(p=>p.brand===bk).map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"12px 8px",borderRadius:12,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                    <img src={info.logo} alt="" style={{height:22,width:"auto",maxWidth:"78%",objectFit:"contain"}}/>
+                    <span style={{fontSize:10,fontWeight:600,color:"#f8fafc",lineHeight:1.2}}>{p.name}</span>
+                  </button>))}
+                </div>
+              </div>);
+            })}
+          </div>
+        ):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
           {MARG_PRODUCTS[selCat].items.map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"14px 8px",borderRadius:12,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
             <span style={{fontSize:22}}>{p.icon}</span>
             <span style={{fontSize:10,fontWeight:600,color:"#f8fafc",lineHeight:1.2}}>{p.name}</span>
           </button>))}
-        </div>):(<div>
+        </div>)):(<div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
             <button onClick={()=>setSelProd(null)} style={{background:"none",border:"none",color:"#6f42c1",fontSize:13,cursor:"pointer",fontWeight:600}}>← Indietro</button>
-            <span style={{fontSize:22}}>{selProd.icon}</span>
+            {selProd.brand&&SIM_BRANDS[selProd.brand]?<img src={SIM_BRANDS[selProd.brand].logo} alt="" style={{height:24,width:"auto",maxWidth:90,objectFit:"contain"}}/>:<span style={{fontSize:22}}>{selProd.icon}</span>}
             <span style={{fontSize:16,fontWeight:800,color:"#f8fafc"}}>{selProd.name}</span>
           </div>
           <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Quantità</div>
