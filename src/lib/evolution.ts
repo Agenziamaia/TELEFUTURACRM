@@ -63,6 +63,12 @@ export async function eliminaIstanza(instanceName: string): Promise<any> {
     return call("DELETE", `/instance/delete/${encodeURIComponent(instanceName)}`);
 }
 
+/** Disconnette (logout) la sessione WhatsApp SENZA eliminare l'istanza: le
+ *  conversazioni restano e si puo' ricollegare riscansionando il QR. */
+export async function logoutIstanza(instanceName: string): Promise<any> {
+    return call("DELETE", `/instance/logout/${encodeURIComponent(instanceName)}`);
+}
+
 /** Elenca le chat note all'istanza. WhatsApp, al collegamento, invia una
  *  history-sync (chat/messaggi recenti) che Evolution conserva: qui la leggiamo
  *  per popolare le conversazioni gia' esistenti (i webhook portano solo i nuovi). */

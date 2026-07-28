@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, elencoChat, elencoMessaggi, scaricaMedia } from "@/lib/evolution";
+import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoMessaggi, scaricaMedia } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
 
 export const dynamic = "force-dynamic";
@@ -216,6 +216,14 @@ export async function POST(request: Request) {
             if (nuovi.length) await supabase.from("wa_messages").insert(nuovi);
             for (const u of mediaUpdate) await supabase.from("wa_messages").update({ media_url: u.url }).eq("wa_message_id", u.id);
             return NextResponse.json({ ok: true, importati: nuovi.length, media: mediaScaricati });
+        }
+
+        if (action === "logout") {
+            // disconnessione volontaria: chiude la sessione WhatsApp ma tiene
+            // l'istanza e le conversazioni. Si ricollega riscansionando il QR.
+            try { await logoutIstanza(b.instanceName); } catch { /* forse gia' disconnessa */ }
+            await supabase.from("wa_instances").update({ status: "disconnessa" }).eq("instance_name", b.instanceName);
+            return NextResponse.json({ ok: true });
         }
 
         if (action === "delete") {

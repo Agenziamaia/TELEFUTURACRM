@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
-import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText } from "lucide-react";
+import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut } from "lucide-react";
 import { cn } from "@/utils";
 
 type Instance = { id: string; instance_name: string; display_name: string | null; wa_number: string | null; status: string; owner_user_id: string | null; negozio: string | null };
@@ -30,6 +30,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
     const [linkModal, setLinkModal] = useState(false);
     const [relinkName, setRelinkName] = useState<string | null>(null);   // ri-scansione di un numero disconnesso
     const [syncing, setSyncing] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const fileRef = useRef<HTMLInputElement | null>(null);
     const historyLoaded = useRef<Set<string>>(new Set());   // conversazioni gia' backfillate
@@ -82,6 +83,19 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
         } finally {
             if (!silent) setSyncing(false);
         }
+    };
+
+    // disconnessione volontaria (logout): chiude la sessione ma tiene le
+    // conversazioni; si riattiva riscansionando il QR con "Ricollega".
+    const disconnetti = async () => {
+        const inst = instances.find(i => i.id === selInst);
+        if (!inst || disconnecting) return;
+        if (!window.confirm(`Disconnettere "${inst.display_name || inst.instance_name}"?\nLe conversazioni restano; per riattivarlo dovrai riscansionare il QR.`)) return;
+        setDisconnecting(true);
+        const res = await api({ action: "logout", instanceName: inst.instance_name });
+        setDisconnecting(false);
+        if (res?.error) alert("Disconnessione non riuscita: " + res.error);
+        else { setSelConv(null); loadInstances(); }
     };
 
     const loadInstances = async () => {
@@ -209,6 +223,12 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                         <button onClick={() => sincronizza()} disabled={syncing} title="Ricarica le conversazioni dal telefono (di solito non serve: si aggiorna da solo)"
                             className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 disabled:opacity-40">
                             {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        </button>
+                    )}
+                    {instConnessa?.status === "connessa" && (
+                        <button onClick={disconnetti} disabled={disconnecting} title="Disconnetti questo numero (le conversazioni restano, per riattivarlo si riscansiona il QR)"
+                            className="px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-sm font-bold flex items-center gap-2 hover:bg-rose-500/25 disabled:opacity-40">
+                            {disconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />} Disconnetti
                         </button>
                     )}
                     {/* Numero selezionato NON connesso (mai scansionato o sessione scaduta):
