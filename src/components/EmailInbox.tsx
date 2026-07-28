@@ -33,9 +33,12 @@ export function EmailInbox({ embedded = false }: { embedded?: boolean }) {
 
     // visibilita' come WhatsApp: admin/dev/amministrativo tutte; store_manager il
     // proprio negozio; gli altri solo le proprie caselle.
+    // SICUREZZA: il dev (ruolo tecnico) NON vede le caselle altrui. Le email di
+    // negozio sono aziendali, quindi admin e amministrativo mantengono la vista
+    // completa; lo store manager il proprio negozio; gli altri solo le proprie.
     const scope: "all" | "store" | "own" = useMemo(() => {
         const role = user?.role || "";
-        if (["admin", "dev", "amministrativo"].includes(role)) return "all";
+        if (["admin", "amministrativo"].includes(role)) return "all";
         if (role === "store_manager") return "store";
         return "own";
     }, [user?.role]);

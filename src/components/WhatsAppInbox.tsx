@@ -39,9 +39,12 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
     // Modello "un numero per caller": ognuno vede i PROPRI numeri. Eccezioni:
     //  - admin/dev/amministrativo -> tutti i numeri
     //  - store_manager            -> i numeri del proprio negozio
+    // SICUREZZA: chi vede TUTTI i numeri. NON dev (ruolo tecnico) ne' amministrativo:
+    // un numero WhatsApp puo' essere personale, quindi lo vede solo il proprietario,
+    // lo store manager del suo negozio e l'admin (direzione). (rivisto 28/07)
     const waScope: "all" | "store" | "own" = useMemo(() => {
         const role = user?.role || "";
-        if (["admin", "dev", "amministrativo"].includes(role)) return "all";
+        if (role === "admin") return "all";
         if (role === "store_manager") return "store";
         return "own";
     }, [user?.role]);
