@@ -311,7 +311,7 @@ const BRANDS = [
   { id: "fastweb", logo: "/fastweb.png", label: "Fastweb", short: "FW", color: "#CC9900", gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)", icon: "⚡", desc: "Mobile, Fisso, Energy", ready: true },
   { id: "iliad", logo: "/iliad.png", label: "Iliad", short: "IL", color: "#C00028", gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)", icon: "📡", desc: "Mobile e Fisso (Fibra)", ready: true },
   { id: "energy", logo: "/energy - Copy.png", label: "S4", short: "S4", color: "#28a745", gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)", icon: "🔋", desc: "Forniture Luce e Gas", ready: true },
-  { id: "dojo", logo: "/dojo - Copy.png", label: "Dojo", short: "DOJO", color: "#14b8a6", gradient: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", icon: "🏧", desc: "POS e pagamenti", ready: true },
+  { id: "dojo", logo: "/dojo-round.png", label: "Dojo", short: "DOJO", color: "#14b8a6", gradient: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", icon: "🏧", desc: "POS e pagamenti", ready: true },
   { id: "tim", logo: "/tim-logo-v2.png", label: "TIM", short: "TIM", color: "#0050FF", gradient: "linear-gradient(135deg, #0033A0 0%, #0050FF 100%)", icon: "☎️", desc: "Mobile, Fisso, Multi-Servizi", ready: true },
   { id: "very", logo: "/very-mobile.png", label: "Very Mobile", short: "VERY", color: "#1FA300", gradient: "linear-gradient(135deg, #137A00 0%, #1FA300 100%)", icon: "🟢", desc: "Mobile", ready: true },
   { id: "ho", logo: "/ho-mobile.png", label: "Ho. Mobile", short: "HO", color: "#E6007E", gradient: "linear-gradient(135deg, #B0005F 0%, #E6007E 100%)", icon: "💗", desc: "Mobile", ready: true },
