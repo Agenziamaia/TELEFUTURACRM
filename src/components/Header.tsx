@@ -1,6 +1,7 @@
 "use client";
 
-import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon } from "lucide-react";
+import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon } from "lucide-react";
+import { useTema } from "@/lib/theme";
 import { UrgentTasks } from "@/components/UrgentTasks";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -27,6 +28,7 @@ type Hit = {
 export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     const router = useRouter();
     const pathname = usePathname();
+    const [tema, cambiaTema] = useTema();
     const { user, logout, realRole, viewAs, setViewAs, viewAsUser, setViewAsUser } = useAuth();
     // ruoli FUSI codice+DB: anche i ruoli creati da UI si possono impersonare
     const { roles: allRoles } = useRoles();
@@ -300,6 +302,15 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                         )}
                     </div>
                 )}
+                {/* TEMA chiaro/scuro (Luca 29/07): come su telefoni e sistemi
+                    operativi — ☀️ accende il chiaro, 🌙 torna allo scuro. */}
+                <button
+                    onClick={cambiaTema}
+                    title={tema === "chiaro" ? "Passa al tema scuro" : "Passa al tema chiaro"}
+                    className="text-slate-400 hover:text-white transition-colors"
+                >
+                    {tema === "chiaro" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+                </button>
                 {/* Il tasto schermo intero non faceva nulla: ora entra ed esce davvero. */}
                 <button
                     onClick={toggleFullscreen}

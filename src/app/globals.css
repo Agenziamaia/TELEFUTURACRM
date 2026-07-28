@@ -259,3 +259,159 @@ select:-webkit-autofill {
   box-shadow: 0 0 0 1000px #0f111a inset;
   transition: background-color 9999s ease-in-out 0s;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TEMA CHIARO (Luca 29/07) — attivato da <html class="light">
+   (interruttore ☀️/🌙 in alto a destra, memoria in localStorage crm_theme).
+
+   Il CRM è nato scuro, con le utility Tailwind cablate nei componenti:
+   il tema chiaro è un RIDISEGNO centralizzato che rimappa il design
+   system (superfici, testi, bordi, chip) senza toccare le pagine.
+   La gerarchia dei grigi è INVERTITA con criterio: ciò che sullo scuro
+   era chiaro (testo primario) qui diventa scuro, e viceversa.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Design token ─────────────────────────────────────────────────── */
+html.light {
+  --color-bg-base: #eef1f7;
+  --color-bg-glass: rgba(255, 255, 255, 0.86);
+  --color-bg-glass-hover: rgba(255, 255, 255, 0.97);
+  --color-border-glass: rgba(15, 23, 42, 0.10);
+  --color-border-glass-bright: rgba(79, 70, 229, 0.28);
+  --color-text-main: #0f172a;
+  --color-text-muted: #64748b;
+  color-scheme: light;
+}
+html.light body[class] {
+  background-color: #eef1f7 !important;
+  color: #0f172a;
+  background-image: radial-gradient(ellipse at top left,
+      rgba(79, 70, 229, 0.07), transparent 50%),
+    radial-gradient(ellipse at bottom right,
+      rgba(236, 72, 153, 0.06), transparent 50%);
+}
+
+/* ── 2. Superfici scure cablate → superfici chiare ───────────────────── */
+/* pannelli, sidebar, header, tendine (bg-[#0f111a], /80, /95, ecc.) */
+html.light [class*="bg-[#0f111a]"] { background-color: rgba(255, 255, 255, 0.92) !important; }
+html.light [class*="bg-[#161b22]"],
+html.light [class*="bg-[#0d1117]"] { background-color: #f1f4f9 !important; }
+html.light [class*="bg-[#161a26]"],
+html.light [class*="bg-[#1a1d29]"],
+html.light [class*="bg-[#0f172a]"] { background-color: #ffffff !important; }
+/* velature bianche sul scuro → velature scure sul chiaro */
+html.light [class*="bg-white/"] { background-color: rgba(15, 23, 42, 0.045) !important; }
+html.light [class*="hover:bg-white/"]:hover { background-color: rgba(15, 23, 42, 0.08) !important; }
+html.light [class*="bg-slate-900"],
+html.light [class*="bg-slate-800"],
+html.light [class*="bg-black/40"] { background-color: #ffffff !important; }
+/* bordi */
+html.light [class*="border-white/"] { border-color: rgba(15, 23, 42, 0.12) !important; }
+html.light [class*="divide-white/"] > * + * { border-color: rgba(15, 23, 42, 0.08) !important; }
+/* ombre pensate per il nero: si ammorbidiscono */
+html.light [class*="shadow-black/"] { --tw-shadow-color: rgba(15, 23, 42, 0.18) !important; }
+
+/* ── 3. Gerarchia testi (invertita con criterio) ─────────────────────── */
+html.light [class~="text-white"] { color: #0f172a; }
+html.light [class~="text-slate-100"] { color: #14203a; }
+html.light [class~="text-slate-200"] { color: #1e293b; }
+html.light [class~="text-slate-300"] { color: #334155; }
+html.light [class~="text-slate-400"] { color: #5a6b84; }
+html.light [class~="text-slate-500"] { color: #64748b; }
+html.light [class~="text-slate-600"] { color: #93a1b5; }
+html.light [class~="text-slate-700"] { color: #a9b4c5; }
+html.light [class*="hover:text-white"]:hover { color: #0f172a; }
+/* placeholder leggibili ma discreti */
+html.light input::placeholder, html.light textarea::placeholder { color: #94a3b8 !important; }
+
+/* ── 4. Accenti colorati: i toni -100/-300 (pensati sul nero) scendono
+       ai -600/-800 per restare leggibili sul bianco; le velature /15
+       diventano naturalmente pastello e NON si toccano. ──────────────── */
+html.light [class~="text-indigo-200"], html.light [class~="text-indigo-100"] { color: #3730a3; }
+html.light [class~="text-indigo-300"] { color: #4338ca; }
+html.light [class~="text-indigo-400"] { color: #4f46e5; }
+html.light [class~="text-violet-200"], html.light [class~="text-violet-100"] { color: #5b21b6; }
+html.light [class~="text-violet-300"] { color: #6d28d9; }
+html.light [class~="text-violet-400"] { color: #7c3aed; }
+html.light [class~="text-purple-300"] { color: #7e22ce; }
+html.light [class~="text-purple-400"] { color: #9333ea; }
+html.light [class~="text-emerald-200"], html.light [class~="text-emerald-100"] { color: #065f46; }
+html.light [class~="text-emerald-300"] { color: #047857; }
+html.light [class~="text-emerald-400"] { color: #059669; }
+html.light [class~="text-green-300"] { color: #15803d; }
+html.light [class~="text-green-400"] { color: #16a34a; }
+html.light [class~="text-teal-300"] { color: #0f766e; }
+html.light [class~="text-amber-200"], html.light [class~="text-amber-100"] { color: #92400e; }
+html.light [class~="text-amber-300"] { color: #b45309; }
+html.light [class~="text-amber-400"] { color: #d97706; }
+html.light [class~="text-yellow-300"] { color: #a16207; }
+html.light [class~="text-orange-300"] { color: #c2410c; }
+html.light [class~="text-rose-200"], html.light [class~="text-rose-100"] { color: #9f1239; }
+html.light [class~="text-rose-300"] { color: #be123c; }
+html.light [class~="text-rose-400"] { color: #e11d48; }
+html.light [class~="text-red-300"] { color: #b91c1c; }
+html.light [class~="text-red-400"] { color: #dc2626; }
+html.light [class~="text-sky-200"], html.light [class~="text-sky-100"] { color: #075985; }
+html.light [class~="text-sky-300"] { color: #0369a1; }
+html.light [class~="text-sky-400"] { color: #0284c7; }
+html.light [class~="text-blue-300"] { color: #1d4ed8; }
+html.light [class~="text-blue-400"] { color: #2563eb; }
+html.light [class~="text-cyan-300"] { color: #0e7490; }
+html.light [class~="text-pink-300"] { color: #be185d; }
+
+/* ── 5. Il bianco RESTA bianco dove lo sfondo è pieno (bottoni solidi,
+       gradienti, badge): senza queste regole il rimappo del text-white
+       renderebbe illeggibili i pulsanti colorati. ─────────────────────── */
+html.light .primary-btn,
+html.light [class*="bg-gradient-to"],
+html.light [class~="bg-indigo-600"], html.light [class~="bg-indigo-500"],
+html.light [class~="bg-emerald-500"], html.light [class~="bg-emerald-600"],
+html.light [class~="bg-amber-500"], html.light [class~="bg-amber-600"],
+html.light [class~="bg-rose-500"], html.light [class~="bg-rose-600"],
+html.light [class~="bg-red-500"], html.light [class~="bg-red-600"],
+html.light [class~="bg-sky-500"], html.light [class~="bg-sky-600"],
+html.light [class~="bg-violet-600"], html.light [class~="bg-purple-600"],
+html.light [class~="bg-blue-600"], html.light [class~="bg-green-500"], html.light [class~="bg-green-600"] { color: #ffffff; }
+
+/* ── 6. Campi e tendine ──────────────────────────────────────────────── */
+html.light .glass-input {
+  background-color: #ffffff;
+  color: #0f172a;
+  border-color: rgba(15, 23, 42, 0.14);
+}
+html.light .glass-input:focus { background-color: #ffffff; border-color: #4f46e5; }
+html.light select, html.light select option { background-color: #ffffff; color: #0f172a; }
+html.light input:not(.glass-input):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+html.light select:not(.glass-input),
+html.light textarea:not(.glass-input) {
+  background-color: #ffffff;
+  color: #0f172a;
+  border-color: rgba(15, 23, 42, 0.14);
+}
+html.light input:-webkit-autofill,
+html.light input:-webkit-autofill:hover,
+html.light input:-webkit-autofill:focus,
+html.light textarea:-webkit-autofill,
+html.light select:-webkit-autofill {
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+  box-shadow: 0 0 0 1000px #ffffff inset;
+}
+
+/* ── 7. Card: sul chiaro l'eleganza è un'ombra morbida, non il vetro ─── */
+html.light .glass-card, html.light .glass-panel {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+html.light .glass-card:hover { box-shadow: 0 2px 4px rgba(15, 23, 42, 0.06), 0 12px 32px rgba(15, 23, 42, 0.10); }
+
+/* ── 8. Scrollbar e calendario ───────────────────────────────────────── */
+html.light ::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
+html.light ::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.30); }
+html.light .rdp-popup .rdp-root { color: #334155; }
+html.light .rdp-popup .rdp-month_caption { color: #0f172a; }
+html.light .rdp-popup .rdp-button_previous,
+html.light .rdp-popup .rdp-button_next { background: rgba(15, 23, 42, 0.05); border-color: rgba(15, 23, 42, 0.12); color: #64748b; }
+html.light .rdp-popup .rdp-day { color: #334155; }
+html.light .rdp-popup .rdp-day:hover:not([disabled]):not(.rdp-selected) { background: rgba(15, 23, 42, 0.06); color: #0f172a; }
+html.light .rdp-popup .rdp-outside { color: #cbd5e1; }

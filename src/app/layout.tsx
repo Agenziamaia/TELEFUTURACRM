@@ -23,8 +23,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="it">
+    <html lang="it" suppressHydrationWarning>
       <body className="antialiased font-sans bg-[#0f111a] text-white">
+        {/* TEMA (Luca 29/07): applicato PRIMA del primo paint — senza questo
+            script chi usa il tema chiaro vedrebbe un lampo scuro a ogni pagina. */}
+        <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem("crm_theme")==="chiaro")document.documentElement.classList.add("light")}catch(e){}` }} />
         <AuthProvider>
           <NotificationCenter />
           <div className="flex min-h-screen">
