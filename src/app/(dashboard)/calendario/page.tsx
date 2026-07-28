@@ -1177,41 +1177,46 @@ export default function Calendario() {
                                             {isBlocked && <Lock className="w-3 h-3 text-amber-400 mx-auto mt-0.5" />}
                                         </button>
                                         <div className="flex-1 overflow-y-auto p-1 space-y-1 custom-scrollbar">
-                                            {dayAppts.map((a) => (
-                                                <button
-                                                    key={`a-${a.id}`}
-                                                    onClick={() => { selectDate(dateStr); setSelectedAppointment(a); setShowModal(true); }}
-                                                    className={cn(
-                                                        "w-full text-left px-1.5 py-1 rounded-lg border text-[10px] leading-tight transition-colors hover:bg-white/[0.08]",
-                                                        a.type === "incoming" ? "border-blue-500/30 bg-blue-500/10" :
-                                                            a.type === "self_generated" ? "border-purple-500/30 bg-purple-500/10" : "border-amber-500/30 bg-amber-500/10",
-                                                    )}
-                                                >
-                                                    <div className="font-semibold text-slate-200 truncate">{a.time} {a.customerName}</div>
-                                                    <div className="text-slate-400 truncate">{a.type === "incoming" ? (a.store || "Inbound") : (a.agente || "—")}</div>
-                                                </button>
-                                            ))}
-                                            {dayTasks.map((t) => (
-                                                <button
-                                                    key={`t-${t.id}`}
-                                                    onClick={() => selectDate(dateStr)}
-                                                    title="Apri il giorno: la task si gestisce dal pannello a destra"
-                                                    className="w-full text-left px-1.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
-                                                >
-                                                    <div className="font-semibold text-emerald-200 truncate">{t.time ? `${t.time} ` : ""}{t.title}</div>
-                                                    <div className="text-slate-400 truncate">{t.assignedToStore || t.assignedTo}</div>
-                                                </button>
-                                            ))}
-                                            {dayMeetings.map((m) => (
-                                                <button
-                                                    key={`m-${m.id}`}
-                                                    onClick={() => { selectDate(dateStr); setSelectedMeeting(m); setShowMeetingDetailModal(true); }}
-                                                    className="w-full text-left px-1.5 py-1 rounded-lg border border-sky-500/30 bg-sky-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
-                                                >
-                                                    <div className="font-semibold text-sky-200 truncate">{m.startTime} {m.title}</div>
-                                                    <div className="text-slate-400 truncate">{m.brand}</div>
-                                                </button>
-                                            ))}
+                                            {/* UNICA lista cronologica (Luca 29/07): l'ORARIO è il principe —
+                                                senza-orario IN TESTA, poi tutte le categorie mescolate
+                                                in ordine di orario reale (non tre liste in sequenza). */}
+                                            {[
+                                                ...dayAppts.map((a) => ({ min: minutiDi(a.time), jsx: (
+                                                    <button
+                                                        key={`a-${a.id}`}
+                                                        onClick={() => { selectDate(dateStr); setSelectedAppointment(a); setShowModal(true); }}
+                                                        className={cn(
+                                                            "w-full text-left px-1.5 py-1 rounded-lg border text-[10px] leading-tight transition-colors hover:bg-white/[0.08]",
+                                                            a.type === "incoming" ? "border-blue-500/30 bg-blue-500/10" :
+                                                                a.type === "self_generated" ? "border-purple-500/30 bg-purple-500/10" : "border-amber-500/30 bg-amber-500/10",
+                                                        )}
+                                                    >
+                                                        <div className="font-semibold text-slate-200 truncate">{a.time} {a.customerName}</div>
+                                                        <div className="text-slate-400 truncate">{a.type === "incoming" ? (a.store || "Inbound") : (a.agente || "—")}</div>
+                                                    </button>
+                                                ) })),
+                                                ...dayTasks.map((t) => ({ min: t.time ? minutiDi(t.time) : -1, jsx: (
+                                                    <button
+                                                        key={`t-${t.id}`}
+                                                        onClick={() => selectDate(dateStr)}
+                                                        title="Apri il giorno: la task si gestisce dal pannello a destra"
+                                                        className="w-full text-left px-1.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
+                                                    >
+                                                        <div className="font-semibold text-emerald-200 truncate">{t.time ? `${t.time} ` : ""}{t.title}</div>
+                                                        <div className="text-slate-400 truncate">{t.assignedToStore || t.assignedTo}</div>
+                                                    </button>
+                                                ) })),
+                                                ...dayMeetings.map((m) => ({ min: minutiDi(m.startTime), jsx: (
+                                                    <button
+                                                        key={`m-${m.id}`}
+                                                        onClick={() => { selectDate(dateStr); setSelectedMeeting(m); setShowMeetingDetailModal(true); }}
+                                                        className="w-full text-left px-1.5 py-1 rounded-lg border border-sky-500/30 bg-sky-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
+                                                    >
+                                                        <div className="font-semibold text-sky-200 truncate">{m.startTime} {m.title}</div>
+                                                        <div className="text-slate-400 truncate">{m.brand}</div>
+                                                    </button>
+                                                ) })),
+                                            ].sort((x, y) => x.min - y.min).map((v) => v.jsx)}
                                             {dayAppts.length === 0 && dayTasks.length === 0 && dayMeetings.length === 0 && (
                                                 <div className="text-center text-[10px] text-slate-600 pt-4">—</div>
                                             )}
