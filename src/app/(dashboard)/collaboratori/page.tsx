@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { SelectPersona } from "@/components/SelectPersona";
 import { Suspense, useState, useEffect, useCallback } from "react";
-import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2 } from "lucide-react";
+import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2, Pencil } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -854,10 +854,30 @@ function RitardiSection() {
     const isStoreMgr = user?.role === "store_manager" || user?.role === "amministrativo";
     const canReportOthers = reportAll || isStoreMgr;
 
+    // #111 (manu): modifica/cancellazione ritardi con approvazione amministrazione.
+    // L'AMMINISTRAZIONE (amministrativo/direzione/admin) agisce SUBITO: modifica o
+    // elimina direttamente. Lo STORE MANAGER non ha potere diretto: genera una
+    // RICHIESTA (modifica o cancellazione) che finisce nella coda dell'amministrazione
+    // e diventa effettiva solo dopo l'approvazione.
+    const isApprover = isAdminOrAbove(user?.role);
+    const isRequester = user?.role === "store_manager";
+    const canRowAct = isApprover || isRequester;
+
     const [rows, setRows] = useState<RitardoRow[]>([]);
     const [showNewModal, setShowNewModal] = useState(false);
     const [filterPerson, setFilterPerson] = useState("");
     const [saving, setSaving] = useState(false);
+
+    // richieste di modifica/cancellazione in attesa
+    const [changeReqs, setChangeReqs] = useState<any[]>([]);
+    const [editRow, setEditRow] = useState<RitardoRow | null>(null);
+    const [edTipo, setEdTipo] = useState<"pre" | "post">("pre");
+    const [edReason, setEdReason] = useState("");
+    const [edDate, setEdDate] = useState("");
+    const [edNote, setEdNote] = useState("");
+    const [cancelRow, setCancelRow] = useState<RitardoRow | null>(null);
+    const [cancelNote, setCancelNote] = useState("");
+    const [actBusy, setActBusy] = useState<string | null>(null);
 
     const [mode, setMode] = useState<"self" | "other">("self");
     const [newEmployee, setNewEmployee] = useState("");
@@ -879,6 +899,14 @@ function RitardiSection() {
     useEffect(() => {
         fetchRows();
     }, [fetchRows]);
+    // richieste in attesa: gli approvatori vedono la coda, i richiedenti vedono il
+    // badge "in attesa" sulle proprie righe (evita doppioni).
+    const fetchReqs = useCallback(async () => {
+        const { data } = await supabase.from("ritardi_change_requests").select("*").eq("status", "pending").order("created_at", { ascending: false });
+        setChangeReqs((data ?? []) as any[]);
+    }, []);
+    useEffect(() => { fetchReqs(); }, [fetchReqs]);
+    const pendingFor = (id: string) => changeReqs.find((r) => r.ritardo_id === id);
     useEffect(() => {
         (async () => {
             const q = supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name");
@@ -952,9 +980,136 @@ function RitardiSection() {
     };
 
     const formatDate = (d: string) => new Date(d).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const campoLabel = (k: string) => (k === "tipo" ? "Tipo" : k === "reason" ? "Motivo" : k === "date" ? "Data" : k);
+    const fmtCampo = (k: string, v: any) => (k === "tipo" ? (v === "post" ? "Post" : v === "pre" ? "Pre" : v || "—") : k === "date" ? (v ? formatDate(v) : "—") : v || "—");
+
+    const openEdit = (r: RitardoRow) => {
+        setEditRow(r);
+        setEdTipo(r.tipo === "post" ? "post" : "pre");
+        setEdReason(r.reason || "");
+        setEdDate(r.date);
+        setEdNote("");
+    };
+
+    // Salva la modifica: l'approvatore la applica subito, lo store manager la invia
+    // come richiesta all'amministrazione.
+    const submitEdit = async () => {
+        if (!editRow) return;
+        setActBusy(editRow.id);
+        const next = { tipo: edTipo, reason: edReason.trim(), date: edDate };
+        if (isApprover) {
+            const { error } = await supabase.from("ritardi").update({ tipo: next.tipo, reason: next.reason || null, date: next.date }).eq("id", editRow.id);
+            setActBusy(null);
+            if (error) { alert("Modifica non salvata: " + error.message); return; }
+            setEditRow(null); await fetchRows();
+        } else {
+            const ch: any = {};
+            if (next.tipo !== (editRow.tipo || "pre")) ch.tipo = { da: editRow.tipo || "", a: next.tipo };
+            if (next.reason !== (editRow.reason || "")) ch.reason = { da: editRow.reason || "", a: next.reason };
+            if (next.date !== editRow.date) ch.date = { da: editRow.date, a: next.date };
+            if (Object.keys(ch).length === 0) { setActBusy(null); alert("Nessuna modifica da inviare."); return; }
+            if (edNote.trim()) ch.__meta = { note: edNote.trim() };
+            const { error } = await supabase.from("ritardi_change_requests").insert({
+                ritardo_id: editRow.id, tipo: "modifica", employee_name: editRow.employee_name, store: editRow.store,
+                changes: ch, requested_by: user?.id || null, requested_by_name: user?.name || "—",
+            });
+            setActBusy(null);
+            if (error) { alert("Richiesta non inviata: " + error.message); return; }
+            setEditRow(null); await fetchReqs();
+        }
+    };
+
+    // Cancellazione: l'approvatore elimina subito; lo store manager invia la richiesta.
+    const submitCancel = async () => {
+        if (!cancelRow) return;
+        setActBusy(cancelRow.id);
+        if (isApprover) {
+            const { error } = await supabase.from("ritardi").delete().eq("id", cancelRow.id);
+            setActBusy(null);
+            if (error) { alert("Eliminazione non riuscita: " + error.message); return; }
+            setCancelRow(null); await fetchRows(); await fetchReqs();
+        } else {
+            const { error } = await supabase.from("ritardi_change_requests").insert({
+                ritardo_id: cancelRow.id, tipo: "cancellazione", employee_name: cancelRow.employee_name, store: cancelRow.store,
+                changes: { __delete: true, ...(cancelNote.trim() ? { __meta: { note: cancelNote.trim() } } : {}) },
+                requested_by: user?.id || null, requested_by_name: user?.name || "—",
+            });
+            setActBusy(null);
+            if (error) { alert("Richiesta non inviata: " + error.message); return; }
+            setCancelRow(null); await fetchReqs();
+        }
+    };
+
+    // Decisione dell'amministrazione su una richiesta in coda.
+    const decideRequest = async (req: any, approve: boolean) => {
+        setActBusy(req.id);
+        if (approve && req.tipo === "cancellazione") {
+            const { error } = await supabase.from("ritardi").delete().eq("id", req.ritardo_id);
+            if (error) { setActBusy(null); alert("Ritardo NON eliminato: " + error.message); return; }
+        } else if (approve && req.tipo === "modifica") {
+            const patch: any = {};
+            Object.entries(req.changes || {}).forEach(([k, raw]: any) => {
+                if (k.startsWith("__")) return;   // "__meta" = nota, non un campo
+                patch[k] = raw?.a === "" ? null : raw?.a;
+            });
+            if (Object.keys(patch).length) {
+                const { error } = await supabase.from("ritardi").update(patch).eq("id", req.ritardo_id);
+                if (error) { setActBusy(null); alert("Modifica NON applicata: " + error.message); return; }
+            }
+        }
+        const { error: rErr } = await supabase.from("ritardi_change_requests").update({
+            status: approve ? "approved" : "rejected",
+            reviewed_by: user?.id || null, reviewed_by_name: user?.name || "—",
+            reviewed_at: new Date().toISOString(),
+        }).eq("id", req.id);
+        setActBusy(null);
+        if (rErr) { alert("Stato richiesta non aggiornato: " + rErr.message); return; }
+        await fetchRows(); await fetchReqs();
+    };
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* #111: coda richieste (modifica/cancellazione) — solo per l'amministrazione */}
+            {isApprover && changeReqs.length > 0 && (
+                <div className="glass-card p-5 border-l-4 border-l-amber-500 space-y-3">
+                    <div className="flex items-center gap-2">
+                        <Clock3 className="w-4 h-4 text-amber-400" />
+                        <h3 className="text-sm font-bold text-white uppercase tracking-tight">Richieste in attesa</h3>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white">{changeReqs.length}</span>
+                    </div>
+                    <div className="space-y-2">
+                        {changeReqs.map((req) => {
+                            const isCanc = req.tipo === "cancellazione";
+                            const note = req.changes?.__meta?.note || "";
+                            const fields = Object.entries(req.changes || {}).filter(([k]) => !k.startsWith("__"));
+                            return (
+                                <div key={req.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className={cn("text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border", isCanc ? "bg-rose-500/10 text-rose-300 border-rose-500/30" : "bg-sky-500/10 text-sky-300 border-sky-500/30")}>{isCanc ? "Cancellazione" : "Modifica"}</span>
+                                            <span className="text-sm font-bold text-white">{req.employee_name || "—"}</span>
+                                            <span className="text-[10px] text-slate-500 uppercase tracking-wider">{req.store || ""}</span>
+                                        </div>
+                                        {!isCanc && fields.length > 0 && (
+                                            <div className="text-xs text-slate-400 mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
+                                                {fields.map(([k, v]: any) => (
+                                                    <span key={k}>{campoLabel(k)}: <span className="line-through text-slate-600">{fmtCampo(k, v.da)}</span> → <span className="text-slate-200 font-semibold">{fmtCampo(k, v.a)}</span></span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {note && <div className="text-xs text-slate-500 italic mt-1">“{note}”</div>}
+                                        <div className="text-[10px] text-slate-600 mt-1">Richiesta da {req.requested_by_name || "—"}</div>
+                                    </div>
+                                    <div className="flex gap-2 shrink-0">
+                                        <button disabled={actBusy === req.id} onClick={() => decideRequest(req, false)} className="h-8 px-3 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-bold disabled:opacity-50">Rifiuta</button>
+                                        <button disabled={actBusy === req.id} onClick={() => decideRequest(req, true)} className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1 disabled:opacity-50"><Check className="w-3.5 h-3.5" />Approva</button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
             <div className="grid grid-cols-2 gap-4 max-w-lg">
                 <div className="glass-panel p-5 border-l-4 border-l-amber-500">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Ritardi</p>
@@ -995,6 +1150,7 @@ function RitardiSection() {
                                     <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Tipo</th>
                                     <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Data</th>
                                     <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Motivo</th>
+                                    {canRowAct && <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Azioni</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
@@ -1008,10 +1164,24 @@ function RitardiSection() {
                                         <td className="px-5 py-4">{r.tipo ? <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/25">{r.tipo === "pre" ? "Pre" : "Post"}</span> : <span className="text-[10px] text-slate-600">—</span>}</td>
                                         <td className="px-5 py-4 text-xs text-slate-400">{formatDate(r.date)}</td>
                                         <td className="px-5 py-4 text-xs text-slate-400">{r.reason || "—"}</td>
+                                        {canRowAct && (
+                                            <td className="px-5 py-4 text-right">
+                                                {(() => {
+                                                    const pr = pendingFor(r.id);
+                                                    if (pr) return <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 whitespace-nowrap">{pr.tipo === "cancellazione" ? "Cancellaz." : "Modifica"} in attesa</span>;
+                                                    return (
+                                                        <div className="flex items-center justify-end gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+                                                            <button onClick={() => openEdit(r)} title={isApprover ? "Modifica" : "Richiedi modifica"} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-colors"><Pencil className="w-3.5 h-3.5" /></button>
+                                                            <button onClick={() => { setCancelRow(r); setCancelNote(""); }} title={isApprover ? "Elimina" : "Chiedi cancellazione"} className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                                 {filtered.length === 0 && (
-                                    <tr><td colSpan={4} className="px-5 py-10 text-center text-slate-500 text-sm italic">Nessun ritardo registrato</td></tr>
+                                    <tr><td colSpan={canRowAct ? 6 : 5} className="px-5 py-10 text-center text-slate-500 text-sm italic">Nessun ritardo registrato</td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -1066,6 +1236,77 @@ function RitardiSection() {
                                 <button type="submit" disabled={saving} className="flex-[2] h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition-all shadow-lg shadow-amber-500/25 disabled:opacity-50">{saving ? "Salvataggio..." : "Conferma"}</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* #111: modifica ritardo — diretta per l'amministrazione, richiesta per lo store manager */}
+            {editRow && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setEditRow(null)}>
+                    <div className="glass-card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-5">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2"><Pencil className="w-5 h-5 text-amber-500" />{isApprover ? "Modifica ritardo" : "Richiedi modifica"}</h3>
+                            <button onClick={() => setEditRow(null)} className="p-1 hover:bg-white/5 rounded-lg transition-colors"><X className="w-5 h-5 text-slate-500" /></button>
+                        </div>
+                        <div className="space-y-4">
+                            <p className="text-xs text-slate-400 bg-white/5 rounded-lg p-3"><b className="text-white">{editRow.employee_name}</b>{editRow.store ? ` · ${editRow.store}` : ""}</p>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Tipo ritardo</label>
+                                <div className="flex gap-2">
+                                    {([["pre", "Pre apertura"], ["post", "Post apertura"]] as const).map(([val, lab]) => (
+                                        <button type="button" key={val} onClick={() => setEdTipo(val)}
+                                            className={cn("flex-1 h-10 rounded-lg text-xs font-bold transition-colors border", edTipo === val ? "bg-amber-500 text-white border-amber-500" : "bg-white/5 text-slate-400 border-white/10 hover:text-white")}>{lab}</button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Data</label>
+                                <input type="date" value={edDate} onChange={(e) => setEdDate(e.target.value)} className="glass-input !h-10 text-xs w-full" />
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Motivo</label>
+                                <input type="text" value={edReason} onChange={(e) => setEdReason(e.target.value)} className="glass-input !h-10 text-xs w-full" placeholder="Es. traffico, imprevisto…" />
+                            </div>
+                            {!isApprover && (
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Nota per l'amministrazione (opzionale)</label>
+                                    <input type="text" value={edNote} onChange={(e) => setEdNote(e.target.value)} className="glass-input !h-10 text-xs w-full" placeholder="Perché va corretto…" />
+                                </div>
+                            )}
+                            {!isApprover && <p className="text-[11px] text-amber-300/80">La modifica sarà effettiva solo dopo l'approvazione dell'amministrazione.</p>}
+                            <div className="pt-1 flex gap-3">
+                                <button type="button" onClick={() => setEditRow(null)} className="flex-1 h-11 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs transition-all border border-white/5">Annulla</button>
+                                <button type="button" onClick={submitEdit} disabled={actBusy === editRow.id} className="flex-[2] h-11 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition-all shadow-lg shadow-amber-500/25 disabled:opacity-50">{actBusy === editRow.id ? "…" : isApprover ? "Salva" : "Invia richiesta"}</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* #111: cancellazione ritardo — diretta per l'amministrazione, richiesta per lo store manager */}
+            {cancelRow && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setCancelRow(null)}>
+                    <div className="glass-card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-5">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2"><Trash2 className="w-5 h-5 text-rose-400" />{isApprover ? "Elimina ritardo" : "Chiedi cancellazione"}</h3>
+                            <button onClick={() => setCancelRow(null)} className="p-1 hover:bg-white/5 rounded-lg transition-colors"><X className="w-5 h-5 text-slate-500" /></button>
+                        </div>
+                        <div className="space-y-4">
+                            <p className="text-sm text-slate-300">Ritardo di <b className="text-white">{cancelRow.employee_name}</b> del {formatDate(cancelRow.date)}{cancelRow.store ? ` · ${cancelRow.store}` : ""}.</p>
+                            {isApprover ? (
+                                <p className="text-xs text-rose-300/80 bg-rose-500/5 border border-rose-500/20 rounded-lg p-3">L'eliminazione è definitiva.</p>
+                            ) : (
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Motivo della cancellazione</label>
+                                    <input type="text" value={cancelNote} onChange={(e) => setCancelNote(e.target.value)} className="glass-input !h-10 text-xs w-full" placeholder="Perché va cancellato…" />
+                                    <p className="text-[11px] text-amber-300/80">La cancellazione sarà effettiva solo dopo l'approvazione dell'amministrazione.</p>
+                                </div>
+                            )}
+                            <div className="pt-1 flex gap-3">
+                                <button type="button" onClick={() => setCancelRow(null)} className="flex-1 h-11 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs transition-all border border-white/5">Annulla</button>
+                                <button type="button" onClick={submitCancel} disabled={actBusy === cancelRow.id} className={cn("flex-[2] h-11 rounded-xl text-white font-bold text-xs transition-all disabled:opacity-50", isApprover ? "bg-rose-500 hover:bg-rose-600 shadow-lg shadow-rose-500/25" : "bg-amber-500 hover:bg-amber-600 shadow-lg shadow-amber-500/25")}>{actBusy === cancelRow.id ? "…" : isApprover ? "Elimina" : "Invia richiesta"}</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
