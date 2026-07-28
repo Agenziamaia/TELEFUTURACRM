@@ -156,6 +156,15 @@ export default function RicercaContratto() {
     const [offPick, setOffPick] = useState("");
     const [catalogoBrand, setCatalogoBrand] = useState<{ slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[] } | null>(null);
     const _catFiltroCache = useRef<Record<string, { slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[] }>>({});
+    // MARGINALITÀ a DUE LAYER (Luca 28/07): prima il TIPO (prodotti/servizi,
+    // da marg_categories.kind — Kasko/Servizi sono servizi; SIM/ESIM/Telefono
+    // Cash/Prodotti sono prodotti), poi gli ARTICOLI del listino di quel tipo.
+    // Attivi solo con la sola tessera Marginalità selezionata.
+    const [margTipo, setMargTipo] = useState<"" | "prodotti" | "servizi">("");
+    const [margArticoli, setMargArticoli] = useState<string[]>([]);
+    const [margPick, setMargPick] = useState("");
+    const [margListino, setMargListino] = useState<{ name: string; kind: string }[] | null>(null);
+    const _margCache = useRef<{ name: string; kind: string }[] | null>(null);
     const [filterNegozio, setFilterNegozio] = useState("");
     const [filterCodiceAttivazione, setFilterCodiceAttivazione] = useState("");
     const [filterCliente, setFilterCliente] = useState("");
@@ -326,6 +335,33 @@ export default function RicercaContratto() {
         filterProdotti.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
         return Array.from(set).sort();
     }, [catalogoBrand, filterProdotti]);
+    // Sola tessera Marginalità attiva → si accendono i due layer dedicati.
+    const soloMarg = !!soloBrandLabel && ["marginalità", "marginalita"].includes(soloBrandLabel.toLowerCase());
+    useEffect(() => {
+        if (!soloMarg) { setMargTipo(""); setMargArticoli([]); setMargPick(""); return; }
+        if (_margCache.current) { setMargListino(_margCache.current); return; }
+        let alive = true;
+        (async () => {
+            const [rc, ri] = await Promise.all([
+                supabase.from("marg_categories").select("id, kind"),
+                // anche gli articoli spenti: lo storico li contiene
+                supabase.from("marg_items").select("name, category_id"),
+            ]);
+            const kindById: Record<string, string> = {};
+            (rc.data ?? []).forEach((c: { id: string; kind: string }) => { kindById[c.id] = c.kind; });
+            const list = (ri.data ?? []).map((i: { name: string; category_id: string }) => ({ name: i.name, kind: kindById[i.category_id] || "prodotti" }));
+            // voce AUTO del Registra (telefono a rate/listino): non sta nel
+            // listino marg_items ma nelle vendite c'è, ed è un prodotto.
+            list.push({ name: "Telefono TNP (listino)", kind: "prodotti" });
+            const uniq = Array.from(new Map(list.map(x => [x.name, x])).values()).sort((a, b) => a.name.localeCompare(b.name));
+            _margCache.current = uniq;
+            if (alive) setMargListino(uniq);
+        })();
+        return () => { alive = false; };
+    }, [soloMarg]);
+    const margArticoliDisponibili = useMemo(
+        () => (margListino ?? []).filter(x => margTipo && x.kind === margTipo).map(x => x.name),
+        [margListino, margTipo]);
     const lockedStores = !isGlobalView && visStores.length ? negozioInValues(visStores) : null;
     const visKey = (lockedStores || []).join("|");
     // Finche' la lista visibilita' non e' arrivata NON si interroga (si eviterebbe
@@ -437,6 +473,16 @@ export default function RicercaContratto() {
             if (selBrands.size > 0) query = query.in("brand", Array.from(selBrands));
             else query = query.neq("brand", "Marginalità").neq("brand", "Extra");
 
+            // MARGINALITÀ a due layer: gli articoli scelti vincono; col solo
+            // tipo selezionato passano tutti gli articoli di quel tipo.
+            if (soloMarg && (margArticoli.length || margTipo)) {
+                if (margArticoli.length) query = query.in("prodotto", margArticoli);
+                else {
+                    const names = (margListino ?? []).filter(x => x.kind === margTipo).map(x => x.name);
+                    if (names.length) query = query.in("prodotto", names);
+                }
+            }
+
             if (filterCliente) {
                 const safe = filterCliente.trim().replace(/[",()]/g, "");
                 if (safe) {
@@ -506,13 +552,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione]);
+    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|")]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|"), (margListino ?? []).length]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -1012,18 +1058,58 @@ export default function RicercaContratto() {
                     {/* Filtro Brand rimosso: sostituito dalle tessere brand (segn.57).
                         filterBrand resta pilotato dalle tessere. */}
 
-                    {/* 4-bis. Categoria (tassonomia canonica): filtrabile sempre */}
-                    <div>
+                    {/* 4-bis. Categoria (tassonomia canonica): filtrabile sempre —
+                        TRANNE con la sola Marginalità, dove è tutta una categoria
+                        e al suo posto valgono i due layer dedicati. */}
+                    {!soloMarg && <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Categoria</label>
                         <select className="glass-input w-full" value={filterCategoria} onChange={e => setFilterCategoria(e.target.value)}>
                             <option value="">Tutte le categorie</option>
                             {CATEGORIE_CANONICHE.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
-                    </div>
+                    </div>}
+
+                    {/* MARGINALITÀ layer 1 (Luca 28/07): il flusso si divide in
+                        prodotti e servizi (dal kind delle categorie del listino). */}
+                    {soloMarg && <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Tipo <span className="text-slate-500 font-normal">— Marginalità</span></label>
+                        <select className="glass-input w-full" value={margTipo}
+                            onChange={e => { setMargTipo(e.target.value as "" | "prodotti" | "servizi"); setMargArticoli([]); setMargPick(""); }}>
+                            <option value="">Prodotti e servizi</option>
+                            <option value="prodotti">🛍 Prodotti</option>
+                            <option value="servizi">🛠 Servizi</option>
+                        </select>
+                    </div>}
+
+                    {/* MARGINALITÀ layer 2: gli articoli del listino del tipo scelto
+                        (multi, come i prodotti del catalogo). */}
+                    {soloMarg && <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Articolo <span className="text-slate-500 font-normal">— Marginalità</span></label>
+                        <div className="flex gap-2">
+                            <select className="glass-input w-full disabled:opacity-50" value={margPick} onChange={e => setMargPick(e.target.value)} disabled={!margTipo}>
+                                <option value="">{!margTipo ? "Prima scegli Prodotti o Servizi" : margArticoli.length ? "Aggiungi articolo…" : `Tutti i ${margTipo}`}</option>
+                                {margArticoliDisponibili.filter(a => !margArticoli.includes(a)).map(a => <option key={a} value={a}>{a}</option>)}
+                            </select>
+                            <button type="button" title="Aggiungi articolo al filtro"
+                                onClick={() => { if (margPick) { setMargArticoli(prev => prev.includes(margPick) ? prev : [...prev, margPick]); setMargPick(""); } }}
+                                disabled={!margPick}
+                                className="shrink-0 w-10 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed">+</button>
+                        </div>
+                        {margArticoli.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                {margArticoli.map(a => (
+                                    <span key={a} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-emerald-500/15 text-emerald-200 border border-emerald-500/30">
+                                        {a}
+                                        <button type="button" onClick={() => setMargArticoli(prev => prev.filter(x => x !== a))} className="opacity-70 hover:opacity-100">✕</button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>}
 
                     {/* 5. Prodotto (multiplo, dal CATALOGO): serve UN solo brand attivo
                         dalle tessere, altrimenti le variabili esplodono (regola Luca). */}
-                    <div>
+                    {!soloMarg && <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
                         <div className="flex gap-2">
                             <select className="glass-input w-full disabled:opacity-50" value={prodPick} onChange={e => setProdPick(e.target.value)} disabled={!catalogoBrand}>
@@ -1045,11 +1131,11 @@ export default function RicercaContratto() {
                                 ))}
                             </div>
                         )}
-                    </div>
+                    </div>}
 
                     {/* 5-bis. Offerta (multiplo, dal CATALOGO): stessa regola del prodotto;
                         se ci sono prodotti selezionati offre solo le loro offerte. */}
-                    <div>
+                    {!soloMarg && <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Offerta {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
                         <div className="flex gap-2">
                             <select className="glass-input w-full disabled:opacity-50" value={offPick} onChange={e => setOffPick(e.target.value)} disabled={!catalogoBrand}>
@@ -1071,7 +1157,7 @@ export default function RicercaContratto() {
                                 ))}
                             </div>
                         )}
-                    </div>
+                    </div>}
 
                     {/* 6. Negozio di attivazione — la tendina offre SOLO i negozi visibili
                         all'utente (uniqueNegozi arriva dalla query gia' filtrata RBAC), quindi
@@ -1132,7 +1218,7 @@ export default function RicercaContratto() {
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterCategoria(""); setFilterOfferte([]); setOffPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterCategoria(""); setFilterOfferte([]); setOffPick(""); setMargTipo(""); setMargArticoli([]); setMargPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportCsv}>
                         Scarica CSV
                     </button>
