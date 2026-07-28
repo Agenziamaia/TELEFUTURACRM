@@ -16,7 +16,7 @@ type Msg = { id: string; direction: string; from_addr: string | null; from_name:
 
 const api = (path: string, body: unknown) => fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
 
-export function EmailInbox({ embedded = false }: { embedded?: boolean }) {
+export function EmailInbox({ embedded = false, componiA = null }: { embedded?: boolean; componiA?: string | null }) {
     const { user } = useAuth();
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [selAcc, setSelAcc] = useState<string | null>(null);
@@ -57,6 +57,15 @@ export function EmailInbox({ embedded = false }: { embedded?: boolean }) {
         if (visibleAccounts.length === 0) { if (selAcc) setSelAcc(null); return; }
         if (!selAcc || !visibleAccounts.some(a => a.id === selAcc)) { setSelAcc(visibleAccounts[0].id); setSelConv(null); }
     }, [visibleAccounts, selAcc]);
+
+    // DEEP-LINK dal CRM (Luca 28/07): /chat?mail=<indirizzo> arriva qui come
+    // componiA e apre SUBITO la composizione col destinatario precompilato
+    // (bottone ✉️ accanto alla mail del cliente). Consumato alla chiusura.
+    const [prefillTo, setPrefillTo] = useState<string | null>(componiA || null);
+    useEffect(() => { if (componiA) setPrefillTo(componiA); }, [componiA]);
+    useEffect(() => {
+        if (prefillTo && selAcc) setComposeOpen(true);
+    }, [prefillTo, selAcc]);
 
     // scarica la posta nuova per la casella selezionata + ricarica le conversazioni
     const aggiorna = async (accId?: string) => {
@@ -219,7 +228,7 @@ export function EmailInbox({ embedded = false }: { embedded?: boolean }) {
             )}
 
             {connectModal && <ConnectModal onClose={() => { setConnectModal(false); loadAccounts(); }} ownerUserId={user?.id} negozio={user?.negozio} />}
-            {composeOpen && selAcc && <ComposeModal accountId={selAcc} userId={user?.id} onClose={() => setComposeOpen(false)} onSent={(cid) => { setComposeOpen(false); if (cid) { /* la conversazione comparira' col polling */ } }} />}
+            {composeOpen && selAcc && <ComposeModal accountId={selAcc} userId={user?.id} defaultTo={prefillTo || ""} onClose={() => { setComposeOpen(false); setPrefillTo(null); }} onSent={(cid) => { setComposeOpen(false); setPrefillTo(null); if (cid) { /* la conversazione comparira' col polling */ } }} />}
         </div>
     );
 }
@@ -262,8 +271,8 @@ function ConnectModal({ onClose, ownerUserId, negozio }: { onClose: () => void; 
 }
 
 // Modal: componi una nuova email (destinatario + oggetto + testo).
-function ComposeModal({ accountId, userId, onClose, onSent }: { accountId: string; userId?: string; onClose: () => void; onSent: (cid?: string) => void }) {
-    const [to, setTo] = useState(""); const [subject, setSubject] = useState(""); const [body, setBody] = useState(""); const [busy, setBusy] = useState(false);
+function ComposeModal({ accountId, userId, defaultTo = "", onClose, onSent }: { accountId: string; userId?: string; defaultTo?: string; onClose: () => void; onSent: (cid?: string) => void }) {
+    const [to, setTo] = useState(defaultTo); const [subject, setSubject] = useState(""); const [body, setBody] = useState(""); const [busy, setBusy] = useState(false);
     const invia = async () => {
         if (!to.trim() || !body.trim()) return;
         setBusy(true);

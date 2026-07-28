@@ -226,7 +226,16 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                         >💬</Link>
                                     </>)}
                                 </div>
-                                <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} />
+                                <div className="flex items-center gap-2">
+                                    <div className="flex-1 min-w-0"><InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} /></div>
+                                    {cliente.email && (
+                                        <Link
+                                            href={"/chat?mail=" + encodeURIComponent(cliente.email)}
+                                            title="Scrivi una email dal CRM: apre la webmail già in composizione col destinatario caricato"
+                                            className="px-2.5 py-2 rounded-lg border border-sky-500/40 bg-sky-500/15 text-sky-300 hover:bg-sky-500/30 text-sm shrink-0"
+                                        >✉️</Link>
+                                    )}
+                                </div>
                                 <InfoItem icon={<FileText className="w-4 h-4" />} label={cliente.tipo === 'business' ? 'Partita IVA' : 'Codice Fiscale'} value={cliente.cf_piva || "—"} mono />
                                 {(cliente as { data_nascita?: string | null }).data_nascita && (
                                     <InfoItem icon={<Calendar className="w-4 h-4" />} label="Data di nascita"
@@ -1250,6 +1259,12 @@ export default function ClientiPage() {
                                                         <div className="flex items-center gap-2 text-slate-300">
                                                             <Mail className="w-3.5 h-3.5 text-slate-500" />
                                                             <span className="text-xs">{cliente.email}</span>
+                                                            {cliente.email && (
+                                                                <Link href={"/chat?mail=" + encodeURIComponent(cliente.email)}
+                                                                    onClick={e => e.stopPropagation()}
+                                                                    title="Scrivi una email dal CRM (webmail già in composizione)"
+                                                                    className="px-1.5 py-0.5 rounded border border-sky-500/40 bg-sky-500/15 text-sky-300 hover:bg-sky-500/30 text-[11px] shrink-0">✉️</Link>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </td>

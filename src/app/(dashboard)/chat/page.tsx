@@ -72,12 +72,16 @@ function ChatPageInner() {
 
   // Interruttore Chat interna <-> WhatsApp (stessa pagina, nessuna voce di menu).
   // La scelta resta memorizzata tra una visita e l'altra.
-  // deep-link: /chat?wa=<numero> apre direttamente WhatsApp sul cliente
+  // deep-link: /chat?wa=<numero> apre direttamente WhatsApp sul cliente;
+  // /chat?mail=<indirizzo> apre la webmail già in composizione (Luca 28/07).
   const searchParams = useSearchParams();
   const waParam = searchParams.get("wa");
+  const mailParam = searchParams.get("mail");
   const [mode, setMode] = useState<"chat" | "whatsapp" | "email">(() => {
     if (typeof window === "undefined") return "chat";
-    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("wa")) return "whatsapp";
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.get("wa")) return "whatsapp";
+    if (qs.get("mail")) return "email";
     return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp" | "email") || "chat";
   });
   useEffect(() => { try { localStorage.setItem("crm_chat_mode", mode); } catch { } }, [mode]);
@@ -258,7 +262,7 @@ function ChatPageInner() {
       {mode === "whatsapp" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={waParam} /></div>
       ) : mode === "email" ? (
-        <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded /></div>
+        <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} /></div>
       ) : (
       <div className="flex-1 min-h-0 flex overflow-hidden">
       {/* ── LEFT: conversation list ─────────────────────────────── */}
