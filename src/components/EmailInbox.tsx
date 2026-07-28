@@ -31,21 +31,19 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const { stores: myStores } = useVisibleStores();
 
-    // visibilita' come WhatsApp: admin/dev/amministrativo tutte; store_manager il
-    // proprio negozio; gli altri solo le proprie caselle.
-    // SICUREZZA: il dev (ruolo tecnico) NON vede le caselle altrui. Le email di
-    // negozio sono aziendali, quindi admin e amministrativo mantengono la vista
-    // completa; lo store manager il proprio negozio; gli altri solo le proprie.
-    const scope: "all" | "store" | "own" = useMemo(() => {
+    // VISIBILITÀ (Luca 28/07): NESSUNA vista "tutte le caselle" — nemmeno per
+    // amministrazione o admin. Ognuno vede le PROPRIE; lo store manager anche
+    // quella del suo negozio (la casella è del punto vendita). L'admin ispeziona
+    // le altrui SOLO impersonando la persona dal "Vedi come" in alto: lì lo
+    // user effettivo diventa il suo, e questa regola fa il resto da sola.
+    const scope: "store" | "own" = useMemo(() => {
         const role = user?.role || "";
-        if (["admin", "amministrativo"].includes(role)) return "all";
         if (role === "store_manager") return "store";
         return "own";
     }, [user?.role]);
     const visibleAccounts = useMemo(() => {
-        if (scope === "all") return accounts;
         if (scope === "own") return accounts.filter(a => a.owner_user_id === user?.id);
-        return accounts.filter(a => a.negozio && myStores.some(s => sameStore(a.negozio, s)));
+        return accounts.filter(a => a.owner_user_id === user?.id || (a.negozio && myStores.some(s => sameStore(a.negozio, s))));
     }, [accounts, scope, user?.id, myStores]);
 
     const loadAccounts = async () => {

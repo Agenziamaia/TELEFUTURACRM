@@ -19,6 +19,7 @@ import { useRoles } from "@/lib/useRoles";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
+import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import {
     ROLES,
     AREAS,
@@ -999,7 +1000,8 @@ function UserForm({
                         )}
                     </div>
                     <Field label="Indirizzo di residenza">
-                        <input className="glass-input w-full" value={f.address || ""} onChange={(e) => set("address", e.target.value)} placeholder="Via, civico, CAP, città" />
+                        {/* scegli dalla lista → si compila "Via civico, CAP città" */}
+                        <IndirizzoAutocomplete value={f.address || ""} onChange={(v) => set("address", v)} onPick={(s) => set("address", s.completo)} className="glass-input w-full" placeholder="Via, civico: scegli dalla lista" />
                     </Field>
                     <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
                         <input
@@ -1012,7 +1014,7 @@ function UserForm({
                     </label>
                     {f.different_domicile && (
                         <Field label="Indirizzo di domicilio">
-                            <input className="glass-input w-full" value={f.domicile || ""} onChange={(e) => set("domicile", e.target.value)} placeholder="Via, civico, CAP, città" />
+                            <IndirizzoAutocomplete value={f.domicile || ""} onChange={(v) => set("domicile", v)} onPick={(s) => set("domicile", s.completo)} className="glass-input w-full" placeholder="Via, civico: scegli dalla lista" />
                         </Field>
                     )}
 

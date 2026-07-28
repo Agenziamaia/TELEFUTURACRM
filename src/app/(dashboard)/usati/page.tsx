@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
 import { SelectPersona } from "@/components/SelectPersona";
+import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import {
   Smartphone, Tablet, Laptop, Watch,
   Calendar, Search, User, Building2, CalendarDays,
@@ -1080,7 +1081,7 @@ function AnaFields({ tipoCliente, ana, setAna, inp, lbl }: any) {
       <div><label className={lbl}>Codice Fiscale *</label><input value={ana.cf} onChange={e => setAna({ ...ana, cf: e.target.value })} placeholder="RSSMRA80A01H501U" className={inp} /></div>
       <div><label className={lbl}>Email</label><input value={ana.email} onChange={e => setAna({ ...ana, email: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>Cellulare</label><input value={ana.cellulare} onChange={e => setAna({ ...ana, cellulare: e.target.value })} className={inp} /></div>
-      <div><label className={lbl}>Domicilio</label><input value={ana.domicilio} onChange={e => setAna({ ...ana, domicilio: e.target.value })} className={inp} /></div>
+      <div><label className={lbl}>Domicilio</label><IndirizzoAutocomplete value={ana.domicilio} onChange={v => setAna({ ...ana, domicilio: v })} onPick={s => setAna({ ...ana, domicilio: s.completo })} className={inp} placeholder="Via e civico: scegli dalla lista" /></div>
       <div className="col-span-2"><label className={lbl}>IBAN</label><input value={ana.iban} onChange={e => setAna({ ...ana, iban: e.target.value })} placeholder="IT60X0542811101000000123456" className={inp} /></div>
     </div>
   );
@@ -1093,7 +1094,7 @@ function AnaFields({ tipoCliente, ana, setAna, inp, lbl }: any) {
       <div><label className={lbl}>Email</label><input value={ana.email} onChange={e => setAna({ ...ana, email: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>PEC</label><input value={ana.pec} onChange={e => setAna({ ...ana, pec: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>Codice Univoco / SDI</label><input value={ana.sdi} onChange={e => setAna({ ...ana, sdi: e.target.value })} className={inp} /></div>
-      <div><label className={lbl}>Sede Legale</label><input value={ana.sedeLegale} onChange={e => setAna({ ...ana, sedeLegale: e.target.value })} className={inp} /></div>
+      <div><label className={lbl}>Sede Legale</label><IndirizzoAutocomplete value={ana.sedeLegale} onChange={v => setAna({ ...ana, sedeLegale: v })} onPick={s => setAna({ ...ana, sedeLegale: s.completo })} className={inp} placeholder="Via e civico: scegli dalla lista" /></div>
       <div className="col-span-2"><label className={lbl}>IBAN</label><input value={ana.iban} onChange={e => setAna({ ...ana, iban: e.target.value })} placeholder="IT60X0542811101000000123456" className={inp} /></div>
     </div>
   );

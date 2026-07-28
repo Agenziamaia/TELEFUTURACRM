@@ -9,6 +9,7 @@ import { getDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useStores, useSellers } from "@/lib/org";
+import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 
 // ── COSTANTI ──────────────────────────────────────────────────────────────────
 
@@ -2006,7 +2007,7 @@ export default function InviaPda() {
                           <AField label="Numero Fisso" value={anConsumer.numeroFisso} onChange={v => setAnConsumer(p => ({ ...p, numeroFisso: v }))} pf={clienteFound} ph="06 1234567" />
                           <AField label="Recapito Cellulare" value={anConsumer.cellulare} onChange={v => setAnConsumer(p => ({ ...p, cellulare: v }))} pf={clienteFound} ph="333 1234567" />
                           <AField label="IBAN" value={anConsumer.iban} onChange={v => setAnConsumer(p => ({ ...p, iban: v }))} pf={clienteFound} ph="It00..." mono span2 />
-                          <AField label="Domicilio" value={anConsumer.domicilio} onChange={v => setAnConsumer(p => ({ ...p, domicilio: v }))} pf={clienteFound} ph="Via, Numero, CAP, Città" span2 />
+                          <AFieldIndirizzo label="Domicilio" value={anConsumer.domicilio} onChange={v => setAnConsumer(p => ({ ...p, domicilio: v }))} pf={clienteFound} ph="Via, Numero, CAP, Città" span2 />
                           <div className="col-span-full">
                             <Label text="Note" />
                             <textarea className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500/50 transition-colors"
@@ -2024,7 +2025,7 @@ export default function InviaPda() {
                           <AField label="Pec" value={anBusiness.pec} onChange={v => setAnBusiness(p => ({ ...p, pec: v }))} pf={clienteFound} ph="azienda@pec.it" />
                           <AField label="Codice Univoco / SDI" value={anBusiness.codiceUnivoco} onChange={v => setAnBusiness(p => ({ ...p, codiceUnivoco: v }))} pf={clienteFound} ph="Abc1234" mono />
                           <AField label="IBAN" value={anBusiness.iban} onChange={v => setAnBusiness(p => ({ ...p, iban: v }))} pf={clienteFound} ph="It00..." mono span2 />
-                          <AField label="Sede Legale" value={anBusiness.sedeLegale} onChange={v => setAnBusiness(p => ({ ...p, sedeLegale: v }))} pf={clienteFound} ph="Via, Numero, CAP, Città" span2 />
+                          <AFieldIndirizzo label="Sede Legale" value={anBusiness.sedeLegale} onChange={v => setAnBusiness(p => ({ ...p, sedeLegale: v }))} pf={clienteFound} ph="Via, Numero, CAP, Città" span2 />
                           <div className="col-span-full">
                             <Label text="Note" />
                             <textarea className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white placeholder-slate-600 outline-none focus:border-violet-500/50 transition-colors"
@@ -2401,6 +2402,18 @@ function Pill({ children }) {
     <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-xs font-medium text-slate-300">
       {children}
     </span>
+  );
+}
+
+// INDIRIZZO con AUTOCOMPLETE (Luca 28/07): si sceglie dalla lista e il campo
+// unico si compila con "Via civico, CAP Città"; a mano solo se non trovato.
+function AFieldIndirizzo({ label, value, onChange, pf, ph, span2 }) {
+  return (
+    <div className={`space-y-1.5 ${span2 ? 'col-span-full' : ''}`}>
+      <Label text={label} />
+      <IndirizzoAutocomplete value={value || ""} onChange={onChange} onPick={s => onChange(s.completo)} placeholder={ph}
+        className={`w-full glass-input text-sm rounded-xl py-2.5 px-4 outline-none transition-all ${pf && value ? 'border-emerald-500/50 bg-emerald-500/5' : ''}`} />
+    </div>
   );
 }
 

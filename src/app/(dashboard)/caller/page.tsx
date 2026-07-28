@@ -21,6 +21,7 @@ import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
+import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 
 /* ─────────────────────────────────────────────────────────────────────
    CONSTANTS
@@ -1743,7 +1744,7 @@ function CallerPageInner() {
                                         {isOutbound && (
                                             <>
                                                 <FormGroup label="Indirizzo Appuntamento">
-                                                    <input className="glass-input rounded-lg py-2 w-full" value={editCall.indirizzo} onChange={(e) => updateField("indirizzo", e.target.value)} placeholder="Via, Città..." />
+                                                    <IndirizzoAutocomplete value={editCall.indirizzo} onChange={(v) => updateField("indirizzo", v)} onPick={(s) => updateField("indirizzo", s.completo)} className="glass-input rounded-lg py-2 w-full" placeholder="Via e civico: scegli dalla lista" />
                                                 </FormGroup>
                                                 <FormGroup label="Agente Assegnato">
                                                     <SelectPersona value={editCall.agente} onChange={(v) => updateField("agente", v)} opzioni={AGENTI} placeholder="Scrivi l'agente…" className="glass-input rounded-lg py-2 w-full" />
