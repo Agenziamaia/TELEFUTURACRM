@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { SelectPersona } from "@/components/SelectPersona";
+import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video } from "lucide-react";
 import { cn } from "@/utils";
 import { usePageView } from "@/lib/pageView";
@@ -1630,7 +1631,7 @@ export default function Calendario() {
                             {newAppt.type === "outgoing" && (
                                 <div>
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Indirizzo cliente *</label>
-                                    <input type="text" className="glass-input w-full" placeholder="Via, Numero civico, Città" value={newAppt.customerAddress} onChange={e => setNewAppt(p => ({ ...p, customerAddress: e.target.value }))} required />
+                                    <IndirizzoAutocomplete value={newAppt.customerAddress} onChange={v => setNewAppt(p => ({ ...p, customerAddress: v }))} onPick={s => setNewAppt(p => ({ ...p, customerAddress: s.completo }))} className="glass-input w-full" placeholder="Via e civico: scegli dalla lista" />
                                 </div>
                             )}
 

@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
+import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
 import { seesWholeStore, seesAllStores } from "@/lib/roles";
 import { usePageView } from "@/lib/pageView";
@@ -701,10 +702,11 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
 
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Indirizzo</label>
-                                <input
-                                    type="text"
+                                {/* scegli dalla lista → CAP e città si compilano da soli */}
+                                <IndirizzoAutocomplete
                                     value={indirizzo}
-                                    onChange={(e) => setIndirizzo(e.target.value)}
+                                    onChange={setIndirizzo}
+                                    onPick={(s) => { setIndirizzo(s.indirizzo); if (s.cap) setCap(s.cap); if (s.citta) setCitta(s.citta); }}
                                     className="w-full glass-input text-sm rounded-xl py-3"
                                     placeholder="Via Esempio 123"
                                 />

@@ -58,7 +58,8 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     // VISIBILITÀ (Luca 28/07): NESSUNA vista "tutte le caselle" — nemmeno per
     // amministrazione o admin. Ognuno vede le PROPRIE; lo store manager anche
     // quella del suo negozio (la casella è del punto vendita). L'admin ispeziona
-    // le altrui SOLO impersonando la persona dal "Vedi come" in alto.
+    // le altrui SOLO impersonando la persona dal "Vedi come" in alto: lì lo
+    // user effettivo diventa il suo, e questa regola fa il resto da sola.
     const scope: "store" | "own" = useMemo(() => {
         const role = user?.role || "";
         if (role === "store_manager") return "store";
