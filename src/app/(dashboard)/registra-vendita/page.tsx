@@ -212,23 +212,13 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
       </div>
       <div style={{flex:1,overflow:"auto",padding:16}}>
         {!selProd?(MARG_PRODUCTS[selCat].grouped?(
-          // #102: SIM/ESIM raggruppate per brand, logo del brand su ogni tipologia
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            {SIM_BRAND_ORDER.filter(bk=>MARG_PRODUCTS[selCat].items.some(p=>p.brand===bk)).map(bk=>{
-              const info=SIM_BRANDS[bk];
-              return (<div key={bk}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,paddingBottom:6,borderBottom:`1px solid ${info.color}22`}}>
-                  <img src={info.logo} alt={info.label} style={{height:20,width:"auto",maxWidth:74,objectFit:"contain"}}/>
-                  <span style={{fontSize:12,fontWeight:800,color:info.color,letterSpacing:0.3}}>{info.label}</span>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
-                  {MARG_PRODUCTS[selCat].items.filter(p=>p.brand===bk).map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"12px 8px",borderRadius:12,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-                    <img src={info.logo} alt="" style={{height:22,width:"auto",maxWidth:"78%",objectFit:"contain"}}/>
-                    <span style={{fontSize:10,fontWeight:600,color:"#f8fafc",lineHeight:1.2}}>{p.name}</span>
-                  </button>))}
-                </div>
-              </div>);
-            })}
+          // #102: SIM/ESIM affiancate e ordinate per brand (senza titolo), logo grande del brand
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
+            {SIM_BRAND_ORDER.flatMap(bk=>MARG_PRODUCTS[selCat].items.filter(p=>p.brand===bk)).map(p=>{const info=SIM_BRANDS[p.brand]||{color:"#64748b",logo:"/logo-crm.png"};return (
+              <button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"14px 8px",borderRadius:12,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                <img src={info.logo} alt="" style={{height:40,width:"auto",maxWidth:"88%",objectFit:"contain"}}/>
+                <span style={{fontSize:10,fontWeight:600,color:"#f8fafc",lineHeight:1.2}}>{p.name}</span>
+              </button>);})}
           </div>
         ):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
           {MARG_PRODUCTS[selCat].items.map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"14px 8px",borderRadius:12,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
