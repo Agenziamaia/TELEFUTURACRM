@@ -384,7 +384,11 @@ export default function Calendario() {
     // ── Vista MESE / SETTIMANA ────────────────────────────────────────────────
     // La settimanale parte sempre dalla settimana in corso (lunedi'); i giorni
     // mostrano gli impegni gia' espansi e cliccabili, il pannello a destra resta.
-    const [calView, setCalView] = useState<"month" | "week">("month");
+    const [calView, setCalView] = useState<"month" | "week" | "day">("month");
+    // VISTA GIORNO (Luca 29/07): fasce orarie in verticale stile Google
+    // Calendar — tutto il dettaglio della giornata a colpo d'occhio.
+    const [dayDate, setDayDate] = useState(() =>
+        `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`);
     const addDays = (dateStr: string, n: number) => {
         const d = new Date(dateStr + "T12:00:00");
         d.setDate(d.getDate() + n);
@@ -453,8 +457,16 @@ export default function Calendario() {
         return false;
     });
 
+    // ORARIO → MINUTI ("9:30"→570). Il vecchio ordinamento era ALFABETICO
+    // sulle stringhe: "7:00" finiva dopo "15:00" (Luca 29/07). Senza orario
+    // si va in fondo alla giornata.
+    const minutiDi = (t?: string | null) => {
+        const m = String(t || "").match(/^(\d{1,2})[:.](\d{2})/);
+        return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 24 * 60;
+    };
     const apptsByDate = (dateStr: string) =>
-        visibleAppointments.filter(a => a.date === dateStr);
+        visibleAppointments.filter(a => a.date === dateStr)
+            .sort((a, b) => minutiDi(a.time) - minutiDi(b.time));
 
     const tasksByDate = (dateStr: string) => {
         if (!catOn("task")) return [];
@@ -1025,19 +1037,20 @@ export default function Calendario() {
                     {/* Navigazione + selettore vista Mese/Settimana */}
                     <div className="flex items-center justify-between mb-6 gap-3">
                         <button
-                            onClick={calView === "month" ? prevMonth : () => setWeekStart(addDays(weekStart, -7))}
+                            onClick={calView === "month" ? prevMonth : calView === "week" ? () => setWeekStart(addDays(weekStart, -7)) : () => { const d = addDays(dayDate, -1); setDayDate(d); selectDate(d); }}
                             className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300"
                         >
                             <ChevronLeft className="w-5 h-5" />
                         </button>
                         <h3 className="text-xl font-bold text-white text-center flex-1 truncate">
-                            {calView === "month" ? `${MONTHS_IT[viewMonth]} ${viewYear}` : weekLabel}
+                            {calView === "month" ? `${MONTHS_IT[viewMonth]} ${viewYear}` : calView === "week" ? weekLabel
+                                : (() => { const d = new Date(dayDate + "T12:00:00"); return `${DAYS_IT[(d.getDay() + 6) % 7]} ${d.getDate()} ${MONTHS_IT[d.getMonth()]} ${d.getFullYear()}`; })()}
                         </h3>
                         <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 shrink-0">
-                            {([["month", "Mese"], ["week", "Settimana"]] as [typeof calView, string][]).map(([id, lab]) => (
+                            {([["month", "Mese"], ["week", "Settimana"], ["day", "Giorno"]] as [typeof calView, string][]).map(([id, lab]) => (
                                 <button
                                     key={id}
-                                    onClick={() => setCalView(id)}
+                                    onClick={() => { setCalView(id); if (id === "day") selectDate(dayDate); }}
                                     className={cn(
                                         "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                                         calView === id ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white",
@@ -1048,7 +1061,7 @@ export default function Calendario() {
                             ))}
                         </div>
                         <button
-                            onClick={calView === "month" ? nextMonth : () => setWeekStart(addDays(weekStart, 7))}
+                            onClick={calView === "month" ? nextMonth : calView === "week" ? () => setWeekStart(addDays(weekStart, 7)) : () => { const d = addDays(dayDate, 1); setDayDate(d); selectDate(d); }}
                             className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300"
                         >
                             <ChevronRight className="w-5 h-5" />
@@ -1139,7 +1152,7 @@ export default function Calendario() {
                         <div className="grid grid-cols-7 gap-1.5">
                             {weekDays.map((dateStr) => {
                                 const wd = new Date(dateStr + "T12:00:00");
-                                const dayAppts = apptsByDate(dateStr).slice().sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+                                const dayAppts = apptsByDate(dateStr);   // già in ordine di orario REALE
                                 const dayTasks = tasksByDate(dateStr);
                                 const dayMeetings = meetingsByDate(dateStr);
                                 const isToday = dateStr === todayStr;
@@ -1208,6 +1221,97 @@ export default function Calendario() {
                             })}
                         </div>
                     )}
+
+                    {/* VISTA GIORNO (Luca 29/07): ore scandite in verticale stile Google
+                        Calendar — tutta la giornata a colpo d'occhio, dettaglio inline. */}
+                    {calView === "day" && (() => {
+                        const H0 = 7, H1 = 22, PX = 64;                     // 07–22, 64px l'ora
+                        const dayAppts = apptsByDate(dayDate);
+                        const dayTasks = tasksByDate(dayDate);
+                        const dayMeetings = meetingsByDate(dayDate);
+                        const senzaOra = dayTasks.filter(t => !t.time);
+                        type Ev = { key: string; min: number; durata: number; titolo: string; sotto: string; extra?: string; classi: string; onClick: () => void };
+                        const evs: Ev[] = [
+                            ...dayAppts.filter(a => minutiDi(a.time) < 24 * 60).map((a): Ev => ({
+                                key: `a-${a.id}`, min: minutiDi(a.time), durata: 60,
+                                titolo: `${a.time} · ${a.customerName}`,
+                                sotto: a.type === "incoming" ? `🏬 ${a.store || "Inbound"}` : `🧑‍💼 ${a.agente || "—"}${a.customerAddress ? " · " + a.customerAddress : ""}`,
+                                extra: a.customerPhone ? `📞 ${a.customerPhone}` : undefined,
+                                classi: a.type === "incoming" ? "border-blue-500/40 bg-blue-500/15" : a.type === "self_generated" ? "border-purple-500/40 bg-purple-500/15" : "border-amber-500/40 bg-amber-500/15",
+                                onClick: () => { setSelectedAppointment(a); setShowModal(true); },
+                            })),
+                            ...dayTasks.filter(t => t.time && minutiDi(t.time) < 24 * 60).map((t): Ev => ({
+                                key: `t-${t.id}`, min: minutiDi(t.time), durata: 45,
+                                titolo: `${t.time} · ${t.title}`, sotto: t.assignedToStore || t.assignedTo || "",
+                                classi: "border-emerald-500/40 bg-emerald-500/15",
+                                onClick: () => selectDate(dayDate),
+                            })),
+                            ...dayMeetings.map((m): Ev => ({
+                                key: `m-${m.id}`, min: minutiDi(m.startTime),
+                                durata: Math.max(30, minutiDi(m.endTime) - minutiDi(m.startTime) || 60),
+                                titolo: `${m.startTime}${m.endTime ? "–" + m.endTime : ""} · ${m.title}`, sotto: m.brand || "Riunione",
+                                classi: "border-sky-500/40 bg-sky-500/15",
+                                onClick: () => { setSelectedMeeting(m); setShowMeetingDetailModal(true); },
+                            })),
+                        ].sort((x, y) => x.min - y.min);
+                        // corsie per le sovrapposizioni (eventi contemporanei affiancati)
+                        const fineCorsie: number[] = [];
+                        const posiz = evs.map((e) => {
+                            let lane = fineCorsie.findIndex(f => f <= e.min);
+                            if (lane === -1) { lane = fineCorsie.length; fineCorsie.push(0); }
+                            fineCorsie[lane] = e.min + e.durata;
+                            return { ...e, lane };
+                        });
+                        const nCorsie = Math.max(1, fineCorsie.length);
+                        const yDi = (min: number) => Math.max(0, Math.min((H1 - H0) * 60, min - H0 * 60)) / 60 * PX;
+                        const adesso = new Date();
+                        const oraLinea = dayDate === todayStr ? adesso.getHours() * 60 + adesso.getMinutes() : null;
+                        return (
+                            <div>
+                                {senzaOra.length > 0 && (
+                                    <div className="mb-3 flex flex-wrap gap-1.5 items-center">
+                                        <span className="text-[10px] uppercase tracking-wider text-slate-500">Tutto il giorno:</span>
+                                        {senzaOra.map(t => (
+                                            <button key={`sg-${t.id}`} onClick={() => selectDate(dayDate)}
+                                                className="px-2 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-[11px] text-emerald-200 hover:bg-emerald-500/25">
+                                                {t.title}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="relative rounded-xl border border-white/8 bg-white/[0.02] overflow-hidden" style={{ height: (H1 - H0) * PX }}>
+                                    {Array.from({ length: H1 - H0 }, (_, i) => (
+                                        <div key={i} className="absolute left-0 right-0 border-t border-white/5" style={{ top: i * PX }}>
+                                            <span className="absolute -top-2.5 left-2 text-[10px] font-mono text-slate-500 bg-transparent">{String(H0 + i).padStart(2, "0")}:00</span>
+                                        </div>
+                                    ))}
+                                    {oraLinea !== null && oraLinea >= H0 * 60 && oraLinea <= H1 * 60 && (
+                                        <div className="absolute left-0 right-0 z-20 pointer-events-none" style={{ top: yDi(oraLinea) }}>
+                                            <div className="border-t-2 border-rose-500" />
+                                            <span className="absolute -top-2 left-1 w-2.5 h-2.5 rounded-full bg-rose-500" />
+                                        </div>
+                                    )}
+                                    {posiz.map((e) => (
+                                        <button key={e.key} onClick={e.onClick}
+                                            className={cn("absolute z-10 text-left rounded-lg border px-2 py-1 overflow-hidden hover:brightness-125 transition-all", e.classi)}
+                                            style={{
+                                                top: yDi(e.min) + 1,
+                                                height: Math.max(30, yDi(e.min + e.durata) - yDi(e.min) - 2),
+                                                left: `calc(52px + ${e.lane} * ((100% - 60px) / ${nCorsie}))`,
+                                                width: `calc((100% - 60px) / ${nCorsie} - 4px)`,
+                                            }}>
+                                            <div className="text-[11px] font-bold text-slate-100 truncate">{e.titolo}</div>
+                                            <div className="text-[10px] text-slate-300 truncate">{e.sotto}</div>
+                                            {e.extra && <div className="text-[10px] text-slate-400 truncate">{e.extra}</div>}
+                                        </button>
+                                    ))}
+                                    {posiz.length === 0 && (
+                                        <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-600">Nessun impegno in agenda per questo giorno</div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 {/* Side panel */}
