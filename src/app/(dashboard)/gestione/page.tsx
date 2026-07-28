@@ -7,6 +7,7 @@ import { StatusDropdown, STATUS_OPTIONS, getStatusColor } from "@/components/Sta
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
+import { useStores } from "@/lib/org";
 
 type RawRow = Record<string, unknown> & { clients?: Record<string, unknown> | null };
 type GestioneRow = {
@@ -15,6 +16,7 @@ type GestioneRow = {
     venditore: string;
     inviato_il: string;
     operatore: string;
+    negozio: string;
     stato: string;
     note: string;
     societa: string;
@@ -53,6 +55,9 @@ function mapToGestioneRow(r: RawRow): GestioneRow {
         venditore: (c.venditore as string) ?? "—",
         inviato_il: inviatoFormatted,
         operatore: (c.operatore_bo as string) ?? "",
+        // "Agenzia" = pratica outbound non ancora attribuita: il back office
+        // sceglie qui il negozio di attivazione (richiesta Luca 28/07).
+        negozio: (c.negozio as string) ?? "",
         stato: (c.stato as string) ?? "—",
         note: (c.note as string) ?? "",
         societa: clienteName,
@@ -80,6 +85,7 @@ export default function GestionePda() {
     const [tableSearch, setTableSearch] = useState("");
 
     const isAdmin = user?.role === "admin" || user?.role === "dev";
+    const stores = useStores();   // per l'attribuzione del negozio dal back office
     // OUTBOUND in SOLA LETTURA (richiesta Luca 25/07): l'agente vede SOLO le sue
     // pratiche, il direttore outbound tutte quelle caricate dal reparto. Nessun
     // potere di modifica sui campi registrati: possono solo (a) integrare i
@@ -165,7 +171,7 @@ export default function GestionePda() {
     const fetchList = useCallback(async () => {
         const { data, error } = await supabase
             .from("contracts")
-            .select("id, brand, categoria, stato, venditore, data_registrazione, data, created_at, note, operatore_bo, clients(ragione_sociale, cf_piva, tipo)")
+            .select("id, brand, categoria, stato, venditore, negozio, data_registrazione, data, created_at, note, operatore_bo, clients(ragione_sociale, cf_piva, tipo)")
             .order("created_at", { ascending: false });
         if (error) {
             setLoadError(error.message);
@@ -321,6 +327,7 @@ export default function GestionePda() {
                                 <th className="px-4 py-4">Venditore</th>
                                 <th className="px-4 py-4">Inviato il</th>
                                 <th className="px-4 py-4 w-32 text-center">Azioni</th>
+                                <th className="px-4 py-4 w-44">Negozio</th>
                                 <th className="px-4 py-4 w-48">Operatore BO</th>
                                 <th className="px-4 py-4 w-48">Stato</th>
                                 <th className="px-4 py-4 w-16 text-center">Note</th>
@@ -331,7 +338,7 @@ export default function GestionePda() {
                         </thead>
                         <tbody>
                             {filtered.length === 0 ? (
-                                <tr><td colSpan={11} className="px-4 py-8 text-center text-slate-500">Nessuna pratica trovata.</td></tr>
+                                <tr><td colSpan={12} className="px-4 py-8 text-center text-slate-500">Nessuna pratica trovata.</td></tr>
                             ) : (
                             filtered.map((row) => (
                                 <tr key={row.id} className="border-b border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition-colors">
@@ -360,6 +367,24 @@ export default function GestionePda() {
                                                 </button>
                                             ))}
                                         </div>
+                                    </td>
+                                    {/* NEGOZIO DI ATTIVAZIONE (Luca 28/07): la pratica arriva
+                                        dall'agente come "Agenzia"; qui il back office decide
+                                        dove attivarla. L'outbound la vede e basta. */}
+                                    <td className="px-2 py-3">
+                                        {readOnly ? (
+                                            <span className={cn("text-xs", row.negozio === "Agenzia" ? "text-violet-300 font-semibold" : "text-slate-400")}>{row.negozio || "—"}</span>
+                                        ) : (
+                                        <select
+                                            className={cn("glass-input w-full text-xs py-1.5 px-2 h-auto", row.negozio === "Agenzia" && "border-violet-400/50 text-violet-200")}
+                                            value={row.negozio}
+                                            onChange={e => updateContract(row.id, { negozio: e.target.value })}
+                                        >
+                                            <option value="Agenzia">Agenzia (da attribuire)</option>
+                                            {stores.map(n => <option key={n} value={n}>{n}</option>)}
+                                            {row.negozio !== "Agenzia" && !stores.includes(row.negozio) && <option value={row.negozio}>{row.negozio || "—"}</option>}
+                                        </select>
+                                        )}
                                     </td>
                                     <td className="px-2 py-3">
                                         {readOnly ? (

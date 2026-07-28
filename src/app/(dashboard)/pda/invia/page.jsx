@@ -532,7 +532,8 @@ export default function InviaPda() {
             prodotto: item.sub,
             stato: "PDA Inviata",
             venditore: venditore || "Sistema",
-            negozio: negozio || "Sede",
+            // pratica dell'AGENZIA: il negozio vero lo assegna il back office in Gestione
+            negozio: "Agenzia",
             codice_attivazione: String(actCode),
             data_registrazione: dateStr,
             data_attivazione: dateStr,
@@ -1852,11 +1853,10 @@ export default function InviaPda() {
                 <div className="mt-6 mb-6">
                   <h4 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest flex items-center gap-2"><Archive className="w-3 h-3 text-emerald-400" /> Attribuzione & Allegati</h4>
 
+                  {/* Il campo NEGOZIO è stato TOLTO (Luca 28/07): la pratica dell'agente
+                      è dell'AGENZIA e di chi l'ha inserita — il negozio di attivazione
+                      lo deciderà il back office dalla Gestione PDA. */}
                   <div className="space-y-4 mb-6 relative z-50">
-                    <div>
-                      <Label text="Negozio" required />
-                      <SearchableSelect options={NEGOZI} value={negozio} onChange={setNegozio} placeholder="— Seleziona —" icon={<Archive className="w-3 h-3 text-emerald-400" />} />
-                    </div>
                     <div>
                       <Label text="Data Vendita" required />
                       <input type="date" className="w-full glass-input text-sm py-2.5 shadow-sm focus:border-violet-500/50" value={dataVendita} onChange={e => setDataVendita(e.target.value)} />
