@@ -4282,7 +4282,10 @@ export default function CRM() {
             data_registrazione: dateStr,
             data_attivazione: dateStr,   // compilata subito: e' la data di registrazione (Luca)
             note: (notaOn && nota.trim()) ? nota.trim() : null,
-            dettagli: { ...(item.details || {}), menu_brand: item.macro },
+            // categoria_catalogo: la categoria FINE del catalogo (es. "Mobile
+            // Wallet" vs "Mobile Ric. Auto") — la macro in `categoria` non basta
+            // a distinguerle e la Ricerca filtra su questa (Luca 28/07).
+            dettagli: { ...(item.details || {}), menu_brand: item.macro, ...(item.catalogo?.categoria ? { categoria_catalogo: item.catalogo.categoria } : {}) },
             is_demo: false
           });
         });

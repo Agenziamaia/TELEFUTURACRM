@@ -155,11 +155,12 @@ export default function RicercaContratto() {
     const [filterOfferte, setFilterOfferte] = useState<string[]>([]);
     const [offPick, setOffPick] = useState("");
     // catNames = categorie del CATALOGO che il brand vende davvero (in ordine
-    // di catalogo); prodsByCat = prodotti per categoria. Mobile Wallet e Mobile
-    // Ric. Auto si presentano come UNICA voce "Mobile": hanno gli stessi
-    // prodotti (Mobile GA/MNP) e lo storico non distingue le due — ogni altra
-    // categoria ha prodotti univoci, quindi il filtro per categoria è esatto.
-    type CatFiltro = { slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[]; catNames: string[]; prodsByCat: Record<string, string[]> };
+    // di catalogo, Wallet e Ric. Auto SEPARATE — Luca 28/07: non c'è altro modo
+    // di distinguere un'offerta wallet da una a ricarica automatica). Il filtro
+    // interroga dettagli->>categoria_catalogo (scritto dal registra e
+    // backfillato sullo storico); le vendite mobile vecchie SENZA il dato
+    // stanno nella voce dedicata "Mobile (storico)".
+    type CatFiltro = { slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[]; catNames: string[]; prodsByCat: Record<string, string[]>; offsByCat: Record<string, string[]> };
     const [catalogoBrand, setCatalogoBrand] = useState<CatFiltro | null>(null);
     const _catFiltroCache = useRef<Record<string, CatFiltro>>({});
     const _catNomi = useRef<{ id: string; nome: string }[] | null>(null);
@@ -308,6 +309,8 @@ export default function RicercaContratto() {
     const soloBrandLabel = selBrands.size === 1 ? Array.from(selBrands)[0] : (selBrands.size === 0 && brandCounts.length === 1 ? brandCounts[0].brand : null);
     const soloSlug = soloBrandLabel ? (LABEL_SLUG[soloBrandLabel] || null) : null;
     const _prevSlug = useRef<string | null>(null);
+    // voce per le vendite mobile vecchie in cui wallet/ric.auto non fu registrato
+    const CAT_MOBILE_STORICO = "Mobile (storico)";
     useEffect(() => {
         if (_prevSlug.current !== soloSlug) {
             _prevSlug.current = soloSlug;
@@ -335,33 +338,42 @@ export default function RicercaContratto() {
             const offByProd: Record<string, string[]> = {};
             offs.forEach((o) => { const pn = nomeById[o.prodotto_id]; if (!pn) return; (offByProd[pn] = offByProd[pn] || []).push(o.nome); });
             Object.keys(offByProd).forEach((k) => { offByProd[k] = Array.from(new Set(offByProd[k])).sort(); });
-            // categorie del brand in ordine di catalogo, con la fusione Wallet+Ric. Auto → "Mobile"
-            const vociByCatId: Record<string, string> = {};
-            (_catNomi.current || []).forEach((c) => { vociByCatId[c.id] = ["Mobile Wallet", "Mobile Ric. Auto"].includes(c.nome) ? "Mobile" : c.nome; });
-            const catNames: string[] = []; const prodsByCat: Record<string, string[]> = {};
+            // categorie REALI del brand in ordine di catalogo + offerte per categoria
+            // (via id prodotto: la stessa offerta può stare in più categorie)
+            const catNames: string[] = []; const prodsByCat: Record<string, string[]> = {}; const offsByCat: Record<string, string[]> = {};
             (_catNomi.current || []).forEach((c) => {
-                const voce = vociByCatId[c.id];
-                const suoi = prods.filter((p: { categoria_id: string }) => p.categoria_id === c.id).map((p: { nome: string }) => p.nome);
-                if (!suoi.length) return;
-                if (!catNames.includes(voce)) catNames.push(voce);
-                prodsByCat[voce] = Array.from(new Set([...(prodsByCat[voce] || []), ...suoi])).sort();
+                const suoiProds = prods.filter((p: { categoria_id: string }) => p.categoria_id === c.id);
+                if (!suoiProds.length) return;
+                catNames.push(c.nome);
+                prodsByCat[c.nome] = Array.from(new Set(suoiProds.map((p: { nome: string }) => p.nome))).sort();
+                const ids = new Set(suoiProds.map((p: { id: string }) => p.id));
+                offsByCat[c.nome] = Array.from(new Set(offs.filter((o) => ids.has(o.prodotto_id)).map((o) => o.nome))).sort();
             });
-            const t: CatFiltro = { slug: soloSlug, prodNames: Array.from(new Set(prods.map((x: { nome: string }) => x.nome))).sort() as string[], offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat };
+            // le vendite mobile STORICHE senza wallet/ric.auto (il dato non esiste)
+            if (catNames.includes("Mobile Wallet") || catNames.includes("Mobile Ric. Auto")) {
+                catNames.push(CAT_MOBILE_STORICO);
+                prodsByCat[CAT_MOBILE_STORICO] = Array.from(new Set([...(prodsByCat["Mobile Wallet"] || []), ...(prodsByCat["Mobile Ric. Auto"] || [])])).sort();
+            }
+            const t: CatFiltro = { slug: soloSlug, prodNames: Array.from(new Set(prods.map((x: { nome: string }) => x.nome))).sort() as string[], offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat, offsByCat };
             _catFiltroCache.current[soloSlug] = t;
             if (alive) setCatalogoBrand(t);
         })();
         return () => { alive = false; };
     }, [soloSlug]); // eslint-disable-line react-hooks/exhaustive-deps
     // CONSEGUENZIALITÀ (Luca 28/07): le offerte seguono i prodotti scelti; senza
-    // prodotti ma con una categoria, seguono i prodotti di quella categoria.
+    // prodotti ma con una categoria, seguono i prodotti di quella categoria —
+    // e comunque si restringono alle offerte DELLA categoria (la stessa offerta
+    // può esistere sia in Wallet sia in Ric. Auto).
     const offerteDisponibili = useMemo(() => {
         if (!catalogoBrand) return [];
         const base = filterProdotti.length ? filterProdotti
             : filterCategoria ? (catalogoBrand.prodsByCat[filterCategoria] || [])
             : null;
         if (!base) return catalogoBrand.offNames;
-        const set = new Set<string>();
+        let set = new Set<string>();
         base.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
+        const inCat = filterCategoria ? catalogoBrand.offsByCat[filterCategoria] : null;
+        if (inCat) { const s2 = new Set(inCat); set = new Set(Array.from(set).filter((o) => s2.has(o))); }
         return Array.from(set).sort();
     }, [catalogoBrand, filterProdotti, filterCategoria]);
     // Sola tessera Marginalità attiva → si accendono i due layer dedicati.
@@ -481,14 +493,18 @@ export default function RicercaContratto() {
             if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
             if (filterOfferte.length > 0) query = query.in("offerta", filterOfferte);
-            // CATEGORIA: in modalità catalogo (un solo brand) la voce è una
-            // categoria del CATALOGO → si filtra sui suoi PRODOTTI (i contratti
-            // salvano solo la macro); con più brand resta la macro canonica.
+            // CATEGORIA: in modalità catalogo (un solo brand) la voce è la
+            // categoria FINE del catalogo → si filtra su dettagli->>categoria_
+            // catalogo (Wallet e Ric. Auto separate, Luca 28/07; scritto dal
+            // registra e backfillato). "Mobile (storico)" = vendite mobile
+            // vecchie SENZA il dato. Con più brand resta la macro canonica.
             if (filterCategoria && !soloMarg) {
                 if (catalogoBrand) {
-                    if (!filterProdotti.length) {
-                        const prods = catalogoBrand.prodsByCat[filterCategoria] || [];
-                        if (prods.length) query = query.in("prodotto", prods);
+                    if (filterCategoria === CAT_MOBILE_STORICO) {
+                        const prods = catalogoBrand.prodsByCat[CAT_MOBILE_STORICO] || [];
+                        if (prods.length) query = query.in("prodotto", prods).is("dettagli->>categoria_catalogo", null);
+                    } else {
+                        query = query.eq("dettagli->>categoria_catalogo", filterCategoria);
                     }
                 } else {
                     query = query.eq("categoria", filterCategoria);
@@ -630,9 +646,9 @@ export default function RicercaContratto() {
     const handleExportCsv = () => {
         if (visibleData.length === 0) return;
         // Segnalazione 76: anche nell'esport il Codice ins. e il nome corretto della colonna
-        const headers = ["Venditore", "Brand", "Prodotto", "Cliente", "Negozio", "Codice ins.", "Codice contratto", "Data Registrazione", "Data Attivazione", "Stato"];
+        const headers = ["Venditore", "Brand", "Categoria", "Prodotto", "Offerta", "Cliente", "Negozio", "Codice ins.", "Codice contratto", "Data Registrazione", "Data Attivazione", "Stato"];
         const rows = visibleData.map(r => [
-            r.venditore, r.brand, r.prodotto, r.cliente, r.negozio, codInsDi(r), r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato
+            r.venditore, r.brand, ((r.raw?.dettagli as Record<string, unknown>)?.categoria_catalogo as string) || (r.raw?.categoria as string) || "", r.prodotto, (r.raw?.offerta as string) || ((r.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "", r.cliente, r.negozio, codInsDi(r), r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato
         ].map(val => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","));
         const csvContent = [headers.join(","), ...rows].join("\n");
         const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
@@ -1274,6 +1290,7 @@ export default function RicercaContratto() {
                                     <th className="px-4 py-4 font-semibold">Brand</th>
                                     <th className="px-4 py-4 font-semibold">Categoria</th>
                                     <th className="px-4 py-4 font-semibold">Prodotto</th>
+                                    <th className="px-4 py-4 font-semibold">Offerta</th>
                                     <th className="px-4 py-4 font-semibold">Cliente</th>
                                     <th className="px-4 py-4 font-semibold">Negozio</th>
                                     {/* Segnalazione 76: "Codice Attivazione" si chiama Codice
@@ -1291,8 +1308,10 @@ export default function RicercaContratto() {
                                         <td className="px-4 py-3 text-slate-300">{row.venditore}</td>
                                         <td className="px-4 py-3 font-medium text-white">{row.brand}</td>
                                         {/* Segnalazione 95: colonna Categoria (badge, asse 2) + Prodotto (asse 3). */}
-                                        <td className="px-4 py-3">{(() => { const d = categoriaDef((row.raw?.categoria_macro as string) || categoriaDi(row.brand, row.raw?.categoria as string, row.prodotto)); return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border" style={{ color: d.color, borderColor: d.color + "55", backgroundColor: d.color + "18" }}>{d.label}</span>; })()}</td>
+                                        {/* la categoria FINE del catalogo (Wallet ≠ Ric. Auto); colore della macro */}
+                                        <td className="px-4 py-3">{(() => { const d = categoriaDef((row.raw?.categoria_macro as string) || categoriaDi(row.brand, row.raw?.categoria as string, row.prodotto)); const fine = ((row.raw?.dettagli as Record<string, unknown>)?.categoria_catalogo as string) || d.label; return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border whitespace-nowrap" style={{ color: d.color, borderColor: d.color + "55", backgroundColor: d.color + "18" }}>{fine}</span>; })()}</td>
                                         <td className="px-4 py-3 text-slate-300">{row.prodotto}</td>
+                                        <td className="px-4 py-3 text-slate-400 text-xs">{String((row.raw?.offerta as string) || ((row.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "—")}</td>
                                         <td className="px-4 py-3 text-slate-300 font-medium">{row.cliente}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{row.negozio}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{codInsDi(row) || "—"}</td>
@@ -1339,7 +1358,7 @@ export default function RicercaContratto() {
                                 ))}
                                 {visibleData.length === 0 && (
                                     <tr>
-                                        <td colSpan={11} className="px-4 py-8 text-center text-slate-500">
+                                        <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
                                             Nessun contratto trovato per i criteri o permessi correnti.
                                         </td>
                                     </tr>
