@@ -1085,8 +1085,8 @@ const VF_LIGHT="rgba(220,53,69,0.12)";
 const VF_BORDER="#F5C6C6";
 const VF_BRANDS=["TIM","Vodafone","WindTre","Iliad","Fastweb","Sky","Sky Mobile","Very Mobile","Ho Mobile","Postemobile","Coop Voce","Tiscali","Lyca Mobile","Altro"];
 const VF_SMARTPHONES = VF_SMARTPHONES_GROUPED;
-const GNP_FISSO_BRANDS=["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi","Enel Fibra","EniPlenitude Fibra","Iliad","Altro"];
-const VF_GNP_BRANDS=["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi","Enel Fibra","EniPlenitude Fibra","Iliad","Altro"];
+const GNP_FISSO_BRANDS=["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi","Enel Fibra","EniPlenitude Fibra","Iliad","Poste","Altro"];
+const VF_GNP_BRANDS=["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi","Enel Fibra","EniPlenitude Fibra","Iliad","Poste","Altro"];
 const VF_CODICI_NEGOZIO=["Acilia","Baleniere","Castani","Merulana","Donna","Magliana","Collatina","Garbatella"];
 const FW_C = "#CC9900";
 
@@ -1103,7 +1103,7 @@ const FW_FISSO_BIZ_SECLINE = ["Fastweb Business Pro","Centralino"];
 const FW_ENERGIA_OFFERS = ["Energy Flex","Energy Core","Energy Fix","GAS"];
 const FW_BRANDS_MNP = ["TIM","Vodafone","WindTre","Iliad","Fastweb","Sky","Sky Mobile","Very Mobile","Ho Mobile","Postemobile","Coop Voce","Tiscali","Lyca Mobile","Altro"];
 const FW_CODICI_NEGOZIO = ["Acilia","Baleniere","Castani","Merulana","Magliana","Donna","Garbatella","Promontori"];
-const FW_GNP_BRANDS = ["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi","Enel Fibra","EniPlenitude Fibra","Iliad","Altro"];
+const FW_GNP_BRANDS = ["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi","Enel Fibra","EniPlenitude Fibra","Iliad","Poste","Altro"];
 
 const getFW = (tc) => {
   const biz = tc === "business";
