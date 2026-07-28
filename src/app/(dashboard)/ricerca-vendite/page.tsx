@@ -154,8 +154,15 @@ export default function RicercaContratto() {
     const [filterCategoria, setFilterCategoria] = useState("");
     const [filterOfferte, setFilterOfferte] = useState<string[]>([]);
     const [offPick, setOffPick] = useState("");
-    const [catalogoBrand, setCatalogoBrand] = useState<{ slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[] } | null>(null);
-    const _catFiltroCache = useRef<Record<string, { slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[] }>>({});
+    // catNames = categorie del CATALOGO che il brand vende davvero (in ordine
+    // di catalogo); prodsByCat = prodotti per categoria. Mobile Wallet e Mobile
+    // Ric. Auto si presentano come UNICA voce "Mobile": hanno gli stessi
+    // prodotti (Mobile GA/MNP) e lo storico non distingue le due — ogni altra
+    // categoria ha prodotti univoci, quindi il filtro per categoria è esatto.
+    type CatFiltro = { slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[]; catNames: string[]; prodsByCat: Record<string, string[]> };
+    const [catalogoBrand, setCatalogoBrand] = useState<CatFiltro | null>(null);
+    const _catFiltroCache = useRef<Record<string, CatFiltro>>({});
+    const _catNomi = useRef<{ id: string; nome: string }[] | null>(null);
     // MARGINALITÀ a DUE LAYER (Luca 28/07): prima il TIPO (prodotti/servizi,
     // da marg_categories.kind — Kasko/Servizi sono servizi; SIM/ESIM/Telefono
     // Cash/Prodotti sono prodotti), poi gli ARTICOLI del listino di quel tipo.
@@ -304,14 +311,20 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (_prevSlug.current !== soloSlug) {
             _prevSlug.current = soloSlug;
-            setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick("");
+            // cambio brand = si riparte: anche la CATEGORIA, che in modalità
+            // catalogo elenca voci specifiche del brand (conseguenzialità).
+            setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterCategoria("");
         }
         if (!soloSlug) { setCatalogoBrand(null); return; }
         const hit = _catFiltroCache.current[soloSlug];
         if (hit) { setCatalogoBrand(hit); return; }
         let alive = true;
         (async () => {
-            const rp = await supabase.from("catalog_prodotti").select("id, nome").eq("brand_id", soloSlug);
+            if (!_catNomi.current) {
+                const rc = await supabase.from("catalog_categorie").select("id, nome");
+                _catNomi.current = (rc.data ?? []) as { id: string; nome: string }[];
+            }
+            const rp = await supabase.from("catalog_prodotti").select("id, nome, categoria_id").eq("brand_id", soloSlug);
             const prods = rp.data ?? [];
             let offs: { prodotto_id: string; nome: string }[] = [];
             if (prods.length) {
@@ -322,23 +335,40 @@ export default function RicercaContratto() {
             const offByProd: Record<string, string[]> = {};
             offs.forEach((o) => { const pn = nomeById[o.prodotto_id]; if (!pn) return; (offByProd[pn] = offByProd[pn] || []).push(o.nome); });
             Object.keys(offByProd).forEach((k) => { offByProd[k] = Array.from(new Set(offByProd[k])).sort(); });
-            const t = { slug: soloSlug, prodNames: Array.from(new Set(prods.map((x: { nome: string }) => x.nome))).sort() as string[], offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort() };
+            // categorie del brand in ordine di catalogo, con la fusione Wallet+Ric. Auto → "Mobile"
+            const vociByCatId: Record<string, string> = {};
+            (_catNomi.current || []).forEach((c) => { vociByCatId[c.id] = ["Mobile Wallet", "Mobile Ric. Auto"].includes(c.nome) ? "Mobile" : c.nome; });
+            const catNames: string[] = []; const prodsByCat: Record<string, string[]> = {};
+            (_catNomi.current || []).forEach((c) => {
+                const voce = vociByCatId[c.id];
+                const suoi = prods.filter((p: { categoria_id: string }) => p.categoria_id === c.id).map((p: { nome: string }) => p.nome);
+                if (!suoi.length) return;
+                if (!catNames.includes(voce)) catNames.push(voce);
+                prodsByCat[voce] = Array.from(new Set([...(prodsByCat[voce] || []), ...suoi])).sort();
+            });
+            const t: CatFiltro = { slug: soloSlug, prodNames: Array.from(new Set(prods.map((x: { nome: string }) => x.nome))).sort() as string[], offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat };
             _catFiltroCache.current[soloSlug] = t;
             if (alive) setCatalogoBrand(t);
         })();
         return () => { alive = false; };
     }, [soloSlug]); // eslint-disable-line react-hooks/exhaustive-deps
+    // CONSEGUENZIALITÀ (Luca 28/07): le offerte seguono i prodotti scelti; senza
+    // prodotti ma con una categoria, seguono i prodotti di quella categoria.
     const offerteDisponibili = useMemo(() => {
         if (!catalogoBrand) return [];
-        if (!filterProdotti.length) return catalogoBrand.offNames;
+        const base = filterProdotti.length ? filterProdotti
+            : filterCategoria ? (catalogoBrand.prodsByCat[filterCategoria] || [])
+            : null;
+        if (!base) return catalogoBrand.offNames;
         const set = new Set<string>();
-        filterProdotti.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
+        base.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
         return Array.from(set).sort();
-    }, [catalogoBrand, filterProdotti]);
+    }, [catalogoBrand, filterProdotti, filterCategoria]);
     // Sola tessera Marginalità attiva → si accendono i due layer dedicati.
     const soloMarg = !!soloBrandLabel && ["marginalità", "marginalita"].includes(soloBrandLabel.toLowerCase());
     useEffect(() => {
         if (!soloMarg) { setMargTipo(""); setMargArticoli([]); setMargPick(""); return; }
+        setFilterCategoria("");   // la categoria nascosta non deve restare a filtrare
         if (_margCache.current) { setMargListino(_margCache.current); return; }
         let alive = true;
         (async () => {
@@ -451,7 +481,19 @@ export default function RicercaContratto() {
             if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
             if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
             if (filterOfferte.length > 0) query = query.in("offerta", filterOfferte);
-            if (filterCategoria) query = query.eq("categoria", filterCategoria);
+            // CATEGORIA: in modalità catalogo (un solo brand) la voce è una
+            // categoria del CATALOGO → si filtra sui suoi PRODOTTI (i contratti
+            // salvano solo la macro); con più brand resta la macro canonica.
+            if (filterCategoria && !soloMarg) {
+                if (catalogoBrand) {
+                    if (!filterProdotti.length) {
+                        const prods = catalogoBrand.prodsByCat[filterCategoria] || [];
+                        if (prods.length) query = query.in("prodotto", prods);
+                    }
+                } else {
+                    query = query.eq("categoria", filterCategoria);
+                }
+            }
             // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
             // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
             if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
@@ -558,7 +600,7 @@ export default function RicercaContratto() {
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|"), (margListino ?? []).length]);
+    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|"), (margListino ?? []).length, catalogoBrand?.slug ?? ""]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -1062,10 +1104,13 @@ export default function RicercaContratto() {
                         TRANNE con la sola Marginalità, dove è tutta una categoria
                         e al suo posto valgono i due layer dedicati. */}
                     {!soloMarg && <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Categoria</label>
-                        <select className="glass-input w-full" value={filterCategoria} onChange={e => setFilterCategoria(e.target.value)}>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Categoria {catalogoBrand && soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
+                        {/* CONSEGUENZIALITÀ: cambiare categoria azzera prodotti e
+                            offerte (che si restringono alla nuova categoria). */}
+                        <select className="glass-input w-full" value={filterCategoria}
+                            onChange={e => { setFilterCategoria(e.target.value); setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); }}>
                             <option value="">Tutte le categorie</option>
-                            {CATEGORIE_CANONICHE.map(c => <option key={c} value={c}>{c}</option>)}
+                            {(catalogoBrand ? catalogoBrand.catNames : CATEGORIE_CANONICHE).map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                     </div>}
 
@@ -1085,16 +1130,12 @@ export default function RicercaContratto() {
                         (multi, come i prodotti del catalogo). */}
                     {soloMarg && <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Articolo <span className="text-slate-500 font-normal">— Marginalità</span></label>
-                        <div className="flex gap-2">
-                            <select className="glass-input w-full disabled:opacity-50" value={margPick} onChange={e => setMargPick(e.target.value)} disabled={!margTipo}>
-                                <option value="">{!margTipo ? "Prima scegli Prodotti o Servizi" : margArticoli.length ? "Aggiungi articolo…" : `Tutti i ${margTipo}`}</option>
-                                {margArticoliDisponibili.filter(a => !margArticoli.includes(a)).map(a => <option key={a} value={a}>{a}</option>)}
-                            </select>
-                            <button type="button" title="Aggiungi articolo al filtro"
-                                onClick={() => { if (margPick) { setMargArticoli(prev => prev.includes(margPick) ? prev : [...prev, margPick]); setMargPick(""); } }}
-                                disabled={!margPick}
-                                className="shrink-0 w-10 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed">+</button>
-                        </div>
+                        <select className="glass-input w-full disabled:opacity-50" value={margPick}
+                            onChange={e => { const v = e.target.value; if (v) setMargArticoli(prev => prev.includes(v) ? prev : [...prev, v]); setMargPick(""); }}
+                            disabled={!margTipo}>
+                            <option value="">{!margTipo ? "Prima scegli Prodotti o Servizi" : margArticoli.length ? "Aggiungi articolo…" : `Tutti i ${margTipo}`}</option>
+                            {margArticoliDisponibili.filter(a => !margArticoli.includes(a)).map(a => <option key={a} value={a}>{a}</option>)}
+                        </select>
                         {margArticoli.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
                                 {margArticoli.map(a => (
@@ -1111,16 +1152,15 @@ export default function RicercaContratto() {
                         dalle tessere, altrimenti le variabili esplodono (regola Luca). */}
                     {!soloMarg && <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
-                        <div className="flex gap-2">
-                            <select className="glass-input w-full disabled:opacity-50" value={prodPick} onChange={e => setProdPick(e.target.value)} disabled={!catalogoBrand}>
-                                <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : filterProdotti.length ? "Aggiungi prodotto…" : "Tutti i prodotti"}</option>
-                                {(catalogoBrand?.prodNames || []).filter(p => !filterProdotti.includes(p)).map(p => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                            <button type="button" title="Aggiungi prodotto al filtro"
-                                onClick={() => { if (prodPick) { setFilterProdotti(prev => prev.includes(prodPick) ? prev : [...prev, prodPick]); setProdPick(""); } }}
-                                disabled={!prodPick}
-                                className="shrink-0 w-10 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed">+</button>
-                        </div>
+                        {/* selezione IMMEDIATA (via il "+": Luca 28/07, "le offerte non
+                            seguivano il prodotto" — in realtà serviva il click sul +);
+                            la lista segue la categoria scelta. */}
+                        <select className="glass-input w-full disabled:opacity-50" value={prodPick}
+                            onChange={e => { const v = e.target.value; if (v) setFilterProdotti(prev => prev.includes(v) ? prev : [...prev, v]); setProdPick(""); }}
+                            disabled={!catalogoBrand}>
+                            <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : filterProdotti.length ? "Aggiungi prodotto…" : "Tutti i prodotti"}</option>
+                            {(catalogoBrand ? (filterCategoria ? (catalogoBrand.prodsByCat[filterCategoria] || []) : catalogoBrand.prodNames) : []).filter(p => !filterProdotti.includes(p)).map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
                         {filterProdotti.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
                                 {filterProdotti.map(p => (
@@ -1137,16 +1177,12 @@ export default function RicercaContratto() {
                         se ci sono prodotti selezionati offre solo le loro offerte. */}
                     {!soloMarg && <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Offerta {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
-                        <div className="flex gap-2">
-                            <select className="glass-input w-full disabled:opacity-50" value={offPick} onChange={e => setOffPick(e.target.value)} disabled={!catalogoBrand}>
-                                <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : filterOfferte.length ? "Aggiungi offerta…" : "Tutte le offerte"}</option>
-                                {offerteDisponibili.filter(o => !filterOfferte.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
-                            </select>
-                            <button type="button" title="Aggiungi offerta al filtro"
-                                onClick={() => { if (offPick) { setFilterOfferte(prev => prev.includes(offPick) ? prev : [...prev, offPick]); setOffPick(""); } }}
-                                disabled={!offPick}
-                                className="shrink-0 w-10 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed">+</button>
-                        </div>
+                        <select className="glass-input w-full disabled:opacity-50" value={offPick}
+                            onChange={e => { const v = e.target.value; if (v) setFilterOfferte(prev => prev.includes(v) ? prev : [...prev, v]); setOffPick(""); }}
+                            disabled={!catalogoBrand}>
+                            <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : filterOfferte.length ? "Aggiungi offerta…" : "Tutte le offerte"}</option>
+                            {offerteDisponibili.filter(o => !filterOfferte.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
                         {filterOfferte.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 mt-2">
                                 {filterOfferte.map(o => (
