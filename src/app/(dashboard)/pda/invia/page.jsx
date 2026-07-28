@@ -264,6 +264,11 @@ export default function InviaPda() {
   const [step, setStep] = useState(draft?.step ?? 1);
   const [venditore, setVenditore] = useState(draft?.venditore ?? user?.name ?? "");
   const [negozio, setNegozio] = useState(draft?.negozio ?? user?.negozio ?? "");
+  // AUTOCOMPILAZIONE (Luca 29/07): il venditore è CHI È LOGGATO. L'init sopra
+  // non basta: al primo render l'utente può non essere ancora arrivato, e una
+  // bozza con venditore VUOTO ("" non è nullish) bloccava il fallback → il
+  // campo restava da selezionare a mano.
+  useEffect(() => { if (!venditore && user?.name) setVenditore(user.name); }, [user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
   // "Data Vendita" era un input non controllato fisso al 2026-03-07 (residuo
   // del mock): mostrava sempre il 7 marzo e il valore scelto non veniva letto.
   const [dataVendita, setDataVendita] = useState(
