@@ -94,7 +94,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
     const disconnetti = async () => {
         const inst = instances.find(i => i.id === selInst);
         if (!inst || disconnecting) return;
-        if (!window.confirm(`Disconnettere "${inst.display_name || inst.instance_name}"?\nLe conversazioni restano; per riattivarlo dovrai riscansionare il QR.`)) return;
+        if (!window.confirm(`Disconnettere "${inst.display_name || inst.instance_name}"?\nLe conversazioni verranno NASCOSTE (non cancellate): torneranno visibili quando ricolleghi il numero col QR.`)) return;
         setDisconnecting(true);
         const res = await api({ action: "logout", instanceName: inst.instance_name });
         setDisconnecting(false);
@@ -108,9 +108,13 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
     };
     useEffect(() => { loadInstances(); const t = setInterval(loadInstances, 5000); return () => clearInterval(t); }, []);
 
-    // conversazioni dell'istanza selezionata (polling leggero)
+    // conversazioni dell'istanza selezionata (polling leggero). Se il numero NON
+    // e' connesso (disconnesso o sessione scaduta) le chat NON si mostrano: restano
+    // nel DB (non cancellate) ma nascoste finche' non si ricollega il numero.
+    const selInstStatus = instances.find(i => i.id === selInst)?.status;
     useEffect(() => {
-        if (!selInst) { setConvs([]); return; }
+        if (selInstStatus && selInstStatus !== "connessa") setSelConv(null);   // chiude una chat aperta alla disconnessione
+        if (!selInst || selInstStatus !== "connessa") { setConvs([]); return; }
         let alive = true;
         const load = async () => {
             const { data } = await supabase.from("wa_conversations").select("*").eq("instance_id", selInst).order("last_message_at", { ascending: false, nullsFirst: false });
@@ -118,7 +122,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
         };
         load(); const t = setInterval(load, 3000);
         return () => { alive = false; clearInterval(t); };
-    }, [selInst]);
+    }, [selInst, selInstStatus]);
 
     // messaggi della conversazione (polling)
     useEffect(() => {
@@ -230,7 +234,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                         </button>
                     )}
                     {instConnessa?.status === "connessa" && (
-                        <button onClick={disconnetti} disabled={disconnecting} title="Disconnetti questo numero (le conversazioni restano, per riattivarlo si riscansiona il QR)"
+                        <button onClick={disconnetti} disabled={disconnecting} title="Disconnetti questo numero: le conversazioni si nascondono (non vengono cancellate) e tornano quando ricolleghi il QR"
                             className="px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-sm font-bold flex items-center gap-2 hover:bg-rose-500/25 disabled:opacity-40">
                             {disconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />} Disconnetti
                         </button>
@@ -283,14 +287,14 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                     <div className="glass-card overflow-y-auto">
                         {instConnessa && instConnessa.status !== "connessa" && (
                             <div className="p-3 text-xs text-amber-300 border-b border-amber-500/20 bg-amber-500/5">
-                                {instConnessa.status === "disconnessa" ? "Sessione scaduta" : "Numero non ancora collegato"} — premi{" "}
+                                {instConnessa.status === "disconnessa" ? "Sessione scaduta — le conversazioni sono nascoste" : "Numero non ancora collegato"} — premi{" "}
                                 <button onClick={() => setRelinkName(instConnessa.instance_name)} className="underline font-semibold hover:text-amber-200">
                                     {instConnessa.status === "disconnessa" ? "Ricollega" : "Scansiona QR"}
                                 </button>{" "}per il QR.
                             </div>
                         )}
                         {convs.length === 0 ? (
-                            <div className="p-6 text-center text-slate-500 text-sm">Ancora nessuna conversazione.</div>
+                            <div className="p-6 text-center text-slate-500 text-sm">{instConnessa && instConnessa.status !== "connessa" ? "Conversazioni nascoste finché non ricolleghi il numero." : "Ancora nessuna conversazione."}</div>
                         ) : convs.map(c => (
                             <button key={c.id} onClick={() => setSelConv(c)}
                                 className={cn("w-full text-left px-4 py-3 border-b border-white/5 hover:bg-white/[0.03] flex items-center gap-3", selConv?.id === c.id && "bg-white/[0.05]")}>
