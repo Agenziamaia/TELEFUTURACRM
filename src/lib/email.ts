@@ -69,9 +69,20 @@ function smtpTransport(a: Account) {
 export async function testConnessione(a: Account): Promise<void> {
     const c = imapClient(a);
     try { await c.connect(); await c.logout(); }
-    catch (e: any) { try { await c.logout(); } catch { } throw new Error("IMAP: " + (e?.message || e)); }
+    catch (e: any) {
+        try { await c.logout(); } catch { }
+        const d = e?.authenticationFailed
+            ? "credenziali rifiutate. Se e' Gmail/Outlook serve una 'password per le app' (non quella normale) e IMAP attivo. Per le caselle @telefuturasrl.com usa la password della casella."
+            : (e?.responseText || e?.message || String(e));
+        throw new Error("IMAP: " + d);
+    }
     try { await smtpTransport(a).verify(); }
-    catch (e: any) { throw new Error("SMTP: " + (e?.message || e)); }
+    catch (e: any) {
+        const d = /invalid|auth|credential|username|password|5\.7\.8/i.test(String(e?.message || ""))
+            ? "credenziali rifiutate (per Gmail/Outlook serve una 'password per le app')."
+            : (e?.response || e?.message || String(e));
+        throw new Error("SMTP: " + d);
+    }
 }
 
 export type EmailInAtt = { name: string; mime: string; size: number; content: Buffer };
