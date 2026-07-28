@@ -17,8 +17,9 @@ import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
+import { EmailInbox } from "@/components/EmailInbox";
 import { cn } from "@/utils";
 
 // Segnalazione 74: testo breve del messaggio citato (i tag @[tipo:id|etichetta]
@@ -74,10 +75,10 @@ function ChatPageInner() {
   // deep-link: /chat?wa=<numero> apre direttamente WhatsApp sul cliente
   const searchParams = useSearchParams();
   const waParam = searchParams.get("wa");
-  const [mode, setMode] = useState<"chat" | "whatsapp">(() => {
+  const [mode, setMode] = useState<"chat" | "whatsapp" | "email">(() => {
     if (typeof window === "undefined") return "chat";
     if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("wa")) return "whatsapp";
-    return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp") || "chat";
+    return (localStorage.getItem("crm_chat_mode") as "chat" | "whatsapp" | "email") || "chat";
   });
   useEffect(() => { try { localStorage.setItem("crm_chat_mode", mode); } catch { } }, [mode]);
 
@@ -247,10 +248,17 @@ function ChatPageInner() {
             mode === "whatsapp" ? "bg-emerald-500/15 text-emerald-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
           <MessageCircle className="w-4 h-4" /> WhatsApp
         </button>
+        <button onClick={() => setMode("email")}
+          className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+            mode === "email" ? "bg-sky-500/15 text-sky-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
+          <Mail className="w-4 h-4" /> Email
+        </button>
       </div>
 
       {mode === "whatsapp" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={waParam} /></div>
+      ) : mode === "email" ? (
+        <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded /></div>
       ) : (
       <div className="flex-1 min-h-0 flex overflow-hidden">
       {/* ── LEFT: conversation list ─────────────────────────────── */}
