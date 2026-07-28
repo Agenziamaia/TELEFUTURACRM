@@ -167,6 +167,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                 <div className="hidden lg:block fixed inset-y-0 left-0 w-3 z-40" onMouseEnter={() => setPeek(true)} />
             )}
             <aside
+                id="crm-sidebar"
                 onMouseLeave={() => { if (autoHide) setPeek(false); }}
                 className={cn(
                     "fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-[#0f111a]/95 backdrop-blur-xl border-r border-white/5 transition-transform duration-300",
