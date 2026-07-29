@@ -1338,7 +1338,7 @@ export default function TrackingPdaPage() {
         .from("contracts")
         .select(selectCols)
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(5000);   // #tracking: con .limit(500) i contratti oltre i 500 piu' recenti sparivano dal Tracking (pratiche piu' vecchie non trovabili)
 
       if (baseErr) throw baseErr;
 
@@ -1348,7 +1348,7 @@ export default function TrackingPdaPage() {
         .from("contracts")
         .select("id, stato_negozio, stato_admin, storia, stati_categoria")
         .order("created_at", { ascending: false })
-        .limit(500);
+        .limit(5000);   // #tracking: con .limit(500) i contratti oltre i 500 piu' recenti sparivano dal Tracking (pratiche piu' vecchie non trovabili)
 
       if (!trackingErr && trackingData?.length) {
         trackingMap = new Map(
