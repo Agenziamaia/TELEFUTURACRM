@@ -1285,7 +1285,7 @@ export default function TrackingPdaPage() {
   // user_store_visibility): prima la stessa union era ricalcolata qui a mano.
   const seesWhole = seesWholeStore(user?.role);
   // seesAll dalla fonte unica: per l'amministrativo dipende dalle restrizioni admin.
-  const { seesAll, stores: visibleStores } = useVisibleStores();
+  const { seesAll, stores: visibleStores, loaded: visLoaded } = useVisibleStores();
 
   // Il manager puo' delegare SOLO ai collaboratori dei propri punti vendita —
   // TUTTI quelli visibili, non solo il principale.
@@ -1414,8 +1414,11 @@ export default function TrackingPdaPage() {
   }, [seesAll, seesWhole, visibleStores, user?.name, user?.id]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    // NON interrogare i dati prima che la visibilita' negozi sia arrivata: un
+    // utente "scopato" (es. store manager) altrimenti parte con stores=[] e la
+    // sua lista resta VUOTA (nessuna pratica del suo negozio). seesAll non attende.
+    if (seesAll || visLoaded) fetchData();
+  }, [fetchData, seesAll, visLoaded]);
 
   // Combinazioni di vendita, come indicate da Francesco (per ora WindTre mobile):
   //   solo Mobile                  -> Mobile
