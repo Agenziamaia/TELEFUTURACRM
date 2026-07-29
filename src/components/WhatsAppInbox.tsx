@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
-import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut } from "lucide-react";
+import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut, Trash2 } from "lucide-react";
 import { cn } from "@/utils";
 
 type Instance = { id: string; instance_name: string; display_name: string | null; wa_number: string | null; status: string; owner_user_id: string | null; negozio: string | null };
@@ -100,6 +100,25 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
         setDisconnecting(false);
         if (res?.error) alert("Disconnessione non riuscita: " + res.error);
         else { setSelConv(null); loadInstances(); }
+    };
+
+    // ELIMINAZIONE DEFINITIVA (Luca 29/07): oltre a disconnettere, il numero si
+    // può proprio TOGLIERE dal CRM — account collegato per sbaglio o numero che
+    // non deve più esistere. Cancella istanza + TUTTE le chat e i messaggi
+    // (cascade a DB) e l'istanza su Evolution. Solo il proprietario del numero
+    // (o la vista completa) — è irreversibile, doppia conferma.
+    const [deleting, setDeleting] = useState(false);
+    const elimina = async () => {
+        const inst = instances.find(i => i.id === selInst);
+        if (!inst || deleting) return;
+        const nome = inst.display_name || inst.instance_name;
+        if (!window.confirm(`ELIMINARE DEFINITIVAMENTE "${nome}"?\n\nVerranno cancellati il numero dal CRM e TUTTO lo storico delle chat (conversazioni e messaggi). Non è una disconnessione: non si può annullare.`)) return;
+        if (!window.confirm(`Ultima conferma: eliminare "${nome}" con tutto lo storico?`)) return;
+        setDeleting(true);
+        const res = await api({ action: "delete", instanceName: inst.instance_name });
+        setDeleting(false);
+        if (res?.error) alert("Eliminazione non riuscita: " + res.error);
+        else { setSelConv(null); setSelInst(null); loadInstances(); }
     };
 
     const loadInstances = async () => {
@@ -237,6 +256,16 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                         <button onClick={disconnetti} disabled={disconnecting} title="Disconnetti questo numero: le conversazioni si nascondono (non vengono cancellate) e tornano quando ricolleghi il QR"
                             className="px-3 py-2 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-sm font-bold flex items-center gap-2 hover:bg-rose-500/25 disabled:opacity-40">
                             {disconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />} Disconnetti
+                        </button>
+                    )}
+                    {/* ELIMINA (Luca 29/07): in QUALSIASI stato — anche un numero
+                        disconnesso o collegato per sbaglio si deve poter togliere
+                        del tutto, storico compreso. Solo proprietario o vista completa. */}
+                    {instConnessa && (waScope === "all" || instConnessa.owner_user_id === user?.id) && (
+                        <button onClick={elimina} disabled={deleting}
+                            title="Elimina DEFINITIVAMENTE questo numero dal CRM: via l'istanza e tutto lo storico delle chat. Non è la disconnessione: non si torna indietro"
+                            className="px-3 py-2 rounded-xl bg-red-600/20 border border-red-500/40 text-red-300 text-sm font-bold flex items-center gap-2 hover:bg-red-600/35 disabled:opacity-40">
+                            {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Elimina
                         </button>
                     )}
                     {/* Numero selezionato NON connesso (mai scansionato o sessione scaduta):

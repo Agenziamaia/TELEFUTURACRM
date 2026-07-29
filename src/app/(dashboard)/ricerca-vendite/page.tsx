@@ -1180,57 +1180,22 @@ export default function RicercaContratto() {
                 {/* FILA CATALOGO (Luca 28/07): categoria → prodotto → offerta → opzioni
                     su una riga tutta loro — sono filtri in successione. */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mt-6 pt-6 border-t border-white/5">
-                    {/* 4-bis. Categoria (tassonomia canonica): filtrabile sempre —
-                        TRANNE con la sola Marginalità, dove è tutta una categoria
-                        e al suo posto valgono i due layer dedicati. */}
-                    {!soloMarg && <div>
+                    {/* 4-bis. Categoria (dal catalogo): sempre in fila — con la sola
+                        Marginalità si spegne (per lei c'è la riga sotto). */}
+                    <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Categoria {catalogoBrand && soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
                         {/* CONSEGUENZIALITÀ: cambiare categoria azzera prodotti e
                             offerte (che si restringono alla nuova categoria). */}
-                        <select className="glass-input w-full" value={filterCategoria}
+                        <select className="glass-input w-full disabled:opacity-50" value={filterCategoria} disabled={soloMarg}
                             onChange={e => { setFilterCategoria(e.target.value); setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); }}>
-                            <option value="">Tutte le categorie</option>
+                            <option value="">{soloMarg ? "Per la Marginalità: riga sotto" : "Tutte le categorie"}</option>
                             {(catalogoBrand ? catalogoBrand.catNames : catNomiAll).map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
-                    </div>}
-
-                    {/* MARGINALITÀ layer 1 (Luca 28/07): il flusso si divide in
-                        prodotti e servizi (dal kind delle categorie del listino). */}
-                    {soloMarg && <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Tipo <span className="text-slate-500 font-normal">— Marginalità</span></label>
-                        <select className="glass-input w-full" value={margTipo}
-                            onChange={e => { setMargTipo(e.target.value as "" | "prodotti" | "servizi"); setMargArticoli([]); setMargPick(""); }}>
-                            <option value="">Prodotti e servizi</option>
-                            <option value="prodotti">🛍 Prodotti</option>
-                            <option value="servizi">🛠 Servizi</option>
-                        </select>
-                    </div>}
-
-                    {/* MARGINALITÀ layer 2: gli articoli del listino del tipo scelto
-                        (multi, come i prodotti del catalogo). */}
-                    {soloMarg && <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Articolo <span className="text-slate-500 font-normal">— Marginalità</span></label>
-                        <select className="glass-input w-full disabled:opacity-50" value={margPick}
-                            onChange={e => { const v = e.target.value; if (v) setMargArticoli(prev => prev.includes(v) ? prev : [...prev, v]); setMargPick(""); }}
-                            disabled={!margTipo}>
-                            <option value="">{!margTipo ? "Prima scegli Prodotti o Servizi" : margArticoli.length ? "Aggiungi articolo…" : `Tutti i ${margTipo}`}</option>
-                            {margArticoliDisponibili.filter(a => !margArticoli.includes(a)).map(a => <option key={a} value={a}>{a}</option>)}
-                        </select>
-                        {margArticoli.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                {margArticoli.map(a => (
-                                    <span key={a} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-emerald-500/15 text-emerald-200 border border-emerald-500/30">
-                                        {a}
-                                        <button type="button" onClick={() => setMargArticoli(prev => prev.filter(x => x !== a))} className="opacity-70 hover:opacity-100">✕</button>
-                                    </span>
-                                ))}
-                            </div>
-                        )}
-                    </div>}
+                    </div>
 
                     {/* 5. Prodotto (multiplo, dal CATALOGO): serve UN solo brand attivo
                         dalle tessere, altrimenti le variabili esplodono (regola Luca). */}
-                    {!soloMarg && <div>
+                    <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
                         {/* selezione IMMEDIATA (via il "+": Luca 28/07, "le offerte non
                             seguivano il prodotto" — in realtà serviva il click sul +);
@@ -1251,11 +1216,11 @@ export default function RicercaContratto() {
                                 ))}
                             </div>
                         )}
-                    </div>}
+                    </div>
 
                     {/* 5-bis. Offerta (multiplo, dal CATALOGO): stessa regola del prodotto;
                         se ci sono prodotti selezionati offre solo le loro offerte. */}
-                    {!soloMarg && <div>
+                    <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Offerta {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
                         <select className="glass-input w-full disabled:opacity-50" value={offPick}
                             onChange={e => { const v = e.target.value; if (v) setFilterOfferte(prev => prev.includes(v) ? prev : [...prev, v]); setOffPick(""); }}
@@ -1273,9 +1238,9 @@ export default function RicercaContratto() {
                                 ))}
                             </div>
                         )}
-                    </div>}
+                    </div>
                     {/* OPZIONI (Luca 28/07): si sbloccano dopo l'offerta; multi. */}
-                    {!soloMarg && <div>
+                    <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Opzioni {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
                         <select className="glass-input w-full disabled:opacity-50" value={opzPick}
                             onChange={e => { const v = e.target.value; if (v) setFilterOpzioni(prev => prev.includes(v) ? prev : [...prev, v]); setOpzPick(""); }}
@@ -1293,7 +1258,46 @@ export default function RicercaContratto() {
                                 ))}
                             </div>
                         )}
-                    </div>}
+                    </div>
+                </div>
+
+                {/* RIGA MARGINALITÀ (Luca 29/07): filtri suoi, su una riga separata
+                    sotto la fila catalogo — attivi con la sola tessera Marginalità. */}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mt-4">
+                    {/* MARGINALITÀ layer 1 (Luca 28/07): il flusso si divide in
+                        prodotti e servizi (dal kind delle categorie del listino). */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Tipo <span className="text-slate-500 font-normal">— Marginalità</span></label>
+                        <select className="glass-input w-full disabled:opacity-50" value={margTipo} disabled={!soloMarg}
+                            onChange={e => { setMargTipo(e.target.value as "" | "prodotti" | "servizi"); setMargArticoli([]); setMargPick(""); }}>
+                            <option value="">{soloMarg ? "Prodotti e servizi" : "Clicca la sola tessera Marginalità"}</option>
+                            <option value="prodotti">🛍 Prodotti</option>
+                            <option value="servizi">🛠 Servizi</option>
+                        </select>
+                    </div>
+
+                    {/* MARGINALITÀ layer 2: gli articoli del listino del tipo scelto
+                        (multi, come i prodotti del catalogo). */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Articolo <span className="text-slate-500 font-normal">— Marginalità</span></label>
+                        <select className="glass-input w-full disabled:opacity-50" value={margPick}
+                            onChange={e => { const v = e.target.value; if (v) setMargArticoli(prev => prev.includes(v) ? prev : [...prev, v]); setMargPick(""); }}
+                            disabled={!soloMarg || !margTipo}>
+                            <option value="">{!soloMarg ? "Clicca la sola tessera Marginalità" : !margTipo ? "Prima scegli Prodotti o Servizi" : margArticoli.length ? "Aggiungi articolo…" : `Tutti i ${margTipo}`}</option>
+                            {margArticoliDisponibili.filter(a => !margArticoli.includes(a)).map(a => <option key={a} value={a}>{a}</option>)}
+                        </select>
+                        {margArticoli.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                {margArticoli.map(a => (
+                                    <span key={a} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-emerald-500/15 text-emerald-200 border border-emerald-500/30">
+                                        {a}
+                                        <button type="button" onClick={() => setMargArticoli(prev => prev.filter(x => x !== a))} className="opacity-70 hover:opacity-100">✕</button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
                 </div>
 
                 {/* Date Ranges Row */}

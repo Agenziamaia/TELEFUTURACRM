@@ -27,6 +27,7 @@ interface Appointment {
     customerName: string;
     customerPhone: string;
     cfPiva?: string;
+    tipoCliente?: string;   // consumer | business (etichetta CF vs P.IVA)
     notes: string;
     esitoNote?: string;
     status: AppointmentStatus;
@@ -103,6 +104,7 @@ function mapAppointmentRow(r: Record<string, unknown>): Appointment {
         customerName: r.customer_name as string,
         customerPhone: r.customer_phone as string,
         cfPiva: r.cf_piva as string | undefined,
+        tipoCliente: (r.tipo_cliente as string | undefined) || undefined,
         notes: (r.notes as string) ?? "",
         esitoNote: r.esito_note as string | undefined,
         status: r.status as AppointmentStatus,
@@ -240,6 +242,7 @@ export default function Calendario() {
         customerName: "",
         customerPhone: "",
         cfPiva: "",
+        tipoCliente: "consumer" as "consumer" | "business",
         notes: "",
     });
 
@@ -384,7 +387,11 @@ export default function Calendario() {
     // ── Vista MESE / SETTIMANA ────────────────────────────────────────────────
     // La settimanale parte sempre dalla settimana in corso (lunedi'); i giorni
     // mostrano gli impegni gia' espansi e cliccabili, il pannello a destra resta.
-    const [calView, setCalView] = useState<"month" | "week">("month");
+    const [calView, setCalView] = useState<"month" | "week" | "day">("month");
+    // VISTA GIORNO (Luca 29/07): fasce orarie in verticale stile Google
+    // Calendar — tutto il dettaglio della giornata a colpo d'occhio.
+    const [dayDate, setDayDate] = useState(() =>
+        `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`);
     const addDays = (dateStr: string, n: number) => {
         const d = new Date(dateStr + "T12:00:00");
         d.setDate(d.getDate() + n);
@@ -453,8 +460,16 @@ export default function Calendario() {
         return false;
     });
 
+    // ORARIO → MINUTI ("9:30"→570). Il vecchio ordinamento era ALFABETICO
+    // sulle stringhe: "7:00" finiva dopo "15:00" (Luca 29/07). Senza orario
+    // si va in fondo alla giornata.
+    const minutiDi = (t?: string | null) => {
+        const m = String(t || "").match(/^(\d{1,2})[:.](\d{2})/);
+        return m ? parseInt(m[1], 10) * 60 + parseInt(m[2], 10) : 24 * 60;
+    };
     const apptsByDate = (dateStr: string) =>
-        visibleAppointments.filter(a => a.date === dateStr);
+        visibleAppointments.filter(a => a.date === dateStr)
+            .sort((a, b) => minutiDi(a.time) - minutiDi(b.time));
 
     const tasksByDate = (dateStr: string) => {
         if (!catOn("task")) return [];
@@ -499,10 +514,12 @@ export default function Calendario() {
             type: newAppt.type,
             agente: newAppt.type === "incoming" ? "" : newAppt.agente,
             store: newAppt.type === "incoming" ? newAppt.store : null,
-            customer_address: newAppt.type === "outgoing" ? newAppt.customerAddress : null,
+            // la via vale anche per gli AUTOGENERATI (prima veniva scartata, Luca 29/07)
+            customer_address: newAppt.type !== "incoming" ? (newAppt.customerAddress || null) : null,
             customer_name: newAppt.customerName,
             customer_phone: newAppt.customerPhone,
             cf_piva: newAppt.cfPiva || null,
+            tipo_cliente: newAppt.tipoCliente,
             notes: newAppt.notes || "",
             status: "scheduled",
             created_by: user?.name || "Sconosciuto",
@@ -519,7 +536,7 @@ export default function Calendario() {
         }
         setAppointments(prev => [...prev, mapAppointmentRow(data)]);
         setShowCreateModal(false);
-        setNewAppt({ time: "10:00", type: "incoming", agente: "", store: "", customerAddress: "", customerName: "", customerPhone: "", cfPiva: "", notes: "" });
+        setNewAppt({ time: "10:00", type: "incoming", agente: "", store: "", customerAddress: "", customerName: "", customerPhone: "", cfPiva: "", tipoCliente: "consumer", notes: "" });
     };
 
     const handleCreateTaskSubmit = async (e: React.FormEvent) => {
@@ -1025,19 +1042,20 @@ export default function Calendario() {
                     {/* Navigazione + selettore vista Mese/Settimana */}
                     <div className="flex items-center justify-between mb-6 gap-3">
                         <button
-                            onClick={calView === "month" ? prevMonth : () => setWeekStart(addDays(weekStart, -7))}
+                            onClick={calView === "month" ? prevMonth : calView === "week" ? () => setWeekStart(addDays(weekStart, -7)) : () => { const d = addDays(dayDate, -1); setDayDate(d); selectDate(d); }}
                             className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300"
                         >
                             <ChevronLeft className="w-5 h-5" />
                         </button>
                         <h3 className="text-xl font-bold text-white text-center flex-1 truncate">
-                            {calView === "month" ? `${MONTHS_IT[viewMonth]} ${viewYear}` : weekLabel}
+                            {calView === "month" ? `${MONTHS_IT[viewMonth]} ${viewYear}` : calView === "week" ? weekLabel
+                                : (() => { const d = new Date(dayDate + "T12:00:00"); return `${DAYS_IT[(d.getDay() + 6) % 7]} ${d.getDate()} ${MONTHS_IT[d.getMonth()]} ${d.getFullYear()}`; })()}
                         </h3>
                         <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 shrink-0">
-                            {([["month", "Mese"], ["week", "Settimana"]] as [typeof calView, string][]).map(([id, lab]) => (
+                            {([["month", "Mese"], ["week", "Settimana"], ["day", "Giorno"]] as [typeof calView, string][]).map(([id, lab]) => (
                                 <button
                                     key={id}
-                                    onClick={() => setCalView(id)}
+                                    onClick={() => { setCalView(id); if (id === "day") selectDate(dayDate); }}
                                     className={cn(
                                         "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
                                         calView === id ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white",
@@ -1048,7 +1066,7 @@ export default function Calendario() {
                             ))}
                         </div>
                         <button
-                            onClick={calView === "month" ? nextMonth : () => setWeekStart(addDays(weekStart, 7))}
+                            onClick={calView === "month" ? nextMonth : calView === "week" ? () => setWeekStart(addDays(weekStart, 7)) : () => { const d = addDays(dayDate, 1); setDayDate(d); selectDate(d); }}
                             className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300"
                         >
                             <ChevronRight className="w-5 h-5" />
@@ -1139,7 +1157,7 @@ export default function Calendario() {
                         <div className="grid grid-cols-7 gap-1.5">
                             {weekDays.map((dateStr) => {
                                 const wd = new Date(dateStr + "T12:00:00");
-                                const dayAppts = apptsByDate(dateStr).slice().sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+                                const dayAppts = apptsByDate(dateStr);   // già in ordine di orario REALE
                                 const dayTasks = tasksByDate(dateStr);
                                 const dayMeetings = meetingsByDate(dateStr);
                                 const isToday = dateStr === todayStr;
@@ -1164,41 +1182,46 @@ export default function Calendario() {
                                             {isBlocked && <Lock className="w-3 h-3 text-amber-400 mx-auto mt-0.5" />}
                                         </button>
                                         <div className="flex-1 overflow-y-auto p-1 space-y-1 custom-scrollbar">
-                                            {dayAppts.map((a) => (
-                                                <button
-                                                    key={`a-${a.id}`}
-                                                    onClick={() => { selectDate(dateStr); setSelectedAppointment(a); setShowModal(true); }}
-                                                    className={cn(
-                                                        "w-full text-left px-1.5 py-1 rounded-lg border text-[10px] leading-tight transition-colors hover:bg-white/[0.08]",
-                                                        a.type === "incoming" ? "border-blue-500/30 bg-blue-500/10" :
-                                                            a.type === "self_generated" ? "border-purple-500/30 bg-purple-500/10" : "border-amber-500/30 bg-amber-500/10",
-                                                    )}
-                                                >
-                                                    <div className="font-semibold text-slate-200 truncate">{a.time} {a.customerName}</div>
-                                                    <div className="text-slate-400 truncate">{a.type === "incoming" ? (a.store || "Inbound") : (a.agente || "—")}</div>
-                                                </button>
-                                            ))}
-                                            {dayTasks.map((t) => (
-                                                <button
-                                                    key={`t-${t.id}`}
-                                                    onClick={() => selectDate(dateStr)}
-                                                    title="Apri il giorno: la task si gestisce dal pannello a destra"
-                                                    className="w-full text-left px-1.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
-                                                >
-                                                    <div className="font-semibold text-emerald-200 truncate">{t.time ? `${t.time} ` : ""}{t.title}</div>
-                                                    <div className="text-slate-400 truncate">{t.assignedToStore || t.assignedTo}</div>
-                                                </button>
-                                            ))}
-                                            {dayMeetings.map((m) => (
-                                                <button
-                                                    key={`m-${m.id}`}
-                                                    onClick={() => { selectDate(dateStr); setSelectedMeeting(m); setShowMeetingDetailModal(true); }}
-                                                    className="w-full text-left px-1.5 py-1 rounded-lg border border-sky-500/30 bg-sky-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
-                                                >
-                                                    <div className="font-semibold text-sky-200 truncate">{m.startTime} {m.title}</div>
-                                                    <div className="text-slate-400 truncate">{m.brand}</div>
-                                                </button>
-                                            ))}
+                                            {/* UNICA lista cronologica (Luca 29/07): l'ORARIO è il principe —
+                                                senza-orario IN TESTA, poi tutte le categorie mescolate
+                                                in ordine di orario reale (non tre liste in sequenza). */}
+                                            {[
+                                                ...dayAppts.map((a) => ({ min: minutiDi(a.time), jsx: (
+                                                    <button
+                                                        key={`a-${a.id}`}
+                                                        onClick={() => { selectDate(dateStr); setSelectedAppointment(a); setShowModal(true); }}
+                                                        className={cn(
+                                                            "w-full text-left px-1.5 py-1 rounded-lg border text-[10px] leading-tight transition-colors hover:bg-white/[0.08]",
+                                                            a.type === "incoming" ? "border-blue-500/30 bg-blue-500/10" :
+                                                                a.type === "self_generated" ? "border-purple-500/30 bg-purple-500/10" : "border-amber-500/30 bg-amber-500/10",
+                                                        )}
+                                                    >
+                                                        <div className="font-semibold text-slate-200 truncate">{a.time} {a.customerName}</div>
+                                                        <div className="text-slate-400 truncate">{a.type === "incoming" ? (a.store || "Inbound") : (a.agente || "—")}</div>
+                                                    </button>
+                                                ) })),
+                                                ...dayTasks.map((t) => ({ min: t.time ? minutiDi(t.time) : -1, jsx: (
+                                                    <button
+                                                        key={`t-${t.id}`}
+                                                        onClick={() => selectDate(dateStr)}
+                                                        title="Apri il giorno: la task si gestisce dal pannello a destra"
+                                                        className="w-full text-left px-1.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
+                                                    >
+                                                        <div className="font-semibold text-emerald-200 truncate">{t.time ? `${t.time} ` : ""}{t.title}</div>
+                                                        <div className="text-slate-400 truncate">{t.assignedToStore || t.assignedTo}</div>
+                                                    </button>
+                                                ) })),
+                                                ...dayMeetings.map((m) => ({ min: minutiDi(m.startTime), jsx: (
+                                                    <button
+                                                        key={`m-${m.id}`}
+                                                        onClick={() => { selectDate(dateStr); setSelectedMeeting(m); setShowMeetingDetailModal(true); }}
+                                                        className="w-full text-left px-1.5 py-1 rounded-lg border border-sky-500/30 bg-sky-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
+                                                    >
+                                                        <div className="font-semibold text-sky-200 truncate">{m.startTime} {m.title}</div>
+                                                        <div className="text-slate-400 truncate">{m.brand}</div>
+                                                    </button>
+                                                ) })),
+                                            ].sort((x, y) => x.min - y.min).map((v) => v.jsx)}
                                             {dayAppts.length === 0 && dayTasks.length === 0 && dayMeetings.length === 0 && (
                                                 <div className="text-center text-[10px] text-slate-600 pt-4">—</div>
                                             )}
@@ -1208,6 +1231,97 @@ export default function Calendario() {
                             })}
                         </div>
                     )}
+
+                    {/* VISTA GIORNO (Luca 29/07): ore scandite in verticale stile Google
+                        Calendar — tutta la giornata a colpo d'occhio, dettaglio inline. */}
+                    {calView === "day" && (() => {
+                        const H0 = 7, H1 = 22, PX = 64;                     // 07–22, 64px l'ora
+                        const dayAppts = apptsByDate(dayDate);
+                        const dayTasks = tasksByDate(dayDate);
+                        const dayMeetings = meetingsByDate(dayDate);
+                        const senzaOra = dayTasks.filter(t => !t.time);
+                        type Ev = { key: string; min: number; durata: number; titolo: string; sotto: string; extra?: string; classi: string; onClick: () => void };
+                        const evs: Ev[] = [
+                            ...dayAppts.filter(a => minutiDi(a.time) < 24 * 60).map((a): Ev => ({
+                                key: `a-${a.id}`, min: minutiDi(a.time), durata: 60,
+                                titolo: `${a.time} · ${a.customerName}`,
+                                sotto: a.type === "incoming" ? `🏬 ${a.store || "Inbound"}` : `🧑‍💼 ${a.agente || "—"}${a.customerAddress ? " · " + a.customerAddress : ""}`,
+                                extra: a.customerPhone ? `📞 ${a.customerPhone}` : undefined,
+                                classi: a.type === "incoming" ? "border-blue-500/40 bg-blue-500/15" : a.type === "self_generated" ? "border-purple-500/40 bg-purple-500/15" : "border-amber-500/40 bg-amber-500/15",
+                                onClick: () => { setSelectedAppointment(a); setShowModal(true); },
+                            })),
+                            ...dayTasks.filter(t => t.time && minutiDi(t.time) < 24 * 60).map((t): Ev => ({
+                                key: `t-${t.id}`, min: minutiDi(t.time), durata: 45,
+                                titolo: `${t.time} · ${t.title}`, sotto: t.assignedToStore || t.assignedTo || "",
+                                classi: "border-emerald-500/40 bg-emerald-500/15",
+                                onClick: () => selectDate(dayDate),
+                            })),
+                            ...dayMeetings.map((m): Ev => ({
+                                key: `m-${m.id}`, min: minutiDi(m.startTime),
+                                durata: Math.max(30, minutiDi(m.endTime) - minutiDi(m.startTime) || 60),
+                                titolo: `${m.startTime}${m.endTime ? "–" + m.endTime : ""} · ${m.title}`, sotto: m.brand || "Riunione",
+                                classi: "border-sky-500/40 bg-sky-500/15",
+                                onClick: () => { setSelectedMeeting(m); setShowMeetingDetailModal(true); },
+                            })),
+                        ].sort((x, y) => x.min - y.min);
+                        // corsie per le sovrapposizioni (eventi contemporanei affiancati)
+                        const fineCorsie: number[] = [];
+                        const posiz = evs.map((e) => {
+                            let lane = fineCorsie.findIndex(f => f <= e.min);
+                            if (lane === -1) { lane = fineCorsie.length; fineCorsie.push(0); }
+                            fineCorsie[lane] = e.min + e.durata;
+                            return { ...e, lane };
+                        });
+                        const nCorsie = Math.max(1, fineCorsie.length);
+                        const yDi = (min: number) => Math.max(0, Math.min((H1 - H0) * 60, min - H0 * 60)) / 60 * PX;
+                        const adesso = new Date();
+                        const oraLinea = dayDate === todayStr ? adesso.getHours() * 60 + adesso.getMinutes() : null;
+                        return (
+                            <div>
+                                {senzaOra.length > 0 && (
+                                    <div className="mb-3 flex flex-wrap gap-1.5 items-center">
+                                        <span className="text-[10px] uppercase tracking-wider text-slate-500">Tutto il giorno:</span>
+                                        {senzaOra.map(t => (
+                                            <button key={`sg-${t.id}`} onClick={() => selectDate(dayDate)}
+                                                className="px-2 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-[11px] text-emerald-200 hover:bg-emerald-500/25">
+                                                {t.title}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="relative rounded-xl border border-white/8 bg-white/[0.02] overflow-hidden" style={{ height: (H1 - H0) * PX }}>
+                                    {Array.from({ length: H1 - H0 }, (_, i) => (
+                                        <div key={i} className="absolute left-0 right-0 border-t border-white/5" style={{ top: i * PX }}>
+                                            <span className="absolute -top-2.5 left-2 text-[10px] font-mono text-slate-500 bg-transparent">{String(H0 + i).padStart(2, "0")}:00</span>
+                                        </div>
+                                    ))}
+                                    {oraLinea !== null && oraLinea >= H0 * 60 && oraLinea <= H1 * 60 && (
+                                        <div className="absolute left-0 right-0 z-20 pointer-events-none" style={{ top: yDi(oraLinea) }}>
+                                            <div className="border-t-2 border-rose-500" />
+                                            <span className="absolute -top-2 left-1 w-2.5 h-2.5 rounded-full bg-rose-500" />
+                                        </div>
+                                    )}
+                                    {posiz.map((e) => (
+                                        <button key={e.key} onClick={e.onClick}
+                                            className={cn("absolute z-10 text-left rounded-lg border px-2 py-1 overflow-hidden hover:brightness-125 transition-all", e.classi)}
+                                            style={{
+                                                top: yDi(e.min) + 1,
+                                                height: Math.max(30, yDi(e.min + e.durata) - yDi(e.min) - 2),
+                                                left: `calc(52px + ${e.lane} * ((100% - 60px) / ${nCorsie}))`,
+                                                width: `calc((100% - 60px) / ${nCorsie} - 4px)`,
+                                            }}>
+                                            <div className="text-[11px] font-bold text-slate-100 truncate">{e.titolo}</div>
+                                            <div className="text-[10px] text-slate-300 truncate">{e.sotto}</div>
+                                            {e.extra && <div className="text-[10px] text-slate-400 truncate">{e.extra}</div>}
+                                        </button>
+                                    ))}
+                                    {posiz.length === 0 && (
+                                        <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-600">Nessun impegno in agenda per questo giorno</div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 {/* Side panel */}
@@ -1514,8 +1628,16 @@ export default function Calendario() {
                                 <div className="flex items-center gap-2 text-slate-300"><Clock className="w-4 h-4 text-slate-500" />{selectedAppointment.date} alle {selectedAppointment.time}</div>
                                 <div className="flex items-center gap-2 text-slate-300"><User className="w-4 h-4 text-slate-500" />{selectedAppointment.customerName}</div>
                                 <div className="flex items-center gap-2 text-slate-300"><Phone className="w-4 h-4 text-slate-500" />{selectedAppointment.customerPhone}</div>
-                                {selectedAppointment.cfPiva && <div className="flex items-center gap-2 text-slate-300 font-mono"><Search className="w-4 h-4 text-slate-500" />{selectedAppointment.cfPiva}</div>}
-                                <div className="flex items-center gap-2 text-slate-300"><MapPin className="w-4 h-4 text-slate-500" />{selectedAppointment.store || selectedAppointment.customerAddress}</div>
+                                {selectedAppointment.cfPiva && <div className="flex items-center gap-2 text-slate-300 font-mono"><Search className="w-4 h-4 text-slate-500" /><span className="text-[10px] uppercase text-slate-500 font-sans">{selectedAppointment.tipoCliente === "business" ? "P.IVA" : "C.F."}</span>{selectedAppointment.cfPiva}</div>}
+                                <div className="flex items-center gap-2 text-slate-300">
+                                    <MapPin className="w-4 h-4 text-slate-500" />{selectedAppointment.store || selectedAppointment.customerAddress}
+                                    {selectedAppointment.customerAddress && (
+                                        <a href={"https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(selectedAppointment.customerAddress)}
+                                            target="_blank" rel="noopener noreferrer"
+                                            title="Vedi su Google Maps dove si trova"
+                                            className="px-2 py-0.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-xs shrink-0">🗺 Maps</a>
+                                    )}
+                                </div>
                                 <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />{selectedAppointment.type === "incoming" && selectedAppointment.store ? `Punto vendita: ${selectedAppointment.store}` : `Agente: ${selectedAppointment.agente || "—"}`}</div>
                             </div>
                             {selectedAppointment.notes && (
@@ -1628,17 +1750,44 @@ export default function Calendario() {
                                     <p className="text-xs text-slate-500 mt-1">Per gli appuntamenti inbound si seleziona solo il punto vendita.</p>
                                 </div>
                             )}
-                            {newAppt.type === "outgoing" && (
+                            {/* VIA anche per gli AUTOGENERATI (Luca 29/07): autocomplete con
+                                CAP/zona compilati dalla lista + bottone 🗺 che apre Maps. */}
+                            {newAppt.type !== "incoming" && (
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Indirizzo cliente *</label>
-                                    <IndirizzoAutocomplete value={newAppt.customerAddress} onChange={v => setNewAppt(p => ({ ...p, customerAddress: v }))} onPick={s => setNewAppt(p => ({ ...p, customerAddress: s.completo }))} className="glass-input w-full" placeholder="Via e civico: scegli dalla lista" />
+                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Indirizzo cliente {newAppt.type === "outgoing" ? "*" : ""}</label>
+                                    <div className="flex gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <IndirizzoAutocomplete value={newAppt.customerAddress} onChange={v => setNewAppt(p => ({ ...p, customerAddress: v }))} onPick={s => setNewAppt(p => ({ ...p, customerAddress: s.completo }))} className="glass-input w-full" placeholder="Via e civico: scegli dalla lista" />
+                                        </div>
+                                        {newAppt.customerAddress.trim() && (
+                                            <a href={"https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(newAppt.customerAddress)}
+                                                target="_blank" rel="noopener noreferrer"
+                                                title="Vedi su Google Maps dove si trova"
+                                                className="shrink-0 px-3 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-sm">🗺</a>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
-
+                            {/* CONSUMER/BUSINESS (Luca 29/07): il flag decide cosa chiede
+                                il campo — Codice Fiscale o Partita IVA. */}
                             <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Codice Fiscale / Partita IVA *</label>
-                                <input type="text" className="glass-input w-full font-mono uppercase" placeholder="es. RSSMRA80A01H501U" value={newAppt.cfPiva} onChange={e => setNewAppt(p => ({ ...p, cfPiva: e.target.value.toUpperCase() }))} required />
+                                <div className="flex gap-2 mb-1.5">
+                                    {([["consumer", "👤 Consumer"], ["business", "🏢 Business"]] as const).map(([id, lab]) => (
+                                        <button key={id} type="button"
+                                            onClick={() => setNewAppt(p => ({ ...p, tipoCliente: id }))}
+                                            className={cn("px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all",
+                                                newAppt.tipoCliente === id ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]")}>
+                                            {lab}
+                                        </button>
+                                    ))}
+                                </div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">{newAppt.tipoCliente === "business" ? "Partita IVA *" : "Codice Fiscale *"}</label>
+                                <input type="text" className="glass-input w-full font-mono uppercase"
+                                    placeholder={newAppt.tipoCliente === "business" ? "es. 01234567890" : "es. RSSMRA80A01H501U"}
+                                    maxLength={newAppt.tipoCliente === "business" ? 11 : 16}
+                                    value={newAppt.cfPiva}
+                                    onChange={e => setNewAppt(p => ({ ...p, cfPiva: p.tipoCliente === "business" ? e.target.value.replace(/\D/g, "") : e.target.value.toUpperCase() }))} required />
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -1868,14 +2017,7 @@ export default function Calendario() {
                             {newMeeting.type === "in_person" && (
                                 <div>
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Indirizzo riunione *</label>
-                                    <input
-                                        type="text"
-                                        className="glass-input w-full"
-                                        placeholder="Via, numero civico, città"
-                                        value={newMeeting.location}
-                                        onChange={e => setNewMeeting(p => ({ ...p, location: e.target.value }))}
-                                        required
-                                    />
+                                    <IndirizzoAutocomplete value={newMeeting.location} onChange={v => setNewMeeting(p => ({ ...p, location: v }))} onPick={s => setNewMeeting(p => ({ ...p, location: s.completo }))} className="glass-input w-full" placeholder="Via e civico: scegli dalla lista" />
                                 </div>
                             )}
 

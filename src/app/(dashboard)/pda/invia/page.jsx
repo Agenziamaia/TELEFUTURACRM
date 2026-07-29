@@ -264,6 +264,11 @@ export default function InviaPda() {
   const [step, setStep] = useState(draft?.step ?? 1);
   const [venditore, setVenditore] = useState(draft?.venditore ?? user?.name ?? "");
   const [negozio, setNegozio] = useState(draft?.negozio ?? user?.negozio ?? "");
+  // AUTOCOMPILAZIONE (Luca 29/07): il venditore è CHI È LOGGATO. L'init sopra
+  // non basta: al primo render l'utente può non essere ancora arrivato, e una
+  // bozza con venditore VUOTO ("" non è nullish) bloccava il fallback → il
+  // campo restava da selezionare a mano.
+  useEffect(() => { if (!venditore && user?.name) setVenditore(user.name); }, [user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
   // "Data Vendita" era un input non controllato fisso al 2026-03-07 (residuo
   // del mock): mostrava sempre il 7 marzo e il valore scelto non veniva letto.
   const [dataVendita, setDataVendita] = useState(
@@ -300,6 +305,24 @@ export default function InviaPda() {
   const updSale = (ck, si, up) => setAllSales(p => { const a = [...getSales(ck)]; a[si] = { ...a[si], ...up }; return { ...p, [ck]: a }; });
   const setProd = (ck, si, v) => updSale(ck, si, { product: v });
   const setField = (ck, si, fk, v) => updSale(ck, si, { fields: { ...(getSales(ck)[si]?.fields || {}), [fk]: v } });
+  // piu' campi in UN colpo (la scelta dell'indirizzo compila via+CAP+citta':
+  // tre setField in fila si mangerebbero a vicenda leggendo stato stantio)
+  const setFields = (ck, si, patch) => updSale(ck, si, { fields: { ...(getSales(ck)[si]?.fields || {}), ...patch } });
+  // INDIRIZZO COMPLETO (Luca 29/07): via con riconoscimento + CAP e Citta'
+  // compilati dalla lista (chiavi <k>Cap e <k>Citta nei dettagli); a mano
+  // solo se non trovato. Montato su fisso, energia, Dojo e SME.
+  const CampiIndirizzo = ({ k, sale, catKey, si }) => {
+    const f = sale.fields || {};
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1.2fr] gap-2 mt-2">
+        <IndirizzoAutocomplete value={f[k] || ""} onChange={v => setField(catKey, si, k, v)}
+          onPick={s => setFields(catKey, si, { [k]: s.indirizzo, ...(s.cap ? { [k + "Cap"]: s.cap } : {}), ...(s.citta ? { [k + "Citta"]: s.citta } : {}) })}
+          className="glass-input w-full" placeholder="Via e civico: scegli dalla lista" />
+        <input type="text" className="glass-input" placeholder="CAP" maxLength={5} value={f[k + "Cap"] || ""} onChange={e => setField(catKey, si, k + "Cap", e.target.value)} />
+        <input type="text" className="glass-input" placeholder="Città" value={f[k + "Citta"] || ""} onChange={e => setField(catKey, si, k + "Citta", e.target.value)} />
+      </div>
+    );
+  };
   const toggleSkyPkt = (ck, si, p) => { const cur = getSales(ck)[si]?.skyPkt || []; updSale(ck, si, { skyPkt: cur.includes(p) ? cur.filter(x => x !== p) : [...cur, p] }); };
   const setSkyTech = (ck, si, v) => updSale(ck, si, { skyTech: v });
   const setSkyDec = (ck, si, v) => updSale(ck, si, { skyDec: v });
@@ -702,6 +725,8 @@ export default function InviaPda() {
                     >
                       {opts.map(o => <option key={o} value={o}>{o || "— Seleziona —"}</option>)}
                     </select>
+                  ) : f.key.toLowerCase().startsWith("indirizzo") ? (
+                    <CampiIndirizzo k={f.key} sale={sale} catKey={catKey} si={si} />
                   ) : (
                     <input
                       type="text"
@@ -767,9 +792,7 @@ export default function InviaPda() {
         <div className="mt-4 p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-6">
           <div>
             <Label text="Indirizzo installazione" required />
-            <input type="text" className="glass-input mt-2" value={addr}
-              onChange={e => setField(catKey, si, "dojoAddr", e.target.value)}
-              placeholder="es. Via Roma 1, 00100 Roma" />
+            <CampiIndirizzo k="dojoAddr" sale={sale} catKey={catKey} si={si} />
           </div>
           <Stepper label="Costo mensile" value={cost} min={COST_MIN} max={COST_MAX} step={COST_STEP} fieldKey="dojoCost" unit="€/mese" decimals={2} />
           <Stepper label="Commissione transazioni" value={comm} min={COMM_MIN} max={COMM_MAX} step={COMM_STEP} fieldKey="dojoComm" unit="%" decimals={2} />
@@ -867,9 +890,7 @@ export default function InviaPda() {
           {lineeSet && portSet && payDone && (
             <div className="pt-4 border-t border-white/5 animate-in fade-in duration-200">
               <Label text="📍 Indirizzo installazione" required />
-              <input type="text" value={smeAddr} onChange={e => setField(catKey, si, "smeAddr", e.target.value)}
-                placeholder="es. Via Roma 1, 00100 Roma"
-                className="glass-input mt-2" />
+              <CampiIndirizzo k="smeAddr" sale={sale} catKey={catKey} si={si} />
             </div>
           )}
 
@@ -1332,6 +1353,8 @@ export default function InviaPda() {
                     onChange={v => setField(catKey, si, f.key, v)}
                     placeholder="— Seleziona —"
                   />
+                ) : f.key.toLowerCase().startsWith("indirizzo") ? (
+                  <CampiIndirizzo k={f.key} sale={sale} catKey={catKey} si={si} />
                 ) : (
                   <input
                     type="text"
@@ -1410,10 +1433,7 @@ export default function InviaPda() {
         {tech && (
           <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5">
             <Label text="Indirizzo installazione" color={color} />
-            <input type="text" className="glass-input mt-2"
-              value={sale.fields?.indirizzoInstallazione || ""}
-              onChange={e => setField(catKey, si, "indirizzoInstallazione", e.target.value)}
-              placeholder="es. Via Roma 1, 00100 Roma" />
+            <CampiIndirizzo k="indirizzoInstallazione" sale={sale} catKey={catKey} si={si} />
           </div>
         )}
       </div>

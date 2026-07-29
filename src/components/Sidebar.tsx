@@ -87,6 +87,9 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
     // auto-nascondi: "peek" = ricomparsa temporanea perche' il mouse e' sul bordo
     const [peek, setPeek] = useState(false);
     const searchParams = useSearchParams();
+    // navigando da un menù "sbirciato" il menù si RITIRA da solo — prima
+    // restava aperto in sovrapposizione sulla pagina nuova (Luca 29/07)
+    useEffect(() => { setPeek(false); }, [pathname, searchParams]);
     // Voce attiva anche con la query: due voci sulla stessa rotta (es. hub
     // Call Center: /caller e /caller?tab=badge) si distinguono per ?tab=.
     const attivo = (href: string) => {
@@ -164,6 +167,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                 <div className="hidden lg:block fixed inset-y-0 left-0 w-3 z-40" onMouseEnter={() => setPeek(true)} />
             )}
             <aside
+                id="crm-sidebar"
                 onMouseLeave={() => { if (autoHide) setPeek(false); }}
                 className={cn(
                     "fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-[#0f111a]/95 backdrop-blur-xl border-r border-white/5 transition-transform duration-300",
@@ -183,8 +187,12 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                         <div className="px-4 mb-4 flex items-center justify-between">
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Menu</p>
                             {setAutoHide && (
+                                /* FIX (Luca 29/07): prima il click lasciava il menù APERTO in
+                                   sovrapposizione (peek=true) mentre il contenuto si riallargava
+                                   sotto → "pagina scomposta". Ora attivando la scomparsa il
+                                   menù SI NASCONDE SUBITO (riappare dal bordo sinistro). */
                                 <button
-                                    onClick={() => { setAutoHide(!autoHide); setPeek(true); }}
+                                    onClick={() => { setAutoHide(!autoHide); setPeek(false); }}
                                     title={autoHide ? "Menù a scomparsa attivo — clicca per bloccarlo aperto" : "Menù bloccato aperto — clicca per farlo scomparire da solo (ricompare avvicinando il mouse al bordo)"}
                                     className={cn("hidden lg:flex p-1.5 rounded-lg transition-colors", autoHide ? "text-violet-300 bg-violet-500/15 hover:bg-violet-500/25" : "text-slate-500 hover:text-white hover:bg-white/10")}
                                 >
