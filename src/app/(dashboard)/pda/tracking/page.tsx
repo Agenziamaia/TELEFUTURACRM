@@ -1455,12 +1455,13 @@ export default function TrackingPdaPage() {
         ...base,
         categoria: c,
         rowKey: `${base.id}#${c}`,
-        // #119: ogni riga (categoria) e' INDIPENDENTE. Solo i contratti a categoria
-        // UNICA ereditano lo stato_negozio condiviso (retrocompat pratiche vecchie);
-        // con piu' categorie, quelle senza esito proprio partono da "nuovo" e NON
-        // ereditano lo stato di un'altra categoria (es. l'MNP non deve mostrare
-        // "In Liquidazione", stato valido solo per il Finanziamento).
-        statoNegozio: perCat[c] ?? (cats.length === 1 ? base.statoNegozio : "nuovo"),
+        // #119: ogni riga (categoria) e' INDIPENDENTE. Se la categoria non ha un
+        // esito proprio in stati_categoria, eredita lo stato_negozio condiviso SOLO
+        // se e' VALIDO per quella categoria (retrocompat delle pratiche vecchie il cui
+        // esito sta ancora nel campo condiviso); altrimenti parte da "nuovo". Cosi'
+        // "In Liquidazione" (valido solo per il Finanziamento) non finisce sull'MNP,
+        // ma il Finanziamento non perde il suo stato.
+        statoNegozio: perCat[c] ?? ((base.statoNegozio && getStatiNegozioPerCategoria(c).some((s) => s.id === base.statoNegozio)) ? base.statoNegozio : "nuovo"),
       }));
     });
     return out;
