@@ -25,7 +25,9 @@ const _isEmptyVal=(v)=>!(v!==undefined&&v!==null&&String(v).trim()!=="");
 // ═══════════════════════════════════════════════════════════════
 
 // ── AUTO-SAVE ──
-const useAutoSave=(key,state)=>{useEffect(()=>{try{sessionStorage.setItem(key,JSON.stringify(state))}catch(e){}},[key,state])};
+// enabled: non salvare finche' la bozza non e' stata ricaricata, altrimenti al
+// mount lo stato VUOTO sovrascriverebbe la bozza prima del ripristino (#118).
+const useAutoSave=(key,state,enabled=true)=>{useEffect(()=>{if(!enabled)return;try{sessionStorage.setItem(key,JSON.stringify(state))}catch(e){}},[key,state,enabled])};
 const loadDraft=(key)=>{try{const d=sessionStorage.getItem(key);return d?JSON.parse(d):null}catch(e){return null}};
 const clearDraft=(key)=>{try{sessionStorage.removeItem(key)}catch(e){}};
 
@@ -4035,11 +4037,30 @@ export default function CRM() {
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
     setSelVend(user?.name||"");setSelNeg(user?.negozio||"");};
-  // ── Auto-save every state change ──
-  useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,selVend,selNeg,lookupValue,margItems});
-  
+  // ── Auto-save every state change (solo dopo il ripristino della bozza) ──
+  // #118: si salva l'intera vendita in corso (brand, prodotti, carrello, flusso).
+  useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,cart,selVend,selNeg,lookupValue,margItems,clienteFound,lookupDone,showAna,showStep4,notaOn,nota,promData,promOra,promNeg,promDesc},draftLoaded);
+
   // ── Load draft on mount (once) ──
-  useEffect(()=>{if(draftLoaded)return;setDraftLoaded(true);const d=loadDraft("crm_v9");if(d){if(d.tipoCliente)setTipoCliente(d.tipoCliente);if(d.ana)setAna(d.ana);if(d.selVend)setSelVend(d.selVend);if(d.selNeg)setSelNeg(d.selNeg);if(d.margItems)setMargItems(d.margItems)}},[]);
+  // #118: ripristino COMPLETO della vendita in corso. Prima si ricaricava solo un
+  // sottoinsieme e — soprattutto — l'auto-save al mount cancellava la bozza; ora
+  // l'auto-save e' gated su draftLoaded, quindi navigando fuori e rientrando la
+  // pratica resta. L'azzeramento avviene solo con: salvataggio (fullReset),
+  // logout esplicito (AuthContext) o chiusura scheda/browser (sessionStorage).
+  useEffect(()=>{if(draftLoaded)return;setDraftLoaded(true);const d=loadDraft("crm_v9");if(d){
+    if(d.tipoCliente)setTipoCliente(d.tipoCliente);if(d.ana)setAna(d.ana);
+    if(d.selVend)setSelVend(d.selVend);if(d.selNeg)setSelNeg(d.selNeg);if(d.margItems)setMargItems(d.margItems);
+    if(d.brand)setBrand(d.brand);if(d.sales)setSales(d.sales);if(d.sesCode)setSesCode(d.sesCode);
+    if(Array.isArray(d.skyS))setSkyS(d.skyS);if(Array.isArray(d.cart))setCart(d.cart);
+    if(d.lookupValue)setLookupValue(d.lookupValue);
+    if(typeof d.clienteFound==="boolean")setClienteFound(d.clienteFound);
+    if(typeof d.lookupDone==="boolean")setLookupDone(d.lookupDone);
+    if(typeof d.showAna==="boolean")setShowAna(d.showAna);
+    if(typeof d.showStep4==="boolean")setShowStep4(d.showStep4);
+    if(typeof d.notaOn==="boolean")setNotaOn(d.notaOn);if(d.nota)setNota(d.nota);
+    if(d.promData)setPromData(d.promData);if(d.promOra)setPromOra(d.promOra);
+    if(d.promNeg)setPromNeg(d.promNeg);if(d.promDesc)setPromDesc(d.promDesc);
+  }},[]);
   
   // ── Remember last brand+tipo for next session ──
   useEffect(()=>{if(tipoCliente)try{sessionStorage.setItem("crm_lastTipo",tipoCliente)}catch(e){}},[tipoCliente]);

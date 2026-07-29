@@ -208,6 +208,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const logout = () => {
         clearAiChat(user?.id);
+        // #118: la bozza della vendita in corso (Registra Vendita) non sopravvive
+        // al logout esplicito — al nuovo login il form riparte vuoto.
+        try { sessionStorage.removeItem("crm_v9"); sessionStorage.removeItem("crm_lastTipo"); } catch { /* ignore */ }
         setViewAs(null);   // il "guarda come" non sopravvive al logout
         setViewAsUser(null);
         setUser(null);
