@@ -11,6 +11,7 @@ import { MarginalitaView } from "./_views/marginalita";
 import { PermessiView } from "./_views/permessi";
 import { RuoliView } from "./_views/ruoli";
 import { CatalogoView } from "./_views/catalogo";
+import { CallCenterView } from "./_views/callcenter";
 import { IncarichiView } from "./_views/incarichi";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
@@ -172,6 +173,7 @@ const SEZIONI = [
     { id: "altri", label: "Altri costi", icon: Tag, desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
     { id: "marginalita", label: "Marginalità", icon: Package, desc: "Catalogo prodotti e servizi: IVA, costi e margini, valore visibile per le gare, legami coi brand." },
     { id: "catalogo", label: "Catalogo", icon: Layers, desc: "Catalogo operatori a 6 livelli: brand, tipo cliente, categorie, prodotti, offerte e opzioni — la base del Registra Vendita." },
+    { id: "callcenter", label: "Call Center", icon: Phone, desc: "Opzioni della sezione Caller: esiti/stati, provenienze, tipologie e obiettivi — aggiungi, rinomina, riordina, spegni." },
     { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
 ] as const;
 
@@ -491,6 +493,8 @@ function AmministrazioneInner() {
                 <MarginalitaView />
             ) : sez === "catalogo" ? (
                 <CatalogoView />
+            ) : sez === "callcenter" ? (
+                <CallCenterView />
             ) : (
                 <TargetSection />
             )}

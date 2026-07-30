@@ -319,6 +319,27 @@ function CallerPageInner() {
     // SOLO il personale del call center (ruoli area cc), non tutti gli utenti:
     // il filtro Caller elencava l'intera azienda (segnalazione Luca 30/07).
     const CALLERS = useCallers();
+    // OPZIONI AMMINISTRABILI (mig. 105): stati/esiti, provenienze, tipologie e
+    // obiettivi arrivano da caller_opzioni (Amministrazione → Call Center);
+    // tabella vuota o non raggiungibile = liste storiche in codice. Gli stati
+    // con automatismi (NR → WhatsApp, richiami, appuntamenti → calendario)
+    // sono riconosciuti PER NOME: valgono finche' il nome resta quello.
+    const [opzioniDb, setOpzioniDb] = useState<Record<string, string[]>>({});
+    useEffect(() => {
+        supabase.from("caller_opzioni").select("categoria, voce, attiva, ordine").order("ordine")
+            .then(({ data }) => {
+                if (!data?.length) return;
+                const m: Record<string, string[]> = {};
+                (data as { categoria: string; voce: string; attiva: boolean }[])
+                    .filter((r) => r.attiva)
+                    .forEach((r) => { (m[r.categoria] ||= []).push(r.voce); });
+                setOpzioniDb(m);
+            });
+    }, []);
+    const STATI_OPT = opzioniDb.stato?.length ? opzioniDb.stato : [...STATI];
+    const PROVENIENZE_OPT = opzioniDb.provenienza?.length ? opzioniDb.provenienza : [...PROVENIENZE];
+    const TIPOLOGIE_OPT = opzioniDb.tipologia?.length ? opzioniDb.tipologia : [...TIPOLOGIE];
+    const OBIETTIVI_OPT = opzioniDb.obiettivo?.length ? opzioniDb.obiettivo : [...OBIETTIVI];
     const [view, setView] = usePageView<typeof defaultCallerView>("caller", defaultCallerView);
 
     // Utente e ruolo REALI dalla sessione. Prima erano fissi ("Mario Rossi" +
@@ -1113,7 +1134,7 @@ function CallerPageInner() {
     const canNext4 = colsAttive.some(c => listaMappa[c] === "Numero");
     const canConfirm = splitsValidi;
 
-    const statiDisponibili = isDirector ? STATI : STATI.filter(s => s !== "Nuovo");
+    const statiDisponibili = isDirector ? STATI_OPT : STATI_OPT.filter(s => s !== "Nuovo");
 
     /* ── Detail mode flags ── */
     const statoNewIsNR = !!editCall && NR_STATI.includes(editCall.statoNew || "");
@@ -1347,16 +1368,16 @@ function CallerPageInner() {
                                         </div>
                                     </FilterField>
                                     <FilterField label="Stato">
-                                        <SelectOpzioni value={fStato} onChange={setFStato} opzioni={STATI} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
+                                        <SelectOpzioni value={fStato} onChange={setFStato} opzioni={STATI_OPT} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Provenienza">
-                                        <SelectOpzioni value={fProvenienza} onChange={setFProvenienza} opzioni={PROVENIENZE} placeholder="Tutte — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
+                                        <SelectOpzioni value={fProvenienza} onChange={setFProvenienza} opzioni={PROVENIENZE_OPT} placeholder="Tutte — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Tipologia">
-                                        <SelectOpzioni value={fTipologia} onChange={setFTipologia} opzioni={TIPOLOGIE} placeholder="Tutte — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
+                                        <SelectOpzioni value={fTipologia} onChange={setFTipologia} opzioni={TIPOLOGIE_OPT} placeholder="Tutte — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Obiettivo">
-                                        <SelectOpzioni value={fObiettivo} onChange={setFObiettivo} opzioni={OBIETTIVI} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
+                                        <SelectOpzioni value={fObiettivo} onChange={setFObiettivo} opzioni={OBIETTIVI_OPT} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     {isDirector && (
                                         <FilterField label="Caller">
@@ -1565,19 +1586,19 @@ function CallerPageInner() {
                                 <FormGroup label="Obiettivo">
                                     <select className="glass-input rounded-lg py-2 w-full" value={serie.obiettivo} onChange={(e) => salvaSerie({ ...serie, obiettivo: e.target.value })}>
                                         <option value="">—</option>
-                                        {OBIETTIVI.map(o => <option key={o} value={o}>{o}</option>)}
+                                        {OBIETTIVI_OPT.map(o => <option key={o} value={o}>{o}</option>)}
                                     </select>
                                 </FormGroup>
                                 <FormGroup label="Provenienza">
                                     <select className="glass-input rounded-lg py-2 w-full" value={serie.provenienza} onChange={(e) => salvaSerie({ ...serie, provenienza: e.target.value })}>
                                         <option value="">—</option>
-                                        {PROVENIENZE.map(pr => <option key={pr} value={pr}>{pr}</option>)}
+                                        {PROVENIENZE_OPT.map(pr => <option key={pr} value={pr}>{pr}</option>)}
                                     </select>
                                 </FormGroup>
                                 <FormGroup label="Tipologia">
                                     <select className="glass-input rounded-lg py-2 w-full" value={serie.tipologia} onChange={(e) => salvaSerie({ ...serie, tipologia: e.target.value })}>
                                         <option value="">—</option>
-                                        {TIPOLOGIE.map(t => <option key={t} value={t}>{t}</option>)}
+                                        {TIPOLOGIE_OPT.map(t => <option key={t} value={t}>{t}</option>)}
                                     </select>
                                 </FormGroup>
                             </div>
@@ -1764,7 +1785,7 @@ function CallerPageInner() {
                                             <FormGroup label="Obiettivo">
                                                 <select className="glass-input rounded-lg py-2 w-full" value={editCall.obiettivo} onChange={(e) => updateField("obiettivo", e.target.value)}>
                                                     <option value="">Seleziona...</option>
-                                                    {OBIETTIVI.map(o => <option key={o} value={o}>{o}</option>)}
+                                                    {OBIETTIVI_OPT.map(o => <option key={o} value={o}>{o}</option>)}
                                                 </select>
                                             </FormGroup>
                                         </div>
@@ -1773,13 +1794,13 @@ function CallerPageInner() {
                                             <FormGroup label="Provenienza">
                                                 <select className="glass-input rounded-lg py-2 w-full" value={editCall.provenienza} onChange={(e) => updateField("provenienza", e.target.value)}>
                                                     <option value="">Seleziona...</option>
-                                                    {PROVENIENZE.map(p => <option key={p} value={p}>{p}</option>)}
+                                                    {PROVENIENZE_OPT.map(p => <option key={p} value={p}>{p}</option>)}
                                                 </select>
                                             </FormGroup>
                                             <FormGroup label="Tipologia">
                                                 <select className="glass-input rounded-lg py-2 w-full" value={editCall.tipologia} onChange={(e) => updateField("tipologia", e.target.value)}>
                                                     <option value="">Seleziona...</option>
-                                                    {TIPOLOGIE.map(t => <option key={t} value={t}>{t}</option>)}
+                                                    {TIPOLOGIE_OPT.map(t => <option key={t} value={t}>{t}</option>)}
                                                 </select>
                                             </FormGroup>
                                         </div>
@@ -1982,19 +2003,19 @@ function CallerPageInner() {
                                                 <FormGroup label="Obiettivo">
                                                     <select className="glass-input rounded-lg py-2 w-full" value={editCall.obiettivo} onChange={(e) => updateField("obiettivo", e.target.value)}>
                                                         <option value="">Seleziona...</option>
-                                                        {OBIETTIVI.map(o => <option key={o} value={o}>{o}</option>)}
+                                                        {OBIETTIVI_OPT.map(o => <option key={o} value={o}>{o}</option>)}
                                                     </select>
                                                 </FormGroup>
                                                 <FormGroup label="Provenienza">
                                                     <select className="glass-input rounded-lg py-2 w-full" value={editCall.provenienza} onChange={(e) => updateField("provenienza", e.target.value)}>
                                                         <option value="">Seleziona...</option>
-                                                        {PROVENIENZE.map(pr => <option key={pr} value={pr}>{pr}</option>)}
+                                                        {PROVENIENZE_OPT.map(pr => <option key={pr} value={pr}>{pr}</option>)}
                                                     </select>
                                                 </FormGroup>
                                                 <FormGroup label="Tipologia">
                                                     <select className="glass-input rounded-lg py-2 w-full" value={editCall.tipologia} onChange={(e) => updateField("tipologia", e.target.value)}>
                                                         <option value="">Seleziona...</option>
-                                                        {TIPOLOGIE.map(t => <option key={t} value={t}>{t}</option>)}
+                                                        {TIPOLOGIE_OPT.map(t => <option key={t} value={t}>{t}</option>)}
                                                     </select>
                                                 </FormGroup>
                                             </div>
@@ -2201,7 +2222,7 @@ function CallerPageInner() {
                                             <FormGroup label="Obiettivo">
                                                 <select className="glass-input rounded-lg py-2 w-full" value={listaObiettivoMkt} onChange={(e) => setListaObiettivoMkt(e.target.value)}>
                                                     <option value="">Seleziona obiettivo...</option>
-                                                    {OBIETTIVI.map(o => <option key={o} value={o}>{o}</option>)}
+                                                    {OBIETTIVI_OPT.map(o => <option key={o} value={o}>{o}</option>)}
                                                 </select>
                                             </FormGroup>
                                         </>
