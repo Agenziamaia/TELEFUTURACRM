@@ -470,11 +470,14 @@ function CallerPageInner() {
         "Sky": "/sky.png", "Energia": "/energy - Copy.png", "Tim": "/tim-logo-v2.png",
     };
     const [selBrands, setSelBrands] = useState<Set<string>>(new Set());  // vuoto = tutte
+    // Filtro rapido dal pulsante "Da esitare" in alto (Luca 30/07).
+    const [soloDaEsitare, setSoloDaEsitare] = useState(false);
     // FACCETTE COERENTI (Luca 30/07): i contatori dei brand rispettano TUTTI
     // gli altri filtri attivi (caller, date, stato...) ignorando solo la
     // selezione brand stessa — prima erano fissi e non seguivano i filtri.
     const matchFiltri = (c: Call, ignoraBrand = false) => {
         if (!isDirector && c.caller !== currentCaller) return false;
+        if (soloDaEsitare && !c.da_esitare) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
         if (fNome) {
             const search = fNome.toLowerCase();
@@ -511,12 +514,12 @@ function CallerPageInner() {
         return true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
+    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const brandCounts = useMemo(() => {
         const scoped = calls.filter((c) => matchFiltri(c, true));
         return BRANDS.map((b) => ({ brand: b as string, n: scoped.filter((c) => c.brand === b).length }));
-    }, [calls, isDirector, currentCaller, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, fProvenienza, fTipologia, fObiettivo, fLista]);
+    }, [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, fProvenienza, fTipologia, fObiettivo, fLista]);
 
     function listaBrandLabel(l: ListaAssegnata): string {
         if (l.provenienza === "Acquistato") return l.brandAcq || "—";
@@ -1210,7 +1213,9 @@ function CallerPageInner() {
                             </button>
                         </>
                     )}
-                    {!isListeView && (
+                    {/* Serie: strumento di chi FA le chiamate — dall'amministrativo
+                        in su non serve e sparisce (Luca 30/07). */}
+                    {!isListeView && !["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "") && (
                         <button
                             onClick={() => setSerieOpen(true)}
                             title={serie.attivo ? `Lavorazione in serie ATTIVA: ${[serie.brand, serie.obiettivo, serie.provenienza, serie.tipologia].filter(Boolean).join(" · ")}` : "Imposta le 4 voci una volta sola e lavora in serie"}
@@ -1221,15 +1226,19 @@ function CallerPageInner() {
                     )}
                     {!isListeView && (() => {
                         const daEsitare = calls.filter((c) => c.da_esitare && (isDirector || c.caller === currentCaller)).length;
-                        // SOLO informativo (decisione Luca): le pratiche da esitare si
-                        // riconoscono in lista dal pallino ambra pulsante.
-                        return daEsitare > 0 ? (
-                            <span
-                                title="Chiamate risposte in attesa dell'esito: in lista hanno il pallino ambra pulsante"
-                                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 text-xs font-bold uppercase tracking-widest cursor-default"
+                        // Da informativo a PULSANTE-FILTRO (Luca 30/07): cliccato mostra
+                        // solo le pratiche ancora da esitare; ri-cliccato torna a tutte.
+                        return (daEsitare > 0 || soloDaEsitare) ? (
+                            <button
+                                type="button"
+                                onClick={() => setSoloDaEsitare((v) => !v)}
+                                title={soloDaEsitare ? "Stai vedendo solo le pratiche da esitare: clicca per tornare a tutte" : "Mostra solo le chiamate risposte in attesa dell'esito"}
+                                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors ${soloDaEsitare
+                                    ? "border-amber-400 bg-amber-500/25 text-amber-200 shadow-lg shadow-amber-500/20"
+                                    : "border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"}`}
                             >
-                                ☎️ Da esitare: {daEsitare}
-                            </span>
+                                ☎️ Da esitare: {daEsitare}{soloDaEsitare ? " ✕" : ""}
+                            </button>
                         ) : null;
                     })()}
                     {!isListeView && (
