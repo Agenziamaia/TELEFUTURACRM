@@ -19,7 +19,7 @@ import { BussolaWidget } from "@/components/DirezioneInserimento";
 import {
   FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
   AlertTriangle, ArrowRight, Loader2, Compass, Target as TargetIcon, Zap,
-  Megaphone, Trophy, Search, Plus, PenSquare,
+  Megaphone, Trophy, Search, Plus, PenSquare, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 const norm = (s) => (s || "").trim().toLowerCase();
@@ -48,15 +48,18 @@ function Kpi({ icon: Icon, label, value, sub, color }) {
 }
 
 function BarChart({ icon: Icon, title, rows, total, colorFor, accent }) {
+  const LIMIT = 4;
+  const [exp, setExp] = useState(false);
+  const shown = exp ? rows : rows.slice(0, LIMIT);
   return (
     <div className="glass-card overflow-hidden flex flex-col">
       <div className="px-5 py-3.5 border-b border-white/5 flex items-center gap-2">
         <Icon className="w-4 h-4" style={{ color: accent }} />
         <h3 className="text-[13px] font-bold text-slate-200 tracking-wide">{title}</h3>
       </div>
-      <div className="p-5 space-y-3.5">
+      <div className="p-5 space-y-3.5 flex-1">
         {rows.length === 0 ? <p className="text-sm text-slate-500 py-2">Nessun dato nel periodo.</p> :
-          rows.map(([label, n]) => (
+          shown.map(([label, n]) => (
             <div key={label}>
               <div className="flex items-center justify-between text-xs mb-1.5">
                 <span className="text-slate-300 truncate">{label}</span>
@@ -68,6 +71,13 @@ function BarChart({ icon: Icon, title, rows, total, colorFor, accent }) {
             </div>
           ))}
       </div>
+      {rows.length > LIMIT && (
+        <div className="px-5 pb-3 -mt-1 flex justify-end">
+          <button onClick={() => setExp((v) => !v)} className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-200 transition-colors">
+            {exp ? <>Mostra meno <ChevronUp className="w-3.5 h-3.5" /></> : <>Mostra tutti ({rows.length}) <ChevronDown className="w-3.5 h-3.5" /></>}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
