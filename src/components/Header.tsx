@@ -130,15 +130,19 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
         (async () => {
             try {
                 const visto = localStorage.getItem(chiaveVisto) || "1970-01-01";
-                const { count } = await supabase
+                // Contano solo le comunicazioni destinate al proprio ruolo
+                // (target_roles NULL = tutti — mig. 104).
+                let q = supabase
                     .from("comunicazioni")
                     .select("id", { count: "exact", head: true })
                     .gt("created_at", visto);
+                if (user?.role) q = q.or(`target_roles.is.null,target_roles.cs.{${user.role}}`);
+                const { count } = await q;
                 if (vivo) setNuoveCom(count ?? 0);
             } catch { /* ignore */ }
         })();
         return () => { vivo = false; };
-    }, [chiaveVisto, pathname]);
+    }, [chiaveVisto, pathname, user?.role]);
     const openComunicazioni = () => {
         if (chiaveVisto) { try { localStorage.setItem(chiaveVisto, new Date().toISOString()); } catch { } }
         setNuoveCom(0);
