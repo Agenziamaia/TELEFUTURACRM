@@ -38,7 +38,11 @@ export async function POST(request: Request) {
         // INTERRUTTORE ROLLOUT: in PILOTA la 2FA e' obbligatoria solo per questi
         // utenti; con la lista VUOTA diventa obbligatoria per TUTTI. Chi ha gia'
         // attivato la 2FA la usa comunque (enabled === true), pilota o meno.
-        const PILOT_2FA_IDS: string[] = ["46becc7e-02cb-4d0b-904a-6f480e5968d2"]; // Rahib
+        // PILOTA: 2FA obbligatoria solo per Rahib e Luca (verifica). Lista VUOTA = TUTTI.
+        const PILOT_2FA_IDS: string[] = [
+            "46becc7e-02cb-4d0b-904a-6f480e5968d2", // Rahib
+            "0355d28b-968f-4089-93b7-b8b5eeeda40c", // Luca Perrotta
+        ];
         const required2fa = PILOT_2FA_IDS.length === 0 || PILOT_2FA_IDS.includes(row.id);
 
         if (!enabled) {
