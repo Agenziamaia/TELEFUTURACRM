@@ -848,6 +848,10 @@ function CallerPageInner() {
                 await sincronizzaAppuntamento(
                     {
                         ...original, ...editCall, stato: editCall.statoNew,
+                        // La NOTA scritta durante l'esito (noteUpdate) viaggia con
+                        // l'appuntamento: prima finiva solo nello storico della
+                        // pratica e il negozio non la vedeva (Luca 30/07).
+                        note: [editCall.note, editCall.noteUpdate].filter(Boolean).join(" — "),
                         data_appuntamento: (updates.data_appuntamento as string) || original.data_appuntamento,
                         negozio_appuntamento: (updates.negozio_appuntamento as string) || original.negozio_appuntamento,
                     },
