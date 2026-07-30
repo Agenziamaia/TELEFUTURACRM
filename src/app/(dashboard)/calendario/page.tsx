@@ -376,6 +376,66 @@ export default function Calendario() {
     const [appointmentOutcomeFilter, setAppointmentOutcomeFilter] = useState<AppointmentStatus | "">("");
     const [taskOutcomeFilter, setTaskOutcomeFilter] = useState<TaskStatus | "">("");
 
+    // ── ESITI AMMINISTRABILI (mig. 106, Luca 30/07): etichette, colori e
+    // scelte per TIPO (negozio/domicilio/task) arrivano da calendario_esiti
+    // (Amministrazione → Calendario); tabella vuota = default di codice.
+    // La CHIAVE resta quella salvata sulle righe: le voci spente non si
+    // propongono piu' ma le righe storiche mantengono etichetta e colore.
+    type EsitoDef = { chiave: string; etichetta: string; colore: string; attiva: boolean };
+    const [esitiDb, setEsitiDb] = useState<Record<string, EsitoDef[]>>({});
+    useEffect(() => {
+        supabase.from("calendario_esiti").select("tipo, chiave, etichetta, colore, attiva, ordine").order("ordine")
+            .then(({ data }) => {
+                if (!data?.length) return;
+                const m: Record<string, EsitoDef[]> = {};
+                (data as (EsitoDef & { tipo: string })[]).forEach((r) => { (m[r.tipo] ||= []).push(r); });
+                setEsitiDb(m);
+            });
+    }, []);
+    const PALETTE: Record<string, string> = {
+        blue: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+        emerald: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+        rose: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+        purple: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+        yellow: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+        amber: "bg-amber-100/10 text-amber-200 border-amber-200/30",
+        orange: "bg-orange-500/20 text-orange-300 border-orange-500/30",
+        sky: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+        violet: "bg-violet-500/20 text-violet-300 border-violet-500/30",
+        slate: "bg-white/5 text-slate-300 border-white/10",
+    };
+    const tipoEsiti = (tipo?: string) => tipo === "outgoing" ? "outgoing" : tipo === "task" ? "task" : "incoming";
+    const FALLBACK_TASK: EsitoDef[] = [
+        { chiave: "da_fare", etichetta: "Da fare", colore: "slate", attiva: true },
+        { chiave: "fatta", etichetta: "Fatta", colore: "emerald", attiva: true },
+        { chiave: "sospesa", etichetta: "Sospesa", colore: "amber", attiva: true },
+        { chiave: "abbandonata", etichetta: "Abbandonata", colore: "rose", attiva: true },
+    ];
+    /** scelte proponibili (solo voci attive) per il tipo dato */
+    const esitiPer = (tipo?: string): EsitoDef[] => {
+        const t = tipoEsiti(tipo);
+        const db = esitiDb[t];
+        if (db?.length) return db.filter((e) => e.attiva);
+        if (t === "task") return FALLBACK_TASK;
+        return (Object.keys(STATUS_LABELS) as AppointmentStatus[]).map((k) => ({ chiave: k, etichetta: STATUS_LABELS[k], colore: "", attiva: true }));
+    };
+    const esitoDef = (status: string, tipo?: string) => (esitiDb[tipoEsiti(tipo)] || []).find((e) => e.chiave === status);
+    const esitoLabel = (status: string, tipo?: string) =>
+        esitoDef(status, tipo)?.etichetta ?? (STATUS_LABELS as Record<string, string>)[status] ?? status;
+    const esitoClasse = (status: string, tipo?: string) => {
+        const d = esitoDef(status, tipo);
+        return (d && PALETTE[d.colore]) || (STATUS_COLORS as Record<string, string>)[status] || PALETTE.slate;
+    };
+    // filtro esiti appuntamenti: unione negozio+domicilio, senza doppioni
+    const esitiFiltroAppt = (() => {
+        const visti = new Set<string>();
+        return [...esitiPer("incoming"), ...esitiPer("outgoing")].filter((e) => {
+            if (visti.has(e.chiave)) return false;
+            visti.add(e.chiave);
+            return true;
+        });
+    })();
+
     const prevMonth = () => {
         if (viewMonth === 0) { setViewYear(viewYear - 1); setViewMonth(11); }
         else setViewMonth(viewMonth - 1);
@@ -843,9 +903,9 @@ export default function Calendario() {
                         onChange={(e) => setAppointmentOutcomeFilter(e.target.value as AppointmentStatus | "")}
                     >
                         <option value="">Tutti gli esiti</option>
-                        {(Object.keys(STATUS_LABELS) as AppointmentStatus[]).map((s) => (
-                            <option key={s} value={s}>
-                                {STATUS_LABELS[s]}
+                        {esitiFiltroAppt.map((s) => (
+                            <option key={s.chiave} value={s.chiave}>
+                                {s.etichetta}
                             </option>
                         ))}
                     </select>
@@ -860,10 +920,9 @@ export default function Calendario() {
                         onChange={(e) => setTaskOutcomeFilter(e.target.value as TaskStatus | "")}
                     >
                         <option value="">Tutti gli stati</option>
-                        <option value="da_fare">Da fare</option>
-                        <option value="fatta">Fatta</option>
-                        <option value="sospesa">Sospesa</option>
-                        <option value="abbandonata">Abbandonata</option>
+                        {esitiPer("task").map((s) => (
+                            <option key={s.chiave} value={s.chiave}>{s.etichetta}</option>
+                        ))}
                     </select>
                 </div>
             </div>
@@ -1027,9 +1086,9 @@ export default function Calendario() {
                                         </span>
                                         <span className={cn(
                                             "text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border",
-                                            STATUS_COLORS[appt.status]
+                                            esitoClasse(appt.status, appt.type)
                                         )}>
-                                            {STATUS_LABELS[appt.status]}
+                                            {esitoLabel(appt.status, appt.type)}
                                         </span>
                                     </div>
                                 </div>
@@ -1373,8 +1432,8 @@ export default function Calendario() {
                                         >
                                             <div className="flex items-center justify-between mb-1">
                                                 <span className="text-sm font-semibold text-white truncate max-w-[200px]">{a.time} — {a.customerName}</span>
-                                                <span className={cn("text-[10px] px-2 py-0.5 rounded-full border font-medium", STATUS_COLORS[a.status])}>
-                                                    {STATUS_LABELS[a.status]}
+                                                <span className={cn("text-[10px] px-2 py-0.5 rounded-full border font-medium", esitoClasse(a.status, a.type))}>
+                                                    {esitoLabel(a.status, a.type)}
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-2 text-xs text-slate-400">
@@ -1462,7 +1521,7 @@ export default function Calendario() {
                                                 <button
                                                     onClick={async (e) => {
                                                         e.stopPropagation();
-                                                        const order: TaskStatus[] = ["da_fare", "fatta", "sospesa", "abbandonata"];
+                                                        const order = esitiPer("task").map((x) => x.chiave) as TaskStatus[];
                                                         const idx = order.indexOf(t.status);
                                                         const nextStatus = order[(idx + 1) % order.length];
                                                         await supabase.from("calendar_tasks").update({ status: nextStatus }).eq("id", t.id);
@@ -1477,7 +1536,7 @@ export default function Calendario() {
                                                     )}
                                                 >
                                                     {t.status === "da_fare" ? <Circle className="w-3 h-3" /> : t.status === "fatta" ? <CheckCircle2 className="w-3 h-3" /> : t.status === "sospesa" ? <PauseCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                                                    {t.status === "abbandonata" ? "Abbandonata" : t.status.replace("_", " ")}
+                                                    {esitoLabel(t.status, "task")}
                                                 </button>
                                             </div>
 
@@ -1509,10 +1568,9 @@ export default function Calendario() {
                                                                 setTasks(prev => prev.map(task => task.id === t.id ? { ...task, status: s } : task));
                                                             }}
                                                         >
-                                                            <option value="da_fare">Da fare</option>
-                                                            <option value="fatta">Fatta</option>
-                                                            <option value="sospesa">Sospesa</option>
-                                                            <option value="abbandonata">Abbandonata</option>
+                                                            {esitiPer("task").map((x) => (
+                                                                <option key={x.chiave} value={x.chiave}>{x.etichetta}</option>
+                                                            ))}
                                                         </select>
                                                         <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mt-2">Note esito (salvate con la task)</label>
                                                         <textarea
@@ -1636,8 +1694,8 @@ export default function Calendario() {
                                 )}>
                                     {selectedAppointment.type === "incoming" ? "🏪 Inbound — cliente viene in store" : "🚗 Outbound — agente va dal cliente"}
                                 </span>
-                                <span className={cn("px-2.5 py-1 rounded-full border text-xs font-medium", STATUS_COLORS[selectedAppointment.status])}>
-                                    {STATUS_LABELS[selectedAppointment.status]}
+                                <span className={cn("px-2.5 py-1 rounded-full border text-xs font-medium", esitoClasse(selectedAppointment.status, selectedAppointment.type))}>
+                                    {esitoLabel(selectedAppointment.status, selectedAppointment.type)}
                                 </span>
                             </div>
                             <div className="p-3 rounded-xl bg-white/[0.03] border border-white/8 space-y-2">
@@ -1682,9 +1740,16 @@ export default function Calendario() {
                                         setSelectedAppointment({ ...selectedAppointment, status: s });
                                     }}
                                 >
-                                    {(Object.keys(STATUS_LABELS) as AppointmentStatus[]).map(s => (
-                                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                                    ))}
+                                    {(() => {
+                                        const scelte = esitiPer(selectedAppointment.type);
+                                        const cur = selectedAppointment.status;
+                                        const conCorrente = scelte.some((x) => x.chiave === cur)
+                                            ? scelte
+                                            : [{ chiave: cur, etichetta: esitoLabel(cur, selectedAppointment.type), colore: "", attiva: true }, ...scelte];
+                                        return conCorrente.map((x) => (
+                                            <option key={x.chiave} value={x.chiave}>{x.etichetta}</option>
+                                        ));
+                                    })()}
                                 </select>
                                 <textarea
                                     className="glass-input w-full resize-none text-xs"
