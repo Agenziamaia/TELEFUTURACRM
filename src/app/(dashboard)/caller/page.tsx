@@ -16,7 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { AircallPhoneDock } from "@/components/AircallPhoneDock";
-import { useStores, useSellers } from "@/lib/org";
+import { useStores, useSellers, useCallers } from "@/lib/org";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, EVERYONE } from "@/lib/nav";
@@ -312,7 +312,9 @@ function CallerPageInner() {
     const NEGOZI = useStores();
     const VENDITORI = useSellers();
     const AGENTI = VENDITORI;
-    const CALLERS = VENDITORI;   // anche i caller sono utenti reali (app_users)
+    // SOLO il personale del call center (ruoli area cc), non tutti gli utenti:
+    // il filtro Caller elencava l'intera azienda (segnalazione Luca 30/07).
+    const CALLERS = useCallers();
     const [view, setView] = usePageView<typeof defaultCallerView>("caller", defaultCallerView);
 
     // Utente e ruolo REALI dalla sessione. Prima erano fissi ("Mario Rossi" +

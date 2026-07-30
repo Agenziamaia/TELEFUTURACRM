@@ -4,12 +4,15 @@
 // e contenevano ancora "Telefonico", negozio eliminato dalla migration 033.
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { ROLES } from "@/lib/roles";
 
 // cache a livello di modulo: una fetch sola condivisa da tutte le pagine
 let storesCache: string[] | null = null;
 let sellersCache: string[] | null = null;
+let callersCache: string[] | null = null;
 let storesPromise: Promise<string[]> | null = null;
 let sellersPromise: Promise<string[]> | null = null;
+let callersPromise: Promise<string[]> | null = null;
 
 async function loadStores(): Promise<string[]> {
   if (storesCache) return storesCache;
@@ -72,8 +75,33 @@ export function useSellers(): string[] {
   return v;
 }
 
+// Il filtro Caller proponeva TUTTI gli utenti attivi (CALLERS = VENDITORI):
+// qui si caricano solo i ruoli dell'area Call Center, dalla fonte unica
+// roles.ts (caller, back office/caller, direzione CC). Segnalazione Luca 30/07.
+async function loadCallers(): Promise<string[]> {
+  if (callersCache) return callersCache;
+  if (!callersPromise) {
+    callersPromise = (async () => {
+      const ruoliCc = ROLES.filter((r) => r.area === "cc").map((r) => r.id);
+      const { data } = await supabase
+        .from("app_users").select("full_name")
+        .in("role", ruoliCc).eq("active", true).order("full_name");
+      callersCache = (data || []).map((r: any) => r.full_name).filter(Boolean) as string[];
+      return callersCache;
+    })();
+  }
+  return callersPromise;
+}
+
+/** Nomi del personale del call center (ruoli area "cc"). */
+export function useCallers(): string[] {
+  const [v, setV] = useState<string[]>(callersCache || []);
+  useEffect(() => { let ok = true; loadCallers().then((s) => ok && setV(s)).catch(() => {}); return () => { ok = false; }; }, []);
+  return v;
+}
+
 /** Svuota la cache (utile dopo aver creato/rinominato un negozio o un utente). */
 export function invalidateOrgCache() {
-  storesCache = sellersCache = null;
-  storesPromise = sellersPromise = null;
+  storesCache = sellersCache = callersCache = null;
+  storesPromise = sellersPromise = callersPromise = null;
 }
