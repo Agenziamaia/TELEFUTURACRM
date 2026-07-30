@@ -64,19 +64,22 @@ export function SelectPersona({
                         title="Svuota" className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs">✕</button>
                 )}
             </div>
+            {/* Tendina leggibile (Luca 30/07: "si vede malissimo"): righe piu'
+                alte, testo a misura normale, fondo con contrasto e bordo netto;
+                la classe select-persona-menu porta la variante del tema chiaro. */}
             {aperta && filtrate.length > 0 && (
-                <div className="absolute z-[1300] mt-1 w-full min-w-[200px] max-h-64 overflow-y-auto rounded-lg border border-white/10 bg-[#0f111a] shadow-2xl">
+                <div className="select-persona-menu absolute z-[1300] mt-1.5 w-full min-w-[230px] max-h-72 overflow-y-auto rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 divide-y divide-white/5">
                     {filtrate.map((n) => (
                         <button key={n} type="button"
                             onMouseDown={(e) => { e.preventDefault(); scegli(n); }}
-                            className={`block w-full text-left px-3 py-1.5 text-xs hover:bg-indigo-500/15 ${n === value ? "text-indigo-300 font-bold" : "text-slate-200"}`}>
+                            className={`block w-full text-left px-3.5 py-2.5 text-sm transition-colors hover:bg-indigo-500/20 ${n === value ? "text-indigo-300 font-bold" : "text-slate-100"}`}>
                             {n}
                         </button>
                     ))}
                 </div>
             )}
             {aperta && filtrate.length === 0 && q && (
-                <div className="absolute z-[1300] mt-1 w-full rounded-lg border border-white/10 bg-[#0f111a] shadow-2xl px-3 py-1.5 text-xs text-slate-600">
+                <div className="select-persona-menu absolute z-[1300] mt-1.5 w-full rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl px-3.5 py-2.5 text-sm text-slate-500">
                     Nessun collaboratore corrispondente
                 </div>
             )}

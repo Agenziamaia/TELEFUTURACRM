@@ -440,6 +440,10 @@ html.light .glass-card:hover {
 }
 /* header e superfici sospese: solide anche loro, niente velo */
 html.light header { backdrop-filter: none; -webkit-backdrop-filter: none; background-color: #ffffff !important; box-shadow: 0 1px 0 rgba(30, 41, 82, 0.08), 0 4px 16px rgba(30, 41, 82, 0.05); }
+/* tendina SelectPersona: bianca col tema chiaro (il componente e' scuro di default) */
+html.light .select-persona-menu { background-color: #ffffff; border-color: rgba(30, 41, 82, 0.15); box-shadow: 0 12px 32px rgba(30, 41, 82, 0.16); }
+html.light .select-persona-menu button { color: #1e2952; }
+html.light .select-persona-menu button:hover { background-color: rgba(79, 70, 229, 0.08); }
 html.light [class*="backdrop-blur"]:not(#crm-sidebar):not(header) { -webkit-backdrop-filter: none; backdrop-filter: none; }
 
 /* ── 10. Scrollbar e calendario ──────────────────────────────────────── */
