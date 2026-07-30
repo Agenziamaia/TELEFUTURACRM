@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { SelectPersona } from "@/components/SelectPersona";
+import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video } from "lucide-react";
 import { cn } from "@/utils";
@@ -799,16 +799,13 @@ export default function Calendario() {
                 <div className="mb-6 flex flex-col md:flex-row gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5">
                     <div className="flex-1">
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Punto Vendita</label>
-                        <select
+                        <SelectOpzioni
                             className="glass-input w-full text-sm"
-                            value={filterStore}
-                            onChange={(e) => setFilterStore(e.target.value)}
-                        >
-                            <option value="Tutti">Tutti i punti vendita</option>
-                            {storeNames.map((s) => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
+                            value={filterStore === "Tutti" ? "" : filterStore}
+                            onChange={(v) => setFilterStore(v || "Tutti")}
+                            opzioni={storeNames}
+                            placeholder="Tutti i punti vendita — scrivi per filtrare"
+                        />
                     </div>
                     <div className="flex-1">
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Consulente</label>

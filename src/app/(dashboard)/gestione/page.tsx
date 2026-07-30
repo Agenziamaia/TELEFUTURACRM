@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { Search, FolderOpen, Archive, Paperclip, CheckSquare, MessageSquare, X, Filter } from "lucide-react";
 import { cn } from "@/utils";
 import { StatusDropdown, STATUS_OPTIONS, getStatusColor } from "@/components/StatusDropdown";
+import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -258,33 +259,19 @@ export default function GestionePda() {
                 <div key={filterKey} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto</label>
-                        <select className="glass-input w-full" value={filterProdotto} onChange={e => setFilterProdotto(e.target.value)}>
-                            <option value="">Tutti i prodotti</option>
-                            {uniqueCategorie.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
+                        <SelectOpzioni className="glass-input w-full" value={filterProdotto} onChange={setFilterProdotto} opzioni={uniqueCategorie} placeholder="Tutti i prodotti — scrivi per filtrare" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Brand</label>
-                        <select className="glass-input w-full" value={filterBrand} onChange={e => setFilterBrand(e.target.value)}>
-                            <option value="">Tutti i brand</option>
-                            {uniqueBrands.map(b => <option key={b} value={b}>{b}</option>)}
-                        </select>
+                        <SelectOpzioni className="glass-input w-full" value={filterBrand} onChange={setFilterBrand} opzioni={uniqueBrands} placeholder="Tutti i brand — scrivi per filtrare" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Venditore</label>
-                        <select className="glass-input w-full" value={filterVenditore} onChange={e => setFilterVenditore(e.target.value)}>
-                            <option value="">Tutti</option>
-                            {uniqueVenditori.map(v => <option key={v} value={v}>{v}</option>)}
-                        </select>
+                        <SelectPersona className="glass-input w-full" value={filterVenditore} onChange={setFilterVenditore} opzioni={uniqueVenditori} placeholder="Tutti — scrivi per filtrare" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Stato</label>
-                        <select className="glass-input w-full" value={filterStato} onChange={e => setFilterStato(e.target.value)}>
-                            <option value="">Tutti gli stati</option>
-                            {STATUS_OPTIONS.map(opt => (
-                                <option key={opt.label} value={opt.label}>{opt.label}</option>
-                            ))}
-                        </select>
+                        <SelectOpzioni className="glass-input w-full" value={filterStato} onChange={setFilterStato} opzioni={STATUS_OPTIONS.map(opt => opt.label)} placeholder="Tutti gli stati — scrivi per filtrare" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Da data invio</label>
