@@ -1616,7 +1616,12 @@ export default function TrackingPdaPage() {
       // sovrascrivono a vicenda (segnalazione 66).
       const rigaEspansa = !!updated.rowKey && updated.rowKey.includes("#");
       const cat = updated.categoria;
-      const attuali = (rawList.find((r) => (r.id as string) === updated.id)?.stati_categoria as Record<string, string>) || {};
+      // #119: lo stato per-categoria ATTUALE va letto FRESCO dal DB, non da rawList:
+      // questo callback ha deps [] e nel suo closure `rawList` e' quello del primo
+      // render (vuoto), quindi il merge partiva da {} e CANCELLAVA le altre categorie
+      // gia' salvate (corruzione della riga sorella allo "Salva esito negozio").
+      const { data: _cur } = await supabase.from("contracts").select("stati_categoria").eq("id", updated.id).maybeSingle();
+      const attuali = ((_cur?.stati_categoria as Record<string, string>) || {});
       const nuoviStati = { ...attuali, [cat]: updated.statoNegozio };
 
       // Lo stato del contratto e' "Attivo" solo quando TUTTI i controlli sono
