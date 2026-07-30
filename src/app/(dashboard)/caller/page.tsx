@@ -347,6 +347,24 @@ function CallerPageInner() {
 
     /* ── Data state ── */
     const [calls, setCalls] = useState<Call[]>([]);
+    // ── ELIMINAZIONE riga (solo admin, Luca 30/07) — A CASCATA: con la
+    // pratica muore l'appuntamento in calendario collegato (mig. 088). NON si
+    // toccano l'anagrafica cliente e il registro telefonico Aircall
+    // (call_events): sono entita' condivise, non appendici della pratica.
+    const canDeleteRows = ["admin", "dev"].includes(user?.role || "");
+    const [delConfirmId, setDelConfirmId] = useState<string | null>(null);
+    async function eliminaCallCascata(c: Call) {
+        const { data: row } = await supabase.from("calls").select("appointment_id").eq("id", c.id).maybeSingle();
+        const apptId = (row as { appointment_id?: number | null } | null)?.appointment_id;
+        if (apptId) {
+            const { error: e1 } = await supabase.from("appointments").delete().eq("id", apptId);
+            if (e1) { alert("Appuntamento collegato NON eliminato (riga lasciata intatta): " + e1.message); return; }
+        }
+        const { error } = await supabase.from("calls").delete().eq("id", c.id);
+        if (error) { alert("Riga non eliminata: " + error.message); return; }
+        setCalls(prev => prev.filter(x => x.id !== c.id));
+        setDelConfirmId(null);
+    }
     const [listeAssegnate, setListeAssegnate] = useState<ListaAssegnata[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -1365,7 +1383,30 @@ function CallerPageInner() {
                                                 <td className="px-4 py-3 text-slate-300">{c.obiettivo || "—"}</td>
                                                 <td className="px-4 py-3 font-mono text-xs text-slate-400">{formatDateShort(c.data_chiamata)}</td>
                                                 <td className="px-4 py-3 text-slate-300">{c.caller}</td>
-                                                <td className="px-4 py-3"><span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statoBadgeClasses(c.stato)}`}>{c.stato}</span></td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statoBadgeClasses(c.stato)}`}>{c.stato}</span>
+                                                        {canDeleteRows && (
+                                                            <span onClick={(e) => e.stopPropagation()} className="ml-auto shrink-0">
+                                                                {delConfirmId === c.id ? (
+                                                                    <span className="inline-flex gap-1">
+                                                                        <button onClick={() => eliminaCallCascata(c)}
+                                                                            className="px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold"
+                                                                            title="Elimina la pratica E l'eventuale appuntamento in calendario">
+                                                                            Elimina?
+                                                                        </button>
+                                                                        <button onClick={() => setDelConfirmId(null)}
+                                                                            className="px-2 py-1 rounded-md border border-white/15 text-slate-400 text-[11px]">✕</button>
+                                                                    </span>
+                                                                ) : (
+                                                                    <button onClick={() => setDelConfirmId(c.id)}
+                                                                        title="Elimina la pratica (a cascata anche l'appuntamento collegato in calendario)"
+                                                                        className="p-1 rounded-md border border-rose-500/30 text-rose-400/70 hover:text-rose-300 hover:bg-rose-500/15 text-[11px] leading-none">🗑</button>
+                                                                )}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
