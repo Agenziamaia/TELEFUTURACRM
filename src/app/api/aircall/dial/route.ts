@@ -26,7 +26,10 @@ export async function POST(request: Request) {
         if (!u?.aircall_user_id) {
             return NextResponse.json({ error: "Il tuo utente non è collegato ad Aircall: l'amministrazione deve mappare il tuo interno" }, { status: 400 });
         }
-        await aircallPost(`/users/${u.aircall_user_id}/dial`, { number: e164 });
+        // Il body del dial vuole "to" (docs Aircall), NON "number" (che e' il
+        // parametro di POST /users/:id/calls): con la chiave sbagliata Aircall
+        // rispondeva 400 "Invalid number to call" per QUALSIASI numero.
+        await aircallPost(`/users/${u.aircall_user_id}/dial`, { to: e164 });
         return NextResponse.json({ ok: true, number: e164 });
     } catch (err) {
         const message = err instanceof Error ? err.message : "Errore";
