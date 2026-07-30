@@ -13,6 +13,7 @@ import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useStores } from "@/lib/org";
+import { SelectMulti } from "@/components/SelectPersona";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -793,9 +794,9 @@ const defaultClientiView = {
     filterCellulare: "",
     filterEmail: "",
     filterIdentifier: "",
-    // Filtro visibilità (amministrazione): clienti gestiti da un utente/negozio
-    filterGestitoDa: "",
-    filterNegozioGestito: "",
+    // Filtro visibilità (amministrazione): clienti gestiti da utenti/negozi (multi)
+    filterGestitoDa: [] as string[],
+    filterNegozioGestito: [] as string[],
 };
 
 export default function ClientiPage() {
@@ -867,10 +868,12 @@ export default function ClientiPage() {
     // vedono loro — i clienti gestiti almeno una volta (pratiche a loro nome,
     // o del punto vendita piu' le anagrafiche acquisite li'). Stesse regole
     // della fonte unica clientiVisibili, calcolate per il soggetto scelto.
-    const filterGestitoDa = view.filterGestitoDa || "";
-    const setFilterGestitoDa = (v: string) => setView((p) => ({ ...p, filterGestitoDa: v }));
-    const filterNegozioGestito = view.filterNegozioGestito || "";
-    const setFilterNegozioGestito = (v: string) => setView((p) => ({ ...p, filterNegozioGestito: v }));
+    // MULTI-selezione (Luca 30/07): più persone e più negozi insieme. Le viste
+    // salvate prima della modifica avevano una stringa singola: si normalizza.
+    const filterGestitoDa = Array.isArray(view.filterGestitoDa) ? view.filterGestitoDa : (view.filterGestitoDa ? [view.filterGestitoDa as unknown as string] : []);
+    const setFilterGestitoDa = (v: string[]) => setView((p) => ({ ...p, filterGestitoDa: v }));
+    const filterNegozioGestito = Array.isArray(view.filterNegozioGestito) ? view.filterNegozioGestito : (view.filterNegozioGestito ? [view.filterNegozioGestito as unknown as string] : []);
+    const setFilterNegozioGestito = (v: string[]) => setView((p) => ({ ...p, filterNegozioGestito: v }));
     const NEGOZI = useStores();
     const [utentiFiltro, setUtentiFiltro] = useState<{ full_name: string; match_name: string | null }[]>([]);
     const [contrattiGest, setContrattiGest] = useState<{ client_id: string | null; venditore: string | null; negozio: string | null }[] | null>(null);
@@ -880,30 +883,54 @@ export default function ClientiPage() {
         supabase.from("app_users").select("full_name, match_name").eq("active", true).order("full_name")
             .then(({ data }) => setUtentiFiltro((data ?? []) as never));
     }, [canApproveAccess]);
+    // COLONNA "Gestito da" (Luca 30/07): da store manager in su la tabella
+    // mostra chi ha gestito il cliente (venditori delle sue pratiche) e in
+    // quali negozi; il mapping e' lo stesso del filtro visibilita'.
+    const vedeGestitoDa = seesAllStores(user?.role) || seesWholeStore(user?.role);
     useEffect(() => {
-        // il mapping pratiche->clienti si carica alla PRIMA selezione, poi resta
-        if (!canApproveAccess || (!filterGestitoDa && !filterNegozioGestito) || contrattiGest !== null) return;
+        // il mapping pratiche->clienti si carica una volta sola: subito se la
+        // colonna e' visibile, altrimenti alla prima selezione del filtro
+        if (contrattiGest !== null) return;
+        if (!vedeGestitoDa && !(canApproveAccess && (filterGestitoDa.length || filterNegozioGestito.length))) return;
         (async () => {
             const { data: cs } = await supabase.from("contracts").select("client_id, venditore, negozio").limit(10000);
             const { data: acq } = await supabase.from("clients").select("id, acquisito_da").limit(5000);
             setContrattiGest((cs ?? []) as never);
             setAcquisitiGest((acq ?? []) as never);
         })();
-    }, [canApproveAccess, filterGestitoDa, filterNegozioGestito, contrattiGest]);
+    }, [canApproveAccess, vedeGestitoDa, filterGestitoDa, filterNegozioGestito, contrattiGest]);
+    const gestioneDi = useMemo(() => {
+        const m = new Map<string, { venditori: string[]; negozi: string[] }>();
+        (contrattiGest || []).forEach((c) => {
+            if (!c.client_id) return;
+            const r = m.get(c.client_id) || { venditori: [], negozi: [] };
+            const v = (c.venditore || "").trim();
+            const n = (c.negozio || "").trim();
+            if (v && !r.venditori.includes(v)) r.venditori.push(v);
+            if (n && !r.negozi.includes(n)) r.negozi.push(n);
+            m.set(c.client_id, r);
+        });
+        return m;
+    }, [contrattiGest]);
     const gestitiSet = useMemo(() => {
-        if (!canApproveAccess || (!filterGestitoDa && !filterNegozioGestito)) return null;
+        if (!canApproveAccess || (!filterGestitoDa.length && !filterNegozioGestito.length)) return null;
         if (contrattiGest === null) return new Set<string>(); // in carica: un attimo di lista vuota
-        const nomeEq = (a?: string | null, b?: string | null) => { const x = (a || "").trim().toLowerCase(), y = (b || "").trim().toLowerCase(); return !!x && x === y; };
         let set: Set<string> | null = null;
-        if (filterGestitoDa) {
-            const u = utentiFiltro.find((x) => x.full_name === filterGestitoDa);
-            const nomi = [u?.full_name || filterGestitoDa, u?.match_name].filter(Boolean) as string[];
-            set = new Set(contrattiGest.filter((c) => c.client_id && nomi.some((n) => nomeEq(c.venditore, n))).map((c) => c.client_id as string));
+        if (filterGestitoDa.length) {
+            // piu' persone = UNIONE dei loro clienti (match_name incluso)
+            const nomiSel = new Set<string>();
+            filterGestitoDa.forEach((fn) => {
+                const u = utentiFiltro.find((x) => x.full_name === fn);
+                [u?.full_name || fn, u?.match_name].forEach((n) => { const t = String(n || "").trim().toLowerCase(); if (t) nomiSel.add(t); });
+            });
+            set = new Set(contrattiGest
+                .filter((c) => c.client_id && nomiSel.has(String(c.venditore || "").trim().toLowerCase()))
+                .map((c) => c.client_id as string));
         }
-        if (filterNegozioGestito) {
+        if (filterNegozioGestito.length) {
             const s = new Set<string>();
-            contrattiGest.forEach((c) => { if (c.client_id && sameStore(c.negozio, filterNegozioGestito)) s.add(c.client_id); });
-            acquisitiGest.forEach((c) => { if (sameStore(c.acquisito_da, filterNegozioGestito)) s.add(c.id); });
+            contrattiGest.forEach((c) => { if (c.client_id && filterNegozioGestito.some((ng) => sameStore(c.negozio, ng))) s.add(c.client_id); });
+            acquisitiGest.forEach((c) => { if (filterNegozioGestito.some((ng) => sameStore(c.acquisito_da, ng))) s.add(c.id); });
             set = set ? new Set([...set].filter((id) => s.has(id))) : s;
         }
         return set;
@@ -1150,41 +1177,29 @@ export default function ClientiPage() {
                                     </div>
                                 </div>
 
-                                {/* Visibilità: cosa vede un utente o un negozio (solo amministrazione).
-                                    Richiesta Luca 30/07: replica il perimetro reale — clienti gestiti
-                                    almeno una volta dall'utente o dal punto vendita. */}
+                                {/* Filtri "gestito da": due campi NORMALI come gli altri, multi-
+                                    selezione nello stile unificato (Luca 30/07). */}
                                 {canApproveAccess && (
-                                    <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-xl bg-violet-500/5 border border-violet-500/20 mb-2">
-                                        <div className="md:col-span-2">
-                                            <span className="text-xs font-bold text-violet-300">👁 Visibilità — cosa vede chi</span>
-                                            <p className="text-[11px] text-slate-500 mt-0.5">
-                                                Clienti gestiti almeno una volta dall&apos;utente (pratiche a suo nome) o dal negozio
-                                                (pratiche del punto vendita + anagrafiche acquisite lì): è il perimetro che quell&apos;utente o punto vendita vede.
-                                            </p>
-                                        </div>
+                                    <>
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-slate-400">Gestiti dall&apos;utente</label>
-                                            <select
-                                                value={filterGestitoDa}
-                                                onChange={(e) => { setFilterGestitoDa(e.target.value); setCurrentPage(1); }}
+                                            <SelectMulti
+                                                values={filterGestitoDa}
+                                                onChange={(v) => { setFilterGestitoDa(v); setCurrentPage(1); }}
+                                                opzioni={utentiFiltro.map((u) => u.full_name)}
                                                 className="w-full glass-input text-sm rounded-lg py-2"
-                                            >
-                                                <option value="">— Tutti —</option>
-                                                {utentiFiltro.map((u) => <option key={u.full_name} value={u.full_name}>{u.full_name}</option>)}
-                                            </select>
+                                            />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-slate-400">Gestiti dal negozio</label>
-                                            <select
-                                                value={filterNegozioGestito}
-                                                onChange={(e) => { setFilterNegozioGestito(e.target.value); setCurrentPage(1); }}
+                                            <SelectMulti
+                                                values={filterNegozioGestito}
+                                                onChange={(v) => { setFilterNegozioGestito(v); setCurrentPage(1); }}
+                                                opzioni={NEGOZI}
                                                 className="w-full glass-input text-sm rounded-lg py-2"
-                                            >
-                                                <option value="">— Tutti —</option>
-                                                {NEGOZI.map((n) => <option key={n} value={n}>{n}</option>)}
-                                            </select>
+                                            />
                                         </div>
-                                    </div>
+                                    </>
                                 )}
 
                                 {/* Common Fields */}
@@ -1271,6 +1286,7 @@ export default function ClientiPage() {
                                         <th className="px-6 py-4 font-semibold">Cliente</th>
                                         <th className="px-6 py-4 font-semibold">Contatti</th>
                                         <th className="px-6 py-4 font-semibold">Indirizzo</th>
+                                        {vedeGestitoDa && <th className="px-6 py-4 font-semibold">Gestito da</th>}
                                         <th className="px-6 py-4 font-semibold text-right">Identificativo</th>
                                         {canDelete && <th className="px-4 py-4 w-14"></th>}
                                     </tr>
@@ -1278,13 +1294,13 @@ export default function ClientiPage() {
                                 <tbody>
                                     {loading ? (
                                         <tr>
-                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-slate-400">
+                                            <td colSpan={4 + (vedeGestitoDa ? 1 : 0) + (canDelete ? 1 : 0)} className="px-6 py-12 text-center text-slate-400">
                                                 Caricamento clienti...
                                             </td>
                                         </tr>
                                     ) : loadError ? (
                                         <tr>
-                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-rose-400">
+                                            <td colSpan={4 + (vedeGestitoDa ? 1 : 0) + (canDelete ? 1 : 0)} className="px-6 py-12 text-center text-rose-400">
                                                 Errore: {loadError}
                                             </td>
                                         </tr>
@@ -1306,6 +1322,7 @@ export default function ClientiPage() {
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
                                                 <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
+                                                {vedeGestitoDa && <td className="px-6 py-4 text-slate-600 text-xs">•••</td>}
                                                 <td className="px-6 py-4 text-right" colSpan={canDelete ? 2 : 1}>
                                                     {accessPending.has(cliente.id) ? (
                                                         <span className="text-xs px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium">⏳ In attesa di approvazione</span>
@@ -1368,6 +1385,34 @@ export default function ClientiPage() {
                                                         </div>
                                                     </div>
                                                 </td>
+                                                {vedeGestitoDa && (() => {
+                                                    // Chi l'ha gestito: venditori delle sue pratiche + negozi;
+                                                    // senza pratiche resta il negozio di acquisizione.
+                                                    const g = gestioneDi.get(cliente.id);
+                                                    const venditori = g?.venditori || [];
+                                                    const negozi = g?.negozi?.length ? g.negozi : (cliente.acquisito_da ? [cliente.acquisito_da] : []);
+                                                    return (
+                                                        <td className="px-6 py-4">
+                                                            {venditori.length === 0 && negozi.length === 0 ? (
+                                                                <span className="text-slate-600 text-xs">—</span>
+                                                            ) : (
+                                                                <div className="text-xs">
+                                                                    {venditori.length > 0 && (
+                                                                        <div className="text-slate-200">
+                                                                            {venditori.slice(0, 2).join(", ")}
+                                                                            {venditori.length > 2 && <span className="text-slate-500"> +{venditori.length - 2}</span>}
+                                                                        </div>
+                                                                    )}
+                                                                    {negozi.length > 0 && (
+                                                                        <div className="text-slate-500 mt-0.5">
+                                                                            🏪 {negozi.slice(0, 2).join(", ")}{negozi.length > 2 ? ` +${negozi.length - 2}` : ""}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })()}
                                                 <td className="px-6 py-4 text-right">
                                                     <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-mono text-slate-300">
                                                         {cliente.cf_piva || "—"}
@@ -1391,7 +1436,7 @@ export default function ClientiPage() {
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-slate-500">
+                                            <td colSpan={4 + (vedeGestitoDa ? 1 : 0) + (canDelete ? 1 : 0)} className="px-6 py-12 text-center text-slate-500">
                                                 <div className="flex flex-col items-center justify-center gap-2">
                                                     <Search className="w-6 h-6 text-slate-600 mb-2" />
                                                     <p>Nessun cliente trovato con i filtri correnti.</p>

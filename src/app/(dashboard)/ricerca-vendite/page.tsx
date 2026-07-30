@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { SelectPersona } from "@/components/SelectPersona";
+import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation, FileText } from "lucide-react";
 import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
@@ -1138,14 +1138,14 @@ export default function RicercaContratto() {
                         Prima era disabled e inchiodata sul primary_store. */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Negozio di attivazione</label>
-                        <select
-                            className="glass-input w-full"
-                            value={filterNegozio}
-                            onChange={e => setFilterNegozio(e.target.value)}
-                        >
-                            <option value="Tutti">{isGlobalView ? "Tutti i negozi" : "Tutti i miei negozi"}</option>
-                            {uniqueNegozi.map(n => <option key={n} value={n}>{n}</option>)}
-                        </select>
+                        {/* Tendina unificata (Luca 30/07): "Tutti" resta il valore-sentinella storico */}
+                        <SelectOpzioni
+                            value={filterNegozio === "Tutti" ? "" : filterNegozio}
+                            onChange={(v) => setFilterNegozio(v || "Tutti")}
+                            opzioni={uniqueNegozi}
+                            placeholder={(isGlobalView ? "Tutti i negozi" : "Tutti i miei negozi") + " — scrivi per filtrare"}
+                            className="glass-input w-full text-sm"
+                        />
                     </div>
 
                     {/* 7. Codice di inserimento */}
@@ -1153,15 +1153,13 @@ export default function RicercaContratto() {
                         <label className="block text-sm font-medium text-slate-300 mb-2">Codice di inserimento</label>
                         {/* Segnalazione 53: tendina dei codici di inserimento (Cod.Ins.),
                             suddivisi per brand; se un brand e' selezionato mostra solo i suoi. */}
-                        <select className="glass-input w-full" value={filterCodiceAttivazione} onChange={e => setFilterCodiceAttivazione(e.target.value)}>
-                            <option value="">Tutti i codici</option>
-                            {(filterBrand ? [[filterBrand, codeByBrand[filterBrand] || []] as [string, string[]]] : Object.entries(codeByBrand))
-                                .map(([b, codes]) => codes.length ? (
-                                    <optgroup key={b} label={b}>
-                                        {codes.map(c => <option key={c} value={c}>{c}</option>)}
-                                    </optgroup>
-                                ) : null)}
-                        </select>
+                        <SelectOpzioni
+                            value={filterCodiceAttivazione}
+                            onChange={setFilterCodiceAttivazione}
+                            opzioni={[...new Set(filterBrand ? (codeByBrand[filterBrand] || []) : Object.values(codeByBrand).flat())]}
+                            placeholder="Tutti i codici — scrivi per filtrare"
+                            className="glass-input w-full text-sm"
+                        />
                     </div>
 
                     {/* 8. Cliente */}
@@ -1186,11 +1184,13 @@ export default function RicercaContratto() {
                         <label className="block text-sm font-medium text-slate-300 mb-2">Categoria {catalogoBrand && soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
                         {/* CONSEGUENZIALITÀ: cambiare categoria azzera prodotti e
                             offerte (che si restringono alla nuova categoria). */}
-                        <select className="glass-input w-full disabled:opacity-50" value={filterCategoria} disabled={soloMarg}
-                            onChange={e => { setFilterCategoria(e.target.value); setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); }}>
-                            <option value="">{soloMarg ? "Per la Marginalità: riga sotto" : "Tutte le categorie"}</option>
-                            {(catalogoBrand ? catalogoBrand.catNames : catNomiAll).map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
+                        <SelectOpzioni
+                            value={filterCategoria} disabled={soloMarg}
+                            onChange={(v) => { setFilterCategoria(v); setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); }}
+                            opzioni={catalogoBrand ? catalogoBrand.catNames : catNomiAll}
+                            placeholder={soloMarg ? "Per la Marginalità: riga sotto" : "Tutte le categorie — scrivi per filtrare"}
+                            className="glass-input w-full text-sm disabled:opacity-50"
+                        />
                     </div>
 
                     {/* 5. Prodotto (multiplo, dal CATALOGO): serve UN solo brand attivo
@@ -1200,64 +1200,37 @@ export default function RicercaContratto() {
                         {/* selezione IMMEDIATA (via il "+": Luca 28/07, "le offerte non
                             seguivano il prodotto" — in realtà serviva il click sul +);
                             la lista segue la categoria scelta. */}
-                        <select className="glass-input w-full disabled:opacity-50" value={prodPick}
-                            onChange={e => { const v = e.target.value; if (v) setFilterProdotti(prev => prev.includes(v) ? prev : [...prev, v]); setProdPick(""); }}
-                            disabled={!catalogoBrand}>
-                            <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : filterProdotti.length ? "Aggiungi prodotto…" : "Tutti i prodotti"}</option>
-                            {(catalogoBrand ? (filterCategoria ? (catalogoBrand.prodsByCat[filterCategoria] || []) : catalogoBrand.prodNames) : []).filter(p => !filterProdotti.includes(p)).map(p => <option key={p} value={p}>{p}</option>)}
-                        </select>
-                        {filterProdotti.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                {filterProdotti.map(p => (
-                                    <span key={p} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-indigo-500/15 text-indigo-200 border border-indigo-500/30">
-                                        {p}
-                                        <button type="button" onClick={() => setFilterProdotti(prev => prev.filter(x => x !== p))} className="opacity-70 hover:opacity-100">✕</button>
-                                    </span>
-                                ))}
-                            </div>
-                        )}
+                        <SelectMulti
+                            values={filterProdotti} onChange={setFilterProdotti}
+                            opzioni={catalogoBrand ? (filterCategoria ? (catalogoBrand.prodsByCat[filterCategoria] || []) : catalogoBrand.prodNames) : []}
+                            disabled={!catalogoBrand}
+                            placeholder={!catalogoBrand ? "Seleziona un solo brand dalle tessere" : "Tutti i prodotti — scrivi per filtrare"}
+                            className="glass-input w-full text-sm"
+                        />
                     </div>
 
                     {/* 5-bis. Offerta (multiplo, dal CATALOGO): stessa regola del prodotto;
                         se ci sono prodotti selezionati offre solo le loro offerte. */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Offerta {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
-                        <select className="glass-input w-full disabled:opacity-50" value={offPick}
-                            onChange={e => { const v = e.target.value; if (v) setFilterOfferte(prev => prev.includes(v) ? prev : [...prev, v]); setOffPick(""); }}
-                            disabled={!catalogoBrand}>
-                            <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : filterOfferte.length ? "Aggiungi offerta…" : "Tutte le offerte"}</option>
-                            {offerteDisponibili.filter(o => !filterOfferte.includes(o)).map(o => <option key={o} value={o}>{o}</option>)}
-                        </select>
-                        {filterOfferte.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                {filterOfferte.map(o => (
-                                    <span key={o} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-amber-500/15 text-amber-200 border border-amber-500/30">
-                                        {o}
-                                        <button type="button" onClick={() => setFilterOfferte(prev => prev.filter(x => x !== o))} className="opacity-70 hover:opacity-100">✕</button>
-                                    </span>
-                                ))}
-                            </div>
-                        )}
+                        <SelectMulti
+                            values={filterOfferte} onChange={setFilterOfferte}
+                            opzioni={offerteDisponibili}
+                            disabled={!catalogoBrand}
+                            placeholder={!catalogoBrand ? "Seleziona un solo brand dalle tessere" : "Tutte le offerte — scrivi per filtrare"}
+                            className="glass-input w-full text-sm"
+                        />
                     </div>
                     {/* OPZIONI (Luca 28/07): si sbloccano dopo l'offerta; multi. */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Opzioni {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
-                        <select className="glass-input w-full disabled:opacity-50" value={opzPick}
-                            onChange={e => { const v = e.target.value; if (v) setFilterOpzioni(prev => prev.includes(v) ? prev : [...prev, v]); setOpzPick(""); }}
-                            disabled={!catalogoBrand || !filterOfferte.length}>
-                            <option value="">{!catalogoBrand ? "Seleziona un solo brand dalle tessere" : !filterOfferte.length ? "Prima scegli un'offerta" : filterOpzioni.length ? "Aggiungi opzione…" : "Tutte le opzioni"}</option>
-                            {opzioniDisponibili.filter(z => !filterOpzioni.includes(z)).map(z => <option key={z} value={z}>{z}</option>)}
-                        </select>
-                        {filterOpzioni.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                {filterOpzioni.map(z => (
-                                    <span key={z} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-violet-500/15 text-violet-200 border border-violet-500/30">
-                                        {z}
-                                        <button type="button" onClick={() => setFilterOpzioni(prev => prev.filter(x => x !== z))} className="opacity-70 hover:opacity-100">✕</button>
-                                    </span>
-                                ))}
-                            </div>
-                        )}
+                        <SelectMulti
+                            values={filterOpzioni} onChange={setFilterOpzioni}
+                            opzioni={opzioniDisponibili}
+                            disabled={!catalogoBrand || !filterOfferte.length}
+                            placeholder={!catalogoBrand ? "Seleziona un solo brand dalle tessere" : !filterOfferte.length ? "Prima scegli un'offerta" : "Tutte le opzioni — scrivi per filtrare"}
+                            className="glass-input w-full text-sm"
+                        />
                     </div>
                 </div>
 
@@ -1280,22 +1253,13 @@ export default function RicercaContratto() {
                         (multi, come i prodotti del catalogo). */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Articolo <span className="text-slate-500 font-normal">— Marginalità</span></label>
-                        <select className="glass-input w-full disabled:opacity-50" value={margPick}
-                            onChange={e => { const v = e.target.value; if (v) setMargArticoli(prev => prev.includes(v) ? prev : [...prev, v]); setMargPick(""); }}
-                            disabled={!soloMarg || !margTipo}>
-                            <option value="">{!soloMarg ? "Clicca la sola tessera Marginalità" : !margTipo ? "Prima scegli Prodotti o Servizi" : margArticoli.length ? "Aggiungi articolo…" : `Tutti i ${margTipo}`}</option>
-                            {margArticoliDisponibili.filter(a => !margArticoli.includes(a)).map(a => <option key={a} value={a}>{a}</option>)}
-                        </select>
-                        {margArticoli.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                {margArticoli.map(a => (
-                                    <span key={a} className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] bg-emerald-500/15 text-emerald-200 border border-emerald-500/30">
-                                        {a}
-                                        <button type="button" onClick={() => setMargArticoli(prev => prev.filter(x => x !== a))} className="opacity-70 hover:opacity-100">✕</button>
-                                    </span>
-                                ))}
-                            </div>
-                        )}
+                        <SelectMulti
+                            values={margArticoli} onChange={setMargArticoli}
+                            opzioni={margArticoliDisponibili}
+                            disabled={!soloMarg || !margTipo}
+                            placeholder={!soloMarg ? "Clicca la sola tessera Marginalità" : !margTipo ? "Prima scegli Prodotti o Servizi" : `Tutti i ${margTipo} — scrivi per filtrare`}
+                            className="glass-input w-full text-sm"
+                        />
                     </div>
 
                 </div>
