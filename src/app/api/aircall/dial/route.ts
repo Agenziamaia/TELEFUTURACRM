@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { aircallPost, soloCifre } from "@/lib/aircall";
+import { aircallPost } from "@/lib/aircall";
+import { normalizzaE164, msgNumeroNonValido } from "@/lib/telefono";
 
 export const dynamic = "force-dynamic";
 
@@ -13,16 +14,18 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Credenziali Aircall non configurate sul server" }, { status: 500 });
         }
         const { number, appUserId } = await request.json();
-        const cifre = soloCifre(number);
-        if (cifre.length < 6) return NextResponse.json({ error: "Numero non valido" }, { status: 400 });
+        // Validazione VERA prima di Aircall: sui numeri malformati (es.
+        // cellulare a 9 cifre per refuso) Aircall risponde 400 "Invalid number
+        // to call" e all'utente arrivava il JSON grezzo. Meglio fermarli qui
+        // dicendo qual e' il numero da correggere in anagrafica.
+        const e164 = normalizzaE164(number);
+        if (!e164) return NextResponse.json({ error: msgNumeroNonValido(number) }, { status: 400 });
         if (!appUserId) return NextResponse.json({ error: "Utente non riconosciuto" }, { status: 400 });
         const { data: u } = await supabase.from("app_users")
             .select("aircall_user_id, full_name").eq("id", appUserId).maybeSingle();
         if (!u?.aircall_user_id) {
             return NextResponse.json({ error: "Il tuo utente non è collegato ad Aircall: l'amministrazione deve mappare il tuo interno" }, { status: 400 });
         }
-        // E.164: numeri italiani -> +39; gia' col 39 davanti -> +
-        const e164 = cifre.startsWith("39") && cifre.length >= 11 ? `+${cifre}` : `+39${cifre}`;
         await aircallPost(`/users/${u.aircall_user_id}/dial`, { number: e164 });
         return NextResponse.json({ ok: true, number: e164 });
     } catch (err) {

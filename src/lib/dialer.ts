@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizzaE164, msgNumeroNonValido } from "@/lib/telefono";
+
 /** Telefono incorporato (AircallPhoneDock): quando e' collegato, i 📞 compongono
  *  direttamente li'. Registrato dal dock al primo avvio. */
 type DialFn = (numero: string, cb?: (ok: boolean, d?: unknown) => void) => void;
@@ -10,8 +12,10 @@ export function registraTelefono(fn: DialFn) { _telefono = fn; }
  *  numero all'app Aircall del caller via API (tasto verde lo preme lui). */
 export async function chiamaAircall(number: string | null | undefined, appUserId: string | null | undefined): Promise<{ ok: boolean; msg: string }> {
     if (!number) return { ok: false, msg: "Nessun numero da chiamare" };
-    const cifre = String(number).replace(/\D/g, "");
-    const e164 = cifre.startsWith("39") && cifre.length >= 11 ? `+${cifre}` : `+39${cifre}`;
+    // Un numero malformato (es. cellulare a 9 cifre) fallirebbe comunque, con
+    // l'errore grezzo di Aircall: meglio dirlo subito e indicare cosa correggere.
+    const e164 = normalizzaE164(number);
+    if (!e164) return { ok: false, msg: msgNumeroNonValido(number) };
     // 1) telefono dentro il CRM (pannello ☎ in basso a destra)
     if (_telefono) {
         const esito = await new Promise<boolean>((resolve) => {
