@@ -248,7 +248,7 @@ export default function Dashboard() {
               </div>
               <div className="p-4 space-y-2.5">
                 {lavorazione > 0 ? (
-                  <Link href="/tracking-pda" className="flex items-center gap-3 group">
+                  <Link href="/pda/tracking" className="flex items-center gap-3 group">
                     <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 shrink-0"><Clock className="w-4 h-4" /></div>
                     <div className="min-w-0"><div className="text-xs font-semibold text-slate-100">{lavorazione} pratiche in lavorazione</div><div className="text-[10px] text-slate-500">da completare nel Tracking PDA</div></div>
                     <ArrowRight className="w-3.5 h-3.5 text-slate-600 ml-auto group-hover:text-slate-400" />
