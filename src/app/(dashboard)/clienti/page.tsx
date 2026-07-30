@@ -880,16 +880,35 @@ export default function ClientiPage() {
         supabase.from("app_users").select("full_name, match_name").eq("active", true).order("full_name")
             .then(({ data }) => setUtentiFiltro((data ?? []) as never));
     }, [canApproveAccess]);
+    // COLONNA "Gestito da" (Luca 30/07): da store manager in su la tabella
+    // mostra chi ha gestito il cliente (venditori delle sue pratiche) e in
+    // quali negozi; il mapping e' lo stesso del filtro visibilita'.
+    const vedeGestitoDa = seesAllStores(user?.role) || seesWholeStore(user?.role);
     useEffect(() => {
-        // il mapping pratiche->clienti si carica alla PRIMA selezione, poi resta
-        if (!canApproveAccess || (!filterGestitoDa && !filterNegozioGestito) || contrattiGest !== null) return;
+        // il mapping pratiche->clienti si carica una volta sola: subito se la
+        // colonna e' visibile, altrimenti alla prima selezione del filtro
+        if (contrattiGest !== null) return;
+        if (!vedeGestitoDa && !(canApproveAccess && (filterGestitoDa || filterNegozioGestito))) return;
         (async () => {
             const { data: cs } = await supabase.from("contracts").select("client_id, venditore, negozio").limit(10000);
             const { data: acq } = await supabase.from("clients").select("id, acquisito_da").limit(5000);
             setContrattiGest((cs ?? []) as never);
             setAcquisitiGest((acq ?? []) as never);
         })();
-    }, [canApproveAccess, filterGestitoDa, filterNegozioGestito, contrattiGest]);
+    }, [canApproveAccess, vedeGestitoDa, filterGestitoDa, filterNegozioGestito, contrattiGest]);
+    const gestioneDi = useMemo(() => {
+        const m = new Map<string, { venditori: string[]; negozi: string[] }>();
+        (contrattiGest || []).forEach((c) => {
+            if (!c.client_id) return;
+            const r = m.get(c.client_id) || { venditori: [], negozi: [] };
+            const v = (c.venditore || "").trim();
+            const n = (c.negozio || "").trim();
+            if (v && !r.venditori.includes(v)) r.venditori.push(v);
+            if (n && !r.negozi.includes(n)) r.negozi.push(n);
+            m.set(c.client_id, r);
+        });
+        return m;
+    }, [contrattiGest]);
     const gestitiSet = useMemo(() => {
         if (!canApproveAccess || (!filterGestitoDa && !filterNegozioGestito)) return null;
         if (contrattiGest === null) return new Set<string>(); // in carica: un attimo di lista vuota
@@ -1271,6 +1290,7 @@ export default function ClientiPage() {
                                         <th className="px-6 py-4 font-semibold">Cliente</th>
                                         <th className="px-6 py-4 font-semibold">Contatti</th>
                                         <th className="px-6 py-4 font-semibold">Indirizzo</th>
+                                        {vedeGestitoDa && <th className="px-6 py-4 font-semibold">Gestito da</th>}
                                         <th className="px-6 py-4 font-semibold text-right">Identificativo</th>
                                         {canDelete && <th className="px-4 py-4 w-14"></th>}
                                     </tr>
@@ -1278,13 +1298,13 @@ export default function ClientiPage() {
                                 <tbody>
                                     {loading ? (
                                         <tr>
-                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-slate-400">
+                                            <td colSpan={4 + (vedeGestitoDa ? 1 : 0) + (canDelete ? 1 : 0)} className="px-6 py-12 text-center text-slate-400">
                                                 Caricamento clienti...
                                             </td>
                                         </tr>
                                     ) : loadError ? (
                                         <tr>
-                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-rose-400">
+                                            <td colSpan={4 + (vedeGestitoDa ? 1 : 0) + (canDelete ? 1 : 0)} className="px-6 py-12 text-center text-rose-400">
                                                 Errore: {loadError}
                                             </td>
                                         </tr>
@@ -1306,6 +1326,7 @@ export default function ClientiPage() {
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
                                                 <td className="px-6 py-4 text-slate-600 text-xs">•••</td>
+                                                {vedeGestitoDa && <td className="px-6 py-4 text-slate-600 text-xs">•••</td>}
                                                 <td className="px-6 py-4 text-right" colSpan={canDelete ? 2 : 1}>
                                                     {accessPending.has(cliente.id) ? (
                                                         <span className="text-xs px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium">⏳ In attesa di approvazione</span>
@@ -1368,6 +1389,34 @@ export default function ClientiPage() {
                                                         </div>
                                                     </div>
                                                 </td>
+                                                {vedeGestitoDa && (() => {
+                                                    // Chi l'ha gestito: venditori delle sue pratiche + negozi;
+                                                    // senza pratiche resta il negozio di acquisizione.
+                                                    const g = gestioneDi.get(cliente.id);
+                                                    const venditori = g?.venditori || [];
+                                                    const negozi = g?.negozi?.length ? g.negozi : (cliente.acquisito_da ? [cliente.acquisito_da] : []);
+                                                    return (
+                                                        <td className="px-6 py-4">
+                                                            {venditori.length === 0 && negozi.length === 0 ? (
+                                                                <span className="text-slate-600 text-xs">—</span>
+                                                            ) : (
+                                                                <div className="text-xs">
+                                                                    {venditori.length > 0 && (
+                                                                        <div className="text-slate-200">
+                                                                            {venditori.slice(0, 2).join(", ")}
+                                                                            {venditori.length > 2 && <span className="text-slate-500"> +{venditori.length - 2}</span>}
+                                                                        </div>
+                                                                    )}
+                                                                    {negozi.length > 0 && (
+                                                                        <div className="text-slate-500 mt-0.5">
+                                                                            🏪 {negozi.slice(0, 2).join(", ")}{negozi.length > 2 ? ` +${negozi.length - 2}` : ""}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })()}
                                                 <td className="px-6 py-4 text-right">
                                                     <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-white/5 border border-white/10 text-xs font-mono text-slate-300">
                                                         {cliente.cf_piva || "—"}
@@ -1391,7 +1440,7 @@ export default function ClientiPage() {
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan={canDelete ? 5 : 4} className="px-6 py-12 text-center text-slate-500">
+                                            <td colSpan={4 + (vedeGestitoDa ? 1 : 0) + (canDelete ? 1 : 0)} className="px-6 py-12 text-center text-slate-500">
                                                 <div className="flex flex-col items-center justify-center gap-2">
                                                     <Search className="w-6 h-6 text-slate-600 mb-2" />
                                                     <p>Nessun cliente trovato con i filtri correnti.</p>
