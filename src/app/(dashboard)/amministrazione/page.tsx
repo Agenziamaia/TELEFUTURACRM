@@ -22,6 +22,7 @@ import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from 
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
+import { DashboardTargetAdmin } from "@/components/DashboardTargetAdmin";
 import {
     ROLES,
     AREAS,
@@ -73,6 +74,7 @@ import {
     Layers,
     ShieldCheck,
     Compass,
+    Target,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -178,6 +180,7 @@ const SEZIONI = [
     { id: "callcenter", label: "Call Center", icon: Phone, desc: "Opzioni della sezione Caller: esiti/stati, provenienze, tipologie e obiettivi — aggiungi, rinomina, riordina, spegni." },
     { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
     { id: "direzione", label: "Direzione Inserimento", icon: Compass, desc: "Mappa, per ogni negozio, su quale codice inserire ogni brand/categoria — alimenta la bussola in Home (sola lettura)." },
+    { id: "obiettivi", label: "Obiettivi Home", icon: Target, desc: "Target contratti del mese per rete, negozio e venditore — la barra 'Obiettivo' nella Home." },
 ] as const;
 
 function AmministrazioneInner() {
@@ -498,6 +501,8 @@ function AmministrazioneInner() {
                 <CatalogoView />
             ) : sez === "direzione" ? (
                 <DirezioneInserimentoAdmin />
+            ) : sez === "obiettivi" ? (
+                <DashboardTargetAdmin />
             ) : sez === "callcenter" ? (
                 <CallCenterView />
             ) : (

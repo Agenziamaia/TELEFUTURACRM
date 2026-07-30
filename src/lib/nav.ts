@@ -19,7 +19,7 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy, Layers, Compass,
+    ClipboardList, Trophy, Layers, Compass, Target,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -144,6 +144,7 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },
             { name: "Target", sez: "target", icon: ClipboardList, roles: ["admin", "dev"] },
             { name: "Direzione Inserimento", sez: "direzione", icon: Compass, roles: ["admin", "dev"] },
+            { name: "Obiettivi Home", sez: "obiettivi", icon: Target, roles: ["admin", "dev"] },
         ],
     },
 ];
