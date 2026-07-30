@@ -21,7 +21,12 @@ interface User {
     canSwitchRole?: boolean;  // puo' guardare il CRM con un altro ruolo (solo Luca)
 }
 
-interface LoginResult { ok: boolean; error?: string; mustChange?: boolean; email?: string }
+interface LoginResult { ok: boolean; error?: string; mustChange?: boolean; email?: string;
+    // 2FA: la password e' giusta ma serve un altro passo prima di entrare
+    totpRequired?: boolean;    // inserisci il codice dell'app authenticator
+    enrollRequired?: boolean;  // prima iscrizione: scansiona il QR e conferma
+    otpauth?: string;          // uri otpauth:// (per QR alternativo/manuale)
+    qr?: string }              // data URL del QR da mostrare
 
 export interface ViewAsUser { id: string; name: string; role: Role; grade?: string | null; negozio?: string }
 
@@ -34,7 +39,7 @@ interface AuthContextType {
     // sceglie la persona, cosi' visibilita' e negozi sono esattamente i suoi.
     viewAsUser: ViewAsUser | null;
     setViewAsUser: (u: ViewAsUser | null) => void;
-    login: (email: string, password: string) => Promise<LoginResult>;
+    login: (email: string, password: string, opts?: { code?: string; enrolling?: boolean }) => Promise<LoginResult>;
     completeFirstLogin: (email: string, oldPw: string, newPw: string) => Promise<LoginResult>;
     logout: () => void;
     isAuthenticated: boolean;
@@ -164,20 +169,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("crm_session", JSON.stringify(u));
     };
 
-    const login = async (email: string, password: string): Promise<LoginResult> => {
-        const { data, error } = await supabase.rpc("verify_login", {
-            p_email: email.trim(),
-            p_password: password,
-        });
-        if (error) return { ok: false, error: error.message };
-        const row = Array.isArray(data) ? data[0] : data;
-        if (!row) return { ok: false, error: "Email o password non validi" };
-        const u = rowToUser(row);
-        if (u.mustChange) {
-            // Non persistiamo finche' la password temporanea non e' stata cambiata
-            return { ok: true, mustChange: true, email: u.email };
-        }
-        persist(u);
+    // Login con 2FA verificata lato server (route /api/auth/login): la sessione
+    // torna SOLO quando password + codice (o iscrizione) sono ok.
+    const login = async (email: string, password: string, opts?: { code?: string; enrolling?: boolean }): Promise<LoginResult> => {
+        let res: any;
+        try {
+            res = await fetch("/api/auth/login", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: email.trim(), password, code: opts?.code, enrolling: opts?.enrolling }),
+            }).then(r => r.json());
+        } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "Accesso non riuscito" }; }
+        if (res?.stage === "change") return { ok: true, mustChange: true, email: res.email };
+        if (res?.stage === "enroll") return { ok: false, enrollRequired: true, email: res.email, otpauth: res.otpauth, qr: res.qr, error: res.error };
+        if (res?.stage === "totp") return { ok: false, totpRequired: true, email: res.email, error: res.error };
+        if (!res?.ok) return { ok: false, error: res?.error || "Accesso non riuscito" };
+        persist(rowToUser(res.user));
         return { ok: true };
     };
 
@@ -189,12 +195,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (error) return { ok: false, error: error.message };
         if (data !== true) return { ok: false, error: "Password attuale non valida" };
-        // Rileggo l'utente aggiornato (must_change_password ora false)
-        const res = await supabase.rpc("verify_login", { p_email: email.trim(), p_password: newPw });
-        const row = Array.isArray(res.data) ? res.data[0] : res.data;
-        if (!row) return { ok: false, error: "Errore di accesso dopo il cambio password" };
-        persist(rowToUser(row));
-        return { ok: true };
+        // Cambiata la password, si passa dal normale flusso di login: cosi' scatta
+        // anche la 2FA (iscrizione al primo accesso).
+        return login(email, newPw);
     };
 
     // Segnalazione 69: la conversazione dell'Assistente AI si azzera SOLO al

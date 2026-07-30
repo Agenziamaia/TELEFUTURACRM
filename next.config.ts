@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Librerie email SOLO server (IMAP/SMTP): non vanno impacchettate da Turbopack,
   // vanno lasciate come pacchetti node esterni ai route handler.
-  serverExternalPackages: ["imapflow", "nodemailer", "mailparser"],
+  serverExternalPackages: ["imapflow", "nodemailer", "mailparser", "otplib"],
   async redirects() {
     // Rinomina "Registra/Ricerca Contratto" -> "Vendite": i vecchi URL restano
     // validi per link salvati e abitudini (redirect temporanei, non cacheati).

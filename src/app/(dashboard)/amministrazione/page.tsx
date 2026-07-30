@@ -69,6 +69,7 @@ import {
     Euro,
     Package,
     Layers,
+    ShieldCheck,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -1182,6 +1183,17 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
         setTimeout(() => setCopied(false), 1500);
     };
 
+    // Reset 2FA (telefono perso): azzera la verifica in due passaggi — al prossimo
+    // accesso l'utente rifa' l'iscrizione scansionando un nuovo QR.
+    const [resetting2fa, setResetting2fa] = useState(false);
+    const [reset2faDone, setReset2faDone] = useState(false);
+    const doReset2FA = async () => {
+        setResetting2fa(true);
+        const { error } = await supabase.from("app_users").update({ totp_enabled: false, totp_secret: null }).eq("id", u.id);
+        setResetting2fa(false);
+        if (!error) { setReset2faDone(true); setTimeout(() => setReset2faDone(false), 2500); }
+    };
+
     useEffect(() => {
         (async () => {
             setLoading(true);
@@ -1328,14 +1340,25 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
                             <div className="glass-card p-4 rounded-xl">
                                 <div className="flex items-center justify-between mb-3">
                                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Credenziali</p>
-                                    <button
-                                        onClick={doResetPassword}
-                                        disabled={resetting}
-                                        className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 transition-colors disabled:opacity-60"
-                                    >
-                                        {resetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
-                                        Reset password
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={doReset2FA}
+                                            disabled={resetting2fa}
+                                            title="Azzera la verifica in due passaggi (telefono perso): al prossimo accesso l'utente rifà l'iscrizione col QR"
+                                            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 transition-colors disabled:opacity-60"
+                                        >
+                                            {resetting2fa ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : reset2faDone ? <Check className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                                            {reset2faDone ? "2FA azzerata" : "Reset 2FA"}
+                                        </button>
+                                        <button
+                                            onClick={doResetPassword}
+                                            disabled={resetting}
+                                            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 transition-colors disabled:opacity-60"
+                                        >
+                                            {resetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCw className="w-3.5 h-3.5" />}
+                                            Reset password
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="space-y-2 text-sm">
                                     <div className="flex items-center gap-2 text-slate-300">
