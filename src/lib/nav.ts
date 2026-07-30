@@ -141,6 +141,7 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Altri costi", sez: "altri", icon: Tag, roles: ["admin", "dev"] },
             { name: "Marginalità", sez: "marginalita", icon: Package, roles: ["admin", "dev"] },
             { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
+            { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },
             { name: "Target", sez: "target", icon: ClipboardList, roles: ["admin", "dev"] },
             { name: "Direzione Inserimento", sez: "direzione", icon: Compass, roles: ["admin", "dev"] },
         ],
