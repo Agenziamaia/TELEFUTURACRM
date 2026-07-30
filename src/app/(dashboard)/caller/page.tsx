@@ -1220,7 +1220,9 @@ function CallerPageInner() {
 
             {/* CONTENT */}
             <div className="flex-1 overflow-y-auto p-4 md:p-8">
-                <div className="max-w-7xl mx-auto space-y-6">
+                {/* Tutta la larghezza disponibile (Luca 30/07): la tabella ha
+                    guadagnato colonne e i filtri respirano meglio. */}
+                <div className="w-full space-y-6">
 
                     {/* ── CALLS VIEW ── */}
                     {!isListeView && (
@@ -1314,6 +1316,7 @@ function CallerPageInner() {
                                     <thead>
                                         <tr className="border-b border-white/5">
                                             <Th>Cliente</Th>
+                                            <Th>Cellulare</Th>
                                             <Th>Brand</Th>
                                             <Th>Provenienza</Th>
                                             <Th>Tipologia</Th>
@@ -1324,8 +1327,8 @@ function CallerPageInner() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {loading && (<tr><td colSpan={8} className="text-center py-12 text-slate-500">Caricamento...</td></tr>)}
-                                        {!loading && filtered.length === 0 && (<tr><td colSpan={8} className="text-center py-12 text-slate-500">Nessuna call trovata</td></tr>)}
+                                        {loading && (<tr><td colSpan={9} className="text-center py-12 text-slate-500">Caricamento...</td></tr>)}
+                                        {!loading && filtered.length === 0 && (<tr><td colSpan={9} className="text-center py-12 text-slate-500">Nessuna call trovata</td></tr>)}
                                         {filtered.map((c) => (
                                             <tr
                                                 key={c.id}
@@ -1338,15 +1341,23 @@ function CallerPageInner() {
                                                     <div className="font-semibold text-white flex items-center gap-2">
                                                         {clientLabel(c)}
                                                         {(c.da_esitare || anagraficaIncompleta(c)) && <span title={c.da_esitare ? "Chiamata risposta: esito da inserire" : "Anagrafica incompleta: nome/cognome e CF da inserire"} className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />}
-                                                        {(c.cellulare || c.numero) && (
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-500 mt-0.5">{c.tipo_cliente === "business" ? "■ Business" : "● Consumer"}</div>
+                                                </td>
+                                                {/* La cornetta sta sul NUMERO, non sul nome (Luca 30/07). */}
+                                                <td className="px-4 py-3">
+                                                    {(c.cellulare || c.numero) ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-mono text-[13px] text-slate-200 whitespace-nowrap">{c.cellulare || c.numero}</span>
                                                             <button
                                                                 onClick={async (e) => { e.stopPropagation(); const r = await chiamaAircall(c.cellulare || c.numero, user?.id); alert(r.msg); }}
                                                                 title="Chiama con Aircall"
                                                                 className="p-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-[11px] leading-none shrink-0"
                                                             >📞</button>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-[11px] text-slate-500 mt-0.5">{c.tipo_cliente === "business" ? "■ Business" : "● Consumer"}</div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-slate-600 text-xs">—</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-300">{c.brand || "—"}</td>
                                                 <td className="px-4 py-3 text-slate-300">{c.provenienza || "—"}</td>
