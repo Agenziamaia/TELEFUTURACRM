@@ -10,14 +10,15 @@ import {
   getInbox, listMessages, getParticipants, sendMessage, markRead,
   subscribeMessages, subscribeInbox, subscribeReceipts, refHref,
   splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
+  listDirectory, addParticipants, removeParticipant,
 } from "@/lib/chat";
-import type { ChatMessage } from "@/lib/chat";
+import type { ChatMessage, DirUser } from "@/lib/chat";
 import { roleLabel, seesAllStores, seesWholeStore } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { cn } from "@/utils";
@@ -116,6 +117,16 @@ function ChatPageInner() {
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);   // dragenter/leave scattano anche sui figli: conta la profondita'
 
+  // #125/#126: sono l'AMMINISTRATORE (creatore) di QUESTO gruppo? Abilita la
+  // gestione membri (aggiungi/espelli) e il tasto "chi ha letto", a prescindere
+  // dal ruolo aziendale — "chi crea un gruppo" (Francesco).
+  const iAmGroupAdmin = useMemo(() => !!meId && parts.some((p) => p.user_id === meId && p.is_admin), [parts, meId]);
+  const [manageBusy, setManageBusy] = useState<string | null>(null); // user_id in aggiunta/rimozione
+  const [addOpen, setAddOpen] = useState(false);                     // pannello "aggiungi membri" aperto
+  const [addQ, setAddQ] = useState("");
+  const [dir, setDir] = useState<DirUser[]>([]);                     // rubrica (per l'aggiunta)
+  const [infoMsg, setInfoMsg] = useState<ChatMessage | null>(null);  // #126: messaggio del popup "chi ha letto"
+
   const reloadInbox = async () => { if (!meId) return; try { setInbox(await getInbox(meId)); } catch {} };
   useEffect(() => { reloadInbox(); }, [meId]);
   useEffect(() => { if (!meId) return; return subscribeInbox(reloadInbox); }, [meId]);
@@ -133,16 +144,37 @@ function ChatPageInner() {
       if (meId) markRead(cid, meId).then(reloadInbox);
     } catch {}
   };
+  const loadParts = () => { if (selId) getParticipants(selId).then(setParts).catch(() => setParts([])); };
   useEffect(() => {
-    setShowMembers(false);
+    setShowMembers(false); setAddOpen(false); setAddQ(""); setInfoMsg(null);
     if (!selId) { setMessages([]); setParts([]); return; }
-    const loadParts = () => getParticipants(selId).then(setParts).catch(() => setParts([]));
     reloadMessages(selId);
     loadParts();
     const offMsg = subscribeMessages(selId, () => reloadMessages(selId));
     const offRcpt = subscribeReceipts(selId, loadParts);
     return () => { offMsg(); offRcpt(); };
   }, [selId]);
+
+  // #125: gestione membri del gruppo (solo l'amministratore del gruppo).
+  const openAdd = async () => {
+    setAddOpen(true); setAddQ("");
+    if (meId) { try { setDir(await listDirectory(meId)); } catch {} }
+  };
+  const addMember = async (u: DirUser) => {
+    if (!selId) return;
+    setManageBusy(u.id);
+    try { await addParticipants(selId, [u.id]); loadParts(); reloadInbox(); }
+    catch (e: any) { alert("Aggiunta non riuscita: " + (e?.message || e)); }
+    finally { setManageBusy(null); }
+  };
+  const removeMember = async (p: any) => {
+    if (!selId) return;
+    if (!window.confirm(`Rimuovere ${p.full_name} dal gruppo?`)) return;
+    setManageBusy(p.user_id);
+    try { await removeParticipant(selId, p.user_id); loadParts(); reloadInbox(); }
+    catch (e: any) { alert("Rimozione non riuscita: " + (e?.message || e)); }
+    finally { setManageBusy(null); }
+  };
 
   useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [messages]);
 
@@ -349,7 +381,7 @@ function ChatPageInner() {
                 <p className="text-xs text-slate-500 truncate flex items-center gap-1.5">
                   {selConv.type === "dm" && <span className={`w-2 h-2 rounded-full ${dmOnline ? "bg-green-500" : "bg-slate-600"}`} />}
                   {selConv.type === "group"
-                    ? (canSeeMembers
+                    ? ((canSeeMembers || iAmGroupAdmin)
                       ? <button onClick={() => setShowMembers(true)} className="text-purple-300 hover:text-purple-200 hover:underline">
                         {selConv.member_count} membri
                       </button>
@@ -357,7 +389,7 @@ function ChatPageInner() {
                     : (dmOnline ? "Online" : (lastSeen(otherPart?.last_seen_at) || roleLabel(selConv.other_role || "")))}
                 </p>
               </div>
-              {selConv.type === "group" && canSeeMembers && (
+              {selConv.type === "group" && (canSeeMembers || iAmGroupAdmin) && (
                 <button onClick={() => setShowMembers(true)} title="Membri del gruppo"
                   className="p-2 rounded-lg text-slate-500 hover:text-purple-300 hover:bg-purple-500/10 transition-colors shrink-0">
                   <Users className="w-4.5 h-4.5" />
@@ -383,11 +415,18 @@ function ChatPageInner() {
                     <Reply className="w-4 h-4" />
                   </button>
                 );
+                // #126: solo l'amministratore del gruppo vede il tasto "i" (chi ha letto e quando)
+                const btnInfo = (selConv.type === "group" && iAmGroupAdmin) ? (
+                  <button type="button" title="Chi ha letto" onClick={() => setInfoMsg(m)}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-white/10 transition-opacity">
+                    <Info className="w-4 h-4" />
+                  </button>
+                ) : null;
                 return (
                   <div key={m.id} id={`msg-${m.id}`}>
                     {showDay && <div className="text-center my-3"><span className="text-[11px] text-slate-500 bg-white/5 px-3 py-1 rounded-full">{showDay}</span></div>}
                     <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}>
-                      {mine && btnRispondi}
+                      {mine && <>{btnInfo}{btnRispondi}</>}
                       <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
                         {!mine && selConv.type === "group" && (
                           <p className="text-[11px] font-semibold text-indigo-300 mb-0.5">{senderName[m.sender_id] || "—"}</p>
@@ -457,7 +496,7 @@ function ChatPageInner() {
                           })()}
                         </p>
                       </div>
-                      {!mine && btnRispondi}
+                      {!mine && <>{btnRispondi}{btnInfo}</>}
                     </div>
                   </div>
                 );
@@ -573,18 +612,60 @@ function ChatPageInner() {
           }} />
       )}
 
-      {showMembers && selConv?.type === "group" && canSeeMembers && (
+      {showMembers && selConv?.type === "group" && (canSeeMembers || iAmGroupAdmin) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowMembers(false)}>
           <div className="glass-card w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+            <div className="flex items-center justify-between gap-2 p-4 border-b border-white/10 bg-white/5">
               <div className="min-w-0">
                 <h3 className="text-base font-bold text-white truncate">Membri del gruppo</h3>
                 <p className="text-xs text-slate-400 truncate">{title} · {parts.length} {parts.length === 1 ? "membro" : "membri"}</p>
               </div>
-              <button onClick={() => setShowMembers(false)} className="p-1 hover:bg-white/10 rounded-lg text-slate-400 transition-colors">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                {/* #125: solo l'amministratore del gruppo può aggiungere/espellere membri */}
+                {iAmGroupAdmin && (
+                  <button onClick={() => (addOpen ? setAddOpen(false) : openAdd())}
+                    className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors",
+                      addOpen ? "bg-white/10 text-slate-300 border-white/10" : "bg-purple-500/15 text-purple-200 border-purple-500/30 hover:bg-purple-500/25")}>
+                    <UserPlus className="w-4 h-4" /> {addOpen ? "Chiudi" : "Aggiungi"}
+                  </button>
+                )}
+                <button onClick={() => setShowMembers(false)} className="p-1 hover:bg-white/10 rounded-lg text-slate-400 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
+
+            {/* #125: pannello di ricerca/aggiunta (solo admin del gruppo) */}
+            {iAmGroupAdmin && addOpen && (
+              <div className="border-b border-white/10 bg-black/20 p-3 shrink-0">
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input value={addQ} onChange={(e) => setAddQ(e.target.value)} placeholder="Cerca persona da aggiungere…" className="glass-input w-full pl-9 h-9 text-sm" autoFocus />
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {(() => {
+                    const memberIds = new Set(parts.map((p) => p.user_id));
+                    const s = addQ.trim().toLowerCase();
+                    const cand = dir.filter((u) => !memberIds.has(u.id)).filter((u) => !s || (u.full_name || "").toLowerCase().includes(s));
+                    if (cand.length === 0) return <p className="text-xs text-slate-500 py-4 text-center">Nessuna persona da aggiungere.</p>;
+                    return cand.slice(0, 50).map((u) => (
+                      <button key={u.id} disabled={manageBusy === u.id} onClick={() => addMember(u)}
+                        className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-left hover:bg-white/5 disabled:opacity-50">
+                        <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border bg-indigo-500/20 text-indigo-200 border-indigo-500/30 shrink-0">
+                          {initials(u.full_name)}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm text-white truncate">{u.full_name}</span>
+                          <span className="block text-[10px] text-slate-500 truncate">{roleLabel(u.role) || "—"}{u.primary_store ? ` · ${u.primary_store}` : ""}</span>
+                        </span>
+                        <UserPlus className="w-4 h-4 text-purple-300 shrink-0" />
+                      </button>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
+
             <div className="overflow-y-auto p-2">
               {parts.length === 0 && <p className="text-sm text-slate-500 p-4 text-center">Nessun membro trovato.</p>}
               {[...parts]
@@ -613,9 +694,18 @@ function ChatPageInner() {
                           {roleLabel(m.role) || "—"}{m.primary_store ? ` · ${m.primary_store}` : ""}
                         </p>
                       </div>
-                      <span className="text-[11px] text-slate-500 shrink-0">
-                        {online ? <span className="text-green-400">Online</span> : (lastSeen(m.last_seen_at) || "")}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] text-slate-500">
+                          {online ? <span className="text-green-400">Online</span> : (lastSeen(m.last_seen_at) || "")}
+                        </span>
+                        {/* #125: espelli (solo admin, non su sé stesso) */}
+                        {iAmGroupAdmin && m.user_id !== meId && (
+                          <button onClick={() => removeMember(m)} disabled={manageBusy === m.user_id} title="Rimuovi dal gruppo"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors disabled:opacity-50">
+                            <UserMinus className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -623,6 +713,62 @@ function ChatPageInner() {
           </div>
         </div>
       )}
+
+      {/* #126: popup "chi ha letto il messaggio e quando" — solo l'admin del gruppo */}
+      {infoMsg && selConv?.type === "group" && iAmGroupAdmin && (() => {
+        const T = new Date(infoMsg.created_at).getTime();
+        const recips = parts.filter((p) => p.user_id !== infoMsg.sender_id);
+        const read = recips.filter((p) => p.last_read_at && new Date(p.last_read_at).getTime() >= T);
+        const unread = recips.filter((p) => !(p.last_read_at && new Date(p.last_read_at).getTime() >= T));
+        const readAtLabel = (s: string | null) => (s ? `${dayLabel(s)} · ${fmtTime(s)}` : "");
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setInfoMsg(null)}>
+            <div className="glass-card w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between gap-2 p-4 border-b border-white/10 bg-white/5">
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2"><Info className="w-4 h-4 text-sky-300" /> Info messaggio</h3>
+                  <p className="text-xs text-slate-400 truncate mt-0.5">“{previewBody(infoMsg)}” · {fmtTime(infoMsg.created_at)}</p>
+                </div>
+                <button onClick={() => setInfoMsg(null)} className="p-1 hover:bg-white/10 rounded-lg text-slate-400 transition-colors shrink-0">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="overflow-y-auto p-3 space-y-4">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-sky-300/80 flex items-center gap-1.5 mb-1.5">
+                    <CheckCheck className="w-3.5 h-3.5" /> Letto da · {read.length}
+                  </p>
+                  {read.length === 0 ? <p className="text-xs text-slate-500 px-1 py-1">Nessuno ha ancora letto.</p> :
+                    [...read].sort((a, b) => new Date(b.last_read_at!).getTime() - new Date(a.last_read_at!).getTime()).map((p) => (
+                      <div key={p.user_id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5">
+                        <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border bg-indigo-500/20 text-indigo-200 border-indigo-500/30 shrink-0">{initials(p.full_name)}</span>
+                        <span className="flex-1 min-w-0 text-sm text-white truncate">{p.full_name}</span>
+                        <span className="text-[11px] text-sky-300/90 shrink-0">{readAtLabel(p.last_read_at)}</span>
+                      </div>
+                    ))}
+                </div>
+                {unread.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5 mb-1.5">
+                      <Check className="w-3.5 h-3.5" /> Non ancora letto · {unread.length}
+                    </p>
+                    {unread.map((p) => {
+                      const delivered = p.last_delivered_at && new Date(p.last_delivered_at).getTime() >= T;
+                      return (
+                        <div key={p.user_id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5">
+                          <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border bg-white/5 text-slate-300 border-white/10 shrink-0">{initials(p.full_name)}</span>
+                          <span className="flex-1 min-w-0 text-sm text-slate-300 truncate">{p.full_name}</span>
+                          <span className="text-[11px] text-slate-500 shrink-0">{delivered ? "Consegnato" : "In attesa"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showNew && meId && (
         <NewChatModal meId={meId} onClose={() => setShowNew(false)}

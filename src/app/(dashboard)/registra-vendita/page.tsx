@@ -4580,6 +4580,22 @@ export default function CRM() {
 
   const gSS=i=>{if(i===0)return brand?"done":"active";if(i===1)return !brand?"pending":tipoCliente?"done":"active";if(i===2)return !tipoCliente?"pending":showAna?"done":"active";return showAna?"active":"pending"};
 
+  // #124: il popup di conferma reset è condiviso da form E carrello (il carrello
+  // fa un return anticipato, quindi il modal inline nel form non lo raggiunge).
+  const confirmResetModal = confirmReset && (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirmReset(false)}}>
+      <div style={{background:"rgba(255,255,255,0.02)",borderRadius:16,padding:"28px 30px",width:"min(420px,92vw)",boxShadow:"0 18px 50px rgba(0,0,0,.3)",textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:10}}>⚠️</div>
+        <div style={{fontSize:17,fontWeight:800,color:"#f8fafc",marginBottom:6}}>Reset del form</div>
+        <div style={{fontSize:14,color:"#8892b0",marginBottom:22,lineHeight:1.5}}>Sei sicuro di voler procedere?<br/>Tutti i dati non salvati andranno persi.</div>
+        <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+          <button onClick={()=>setConfirmReset(false)} style={{padding:"11px 28px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:14,fontWeight:700,cursor:"pointer"}}>No</button>
+          <button onClick={fullReset} style={{padding:"11px 28px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#dc3545,#b02a37)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>Sì, resetta</button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ═══════════ CART ═══════════
   if(showCart){
     const curI=colItems();const allG=[...cart];
@@ -4708,6 +4724,8 @@ export default function CRM() {
         </div>}
         <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
           <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
+          {/* #124: reset TOTALE del form disponibile anche nel carrello */}
+          <button onClick={()=>setConfirmReset(true)} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
           {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
           {onlyMarg&&<button onClick={()=>setShowMargSave(true)} style={{padding:"12px 36px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
           {!onlyMarg&&<button onClick={finalSubmit} disabled={tp===0||submitting} style={{padding:"12px 36px",borderRadius:10,border:"none",background:(tp>0&&!submitting)?"linear-gradient(135deg,#28a745,#20c997)":"rgba(255,255,255,0.1)",color:"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":`💾 Salva contratto (${tp})`}</button>}
@@ -4741,6 +4759,8 @@ export default function CRM() {
             </div>
           </div>
         </div>}
+        {/* #124: popup di conferma reset anche dentro il carrello */}
+        {confirmResetModal}
       </div>
     );
     return cartContent;
@@ -4901,7 +4921,11 @@ export default function CRM() {
           <TF l="Codice Fiscale intestatario" r v={ana.intCf} o={v=>uA("intCf",v.toUpperCase())} p="RSSMRA80A01H501Z"/>
         </div>}</>}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
-          <button onClick={()=>{setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});setLookupValue("");setClienteFound(false);setShowStep4(false)}} style={{padding:"9px 18px",borderRadius:8,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>↺ Reset anagrafica</button>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>{setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});setLookupValue("");setClienteFound(false);setShowStep4(false)}} style={{padding:"9px 18px",borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>↺ Reset anagrafica</button>
+            {/* #124: reset TOTALE del form disponibile anche allo step 3 (prima solo dallo step 4) */}
+            <button onClick={()=>setConfirmReset(true)} style={{padding:"9px 18px",borderRadius:8,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
+          </div>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"#f59e0b"}}>Obbligatori: {anaMissing.join(", ")}</span>}
             <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"rgba(255,255,255,0.08)":"linear-gradient(135deg,#2E75B6,#1B3A5C)",color:anaMissing.length>0?"#64748b":"#fff",fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
@@ -5116,20 +5140,8 @@ export default function CRM() {
         </div>
       </div>}
 
-      {/* ── CONFIRM RESET POPUP ──────────────────────────────────────────── */}
-      {confirmReset&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirmReset(false)}}>
-          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:16,padding:"28px 30px",width:"min(420px,92vw)",boxShadow:"0 18px 50px rgba(0,0,0,.3)",textAlign:"center"}}>
-            <div style={{fontSize:40,marginBottom:10}}>⚠️</div>
-            <div style={{fontSize:17,fontWeight:800,color:"#f8fafc",marginBottom:6}}>Reset del form</div>
-            <div style={{fontSize:14,color:"#8892b0",marginBottom:22,lineHeight:1.5}}>Sei sicuro di voler procedere?<br/>Tutti i dati non salvati andranno persi.</div>
-            <div style={{display:"flex",gap:10,justifyContent:"center"}}>
-              <button onClick={()=>setConfirmReset(false)} style={{padding:"11px 28px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:14,fontWeight:700,cursor:"pointer"}}>No</button>
-              <button onClick={fullReset} style={{padding:"11px 28px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#dc3545,#b02a37)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>Sì, resetta</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── CONFIRM RESET POPUP (condiviso, #124) ────────────────────────── */}
+      {confirmResetModal}
 
       {/* ── VF QTY MODAL OVERLAY ─────────────────────────────────────────── */}
       {vfQtyModal&&(

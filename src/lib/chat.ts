@@ -297,6 +297,29 @@ export async function deleteConversation(convId: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * #125: aggiunge partecipanti a un gruppo (idempotente sui duplicati).
+ * Il gating (solo l'amministratore del gruppo) e' lato UI: qui si scrive e basta.
+ */
+export async function addParticipants(convId: string, userIds: string[]): Promise<void> {
+  const rows = (userIds || []).filter(Boolean).map((user_id) => ({ conversation_id: convId, user_id }));
+  if (!rows.length) return;
+  const { error } = await supabase
+    .from("chat_participants")
+    .upsert(rows, { onConflict: "conversation_id,user_id", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+/** #125: rimuove (espelle) un partecipante da un gruppo. */
+export async function removeParticipant(convId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from("chat_participants")
+    .delete()
+    .eq("conversation_id", convId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
 // Realtime: nuovi messaggi in UNA conversazione (per la finestra aperta).
 export function subscribeMessages(convId: string, onInsert: (m: any) => void) {
   const channel = supabase
