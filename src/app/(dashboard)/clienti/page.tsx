@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useStores } from "@/lib/org";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -792,6 +793,9 @@ const defaultClientiView = {
     filterCellulare: "",
     filterEmail: "",
     filterIdentifier: "",
+    // Filtro visibilità (amministrazione): clienti gestiti da un utente/negozio
+    filterGestitoDa: "",
+    filterNegozioGestito: "",
 };
 
 export default function ClientiPage() {
@@ -857,6 +861,53 @@ export default function ClientiPage() {
         })();
     }, [user?.id, canApproveAccess]);
     const oscurato = (c: Cliente) => !visCli.visibile(c.id);
+
+    // ── FILTRO VISIBILITÀ (richiesta Luca 30/07): dall'amministrativo in su,
+    // nei filtri avanzati si sceglie un UTENTE o un NEGOZIO e si vede cio' che
+    // vedono loro — i clienti gestiti almeno una volta (pratiche a loro nome,
+    // o del punto vendita piu' le anagrafiche acquisite li'). Stesse regole
+    // della fonte unica clientiVisibili, calcolate per il soggetto scelto.
+    const filterGestitoDa = view.filterGestitoDa || "";
+    const setFilterGestitoDa = (v: string) => setView((p) => ({ ...p, filterGestitoDa: v }));
+    const filterNegozioGestito = view.filterNegozioGestito || "";
+    const setFilterNegozioGestito = (v: string) => setView((p) => ({ ...p, filterNegozioGestito: v }));
+    const NEGOZI = useStores();
+    const [utentiFiltro, setUtentiFiltro] = useState<{ full_name: string; match_name: string | null }[]>([]);
+    const [contrattiGest, setContrattiGest] = useState<{ client_id: string | null; venditore: string | null; negozio: string | null }[] | null>(null);
+    const [acquisitiGest, setAcquisitiGest] = useState<{ id: string; acquisito_da: string | null }[]>([]);
+    useEffect(() => {
+        if (!canApproveAccess) return;
+        supabase.from("app_users").select("full_name, match_name").eq("active", true).order("full_name")
+            .then(({ data }) => setUtentiFiltro((data ?? []) as never));
+    }, [canApproveAccess]);
+    useEffect(() => {
+        // il mapping pratiche->clienti si carica alla PRIMA selezione, poi resta
+        if (!canApproveAccess || (!filterGestitoDa && !filterNegozioGestito) || contrattiGest !== null) return;
+        (async () => {
+            const { data: cs } = await supabase.from("contracts").select("client_id, venditore, negozio").limit(10000);
+            const { data: acq } = await supabase.from("clients").select("id, acquisito_da").limit(5000);
+            setContrattiGest((cs ?? []) as never);
+            setAcquisitiGest((acq ?? []) as never);
+        })();
+    }, [canApproveAccess, filterGestitoDa, filterNegozioGestito, contrattiGest]);
+    const gestitiSet = useMemo(() => {
+        if (!canApproveAccess || (!filterGestitoDa && !filterNegozioGestito)) return null;
+        if (contrattiGest === null) return new Set<string>(); // in carica: un attimo di lista vuota
+        const nomeEq = (a?: string | null, b?: string | null) => { const x = (a || "").trim().toLowerCase(), y = (b || "").trim().toLowerCase(); return !!x && x === y; };
+        let set: Set<string> | null = null;
+        if (filterGestitoDa) {
+            const u = utentiFiltro.find((x) => x.full_name === filterGestitoDa);
+            const nomi = [u?.full_name || filterGestitoDa, u?.match_name].filter(Boolean) as string[];
+            set = new Set(contrattiGest.filter((c) => c.client_id && nomi.some((n) => nomeEq(c.venditore, n))).map((c) => c.client_id as string));
+        }
+        if (filterNegozioGestito) {
+            const s = new Set<string>();
+            contrattiGest.forEach((c) => { if (c.client_id && sameStore(c.negozio, filterNegozioGestito)) s.add(c.client_id); });
+            acquisitiGest.forEach((c) => { if (sameStore(c.acquisito_da, filterNegozioGestito)) s.add(c.id); });
+            set = set ? new Set([...set].filter((id) => s.has(id))) : s;
+        }
+        return set;
+    }, [canApproveAccess, filterGestitoDa, filterNegozioGestito, contrattiGest, acquisitiGest, utentiFiltro]);
 
     const richiediAccesso = async (c: Cliente) => {
         setAccessMsg("");
@@ -962,6 +1013,7 @@ export default function ClientiPage() {
             }
 
             // 2. Advanced filters
+            if (gestitiSet && !gestitiSet.has(c.id)) return false;
             if (filterTipo !== "tutti" && c.tipo !== filterTipo) return false;
             if (filterNome && !c.nome.toLowerCase().includes(filterNome.toLowerCase())) return false;
             if (filterCognome && (!c.cognome || !c.cognome.toLowerCase().includes(filterCognome.toLowerCase()))) return false;
@@ -972,7 +1024,7 @@ export default function ClientiPage() {
 
             return true;
         });
-    }, [clientList, quickSearch, filterTipo, filterNome, filterCognome, filterRagione, filterCellulare, filterEmail, filterIdentifier]);
+    }, [clientList, quickSearch, filterTipo, filterNome, filterCognome, filterRagione, filterCellulare, filterEmail, filterIdentifier, gestitiSet]);
 
     // Pagination bounds
     const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
@@ -1097,6 +1149,43 @@ export default function ClientiPage() {
                                         ))}
                                     </div>
                                 </div>
+
+                                {/* Visibilità: cosa vede un utente o un negozio (solo amministrazione).
+                                    Richiesta Luca 30/07: replica il perimetro reale — clienti gestiti
+                                    almeno una volta dall'utente o dal punto vendita. */}
+                                {canApproveAccess && (
+                                    <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-xl bg-violet-500/5 border border-violet-500/20 mb-2">
+                                        <div className="md:col-span-2">
+                                            <span className="text-xs font-bold text-violet-300">👁 Visibilità — cosa vede chi</span>
+                                            <p className="text-[11px] text-slate-500 mt-0.5">
+                                                Clienti gestiti almeno una volta dall&apos;utente (pratiche a suo nome) o dal negozio
+                                                (pratiche del punto vendita + anagrafiche acquisite lì): è il perimetro che quell&apos;utente o punto vendita vede.
+                                            </p>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-slate-400">Gestiti dall&apos;utente</label>
+                                            <select
+                                                value={filterGestitoDa}
+                                                onChange={(e) => { setFilterGestitoDa(e.target.value); setCurrentPage(1); }}
+                                                className="w-full glass-input text-sm rounded-lg py-2"
+                                            >
+                                                <option value="">— Tutti —</option>
+                                                {utentiFiltro.map((u) => <option key={u.full_name} value={u.full_name}>{u.full_name}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-slate-400">Gestiti dal negozio</label>
+                                            <select
+                                                value={filterNegozioGestito}
+                                                onChange={(e) => { setFilterNegozioGestito(e.target.value); setCurrentPage(1); }}
+                                                className="w-full glass-input text-sm rounded-lg py-2"
+                                            >
+                                                <option value="">— Tutti —</option>
+                                                {NEGOZI.map((n) => <option key={n} value={n}>{n}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Common Fields */}
                                 <div className="space-y-1.5">
