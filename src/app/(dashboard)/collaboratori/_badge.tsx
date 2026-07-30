@@ -608,6 +608,61 @@ function PresenzeAdmin() {
         setDelId(null);
         setRows((prev) => prev.filter((r) => r.id !== id));
     };
+    // ── MODIFICA TURNO (Luca 30/07): dall'amministrativo in su si correggono
+    // entrata e uscita; le ore nette si ricalcolano da sole (sono derivate).
+    // Al salvataggio si sceglie se AVVISARE il caller (messaggio in chat dal
+    // profilo di chi corregge) o correggere in silenzio.
+    const canEditShift = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    const [editShift, setEditShift] = useState<ShiftRow | null>(null);
+    const [editEntrata, setEditEntrata] = useState("");
+    const [editUscita, setEditUscita] = useState("");
+    const [editErr, setEditErr] = useState<string | null>(null);
+    const [salvando, setSalvando] = useState(false);
+    const toLocalInput = (iso: string) => {
+        const d = new Date(iso); const p = (n: number) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    const apriModifica = (s: ShiftRow) => {
+        setEditShift(s);
+        setEditEntrata(toLocalInput(s.started_at));
+        setEditUscita(s.ended_at ? toLocalInput(s.ended_at) : "");
+        setEditErr(null);
+    };
+    const salvaModifica = async (avvisa: boolean) => {
+        if (!editShift) return;
+        const ini = new Date(editEntrata);
+        const fine = new Date(editUscita);
+        if (isNaN(ini.getTime()) || isNaN(fine.getTime())) { setEditErr("Compila entrata e uscita."); return; }
+        if (fine <= ini) { setEditErr("L'uscita deve essere dopo l'entrata."); return; }
+        setSalvando(true);
+        setEditErr(null);
+        const { error } = await supabase.from("shifts")
+            .update({ started_at: ini.toISOString(), ended_at: fine.toISOString() })
+            .eq("id", editShift.id);
+        if (error) { setSalvando(false); setEditErr(error.message); return; }
+        const aggiornato: ShiftRow = { ...editShift, started_at: ini.toISOString(), ended_at: fine.toISOString() };
+        setRows((prev) => prev.map((r) => r.id === editShift.id ? aggiornato : r));
+        if (avvisa && user?.id) {
+            // notifica = messaggio in chat: DM amministratore -> caller
+            try {
+                const { data: dest } = await supabase.from("app_users")
+                    .select("id").eq("full_name", editShift.employee_name).eq("active", true).maybeSingle();
+                if (!dest?.id) throw new Error(`"${editShift.employee_name}" non trovato tra gli utenti attivi`);
+                const { data: convId, error: eDm } = await supabase.rpc("chat_get_or_create_dm", { p_me: user.id, p_other: dest.id });
+                if (eDm || !convId) throw new Error(eDm?.message || "conversazione non creata");
+                const fmtT = (d: Date) => d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+                const body = `⏱ Il tuo turno di ${ini.toLocaleDateString("it-IT")} è stato corretto dall'amministrazione: entrata ${fmtT(ini)}, uscita ${fmtT(fine)}, ore nette ${fmtOre(oreNette(aggiornato))}.`;
+                const { error: eMsg } = await supabase.from("chat_messages")
+                    .insert({ conversation_id: convId, sender_id: user.id, body });
+                if (eMsg) throw new Error(eMsg.message);
+                await supabase.from("chat_conversations").update({ last_message_at: new Date().toISOString() }).eq("id", convId);
+            } catch (e) {
+                alert("Turno corretto, ma la notifica in chat NON è partita: " + (e instanceof Error ? e.message : String(e)));
+            }
+        }
+        setSalvando(false);
+        setEditShift(null);
+    };
     const primoDelMese = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
     const [da, setDa] = useState(primoDelMese());
     const [a, setA] = useState(() => new Date().toISOString().slice(0, 10));
@@ -744,12 +799,12 @@ function PresenzeAdmin() {
                             <th className="px-3 py-2.5 text-right">Uscita</th>
                             <th className="px-3 py-2.5 text-right">Pausa</th>
                             <th className="px-3 py-2.5 text-right">Ore nette</th>
-                            {canDeleteShift && <th className="px-3 py-2.5 w-16"></th>}
+                            {(canDeleteShift || canEditShift) && <th className="px-3 py-2.5 w-20"></th>}
                         </tr>
                     </thead>
                     <tbody>
                         {filtered.length === 0 ? (
-                            <tr><td colSpan={canDeleteShift ? 8 : 7} className="px-3 py-8 text-center text-slate-500">Nessuna presenza nel periodo.</td></tr>
+                            <tr><td colSpan={(canDeleteShift || canEditShift) ? 8 : 7} className="px-3 py-8 text-center text-slate-500">Nessuna presenza nel periodo.</td></tr>
                         ) : filtered.map((x) => (
                             <tr key={x.id} className="border-t border-white/5 text-slate-300">
                                 <td className="px-3 py-2">{new Date(x.started_at).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}</td>
@@ -759,9 +814,13 @@ function PresenzeAdmin() {
                                 <td className="px-3 py-2 text-right">{x.ended_at ? new Date(x.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
                                 <td className="px-3 py-2 text-right text-amber-400/80">{Math.round(x.total_pause_minutes || 0)}m</td>
                                 <td className="px-3 py-2 text-right font-bold text-slate-100">{fmtOre(oreNette(x))}</td>
-                                {canDeleteShift && (
+                                {(canDeleteShift || canEditShift) && (
                                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                                        {delId === x.id ? (
+                                        {canEditShift && (
+                                            <button onClick={() => apriModifica(x)} title="Correggi entrata/uscita del turno"
+                                                className="p-1 rounded-md text-slate-600 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors">✏️</button>
+                                        )}
+                                        {canDeleteShift && (delId === x.id ? (
                                             <span className="inline-flex items-center gap-1">
                                                 <button onClick={() => eliminaTimbratura(x.id)} className="text-[10px] px-2 py-1 rounded-md bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 font-bold">Elimina</button>
                                                 <button onClick={() => setDelId(null)} className="text-[10px] px-1.5 py-1 rounded-md text-slate-400 hover:text-white">✕</button>
@@ -769,7 +828,7 @@ function PresenzeAdmin() {
                                         ) : (
                                             <button onClick={() => setDelId(x.id)} title="Elimina timbratura (solo admin)"
                                                 className="p-1 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 transition-colors">🗑</button>
-                                        )}
+                                        ))}
                                     </td>
                                 )}
                             </tr>
@@ -777,6 +836,55 @@ function PresenzeAdmin() {
                     </tbody>
                 </table>
             </div>
+
+            {/* ── Modale correzione turno ── */}
+            {editShift && (
+                <div className="fixed inset-0 bg-black/70 z-[1300] flex items-center justify-center p-4"
+                    onClick={() => !salvando && setEditShift(null)} role="dialog" aria-modal="true">
+                    <div className="w-full max-w-md p-6 rounded-2xl border border-white/10 shadow-2xl bg-[#12141f]" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="text-base font-bold text-white mb-1">✏️ Correggi turno</h3>
+                        <p className="text-xs text-slate-500 mb-5">
+                            {editShift.employee_name} — {new Date(editShift.started_at).toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long" })}
+                        </p>
+                        <div className="space-y-3.5">
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Entrata</label>
+                                <input type="datetime-local" value={editEntrata} onChange={(e) => setEditEntrata(e.target.value)} className="glass-input w-full text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Uscita</label>
+                                <input type="datetime-local" value={editUscita} onChange={(e) => setEditUscita(e.target.value)} className="glass-input w-full text-sm" />
+                            </div>
+                            {(() => {
+                                const i = new Date(editEntrata), f = new Date(editUscita);
+                                const ok = !isNaN(i.getTime()) && !isNaN(f.getTime()) && f > i;
+                                const ore = ok ? Math.max(0, (f.getTime() - i.getTime()) / 3600000 - (editShift.total_pause_minutes || 0) / 60) : null;
+                                return (
+                                    <div className="p-3 rounded-xl bg-white/[0.03] border border-white/8 text-sm text-slate-300">
+                                        Pausa registrata: <b className="text-amber-300">{Math.round(editShift.total_pause_minutes || 0)}m</b> ·
+                                        Ore nette ricalcolate: <b className="text-emerald-300">{ore != null ? fmtOre(ore) : "—"}</b>
+                                    </div>
+                                );
+                            })()}
+                            {editErr && <div className="text-rose-400 text-xs">{editErr}</div>}
+                        </div>
+                        <div className="mt-5 space-y-2">
+                            <button onClick={() => salvaModifica(true)} disabled={salvando}
+                                className="w-full h-11 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-sm transition-all disabled:opacity-50">
+                                💬 Salva e avvisa {editShift.employee_name.split(" ")[0]} in chat
+                            </button>
+                            <button onClick={() => salvaModifica(false)} disabled={salvando}
+                                className="w-full h-11 rounded-xl border border-white/15 text-slate-300 hover:bg-white/5 font-bold text-sm transition-all disabled:opacity-50">
+                                Salva senza avvisare
+                            </button>
+                            <button onClick={() => setEditShift(null)} disabled={salvando}
+                                className="w-full h-9 rounded-xl text-slate-500 hover:text-white text-xs transition-colors">
+                                Annulla
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
