@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, Suspense } from "react";
-import { SelectPersona } from "@/components/SelectPersona";
+import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -1327,11 +1327,10 @@ function CallerPageInner() {
                                     <FilterField label="CF / P.IVA"><input className="glass-input text-sm rounded-lg py-2 w-full" value={fCf} onChange={(e) => setFCf(e.target.value)} placeholder="Cerca..." /></FilterField>
                                     <FilterField label="Nome / Rag. Soc."><input className="glass-input text-sm rounded-lg py-2 w-full" value={fNome} onChange={(e) => setFNome(e.target.value)} placeholder="Cerca..." /></FilterField>
                                     <FilterField label="Cellulare"><input inputMode="numeric" className="glass-input text-sm rounded-lg py-2 w-full" value={fCellulare} onChange={(e) => setFCellulare(e.target.value)} placeholder="Anche parziale..." /></FilterField>
+                                    {/* Tendine UNIFICATE (Luca 30/07): stessa estetica del filtro
+                                        Caller ovunque — si scrive per filtrare o si clicca. */}
                                     <FilterField label="Negozio App.">
-                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fNegozio} onChange={(e) => setFNegozio(e.target.value)}>
-                                            <option value="">Tutti</option>
-                                            {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
-                                        </select>
+                                        <SelectOpzioni value={fNegozio} onChange={setFNegozio} opzioni={NEGOZI} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Data App. (da → a)">
                                         <div className="flex items-center gap-1.5">
@@ -1348,28 +1347,16 @@ function CallerPageInner() {
                                         </div>
                                     </FilterField>
                                     <FilterField label="Stato">
-                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fStato} onChange={(e) => setFStato(e.target.value)}>
-                                            <option value="">Tutti</option>
-                                            {STATI.map(s => <option key={s} value={s}>{s}</option>)}
-                                        </select>
+                                        <SelectOpzioni value={fStato} onChange={setFStato} opzioni={STATI} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Provenienza">
-                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fProvenienza} onChange={(e) => setFProvenienza(e.target.value)}>
-                                            <option value="">Tutte</option>
-                                            {PROVENIENZE.map(p => <option key={p} value={p}>{p}</option>)}
-                                        </select>
+                                        <SelectOpzioni value={fProvenienza} onChange={setFProvenienza} opzioni={PROVENIENZE} placeholder="Tutte — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Tipologia">
-                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fTipologia} onChange={(e) => setFTipologia(e.target.value)}>
-                                            <option value="">Tutte</option>
-                                            {TIPOLOGIE.map(t => <option key={t} value={t}>{t}</option>)}
-                                        </select>
+                                        <SelectOpzioni value={fTipologia} onChange={setFTipologia} opzioni={TIPOLOGIE} placeholder="Tutte — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Obiettivo">
-                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fObiettivo} onChange={(e) => setFObiettivo(e.target.value)}>
-                                            <option value="">Tutti</option>
-                                            {OBIETTIVI.map(o => <option key={o} value={o}>{o}</option>)}
-                                        </select>
+                                        <SelectOpzioni value={fObiettivo} onChange={setFObiettivo} opzioni={OBIETTIVI} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     {isDirector && (
                                         <FilterField label="Caller">
@@ -1482,22 +1469,13 @@ function CallerPageInner() {
                                 </div>
                                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                                     <FilterField label="Provenienza">
-                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fLProvenienza} onChange={(e) => setFLProvenienza(e.target.value)}>
-                                            <option value="">Tutte</option>
-                                            {PROVENIENZE_LISTA.map(p => <option key={p} value={p}>{p}</option>)}
-                                        </select>
+                                        <SelectOpzioni value={fLProvenienza} onChange={setFLProvenienza} opzioni={[...PROVENIENZE_LISTA]} placeholder="Tutte — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Brand">
-                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fLBrand} onChange={(e) => setFLBrand(e.target.value)}>
-                                            <option value="">Tutti</option>
-                                            {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                                        </select>
+                                        <SelectOpzioni value={fLBrand} onChange={setFLBrand} opzioni={[...BRANDS]} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Caller">
-                                        <select className="glass-input text-sm rounded-lg py-2 w-full" value={fLCaller} onChange={(e) => setFLCaller(e.target.value)}>
-                                            <option value="">Tutti</option>
-                                            {CALLERS.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
+                                        <SelectPersona value={fLCaller} onChange={setFLCaller} opzioni={CALLERS} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Assegnata Dal"><input type="date" className="glass-input text-sm rounded-lg py-2 w-full" value={fLDataDa} onChange={(e) => setFLDataDa(e.target.value)} /></FilterField>
                                     <FilterField label="Assegnata Al"><input type="date" className="glass-input text-sm rounded-lg py-2 w-full" value={fLDataA} onChange={(e) => setFLDataA(e.target.value)} /></FilterField>

@@ -14,15 +14,31 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-export function SelectPersona({
-    value, onChange, opzioni, placeholder = "Scrivi o scegli…", className = "", disabled = false,
-}: {
+/** Variante GENERICA per qualsiasi filtro (Luca 30/07: "tutte le tendine
+ *  identiche a questa"): stessa estetica e stesso comportamento — si scrive
+ *  per filtrare o si sceglie col mouse; campo vuoto = nessun filtro. */
+export function SelectOpzioni(props: {
     value: string;
     onChange: (v: string) => void;
-    opzioni: string[];
+    opzioni: readonly string[];
     placeholder?: string;
     className?: string;
     disabled?: boolean;
+}) {
+    return <SelectPersona {...props} vuotoMsg="Nessuna voce corrispondente" />;
+}
+
+export function SelectPersona({
+    value, onChange, opzioni, placeholder = "Scrivi o scegli…", className = "", disabled = false,
+    vuotoMsg = "Nessun collaboratore corrispondente",
+}: {
+    value: string;
+    onChange: (v: string) => void;
+    opzioni: readonly string[];
+    placeholder?: string;
+    className?: string;
+    disabled?: boolean;
+    vuotoMsg?: string;
 }) {
     const [testo, setTesto] = useState(value);
     const [aperta, setAperta] = useState(false);
@@ -82,7 +98,7 @@ export function SelectPersona({
                     {n}
                 </button>
             )) : (
-                <div className="px-3.5 py-2.5 text-sm text-slate-500">Nessun collaboratore corrispondente</div>
+                <div className="px-3.5 py-2.5 text-sm text-slate-500">{vuotoMsg}</div>
             )}
         </div>
     ) : null;
