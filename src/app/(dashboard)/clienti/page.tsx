@@ -13,6 +13,7 @@ import { useAuth } from "@/context/AuthContext";
 import { trovaDuplicati, liberaCellulare, type DupCliente } from "@/lib/clientChecks";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useStores } from "@/lib/org";
+import { SelectMulti } from "@/components/SelectPersona";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -793,9 +794,9 @@ const defaultClientiView = {
     filterCellulare: "",
     filterEmail: "",
     filterIdentifier: "",
-    // Filtro visibilità (amministrazione): clienti gestiti da un utente/negozio
-    filterGestitoDa: "",
-    filterNegozioGestito: "",
+    // Filtro visibilità (amministrazione): clienti gestiti da utenti/negozi (multi)
+    filterGestitoDa: [] as string[],
+    filterNegozioGestito: [] as string[],
 };
 
 export default function ClientiPage() {
@@ -867,10 +868,12 @@ export default function ClientiPage() {
     // vedono loro — i clienti gestiti almeno una volta (pratiche a loro nome,
     // o del punto vendita piu' le anagrafiche acquisite li'). Stesse regole
     // della fonte unica clientiVisibili, calcolate per il soggetto scelto.
-    const filterGestitoDa = view.filterGestitoDa || "";
-    const setFilterGestitoDa = (v: string) => setView((p) => ({ ...p, filterGestitoDa: v }));
-    const filterNegozioGestito = view.filterNegozioGestito || "";
-    const setFilterNegozioGestito = (v: string) => setView((p) => ({ ...p, filterNegozioGestito: v }));
+    // MULTI-selezione (Luca 30/07): più persone e più negozi insieme. Le viste
+    // salvate prima della modifica avevano una stringa singola: si normalizza.
+    const filterGestitoDa = Array.isArray(view.filterGestitoDa) ? view.filterGestitoDa : (view.filterGestitoDa ? [view.filterGestitoDa as unknown as string] : []);
+    const setFilterGestitoDa = (v: string[]) => setView((p) => ({ ...p, filterGestitoDa: v }));
+    const filterNegozioGestito = Array.isArray(view.filterNegozioGestito) ? view.filterNegozioGestito : (view.filterNegozioGestito ? [view.filterNegozioGestito as unknown as string] : []);
+    const setFilterNegozioGestito = (v: string[]) => setView((p) => ({ ...p, filterNegozioGestito: v }));
     const NEGOZI = useStores();
     const [utentiFiltro, setUtentiFiltro] = useState<{ full_name: string; match_name: string | null }[]>([]);
     const [contrattiGest, setContrattiGest] = useState<{ client_id: string | null; venditore: string | null; negozio: string | null }[] | null>(null);
@@ -888,7 +891,7 @@ export default function ClientiPage() {
         // il mapping pratiche->clienti si carica una volta sola: subito se la
         // colonna e' visibile, altrimenti alla prima selezione del filtro
         if (contrattiGest !== null) return;
-        if (!vedeGestitoDa && !(canApproveAccess && (filterGestitoDa || filterNegozioGestito))) return;
+        if (!vedeGestitoDa && !(canApproveAccess && (filterGestitoDa.length || filterNegozioGestito.length))) return;
         (async () => {
             const { data: cs } = await supabase.from("contracts").select("client_id, venditore, negozio").limit(10000);
             const { data: acq } = await supabase.from("clients").select("id, acquisito_da").limit(5000);
@@ -910,19 +913,24 @@ export default function ClientiPage() {
         return m;
     }, [contrattiGest]);
     const gestitiSet = useMemo(() => {
-        if (!canApproveAccess || (!filterGestitoDa && !filterNegozioGestito)) return null;
+        if (!canApproveAccess || (!filterGestitoDa.length && !filterNegozioGestito.length)) return null;
         if (contrattiGest === null) return new Set<string>(); // in carica: un attimo di lista vuota
-        const nomeEq = (a?: string | null, b?: string | null) => { const x = (a || "").trim().toLowerCase(), y = (b || "").trim().toLowerCase(); return !!x && x === y; };
         let set: Set<string> | null = null;
-        if (filterGestitoDa) {
-            const u = utentiFiltro.find((x) => x.full_name === filterGestitoDa);
-            const nomi = [u?.full_name || filterGestitoDa, u?.match_name].filter(Boolean) as string[];
-            set = new Set(contrattiGest.filter((c) => c.client_id && nomi.some((n) => nomeEq(c.venditore, n))).map((c) => c.client_id as string));
+        if (filterGestitoDa.length) {
+            // piu' persone = UNIONE dei loro clienti (match_name incluso)
+            const nomiSel = new Set<string>();
+            filterGestitoDa.forEach((fn) => {
+                const u = utentiFiltro.find((x) => x.full_name === fn);
+                [u?.full_name || fn, u?.match_name].forEach((n) => { const t = String(n || "").trim().toLowerCase(); if (t) nomiSel.add(t); });
+            });
+            set = new Set(contrattiGest
+                .filter((c) => c.client_id && nomiSel.has(String(c.venditore || "").trim().toLowerCase()))
+                .map((c) => c.client_id as string));
         }
-        if (filterNegozioGestito) {
+        if (filterNegozioGestito.length) {
             const s = new Set<string>();
-            contrattiGest.forEach((c) => { if (c.client_id && sameStore(c.negozio, filterNegozioGestito)) s.add(c.client_id); });
-            acquisitiGest.forEach((c) => { if (sameStore(c.acquisito_da, filterNegozioGestito)) s.add(c.id); });
+            contrattiGest.forEach((c) => { if (c.client_id && filterNegozioGestito.some((ng) => sameStore(c.negozio, ng))) s.add(c.client_id); });
+            acquisitiGest.forEach((c) => { if (filterNegozioGestito.some((ng) => sameStore(c.acquisito_da, ng))) s.add(c.id); });
             set = set ? new Set([...set].filter((id) => s.has(id))) : s;
         }
         return set;
@@ -1169,41 +1177,29 @@ export default function ClientiPage() {
                                     </div>
                                 </div>
 
-                                {/* Visibilità: cosa vede un utente o un negozio (solo amministrazione).
-                                    Richiesta Luca 30/07: replica il perimetro reale — clienti gestiti
-                                    almeno una volta dall'utente o dal punto vendita. */}
+                                {/* Filtri "gestito da": due campi NORMALI come gli altri, multi-
+                                    selezione nello stile unificato (Luca 30/07). */}
                                 {canApproveAccess && (
-                                    <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-xl bg-violet-500/5 border border-violet-500/20 mb-2">
-                                        <div className="md:col-span-2">
-                                            <span className="text-xs font-bold text-violet-300">👁 Visibilità — cosa vede chi</span>
-                                            <p className="text-[11px] text-slate-500 mt-0.5">
-                                                Clienti gestiti almeno una volta dall&apos;utente (pratiche a suo nome) o dal negozio
-                                                (pratiche del punto vendita + anagrafiche acquisite lì): è il perimetro che quell&apos;utente o punto vendita vede.
-                                            </p>
-                                        </div>
+                                    <>
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-slate-400">Gestiti dall&apos;utente</label>
-                                            <select
-                                                value={filterGestitoDa}
-                                                onChange={(e) => { setFilterGestitoDa(e.target.value); setCurrentPage(1); }}
+                                            <SelectMulti
+                                                values={filterGestitoDa}
+                                                onChange={(v) => { setFilterGestitoDa(v); setCurrentPage(1); }}
+                                                opzioni={utentiFiltro.map((u) => u.full_name)}
                                                 className="w-full glass-input text-sm rounded-lg py-2"
-                                            >
-                                                <option value="">— Tutti —</option>
-                                                {utentiFiltro.map((u) => <option key={u.full_name} value={u.full_name}>{u.full_name}</option>)}
-                                            </select>
+                                            />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-slate-400">Gestiti dal negozio</label>
-                                            <select
-                                                value={filterNegozioGestito}
-                                                onChange={(e) => { setFilterNegozioGestito(e.target.value); setCurrentPage(1); }}
+                                            <SelectMulti
+                                                values={filterNegozioGestito}
+                                                onChange={(v) => { setFilterNegozioGestito(v); setCurrentPage(1); }}
+                                                opzioni={NEGOZI}
                                                 className="w-full glass-input text-sm rounded-lg py-2"
-                                            >
-                                                <option value="">— Tutti —</option>
-                                                {NEGOZI.map((n) => <option key={n} value={n}>{n}</option>)}
-                                            </select>
+                                            />
                                         </div>
-                                    </div>
+                                    </>
                                 )}
 
                                 {/* Common Fields */}

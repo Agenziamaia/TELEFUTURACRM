@@ -9,6 +9,7 @@
 // l'amministrazione puo' segnare/annullare a mano.
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { SelectPersona } from "@/components/SelectPersona";
 import { getCat } from "./trackingHelpers";
 import { type EpisodioMalus, totaliEpisodi, formatDataIt } from "./malusStorico";
 
@@ -211,14 +212,15 @@ export function ArchivioMalus({
               />
             </div>
             {venditori.length > 1 && (
-              <select
-                value={venditoreSel}
-                onChange={(e) => setVenditoreSel(e.target.value)}
-                className="bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none"
-              >
-                <option value="">Tutti i venditori</option>
-                {venditori.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
+              <div className="min-w-[230px]">
+                <SelectPersona
+                  value={venditoreSel}
+                  onChange={setVenditoreSel}
+                  opzioni={venditori}
+                  placeholder="Tutti i venditori — scrivi per filtrare"
+                  className="bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none w-full"
+                />
+              </div>
             )}
           </div>
 
