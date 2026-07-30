@@ -470,12 +470,10 @@ function CallerPageInner() {
         "Sky": "/sky.png", "Energia": "/energy - Copy.png", "Tim": "/tim-logo-v2.png",
     };
     const [selBrands, setSelBrands] = useState<Set<string>>(new Set());  // vuoto = tutte
-    const brandCounts = useMemo(() => {
-        const scoped = calls.filter((c) => isDirector || c.caller === currentCaller);
-        return BRANDS.map((b) => ({ brand: b as string, n: scoped.filter((c) => c.brand === b).length }));
-    }, [calls, isDirector, currentCaller]);
-
-    const filtered = useMemo(() => calls.filter((c) => {
+    // FACCETTE COERENTI (Luca 30/07): i contatori dei brand rispettano TUTTI
+    // gli altri filtri attivi (caller, date, stato...) ignorando solo la
+    // selezione brand stessa — prima erano fissi e non seguivano i filtri.
+    const matchFiltri = (c: Call, ignoraBrand = false) => {
         if (!isDirector && c.caller !== currentCaller) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
         if (fNome) {
@@ -505,13 +503,20 @@ function CallerPageInner() {
         }
         if (fStato && c.stato !== fStato) return false;
         if (fCaller && c.caller !== fCaller) return false;
-        if (selBrands.size > 0 && !selBrands.has(c.brand)) return false;
+        if (!ignoraBrand && selBrands.size > 0 && !selBrands.has(c.brand)) return false;
         if (fProvenienza && c.provenienza !== fProvenienza) return false;
         if (fTipologia && c.tipologia !== fTipologia) return false;
         if (fObiettivo && c.obiettivo !== fObiettivo) return false;
         if (fLista && (!c.lista_origine || !c.lista_origine.toLowerCase().includes(fLista.toLowerCase()))) return false;
         return true;
-    }), [calls, isDirector, currentCaller, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const brandCounts = useMemo(() => {
+        const scoped = calls.filter((c) => matchFiltri(c, true));
+        return BRANDS.map((b) => ({ brand: b as string, n: scoped.filter((c) => c.brand === b).length }));
+    }, [calls, isDirector, currentCaller, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, fProvenienza, fTipologia, fObiettivo, fLista]);
 
     function listaBrandLabel(l: ListaAssegnata): string {
         if (l.provenienza === "Acquistato") return l.brandAcq || "—";
