@@ -16,6 +16,7 @@ import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, capAllowed } from "@/lib/capabilities";
 import { useVisibleStores } from "@/lib/visibleStores";
+import { SelectOpzioni } from "@/components/SelectPersona";
 
 type ShiftRow = { id: number; employee_name: string; store: string; started_at: string; ended_at: string | null; pause_started_at: string | null; total_pause_minutes: number };
 
@@ -760,10 +761,7 @@ function PresenzeAdmin() {
                 </div>
                 <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Negozio</label>
-                    <select value={negozio} onChange={(e) => setNegozio(e.target.value)} className="glass-input text-xs py-1.5">
-                        <option value="">Tutti</option>
-                        {negozi.map((n) => <option key={n} value={n}>{n}</option>)}
-                    </select>
+                    <SelectOpzioni value={negozio} onChange={setNegozio} opzioni={negozi} placeholder="Tutti — scrivi per filtrare" className="glass-input text-xs py-1.5" />
                 </div>
                 <button onClick={exportCsv} disabled={filtered.length === 0}
                     className="h-8 px-4 rounded-lg text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">

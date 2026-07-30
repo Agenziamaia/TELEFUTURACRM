@@ -8,6 +8,7 @@ import { RotateCcw, Download, Eye, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { SelectOpzioni } from "@/components/SelectPersona";
 
 //  Types ─
 type DocKey = "cassa" | "pos" | "ddt_w3" | "ddt_vf" | "fatture";
@@ -469,14 +470,8 @@ function VistaFatture({ onClose, history, onToggleEmessa }: { onClose: () => voi
 
                 {/* Filters */}
                 <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 items-center">
-                    <select value={fStore} onChange={e => setFStore(e.target.value)} className={sel}>
-                        <option value="">Tutti i negozi</option>
-                        {NEGOZI.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <select value={fSoc} onChange={e => setFSoc(e.target.value)} className={sel}>
-                        <option value="">Tutte le società</option>
-                        {SOCIETA.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <SelectOpzioni value={fStore} onChange={setFStore} opzioni={NEGOZI} placeholder="Tutti i negozi — scrivi per filtrare" className={sel} />
+                    <SelectOpzioni value={fSoc} onChange={setFSoc} opzioni={SOCIETA} placeholder="Tutte le società — scrivi per filtrare" className={sel} />
                     <input type="date" value={fDateA} onChange={e => setFDateA(e.target.value)} className={sel} />
                     <input type="date" value={fDateB} onChange={e => setFDateB(e.target.value)} className={sel} />
                     {hasFilters && (
@@ -633,15 +628,9 @@ function VistaGestione({ isAdmin, userStores, history }: { isAdmin: boolean; use
             {/* Filters */}
             <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 items-center">
                 {isAdmin && (
-                    <select value={fStore} onChange={e => setFStore(e.target.value)} className={sel}>
-                        <option value="">Tutti i negozi</option>
-                        {NEGOZI.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <SelectOpzioni value={fStore} onChange={setFStore} opzioni={NEGOZI} placeholder="Tutti i negozi — scrivi per filtrare" className={sel} />
                 )}
-                <select value={fSoc} onChange={e => setFSoc(e.target.value)} className={sel}>
-                    <option value="">Tutte le società</option>
-                    {SOCIETA.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                <SelectOpzioni value={fSoc} onChange={setFSoc} opzioni={SOCIETA} placeholder="Tutte le società — scrivi per filtrare" className={sel} />
                 <input type="date" value={fDateA} onChange={e => setFDateA(e.target.value)} className={sel} />
                 <input type="date" value={fDateB} onChange={e => setFDateB(e.target.value)} className={sel} />
                 {hasFilters && (
