@@ -117,7 +117,7 @@ export function getCat(id: string) {
   };
 }
 
-const STATI_COMPLETATI: Record<string, string[]> = {
+export const STATI_COMPLETATI: Record<string, string[]> = {
   mnp: ["attivato", "re_inserita"],
   fisso: ["attivato"],
   finanziamento: ["liquidato"],
@@ -155,7 +155,7 @@ let REGOLE_ATTIVE: Record<string, RegolaTracking> | null = null;
 export function impostaRegoleTracking(rows: RegolaTracking[] | null | undefined) {
   REGOLE_ATTIVE = rows && rows.length ? Object.fromEntries(rows.map((r) => [r.categoria, r])) : null;
 }
-function regolaDi(categoria: string): RegolaTracking | undefined {
+export function regolaDi(categoria: string): RegolaTracking | undefined {
   const base = REGOLE_ATTIVE ?? Object.fromEntries(REGOLE_TRACKING_DEFAULT.map((r) => [r.categoria, r]));
   return base[categoria];
 }

@@ -4,6 +4,7 @@ import { AuthProvider } from '@/context/AuthContext'
 import { Sidebar } from '@/components/Sidebar'
 import { Header } from '@/components/Header'
 import { NotificationCenter } from '@/components/NotificationCenter'
+import { ComunicazioniPopup } from '@/components/ComunicazioniPopup'
 
 export const metadata: Metadata = {
   title: 'Telefutura - CRM',
@@ -30,6 +31,8 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem("crm_theme")==="chiaro")document.documentElement.classList.add("light")}catch(e){}` }} />
         <AuthProvider>
           <NotificationCenter />
+          {/* Pop-up comunicazioni con conferma: sopra tutto, per gli utenti loggati */}
+          <ComunicazioniPopup />
           <div className="flex min-h-screen">
             {children}
           </div>

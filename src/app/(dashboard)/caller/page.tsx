@@ -16,7 +16,7 @@ import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { AircallPhoneDock } from "@/components/AircallPhoneDock";
-import { useStores, useSellers } from "@/lib/org";
+import { useStores, useSellers, useCallers } from "@/lib/org";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, EVERYONE } from "@/lib/nav";
@@ -286,9 +286,13 @@ const defaultCallerView = {
     currentView: "calls" as "calls" | "liste",
     fCf: "",
     fNome: "",
+    fCellulare: "",
     fNegozio: "",
-    fDataApp: "",
-    fDataChiamata: "",
+    // Date a RANGE (Luca 30/07): da-a, non piu' giorno singolo.
+    fDataAppDa: "",
+    fDataAppA: "",
+    fDataChiamataDa: "",
+    fDataChiamataA: "",
     fStato: "",
     fCaller: "",
     fBrand: "",
@@ -312,7 +316,9 @@ function CallerPageInner() {
     const NEGOZI = useStores();
     const VENDITORI = useSellers();
     const AGENTI = VENDITORI;
-    const CALLERS = VENDITORI;   // anche i caller sono utenti reali (app_users)
+    // SOLO il personale del call center (ruoli area cc), non tutti gli utenti:
+    // il filtro Caller elencava l'intera azienda (segnalazione Luca 30/07).
+    const CALLERS = useCallers();
     const [view, setView] = usePageView<typeof defaultCallerView>("caller", defaultCallerView);
 
     // Utente e ruolo REALI dalla sessione. Prima erano fissi ("Mario Rossi" +
@@ -345,6 +351,24 @@ function CallerPageInner() {
 
     /* ── Data state ── */
     const [calls, setCalls] = useState<Call[]>([]);
+    // ── ELIMINAZIONE riga (solo admin, Luca 30/07) — A CASCATA: con la
+    // pratica muore l'appuntamento in calendario collegato (mig. 088). NON si
+    // toccano l'anagrafica cliente e il registro telefonico Aircall
+    // (call_events): sono entita' condivise, non appendici della pratica.
+    const canDeleteRows = ["admin", "dev"].includes(user?.role || "");
+    const [delConfirmId, setDelConfirmId] = useState<string | null>(null);
+    async function eliminaCallCascata(c: Call) {
+        const { data: row } = await supabase.from("calls").select("appointment_id").eq("id", c.id).maybeSingle();
+        const apptId = (row as { appointment_id?: number | null } | null)?.appointment_id;
+        if (apptId) {
+            const { error: e1 } = await supabase.from("appointments").delete().eq("id", apptId);
+            if (e1) { alert("Appuntamento collegato NON eliminato (riga lasciata intatta): " + e1.message); return; }
+        }
+        const { error } = await supabase.from("calls").delete().eq("id", c.id);
+        if (error) { alert("Riga non eliminata: " + error.message); return; }
+        setCalls(prev => prev.filter(x => x.id !== c.id));
+        setDelConfirmId(null);
+    }
     const [listeAssegnate, setListeAssegnate] = useState<ListaAssegnata[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
@@ -381,8 +405,11 @@ function CallerPageInner() {
     const fCf = view.fCf, setFCf = (v: string) => setView((p) => ({ ...p, fCf: v }));
     const fNome = view.fNome, setFNome = (v: string) => setView((p) => ({ ...p, fNome: v }));
     const fNegozio = view.fNegozio, setFNegozio = (v: string) => setView((p) => ({ ...p, fNegozio: v }));
-    const fDataApp = view.fDataApp, setFDataApp = (v: string) => setView((p) => ({ ...p, fDataApp: v }));
-    const fDataChiamata = view.fDataChiamata, setFDataChiamata = (v: string) => setView((p) => ({ ...p, fDataChiamata: v }));
+    const fCellulare = view.fCellulare || "", setFCellulare = (v: string) => setView((p) => ({ ...p, fCellulare: v }));
+    const fDataAppDa = view.fDataAppDa || "", setFDataAppDa = (v: string) => setView((p) => ({ ...p, fDataAppDa: v }));
+    const fDataAppA = view.fDataAppA || "", setFDataAppA = (v: string) => setView((p) => ({ ...p, fDataAppA: v }));
+    const fDataChiamataDa = view.fDataChiamataDa || "", setFDataChiamataDa = (v: string) => setView((p) => ({ ...p, fDataChiamataDa: v }));
+    const fDataChiamataA = view.fDataChiamataA || "", setFDataChiamataA = (v: string) => setView((p) => ({ ...p, fDataChiamataA: v }));
     const fStato = view.fStato, setFStato = (v: string) => setView((p) => ({ ...p, fStato: v }));
     const fCaller = view.fCaller, setFCaller = (v: string) => setView((p) => ({ ...p, fCaller: v }));
     const fBrand = view.fBrand, setFBrand = (v: string) => setView((p) => ({ ...p, fBrand: v }));
@@ -457,8 +484,25 @@ function CallerPageInner() {
             if (!match) return false;
         }
         if (fNegozio && c.negozio_appuntamento !== fNegozio) return false;
-        if (fDataApp && c.data_appuntamento && !c.data_appuntamento.startsWith(fDataApp)) return false;
-        if (fDataChiamata && !c.data_chiamata.startsWith(fDataChiamata)) return false;
+        // Cellulare: confronto sulle sole cifre, su entrambi i campi numero.
+        if (fCellulare) {
+            const q = fCellulare.replace(/\D/g, "");
+            if (q && ![c.cellulare, c.numero].some((n) => String(n || "").replace(/\D/g, "").includes(q))) return false;
+        }
+        // Date a RANGE (estremi inclusi). NB: col range attivo una pratica SENZA
+        // data appuntamento resta fuori (il vecchio filtro la lasciava passare).
+        const dataDi = (s: string | null | undefined) => String(s || "").slice(0, 10);
+        if (fDataAppDa || fDataAppA) {
+            const d = dataDi(c.data_appuntamento);
+            if (!d) return false;
+            if (fDataAppDa && d < fDataAppDa) return false;
+            if (fDataAppA && d > fDataAppA) return false;
+        }
+        if (fDataChiamataDa || fDataChiamataA) {
+            const d = dataDi(c.data_chiamata);
+            if (fDataChiamataDa && d < fDataChiamataDa) return false;
+            if (fDataChiamataA && d > fDataChiamataA) return false;
+        }
         if (fStato && c.stato !== fStato) return false;
         if (fCaller && c.caller !== fCaller) return false;
         if (selBrands.size > 0 && !selBrands.has(c.brand)) return false;
@@ -467,7 +511,7 @@ function CallerPageInner() {
         if (fObiettivo && c.obiettivo !== fObiettivo) return false;
         if (fLista && (!c.lista_origine || !c.lista_origine.toLowerCase().includes(fLista.toLowerCase()))) return false;
         return true;
-    }), [calls, isDirector, currentCaller, fCf, fNome, fNegozio, fDataApp, fDataChiamata, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
+    }), [calls, isDirector, currentCaller, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
 
     function listaBrandLabel(l: ListaAssegnata): string {
         if (l.provenienza === "Acquistato") return l.brandAcq || "—";
@@ -789,7 +833,8 @@ function CallerPageInner() {
     function resetFilters() {
         setView((p) => ({
             ...p,
-            fCf: "", fNome: "", fNegozio: "", fDataApp: "", fDataChiamata: "",
+            fCf: "", fNome: "", fCellulare: "", fNegozio: "",
+            fDataAppDa: "", fDataAppA: "", fDataChiamataDa: "", fDataChiamataA: "",
             fStato: "", fCaller: "", fBrand: "", fProvenienza: "", fTipologia: "",
             fObiettivo: "", fLista: ""
         }));
@@ -1218,7 +1263,9 @@ function CallerPageInner() {
 
             {/* CONTENT */}
             <div className="flex-1 overflow-y-auto p-4 md:p-8">
-                <div className="max-w-7xl mx-auto space-y-6">
+                {/* Tutta la larghezza disponibile (Luca 30/07): la tabella ha
+                    guadagnato colonne e i filtri respirano meglio. */}
+                <div className="w-full space-y-6">
 
                     {/* ── CALLS VIEW ── */}
                     {!isListeView && (
@@ -1265,14 +1312,27 @@ function CallerPageInner() {
                                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                                     <FilterField label="CF / P.IVA"><input className="glass-input text-sm rounded-lg py-2 w-full" value={fCf} onChange={(e) => setFCf(e.target.value)} placeholder="Cerca..." /></FilterField>
                                     <FilterField label="Nome / Rag. Soc."><input className="glass-input text-sm rounded-lg py-2 w-full" value={fNome} onChange={(e) => setFNome(e.target.value)} placeholder="Cerca..." /></FilterField>
+                                    <FilterField label="Cellulare"><input inputMode="numeric" className="glass-input text-sm rounded-lg py-2 w-full" value={fCellulare} onChange={(e) => setFCellulare(e.target.value)} placeholder="Anche parziale..." /></FilterField>
                                     <FilterField label="Negozio App.">
                                         <select className="glass-input text-sm rounded-lg py-2 w-full" value={fNegozio} onChange={(e) => setFNegozio(e.target.value)}>
                                             <option value="">Tutti</option>
                                             {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
                                         </select>
                                     </FilterField>
-                                    <FilterField label="Data App."><input type="date" className="glass-input text-sm rounded-lg py-2 w-full" value={fDataApp} onChange={(e) => setFDataApp(e.target.value)} /></FilterField>
-                                    <FilterField label="Data Chiamata"><input type="date" className="glass-input text-sm rounded-lg py-2 w-full" value={fDataChiamata} onChange={(e) => setFDataChiamata(e.target.value)} /></FilterField>
+                                    <FilterField label="Data App. (da → a)">
+                                        <div className="flex items-center gap-1.5">
+                                            <input type="date" className="glass-input text-sm rounded-lg py-2 w-full min-w-0" value={fDataAppDa} onChange={(e) => setFDataAppDa(e.target.value)} title="Dal giorno" />
+                                            <span className="text-slate-600 text-xs shrink-0">→</span>
+                                            <input type="date" className="glass-input text-sm rounded-lg py-2 w-full min-w-0" value={fDataAppA} onChange={(e) => setFDataAppA(e.target.value)} title="Al giorno" />
+                                        </div>
+                                    </FilterField>
+                                    <FilterField label="Data Chiamata (da → a)">
+                                        <div className="flex items-center gap-1.5">
+                                            <input type="date" className="glass-input text-sm rounded-lg py-2 w-full min-w-0" value={fDataChiamataDa} onChange={(e) => setFDataChiamataDa(e.target.value)} title="Dal giorno" />
+                                            <span className="text-slate-600 text-xs shrink-0">→</span>
+                                            <input type="date" className="glass-input text-sm rounded-lg py-2 w-full min-w-0" value={fDataChiamataA} onChange={(e) => setFDataChiamataA(e.target.value)} title="Al giorno" />
+                                        </div>
+                                    </FilterField>
                                     <FilterField label="Stato">
                                         <select className="glass-input text-sm rounded-lg py-2 w-full" value={fStato} onChange={(e) => setFStato(e.target.value)}>
                                             <option value="">Tutti</option>
@@ -1312,6 +1372,7 @@ function CallerPageInner() {
                                     <thead>
                                         <tr className="border-b border-white/5">
                                             <Th>Cliente</Th>
+                                            <Th>Cellulare</Th>
                                             <Th>Brand</Th>
                                             <Th>Provenienza</Th>
                                             <Th>Tipologia</Th>
@@ -1322,8 +1383,8 @@ function CallerPageInner() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {loading && (<tr><td colSpan={8} className="text-center py-12 text-slate-500">Caricamento...</td></tr>)}
-                                        {!loading && filtered.length === 0 && (<tr><td colSpan={8} className="text-center py-12 text-slate-500">Nessuna call trovata</td></tr>)}
+                                        {loading && (<tr><td colSpan={9} className="text-center py-12 text-slate-500">Caricamento...</td></tr>)}
+                                        {!loading && filtered.length === 0 && (<tr><td colSpan={9} className="text-center py-12 text-slate-500">Nessuna call trovata</td></tr>)}
                                         {filtered.map((c) => (
                                             <tr
                                                 key={c.id}
@@ -1336,15 +1397,23 @@ function CallerPageInner() {
                                                     <div className="font-semibold text-white flex items-center gap-2">
                                                         {clientLabel(c)}
                                                         {(c.da_esitare || anagraficaIncompleta(c)) && <span title={c.da_esitare ? "Chiamata risposta: esito da inserire" : "Anagrafica incompleta: nome/cognome e CF da inserire"} className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />}
-                                                        {(c.cellulare || c.numero) && (
+                                                    </div>
+                                                    <div className="text-[11px] text-slate-500 mt-0.5">{c.tipo_cliente === "business" ? "■ Business" : "● Consumer"}</div>
+                                                </td>
+                                                {/* La cornetta sta sul NUMERO, non sul nome (Luca 30/07). */}
+                                                <td className="px-4 py-3">
+                                                    {(c.cellulare || c.numero) ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-mono text-[13px] text-slate-200 whitespace-nowrap">{c.cellulare || c.numero}</span>
                                                             <button
                                                                 onClick={async (e) => { e.stopPropagation(); const r = await chiamaAircall(c.cellulare || c.numero, user?.id); alert(r.msg); }}
                                                                 title="Chiama con Aircall"
                                                                 className="p-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-[11px] leading-none shrink-0"
                                                             >📞</button>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-[11px] text-slate-500 mt-0.5">{c.tipo_cliente === "business" ? "■ Business" : "● Consumer"}</div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-slate-600 text-xs">—</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-300">{c.brand || "—"}</td>
                                                 <td className="px-4 py-3 text-slate-300">{c.provenienza || "—"}</td>
@@ -1352,7 +1421,30 @@ function CallerPageInner() {
                                                 <td className="px-4 py-3 text-slate-300">{c.obiettivo || "—"}</td>
                                                 <td className="px-4 py-3 font-mono text-xs text-slate-400">{formatDateShort(c.data_chiamata)}</td>
                                                 <td className="px-4 py-3 text-slate-300">{c.caller}</td>
-                                                <td className="px-4 py-3"><span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statoBadgeClasses(c.stato)}`}>{c.stato}</span></td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statoBadgeClasses(c.stato)}`}>{c.stato}</span>
+                                                        {canDeleteRows && (
+                                                            <span onClick={(e) => e.stopPropagation()} className="ml-auto shrink-0">
+                                                                {delConfirmId === c.id ? (
+                                                                    <span className="inline-flex gap-1">
+                                                                        <button onClick={() => eliminaCallCascata(c)}
+                                                                            className="px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold"
+                                                                            title="Elimina la pratica E l'eventuale appuntamento in calendario">
+                                                                            Elimina?
+                                                                        </button>
+                                                                        <button onClick={() => setDelConfirmId(null)}
+                                                                            className="px-2 py-1 rounded-md border border-white/15 text-slate-400 text-[11px]">✕</button>
+                                                                    </span>
+                                                                ) : (
+                                                                    <button onClick={() => setDelConfirmId(c.id)}
+                                                                        title="Elimina la pratica (a cascata anche l'appuntamento collegato in calendario)"
+                                                                        className="p-1 rounded-md border border-rose-500/30 text-rose-400/70 hover:text-rose-300 hover:bg-rose-500/15 text-[11px] leading-none">🗑</button>
+                                                                )}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>

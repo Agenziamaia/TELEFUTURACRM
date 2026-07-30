@@ -11,6 +11,7 @@ import { DatePickerInput } from "@/components/DatePickerInput";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useCallers } from "@/lib/org";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto)
 type AppointmentType = "incoming" | "outgoing" | "self_generated";
@@ -442,6 +443,12 @@ export default function Calendario() {
         agendaBlocks.some(b => dateStr >= b.startDate && dateStr <= b.endDate);
 
     // Role-based visibility and Admin Grid Filter
+    // TEORIA (Luca 30/07): ognuno vede gli appuntamenti che CREA o che gli
+    // APPARTENGONO (assegnati a lui come agente); il team del punto vendita
+    // vede gli inbound del suo negozio; il caller vede quelli che ha fissato;
+    // la direzione del call center vede tutti quelli presi dal call center.
+    const ccStaff = useCallers();
+    const isDirezioneCc = ["direttore_cc", "back_office_caller"].includes(user?.role || "");
     const visibleAppointments = appointments.filter(a => {
         // filtro categorie (pallini): vale per tutti i ruoli
         if (!catOn(a.type)) return false;
@@ -453,6 +460,10 @@ export default function Calendario() {
             return true;
         }
         if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
+        // Chi l'ha creato lo vede (il caller vede i SUOI appuntamenti fissati).
+        if (a.createdBy && a.createdBy === user?.name) return true;
+        // La direzione CC vede tutti gli appuntamenti presi dal call center.
+        if (isDirezioneCc && a.createdBy && ccStaff.includes(a.createdBy)) return true;
         // Agent: own appointments, or inbound appointments for their store
         if (a.agente === user?.name) return true;
         // Appuntamenti inbound di QUALSIASI negozio visibile (non solo il principale).
@@ -1383,6 +1394,14 @@ export default function Calendario() {
                                                     {a.type === "incoming" ? "Inbound" : "Outbound"}
                                                 </span>
                                             </div>
+                                            {/* Chi l'ha fissato, A PRIMA VISTA (Luca 30/07): il negozio deve
+                                                sapere quale operatore del call center ha preso l'appuntamento
+                                                senza andare a scavare nello storico chiamate del cliente. */}
+                                            {a.createdBy && (
+                                                <div className="flex items-center gap-1.5 text-xs mt-1 text-violet-300">
+                                                    📞 Fissato da <span className="font-semibold">{a.createdBy}</span>
+                                                </div>
+                                            )}
                                         </button>
                                     ))}
                                 </div>
@@ -1639,6 +1658,12 @@ export default function Calendario() {
                                     )}
                                 </div>
                                 <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />{selectedAppointment.type === "incoming" && selectedAppointment.store ? `Punto vendita: ${selectedAppointment.store}` : `Agente: ${selectedAppointment.agente || "—"}`}</div>
+                                {/* Operatore che ha preso l'appuntamento, a prima vista (Luca 30/07). */}
+                                {selectedAppointment.createdBy && (
+                                    <div className="flex items-center gap-2 text-violet-300 text-sm font-medium">
+                                        📞 Fissato da <span className="font-bold">{selectedAppointment.createdBy}</span>
+                                    </div>
+                                )}
                             </div>
                             {selectedAppointment.notes && (
                                 <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-slate-400 text-xs">

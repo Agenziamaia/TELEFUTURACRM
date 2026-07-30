@@ -20,7 +20,7 @@
  * Permessi la rende amministrabile da sola.
  */
 
-import { areaOf, seesAllStores, seesWholeStore } from "@/lib/roles";
+import { areaOf, seesAllStores, seesWholeStore, ROLES } from "@/lib/roles";
 import type { PermMap } from "@/lib/nav";
 
 export interface CapDef {
@@ -29,6 +29,11 @@ export interface CapDef {
     desc: string;
     /** comportamento DI DEFAULT per un ruolo (replica del codice storico) */
     default: (role: string) => boolean;
+    /** id di un'altra capacità dello STESSO gruppo che deve essere attiva:
+     *  con quella spenta questa non conta nulla e nel pannello Permessi resta
+     *  oscurata e non cliccabile (es. i destinatari delle Comunicazioni
+     *  richiedono "può creare comunicazioni"). */
+    requires?: string;
 }
 
 export interface CapGroupChoice {
@@ -159,7 +164,51 @@ export const CAP_FERIE: CapGroupFlags = {
     caps: [CAP_FERIE_GESTIONE],
 };
 
+// ─── COMUNICAZIONI: chi puo' crearle e verso quali ruoli (Luca 30/07) ────────
+// "crea" accende il pulsante Nuova comunicazione; i destinatari possibili sono
+// tutti i ruoli (verso_tutti) oppure SOLO quelli spuntati (verso_<ruolo>) —
+// es. lo store manager puo' essere abilitato solo verso i ruoli del negozio.
+const CREA_COM_DEFAULT = ["amministrativo", "admin", "dev", "direttore_generale"];
+export const CAP_COM_CREA: CapDef = {
+    id: "crea",
+    label: "Può creare comunicazioni",
+    desc: "Mostra il pulsante Nuova comunicazione: bacheca (campanella + letture) o pop-up con conferma.",
+    default: (r) => CREA_COM_DEFAULT.includes(r),
+};
+export const CAP_COM_VERSO_TUTTI: CapDef = {
+    id: "verso_tutti",
+    label: "Destinatari: tutti i ruoli",
+    desc: "Può indirizzare le comunicazioni a chiunque. Spenta: valgono solo i ruoli spuntati qui sotto.",
+    default: (r) => CREA_COM_DEFAULT.includes(r),
+    requires: "crea",
+};
+export const CAP_COMUNICAZIONI: CapGroupFlags = {
+    mode: "flags",
+    section: "/comunicazioni",
+    sectionLabel: "Comunicazioni",
+    caps: [
+        CAP_COM_CREA,
+        CAP_COM_VERSO_TUTTI,
+        ...ROLES.map((r): CapDef => ({
+            id: `verso_${r.id}`,
+            label: `Destinatari: ${r.label}`,
+            desc: `Può indirizzare comunicazioni al ruolo ${r.label} (conta solo con "tutti i ruoli" spenta).`,
+            default: () => false,
+            requires: "crea",
+        })),
+    ],
+};
+
+/** Ruoli verso cui `role` puo' indirizzare una comunicazione (id da roles.ts). */
+export function ruoliDestinatariComunicazioni(role: string | null | undefined, perms: PermMap | null): string[] {
+    if (!role || !capAllowed(role, CAP_COMUNICAZIONI.section, CAP_COM_CREA, perms)) return [];
+    if (capAllowed(role, CAP_COMUNICAZIONI.section, CAP_COM_VERSO_TUTTI, perms)) return ROLES.map((r) => r.id);
+    return ROLES.filter((r) =>
+        capAllowed(role, CAP_COMUNICAZIONI.section, { id: `verso_${r.id}`, label: "", desc: "", default: () => false }, perms)
+    ).map((r) => r.id);
+}
+
 /** Catalogo completo: la pagina Permessi lo rende amministrabile da solo.
  *  Piu' gruppi possono condividere la stessa sezione: l'ingranaggio li mostra
  *  impilati nello stesso pannello. */
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_FERIE];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_FERIE, CAP_COMUNICAZIONI];
