@@ -29,6 +29,11 @@ export interface CapDef {
     desc: string;
     /** comportamento DI DEFAULT per un ruolo (replica del codice storico) */
     default: (role: string) => boolean;
+    /** id di un'altra capacità dello STESSO gruppo che deve essere attiva:
+     *  con quella spenta questa non conta nulla e nel pannello Permessi resta
+     *  oscurata e non cliccabile (es. i destinatari delle Comunicazioni
+     *  richiedono "può creare comunicazioni"). */
+    requires?: string;
 }
 
 export interface CapGroupChoice {
@@ -175,6 +180,7 @@ export const CAP_COM_VERSO_TUTTI: CapDef = {
     label: "Destinatari: tutti i ruoli",
     desc: "Può indirizzare le comunicazioni a chiunque. Spenta: valgono solo i ruoli spuntati qui sotto.",
     default: (r) => CREA_COM_DEFAULT.includes(r),
+    requires: "crea",
 };
 export const CAP_COMUNICAZIONI: CapGroupFlags = {
     mode: "flags",
@@ -188,6 +194,7 @@ export const CAP_COMUNICAZIONI: CapGroupFlags = {
             label: `Destinatari: ${r.label}`,
             desc: `Può indirizzare comunicazioni al ruolo ${r.label} (conta solo con "tutti i ruoli" spenta).`,
             default: () => false,
+            requires: "crea",
         })),
     ],
 };
