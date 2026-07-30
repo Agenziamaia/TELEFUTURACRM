@@ -15,6 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, seesWholeStore, BRAND_COLORS } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
+import { BussolaWidget } from "@/components/DirezioneInserimento";
 import {
   FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
   AlertTriangle, ArrowRight, Loader2, Compass, Target as TargetIcon, Zap,
@@ -212,12 +213,9 @@ export default function Dashboard() {
           {/* ROW 3 — widget operativi */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {/* Direzione Inserimento (read-only, in arrivo con il modulo Admin) */}
-            <WidgetShell icon={Compass} title="Direzione inserimento" accent="#38bdf8">
-              <div className="p-5 text-center flex flex-col items-center justify-center gap-2 h-full min-h-[160px]">
-                <Compass className="w-8 h-8 text-slate-600" />
-                <p className="text-xs text-slate-400">La mappa "su quale codice inserire ogni brand" arriva a breve: la configurerà l'Amministrazione per ogni negozio.</p>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-sky-400/70 bg-sky-500/10 px-2 py-0.5 rounded-full">In arrivo</span>
-              </div>
+            <WidgetShell icon={Compass} title="Direzione inserimento" accent="#38bdf8"
+              action={!seesAll && myStores[0] ? <span className="text-[10px] text-slate-500">{myStores[0]}</span> : null}>
+              <BussolaWidget negozio={seesAll ? (myStores[0] || user.negozio) : (user.negozio || myStores[0])} />
             </WidgetShell>
 
             {/* Obiettivo */}

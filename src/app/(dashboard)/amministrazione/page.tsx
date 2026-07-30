@@ -20,6 +20,7 @@ import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
 import {
     ROLES,
     AREAS,
@@ -70,6 +71,7 @@ import {
     Package,
     Layers,
     ShieldCheck,
+    Compass,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -173,6 +175,7 @@ const SEZIONI = [
     { id: "marginalita", label: "Marginalità", icon: Package, desc: "Catalogo prodotti e servizi: IVA, costi e margini, valore visibile per le gare, legami coi brand." },
     { id: "catalogo", label: "Catalogo", icon: Layers, desc: "Catalogo operatori a 6 livelli: brand, tipo cliente, categorie, prodotti, offerte e opzioni — la base del Registra Vendita." },
     { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
+    { id: "direzione", label: "Direzione Inserimento", icon: Compass, desc: "Mappa, per ogni negozio, su quale codice inserire ogni brand/categoria — alimenta la bussola in Home (sola lettura)." },
 ] as const;
 
 function AmministrazioneInner() {
@@ -491,6 +494,8 @@ function AmministrazioneInner() {
                 <MarginalitaView />
             ) : sez === "catalogo" ? (
                 <CatalogoView />
+            ) : sez === "direzione" ? (
+                <DirezioneInserimentoAdmin />
             ) : (
                 <TargetSection />
             )}
