@@ -18,8 +18,6 @@ import {
   type FollowUpItem,
 } from "./trackingConstants";
 import {
-  giorniLavorativiDa,
-  giorniDaUltimoAggiornamento,
   getStatiNegozioPerCategoria,
   getStatoN,
   getStatoA,
@@ -31,6 +29,8 @@ import {
   impostaRegoleTracking,
 } from "./trackingHelpers";
 import { RegoleTracking } from "./RegoleTracking";
+import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
+import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt } from "./malusStorico";
 
 type RawRow = Record<string, unknown> & {
   clients?: Record<string, unknown> | null;
@@ -195,6 +195,8 @@ function KpiBar({
   setEscludiConfermati,
   escludiCompletati,
   setEscludiCompletati,
+  storicoTotale,
+  onApriStorico,
 }: {
   data: TrackingRow[];
   onFilter: (f: string | null) => void;
@@ -203,6 +205,8 @@ function KpiBar({
   setEscludiConfermati: (v: boolean) => void;
   escludiCompletati: boolean;
   setEscludiCompletati: (v: boolean) => void;
+  storicoTotale: number;
+  onApriStorico: () => void;
 }) {
   const totale = data.length;
   const nuovi = data.filter((r) => r.statoNegozio === "nuovo").length;
@@ -248,6 +252,20 @@ function KpiBar({
               {c.filter === "__malus__" && malusTotale > 0 && (
                 <div className="text-[10px] mt-1" style={{ color: isActive ? "#fca5a5" : "#64748b" }}>
                   € {malusTotale.toFixed(0)} maturati
+                </div>
+              )}
+              {/* Il contatore sopra dice i malus ATTIVI adesso; questa riga apre
+                  l'archivio con tutto lo storico (anche il gia' sanato). */}
+              {c.filter === "__malus__" && (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => { e.stopPropagation(); onApriStorico(); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onApriStorico(); } }}
+                  className="text-[10px] mt-1 font-bold underline decoration-dotted underline-offset-2 text-slate-400 hover:text-red-300"
+                  title="Apri l'archivio storico dei malus"
+                >
+                  📂 Storico{storicoTotale > 0 ? `: € ${Math.round(storicoTotale)}` : ""} →
                 </div>
               )}
             </div>
@@ -642,12 +660,13 @@ function FilterBar({
 }
 
 // ─── Tabella ──────────────────────────────────────────────────────────────────
-function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDelegate }: {
+function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDelegate, archivio }: {
   rows: TrackingRow[];
   onSelect: (row: TrackingRow) => void;
   canDelegate?: boolean;
   members?: { id: string; full_name: string }[];
   onBulkDelegate?: (ids: string[], toId: string) => void;
+  archivio?: Map<string, EpisodioMalus[]>;
 }) {
   const thStyle =
     "py-2.5 px-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700 whitespace-nowrap";
@@ -738,16 +757,36 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                     <StatoBadge id={row.statoAdmin} set="admin" />
                   </td>
                   <td className="py-2.5 px-3.5 border-b border-slate-800 text-center">
-                    {isMalusRow(row) ? (
-                      <div className="inline-flex flex-col items-center gap-0.5">
-                        <div className="bg-red-950 border border-red-600 rounded-md px-2.5 py-0.5 text-xs font-bold text-red-200">
-                          € {calcolaMalus(row)}
-                        </div>
-                        <div className="text-[10px] text-slate-500">({MALUS_IMPORTO[row.categoria] ?? 0}€/gg)</div>
-                      </div>
-                    ) : (
-                      <span className="text-slate-800 text-xs">—</span>
-                    )}
+                    {(() => {
+                      // Oltre al malus che sta maturando ADESSO, la colonna dice
+                      // quanto la pratica ha gia' generato in passato (episodi
+                      // archiviati in malus_storico): sanare non cancella.
+                      const chiusi = (archivio?.get(`${row.id}#${row.categoria}`) || []).filter((e) => e.data_fine !== null);
+                      const totStorico = chiusi.reduce((a, e) => a + (Number(e.importo) || 0), 0);
+                      if (isMalusRow(row)) {
+                        return (
+                          <div className="inline-flex flex-col items-center gap-0.5">
+                            <div className="bg-red-950 border border-red-600 rounded-md px-2.5 py-0.5 text-xs font-bold text-red-200">
+                              € {calcolaMalus(row)}
+                            </div>
+                            <div className="text-[10px] text-slate-500">({MALUS_IMPORTO[row.categoria] ?? 0}€/gg)</div>
+                            {totStorico > 0 && (
+                              <div className="text-[10px] text-slate-500">+ € {Math.round(totStorico)} storico</div>
+                            )}
+                          </div>
+                        );
+                      }
+                      if (totStorico > 0) {
+                        return (
+                          <div className="inline-flex flex-col items-center gap-0.5" title="Malus generato in passato, archiviato">
+                            <div className="bg-slate-900 border border-slate-600 rounded-md px-2.5 py-0.5 text-[11px] font-bold text-slate-400">
+                              € {Math.round(totStorico)} storico
+                            </div>
+                          </div>
+                        );
+                      }
+                      return <span className="text-slate-800 text-xs">—</span>;
+                    })()}
                   </td>
                   <td className="py-2.5 px-3.5 border-b border-slate-800 text-center">
                     {isMalusRow(row) ? (
@@ -801,6 +840,7 @@ function Drawer({
   canEditAdmin = false,
   onDelegate,
   delegatoNome = null,
+  episodiMalus = [],
 }: {
   row: TrackingRow;
   onClose: () => void;
@@ -810,6 +850,7 @@ function Drawer({
   canEditAdmin?: boolean;
   onDelegate?: (rowId: string, toId: string | null) => void;
   delegatoNome?: string | null;
+  episodiMalus?: EpisodioMalus[];
 }) {
   const [notaNegozio, setNotaNegozio] = useState("");
   const [notaAdmin, setNotaAdmin] = useState("");
@@ -1194,43 +1235,64 @@ function Drawer({
 
         {activeTab === "storico" && (
           <div>
-            {isMalusRow(row) && (
-              <div className="bg-red-950/50 border border-red-600 rounded-xl p-4 mb-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" />
-                  <div className="text-xs font-bold text-red-200 uppercase tracking-wider">Malus maturato</div>
-                  <div className="ml-auto bg-red-950 border border-red-600 rounded-md py-0.5 px-3 text-sm font-black text-red-200">
-                    € {calcolaMalus(row)}
+            {/* STORICO MALUS (30/07): sanare la pratica ferma la maturazione ma
+                NON cancella il generato — gli episodi restano archiviati in
+                malus_storico. Sostituisce il vecchio blocco che diceva
+                "il malus si azzera quando la pratica viene aggiornata". */}
+            {(() => {
+              const importoLive = isMalusRow(row) ? calcolaMalus(row) : 0;
+              const aperto = episodiMalus.find((e) => e.data_fine === null) || null;
+              const chiusi = episodiMalus.filter((e) => e.data_fine !== null);
+              const totGenerato = chiusi.reduce((a, e) => a + (Number(e.importo) || 0), 0) + importoLive;
+              if (totGenerato <= 0) return null;
+              const euroGg = MALUS_IMPORTO[row.categoria] ?? 0;
+              return (
+                <div className="bg-red-950/50 border border-red-600 rounded-xl p-4 mb-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" />
+                    <div className="text-xs font-bold text-red-200 uppercase tracking-wider">Storico malus</div>
+                    <div className="ml-auto bg-red-950 border border-red-600 rounded-md py-0.5 px-3 text-sm font-black text-red-200">
+                      € {Math.round(totGenerato)} generati
+                    </div>
                   </div>
-                </div>
-                {(() => {
-                  const ggAgg = giorniDaUltimoAggiornamento(row.storia, row.dataInserimento);
-                  const soglia = MALUS_IMPORTO[row.categoria] ? 6 : 0;
-                  const importo = MALUS_IMPORTO[row.categoria] ?? 0;
-                  const giorniMalus = Math.max(0, ggAgg - (row.categoria === "piva" ? 6 : (row.categoria === "mnp" ? 6 : row.categoria === "fisso" ? 15 : row.categoria === "finanziamento" ? 6 : row.categoria === "energia" ? 15 : 2)) + 1);
-                  return (
-                    <div className="grid grid-cols-3 gap-2.5">
+                  {importoLive > 0 && (
+                    <div className="grid grid-cols-3 gap-2.5 mb-3">
                       <div className="bg-red-950/50 rounded-lg p-2.5">
                         <div className="text-[10px] text-red-500 font-bold uppercase tracking-wider mb-1">Entrata in malus</div>
-                        <div className="text-[13px] font-bold text-red-200">—</div>
+                        <div className="text-[13px] font-bold text-red-200">{aperto ? formatDataIt(aperto.data_inizio) : "—"}</div>
                       </div>
                       <div className="bg-red-950/50 rounded-lg p-2.5">
                         <div className="text-[10px] text-red-500 font-bold uppercase tracking-wider mb-1">Giorni in malus</div>
-                        <div className="text-[13px] font-bold text-red-200">{giorniMalus} gg</div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">{importo} €/gg lavorativo</div>
+                        <div className="text-[13px] font-bold text-red-200">{euroGg > 0 ? Math.max(1, Math.round(importoLive / euroGg)) : "—"} gg</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">{euroGg} €/gg lavorativo</div>
                       </div>
                       <div className="bg-red-950/50 rounded-lg p-2.5">
-                        <div className="text-[10px] text-red-500 font-bold uppercase tracking-wider mb-1">Totale maturato</div>
-                        <div className="text-base font-black text-red-300">€ {calcolaMalus(row)}</div>
+                        <div className="text-[10px] text-red-500 font-bold uppercase tracking-wider mb-1">In corso ora</div>
+                        <div className="text-base font-black text-red-300">€ {importoLive}</div>
                       </div>
                     </div>
-                  );
-                })()}
-                <div className="mt-3 py-2 px-3 bg-red-950/30 rounded-md text-[11px] text-slate-400 italic">
-                  Il malus si azzera quando la pratica viene aggiornata o portata a completamento.
+                  )}
+                  {chiusi.length > 0 && (
+                    <div className="rounded-lg overflow-hidden border border-red-900/60">
+                      {[...chiusi].sort((a, b) => (b.data_inizio || "").localeCompare(a.data_inizio || "")).map((e) => (
+                        <div key={e.id} className="flex items-center gap-2.5 py-2 px-3 bg-red-950/30 border-b border-red-900/40 last:border-b-0">
+                          <div className="text-[12px] text-slate-300 whitespace-nowrap">
+                            {formatDataIt(e.data_inizio)} → {formatDataIt(e.data_fine)}
+                          </div>
+                          <div className="text-[11px] text-slate-500">{e.giorni} gg · {Number(e.malus_euro)}€/gg</div>
+                          <div className="ml-auto text-[13px] font-black text-red-200 whitespace-nowrap">€ {Math.round(Number(e.importo))}</div>
+                          <StatoEpisodioBadge ep={e} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-3 py-2 px-3 bg-red-950/30 rounded-md text-[11px] text-slate-400 italic">
+                    Quando la pratica viene aggiornata o completata il malus smette di maturare,
+                    ma quanto generato resta archiviato (attivo finch&eacute; non viene compensato in fase di pagamento gare).
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
             <p className="text-xs text-slate-500 mb-4">Tutte le azioni in ordine cronologico inverso.</p>
             <div className="relative">
               <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-slate-800" />
@@ -1313,6 +1375,10 @@ export default function TrackingPdaPage() {
   const [negozioSel, setNegozioSel] = useState<string>("");
 
   const [selected, setSelected] = useState<TrackingRow | null>(null);
+  // STORICO MALUS (30/07, mig. 103): episodi persistiti + vista archivio.
+  const [episodi, setEpisodi] = useState<EpisodioMalus[]>([]);
+  const [malusErr, setMalusErr] = useState<string | null>(null);
+  const [showArchivio, setShowArchivio] = useState(false);
   const [kpiFilter, setKpiFilter] = useState<string | null>(null);
   const [escludiConfermati, setEscludiConfermati] = useState(false);
   const [escludiCompletati, setEscludiCompletati] = useState(false);
@@ -1471,6 +1537,63 @@ export default function TrackingPdaPage() {
   }, [rawList]);
 
 
+
+  // STORICO MALUS: dopo ogni caricamento/aggiornamento si allineano gli
+  // episodi persistiti alle righe correnti (nuovi malus si aprono, pratiche
+  // sanate si congelano alla data dell'evento, il maturato in corso si
+  // aggiorna) e si tiene in stato l'archivio completo. Idempotente: due
+  // sessioni aperte insieme scrivono gli stessi valori.
+  useEffect(() => {
+    if (loading || data.length === 0) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const { data: eps, error } = await supabase.from("malus_storico").select("*").limit(5000);
+        if (error) throw error;
+        const scritture = await sincronizzaMalusStorico(data, (eps ?? []) as EpisodioMalus[]);
+        if (scritture > 0) {
+          const { data: eps2, error: err2 } = await supabase.from("malus_storico").select("*").limit(5000);
+          if (err2) throw err2;
+          if (vivo) setEpisodi((eps2 ?? []) as EpisodioMalus[]);
+        } else if (vivo) {
+          setEpisodi((eps ?? []) as EpisodioMalus[]);
+        }
+        if (vivo) setMalusErr(null);
+      } catch (e) {
+        // tabella assente (migrazione 103 non ancora eseguita) o rete: il
+        // tracking live continua a funzionare, l'archivio segnala il problema.
+        if (vivo) setMalusErr(e instanceof Error ? e.message : String(e));
+      }
+    })();
+    return () => { vivo = false; };
+  }, [data, loading, regoleV]);
+
+  // Scoping dell'archivio per ruolo, stessa regola delle pratiche: consulente
+  // i suoi episodi, store manager i negozi visibili, amministrazione tutto.
+  const episodiVisibili = useMemo(() => {
+    if (seesAll) return episodi;
+    if (seesWhole) return episodi.filter((e) => visibleStores.some((st) => sameStore(e.negozio, st)));
+    return episodi.filter((e) => !!e.venditore && !!user?.name && e.venditore === user.name);
+  }, [episodi, seesAll, seesWhole, visibleStores, user?.name]);
+
+  const episodiPerRiga = useMemo(() => {
+    const m = new Map<string, EpisodioMalus[]>();
+    episodiVisibili.forEach((e) => {
+      const k = `${e.contract_id}#${e.categoria}`;
+      const arr = m.get(k);
+      if (arr) arr.push(e);
+      else m.set(k, [e]);
+    });
+    return m;
+  }, [episodiVisibili]);
+
+  const storicoTotale = useMemo(() => totaliEpisodi(episodiVisibili).totale, [episodiVisibili]);
+
+  // Dall'archivio si apre la pratica: stessa riga (id+categoria) del tracking.
+  const apriPraticaDaArchivio = useCallback((cid: string, cat: string) => {
+    const hit = data.find((r) => r.id === cid && r.categoria === cat) || data.find((r) => r.id === cid);
+    if (hit) { setSelected(hit); setShowArchivio(false); }
+  }, [data]);
 
   const deepOpened = useRef(false);
   useEffect(() => {
@@ -1723,6 +1846,8 @@ export default function TrackingPdaPage() {
               setEscludiConfermati={setEscludiConfermati}
               escludiCompletati={escludiCompletati}
               setEscludiCompletati={setEscludiCompletati}
+              storicoTotale={storicoTotale}
+              onApriStorico={() => setShowArchivio(true)}
             />
             <FilterBar
               catSel={catSel}
@@ -1744,13 +1869,26 @@ export default function TrackingPdaPage() {
               setNegozioSel={setNegozioSel}
               negozi={seesAll ? Array.from(new Set(data.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort() : []}
             />
-            <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} />
+            <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} archivio={episodiPerRiga} />
           </>
+        )}
+
+        {showArchivio && (
+          <ArchivioMalus
+            episodi={episodiVisibili}
+            errore={malusErr}
+            onClose={() => setShowArchivio(false)}
+            onApriPratica={apriPraticaDaArchivio}
+            canCompensare={canEditAdmin}
+            utente={user?.name || "—"}
+            onAggiornato={(ep) => setEpisodi((prev) => prev.map((e) => (e.id === ep.id ? ep : e)))}
+          />
         )}
 
         {selected && (
           <Drawer row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate}
-            members={members} canDelegate={canDelegate} canEditAdmin={canEditAdmin} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)} />
+            members={members} canDelegate={canDelegate} canEditAdmin={canEditAdmin} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)}
+            episodiMalus={episodiPerRiga.get(`${selected.id}#${selected.categoria}`) || []} />
         )}
       </div>
     </div>
