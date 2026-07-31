@@ -36,6 +36,7 @@ interface Cliente {
     iban?: string | null;
     acquisito_da?: string | null;
     creato_da?: string | null;
+    created_at?: string | null;
     intestatario_diverso?: boolean;
     intestatario_nome?: string | null;
     intestatario_cognome?: string | null;
@@ -73,6 +74,7 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
         iban: (row.iban as string | null) ?? null,
         acquisito_da: (row.acquisito_da as string | null) ?? null,
         creato_da: (row.creato_da as string | null) ?? null,
+        created_at: (row.created_at as string | null) ?? null,
         intestatario_diverso: !!row.intestatario_diverso,
         intestatario_nome: (row.intestatario_nome as string | null) ?? null,
         intestatario_cognome: (row.intestatario_cognome as string | null) ?? null,
@@ -799,6 +801,10 @@ const defaultClientiView = {
     filterCellulare: "",
     filterEmail: "",
     filterIdentifier: "",
+    // Periodo di ACQUISIZIONE (Luca 31/07): quando l'anagrafica e' NATA nel
+    // CRM — es. da ieri a ieri = tutte le anagrafiche nuove generate ieri
+    filterAcqDa: "",
+    filterAcqA: "",
     // Filtro visibilità (amministrazione): clienti gestiti da utenti/negozi (multi)
     filterGestitoDa: [] as string[],
     filterNegozioGestito: [] as string[],
@@ -828,6 +834,10 @@ export default function ClientiPage() {
     const setFilterEmail = (v: string) => setView((p) => ({ ...p, filterEmail: v }));
     const filterIdentifier = view.filterIdentifier;
     const setFilterIdentifier = (v: string) => setView((p) => ({ ...p, filterIdentifier: v }));
+    const filterAcqDa = view.filterAcqDa || "";
+    const setFilterAcqDa = (v: string) => setView((p) => ({ ...p, filterAcqDa: v }));
+    const filterAcqA = view.filterAcqA || "";
+    const setFilterAcqA = (v: string) => setView((p) => ({ ...p, filterAcqA: v }));
 
     // ── OUTBOUND: vede per intero SOLO i clienti inseriti da lui (pratiche con il
     // suo nome); degli altri solo nome/ragione sociale — dati e scheda oscurati.
@@ -1061,9 +1071,21 @@ export default function ClientiPage() {
             if (filterEmail && !c.email.toLowerCase().includes(filterEmail.toLowerCase())) return false;
             if (filterIdentifier && !(c.cf_piva || "").toLowerCase().includes(filterIdentifier.toLowerCase())) return false;
 
+            // Periodo di ACQUISIZIONE (estremi inclusi): quando l'anagrafica e'
+            // nata nel CRM, in data LOCALE italiana
+            if (filterAcqDa || filterAcqA) {
+                if (!c.created_at) return false;
+                const dt = new Date(c.created_at);
+                if (isNaN(dt.getTime())) return false;
+                const p = (n: number) => String(n).padStart(2, "0");
+                const giorno = `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+                if (filterAcqDa && giorno < filterAcqDa) return false;
+                if (filterAcqA && giorno > filterAcqA) return false;
+            }
+
             return true;
         });
-    }, [clientList, quickSearch, filterTipo, filterNome, filterCognome, filterRagione, filterCellulare, filterEmail, filterIdentifier, gestitiSet]);
+    }, [clientList, quickSearch, filterTipo, filterNome, filterCognome, filterRagione, filterCellulare, filterEmail, filterIdentifier, filterAcqDa, filterAcqA, gestitiSet]);
 
     // Pagination bounds
     const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
@@ -1216,6 +1238,27 @@ export default function ClientiPage() {
                                         </div>
                                     </>
                                 )}
+
+                                {/* Periodo di ACQUISIZIONE (Luca 31/07): anagrafiche NATE nel
+                                    range — da ieri a ieri = i clienti nuovi generati ieri */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-slate-400">Acquisito dal <span className="normal-case text-slate-600">(anagrafica creata)</span></label>
+                                    <input
+                                        type="date"
+                                        value={filterAcqDa}
+                                        onChange={(e) => { setFilterAcqDa(e.target.value); setCurrentPage(1); }}
+                                        className="w-full glass-input text-sm rounded-lg py-2"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-medium text-slate-400">Acquisito al</label>
+                                    <input
+                                        type="date"
+                                        value={filterAcqA}
+                                        onChange={(e) => { setFilterAcqA(e.target.value); setCurrentPage(1); }}
+                                        className="w-full glass-input text-sm rounded-lg py-2"
+                                    />
+                                </div>
 
                                 {/* Common Fields */}
                                 <div className="space-y-1.5">
