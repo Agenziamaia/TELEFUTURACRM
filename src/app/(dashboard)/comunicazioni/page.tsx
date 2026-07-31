@@ -405,12 +405,20 @@ export default function Comunicazioni() {
                                     !read && "border-l-4 border-l-primary"
                                 )}
                             >
-                                {!read && (
-                                    <div className="absolute top-6 right-6 flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                                        <span className="text-xs font-semibold text-primary uppercase tracking-wider">Nuovo</span>
-                                    </div>
-                                )}
+                                <div className="absolute top-6 right-6 flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                                    {!read && (
+                                        <span className="flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                                            <span className="text-xs font-semibold text-primary uppercase tracking-wider">Nuovo</span>
+                                        </span>
+                                    )}
+                                    {(isAdminRicevute || mia) && (
+                                        <button onClick={() => eliminaComunicazione(com)} title="Elimina comunicazione (per tutti)"
+                                            className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </div>
 
                                 <div className="flex gap-4">
                                     <div className={cn("shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border", styles.bg, styles.border, styles.color)}>
@@ -448,12 +456,6 @@ export default function Comunicazioni() {
                                         </p>
 
                                         <div className="mt-4 flex items-center gap-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                                            {(isAdminRicevute || mia) && (
-                                                <button onClick={() => eliminaComunicazione(com)} title="Elimina comunicazione (per tutti)"
-                                                    className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            )}
                                             {(isPopup || !!com.esiti?.length) && perMe && (
                                                 isConfermata(com.id) ? (
                                                     <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-400">
