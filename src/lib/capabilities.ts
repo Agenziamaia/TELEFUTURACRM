@@ -151,6 +151,34 @@ export const CAP_CLIENTI_EXTRA: CapGroupFlags = {
     caps: [CAP_CLIENTI_ALLEGATI, CAP_CLIENTI_INTEGRA_DOC],
 };
 
+// ─── GESTIONE USATO: rotellina della sezione (Luca 31/07) ────────────────────
+// Il CRM si rivende: chi lavora il laboratorio, chi vede tempi/malus e chi
+// vede i costi sono SCELTE per ruolo, non regole scolpite nel codice.
+export const CAP_USATO_LAVORA: CapDef = {
+    id: "lavora_usato",
+    label: "Lavora l'usato (laboratorio)",
+    desc: "Gestisce il telefono nelle fasi di laboratorio: ricezione, lavorazione, ricambi, pronto e invio al negozio. Per il ruolo Tecnico serve comunque il grado Senior.",
+    default: (r) => r === "tecnico",
+};
+export const CAP_USATO_MALUS: CapDef = {
+    id: "vede_malus_usato",
+    label: "Tempi e malus del laboratorio",
+    desc: "Vede scadenze, contatori e storico malus del laboratorio (regole in Amministrazione → Regole Usato).",
+    default: (r) => ["tecnico", "amministrativo", "admin", "dev", "direttore_generale"].includes(r),
+};
+export const CAP_USATO_COSTI: CapDef = {
+    id: "vede_costi_usato",
+    label: "Costi di acquisto e riparazione",
+    desc: "Vede il prezzo di acquisto e i costi ricambi/riparazione dei dispositivi usati (tabella, scheda e bonifici). Regola Luca 31/07: di default solo dall'amministrativo in su.",
+    default: (r) => ["amministrativo", "admin", "dev", "direttore_generale"].includes(r),
+};
+export const CAP_USATO: CapGroupFlags = {
+    mode: "flags",
+    section: "/usati",
+    sectionLabel: "Gestione Usato",
+    caps: [CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI],
+};
+
 // ─── FERIE (Collaboratori): maschera della sezione ───────────────────────────
 // Luca 27/07: store manager e direttore commerciale vedevano la maschera del
 // team; devono avere quella del consulente (solo le PROPRIE richieste). Qui il
@@ -217,4 +245,4 @@ export function ruoliDestinatariComunicazioni(role: string | null | undefined, p
 /** Catalogo completo: la pagina Permessi lo rende amministrabile da solo.
  *  Piu' gruppi possono condividere la stessa sezione: l'ingranaggio li mostra
  *  impilati nello stesso pannello. */
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_FERIE, CAP_COMUNICAZIONI];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI];

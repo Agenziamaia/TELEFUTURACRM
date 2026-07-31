@@ -1,8 +1,12 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
-import { SelectPersona } from "@/components/SelectPersona";
+import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { numeroNazionale } from "@/lib/telefono";
+import { dataNascitaDaCF } from "@/lib/dataNascita";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
 import {
   Smartphone, Tablet, Laptop, Watch,
   Calendar, Search, User, Building2, CalendarDays,
@@ -30,6 +34,10 @@ interface Ricambio {
   stato: RicambioState;
   cost: number;
   data_consegna_prevista: string;
+  // orari dei passaggi di stato (mig. 113 / regole laboratorio): servono al
+  // conteggio dei giorni della fase riparazione (dal ricambio ARRIVATO)
+  stato_dal?: string | null;
+  arrivato_il?: string | null;
 }
 
 interface Pagamento {
@@ -64,6 +72,9 @@ interface Device {
   grado_usura: string;
   allegato_documento: string | null;
   allegato_dichiarazione: string | null;
+  // mig. 113: cliente da cui e' stato acquistato + venditore che ha registrato
+  client_id: string | null;
+  venditore: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -194,6 +205,8 @@ type UsatiRow = {
   grado_usura: string;
   allegato_documento: string | null;
   allegato_dichiarazione: string | null;
+  client_id?: string | null;
+  venditore?: string | null;
 };
 
 function parseDate(s: string | null): Date {
@@ -234,6 +247,8 @@ function rowToDevice(r: UsatiRow): Device {
     grado_usura: r.grado_usura || "",
     allegato_documento: r.allegato_documento ?? null,
     allegato_dichiarazione: r.allegato_dichiarazione ?? null,
+    client_id: r.client_id ?? null,
+    venditore: r.venditore || "",
   };
 }
 
@@ -707,14 +722,31 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
 function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: (d: any) => void }) {
   const NEGOZI = useStores();
   const VENDITORI = useSellers();
+  const { user } = useAuth();
   const [step, setStep] = useState(1);
-  const [venditore, setVenditore] = useState("");
+  // AUTOCOMPILAZIONE (Luca 31/07): chi e' loggato parte gia' selezionato come
+  // venditore, col suo negozio — restano tendine aperte e modificabili.
+  const [venditore, setVenditore] = useState(user?.name || "");
   const [negozio, setNegozio] = useState("");
+  useEffect(() => {
+    if (negozio || !user?.negozio || !NEGOZI.length) return;
+    const mio = user.negozio;
+    const match = NEGOZI.find(n => n === mio) || NEGOZI.find(n => n.startsWith(mio) || mio.startsWith(n));
+    if (match) setNegozio(match);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [NEGOZI, user?.negozio]);
   const [provenienzaSubito, setProvenienzaSubito] = useState(false);
   const [tipoCliente, setTipoCliente] = useState<"consumer" | "business" | "">("");
-  const [searchField, setSearchField] = useState("");
   const [searchValue, setSearchValue] = useState("");
   const [clienteFound, setClienteFound] = useState<boolean | null>(null);
+  // RICERCA INTERATTIVA come Registra Vendita (Luca 31/07): digiti CF, nome e
+  // cognome, ragione sociale o numero e le anagrafiche collegate compaiono
+  // sotto; ne scegli una o procedi con la creazione. L'id del cliente scelto
+  // viaggia fino al salvataggio (mig. 113: prima l'anagrafica veniva persa).
+  type ClienteHit = { id: string; tipo: string; nome: string | null; cognome: string | null; ragione_sociale: string | null; cf_piva: string | null; cellulare: string | null; email: string | null; indirizzo: string | null; citta: string | null; iban: string | null };
+  const [risultati, setRisultati] = useState<ClienteHit[]>([]);
+  const [cercando, setCercando] = useState(false);
+  const [selClientId, setSelClientId] = useState<string | null>(null);
   const [ana, setAna] = useState({ nome: "", cognome: "", cf: "", piva: "", email: "", cellulare: "", domicilio: "", iban: "", ragioneSociale: "", referente: "", pec: "", sdi: "", sedeLegale: "" });
   const [tipoProdotto, setTipoProdotto] = useState("");
   const [brand, setBrand] = useState("");
@@ -737,26 +769,44 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const [allegDich, setAllegDich] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Ricerca cliente REALE sulla tabella clients. Prima inventava un cliente
-  // ("Mario Rossi", CF e IBAN fittizi) e lo dava per trovato: quei dati finti
-  // finivano poi salvati sulla pratica.
-  const doSearch = async () => {
-    const v = searchValue.trim();
-    if (!v) return;
-    const like = `%${v}%`;
-    const { data } = await supabase.from("clients").select("*")
-      .or(`cf_piva.ilike.${like},nome.ilike.${like},cognome.ilike.${like},ragione_sociale.ilike.${like},cellulare.ilike.${like}`)
-      .limit(1);
-    const c = data && data[0];
-    if (!c) { setClienteFound(false); return; }
+  // Ricerca LIVE sulla tabella clients (debounce 300ms): stessa esperienza del
+  // Registra Vendita. Con due parole cerca nome+cognome in entrambi gli ordini.
+  useEffect(() => {
+    if (!tipoCliente || clienteFound !== null) { setRisultati([]); return; }
+    const v = searchValue.trim().replace(/[(),]/g, " ").replace(/\s+/g, " ");
+    if (v.length < 3) { setRisultati([]); return; }
+    let vivo = true;
+    setCercando(true);
+    const t = setTimeout(async () => {
+      const parole = v.split(" ").filter(Boolean);
+      const cifre = v.replace(/\D/g, "");
+      let q = supabase.from("clients")
+        .select("id,tipo,nome,cognome,ragione_sociale,cf_piva,cellulare,email,indirizzo,citta,iban")
+        .eq("tipo", tipoCliente).limit(6);
+      if (parole.length >= 2) {
+        q = q.or(`and(nome.ilike.%${parole[0]}%,cognome.ilike.%${parole[1]}%),and(nome.ilike.%${parole[1]}%,cognome.ilike.%${parole[0]}%),ragione_sociale.ilike.%${v}%`);
+      } else {
+        q = q.or(`cf_piva.ilike.%${v}%,nome.ilike.%${v}%,cognome.ilike.%${v}%,ragione_sociale.ilike.%${v}%${cifre.length >= 4 ? `,cellulare.ilike.%${cifre}%` : ""}`);
+      }
+      const { data } = await q;
+      if (!vivo) return;
+      setRisultati((data ?? []) as ClienteHit[]);
+      setCercando(false);
+    }, 300);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [searchValue, tipoCliente, clienteFound]);
+
+  const scegliCliente = (c: ClienteHit) => {
     setClienteFound(true);
+    setSelClientId(c.id);
+    setRisultati([]);
     setAna({
       ...ana,
-      nome: c.nome || "", cognome: c.cognome || "", cf: c.cf_piva || "",
+      nome: c.nome || "", cognome: c.cognome || "", cf: c.ragione_sociale ? "" : (c.cf_piva || ""),
       email: c.email || "", cellulare: c.cellulare || "",
       domicilio: [c.indirizzo, c.citta].filter(Boolean).join(", "),
       ragioneSociale: c.ragione_sociale || "", piva: c.ragione_sociale ? (c.cf_piva || "") : "",
-      referente: "", pec: "", sdi: "", sedeLegale: "", iban: "",
+      referente: "", pec: "", sdi: "", sedeLegale: [c.indirizzo, c.citta].filter(Boolean).join(", "), iban: c.iban || "",
     });
   };
 
@@ -794,7 +844,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       if (allegDich) dichPath = await uploadFile(allegDich, "dichiarazioni");
 
       onSave({
-        venditore, negozio, provenienzaSubito, tipoCliente, anagrafica: ana,
+        venditore, negozio, provenienzaSubito, tipoCliente, anagrafica: ana, clientId: selClientId,
         tipoProdotto, brand, model, capacita, colore, imei,
         prezzoAcquisto: parseFloat(prezzoAcquisto) || 0, gradoUsura,
         extraMargine: hasExtraMargine ? { importo: parseFloat(extraMargineImporto) || 0, venditore } : null,
@@ -824,13 +874,14 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
           <div><label className={lbl}>Venditore *</label>
             <SelectPersona value={venditore} onChange={setVenditore} opzioni={VENDITORI} placeholder="Scrivi il venditore…" className={inp} />
           </div>
+          {/* stessa tendina unificata delle altre sezioni (Luca 31/07) */}
           <div><label className={lbl}>Negozio *</label>
-            <select value={negozio} onChange={e => setNegozio(e.target.value)} className={inp}>
-              <option value="">Seleziona negozio...</option>
-              {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <SelectOpzioni value={negozio} onChange={setNegozio} opzioni={NEGOZI} placeholder="Scrivi il negozio…" className={inp} />
           </div>
         </div>
+        {venditore === (user?.name || "") && negozio && (
+          <p className="text-[11px] text-slate-500 -mt-2">Pre-compilati dal tuo profilo: cambia pure venditore o negozio se serve.</p>
+        )}
         <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer border transition-all ${provenienzaSubito ? "bg-orange-500/10 border-orange-500/30" : "bg-white/[0.02] border-white/5 hover:border-white/10"}`}>
           <input type="checkbox" checked={provenienzaSubito} onChange={e => setProvenienzaSubito(e.target.checked)} className="accent-orange-500 w-4 h-4" />
           <span className="text-sm text-slate-300"> Provenienza da Subito.it</span>
@@ -850,22 +901,55 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
           ))}
         </div>
         {tipoCliente && <div className="space-y-3">
-          <div className="flex gap-2">
-            <select value={searchField} onChange={e => setSearchField(e.target.value)} className="bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
-              <option value="">Cerca per...</option>
-              {tipoCliente === "consumer" ? <><option value="cf">Codice Fiscale</option><option value="cell">Cellulare</option></> : <><option value="piva">Partita IVA</option><option value="cell">Cellulare</option></>}
-            </select>
-            <input value={searchValue} onChange={e => setSearchValue(e.target.value)} placeholder={searchField === "cf" ? "RSSMRA80A..." : searchField === "piva" ? "12345678901" : "333..."}
-              className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none" />
-            <button onClick={doSearch} className="px-3 py-2 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/25 transition-all"> Cerca</button>
-            <button onClick={() => setClienteFound(false)} className="px-3 py-2 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 text-sm font-semibold hover:bg-blue-500/25 transition-all"> Nuovo</button>
-          </div>
+          {/* Ricerca INTERATTIVA come Registra Vendita (Luca 31/07): digiti e
+              le anagrafiche collegate compaiono sotto; niente esiste = Nuovo. */}
+          {clienteFound === null && (
+            <>
+              <div className="relative">
+                <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input value={searchValue} onChange={e => setSearchValue(e.target.value)} autoFocus
+                  placeholder={tipoCliente === "consumer" ? "Codice fiscale, nome e cognome o cellulare…" : "Partita IVA, ragione sociale o cellulare…"}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-3 py-2.5 text-sm text-slate-300 outline-none focus:border-white/20" />
+              </div>
+              {cercando && <div className="text-xs text-slate-500 px-1 animate-pulse">Cerco in anagrafica…</div>}
+              {risultati.length > 0 && (
+                <div className="space-y-1.5">
+                  {risultati.map((c) => (
+                    <button key={c.id} onClick={() => scegliCliente(c)}
+                      className="w-full text-left p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/25 hover:bg-emerald-500/15 hover:border-emerald-500/50 transition-all">
+                      <div className="text-sm font-bold text-white">{c.ragione_sociale || `${c.nome || ""} ${c.cognome || ""}`.trim() || "—"}</div>
+                      <div className="text-xs text-slate-500 mt-0.5 flex gap-3 flex-wrap">
+                        {c.cf_piva && <span className="font-mono">{c.cf_piva}</span>}
+                        {c.cellulare && <span>📱 {c.cellulare}</span>}
+                        {c.email && <span>✉️ {c.email}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {searchValue.trim().length >= 3 && !cercando && risultati.length === 0 && (
+                <div className="text-xs text-slate-500 px-1">Nessuna anagrafica trovata con questi dati.</div>
+              )}
+              <button onClick={() => { setClienteFound(false); setSelClientId(null); setRisultati([]); }}
+                className="w-full px-3 py-2.5 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 text-sm font-semibold hover:bg-blue-500/25 transition-all">
+                ＋ Il cliente non esiste — crea nuova anagrafica
+              </button>
+            </>
+          )}
           {clienteFound === true && <div className="p-4 bg-emerald-500/5 border border-emerald-500/30 rounded-xl">
-            <div className="text-sm text-emerald-400 font-semibold mb-3"> Cliente trovato! Dati pre-compilati.</div>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="text-sm text-emerald-400 font-semibold">✓ Cliente collegato dall&apos;anagrafica — dati pre-compilati</div>
+              <button onClick={() => { setClienteFound(null); setSelClientId(null); setSearchValue(""); }}
+                className="text-[11px] px-2 py-1 rounded-lg border border-white/15 text-slate-400 hover:text-white">↺ Cambia</button>
+            </div>
             <AnaFields tipoCliente={tipoCliente} ana={ana} setAna={setAna} inp={inp} lbl={lbl} />
           </div>}
           {clienteFound === false && <div className="p-4 bg-blue-500/5 border border-blue-500/30 rounded-xl">
-            <div className="text-sm text-blue-400 font-semibold mb-3"> Nuovo cliente  compila i dati</div>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="text-sm text-blue-400 font-semibold">🆕 Nuovo cliente — compila i dati (nascerà in anagrafica)</div>
+              <button onClick={() => { setClienteFound(null); setSearchValue(""); }}
+                className="text-[11px] px-2 py-1 rounded-lg border border-white/15 text-slate-400 hover:text-white">↺ Torna alla ricerca</button>
+            </div>
             <AnaFields tipoCliente={tipoCliente} ana={ana} setAna={setAna} inp={inp} lbl={lbl} />
           </div>}
         </div>}
@@ -1240,7 +1324,7 @@ function GestioneUsatiInner() {
   }, [devices, user?.name]);
 
   const handleRegistra = useCallback(async (data: {
-    venditore: string; negozio: string; tipoCliente?: string; anagrafica?: unknown;
+    venditore: string; negozio: string; tipoCliente?: string; anagrafica?: unknown; clientId?: string | null;
     tipoProdotto?: string; brand?: string; model?: string; capacita?: string; colore?: string;
     imei: string; prezzoAcquisto: number; gradoUsura: string; extraMargine?: { importo: number; venditore: string };
     metodoPagamento: "contanti" | "buono" | "bonifico"; iban?: string; tipoBonifico?: "ordinario" | "istantaneo" | null; provenienzaSubito?: boolean;
@@ -1248,7 +1332,43 @@ function GestioneUsatiInner() {
   }) => {
     const modelName = [data.brand, data.model].filter(Boolean).join(" ") || "Modello non specificato";
     const now = new Date();
+    // ── CLIENTE: find-or-create (mig. 113) — prima l'anagrafica raccolta al
+    // passo 2 veniva BUTTATA VIA. Il cliente scelto in ricerca arriva con l'id;
+    // quello nuovo nasce in clients con attribuzione (creato_da = venditore,
+    // acquisito_da = negozio). L'usato si registra comunque anche se il
+    // cliente fallisce: meglio un telefono senza aggancio che nessun telefono.
+    let clientId: string | null = data.clientId || null;
+    try {
+      const anaD = (data.anagrafica ?? {}) as Record<string, string>;
+      const isBus = data.tipoCliente === "business";
+      const idf = String((isBus ? anaD.piva : anaD.cf) || "").trim().toUpperCase();
+      if (!clientId && idf) {
+        const { data: ex } = await supabase.from("clients").select("id").ilike("cf_piva", idf).limit(1);
+        if (ex?.length) clientId = ex[0].id as string;
+      }
+      if (!clientId && (idf || anaD.nome || anaD.ragioneSociale)) {
+        const payloadCli: Record<string, unknown> = {
+          id: `CL-${(idf || numeroNazionale(anaD.cellulare) || "ND").replace(/\s/g, "")}-${Date.now()}`,
+          tipo: isBus ? "business" : "consumer",
+          cf_piva: idf || null,
+          nome: anaD.nome || "", cognome: anaD.cognome || "",
+          ragione_sociale: anaD.ragioneSociale || "",
+          nome_ref: isBus ? (anaD.referente || "") : "", cognome_ref: "",
+          cellulare: numeroNazionale(anaD.cellulare) || "",
+          email: anaD.email || "",
+          indirizzo: (isBus ? anaD.sedeLegale : anaD.domicilio) || "", cap: "", citta: "",
+          iban: anaD.iban || "",
+          data_nascita: isBus ? null : dataNascitaDaCF(idf),
+          creato_da: data.venditore || "",
+          acquisito_da: data.negozio || null,
+        };
+        const { data: nuovo, error: eCli } = await supabase.from("clients").insert(payloadCli).select("id").single();
+        if (!eCli && nuovo?.id) clientId = nuovo.id as string;
+      }
+    } catch { /* best-effort */ }
     const insertRow = {
+      client_id: clientId,
+      venditore: data.venditore || "",
       model: modelName,
       imei: data.imei,
       status: "acquistato",
@@ -1269,8 +1389,14 @@ function GestioneUsatiInner() {
       allegato_documento: data.allegato_documento || null,
       allegato_dichiarazione: data.allegato_dichiarazione || null,
     };
-    const { data: inserted, error: e } = await supabase.from("usati").insert(insertRow).select().single();
-    if (e) return;
+    let { data: inserted, error: e } = await supabase.from("usati").insert(insertRow).select().single();
+    if (e && /column/i.test(e.message)) {
+      // mig. 113 non ancora applicata: si registra senza aggancio cliente
+      const { client_id: _c, venditore: _v, ...legacy } = insertRow as Record<string, unknown>;
+      void _c; void _v;
+      ({ data: inserted, error: e } = await supabase.from("usati").insert(legacy).select().single());
+    }
+    if (e) { alert("Registrazione non riuscita: " + e.message); return; }
     setDevices(p => [rowToDevice(inserted as UsatiRow), ...p]);
     // ── NOTIFICHE INCARICHI (Luca 29/07) — best-effort, l'acquisto è già salvo ──
     if (data.metodoPagamento === "bonifico") {
