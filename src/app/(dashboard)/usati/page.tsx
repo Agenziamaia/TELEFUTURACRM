@@ -308,7 +308,7 @@ function MultiSelect({ label, options, selected, onChange, renderOpt }: {
       </button>
       {open && <>
         <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-        <div className="absolute top-full mt-1 left-0 z-50 bg-[#161b22] border border-white/10 rounded-xl shadow-2xl w-52 max-h-72 overflow-auto py-1">
+        <div className="absolute top-full mt-1 left-0 z-50 bg-[#12141f] border border-white/10 rounded-xl shadow-2xl w-52 max-h-72 overflow-auto py-1">
           <div className="px-3 py-2 text-[11px] font-bold uppercase text-purple-400 border-b border-white/5 cursor-pointer hover:bg-white/5"
             onClick={() => onChange(allSel ? [] : [...options])}>
             {allSel ? "Deseleziona Tutti" : "Seleziona Tutti"}
@@ -557,9 +557,9 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-start justify-center pt-8 px-4" onClick={onClose}>
-      <div className="bg-[#161b22] border border-white/10 rounded-2xl w-full max-w-5xl max-h-[88vh] overflow-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-[#12141f] border border-white/10 rounded-2xl w-full max-w-5xl max-h-[88vh] overflow-auto shadow-2xl" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="sticky top-0 bg-[#161b22] border-b border-white/10 px-6 py-4 flex items-center justify-between z-10 rounded-t-2xl">
+        <div className="sticky top-0 bg-[#12141f] border-b border-white/10 px-6 py-4 flex items-center justify-between z-10 rounded-t-2xl">
           <div>
             <div className="text-lg font-bold text-white flex items-center gap-2">{s?.icon} {dev.model}</div>
             <div className="text-xs text-slate-500 font-mono mt-0.5">IMEI: {dev.imei}</div>
@@ -1236,8 +1236,8 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-start justify-center pt-6 px-4" onClick={onClose}>
-      <div className="bg-[#161b22] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="sticky top-0 bg-[#161b22] border-b border-white/10 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
+      <div className="bg-[#12141f] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-[#12141f] border-b border-white/10 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
           <div className="text-lg font-bold text-white"> Registra Usato</div>
           <button onClick={onClose} className="text-slate-500 hover:text-white text-xl transition-colors"></button>
         </div>
@@ -1593,15 +1593,15 @@ function GestioneUsatiInner() {
     }
   }, []);
 
-  const thCls = "px-4 py-3 text-left text-[11px] text-slate-500 uppercase font-semibold tracking-wide border-b border-white/5 bg-[#161b22] sticky top-0 cursor-pointer select-none hover:text-slate-300 transition-colors whitespace-nowrap";
+  const thCls = "px-4 py-3 text-left text-[11px] text-slate-500 uppercase font-semibold tracking-wide border-b border-white/5 bg-[#12141f] sticky top-0 cursor-pointer select-none hover:text-slate-300 transition-colors whitespace-nowrap";
 
   return (
     <div
-      className="-m-4 sm:-m-6 md:-m-8 bg-[#0d1117] text-white flex flex-col min-h-0 overflow-x-hidden"
+      className="-m-4 sm:-m-6 md:-m-8 text-white flex flex-col min-h-0 overflow-x-hidden"
       style={{ fontFamily: "inherit", height: "calc(100vh - 4rem)" }}
     >
       {/*  Locked header: does not scroll; only the list below scrolls  */}
-      <div className="flex-shrink-0 bg-[#0d1117] border-b border-white/5 overflow-x-hidden shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+      <div className="flex-shrink-0 bg-[#0f111a]/80 backdrop-blur-xl border-b border-white/5 overflow-x-hidden">
         {/* Title row — bigger */}
         <div className="flex flex-wrap items-center justify-between gap-4 px-4 sm:px-6 py-5 sm:py-6">
           <div>
@@ -1774,7 +1774,7 @@ function GestioneUsatiInner() {
                   </tbody>
                 </table>
               </div>
-              <div className="px-4 py-3 border-t border-white/5 bg-[#161b22]/50 text-xs text-slate-600">{sorted.length} dispositivi mostrati</div>
+              <div className="px-4 py-3 border-t border-white/5 bg-[#12141f]/50 text-xs text-slate-600">{sorted.length} dispositivi mostrati</div>
             </div>
           </>
         )}

@@ -310,7 +310,7 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
     };
 
     if (sent) return (
-        <div className="fixed inset-0 z-[100] bg-[#0d1117] flex items-center justify-center">
+        <div className="fixed inset-0 z-[100] bg-[#0f111a] flex items-center justify-center">
             <div className="text-center px-8">
                 <div className="text-7xl mb-6"></div>
                 <h2 className="text-2xl font-bold text-white mb-2">Chiusura Inviata</h2>
@@ -324,8 +324,8 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
     );
 
     return (
-        <div className="fixed inset-0 z-[100] bg-[#0d1117] overflow-y-auto">
-            <div className="sticky top-0 bg-[#0d1117]/95 backdrop-blur-sm border-b border-white/5 px-4 sm:px-6 py-4 flex items-center justify-between z-10">
+        <div className="fixed inset-0 z-[100] bg-[#0f111a] overflow-y-auto">
+            <div className="sticky top-0 bg-[#0f111a]/85 backdrop-blur-sm border-b border-white/5 px-4 sm:px-6 py-4 flex items-center justify-between z-10">
                 <div className="flex items-center gap-3">
                     <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
                         <ArrowLeft size={16} />
@@ -443,7 +443,7 @@ function VistaFatture({ onClose, history, onToggleEmessa }: { onClose: () => voi
     const sel = "bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none w-full";
 
     return (
-        <div className="fixed inset-0 z-[100] bg-[#0d1117] overflow-y-auto">
+        <div className="fixed inset-0 z-[100] bg-[#0f111a] overflow-y-auto">
             <div className="sticky top-0 bg-purple-600/10 backdrop-blur-sm border-b border-purple-500/20 px-4 sm:px-6 py-4 flex items-center gap-3 z-10">
                 <button onClick={onClose} className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
                     <ArrowLeft size={16} />
@@ -532,7 +532,7 @@ function VistaFatture({ onClose, history, onToggleEmessa }: { onClose: () => voi
                         <thead>
                             <tr>
                                 {["File", "Negozio", "Società", "Data", "Operatore", "Stato", "Azioni"].map(h => (
-                                    <th key={h} className="px-4 py-3 text-left text-[11px] text-slate-500 uppercase font-semibold tracking-wide border-b border-white/5 bg-[#161b22] whitespace-nowrap">{h}</th>
+                                    <th key={h} className="px-4 py-3 text-left text-[11px] text-slate-500 uppercase font-semibold tracking-wide border-b border-white/5 bg-[#12141f] whitespace-nowrap">{h}</th>
                                 ))}
                             </tr>
                         </thead>
@@ -601,7 +601,7 @@ function VistaGestione({ isAdmin, userStores, history }: { isAdmin: boolean; use
     const hasFilters = !!(fStore || fSoc || fDateA || fDateB);
     const reset = () => { setFStore(""); setFSoc(""); setFDateA(""); setFDateB(""); };
     const sel = "bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none w-full sm:w-auto";
-    const thCls = "px-4 py-3 text-left text-[11px] text-slate-500 uppercase font-semibold tracking-wide border-b border-white/5 bg-[#161b22] whitespace-nowrap";
+    const thCls = "px-4 py-3 text-left text-[11px] text-slate-500 uppercase font-semibold tracking-wide border-b border-white/5 bg-[#12141f] whitespace-nowrap";
 
     return (
         <div className="space-y-5">
@@ -831,8 +831,8 @@ export default function ChiusuraNegozio() {
     }, [fetchHistory]);
 
     return (
-        <div className="-m-4 sm:-m-6 md:-m-8 bg-[#0d1117] text-white" style={{ overflowX: "hidden" }}>
-            <div className="sticky top-0 z-30 bg-[#0d1117]/95 backdrop-blur-sm border-b border-white/5">
+        <div className="-m-4 sm:-m-6 md:-m-8 text-white" style={{ overflowX: "hidden" }}>
+            <div className="sticky top-0 z-30 bg-[#0f111a]/85 backdrop-blur-sm border-b border-white/5">
                 <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-4">
                     <div>
                         <h1 className="text-xl sm:text-2xl font-bold text-white"> Chiusura Negozio</h1>
