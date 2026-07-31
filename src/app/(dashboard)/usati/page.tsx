@@ -11,7 +11,7 @@ import {
   Smartphone, Tablet, Laptop, Watch,
   Calendar, Search, User, Building2, CalendarDays,
   CheckCircle2, Truck, Tag, CircleDollarSign, XCircle,
-  Save, MapPin, Plus, Wrench, FileText, Copy,
+  Save, MapPin, Plus, Wrench, FileText, Copy, Trash2,
   ChevronDown, ChevronUp, AlertTriangle, Banknote,
   TicketIcon, Paperclip, ArrowRight, ArrowLeft, RotateCcw,
   UploadCloud, X
@@ -99,16 +99,18 @@ const LIFECYCLE: UsatoStatus[] = ["acquistato", "in_transito", "ricevuto", "in_l
 // → il negozio destinazione ACCETTA → vende o trasferisce. Amministrazione e admin: sempre tutto.
 const RUOLI_SEMPRE = ["admin", "dev", "direttore_generale", "amministrativo"];
 const RUOLI_NEGOZIO = ["venditore", "store_manager", "direttore_commerciale"];
-function puoMuovere(status: UsatoStatus, u: { role?: string; grade?: string | null } | null | undefined): boolean {
+// lavoraLab = capacita' "Lavora l'usato" dalla rotellina permessi (Luca 31/07):
+// di default il ruolo tecnico (col grado Senior), ma riconfigurabile — il CRM
+// si rivende e altre aziende possono abilitare altri ruoli.
+function puoMuovere(status: UsatoStatus, u: { role?: string; grade?: string | null } | null | undefined, lavoraLab: boolean): boolean {
     if (!u?.role) return false;
     if (RUOLI_SEMPRE.includes(u.role)) return true;
-    const senior = u.role === "tecnico" && u.grade === "tecnico_senior";
     switch (status) {
-        case "acquistato": return RUOLI_NEGOZIO.includes(u.role) || senior;   // il negozio spedisce al laboratorio
+        case "acquistato": return RUOLI_NEGOZIO.includes(u.role) || lavoraLab; // il negozio spedisce al laboratorio
         case "in_transito":                                                    // il tecnico firma l'arrivo
         case "ricevuto":                                                       // inizia la lavorazione
         case "in_lavorazione":                                                 // completa (pronto) o KO
-        case "pronto": return senior;                                          // il laboratorio spedisce al negozio
+        case "pronto": return lavoraLab;                                       // il laboratorio spedisce al negozio
         case "invio_in_negozio": return RUOLI_NEGOZIO.includes(u.role);        // ACCETTA chi riceve
         case "in_vendita": return RUOLI_NEGOZIO.includes(u.role);              // vende o trasferisce
         default: return false;
@@ -390,8 +392,12 @@ function StatusTimeline({ currentStatus, history }: { currentStatus: UsatoStatus
   );
 }
 
-//  RicambioRow 
-function RicambioRow({ r, idx, onUpdate, onRemove }: { r: Ricambio; idx: number; onUpdate: (i: number, r: Ricambio) => void; onRemove: (i: number) => void }) {
+//  RicambioRow
+// Niente piu' "data prevista consegna" sull'ordinato (Luca 31/07: eliminata).
+// Il cestino rimuove il ricambio inserito per errore — solo per chi gestisce
+// il telefono (laboratorio/amministrazione); il costo lo vede solo chi ha la
+// capacita' costi (rotellina Gestione Usato).
+function RicambioRow({ r, idx, onUpdate, onRemove, puoRimuovere, vedeCosti }: { r: Ricambio; idx: number; onUpdate: (i: number, r: Ricambio) => void; onRemove: (i: number) => void; puoRimuovere: boolean; vedeCosti: boolean }) {
   const st = RICAMBIO_STATES.find(s => s.key === r.stato);
   return (
     <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
@@ -401,23 +407,24 @@ function RicambioRow({ r, idx, onUpdate, onRemove }: { r: Ricambio; idx: number;
           className={cn("bg-black/40 border rounded-lg px-2 py-1 text-xs font-semibold outline-none cursor-pointer border-white/10", st?.colorClass)}>
           {RICAMBIO_STATES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
         </select>
-        <button onClick={() => onRemove(idx)} className="ml-auto text-slate-600 hover:text-red-400 transition-colors text-sm"></button>
-      </div>
-      <div className="flex gap-3 items-center flex-wrap">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-slate-500">Costo:</span>
-          <input type="number" step="0.01" min="0" value={r.cost || ""} onChange={e => onUpdate(idx, { ...r, cost: parseFloat(e.target.value) || 0 })}
-            className="w-20 bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs text-slate-300 outline-none" placeholder="0.00" />
-          <span className="text-[11px] text-slate-500"></span>
-        </div>
-        {r.stato === "ordinato" && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-slate-500">Consegna prevista:</span>
-            <input type="date" value={r.data_consegna_prevista || ""} onChange={e => onUpdate(idx, { ...r, data_consegna_prevista: e.target.value })}
-              className="bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs text-slate-300 outline-none" />
-          </div>
+        {r.stato === "arrivato" && r.arrivato_il && <span className="text-[10px] text-slate-600">arrivato {fmtDate(new Date(r.arrivato_il))}</span>}
+        {puoRimuovere && (
+          <button onClick={() => onRemove(idx)} title="Rimuovi il ricambio (inserito per errore)"
+            className="ml-auto p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+            <Trash2 size={14} />
+          </button>
         )}
       </div>
+      {vedeCosti && (
+        <div className="flex gap-3 items-center flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-500">Costo:</span>
+            <input type="number" step="0.01" min="0" value={r.cost || ""} onChange={e => onUpdate(idx, { ...r, cost: parseFloat(e.target.value) || 0 })}
+              className="w-20 bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs text-slate-300 outline-none" placeholder="0.00" />
+            <span className="text-[11px] text-slate-500">€</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -426,6 +433,11 @@ function RicambioRow({ r, idx, onUpdate, onRemove }: { r: Ricambio; idx: number;
 function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () => void; onSave: (d: Device) => void }) {
   const NEGOZI = useStores();
   const { user } = useAuth();
+  const { perms } = useRolePermissions(user?.role);
+  // capacita' dalla rotellina Gestione Usato (Luca 31/07)
+  const lavoraLab = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_LAVORA, perms) && (user?.role !== "tecnico" || user?.grade === "tecnico_senior");
+  const vedeCosti = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_COSTI, perms);
+  const isAmministrazione = RUOLI_SEMPRE.includes(user?.role || "");
   const operatore = user?.name || "Operatore";
   const [dev, setDev] = useState<Device>(() => ({ ...device, ricambi: device.ricambi.map(r => ({ ...r })), extra_margine: device.extra_margine ? { ...device.extra_margine } : null, pagamento: { ...device.pagamento } }));
   const [newRicambio, setNewRicambio] = useState("");
@@ -436,6 +448,21 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   const [editSalePrice, setEditSalePrice] = useState(dev.sale_price > 0);
   const [salePriceVal, setSalePriceVal] = useState(String(dev.sale_price || ""));
   const [ibanCopied, setIbanCopied] = useState(false);
+  const [indietroSel, setIndietroSel] = useState("");
+
+  // AUTOSALVATAGGIO (Luca 31/07): niente piu' tasto Salva — ogni azione
+  // persiste subito, come nel resto del gestionale. Note e prezzo si salvano
+  // quando si esce dal campo (onBlur).
+  const persist = (u: Device) => { setDev(u); onSave(u); };
+
+  // cliente da cui e' stato ACQUISTATO (mig. 113) — per i telefoni registrati
+  // prima l'anagrafica non veniva salvata: resta il "—"
+  const [clienteAcq, setClienteAcq] = useState<{ id: string; nome: string } | null>(null);
+  useEffect(() => {
+    if (!dev.client_id) { setClienteAcq(null); return; }
+    supabase.from("clients").select("id,nome,cognome,ragione_sociale").eq("id", dev.client_id).maybeSingle()
+      .then(({ data }) => data && setClienteAcq({ id: data.id as string, nome: (data.ragione_sociale as string) || `${data.nome || ""} ${data.cognome || ""}`.trim() || "—" }));
+  }, [dev.client_id]);
 
   const s = statusMap[dev.status];
   const canAdvance = !["venduto", "ko"].includes(dev.status);
@@ -448,42 +475,68 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
 
   const addRicambio = () => {
     if (!newRicambio.trim()) return;
-    setDev(p => ({ ...p, ricambi: [...p.ricambi, { name: newRicambio.trim(), stato: newRicambioInMag ? "in_magazzino" : "da_ordinare", cost: 0, data_consegna_prevista: "" }] }));
+    const nuovo: Ricambio = { name: newRicambio.trim(), stato: newRicambioInMag ? "in_magazzino" : "da_ordinare", cost: 0, data_consegna_prevista: "", stato_dal: new Date().toISOString() };
+    persist({ ...dev, ricambi: [...dev.ricambi, nuovo] });
     setNewRicambio(""); setShowAdd(false); setNewRicambioInMag(false);
   };
-  const updateRicambio = (idx: number, r: Ricambio) => setDev(p => { const a = [...p.ricambi]; a[idx] = r; return { ...p, ricambi: a }; });
-  const removeRicambio = (idx: number) => setDev(p => ({ ...p, ricambi: p.ricambi.filter((_, i) => i !== idx) }));
+  const updateRicambio = (idx: number, r: Ricambio) => {
+    const prima = dev.ricambi[idx];
+    // orologio delle fasi (regole laboratorio): ogni cambio stato del ricambio
+    // viene datato; l'ARRIVATO fa partire i giorni della riparazione
+    const conData: Ricambio = prima && prima.stato !== r.stato
+      ? { ...r, stato_dal: new Date().toISOString(), arrivato_il: r.stato === "arrivato" ? new Date().toISOString() : r.arrivato_il ?? null }
+      : r;
+    const a = [...dev.ricambi]; a[idx] = conData;
+    persist({ ...dev, ricambi: a });
+  };
+  const removeRicambio = (idx: number) => persist({ ...dev, ricambi: dev.ricambi.filter((_, i) => i !== idx) });
 
   const advanceStatus = () => {
     if (needsStore && !targetStore) return;
-    setDev(p => {
-      // Registra data+ora e operatore del cambio stato (prima non veniva salvato,
-      // quindi la cronologia in ciascun usato restava vuota dopo l'acquisto).
-      const u: Device = { ...p, status: next!, note_tecnico: noteTecnico,
-        status_history: { ...p.status_history, [next!]: { date: new Date(), operatore } } };
-      if (needsStore) u.target_store = targetStore;
-      // Accettazione: quando il negozio destinazione accetta (invio -> in vendita),
-      // il dispositivo passa in carico a LUI (prima restava sul magazzino mittente
-      // e non era vendibile dal negozio che lo aveva ricevuto).
-      if (next === "in_vendita" && p.target_store) { u.store = p.target_store; u.target_store = null; }
-      if (next === "in_vendita") u.listed_date = new Date();
-      if (next === "venduto") u.sold_date = new Date();
-      return u;
-    });
+    // Registra data+ora e operatore del cambio stato (prima non veniva salvato,
+    // quindi la cronologia in ciascun usato restava vuota dopo l'acquisto).
+    const u: Device = { ...dev, status: next!, note_tecnico: noteTecnico,
+      status_history: { ...dev.status_history, [next!]: { date: new Date(), operatore } } };
+    if (needsStore) u.target_store = targetStore;
+    // Accettazione: quando il negozio destinazione accetta (invio -> in vendita),
+    // il dispositivo passa in carico a LUI (prima restava sul magazzino mittente
+    // e non era vendibile dal negozio che lo aveva ricevuto).
+    if (next === "in_vendita" && dev.target_store) { u.store = dev.target_store; u.target_store = null; }
+    if (next === "in_vendita") u.listed_date = new Date();
+    if (next === "venduto") u.sold_date = new Date();
+    persist(u);
+  };
+  // PASSO INDIETRO (Luca 31/07): dall'amministrativo in su si corregge un
+  // avanzamento sbagliato riportando lo stato a 1..N passi prima — con
+  // conferma esplicita. Le date derivate (vendita/vetrina) si azzerano se si
+  // torna prima del loro stato; il passaggio resta tracciato nella cronologia.
+  const tornaIndietro = () => {
+    if (!indietroSel) return;
+    const target = indietroSel as UsatoStatus;
+    const da = statusMap[dev.status]?.label || dev.status;
+    const a = statusMap[target]?.label || target;
+    if (!window.confirm(`⚠️ Stai riportando il telefono INDIETRO: da "${da}" a "${a}".\nConfermi il passo indietro?`)) return;
+    const tIdx = LIFECYCLE.indexOf(target);
+    const u: Device = { ...dev, status: target, note_tecnico: noteTecnico,
+      status_history: { ...dev.status_history, [`indietro_${Date.now()}`]: { date: new Date(), operatore: `${operatore} — riportato da ${da} a ${a}` } } };
+    if (tIdx < LIFECYCLE.indexOf("venduto")) u.sold_date = null;
+    if (tIdx < LIFECYCLE.indexOf("in_vendita")) u.listed_date = null;
+    if (tIdx <= LIFECYCLE.indexOf("pronto")) u.target_store = null;
+    persist(u);
+    setIndietroSel("");
   };
   // Trasferimento tra negozi anche a dispositivo GIA' IN VENDITA (es. fermo in
   // vetrina da troppo): torna "in arrivo" verso il negozio scelto, che deve
   // accettarlo — solo all'accettazione passa in carico a lui. Ripetibile.
   const sendToStore = () => {
     if (!targetStore) return;
-    setDev(p => ({ ...p, status: "invio_in_negozio", target_store: targetStore, note_tecnico: noteTecnico,
-      status_history: { ...p.status_history, invio_in_negozio: { date: new Date(), operatore } } }));
+    persist({ ...dev, status: "invio_in_negozio", target_store: targetStore, note_tecnico: noteTecnico,
+      status_history: { ...dev.status_history, invio_in_negozio: { date: new Date(), operatore } } });
   };
-  const setKO = () => setDev(p => ({ ...p, status: "ko", note_tecnico: noteTecnico,
-    status_history: { ...p.status_history, ko: { date: new Date(), operatore } } }));
-  const handleSave = () => { const u: Device = { ...dev, note_tecnico: noteTecnico, sale_price: editSalePrice ? (parseFloat(salePriceVal) || 0) : 0 }; onSave(u); onClose(); };
+  const setKO = () => persist({ ...dev, status: "ko", note_tecnico: noteTecnico,
+    status_history: { ...dev.status_history, ko: { date: new Date(), operatore } } });
 
-  const confirmExtraMargine = () => setDev(p => ({ ...p, extra_margine: { ...p.extra_margine!, confermato: true, conferma_operatore: "Admin", conferma_date: new Date() } }));
+  const confirmExtraMargine = () => persist({ ...dev, extra_margine: { ...dev.extra_margine!, confermato: true, conferma_operatore: operatore, conferma_date: new Date() } });
 
   const toggleBonifico = () => {
     const nowEff = !dev.pagamento.bonifico_effettuato;
@@ -502,11 +555,9 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             <div className="text-lg font-bold text-white flex items-center gap-2">{s?.icon} {dev.model}</div>
             <div className="text-xs text-slate-500 font-mono mt-0.5">IMEI: {dev.imei}</div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30 text-sm font-semibold hover:bg-purple-500/30 transition-all">
-              Salva
-            </button>
-            <button onClick={onClose} className="text-slate-500 hover:text-white text-xl transition-colors px-2"></button>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400/80" title="Ogni modifica viene salvata subito, come nel resto del gestionale">✓ salvataggio automatico</span>
+            <button onClick={onClose} className="text-slate-500 hover:text-white text-xl transition-colors px-2">✕</button>
           </div>
         </div>
         {/* Body */}
@@ -516,12 +567,12 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             <div className="text-sm font-bold text-white mb-3"> Stato</div>
             <StatusBadge statusKey={dev.status} />
             <div className="mt-4"><StatusTimeline currentStatus={dev.status} history={dev.status_history} /></div>
-            {canAdvance && !puoMuovere(dev.status, user) && (
+            {canAdvance && !puoMuovere(dev.status, user, lavoraLab) && (
               <div className="mt-4 text-[11px] text-slate-500 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5">
                 🔒 {faseGestitaDa(dev.status)}
               </div>
             )}
-            {canAdvance && puoMuovere(dev.status, user) && (
+            {canAdvance && puoMuovere(dev.status, user, lavoraLab) && (
               <div className="mt-4 flex flex-col gap-2">
                 {needsStore && (
                   <select value={targetStore} onChange={e => setTargetStore(e.target.value)}
@@ -553,6 +604,24 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                 )}
               </div>
             )}
+            {/* PASSO INDIETRO (Luca 31/07): correzione errori, solo
+                amministrativo in su, con conferma esplicita */}
+            {isAmministrazione && (LIFECYCLE.indexOf(dev.status as any) > 0 || dev.status === "ko" || dev.status === "venduto") && (
+              <div className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-3">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80">↩ Correzione stato (amministrazione)</div>
+                <select value={indietroSel} onChange={e => setIndietroSel(e.target.value)}
+                  className="w-full bg-black/40 border border-amber-500/20 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
+                  <option value="">Riporta a…</option>
+                  {LIFECYCLE.filter((sk) => dev.status === "ko" ? sk !== "venduto" : LIFECYCLE.indexOf(sk) < LIFECYCLE.indexOf(dev.status as any)).map(sk => (
+                    <option key={sk} value={sk}>{statusMap[sk]?.icon} {statusMap[sk]?.label}</option>
+                  ))}
+                </select>
+                <button onClick={tornaIndietro} disabled={!indietroSel}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-sm font-semibold hover:bg-amber-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                  ↩ Torna indietro
+                </button>
+              </div>
+            )}
           </div>
           {/* RIGHT: Details */}
           <div className="space-y-5">
@@ -568,20 +637,34 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             <div>
               <div className="text-sm font-bold text-white mb-3"> Dettagli</div>
               <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                {([["Modello", dev.model, false], ["IMEI", dev.imei, true], ["Acquisto", fmtEur(dev.purchase_price), false], ["Negozio", dev.store, false], ["Destinazione", dev.target_store || "", false], ["Grado", dev.grado_usura || "", false], ["Data Acquisto", fmtDate(dev.purchase_date), false], ["Data Reg.", fmtDate(dev.created_at), false]] as [string, string, boolean][]).map(([l, v, mono]) => (
+                {/* il prezzo di ACQUISTO lo vede solo chi ha la capacita' costi
+                    (Luca 31/07: dall'amministrativo in su, rotellina permessi) */}
+                {([["Modello", dev.model, false], ["IMEI", dev.imei, true], ...(vedeCosti ? [["Acquisto", fmtEur(dev.purchase_price), false] as [string, string, boolean]] : []), ["Negozio", dev.store, false], ["Destinazione", dev.target_store || "", false], ["Grado", dev.grado_usura || "", false], ["Data Acquisto", fmtDate(dev.purchase_date), false], ["Data Reg.", fmtDate(dev.created_at), false], ["Registrato da", dev.venditore || dev.status_history.acquistato?.operatore || "—", false]] as [string, string, boolean][]).map(([l, v, mono]) => (
                   <div key={l}>
                     <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">{l}</div>
                     <div className={cn("text-sm text-white font-medium", mono && "font-mono")}>{v}</div>
                   </div>
                 ))}
+                {/* da CHI e' stato acquistato (mig. 113): link all'anagrafica */}
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Acquistato da (cliente)</div>
+                  {clienteAcq ? (
+                    <a href={`/clienti?id=${encodeURIComponent(clienteAcq.id)}`} className="text-sm font-medium text-blue-300 hover:text-blue-200 hover:underline">
+                      {clienteAcq.nome} →
+                    </a>
+                  ) : (
+                    <div className="text-sm text-slate-600" title={dev.client_id ? "" : "Registrato prima del collegamento anagrafica (31/07): il dato non esiste"}>—</div>
+                  )}
+                </div>
                 {/* Sale price */}
                 <div>
                   <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Prezzo Vendita</div>
                   {editSalePrice ? (
                     <div className="flex items-center gap-1.5">
                       <input type="number" step="1" min="0" value={salePriceVal} onChange={e => setSalePriceVal(e.target.value)}
+                        onBlur={() => persist({ ...dev, sale_price: parseFloat(salePriceVal) || 0 })}
                         className="w-24 bg-black/40 border border-emerald-500/30 rounded-lg px-2 py-1 text-sm text-emerald-400 font-bold outline-none" />
-                      <span className="text-xs text-slate-500"></span>
+                      <span className="text-xs text-slate-500">€</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
@@ -638,11 +721,14 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                 </div>
               </div>
             )}
-            {/* Cost summary */}
-            <div className="flex gap-4 p-3 rounded-xl bg-white/[0.02] border border-white/5">
-              <div><div className="text-[10px] text-slate-500 uppercase">Costo Ricambi</div><div className="text-sm font-semibold text-orange-400">{fmtEur(totalRicambi)}</div></div>
-              <div><div className="text-[10px] text-slate-500 uppercase">Margine</div><div className={cn("text-sm font-bold", editSalePrice && salePriceVal ? (margin >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500")}>{editSalePrice && salePriceVal ? fmtEur(margin) : ""}</div></div>
-            </div>
+            {/* Cost summary — solo con la capacita' costi (i costi di acquisto
+                e riparazione vanno a braccetto: Luca 31/07) */}
+            {vedeCosti && (
+              <div className="flex gap-4 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                <div><div className="text-[10px] text-slate-500 uppercase">Costo Ricambi</div><div className="text-sm font-semibold text-orange-400">{fmtEur(totalRicambi)}</div></div>
+                <div><div className="text-[10px] text-slate-500 uppercase">Margine</div><div className={cn("text-sm font-bold", editSalePrice && salePriceVal ? (margin >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500")}>{editSalePrice && salePriceVal ? fmtEur(margin) : ""}</div></div>
+              </div>
+            )}
             {/* Ricambi */}
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -667,7 +753,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
               )}
               {dev.ricambi.length === 0 ? (
                 <div className="text-center py-4 text-sm text-slate-600 rounded-xl bg-white/[0.02] border border-white/5">Nessun ricambio richiesto</div>
-              ) : dev.ricambi.map((r, i) => <RicambioRow key={i} r={r} idx={i} onUpdate={updateRicambio} onRemove={removeRicambio} />)}
+              ) : dev.ricambi.map((r, i) => <RicambioRow key={i} r={r} idx={i} onUpdate={updateRicambio} onRemove={removeRicambio} puoRimuovere={lavoraLab || isAmministrazione} vedeCosti={vedeCosti} />)}
             </div>
             {/* Documents */}
             <div>
@@ -708,7 +794,8 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             {/* Note */}
             <div>
               <div className="text-sm font-bold text-white mb-2"> Note</div>
-              <textarea value={noteTecnico} onChange={e => setNoteTecnico(e.target.value)} rows={3} placeholder="Note tecnico / amministrazione..."
+              <textarea value={noteTecnico} onChange={e => setNoteTecnico(e.target.value)} rows={3} placeholder="Note tecnico / amministrazione... (si salvano da sole uscendo dal campo)"
+                onBlur={() => { if (noteTecnico !== dev.note_tecnico) persist({ ...dev, note_tecnico: noteTecnico }); }}
                 className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none resize-none focus:border-white/20 font-inherit" />
             </div>
           </div>
@@ -1191,6 +1278,10 @@ function GestioneUsatiInner() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { perms: permsMain } = useRolePermissions(user?.role);
+  // capacita' COSTI (Luca 31/07): senza, il prezzo di acquisto sparisce da
+  // tabella, card mobile e bonifici (che espongono gli importi)
+  const vedeCosti = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_COSTI, permsMain);
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   // i negozi arrivano in modo asincrono: alla prima load seleziona tutto
   const storesInit = useRef(false);
@@ -1457,11 +1548,11 @@ function GestioneUsatiInner() {
                 <div className="text-xs text-slate-600">{devices.filter(d => d.status === "in_vendita").length} disp.</div>
               </div>
             </div>
-            <button onClick={() => setShowBonifici(true)}
+            {vedeCosti && <button onClick={() => setShowBonifici(true)}
               className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-blue-500/15 text-blue-300 border border-blue-500/40 text-sm font-semibold hover:bg-blue-500/25 transition-all">
               🏦 Bonifici
               {(() => { const n = devices.filter(d => d.pagamento?.metodo === "bonifico" && (d.pagamento.bonifico_stato || (d.pagamento.bonifico_effettuato ? "fatto" : "da_fare")) !== "fatto").length; return n > 0 ? <span className="min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-black text-[11px] font-black flex items-center justify-center">{n}</span> : null; })()}
-            </button>
+            </button>}
             <button onClick={() => setShowRegistra(true)}
               className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 text-sm font-semibold hover:bg-purple-500/30 transition-all">
               <Plus size={18} /> <span className="hidden xs:inline">Registra</span> Usato
@@ -1558,7 +1649,7 @@ function GestioneUsatiInner() {
                     <span>{fmtDate(d.created_at)}</span>
                   </div>
                   <div className="flex items-center gap-4 mt-2 text-xs">
-                    <div><span className="text-slate-600">Acq.</span> <span className="text-slate-300 font-semibold">{fmtEur(d.purchase_price)}</span></div>
+                    {vedeCosti && <div><span className="text-slate-600">Acq.</span> <span className="text-slate-300 font-semibold">{fmtEur(d.purchase_price)}</span></div>}
                     <div><span className="text-slate-600">Vend.</span> {d.sale_price > 0 ? <span className="text-emerald-400 font-semibold">{fmtEur(d.sale_price)}</span> : <span className="text-slate-700">—</span>}</div>
                   </div>
                 </div>
@@ -1572,14 +1663,14 @@ function GestioneUsatiInner() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr>
-                      {[["#", "id"], ["Modello", "model"], ["IMEI", "imei"], ["Stato", "status"], ["Acquisto", "purchase_price"], ["Vendita", "sale_price"], ["Negozio", "store"], ["Data Reg.", "created_at"]].map(([l, k]) => (
+                      {[["#", "id"], ["Modello", "model"], ["IMEI", "imei"], ["Stato", "status"], ...(vedeCosti ? [["Acquisto", "purchase_price"]] : []), ["Vendita", "sale_price"], ["Negozio", "store"], ["Data Reg.", "created_at"]].map(([l, k]) => (
                         <th key={k} className={thCls} onClick={() => doSort(k)}>{l}{arrow(k)}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.length === 0 ? (
-                      <tr><td colSpan={8} className="py-16 text-center text-slate-600 text-sm">Nessun dispositivo trovato</td></tr>
+                      <tr><td colSpan={vedeCosti ? 8 : 7} className="py-16 text-center text-slate-600 text-sm">Nessun dispositivo trovato</td></tr>
                     ) : sorted.map(d => (
                       <tr key={d.id} onClick={() => setSelectedDevice(d)}
                         className="border-b border-white/[0.03] cursor-pointer hover:bg-white/[0.03] transition-colors group">
@@ -1587,7 +1678,7 @@ function GestioneUsatiInner() {
                         <td className="px-4 py-3 text-sm font-medium text-slate-200 group-hover:text-white transition-colors whitespace-nowrap">{d.model}</td>
                         <td className="px-4 py-3 text-xs font-mono text-slate-500 whitespace-nowrap">{d.imei}</td>
                         <td className="px-4 py-3"><StatusBadge statusKey={d.status} /></td>
-                        <td className="px-4 py-3 text-sm text-slate-400 font-semibold whitespace-nowrap">{fmtEur(d.purchase_price)}</td>
+                        {vedeCosti && <td className="px-4 py-3 text-sm text-slate-400 font-semibold whitespace-nowrap">{fmtEur(d.purchase_price)}</td>}
                         <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap">{d.sale_price > 0 ? <span className="text-emerald-400">{fmtEur(d.sale_price)}</span> : <span className="text-slate-700">—</span>}</td>
                         <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{d.store}</td>
                         <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtDate(d.created_at)}</td>
