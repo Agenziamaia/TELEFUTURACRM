@@ -36,6 +36,19 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
     const historyLoaded = useRef<Set<string>>(new Set());   // conversazioni gia' backfillate
     const { stores: myStores } = useVisibleStores();
 
+    // ETICHETTA per NOME (Luca 31/07): il numero collegato si mostra col nome
+    // del titolare (dipendente) o del negozio, non col cellulare — utile a
+    // colpo d'occhio e per le analisi (tasso di risposta per caller/negozio).
+    const [nomiTitolari, setNomiTitolari] = useState<Record<string, string>>({});
+    useEffect(() => {
+        const ids = [...new Set(instances.map(i => i.owner_user_id).filter(Boolean))] as string[];
+        if (!ids.length) return;
+        supabase.from("app_users").select("id, full_name").in("id", ids)
+            .then(({ data }) => setNomiTitolari(Object.fromEntries((data ?? []).map((u: { id: string; full_name: string }) => [u.id, u.full_name]))));
+    }, [instances]);
+    const etichettaIstanza = (i: Instance) =>
+        i.display_name || (i.owner_user_id && nomiTitolari[i.owner_user_id]) || i.negozio || (i.wa_number ? `+${i.wa_number}` : i.instance_name);
+
     // Modello "un numero per caller": ognuno vede i PROPRI numeri. Eccezioni:
     //  - admin/dev/amministrativo -> tutti i numeri
     //  - store_manager            -> i numeri del proprio negozio
@@ -289,16 +302,36 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                 </div>
             </div>
 
-            {/* selettore numero */}
+            {/* selettore numero — PER NOME, non per numero (Luca 31/07): il
+                titolare (dipendente) o il negozio, cosi' l'admin clicca
+                "Tommaso Evangelisti" senza ricordarsi il cellulare. Ordine di
+                preferenza: nome scelto a mano → titolare → negozio → numero.
+                La matita (solo amministrazione) rinomina l'etichetta. */}
             {visibleInstances.length > 0 && (
                 <div className="flex gap-2 flex-wrap shrink-0">
                     {visibleInstances.map(i => (
-                        <button key={i.id} onClick={() => { setSelInst(i.id); setSelConv(null); }}
-                            className={cn("px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-2",
-                                selInst === i.id ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
-                            <Phone className="w-3.5 h-3.5" />{i.display_name || i.instance_name}
-                            <span className={cn("w-2 h-2 rounded-full", i.status === "connessa" ? "bg-emerald-400" : "bg-amber-400")} title={i.status} />
-                        </button>
+                        <span key={i.id} className="inline-flex items-center">
+                            <button onClick={() => { setSelInst(i.id); setSelConv(null); }}
+                                title={i.wa_number ? `+${i.wa_number}` : i.instance_name}
+                                className={cn("px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-2",
+                                    selInst === i.id ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
+                                <Phone className="w-3.5 h-3.5" />{etichettaIstanza(i)}
+                                <span className={cn("w-2 h-2 rounded-full", i.status === "connessa" ? "bg-emerald-400" : "bg-amber-400")} title={i.status} />
+                            </button>
+                            {["admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "") && (
+                                <button
+                                    title="Rinomina questo numero (es. nome del dipendente o del negozio)"
+                                    onClick={async () => {
+                                        const nuovo = window.prompt("Etichetta per questo numero WhatsApp:", etichettaIstanza(i));
+                                        if (nuovo === null) return;
+                                        const pulito = nuovo.trim();
+                                        const { error } = await supabase.from("wa_instances").update({ display_name: pulito || null }).eq("id", i.id);
+                                        if (error) { alert("Rinomina non riuscita: " + error.message); return; }
+                                        loadInstances();
+                                    }}
+                                    className="p-1 -ml-1 rounded-md text-slate-600 hover:text-white transition-colors text-[10px]">✏️</button>
+                            )}
+                        </span>
                     ))}
                 </div>
             )}
