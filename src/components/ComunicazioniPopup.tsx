@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Info, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { comunicazionePerMe, brandDelNegozio } from "@/lib/comunicazioniTarget";
 
 type ComPopup = {
     id: number;
@@ -20,6 +21,9 @@ type ComPopup = {
     date_display: string;
     created_by_name: string | null;
     target_roles: string[] | null;
+    target_stores?: string[] | null;
+    target_users?: string[] | null;
+    target_brands?: string[] | null;
     kind: string | null;
 };
 
@@ -33,13 +37,22 @@ export function ComunicazioniPopup() {
     const carica = useCallback(async () => {
         if (!user?.id) return;
         try {
-            const { data: coms, error } = await supabase
+            // destinatari estesi (mig. 112) con fallback alla forma legacy
+            let res = await supabase
+                .from("comunicazioni")
+                .select("id, title, content, type, date_display, created_by_name, target_roles, target_stores, target_users, target_brands, kind")
+                .eq("kind", "popup")
+                .order("created_at", { ascending: true });
+            if (res.error) res = await supabase
                 .from("comunicazioni")
                 .select("id, title, content, type, date_display, created_by_name, target_roles, kind")
                 .eq("kind", "popup")
                 .order("created_at", { ascending: true });
+            const { data: coms, error } = res;
             if (error || !coms) return;
-            const perMe = (coms as ComPopup[]).filter((c) => !c.target_roles?.length || c.target_roles.includes(user.role || ""));
+            const brandsNegozio = await brandDelNegozio(user.negozio);
+            const perMe = (coms as ComPopup[]).filter((c) =>
+                comunicazionePerMe(c, { userId: user.id, role: user.role || "", negozio: user.negozio, brandsNegozio }));
             if (!perMe.length) { setCoda([]); return; }
             const { data: ric } = await supabase
                 .from("comunicazioni_ricevute")

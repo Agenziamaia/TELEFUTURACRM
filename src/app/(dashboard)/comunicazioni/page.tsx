@@ -14,7 +14,10 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, ruoliDestinatariComunicazioni, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
-import { ROLES } from "@/lib/roles";
+import { ROLES, BRANDS } from "@/lib/roles";
+import { comunicazionePerMe, brandDelNegozio } from "@/lib/comunicazioniTarget";
+import { SelectMulti } from "@/components/SelectPersona";
+import { useStores } from "@/lib/org";
 
 const STORAGE_KEY = "comunicazioni_read_ids";
 
@@ -26,6 +29,10 @@ export type Comunicazione = {
     content: string;
     kind: string | null;             // 'bacheca' | 'popup'
     target_roles: string[] | null;   // NULL = tutti
+    // destinatari ESTESI (mig. 112): negozi, persone singole, brand
+    target_stores?: string[] | null;
+    target_users?: string[] | null;
+    target_brands?: string[] | null;
     created_by: string | null;
     created_by_name: string | null;
 };
@@ -81,10 +88,16 @@ export default function Comunicazioni() {
     const [espansa, setEspansa] = useState<number | null>(null);    // pannello ricevute aperto
 
     const fetchAll = useCallback(async () => {
-        const { data, error: e } = await supabase
+        // prova con i destinatari estesi (mig. 112); fallback alla forma legacy
+        let res = await supabase
+            .from("comunicazioni")
+            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, created_by, created_by_name")
+            .order("created_at", { ascending: false });
+        if (res.error) res = await supabase
             .from("comunicazioni")
             .select("id, title, date_display, type, content, kind, target_roles, created_by, created_by_name")
             .order("created_at", { ascending: false });
+        const { data, error: e } = res;
         if (e) { setError(e.message); setList([]); setLoading(false); return; }
         setError(null);
         setList((data ?? []) as Comunicazione[]);
@@ -101,11 +114,15 @@ export default function Comunicazioni() {
 
     useEffect(() => { fetchAll(); }, [fetchAll]);
 
-    // Destinatario? La lista mostra le comunicazioni indirizzate al proprio
-    // ruolo; chi le ha create (o l'amministrazione) vede anche le altre.
+    // Destinatario? La lista mostra le comunicazioni indirizzate a me (per
+    // ruolo, negozio, persona o brand — mig. 112); chi le ha create (o
+    // l'amministrazione) vede anche le altre.
+    const [brandsNegozio, setBrandsNegozio] = useState<string[]>([]);
+    useEffect(() => { brandDelNegozio(user?.negozio).then(setBrandsNegozio); }, [user?.negozio]);
     const visibili = useMemo(() => list.filter((c) =>
-        !c.target_roles?.length || c.target_roles.includes(role) || c.created_by === user?.id || isAdminRicevute
-    ), [list, role, user?.id, isAdminRicevute]);
+        comunicazionePerMe(c, { userId: user?.id, role, negozio: user?.negozio, brandsNegozio })
+        || c.created_by === user?.id || isAdminRicevute
+    ), [list, role, user?.id, user?.negozio, brandsNegozio, isAdminRicevute]);
 
     const isLetta = useCallback((id: number) =>
         !!mieRicevute.get(id)?.letto_il || localRead.has(id), [mieRicevute, localRead]);
@@ -150,30 +167,53 @@ export default function Comunicazioni() {
     const [fKind, setFKind] = useState<"bacheca" | "popup">("bacheca");
     const [fTutti, setFTutti] = useState(true);
     const [fRuoli, setFRuoli] = useState<string[]>([]);
+    // destinatari ESTESI (Luca 31/07, mig. 112): negozi, persone, brand
+    const [fNegozi, setFNegozi] = useState<string[]>([]);
+    const [fPersone, setFPersone] = useState<string[]>([]);   // full_name selezionati
+    const [fBrand, setFBrand] = useState<string[]>([]);
+    const NEGOZI = useStores();
+    const [utentiAttivi, setUtentiAttivi] = useState<{ id: string; full_name: string }[]>([]);
+    useEffect(() => {
+        if (!formOpen || !canCreate || utentiAttivi.length) return;
+        supabase.from("app_users").select("id, full_name").eq("active", true).order("full_name")
+            .then(({ data }) => setUtentiAttivi((data ?? []) as { id: string; full_name: string }[]));
+    }, [formOpen, canCreate, utentiAttivi.length]);
     const [salvando, setSalvando] = useState(false);
     const puoTutti = destinatariPossibili.length === ROLES.length;
     useEffect(() => { if (!puoTutti) setFTutti(false); }, [puoTutti]);
+    const azzeraTarget = () => { setFRuoli([]); setFNegozi([]); setFPersone([]); setFBrand([]); };
 
     const salvaComunicazione = async () => {
         if (!fTitle.trim() || !fContent.trim()) { setError("Titolo e testo sono obbligatori."); return; }
-        const targets = fTutti ? null : fRuoli;
-        if (!fTutti && fRuoli.length === 0) { setError("Scegli almeno un ruolo destinatario (o Tutti)."); return; }
+        const qualcosa = fRuoli.length || fNegozi.length || fPersone.length || fBrand.length;
+        if (!fTutti && !qualcosa) { setError("Scegli almeno un destinatario: ruoli, negozi, persone o brand (oppure Tutti)."); return; }
+        const idsPersone = fPersone
+            .map((nome) => utentiAttivi.find((u) => u.full_name === nome)?.id)
+            .filter(Boolean) as string[];
         setSalvando(true);
         const { error: e } = await supabase.from("comunicazioni").insert({
             title: fTitle.trim(),
             content: fContent.trim(),
             type: fType,
             kind: fKind,
-            target_roles: targets,
+            target_roles: fTutti || !fRuoli.length ? null : fRuoli,
+            target_stores: fTutti || !fNegozi.length ? null : fNegozi,
+            target_users: fTutti || !idsPersone.length ? null : idsPersone,
+            target_brands: fTutti || !fBrand.length ? null : fBrand,
             created_by: user?.id || null,
             created_by_name: user?.name || null,
             date_display: dataDisplayOggi(),
         });
         setSalvando(false);
-        if (e) { setError(e.message); return; }
+        if (e) {
+            // niente fallback silenzioso: senza mig. 112 una comunicazione mirata
+            // diventerebbe "per tutti" — meglio fermarsi e dirlo
+            setError(/column/i.test(e.message) ? "Destinatari estesi non ancora attivi sul database (mig. 112 da applicare)." : e.message);
+            return;
+        }
         setError(null);
         setFormOpen(false);
-        setFTitle(""); setFContent(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); setFRuoli([]);
+        setFTitle(""); setFContent(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget();
         fetchAll();
     };
 
@@ -237,7 +277,7 @@ export default function Comunicazioni() {
                         const styles = getTypeStyles(com.type);
                         const Icon = styles.icon;
                         const isPopup = com.kind === "popup";
-                        const perMe = !com.target_roles?.length || com.target_roles.includes(role);
+                        const perMe = comunicazionePerMe(com, { userId: user?.id, role, negozio: user?.negozio, brandsNegozio });
                         const vedeRicevute = isAdminRicevute || (!!user?.id && com.created_by === user.id);
                         const cnt = vedeRicevute ? contatori(com.id) : null;
                         const dettaglio = espansa === com.id
@@ -283,9 +323,14 @@ export default function Comunicazioni() {
                                                     Pop-up con conferma
                                                 </span>
                                             )}
-                                            {vedeRicevute && !!com.target_roles?.length && (
+                                            {vedeRicevute && !!(com.target_roles?.length || com.target_stores?.length || com.target_users?.length || com.target_brands?.length) && (
                                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-slate-400 border border-white/10">
-                                                    → {com.target_roles.map(roleLabel).join(", ")}
+                                                    → {[
+                                                        ...(com.target_roles || []).map(roleLabel),
+                                                        ...(com.target_stores || []).map((s) => `🏬 ${s}`),
+                                                        ...(com.target_brands || []).map((b) => `🏷 ${b}`),
+                                                        ...(com.target_users?.length ? [`👤 ${com.target_users.length} person${com.target_users.length === 1 ? "a" : "e"}`] : []),
+                                                    ].join(", ")}
                                                 </span>
                                             )}
                                         </div>
@@ -405,10 +450,10 @@ export default function Comunicazioni() {
                                 </div>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Destinatari</label>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Destinatari — per ruolo</label>
                                 <div className="flex gap-2 mt-2 flex-wrap">
                                     {puoTutti && (
-                                        <button type="button" onClick={() => { setFTutti(true); setFRuoli([]); }}
+                                        <button type="button" onClick={() => { setFTutti(true); azzeraTarget(); }}
                                             className={cn("px-3.5 py-1.5 rounded-full border text-sm font-bold transition-all",
                                                 fTutti ? "border-emerald-500 bg-emerald-500/10 text-emerald-300" : "border-white/10 text-slate-400 hover:border-white/25")}>
                                             Tutti
@@ -429,6 +474,44 @@ export default function Comunicazioni() {
                                 {destinatariPossibili.length === 0 && (
                                     <p className="text-xs text-amber-400 mt-2">Il tuo ruolo non ha destinatari abilitati: chiedi all&apos;amministrazione (Permessi → Comunicazioni).</p>
                                 )}
+                            </div>
+                            {/* destinatari ESTESI (Luca 31/07): negozi, persone, brand —
+                                i criteri si SOMMANO (basta rientrare in uno) */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…per negozio <span className="normal-case font-normal">(tutto lo staff)</span></label>
+                                    <SelectMulti
+                                        values={fNegozi}
+                                        onChange={(v) => { if (v.length) setFTutti(false); setFNegozi(v); }}
+                                        opzioni={NEGOZI}
+                                        className="w-full mt-2 bg-black/40 border border-white/10 rounded-xl text-sm py-2.5 px-3.5"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…a persone singole</label>
+                                    <SelectMulti
+                                        values={fPersone}
+                                        onChange={(v) => { if (v.length) setFTutti(false); setFPersone(v); }}
+                                        opzioni={utentiAttivi.map((u) => u.full_name)}
+                                        className="w-full mt-2 bg-black/40 border border-white/10 rounded-xl text-sm py-2.5 px-3.5"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…per brand <span className="normal-case font-normal">(chi sta in un negozio che lo tratta)</span></label>
+                                <div className="flex gap-2 mt-2 flex-wrap">
+                                    {BRANDS.map((b) => {
+                                        const sel = !fTutti && fBrand.includes(b);
+                                        return (
+                                            <button key={b} type="button"
+                                                onClick={() => { setFTutti(false); setFBrand((p) => p.includes(b) ? p.filter((x) => x !== b) : [...p, b]); }}
+                                                className={cn("px-3.5 py-1.5 rounded-full border text-sm transition-all",
+                                                    sel ? "border-sky-500 bg-sky-500/10 text-white" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                                {b}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
                         <div className="flex items-center justify-end gap-2.5 py-4 px-6 border-t border-white/10">
