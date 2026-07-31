@@ -206,11 +206,13 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
     }).catch(()=>{});
     return()=>{vivo=false};
   },[show,selProd,negozio]);
-  // importo totale della voce = somma dei prezzi delle unita' scelte dal magazzino
+  // importo totale della voce = somma dei prezzi delle unita' scelte dal
+  // magazzino: il campo Importo non si mostra piu' per l'usato (Luca 31/07,
+  // era un doppione del prezzo nel riquadro) ma resta la base del margine
   useEffect(()=>{
     if(!(show&&selProd&&selProd.needsImei))return;
     const somma=usatoUnits.reduce((s,u)=>s+(parseFloat(String(u.prezzo??"").replace(",","."))||0),0);
-    if(somma>0)setImporto(String(Math.round(somma*100)/100));
+    setImporto(somma>0?String(Math.round(somma*100)/100):"");
   },[usatoUnits,selProd,show]);
   useEffect(()=>{
     if(show&&editItem){
@@ -358,9 +360,9 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
               </div>
             );})}
           </div>}
-          <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{selProd.isTelCash?"Importo di vendita €":"Importo €"}{needImporto&&<span style={{color:"#dc3545"}}> *</span>}</div>
+          {!selProd.needsImei&&<div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{selProd.isTelCash?"Importo di vendita €":"Importo €"}{needImporto&&<span style={{color:"#dc3545"}}> *</span>}</div>
             <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:importoMissing?"2px solid #dc3545":"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
-            {selProd.isTelCash&&<div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>
+            {selProd.isTelCash&&<div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>}
           {hasDupImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Sono presenti IMEI duplicati: correggili per registrare</div>}
           {unitMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(253,126,20,0.12)",border:"1px solid #fdd3ad",color:"#fd7e14",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Seleziona il telefono dal magazzino usati: si vendono solo dispositivi presenti a magazzino</div>}
           {importoMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
