@@ -277,6 +277,10 @@ export default function Calendario() {
     });
 
     // New meeting form state
+    // ricerca nei destinatari della riunione (Luca 31/07): con tanti utenti
+    // e negozi le liste vanno filtrate scrivendo
+    const [cercaOperatore, setCercaOperatore] = useState("");
+    const [cercaNegozio, setCercaNegozio] = useState("");
     const [newMeeting, setNewMeeting] = useState<{
         title: string;
         date: string;
@@ -498,7 +502,7 @@ export default function Calendario() {
         setSelectedDate(dateStr);
         setShowCreateModal(false);
         setShowCreateTaskModal(false);
-        setShowCreateMeetingModal(false);
+        setShowCreateMeetingModal(false); setCercaOperatore(""); setCercaNegozio("");
         setSelectedAppointment(null);
         setSelectedMeeting(null);
         setShowModal(false);
@@ -686,7 +690,7 @@ export default function Calendario() {
             return;
         }
         setMeetings(prev => [...prev, mapMeetingRow(data)]);
-        setShowCreateMeetingModal(false);
+        setShowCreateMeetingModal(false); setCercaOperatore(""); setCercaNegozio("");
         setNewMeeting({
             title: "",
             date: "",
@@ -2040,7 +2044,7 @@ export default function Calendario() {
             {showCreateMeetingModal && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-                    onClick={() => setShowCreateMeetingModal(false)}
+                    onClick={() => { setShowCreateMeetingModal(false); setCercaOperatore(""); setCercaNegozio(""); }}
                 >
                     <div
                         className="glass-card p-6 w-full max-w-2xl animate-in slide-in-from-bottom-4 zoom-in-95 duration-200"
@@ -2196,8 +2200,10 @@ export default function Calendario() {
                                             <Users className="w-3 h-3" />
                                             Operatori
                                         </p>
+                                        <input value={cercaOperatore} onChange={(e) => setCercaOperatore(e.target.value)} placeholder="Cerca operatore…"
+                                            className="w-full mb-1.5 bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-sky-500/50" />
                                         <div className="space-y-1.5">
-                                            {meetingUsers.map(u => {
+                                            {meetingUsers.filter(u => { const q = cercaOperatore.trim().toLowerCase(); return !q || u.name.toLowerCase().includes(q) || (u.store || "").toLowerCase().includes(q); }).map(u => {
                                                 const checked = !!newMeeting.recipients.find(r => r.id === u.id);
                                                 return (
                                                     <button
@@ -2234,8 +2240,10 @@ export default function Calendario() {
                                             <MapPin className="w-3 h-3" />
                                             Punti vendita (selezione rapida)
                                         </p>
+                                        <input value={cercaNegozio} onChange={(e) => setCercaNegozio(e.target.value)} placeholder="Cerca punto vendita…"
+                                            className="w-full mb-1.5 bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-sky-500/50" />
                                         <div className="space-y-1.5">
-                                            {storeNames.map(store => (
+                                            {storeNames.filter(s => { const q = cercaNegozio.trim().toLowerCase(); return !q || s.toLowerCase().includes(q); }).map(store => (
                                                 <button
                                                     key={store}
                                                     type="button"
