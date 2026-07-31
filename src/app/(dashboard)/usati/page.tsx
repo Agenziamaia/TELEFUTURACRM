@@ -106,25 +106,30 @@ const RUOLI_NEGOZIO = ["venditore", "store_manager", "direttore_commerciale"];
 // lavoraLab = capacita' "Lavora l'usato" dalla rotellina permessi (Luca 31/07):
 // di default il ruolo tecnico (col grado Senior), ma riconfigurabile — il CRM
 // si rivende e altre aziende possono abilitare altri ruoli.
-function puoMuovere(status: UsatoStatus, u: { role?: string; grade?: string | null } | null | undefined, lavoraLab: boolean): boolean {
+// mieiNegozi = i punti vendita visibili dell'utente: nelle fasi DI NEGOZIO
+// (acquistato, accettazione, in vendita) il ruolo NON basta — il dispositivo
+// deve stare nel TUO negozio (falla scoperta da Luca 31/07: lo SM di Donna
+// Olimpia poteva vendere un telefono in carico a Collatina).
+function puoMuovere(d: { status: UsatoStatus; store: string; target_store: string | null }, u: { role?: string; grade?: string | null } | null | undefined, lavoraLab: boolean, mieiNegozi: string[]): boolean {
     if (!u?.role) return false;
     if (RUOLI_SEMPRE.includes(u.role)) return true;
-    switch (status) {
-        case "acquistato": return RUOLI_NEGOZIO.includes(u.role) || lavoraLab; // il negozio spedisce al laboratorio
+    const mio = (negozio: string | null) => !!negozio && mieiNegozi.some((m) => sameStore(negozio, m));
+    switch (d.status) {
+        case "acquistato": return (RUOLI_NEGOZIO.includes(u.role) && mio(d.store)) || lavoraLab; // il SUO negozio spedisce al laboratorio
         case "in_transito":                                                    // il tecnico firma l'arrivo
         case "ricevuto":                                                       // inizia la lavorazione
         case "in_lavorazione":                                                 // completa (pronto) o KO
         case "pronto": return lavoraLab;                                       // il laboratorio spedisce al negozio
-        case "invio_in_negozio": return RUOLI_NEGOZIO.includes(u.role);        // ACCETTA chi riceve
-        case "in_vendita": return RUOLI_NEGOZIO.includes(u.role);              // vende o trasferisce
+        case "invio_in_negozio": return RUOLI_NEGOZIO.includes(u.role) && mio(d.target_store ?? d.store); // ACCETTA solo chi riceve
+        case "in_vendita": return RUOLI_NEGOZIO.includes(u.role) && mio(d.store); // vende o trasferisce SOLO il suo negozio
         default: return false;
     }
 }
-function faseGestitaDa(status: UsatoStatus): string {
-    if (["in_transito", "ricevuto", "in_lavorazione", "pronto"].includes(status)) return "Fase gestita dal Tecnico Senior (o amministrazione)";
-    if (status === "invio_in_negozio") return "In attesa di accettazione dal negozio destinazione";
-    if (status === "acquistato") return "Il negozio invia il dispositivo al laboratorio";
-    return "Fase gestita dal negozio che ha il dispositivo";
+function faseGestitaDa(d: { status: UsatoStatus; store: string; target_store: string | null }): string {
+    if (["in_transito", "ricevuto", "in_lavorazione", "pronto"].includes(d.status)) return "Fase gestita dal Tecnico Senior (o amministrazione)";
+    if (d.status === "invio_in_negozio") return `In attesa di accettazione dal negozio destinazione${d.target_store ? ` (${d.target_store})` : ""}`;
+    if (d.status === "acquistato") return `Il dispositivo è in carico a ${d.store}: lo invia al laboratorio il suo negozio`;
+    return `Fase gestita dal negozio che ha il dispositivo (${d.store})`;
 }
 
 const KPI_CARDS = [
@@ -465,18 +470,19 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   // Finche' il telefono e' IN NEGOZIO (acquistato): li vede chi l'ha comprato
   // (il venditore della registrazione) e lo store manager per il SUO negozio.
   // Dal passaggio in transito IN POI: solo il team amministrativo in su. ──
-  const { stores: mieiNegozi } = useVisibleStores();
+  const { stores: visStores } = useVisibleStores();
+  const mieiNegozi = visStores.length ? visStores : (user?.negozio ? [user.negozio] : []);
+  const eMioNegozio = mieiNegozi.some((m) => sameStore(dev.store, m));
   const vedeDocumenti = (() => {
     if (isAmministrazione) return true;
     if (dev.status !== "acquistato") return false;
     const compratore = (dev.venditore || dev.status_history.acquistato?.operatore || "").trim().toLowerCase();
     if (compratore && compratore === (user?.name || "").trim().toLowerCase()) return true;
-    if (seesWholeStore(user?.role)) {
-      const miei = mieiNegozi.length ? mieiNegozi : (user?.negozio ? [user.negozio] : []);
-      return miei.some((m) => sameStore(dev.store, m));
-    }
+    if (seesWholeStore(user?.role)) return eMioNegozio;
     return false;
   })();
+  // prezzo di vendita: lo imposta il negozio che HA il telefono (o l'amministrazione)
+  const puoPrezzo = isAmministrazione || (RUOLI_NEGOZIO.includes(user?.role || "") && eMioNegozio);
 
   // AUTOSALVATAGGIO (Luca 31/07): niente piu' tasto Salva — ogni azione
   // persiste subito, come nel resto del gestionale. Note e prezzo si salvano
@@ -611,12 +617,12 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
               </div>
             )}
             <div className="mt-4"><StatusTimeline currentStatus={dev.status} history={dev.status_history} /></div>
-            {canAdvance && !puoMuovere(dev.status, user, lavoraLab) && (
+            {canAdvance && !puoMuovere(dev, user, lavoraLab, mieiNegozi) && (
               <div className="mt-4 text-[11px] text-slate-500 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5">
-                🔒 {faseGestitaDa(dev.status)}
+                🔒 {faseGestitaDa(dev)}
               </div>
             )}
-            {canAdvance && puoMuovere(dev.status, user, lavoraLab) && (
+            {canAdvance && puoMuovere(dev, user, lavoraLab, mieiNegozi) && (
               <div className="mt-4 flex flex-col gap-2">
                 {needsStore && (
                   <select value={targetStore} onChange={e => setTargetStore(e.target.value)}
@@ -713,7 +719,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                   ) : (
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-slate-500"> Non impostato</span>
-                      <button onClick={() => setEditSalePrice(true)} className="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all">Imposta</button>
+                      {puoPrezzo && <button onClick={() => setEditSalePrice(true)} className="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all">Imposta</button>}
                     </div>
                   )}
                 </div>
@@ -730,14 +736,15 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                     <div className="text-xs text-slate-500 mt-1">Generato da: {dev.extra_margine.venditore}</div>
                     {dev.extra_margine.confermato && <div className="text-xs text-slate-500">Confermato da {dev.extra_margine.conferma_operatore} il {fmtDateTime(dev.extra_margine.conferma_date)}</div>}
                   </div>
-                  {!dev.extra_margine.confermato && (
+                  {!dev.extra_margine.confermato && isAmministrazione && (
                     <button onClick={confirmExtraMargine} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-xs font-semibold hover:bg-emerald-500/25 transition-all"> Conferma Extra Margine</button>
                   )}
                 </div>
               </div>
             )}
-            {/* Bonifico section */}
-            {dev.pagamento.metodo === "bonifico" && (
+            {/* Bonifico section — riservata a chi vede i costi (IBAN e azioni
+                di pagamento sono roba dell'amministrazione) */}
+            {dev.pagamento.metodo === "bonifico" && vedeCosti && (
               <div className={cn("p-4 rounded-xl border-2", dev.pagamento.bonifico_effettuato ? "bg-emerald-500/5 border-emerald-500/30" : "bg-red-500/5 border-red-500/30")}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div>
@@ -1344,23 +1351,36 @@ function GestioneUsatiInner() {
   const puoRegole = ["admin", "dev"].includes(user?.role || "");
   const [showRegole, setShowRegole] = useState(false);
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
-  // i negozi arrivano in modo asincrono: alla prima load seleziona tutto
-  const storesInit = useRef(false);
-  useEffect(() => { if (!storesInit.current && NEGOZI.length) { storesInit.current = true; setSelectedStores([...NEGOZI]); } }, [NEGOZI]);
-  // Segnalazione 101: da store manager in giu' i filtri si riducono a Negozio,
-  // Stato e Reset (+ tasto rapido "Mostra i miei" = solo il proprio negozio).
-  // Da direttore commerciale in su restano TUTTI i filtri. (user gia' sopra)
   const filtriCompleti = ["direttore_commerciale", "direttore_generale", "amministrativo", "admin", "dev"].includes(user?.role || "");
-  const mostraImiei = () => {
+  const mieiMatch = useCallback(() => {
     const mio = user?.negozio || "";
     const match = NEGOZI.filter(n => n && mio && (n === mio || n.startsWith(mio) || mio.startsWith(n)));
-    setSelectedStores(match.length ? match : (mio ? [mio] : [...NEGOZI]));
-  };
+    return match.length ? match : (mio ? [mio] : [...NEGOZI]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [NEGOZI, user?.negozio]);
+  // ALL'APERTURA (Luca 31/07): per i ruoli di negozio partono gia' selezionati
+  // SOLO i propri usati ("Mostra i miei" preselezionato); i ruoli direzionali
+  // vedono tutto come prima
+  const storesInit = useRef(false);
+  useEffect(() => {
+    if (storesInit.current || !NEGOZI.length || !user) return;
+    storesInit.current = true;
+    setSelectedStores(filtriCompleti ? [...NEGOZI] : mieiMatch());
+  }, [NEGOZI, user, filtriCompleti, mieiMatch]);
+  const mostraImiei = () => setSelectedStores(mieiMatch());
+  const firma = (a: string[]) => JSON.stringify([...a].sort());
+  const mieiAttivo = !!user?.negozio && firma(selectedStores) === firma(mieiMatch());
+  const tuttiAttivo = NEGOZI.length > 0 && selectedStores.length === NEGOZI.length;
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([...STATUS_KEYS]);
   const [dateField, setDateField] = useState("created_at");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [searchText, setSearchText] = useState("");
+  // FILTRI PER TUTTI (Luca 31/07): brand, modello/IMEI e fascia di prezzo —
+  // prima esistevano solo la ricerca generica riservata alla direzione
+  const [brandFilter, setBrandFilter] = useState<string[]>([]);
+  const [prezzoDa, setPrezzoDa] = useState("");
+  const [prezzoA, setPrezzoA] = useState("");
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [showRegistra, setShowRegistra] = useState(false);
   const [sortKey, setSortKey] = useState<keyof Device | "">("");
@@ -1444,9 +1464,12 @@ function GestioneUsatiInner() {
     if (dateFrom) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) < dateFrom) return false; }
     if (dateTo) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) > dateTo) return false; }
     if (searchText) { const q = searchText.toLowerCase(); if (!d.model.toLowerCase().includes(q) && !d.imei.includes(q)) return false; }
+    if (brandFilter.length > 0 && !brandFilter.some(b => d.model.startsWith(b))) return false;
+    if (prezzoDa && (d.sale_price || 0) < (parseFloat(prezzoDa) || 0)) return false;
+    if (prezzoA && (d.sale_price || 0) > (parseFloat(prezzoA) || Infinity)) return false;
     if (ricambiFilter.length > 0) { if (!d.ricambi.some(r => ricambiFilter.includes(r.stato))) return false; }
     return true;
-  }), [devices, selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, ricambiFilter]);
+  }), [devices, selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter]);
 
   const inCirculation = useMemo(() => devices.filter(d => d.status !== "venduto" && d.status !== "ko"), [devices]);
   const inventoryValue = useMemo(() => inCirculation.filter(d => d.sale_price > 0).reduce((s, d) => s + d.sale_price, 0), [inCirculation]);
@@ -1485,7 +1508,7 @@ function GestioneUsatiInner() {
     }
   };
 
-  const resetFilters = () => { setSelectedStores([...NEGOZI]); setSelectedStatuses([...STATUS_KEYS]); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setRicambiFilter([]); setActiveKpi(null); };
+  const resetFilters = () => { setSelectedStores(filtriCompleti ? [...NEGOZI] : mieiMatch()); setSelectedStatuses([...STATUS_KEYS]); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setActiveKpi(null); };
 
   const handleSaveDevice = useCallback(async (u: Device) => {
     const row = deviceToRow(u);
@@ -1628,7 +1651,9 @@ function GestioneUsatiInner() {
       style={{ fontFamily: "inherit", height: "calc(100vh - 4rem)" }}
     >
       {/*  Locked header: does not scroll; only the list below scrolls  */}
-      <div className="flex-shrink-0 bg-[#0f111a]/80 backdrop-blur-xl border-b border-white/5 overflow-x-hidden">
+      {/* relative z-20: senza, il backdrop-blur crea un contesto sotto la
+          tabella e le TENDINE dei filtri finivano coperte (Luca 31/07) */}
+      <div className="flex-shrink-0 bg-[#0f111a]/80 backdrop-blur-xl border-b border-white/5 relative z-20">
         {/* Title row — bigger */}
         <div className="flex flex-wrap items-center justify-between gap-4 px-4 sm:px-6 py-5 sm:py-6">
           <div>
@@ -1673,17 +1698,30 @@ function GestioneUsatiInner() {
             </button>
           </div>
         </div>
-        {/* Filters row — bigger controls */}
+        {/* Filters row — ORDINE (Luca 31/07): Mostra i miei · Negozio ·
+            Mostra tutti, poi Stato, Brand, ricerca e fascia di prezzo PER
+            TUTTI; date e ricambi restano alla direzione */}
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 px-4 sm:px-6 pb-4">
-          <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
-          {!filtriCompleti && (
+          {!!user?.negozio && (
             <button onClick={mostraImiei} title="Mostra solo i terminali del mio negozio"
-              className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-sm text-purple-200 font-semibold hover:bg-purple-500/25 transition-all">
-              <Building2 size={14} /> Mostra i miei
+              className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
+                mieiAttivo ? "bg-purple-500/25 border-purple-400/60 text-purple-100" : "bg-purple-500/10 border-purple-500/30 text-purple-200 hover:bg-purple-500/20")}>
+              <Building2 size={14} /> Mostra i miei{mieiAttivo ? " ✓" : ""}
             </button>
           )}
+          <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
+          <button onClick={() => setSelectedStores([...NEGOZI])} title="Disponibilità di tutti i telefoni in tutti i punti vendita"
+            className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
+              tuttiAttivo ? "bg-white/15 border-white/30 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
+            🌍 Mostra tutti{tuttiAttivo ? " ✓" : ""}
+          </button>
           <MultiSelect label="Stato" options={STATUS_KEYS} selected={selectedStatuses} onChange={setSelectedStatuses}
             renderOpt={o => <span className="flex items-center gap-1.5">{statusMap[o as UsatoStatus]?.icon} {statusMap[o as UsatoStatus]?.label}</span>} />
+          <MultiSelect label="Brand" options={Object.keys(PHONE_BRANDS_MODELS)} selected={brandFilter} onChange={setBrandFilter} />
+          <input type="number" min="0" value={prezzoDa} onChange={e => setPrezzoDa(e.target.value)} placeholder="€ da"
+            className="w-full sm:w-24 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all min-w-0" />
+          <input type="number" min="0" value={prezzoA} onChange={e => setPrezzoA(e.target.value)} placeholder="€ a"
+            className="w-full sm:w-24 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all min-w-0" />
           {filtriCompleti && (<>
           <select value={dateField} onChange={e => setDateField(e.target.value)}
             className="col-span-2 sm:col-span-1 w-full sm:w-auto px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all">
@@ -1716,9 +1754,8 @@ function GestioneUsatiInner() {
             ))}
           </div>
         </div>
-        {/* Search bar — end of sticky area. Segnalazione 101: nascosta da store
-            manager in giu' (restano solo Negozio, Stato, Reset e "Mostra i miei"). */}
-        {filtriCompleti && (
+        {/* Search bar — end of sticky area. PER TUTTI (Luca 31/07: filtro
+            modello anche ai negozi; supera la segnalazione 101). */}
         <div className="px-4 sm:px-6 pb-5">
           <div className="relative w-full">
             <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -1726,7 +1763,6 @@ function GestioneUsatiInner() {
               className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-base text-slate-300 outline-none focus:border-white/20 transition-all" />
           </div>
         </div>
-        )}
       </div>
 
       {/*  Device List — scrollable; header above stays fixed  */}
