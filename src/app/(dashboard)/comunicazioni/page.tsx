@@ -244,8 +244,9 @@ export default function Comunicazioni() {
         fetchAll();
     };
 
-    const contatori = useCallback((comId: number) => {
-        const r = ricevute.filter((x) => x.comunicazione_id === comId);
+    // l'AUTORE non conta tra letture/conferme della propria comunicazione
+    const contatori = useCallback((comId: number, autore: string | null) => {
+        const r = ricevute.filter((x) => x.comunicazione_id === comId && (!autore || x.user_id !== autore));
         return { letture: r.filter((x) => x.letto_il).length, conferme: r.filter((x) => x.confermato_il).length };
     }, [ricevute]);
 
@@ -300,15 +301,16 @@ export default function Comunicazioni() {
             ) : (
                 <div className="space-y-4">
                     {visibili.map((com) => {
-                        const read = isLetta(com.id);
+                        const mia = !!user?.id && com.created_by === user.id;
+                        const read = isLetta(com.id) || mia;   // la propria non e' mai "Nuovo"
                         const styles = getTypeStyles(com.type);
                         const Icon = styles.icon;
                         const isPopup = com.kind === "popup";
                         const perMe = comunicazionePerMe(com, { userId: user?.id, role, negozio: user?.negozio, brandsNegozio });
-                        const vedeRicevute = isAdminRicevute || (!!user?.id && com.created_by === user.id);
-                        const cnt = vedeRicevute ? contatori(com.id) : null;
+                        const vedeRicevute = isAdminRicevute || mia;
+                        const cnt = vedeRicevute ? contatori(com.id, com.created_by) : null;
                         const dettaglio = espansa === com.id
-                            ? ricevute.filter((r) => r.comunicazione_id === com.id && r.letto_il)
+                            ? ricevute.filter((r) => r.comunicazione_id === com.id && r.letto_il && r.user_id !== com.created_by)
                                 .sort((a, b) => (b.confermato_il || b.letto_il || "").localeCompare(a.confermato_il || a.letto_il || ""))
                             : [];
                         return (

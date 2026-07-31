@@ -19,6 +19,7 @@ type ComPopup = {
     content: string;
     type: string;
     date_display: string;
+    created_by?: string | null;
     created_by_name: string | null;
     target_roles: string[] | null;
     target_stores?: string[] | null;
@@ -40,17 +41,17 @@ export function ComunicazioniPopup() {
             // select a scalare: completa (mig. 116) → senza esiti (mig. 112) → legacy
             const completa = await supabase
                 .from("comunicazioni")
-                .select("id, title, content, type, date_display, created_by_name, target_roles, target_stores, target_users, target_brands, esiti, kind")
+                .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, target_stores, target_users, target_brands, esiti, kind")
                 .eq("kind", "popup")
                 .order("created_at", { ascending: true });
             const esteso = completa.error ? await supabase
                 .from("comunicazioni")
-                .select("id, title, content, type, date_display, created_by_name, target_roles, target_stores, target_users, target_brands, kind")
+                .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, target_stores, target_users, target_brands, kind")
                 .eq("kind", "popup")
                 .order("created_at", { ascending: true }) : null;
             const legacy = (esteso && esteso.error) ? await supabase
                 .from("comunicazioni")
-                .select("id, title, content, type, date_display, created_by_name, target_roles, kind")
+                .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, kind")
                 .eq("kind", "popup")
                 .order("created_at", { ascending: true }) : null;
             const coms = ((legacy ? legacy.data : esteso ? esteso.data : completa.data) ?? null) as unknown as ComPopup[] | null;

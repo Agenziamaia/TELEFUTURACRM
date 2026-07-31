@@ -13,12 +13,16 @@ export type TargetEstesi = {
     target_stores?: string[] | null;
     target_users?: string[] | null;
     target_brands?: string[] | null;
+    created_by?: string | null;
 };
 
 export function comunicazionePerMe(
     c: TargetEstesi,
     io: { userId?: string | null; role?: string | null; negozio?: string | null; brandsNegozio?: string[] },
 ): boolean {
+    // l'AUTORE non e' mai destinatario della propria comunicazione (Luca 31/07):
+    // niente popup, niente conferma, non compare tra le ricevute attese
+    if (c.created_by && io.userId && c.created_by === io.userId) return false;
     const haTarget = !!(c.target_roles?.length || c.target_stores?.length || c.target_users?.length || c.target_brands?.length);
     if (!haTarget) return true;
     if (c.target_roles?.length && io.role && c.target_roles.includes(io.role)) return true;
