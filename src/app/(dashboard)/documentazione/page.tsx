@@ -20,7 +20,8 @@ import {
     UploadCloud,
     FileSignature,
     AlertCircle,
-    PhoneCall
+    PhoneCall,
+    FolderInput
 } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
@@ -312,6 +313,24 @@ export default function DocumentazionePage() {
         if (folderId === id) setFolderId(null);
         fetchFolders();
     }, [folderId, fetchFolders]);
+    // RINOMINA cartella (Luca 31/07: gestione stile Google Drive)
+    const renameFolder = useCallback(async (f: { id: number; name: string }) => {
+        const nm = window.prompt("Nuovo nome della cartella:", f.name);
+        if (nm === null) return;
+        const pulito = nm.trim();
+        if (!pulito || pulito === f.name) return;
+        await supabase.from("doc_folders").update({ name: pulito }).eq("id", f.id);
+        fetchFolders();
+    }, [fetchFolders]);
+    // etichetta col percorso completo ("Canvass / Luglio / Promo") per il
+    // selettore di spostamento documenti
+    const etichettaCartella = useCallback((id: number): string => {
+        const byId = new Map(folders.map(f => [f.id, f]));
+        const parts: string[] = []; let cur: number | null | undefined = id;
+        while (cur != null) { const f = byId.get(cur); if (!f) break; parts.unshift(f.name); cur = f.parent_id; }
+        return parts.join(" / ") || "—";
+    }, [folders]);
+    const [moveTarget, setMoveTarget] = useState<string>("");
 
     const [previewDoc, setPreviewDoc] = useState<DocEntry | null>(null);
     const [fillDoc, setFillDoc] = useState<DocEntry | null>(null);
@@ -641,8 +660,12 @@ export default function DocumentazionePage() {
                                                 <span className="text-sm text-white truncate">{f.name}</span>
                                             </button>
                                             {isAdmin && (
-                                                <button onClick={() => { if (window.confirm(`Rimuovere la cartella "${f.name}"? I documenti al suo interno restano nella sezione.`)) archiveFolder(f.id); }} title="Rimuovi cartella"
-                                                    className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-rose-500/20 text-rose-400 transition-opacity"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
+                                                    <button onClick={() => renameFolder(f)} title="Rinomina cartella"
+                                                        className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-400"><Edit className="w-3.5 h-3.5" /></button>
+                                                    <button onClick={() => { if (window.confirm(`Rimuovere la cartella "${f.name}"? I documenti al suo interno restano nella sezione.`)) archiveFolder(f.id); }} title="Rimuovi cartella"
+                                                        className="p-1 rounded-lg hover:bg-rose-500/20 text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
+                                                </div>
                                             )}
                                         </div>
                                     ))}
@@ -745,6 +768,13 @@ export default function DocumentazionePage() {
                                                                     title="Rinomina"
                                                                 >
                                                                     <Edit className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => { setAdminAct({ doc, action: "move" }); setMoveTarget(String(doc.folder_id ?? "")); }}
+                                                                    className="p-1.5 hover:bg-indigo-500/20 rounded-lg text-indigo-400 transition-colors"
+                                                                    title="Sposta in una cartella"
+                                                                >
+                                                                    <FolderInput className="w-4 h-4" />
                                                                 </button>
                                                                 <button
                                                                     onClick={() => toggleArchive(doc)}
