@@ -474,6 +474,26 @@ export default function Calendario() {
     // domenica a scomparsa nella vista settimana (Luca 31/07): nascosta, gli
     // altri giorni respirano di piu'
     const [mostraDomenica, setMostraDomenica] = useState(true);
+    // PREFERENZA PER ACCOUNT (Luca 31/07): la vista scelta (mese/settimana/
+    // giorno) e la domenica nascosta restano salvate — niente piu' ritorno
+    // al mensile a ogni apertura. Si risalva solo DOPO aver caricato.
+    const vistaCaricata = useRef(false);
+    useEffect(() => {
+        if (!user?.id || vistaCaricata.current) return;
+        vistaCaricata.current = true;
+        try {
+            const raw = localStorage.getItem(`calendario_vista_${user.id}`);
+            if (raw) {
+                const p = JSON.parse(raw) as { calView?: string; mostraDomenica?: boolean };
+                if (p.calView === "month" || p.calView === "week" || p.calView === "day") setCalView(p.calView);
+                if (typeof p.mostraDomenica === "boolean") setMostraDomenica(p.mostraDomenica);
+            }
+        } catch { /* preferenza corrotta: si riparte dal default */ }
+    }, [user?.id]);
+    useEffect(() => {
+        if (!user?.id || !vistaCaricata.current) return;
+        try { localStorage.setItem(`calendario_vista_${user.id}`, JSON.stringify({ calView, mostraDomenica })); } catch { /* no-op */ }
+    }, [user?.id, calView, mostraDomenica]);
     // VISTA GIORNO (Luca 29/07): fasce orarie in verticale stile Google
     // Calendar — tutto il dettaglio della giornata a colpo d'occhio.
     const [dayDate, setDayDate] = useState(() =>
