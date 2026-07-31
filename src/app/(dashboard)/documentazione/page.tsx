@@ -1127,6 +1127,55 @@ export default function DocumentazionePage() {
                 </div>
             )}
 
+            {adminAct && brand && adminAct.action === "move" && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="glass-card w-full max-w-md flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                <FolderInput className={cn("w-5 h-5", brand.text)} />
+                                Sposta Documento
+                            </h3>
+                            <button onClick={() => setAdminAct(null)} className="p-1 hover:bg-white/10 rounded-lg text-slate-400 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-slate-300 mb-4">
+                                Dove vuoi spostare <strong className="text-white">{adminAct.doc.name}</strong>?
+                            </p>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-400">Cartella di destinazione</label>
+                                <select
+                                    value={moveTarget}
+                                    onChange={e => setMoveTarget(e.target.value)}
+                                    className="w-full bg-[#0f111a] border border-white/10 rounded-xl px-4 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 transition-colors"
+                                >
+                                    <option value="">📄 Radice della sezione (nessuna cartella)</option>
+                                    {[...folders].sort((a, b) => etichettaCartella(a.id).localeCompare(etichettaCartella(b.id))).map(f => (
+                                        <option key={f.id} value={String(f.id)}>📁 {etichettaCartella(f.id)}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex justify-end gap-3 mt-6">
+                                <button onClick={() => setAdminAct(null)} className="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                                    Annulla
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        await supabase.from("documentation").update({ folder_id: moveTarget ? Number(moveTarget) : null }).eq("id", adminAct.doc.id);
+                                        await fetchDocs();
+                                        setAdminAct(null);
+                                    }}
+                                    className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-indigo-500 hover:bg-indigo-600 text-white transition-colors"
+                                >
+                                    Sposta
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }
