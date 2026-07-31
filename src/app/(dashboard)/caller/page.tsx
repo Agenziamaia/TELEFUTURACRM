@@ -985,8 +985,32 @@ function CallerPageInner() {
         const idf = String((c.tipo_cliente === "business" ? c.piva : c.cf) || "").trim().toUpperCase();
         if (!idf) return;
         try {
-            const { data: ex } = await supabase.from("clients").select("id").ilike("cf_piva", idf).limit(1);
-            if (ex && ex.length) return;
+            const { data: ex } = await supabase.from("clients").select("id, cellulare, nome, cognome, ragione_sociale").ilike("cf_piva", idf).limit(1);
+            if (ex && ex.length) {
+                // CLIENTE GIA' IN ANAGRAFICA (Luca 31/07, mig. 121): se sto
+                // lavorando un numero DIVERSO dal suo principale, proponi di
+                // associarlo come numero aggiuntivo (famiglie con piu' utenze)
+                try {
+                    const cli = ex[0] as { id: string; cellulare: string | null; nome?: string | null; cognome?: string | null; ragione_sociale?: string | null };
+                    const chiamato = numeroNazionale(c.numero) || numeroNazionale(c.cellulare);
+                    const princ = numeroNazionale(cli.cellulare || "") || String(cli.cellulare || "");
+                    const nomeCli = cli.ragione_sociale || `${cli.nome || ""} ${cli.cognome || ""}`.trim() || cli.id;
+                    if (chiamato && !princ) {
+                        // il cliente non ha alcun numero: questo diventa il principale
+                        const { data: dup } = await supabase.from("clients").select("id").eq("cellulare", chiamato).neq("id", cli.id).limit(1);
+                        if (!dup?.length && window.confirm(`${nomeCli} è già in anagrafica ma SENZA numero.\nVuoi impostare ${chiamato} come suo numero principale?`)) {
+                            await supabase.from("clients").update({ cellulare: chiamato }).eq("id", cli.id);
+                        }
+                    } else if (chiamato && princ && chiamato !== princ) {
+                        const { data: gia } = await supabase.from("client_numeri").select("id").eq("client_id", cli.id).eq("numero", chiamato).limit(1);
+                        if (!gia?.length && window.confirm(`${nomeCli} ha già un numero associato (principale: ${princ}).\nVuoi associare ${chiamato} come numero AGGIUNTIVO?\n(L'etichetta — moglie, figlio, lavoro… — si imposta poi dalla scheda cliente.)`)) {
+                            const { error: en } = await supabase.from("client_numeri").insert({ client_id: cli.id, numero: chiamato });
+                            if (en && !/duplicate/i.test(en.message)) alert("Numero NON associato: " + en.message + (/(relation|table)/i.test(en.message) ? " — manca la migrazione 121?" : ""));
+                        }
+                    }
+                } catch { /* associazione saltata: l'esito resta salvato */ }
+                return;
+            }
             let cel = numeroNazionale(c.numero) || numeroNazionale(c.cellulare);
             if (cel) {
                 const { data: dup } = await supabase.from("clients").select("id").ilike("cellulare", cel).limit(1);

@@ -15,6 +15,7 @@ import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useStores } from "@/lib/org";
 import { SelectMulti } from "@/components/SelectPersona";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
+import { NumeriCliente } from "@/components/NumeriCliente";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, CAP_CLIENTI_INTEGRA_DOC, capChoice, capAllowed } from "@/lib/capabilities";
@@ -236,6 +237,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                         >💬</Link>
                                     </>)}
                                 </div>
+                                {/* NUMERI MULTIPLI (Luca 31/07, mig. 121): principale + aggiuntivi
+                                    etichettati (moglie, figlio, lavoro...), gestibili da qui */}
+                                <NumeriCliente clientId={cliente.id} principale={cliente.cellulare || ""} />
                                 <div className="flex items-center gap-2">
                                     <div className="flex-1 min-w-0"><InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} /></div>
                                     {cliente.email && (
