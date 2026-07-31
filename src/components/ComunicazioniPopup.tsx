@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Info, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
+import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
 
 type ComPopup = {
     id: number;
@@ -26,6 +26,7 @@ type ComPopup = {
     target_users?: string[] | null;
     target_brands?: string[] | null;
     esiti?: string[] | null;   // risposte cliccabili (mig. 116); null = solo conferma
+    meeting_id?: number | null;   // invito riunione (mig. 122): la risposta si riflette sul calendario
     kind: string | null;
 };
 
@@ -41,7 +42,7 @@ export function ComunicazioniPopup() {
             // select a scalare: completa (mig. 116) → senza esiti (mig. 112) → legacy
             const completa = await supabase
                 .from("comunicazioni")
-                .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, target_stores, target_users, target_brands, esiti, kind")
+                .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, kind")
                 .eq("kind", "popup")
                 .order("created_at", { ascending: true });
             const esteso = completa.error ? await supabase
@@ -139,7 +140,11 @@ export function ComunicazioniPopup() {
             ({ error } = await supabase.from("comunicazioni_ricevute").upsert([riga], { onConflict: "comunicazione_id,user_id" }));
         }
         setSalvando(false);
-        if (!error) setCoda((p) => p.filter((c) => c.id !== attuale.id));
+        if (!error) {
+            // invito riunione: la risposta si riflette sullo stato in calendario
+            if (esito) await sincronizzaRispostaRiunione(attuale.meeting_id, user.id, esito);
+            setCoda((p) => p.filter((c) => c.id !== attuale.id));
+        }
     };
 
     if (!user || !attuale) return null;

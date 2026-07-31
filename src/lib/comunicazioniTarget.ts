@@ -37,6 +37,23 @@ export function comunicazionePerMe(
     return false;
 }
 
+/** Se la comunicazione e' l'INVITO di una riunione (meeting_id, mig. 122),
+ *  la risposta Accetto/Rifiuto aggiorna anche lo stato dell'invitato sulla
+ *  riunione in calendario — prima i due sistemi non si parlavano (Luca 31/07:
+ *  Schekella accettava dal pop-up ma sulla riunione restava "in attesa"). */
+export async function sincronizzaRispostaRiunione(meetingId: number | null | undefined, userId: string | null | undefined, esito: string | null | undefined): Promise<void> {
+    if (!meetingId || !userId || !esito) return;
+    const status = esito === "Accetto" ? "confirmed" : esito === "Rifiuto" ? "declined" : null;
+    if (!status) return;
+    try {
+        const { data } = await supabase.from("calendar_meetings").select("recipients").eq("id", meetingId).maybeSingle();
+        const rec = (data?.recipients ?? null) as { id: string; status?: string }[] | null;
+        if (!Array.isArray(rec) || !rec.some((r) => r.id === userId)) return;
+        const nuovi = rec.map((r) => (r.id === userId ? { ...r, status } : r));
+        await supabase.from("calendar_meetings").update({ recipients: nuovi }).eq("id", meetingId);
+    } catch { /* la risposta resta comunque nelle ricevute */ }
+}
+
 /** Negozi ASSEGNATI a un utente (user_stores) — per la consegna delle
  *  comunicazioni mirate a negozio; [] se la tabella non e' leggibile. */
 export async function negoziAssegnati(userId: string | null | undefined): Promise<string[]> {

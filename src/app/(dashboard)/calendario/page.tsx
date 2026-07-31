@@ -2423,8 +2423,8 @@ export default function Calendario() {
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
-                                {/* chi puo' CREARE riunioni puo' anche ANNULLARLE (Luca 31/07) */}
-                                {canCreateMeeting && (
+                                {/* annulla SOLO chi l'ha indetta, o l'amministrativo in su (Luca 31/07) */}
+                                {(selectedMeeting.createdBy === user?.name || ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "")) && (
                                     <button
                                         onClick={() => eliminaRiunione(selectedMeeting)}
                                         className="px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-bold hover:bg-rose-500/25 transition-colors"

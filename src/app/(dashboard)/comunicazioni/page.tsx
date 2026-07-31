@@ -15,7 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
-import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
+import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
 import { sameStore, useVisibleStores } from "@/lib/visibleStores";
@@ -38,6 +38,7 @@ export type Comunicazione = {
     created_by: string | null;
     created_by_name: string | null;
     created_at?: string | null;   // per il filtro periodo
+    meeting_id?: number | null;   // invito riunione (mig. 122)
 };
 
 type Ricevuta = {
@@ -98,7 +99,7 @@ export default function Comunicazioni() {
         // select a scalare: completa (mig. 116, con esiti) → estesa (112) → legacy
         const completa = await supabase
             .from("comunicazioni")
-            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, esiti, created_by, created_by_name, created_at")
+            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, created_by, created_by_name, created_at")
             .order("created_at", { ascending: false });
         const esteso = completa.error ? await supabase
             .from("comunicazioni")
@@ -180,6 +181,11 @@ export default function Comunicazioni() {
             ({ error: e } = await supabase.from("comunicazioni_ricevute").upsert([legacy], { onConflict: "comunicazione_id,user_id" }));
         }
         if (e) { setError(e.message); return; }
+        // invito riunione: la risposta si riflette sullo stato in calendario
+        if (esito) {
+            const com = list.find((c) => c.id === comId);
+            await sincronizzaRispostaRiunione(com?.meeting_id, user.id, esito);
+        }
         setMieRicevute((p) => new Map(p).set(comId, riga));
         setRicevute((p) => {
             const senza = p.filter((r) => !(r.comunicazione_id === comId && r.user_id === user.id));
@@ -190,7 +196,7 @@ export default function Comunicazioni() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify([...s]));
         } catch { /* ignore */ }
         setLocalRead((p) => new Set(p).add(comId));
-    }, [user?.id, user?.name, mieRicevute]);
+    }, [user?.id, user?.name, mieRicevute, list]);
 
     // le PROPRIE comunicazioni non sono mai "da leggere" (Luca 31/07: l'invito
     // riunione che spediva risultava una notifica per lui stesso)
