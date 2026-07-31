@@ -2236,7 +2236,7 @@ export default function Calendario() {
                                     </span>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-h-52 overflow-y-auto custom-scrollbar pr-1">
                                     <div>
                                         <p className="text-[11px] font-semibold text-slate-400 mb-1 flex items-center gap-1">
                                             <Users className="w-3 h-3" />
@@ -2303,6 +2303,31 @@ export default function Calendario() {
                                                     </span>
                                                 </button>
                                             ))}
+                                        </div>
+                                    </div>
+
+                                    {/* selezione rapida per BRAND (Luca 31/07): un click
+                                        seleziona tutti gli operatori associati al brand */}
+                                    <div>
+                                        <p className="text-[11px] font-semibold text-slate-400 mb-1 flex items-center gap-1">
+                                            🏷️ Brand (selezione rapida)
+                                        </p>
+                                        <div className="space-y-1.5">
+                                            {MEETING_BRANDS.map(b => {
+                                                const brandUsers = meetingUsers.filter(u => u.brands.includes(b));
+                                                return (
+                                                    <button
+                                                        key={b}
+                                                        type="button"
+                                                        disabled={!brandUsers.length}
+                                                        onClick={() => brandUsers.forEach(u => handleToggleRecipient(u.id))}
+                                                        className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg border bg-white/5 border-white/10 text-xs text-slate-300 hover:bg-white/10 disabled:opacity-40"
+                                                    >
+                                                        <span>{b}</span>
+                                                        <span className="text-[10px] text-slate-500">{brandUsers.length} operatori</span>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 </div>
