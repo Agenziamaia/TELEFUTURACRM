@@ -194,9 +194,12 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
   useEffect(()=>{
     if(!(show&&selProd&&selProd.needsImei))return;
     let vivo=true;
-    supabase.from("usati").select("id, imei, model, brand, sale_price, store").eq("status","in_vendita").then(({data})=>{
+    // NB: niente colonna "brand" — in usati il brand sta DENTRO model
+    // ("Apple iPhone 17 Pro Max"): selezionarla faceva fallire la query
+    // in silenzio e il magazzino risultava sempre vuoto
+    supabase.from("usati").select("id, imei, model, sale_price, store").eq("status","in_vendita").then(({data})=>{
       if(!vivo)return;
-      const tutti=(data||[]).map(r=>({id:r.id,imei:String(r.imei||""),model:r.model||"",brand:r.brand||"",prezzo:Number(r.sale_price)||0,store:r.store||""}));
+      const tutti=(data||[]).map(r=>({id:r.id,imei:String(r.imei||""),model:r.model||"",prezzo:Number(r.sale_price)||0,store:r.store||""}));
       // sede FISICA, non nome esatto: i negozi doppi (Magliana W3/Multi, Acilia,
       // Collatina) condividono il magazzino — da uno dei due si scarica anche l'altro
       setMagUsati(negozio?tutti.filter(t=>stessoMagazzino(t.store,negozio)):tutti);
@@ -315,7 +318,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
               const q=String(u.cerca||"").trim().toLowerCase();
               const qd=q.replace(/\D/g,"");
               const presi=usatoUnits.map((x,j)=>j!==i?x.usatoId:null).filter(Boolean);
-              const hits=q.length>=2?magUsati.filter(m=>!presi.includes(m.id)&&((`${m.brand} ${m.model}`).toLowerCase().includes(q)||(qd.length>=4&&m.imei.replace(/\D/g,"").includes(qd)))).slice(0,8):[];
+              const hits=q.length>=2?magUsati.filter(m=>!presi.includes(m.id)&&(m.model.toLowerCase().includes(q)||(qd.length>=4&&m.imei.replace(/\D/g,"").includes(qd)))).slice(0,8):[];
               return (
               <div key={i} style={{marginBottom:8,padding:10,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)"}}>
                 <div style={{fontSize:10,fontWeight:800,color:"#6f42c1",marginBottom:5}}>Unità #{i+1}</div>
@@ -341,9 +344,9 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
                       style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/>
                     {hits.length>0&&<div style={{marginTop:6,borderRadius:8,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden"}}>
                       {hits.map(m=>(
-                        <button key={m.id} onClick={()=>{setUsatoUnits(prev=>{const a=[...prev];a[i]={imei:m.imei,model:`${m.brand?m.brand+" ":""}${m.model}`.trim(),usatoId:m.id,prezzo:m.prezzo>0?String(m.prezzo):""};return a;});}}
+                        <button key={m.id} onClick={()=>{setUsatoUnits(prev=>{const a=[...prev];a[i]={imei:m.imei,model:m.model,usatoId:m.id,prezzo:m.prezzo>0?String(m.prezzo):""};return a;});}}
                           style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.05)",background:"rgba(255,255,255,0.02)",cursor:"pointer"}}>
-                          <span style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>📱 {m.brand?m.brand+" ":""}{m.model}</span>
+                          <span style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>📱 {m.model}</span>
                           <span style={{fontSize:11,color:"#8892b0",fontFamily:"monospace",marginLeft:8}}>IMEI {m.imei}</span>
                           {m.prezzo>0&&<span style={{fontSize:12,fontWeight:800,color:"#28a745",marginLeft:8}}>€ {m.prezzo}</span>}
                         </button>
