@@ -52,26 +52,38 @@ async function trovaIstanza(instanceName: string) {
 // upsert conversazione (istanza + numero/gruppo). Aggancio cliente per numero
 // solo per le chat 1-a-1: un gruppo non corrisponde a un singolo cliente.
 async function upsertConversazione(instanceId: string, numero: string, nome: string | null, isGroup = false, chatJid: string | null = null) {
+    // NOME VERO dall'anagrafica (Luca 31/07): se il numero corrisponde a un
+    // cliente, la conversazione porta nome e cognome (o ragione sociale) — non
+    // il nickname WhatsApp ne' il numero nudo. Il profilo WhatsApp resta il
+    // ripiego quando il cliente non esiste in anagrafica.
     let clientId: string | null = null;
+    let nomeAnagrafica: string | null = null;
     if (!isGroup) {
         const coda = codaNumero(numero);
         if (coda.length >= 6) {
-            const { data: cli } = await supabase.from("clients").select("id").ilike("cellulare", `%${coda}%`).limit(1);
-            if (cli && cli[0]) clientId = cli[0].id;
+            const { data: cli } = await supabase.from("clients").select("id, nome, cognome, ragione_sociale").ilike("cellulare", `%${coda}%`).limit(1);
+            if (cli && cli[0]) {
+                clientId = cli[0].id;
+                nomeAnagrafica = (cli[0].ragione_sociale as string) || `${cli[0].nome || ""} ${cli[0].cognome || ""}`.trim() || null;
+            }
         }
     }
+    const soloNumero = (s: string | null | undefined) => !s || !String(s).trim() || /^[+\d\s]+$/.test(String(s).trim());
     const { data: existing } = await supabase.from("wa_conversations")
         .select("id, client_id, customer_name, chat_jid").eq("instance_id", instanceId).eq("customer_number", numero).maybeSingle();
     if (existing) {
         const patch: Record<string, unknown> = {};
         if (clientId && !existing.client_id) patch.client_id = clientId;
-        if (nome && !existing.customer_name) patch.customer_name = nome;
+        // il nome anagrafica RIMPIAZZA un nome vuoto o fatto solo di cifre;
+        // un nome scritto a mano (rinomina admin) non si tocca mai
+        if (nomeAnagrafica && soloNumero(existing.customer_name)) patch.customer_name = nomeAnagrafica;
+        else if (nome && !existing.customer_name) patch.customer_name = nome;
         if (chatJid && !existing.chat_jid) patch.chat_jid = chatJid;
         if (Object.keys(patch).length) await supabase.from("wa_conversations").update(patch).eq("id", existing.id);
         return existing.id as string;
     }
     const { data: created } = await supabase.from("wa_conversations")
-        .insert({ instance_id: instanceId, customer_number: numero, customer_name: nome, client_id: clientId, is_group: isGroup, chat_jid: chatJid })
+        .insert({ instance_id: instanceId, customer_number: numero, customer_name: nomeAnagrafica || nome, client_id: clientId, is_group: isGroup, chat_jid: chatJid })
         .select("id").single();
     return created?.id as string;
 }

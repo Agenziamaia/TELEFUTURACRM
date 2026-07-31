@@ -356,7 +356,25 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                                         selConv.is_group ? "bg-sky-500/15 border-sky-500/25 text-sky-300" : "bg-emerald-500/15 border-emerald-500/25 text-emerald-300")}>
                                         {selConv.is_group ? <Users className="w-4 h-4" /> : (selConv.customer_name || selConv.customer_number).slice(0, 2).toUpperCase()}
                                     </div>
-                                    <div><div className="text-sm font-bold text-white">{selConv.customer_name || (selConv.is_group ? "Gruppo" : `+${selConv.customer_number}`)}</div>
+                                    <div><div className="text-sm font-bold text-white flex items-center gap-1.5">
+                                        {selConv.customer_name || (selConv.is_group ? "Gruppo" : `+${selConv.customer_number}`)}
+                                        {/* RINOMINA (Luca 31/07): l'amministrazione corregge i nomi
+                                            messi male (spesso c'e' il numero al posto del nome) */}
+                                        {!selConv.is_group && ["admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "") && (
+                                            <button
+                                                title="Rinomina questa chat (il nome scritto a mano non viene mai sovrascritto)"
+                                                onClick={async () => {
+                                                    const nuovo = window.prompt("Nome da mostrare per questa chat:", selConv.customer_name || "");
+                                                    if (nuovo === null) return;
+                                                    const pulito = nuovo.trim();
+                                                    const { error } = await supabase.from("wa_conversations").update({ customer_name: pulito || null }).eq("id", selConv.id);
+                                                    if (error) { alert("Rinomina non riuscita: " + error.message); return; }
+                                                    setConvs(p => p.map(c => c.id === selConv.id ? { ...c, customer_name: pulito || null } : c));
+                                                    setSelConv(p => p ? { ...p, customer_name: pulito || null } : p);
+                                                }}
+                                                className="p-1 rounded-md text-slate-500 hover:text-white hover:bg-white/10 transition-colors text-xs">✏️</button>
+                                        )}
+                                    </div>
                                         <div className="text-[11px] text-slate-500">{selConv.is_group ? "gruppo WhatsApp" : `+${selConv.customer_number}`}{selConv.client_id ? " · cliente collegato" : ""}</div></div>
                                 </div>
                                 <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-2">
