@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, Suspense } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, Suspense } from "react";
 import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -24,6 +24,8 @@ import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
+import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, type RegolaCaller, type FaseCaller } from "@/lib/callerMalus";
+import { CallerRegoleModal, ArchivioMalusCallerModal } from "@/components/CallerRegole";
 
 /* ─────────────────────────────────────────────────────────────────────
    CONSTANTS
@@ -386,18 +388,31 @@ function CallerPageInner() {
     // con automatismi (NR → WhatsApp, richiami, appuntamenti → calendario)
     // sono riconosciuti PER NOME: valgono finche' il nome resta quello.
     const [opzioniDb, setOpzioniDb] = useState<Record<string, string[]>>({});
+    // COMPORTAMENTI degli stati (mig. 119): appuntamento/richiamo/non_risposto,
+    // configurabili dal pannello — prima erano riconosciuti PER NOME nel codice
+    const [comportamenti, setComportamenti] = useState<Record<string, string>>({});
     useEffect(() => {
-        supabase.from("caller_opzioni").select("categoria, voce, attiva, ordine").order("ordine")
-            .then(({ data }) => {
-                if (!data?.length) return;
-                const m: Record<string, string[]> = {};
-                (data as { categoria: string; voce: string; attiva: boolean }[])
-                    .filter((r) => r.attiva)
-                    .forEach((r) => { (m[r.categoria] ||= []).push(r.voce); });
-                setOpzioniDb(m);
+        (async () => {
+            const tent = await supabase.from("caller_opzioni").select("categoria, voce, attiva, ordine, comportamento").order("ordine");
+            const legacy = tent.error ? await supabase.from("caller_opzioni").select("categoria, voce, attiva, ordine").order("ordine") : null;
+            const data = ((legacy ? legacy.data : tent.data) ?? null) as unknown as { categoria: string; voce: string; attiva: boolean; comportamento?: string | null }[] | null;
+            if (!data?.length) return;
+            const m: Record<string, string[]> = {};
+            const comp: Record<string, string> = {};
+            (data as { categoria: string; voce: string; attiva: boolean; comportamento?: string | null }[]).forEach((r) => {
+                if (r.attiva) (m[r.categoria] ||= []).push(r.voce);
+                if (r.categoria === "stato" && r.comportamento) comp[r.voce] = r.comportamento;
             });
+            setOpzioniDb(m);
+            setComportamenti(comp);
+        })();
     }, []);
     const STATI_OPT = opzioniDb.stato?.length ? opzioniDb.stato : [...STATI];
+    // gruppi DINAMICI dal pannello; finche' la mig. 119 non c'e', valgono le
+    // liste storiche in codice
+    const APP_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "appuntamento").map(([s]) => s); return v.length ? v : APPUNTAMENTO_STATI; }, [comportamenti]);
+    const RIC_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "richiamo").map(([s]) => s); return v.length ? v : RICHIAMO_STATI; }, [comportamenti]);
+    const NRD_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "non_risposto").map(([s]) => s); return v.length ? v : NR_STATI; }, [comportamenti]);
     const PROVENIENZE_OPT = opzioniDb.provenienza?.length ? opzioniDb.provenienza : [...PROVENIENZE];
     const TIPOLOGIE_OPT = opzioniDb.tipologia?.length ? opzioniDb.tipologia : [...TIPOLOGIE];
     const OBIETTIVI_OPT = opzioniDb.obiettivo?.length ? opzioniDb.obiettivo : [...OBIETTIVI];
@@ -595,9 +610,46 @@ function CallerPageInner() {
     // FACCETTE COERENTI (Luca 30/07): i contatori dei brand rispettano TUTTI
     // gli altri filtri attivi (caller, date, stato...) ignorando solo la
     // selezione brand stessa — prima erano fissi e non seguivano i filtri.
-    const matchFiltri = (c: Call, ignoraBrand = false) => {
+    // ── DA LAVORARE / WARNING / MALUS (Luca 31/07, stile Dragon PDA) ──
+    // regole per stato (giorni lavorativi + €/gg) in caller_regole, modificabili
+    // dall'admin col bottone ⚙️; le pratiche in malus maturano un importo che
+    // si archivia in caller_malus (in_corso → attivo → compensato in gara)
+    const [regoleCaller, setRegoleCaller] = useState<Map<string, RegolaCaller>>(new Map());
+    useEffect(() => { caricaRegoleCaller().then(setRegoleCaller); }, []);
+    const [faseFilter, setFaseFilter] = useState<"" | FaseCaller>("");
+    const faseInfo = useCallback((c: Call): { fase: FaseCaller; giorniMalus: number; importo: number; dalMalus: Date | null } => {
+        const r = regoleCaller.get(c.stato);
+        if (!r || r.esente) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
+        const rif = dataRiferimento(c, c.stato, RIC_STATI, APP_STATI);
+        if (!rif) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
+        const oggi = new Date();
+        const fase = faseDi(lavorativiDopo(rif, oggi), r);
+        const dalMalus = fase === "malus" && r.giorni_malus != null ? aggiungiLavorativi(rif, r.giorni_malus) : null;
+        const giorniMalus = dalMalus ? lavorativiDopo(dalMalus, oggi) + 1 : 0;
+        return { fase, giorniMalus, importo: Math.round(giorniMalus * r.malus_giorno * 100) / 100, dalMalus };
+    }, [regoleCaller, RIC_STATI, APP_STATI]);
+
+    const puoRegoleCaller = ["admin", "dev"].includes(user?.role || "");
+    const [showRegoleCaller, setShowRegoleCaller] = useState(false);
+    const [showArchivioMalus, setShowArchivioMalus] = useState(false);
+    // sincronizzazione episodi (una volta per sessione, solo direzione/admin:
+    // vede tutte le pratiche, quindi l'archivio resta completo)
+    const malusSyncDone = useRef(false);
+    useEffect(() => {
+        if (malusSyncDone.current || !isDirector || !regoleCaller.size || !calls.length) return;
+        malusSyncDone.current = true;
+        const pratiche = calls.map((c) => {
+            const fi = faseInfo(c);
+            const r = regoleCaller.get(c.stato);
+            return { id: c.id, stato: c.stato, caller: c.caller, fase: fi.fase, giorniMalus: fi.giorniMalus, malusGiorno: r?.malus_giorno || 0, dalMalus: fi.dalMalus };
+        });
+        sincronizzaMalusCaller(pratiche);
+    }, [isDirector, regoleCaller, calls, faseInfo]);
+
+    const matchFiltri = (c: Call, ignoraBrand = false, ignoraFase = false) => {
         if (!isDirector && c.caller !== currentCaller) return false;
         if (soloDaEsitare && !c.da_esitare) return false;
+        if (!ignoraFase && faseFilter && faseInfo(c).fase !== faseFilter) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
         if (fNome) {
             const search = fNome.toLowerCase();
@@ -642,7 +694,19 @@ function CallerPageInner() {
         return true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
+    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const faseCounts = useMemo(() => {
+        const cnt = { da_lavorare: 0, warning: 0, malus: 0, importo: 0 };
+        calls.forEach((c) => {
+            if (!matchFiltri(c, false, true)) return;
+            const fi = faseInfo(c);
+            if (fi.fase === "da_lavorare") cnt.da_lavorare++;
+            else if (fi.fase === "warning") cnt.warning++;
+            else if (fi.fase === "malus") { cnt.malus++; cnt.importo += fi.importo; }
+        });
+        return cnt;
+    }, [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const brandCounts = useMemo(() => {
         const scoped = calls.filter((c) => matchFiltri(c, true));
@@ -781,7 +845,7 @@ function CallerPageInner() {
     // (collegamento calls.appointment_id, mig. 088); created_by = il caller, che
     // alimenta anche la visibilità clienti "con appuntamento preso".
     async function sincronizzaAppuntamento(c: Call, callId: string) {
-        if (!APPUNTAMENTO_STATI.includes(c.stato)) return;
+        if (!APP_STATI.includes(c.stato)) return;
         const dt = (c.data_appuntamento || "").trim();
         if (!dt) { alert("Appuntamento NON portato in calendario: manca la data e ora."); return; }
         const [dataApp, oraApp] = dt.includes("T") ? dt.split("T") : [dt, "10:00"];
@@ -991,7 +1055,7 @@ function CallerPageInner() {
             // esito APPUNTAMENTO: senza data e senza negozio (o agente) il
             // calendario non si puo' popolare — meglio fermarsi e dirlo subito
             // (prima il ponte falliva in silenzio: caso del test di Luca).
-            if (APPUNTAMENTO_STATI.includes(editCall.statoNew)) {
+            if (APP_STATI.includes(editCall.statoNew)) {
                 const dataOk = editCall.dataAppuntamentoNew || editCall.data_appuntamento;
                 const luogoOk = editCall.negozioAppNew || editCall.negozio_appuntamento || editCall.agente;
                 if (!dataOk) { alert("Per fissare l'appuntamento serve la DATA E ORA: compilala e risalva."); return; }
@@ -1030,22 +1094,22 @@ function CallerPageInner() {
             updates.anno_provenienza = editCall.anno_provenienza;
             updates.negozio_pertinenza = pertinenza;
 
-            if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
+            if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
                 const eF = fasciaLabel(editCall.fascia_richiamo);
                 newStorico.push({ data: now, caller: currentCaller, campo: "Data richiamo", da: "", a: eF ? `${formatDateShort(editCall.dataRichiamoNew)} · ${eF}` : formatDate(editCall.dataRichiamoNew) });
                 updates.data_richiamo = editCall.dataRichiamoNew;
                 updates.fascia_richiamo = editCall.fascia_richiamo || null;
             }
-            if (APPUNTAMENTO_STATI.includes(editCall.statoNew) && editCall.dataAppuntamentoNew) {
+            if (APP_STATI.includes(editCall.statoNew) && editCall.dataAppuntamentoNew) {
                 const eF = fasciaLabel(editCall.fascia_appuntamento);
                 newStorico.push({ data: now, caller: currentCaller, campo: "Data appuntamento", da: "", a: eF ? `${formatDateShort(editCall.dataAppuntamentoNew)} · ${eF}` : formatDate(editCall.dataAppuntamentoNew) });
                 updates.data_appuntamento = editCall.dataAppuntamentoNew;
                 updates.fascia_appuntamento = editCall.fascia_appuntamento || null;
             }
-            if (APPUNTAMENTO_STATI.includes(editCall.statoNew) && editCall.negozioAppNew) {
+            if (APP_STATI.includes(editCall.statoNew) && editCall.negozioAppNew) {
                 updates.negozio_appuntamento = editCall.negozioAppNew;
             }
-            if (NR_STATI.includes(editCall.statoNew) && editCall.whatsappNew) {
+            if (NRD_STATI.includes(editCall.statoNew) && editCall.whatsappNew) {
                 newStorico.push({ data: now, caller: currentCaller, campo: "WhatsApp", da: "", a: editCall.whatsappNew });
             }
             if (editCall.noteUpdate) {
@@ -1064,10 +1128,10 @@ function CallerPageInner() {
                 return;
             }
             await creaAnagraficaSeManca(editCall);
-            if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
+            if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
                 await sincronizzaRichiamo({ ...original, ...editCall }, editCall.id, editCall.dataRichiamoNew);
             }
-            if (APPUNTAMENTO_STATI.includes(editCall.statoNew)) {
+            if (APP_STATI.includes(editCall.statoNew)) {
                 await sincronizzaAppuntamento(
                     {
                         ...original, ...editCall, stato: editCall.statoNew,
@@ -1381,9 +1445,9 @@ function CallerPageInner() {
     const statiDisponibili = isDirector ? STATI_OPT : STATI_OPT.filter(s => s !== "Nuovo");
 
     /* ── Detail mode flags ── */
-    const statoNewIsNR = !!editCall && NR_STATI.includes(editCall.statoNew || "");
-    const statoNewIsRichiamo = !!editCall && RICHIAMO_STATI.includes(editCall.statoNew || "");
-    const statoNewIsAppuntamento = !!editCall && APPUNTAMENTO_STATI.includes(editCall.statoNew || "");
+    const statoNewIsNR = !!editCall && NRD_STATI.includes(editCall.statoNew || "");
+    const statoNewIsRichiamo = !!editCall && RIC_STATI.includes(editCall.statoNew || "");
+    const statoNewIsAppuntamento = !!editCall && APP_STATI.includes(editCall.statoNew || "");
 
     const isBusiness = editCall && editCall.tipo_cliente === "business";
     const isDTS = editCall && editCall.tipologia === "DTS";
@@ -1391,8 +1455,8 @@ function CallerPageInner() {
     const isSegnalazione = editCall && editCall.provenienza === "Segnalazione";
     const isMarketing = editCall && editCall.provenienza === "Marketing";
     const isInterno = editCall && editCall.provenienza === "Interno";
-    const needsWhatsapp = editCall && NR_STATI.includes(editCall.stato);
-    const needsRichiamo = editCall && RICHIAMO_STATI.includes(editCall.stato);
+    const needsWhatsapp = editCall && NRD_STATI.includes(editCall.stato);
+    const needsRichiamo = editCall && RIC_STATI.includes(editCall.stato);
 
     const isListeView = currentView === "liste";
 
@@ -1567,6 +1631,35 @@ function CallerPageInner() {
                                     );
                                 })}
                             </div>
+
+                            {/* DA LAVORARE / WARNING / MALUS (Luca 31/07, stile Dragon PDA):
+                                contatori-filtro sul perimetro filtrato; ⚙️ regole (admin) e
+                                ⏱ archivio malus (direzione) in alto a destra della riga */}
+                            <div className="flex gap-3 items-stretch">
+                                {([
+                                    ["da_lavorare", "📋 Da Lavorare", faseCounts.da_lavorare, "border-sky-500/40 bg-sky-500/10 text-sky-300"],
+                                    ["warning", "⚠️ Warning", faseCounts.warning, "border-amber-500/40 bg-amber-500/10 text-amber-300"],
+                                    ["malus", "💸 Malus", faseCounts.malus, "border-rose-500/40 bg-rose-500/10 text-rose-300"],
+                                ] as const).map(([k, l, n, cls]) => (
+                                    <button key={k} onClick={() => setFaseFilter(faseFilter === k ? "" : k)}
+                                        title={faseFilter === k ? "Filtro attivo — clicca per toglierlo" : `Mostra solo le pratiche ${l}`}
+                                        className={`flex-1 rounded-2xl border px-3 py-3 text-left transition-all ${cls} ${faseFilter === k ? "ring-2 ring-white/30 brightness-125" : faseFilter ? "opacity-50 hover:opacity-80" : "hover:brightness-110"}`}>
+                                        <div className="text-sm font-bold">{l}</div>
+                                        <div className="text-2xl font-black tabular-nums leading-tight">{n}</div>
+                                        {k === "malus" && isDirector && faseCounts.importo > 0 && (
+                                            <div className="text-[11px] font-semibold">−{faseCounts.importo.toFixed(2).replace(".", ",")} € maturati</div>
+                                        )}
+                                    </button>
+                                ))}
+                                {(isDirector || puoRegoleCaller) && (
+                                    <div className="flex flex-col gap-2 justify-center">
+                                        {isDirector && <button onClick={() => setShowArchivioMalus(true)} title="Archivio dei malus (in corso, attivi, compensati)" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⏱ Malus</button>}
+                                        {puoRegoleCaller && <button onClick={() => setShowRegoleCaller(true)} title="Regole: giorni e malus giornaliero per stato" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>}
+                                    </div>
+                                )}
+                            </div>
+                            {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
+                            {showArchivioMalus && <ArchivioMalusCallerModal puoCompensare={puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || "")} utente={user?.name || "—"} onClose={() => setShowArchivioMalus(false)} />}
 
                             {/* Filter bar */}
                             <div className="glass-panel p-5">

@@ -10,10 +10,19 @@ import { useCallback, useEffect, useState } from "react";
 import { Phone, Plus, ChevronUp, ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
-type Opzione = { id: string; categoria: string; voce: string; ordine: number; attiva: boolean };
+type Opzione = { id: string; categoria: string; voce: string; ordine: number; attiva: boolean; comportamento?: string | null };
+
+// COMPORTAMENTO dello stato (mig. 119, Luca 31/07): niente piu' riconoscimento
+// per nome nel codice — l'automatismo si sceglie qui, voce per voce.
+const COMPORTAMENTI: { id: string; label: string }[] = [
+    { id: "neutro", label: "— nessuno" },
+    { id: "appuntamento", label: "📅 Appuntamento" },
+    { id: "richiamo", label: "☎ Richiamo" },
+    { id: "non_risposto", label: "📵 Non risposto" },
+];
 
 const CATEGORIE: { id: string; label: string; hint: string }[] = [
-    { id: "stato", label: "Stati / Esiti", hint: "La lista che i caller scelgono quando esitano una chiamata. Gli automatismi (WhatsApp sugli NR, data richiamo, ponte col calendario sugli appuntamenti) valgono per NOME: se rinomini quelle voci, l'automatismo si perde." },
+    { id: "stato", label: "Stati / Esiti", hint: "La lista che i caller scelgono quando esitano una chiamata. La tendina a destra decide l'AUTOMATISMO della voce: Appuntamento = chiede data/negozio e va sul calendario; Richiamo = chiede la data e crea il promemoria; Non risposto = chiede il WhatsApp." },
     { id: "provenienza", label: "Provenienze", hint: "Da dove arriva il lead." },
     { id: "tipologia", label: "Tipologie", hint: "Il tipo di attività della chiamata." },
     { id: "obiettivo", label: "Obiettivi", hint: "Cosa si vuole vendere/ottenere." },
@@ -107,6 +116,18 @@ export function CallCenterView() {
                                         ) : (
                                             <button onClick={() => { setEditId(r.id); setEditVal(r.voce); }} title="Clicca per rinominare"
                                                 className="flex-1 text-left text-sm text-slate-200 hover:text-white truncate">{r.voce}</button>
+                                        )}
+                                        {cat.id === "stato" && (
+                                            <select value={r.comportamento || "neutro"}
+                                                onChange={async (e) => {
+                                                    const { error } = await supabase.from("caller_opzioni").update({ comportamento: e.target.value }).eq("id", r.id);
+                                                    if (error) setErr(/comportamento/i.test(error.message) ? "Manca la migrazione 119 (colonna comportamento)." : error.message);
+                                                    carica();
+                                                }}
+                                                title="Automatismo dello stato nel Caller"
+                                                className="shrink-0 bg-black/40 border border-white/10 rounded-lg px-1.5 py-1 text-[11px] text-slate-300 outline-none cursor-pointer">
+                                                {COMPORTAMENTI.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                                            </select>
                                         )}
                                         <button onClick={() => toggle(r)} title={r.attiva ? "Attiva — clicca per spegnerla" : "Spenta — clicca per riattivarla"}
                                             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${r.attiva ? "bg-emerald-500/70" : "bg-white/10"}`}>
