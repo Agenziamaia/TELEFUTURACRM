@@ -8,9 +8,10 @@ export const dynamic = "force-dynamic";
 
 // Mette in coda un job di stampa. Non stampa nulla direttamente: sarà l'agente
 // del negozio a ritirarlo (/api/print/next) e inoltrarlo alla stampante.
-//   POST { kind, negozio?, deviceUrl?, lines?, requestXml? }
+//   POST { kind, negozio?, deviceUrl?, lines?, items?, payment?, requestXml? }
 //   kind: "status" (default, sola lettura) | "rt_status" | "test" (slip NON
-//         fiscale) | "non_fiscal" (con lines[]) | "raw" (con requestXml)
+//         fiscale) | "non_fiscal" (con lines[]) | "fiscal_receipt" (con items[]
+//         + payment: EMETTE scontrino fiscale VERO) | "raw" (con requestXml)
 export async function POST(req: Request) {
   const auth = agentAuthorized(req);
   if (auth === null) return NextResponse.json({ error: "PRINT_AGENT_TOKEN non configurato sul server" }, { status: 503 });
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
 
   const b = await req.json().catch(() => ({} as any));
   const kind = String(b.kind || "status");
-  const request_xml = buildRequestXml(kind, { lines: b.lines, requestXml: b.requestXml });
+  const request_xml = buildRequestXml(kind, { lines: b.lines, requestXml: b.requestXml, items: b.items, payment: b.payment });
   if (!request_xml) return NextResponse.json({ error: `kind non valido o dati mancanti: ${kind}` }, { status: 400 });
 
   const { data, error } = await supabase.from("print_jobs").insert({
