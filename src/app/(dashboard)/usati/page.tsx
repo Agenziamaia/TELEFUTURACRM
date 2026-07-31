@@ -1458,9 +1458,11 @@ function GestioneUsatiInner() {
 
   const RICAMBIO_STATE_KEYS = RICAMBIO_STATES.map(s => s.key);
 
-  const filtered = useMemo(() => devices.filter(d => {
+  // predicato condiviso: conStato=false lo usano i riquadri Inventario/Vetrina,
+  // che hanno gia' il LORO stato e devono seguire tutti gli altri filtri
+  const passaFiltri = useCallback((d: Device, conStato = true) => {
     if (!selectedStores.includes(d.store)) return false;
-    if (!selectedStatuses.includes(d.status)) return false;
+    if (conStato && !selectedStatuses.includes(d.status)) return false;
     if (dateFrom) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) < dateFrom) return false; }
     if (dateTo) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) > dateTo) return false; }
     if (searchText) { const q = searchText.toLowerCase(); if (!d.model.toLowerCase().includes(q) && !d.imei.includes(q)) return false; }
@@ -1469,11 +1471,20 @@ function GestioneUsatiInner() {
     if (prezzoA && (d.sale_price || 0) > (parseFloat(prezzoA) || Infinity)) return false;
     if (ricambiFilter.length > 0) { if (!d.ricambi.some(r => ricambiFilter.includes(r.stato))) return false; }
     return true;
-  }), [devices, selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter]);
+  }, [selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter]);
+  const filtered = useMemo(() => devices.filter(d => passaFiltri(d)), [devices, passaFiltri]);
 
-  const inCirculation = useMemo(() => devices.filter(d => d.status !== "venduto" && d.status !== "ko"), [devices]);
-  const inventoryValue = useMemo(() => inCirculation.filter(d => d.sale_price > 0).reduce((s, d) => s + d.sale_price, 0), [inCirculation]);
-  const vetrinaValue = useMemo(() => devices.filter(d => d.status === "in_vendita").reduce((s, d) => s + d.sale_price, 0), [devices]);
+  // ── INVENTARIO e VETRINA (Luca 31/07): due contatori VERI, sul filtrato.
+  // Inventario = telefoni FERMI (non in vendita, non venduti/ko); Vetrina =
+  // pronti alla vendita (in_vendita). Seguono negozio/brand/prezzo/ricerca:
+  // lo SM di Donna Olimpia parte col SUO dato, con "Mostra tutti" ha il
+  // globale. Valore inventario: prezzo vendita se impostato, altrimenti il
+  // costo d'acquisto — ma SOLO per chi ha la capacita' costi (niente fughe).
+  const STATI_FERMI: UsatoStatus[] = ["acquistato", "in_transito", "ricevuto", "in_lavorazione", "pronto", "invio_in_negozio"];
+  const inventarioList = useMemo(() => devices.filter(d => passaFiltri(d, false) && STATI_FERMI.includes(d.status)), [devices, passaFiltri]); // eslint-disable-line react-hooks/exhaustive-deps
+  const vetrinaList = useMemo(() => devices.filter(d => passaFiltri(d, false) && d.status === "in_vendita"), [devices, passaFiltri]);
+  const inventoryValue = useMemo(() => inventarioList.reduce((s, d) => s + (d.sale_price > 0 ? d.sale_price : (vedeCosti ? d.purchase_price : 0)), 0), [inventarioList, vedeCosti]);
+  const vetrinaValue = useMemo(() => vetrinaList.reduce((s, d) => s + d.sale_price, 0), [vetrinaList]);
 
   const kpiData = useMemo(() => {
     const c: Record<string, number> = {};
@@ -1661,18 +1672,35 @@ function GestioneUsatiInner() {
             <p className="text-sm text-slate-500 mt-1">Inventario e lifecycle dispositivi usati</p>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Value Boxes — bigger */}
+            {/* Value Boxes: PULSANTI veri (Luca 31/07) — contano sul FILTRATO
+                e cliccati filtrano la lista sui loro stati (ri-click = tutte) */}
             <div className="hidden sm:flex gap-3">
-              <div className="px-4 py-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-right min-w-[120px]">
-                <div className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Inventario</div>
-                <div className="text-base font-bold text-purple-300">{fmtEur(inventoryValue)}</div>
-                <div className="text-xs text-slate-600">{inCirculation.length} disp.</div>
-              </div>
-              <div className="px-4 py-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-right min-w-[120px]">
-                <div className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Vetrina</div>
-                <div className="text-base font-bold text-emerald-300">{fmtEur(vetrinaValue)}</div>
-                <div className="text-xs text-slate-600">{devices.filter(d => d.status === "in_vendita").length} disp.</div>
-              </div>
+              {(() => {
+                const invAttivo = selectedStatuses.length === STATI_FERMI.length && STATI_FERMI.every(s => selectedStatuses.includes(s));
+                const vetAttivo = selectedStatuses.length === 1 && selectedStatuses[0] === "in_vendita";
+                return (
+                  <>
+                    <button type="button"
+                      onClick={() => { if (invAttivo) { setSelectedStatuses([...STATUS_KEYS]); setActiveKpi(null); } else { setSelectedStatuses([...STATI_FERMI]); setActiveKpi(null); } }}
+                      title="Valore dei telefoni FERMI (non in vendita) secondo i filtri attivi — clicca per vederli in lista"
+                      className={cn("px-4 py-3 rounded-xl border text-right min-w-[120px] transition-all",
+                        invAttivo ? "bg-purple-500/25 border-purple-400/60" : "bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20")}>
+                      <div className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Inventario</div>
+                      <div className="text-base font-bold text-purple-300">{fmtEur(inventoryValue)}</div>
+                      <div className="text-xs text-slate-600">{inventarioList.length} disp. fermi</div>
+                    </button>
+                    <button type="button"
+                      onClick={() => { if (vetAttivo) { setSelectedStatuses([...STATUS_KEYS]); setActiveKpi(null); } else { setSelectedStatuses(["in_vendita"]); setActiveKpi("in_vendita"); } }}
+                      title="Valore dei telefoni IN VENDITA secondo i filtri attivi — clicca per vederli in lista"
+                      className={cn("px-4 py-3 rounded-xl border text-right min-w-[120px] transition-all",
+                        vetAttivo ? "bg-emerald-500/25 border-emerald-400/60" : "bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20")}>
+                      <div className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Vetrina</div>
+                      <div className="text-base font-bold text-emerald-300">{fmtEur(vetrinaValue)}</div>
+                      <div className="text-xs text-slate-600">{vetrinaList.length} disp. in vendita</div>
+                    </button>
+                  </>
+                );
+              })()}
             </div>
             {puoRegole && (
               <button onClick={() => setShowRegole(true)} title="Regole del laboratorio: giorni per fase e malus €/giorno"
