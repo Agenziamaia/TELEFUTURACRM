@@ -21,6 +21,8 @@ import {
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores, useSellers } from "@/lib/org";
+import { seesWholeStore } from "@/lib/roles";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useAuth } from "@/context/AuthContext";
 import { useSearchParams } from "next/navigation";
 
@@ -459,6 +461,23 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   useEffect(() => { if (vedeMalus) caricaRegoleUsato().then(setRegole); }, [vedeMalus]);
   const scad = vedeMalus ? scadenzaCorrente(dev, regole) : null;
 
+  // ── DOCUMENTI ALLEGATI (Luca 31/07): stessa logica della visibilita' clienti.
+  // Finche' il telefono e' IN NEGOZIO (acquistato): li vede chi l'ha comprato
+  // (il venditore della registrazione) e lo store manager per il SUO negozio.
+  // Dal passaggio in transito IN POI: solo il team amministrativo in su. ──
+  const { stores: mieiNegozi } = useVisibleStores();
+  const vedeDocumenti = (() => {
+    if (isAmministrazione) return true;
+    if (dev.status !== "acquistato") return false;
+    const compratore = (dev.venditore || dev.status_history.acquistato?.operatore || "").trim().toLowerCase();
+    if (compratore && compratore === (user?.name || "").trim().toLowerCase()) return true;
+    if (seesWholeStore(user?.role)) {
+      const miei = mieiNegozi.length ? mieiNegozi : (user?.negozio ? [user.negozio] : []);
+      return miei.some((m) => sameStore(dev.store, m));
+    }
+    return false;
+  })();
+
   // AUTOSALVATAGGIO (Luca 31/07): niente piu' tasto Salva — ogni azione
   // persiste subito, come nel resto del gestionale. Note e prezzo si salvano
   // quando si esce dal campo (onBlur).
@@ -780,7 +799,14 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                 <div className="text-center py-4 text-sm text-slate-600 rounded-xl bg-white/[0.02] border border-white/5">Nessun ricambio richiesto</div>
               ) : dev.ricambi.map((r, i) => <RicambioRow key={i} r={r} idx={i} onUpdate={updateRicambio} onRemove={removeRicambio} puoRimuovere={lavoraLab || isAmministrazione} vedeCosti={vedeCosti} />)}
             </div>
-            {/* Documents */}
+            {/* Documents — visibilita' ristretta (vedi vedeDocumenti sopra) */}
+            {!vedeDocumenti ? (
+              <div className="p-3 rounded-xl bg-white/[0.02] border border-white/10 text-[11px] text-slate-500">
+                🔒 Documenti dell&apos;acquisto riservati: {dev.status === "acquistato"
+                  ? "li vede chi ha comprato il telefono, lo store manager del negozio e l'amministrazione."
+                  : "dal passaggio in transito li vede solo il team amministrativo."}
+              </div>
+            ) : (
             <div>
               <div className="text-sm font-bold text-white mb-3"> Documenti Allegati</div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -816,6 +842,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                 ))}
               </div>
             </div>
+            )}
             {/* Note */}
             <div>
               <div className="text-sm font-bold text-white mb-2"> Note</div>
