@@ -265,8 +265,7 @@ export default function PasswordV2Page() {
                         <button
                             onClick={() => {
                                 if (step === 2) setBrand(null);
-                                else if (step === 3) setCategory(null);
-                                else if (step === 4) setStore(null);
+                                else { setCategory(null); setStore(null); } // #129: dalle credenziali si torna alla categoria
                             }}
                             className="bg-white/5 border border-white/10 hover:bg-white/10 text-white px-5 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2"
                         >
@@ -317,28 +316,12 @@ export default function PasswordV2Page() {
                 {category && (
                     <>
                         <span className="text-slate-700 font-bold">›</span>
-                        <button
-                            onClick={() => { setStore(null); }}
-                            className={cn(
-                                "px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap",
-                                step === 3
-                                    ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
-                                    : "bg-white/5 text-slate-300 hover:bg-white/10 border border-white/10"
-                            )}
-                        >
-                            {currentCategory?.name}
-                        </button>
-                    </>
-                )}
-
-                {store && (
-                    <>
-                        <span className="text-slate-700 font-bold">›</span>
+                        {/* #129: la categoria è l'ultimo passo (niente più chip Negozio) */}
                         <button
                             disabled
                             className="px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all whitespace-nowrap"
                         >
-                            {currentStore?.name}
+                            {currentCategory?.name}
                         </button>
                     </>
                 )}
@@ -416,7 +399,8 @@ export default function PasswordV2Page() {
                                             </div>
                                         ) : (
                                             <>
-                                                <button onClick={() => { setCategory(c.id); setStore(null); }} className="text-left w-full">
+                                                {/* #129: niente più step "Seleziona negozio" — dalla categoria si va dritti alle credenziali (store="tutti") */}
+                                                <button onClick={() => { setCategory(c.id); setStore("tutti"); }} className="text-left w-full">
                                                     <p className={cn("font-semibold text-sm", active ? "text-white" : "text-slate-100")}>{c.name}</p>
                                                     <p className="text-xs text-slate-500 mt-1">Sistema di accesso</p>
                                                 </button>
@@ -457,32 +441,7 @@ export default function PasswordV2Page() {
                     </div>
                 )}
 
-                {step === 3 && brand && category && (
-                    <div className="glass-card p-6 space-y-4">
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                            Step 3 — Seleziona Negozio — {currentBrand?.name} • {currentCategory?.name}
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {STORES.map((s) => {
-                                const active = store === s.id;
-                                return (
-                                    <button
-                                        key={s.id}
-                                        onClick={() => { setStore(s.id); }}
-                                        className={cn(
-                                            "rounded-2xl border p-4 text-left transition-all",
-                                            active ? "bg-slate-100/10 border-sky-500/40" : "bg-white/5 border-white/10 hover:bg-white/10"
-                                        )}
-                                    >
-                                        <p className={cn("font-semibold text-sm", active ? "text-white" : "text-slate-100")}>{s.name}</p>
-                                        <p className="text-[11px] text-slate-500 mt-1">Codice: {s.code}</p>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-
+                {/* #129: step "Seleziona Negozio" rimosso — dalla categoria si passa direttamente alle credenziali */}
                 {step === 4 && brand && category && store && (
                     <div className="space-y-4">
                         <div className="glass-card p-6 space-y-4">
@@ -492,7 +451,7 @@ export default function PasswordV2Page() {
                                         Credenziali trovate
                                     </p>
                                     <p className="text-sm text-slate-300">
-                                        {currentBrand?.name} • {currentCategory?.name} • {currentStore?.name}
+                                        {currentBrand?.name} • {currentCategory?.name}
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-3">

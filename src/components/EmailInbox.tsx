@@ -12,7 +12,7 @@ import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import {
     Mail, Plus, Send, X, RefreshCw, Loader2, Paperclip, Check, PenSquare, Inbox,
     Star, Trash2, ShieldAlert, Archive, Search, CornerUpLeft, FileText, SendHorizontal,
-    RotateCcw, ChevronLeft, MailOpen,
+    RotateCcw, ChevronLeft, MailOpen, Code,
 } from "lucide-react";
 import { cn } from "@/utils";
 
@@ -381,7 +381,6 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
                             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
                                 {msgs.map(m => {
                                     const mine = m.direction === "out";
-                                    const body = m.body_text || (m.body_html ? m.body_html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "");
                                     return (
                                         <div key={m.id} className={cn("rounded-2xl border p-3.5", mine ? "bg-sky-500/[0.08] border-sky-500/20" : "bg-white/[0.03] border-white/10")}>
                                             <div className="flex items-center gap-2.5 mb-2">
@@ -398,7 +397,7 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
                                                 </div>
                                             </div>
                                             {m.subject && m.subject !== selConv.subject && <div className="text-[11px] italic text-slate-400 mb-1">{m.subject}</div>}
-                                            <p className="text-sm text-slate-100 whitespace-pre-wrap break-words leading-relaxed">{body}</p>
+                                            <EmailBody html={m.body_html} text={m.body_text} />
                                             {(m.attachments || []).length > 0 && (
                                                 <div className="mt-2.5 flex flex-wrap gap-1.5">
                                                     {(m.attachments || []).map((a: any, i: number) => (
@@ -499,6 +498,67 @@ function EmptyList({ icon: Icon, label }: { icon: any; label: string }) {
         <div className="flex flex-col items-center justify-center gap-2 py-14 text-slate-600">
             <Icon className="w-10 h-10" />
             <span className="text-sm text-slate-500 text-center px-6">{label}</span>
+        </div>
+    );
+}
+
+// Corpo di un'email. Se c'e' l'HTML lo mostra CON la grafica (tabelle, immagini,
+// loghi) dentro un iframe ISOLATO: sandbox SENZA allow-scripts -> nessun javascript
+// dell'email viene eseguito e il suo CSS non "sporca" il tema del CRM. I link si
+// aprono in una scheda nuova. Piccolo toggle per tornare al testo semplice.
+// Prima l'HTML veniva appiattito a testo (tabelle sfasciate, loghi come URL grezzi).
+function EmailBody({ html, text }: { html: string | null; text: string | null }) {
+    const hasHtml = !!(html && html.trim() && /<[a-z!][\s\S]*>/i.test(html));
+    const [showHtml, setShowHtml] = useState(hasHtml);
+    const ref = useRef<HTMLIFrameElement | null>(null);
+    const plain = (text && text.trim())
+        ? text
+        : (html ? html.replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : "");
+
+    const srcDoc = useMemo(() => hasHtml
+        ? `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_blank">`
+        + `<style>html,body{margin:0;padding:14px;background:#fff;color:#111;`
+        + `font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;`
+        + `word-break:break-word;overflow-wrap:anywhere}img{max-width:100%;height:auto}table{max-width:100%}a{color:#0b66c3}</style>`
+        + `</head><body>${html}</body></html>`
+        : "", [html, hasHtml]);
+
+    // sandbox senza allow-scripts, ma con allow-same-origin per poter MISURARE
+    // l'altezza reale del contenuto e adattare l'iframe (niente doppio scroll).
+    const autosize = useCallback(() => {
+        const f = ref.current;
+        try {
+            const doc = f?.contentDocument;
+            const h = doc ? Math.max(doc.documentElement?.scrollHeight || 0, doc.body?.scrollHeight || 0) : 0;
+            if (f && h) f.style.height = Math.min(h + 4, 6000) + "px";
+        } catch { /* non misurabile: resta l'altezza minima */ }
+    }, []);
+
+    useEffect(() => {
+        if (!showHtml) return;
+        // ri-misura dopo il caricamento delle immagini remote (loghi, banner…)
+        const t = [setTimeout(autosize, 250), setTimeout(autosize, 1000), setTimeout(autosize, 2500)];
+        return () => t.forEach(clearTimeout);
+    }, [showHtml, srcDoc, autosize]);
+
+    if (!hasHtml) {
+        return <p className="text-sm text-slate-100 whitespace-pre-wrap break-words leading-relaxed">{plain}</p>;
+    }
+    return (
+        <div>
+            <div className="flex justify-end -mt-1 mb-1.5">
+                <button onClick={() => setShowHtml(v => !v)} className="text-[11px] text-slate-500 hover:text-slate-300 flex items-center gap-1" title={showHtml ? "Mostra solo il testo" : "Mostra la versione con grafica"}>
+                    <Code className="w-3 h-3" /> {showHtml ? "Testo semplice" : "Versione grafica"}
+                </button>
+            </div>
+            {showHtml ? (
+                <iframe ref={ref} title="Contenuto email" onLoad={autosize}
+                    sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                    srcDoc={srcDoc}
+                    className="w-full rounded-xl bg-white block" style={{ border: 0, minHeight: 80 }} />
+            ) : (
+                <p className="text-sm text-slate-100 whitespace-pre-wrap break-words leading-relaxed">{plain}</p>
+            )}
         </div>
     );
 }
