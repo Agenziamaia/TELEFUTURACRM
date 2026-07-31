@@ -1612,10 +1612,19 @@ function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; c
                                             </div>
                                             {!!e.recording_url && (
                                                 <div className="mt-2 flex items-center gap-3">
+                                                    {/* il recording_url salvato SCADE in ~1h (firma S3): si passa dal
+                                                        proxy che chiede ad Aircall un URL fresco a ogni ascolto */}
                                                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                                                    <audio controls preload="none" src={String(e.recording_url)} className="h-8 flex-1 min-w-0" />
-                                                    <a href={String(e.recording_url)} target="_blank" rel="noreferrer" download
+                                                    <audio controls preload="none" src={e.aircall_call_id ? `/api/aircall/recording?call=${e.aircall_call_id}` : String(e.recording_url)} className="h-8 flex-1 min-w-0" />
+                                                    <a href={e.aircall_call_id ? `/api/aircall/recording?call=${e.aircall_call_id}` : String(e.recording_url)} target="_blank" rel="noreferrer" download
                                                         className="text-xs font-bold text-sky-300 hover:text-white shrink-0">⬇ Scarica</a>
+                                                </div>
+                                            )}
+                                            {!!e.call_id && (
+                                                <div className="mt-1.5">
+                                                    <Link href={`/caller?apri=${String(e.call_id)}`} className="text-[11px] font-bold text-violet-300 hover:text-violet-100 hover:underline">
+                                                        → apri la pratica di questa chiamata
+                                                    </Link>
                                                 </div>
                                             )}
                                         </div>
@@ -1626,13 +1635,18 @@ function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; c
                                 <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Esiti del call center ({pratiche.length})</h4>
                                 {pratiche.length === 0 && <p className="text-sm text-slate-600">Nessuna pratica del call center su questo cliente.</p>}
                                 <div className="space-y-1.5">
+                                    {/* CLICCABILE (Luca 31/07): l'esito porta alla pratica nel
+                                        Caller, aperta in dettaglio con storico e registrazioni */}
                                     {pratiche.map((c) => (
-                                        <div key={String(c.id)} className="flex items-center gap-3 flex-wrap rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm">
+                                        <Link key={String(c.id)} href={`/caller?apri=${String(c.id)}`}
+                                            title="Apri la pratica nel Caller con tutti i dettagli"
+                                            className="flex items-center gap-3 flex-wrap rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-sm hover:bg-white/[0.06] hover:border-violet-400/40 transition-colors">
                                             <span className="text-white">{quando(c.data_chiamata)}</span>
                                             <span className="px-2 py-0.5 rounded bg-violet-500/15 text-violet-200 text-[11px] font-bold">{String(c.stato || "—")}</span>
                                             <span className="text-slate-400 text-xs">{String(c.caller || "—")}</span>
                                             {!!c.lista_origine && <span className="text-slate-600 text-xs">lista: {String(c.lista_origine)}</span>}
-                                        </div>
+                                            <span className="ml-auto text-violet-300 text-xs font-bold">→</span>
+                                        </Link>
                                     ))}
                                 </div>
                             </div>

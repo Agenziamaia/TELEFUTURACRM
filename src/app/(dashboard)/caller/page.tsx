@@ -533,6 +533,17 @@ function CallerPageInner() {
         init();
     }, []);
 
+    // Arrivo dallo storico chiamate del cliente (Luca 31/07): /caller?apri=<id>
+    // apre la pratica in dettaglio appena i dati sono carichi.
+    const apriId = searchParams.get("apri");
+    const [apriFatto, setApriFatto] = useState(false);
+    useEffect(() => {
+        if (!apriId || apriFatto || loading) return;
+        const daAprire = calls.find((x) => x.id === apriId);
+        if (daAprire) { openDetail(daAprire); setApriFatto(true); }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [apriId, apriFatto, loading, calls]);
+
     /* ── Filtering ── */
     /* ── TESSERE BRAND in testa (richiesta Luca 27/07): SOLO i brand, stile
        Ricerca Vendite ma a SELEZIONE POSITIVA — tutte attive per definizione;
@@ -2329,8 +2340,15 @@ function CallerPageInner() {
                                                                             <>
                                                                                 {ev.agente_nome && <span>Operatore: <strong className="text-slate-200">{ev.agente_nome}</strong></span>}
                                                                                 {ev.direction && <span>Telefonata: <strong className="text-slate-200">{ev.direction === "inbound" ? "Inbound ↙" : "Outbound ↗"}</strong>{ev.answered ? " · risposta" : " · non risposta"}{typeof ev.duration_sec === "number" ? ` · ${ev.duration_sec}s` : ""}</span>}
-                                                                                {ev.recording_url && (
-                                                                                    <a className="col-span-2 text-emerald-300 font-bold hover:underline" href={ev.recording_url} target="_blank" rel="noreferrer">▶ Ascolta la registrazione</a>
+                                                                                {ev.recording_url && s.aircall_call_id && (
+                                                                                    <div className="col-span-2 flex items-center gap-2">
+                                                                                        {/* il recording_url salvato scade in ~1h: si ascolta
+                                                                                            via proxy che chiede a Aircall un URL fresco */}
+                                                                                        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                                                                                        <audio controls preload="none" src={`/api/aircall/recording?call=${s.aircall_call_id}`} className="h-8 flex-1 min-w-0" />
+                                                                                        <a href={`/api/aircall/recording?call=${s.aircall_call_id}`} target="_blank" rel="noreferrer" download
+                                                                                            className="text-[11px] font-bold text-emerald-300 hover:underline shrink-0">⬇ Scarica</a>
+                                                                                    </div>
                                                                                 )}
                                                                             </>
                                                                         )
