@@ -19,14 +19,16 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy, Layers, Compass, Target,
+    ClipboardList, Trophy, Layers, Compass, Target, Euro,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
 export type NavLink = { name: string; href: string; icon: NavIcon; roles: string[] };
 export type NavGroup = { type: "group"; label: string; icon: NavIcon; roles?: string[]; children: NavLink[] };
 export type NavItem = { type: "link"; name: string; href: string; icon: NavIcon; roles: string[] };
-export type NavHubSub = { id: string; name: string; roles: string[] };
+// emoji: la "modicon" della sotto-voce — la stessa del pulsante-tab in pagina,
+// riportata piu' piccola nel menu di sinistra (Luca 31/07)
+export type NavHubSub = { id: string; name: string; roles: string[]; emoji?: string };
 // esplodi: la voce si apre nella sidebar mostrando le subs come sotto-link
 // diretti a ?sez=<sub.id> (mini-hub Costi, Luca 31/07); le subs restano
 // amministrabili una a una dalla pagina Permessi (chiavi hubSubKey).
@@ -136,11 +138,11 @@ export const NAVIGATION: NavEntry[] = [
             // sezioni — permessi granulari per sub (chiavi &tab=..., mig. 115
             // ha migrato le vecchie chiavi ?sez=negozi|condivisi|altri)
             {
-                name: "Costi", sez: "costi", icon: Store, roles: ["admin", "dev"], esplodi: true,
+                name: "Costi", sez: "costi", icon: Euro, roles: ["admin", "dev"], esplodi: true,
                 subs: [
-                    { id: "negozi", name: "Negozi", roles: ["admin", "dev"] },
-                    { id: "condivisi", name: "Costi condivisi", roles: ["admin", "dev"] },
-                    { id: "altri", name: "Altri costi", roles: ["admin", "dev"] },
+                    { id: "negozi", name: "Negozi", roles: ["admin", "dev"], emoji: "🏬" },
+                    { id: "condivisi", name: "Costi condivisi", roles: ["admin", "dev"], emoji: "🤝" },
+                    { id: "altri", name: "Altri costi", roles: ["admin", "dev"], emoji: "🧾" },
                 ],
             },
             {

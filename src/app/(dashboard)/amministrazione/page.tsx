@@ -231,6 +231,9 @@ function AmministrazioneInner() {
         !s.gruppo && (s.id === "costi" ? costiVisibile : sezOk(s.id)));
     const sezioniCosti = SEZIONI.filter((s) => s.gruppo === "costi" && sezOk(s.id));
     const current = SEZIONI.find((s) => s.id === sez && (s.id === "costi" ? costiVisibile : sezOk(s.id)));
+    // header: dentro il mini-hub Costi il titolo resta "Costi" (come Utenti
+    // resta "Utenti" su tutte le sue funzioni)
+    const vista = current?.gruppo === "costi" ? SEZIONI.find((s) => s.id === "costi")! : current;
     const [users, setUsers] = useState<AppUser[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [loading, setLoading] = useState(true);
@@ -332,16 +335,16 @@ function AmministrazioneInner() {
                 <div>
                     {current && (
                         <button
-                            onClick={() => go(current.gruppo)}
+                            onClick={() => go()}
                             className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors mb-1"
                         >
-                            <ArrowLeft className="w-3.5 h-3.5" /> {current.gruppo === "costi" ? "Costi" : "Amministrazione"}
+                            <ArrowLeft className="w-3.5 h-3.5" /> Amministrazione
                         </button>
                     )}
                     <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-                        {current ? (
+                        {vista ? (
                             <>
-                                <current.icon className="w-6 h-6 text-indigo-400" /> {current.label}
+                                <vista.icon className="w-6 h-6 text-indigo-400" /> {vista.label}
                             </>
                         ) : (
                             <>
@@ -350,7 +353,7 @@ function AmministrazioneInner() {
                         )}
                     </h1>
                     <p className="text-slate-400 text-sm mt-1">
-                        {current ? current.desc : "Il governo della piattaforma: scegli una sezione."}
+                        {vista ? vista.desc : "Il governo della piattaforma: scegli una sezione."}
                     </p>
                 </div>
                 {sez === "utenti" && utTab === "lista" && !tableMissing && (
@@ -376,42 +379,7 @@ function AmministrazioneInner() {
 
             {tableMissing && <TableMissingBanner />}
 
-            {/* pillole del mini-hub Costi: dentro una delle tre sezioni si
-                salta alle sorelle senza tornare indietro */}
-            {current?.gruppo === "costi" && sezioniCosti.length > 1 && (
-                <div className="flex gap-2 flex-wrap">
-                    {sezioniCosti.map((s) => (
-                        <button key={s.id} onClick={() => go(s.id)}
-                            className={`px-4 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all ${sez === s.id ? "border-indigo-400/70 bg-indigo-500/15 text-indigo-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25"}`}>
-                            {s.label}
-                        </button>
-                    ))}
-                </div>
-            )}
-
-            {sez === "costi" && current ? (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {sezioniCosti.map((s) => {
-                        const Icon = s.icon;
-                        return (
-                            <button
-                                key={s.id}
-                                onClick={() => go(s.id)}
-                                className="glass-panel p-5 rounded-2xl text-left hover:bg-white/5 transition-colors group"
-                            >
-                                <div className="flex items-start justify-between">
-                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center mb-3">
-                                        <Icon className="w-5 h-5 text-emerald-300" />
-                                    </div>
-                                    <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-300 transition-colors" />
-                                </div>
-                                <p className="text-white font-semibold">{s.label}</p>
-                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">{s.desc}</p>
-                            </button>
-                        );
-                    })}
-                </div>
-            ) : !current ? (
+            {!current ? (
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {sezioniVisibili.map((s) => {
                         const Icon = s.icon;
@@ -526,33 +494,42 @@ function AmministrazioneInner() {
                     </>
                     )}
                 </>
-            ) : sez === "negozi" ? (
-                <>
-                    <MonthBar month={month} setMonth={setMonth} months={months} />
-                    {!monthReady ? (
-                        <MonthInitBanner month={month} months={months} rules={costRules} onDone={reloadMonths} />
-                    ) : (
-                        <StoresView stores={stores} onRefresh={fetchAll} month={month} livePeople={livePeople} />
-                    )}
-                </>
-            ) : sez === "condivisi" ? (
-                <>
-                    <MonthBar month={month} setMonth={setMonth} months={months} />
-                    {!monthReady ? (
-                        <MonthInitBanner month={month} months={months} rules={costRules} onDone={reloadMonths} />
-                    ) : (
-                        <SharedCostsView month={month} livePeople={livePeople} />
-                    )}
-                </>
-            ) : sez === "altri" ? (
-                <>
-                    <MonthBar month={month} setMonth={setMonth} months={months} />
-                    {!monthReady ? (
-                        <MonthInitBanner month={month} months={months} rules={costRules} onDone={reloadMonths} />
-                    ) : (
-                        <AltriCostiView month={month} livePeople={livePeople} />
-                    )}
-                </>
+            ) : (sez === "costi" || COSTI_IDS.includes(sez || "")) ? (
+                (() => {
+                    // Il mini-hub Costi con la STESSA veste del gruppo Utenti
+                    // (Luca 31/07): pulsanti-tab con emoji, ?sez=costi apre la
+                    // prima sezione permessa
+                    const attiva = COSTI_IDS.includes(sez || "") ? (sez as string) : (sezioniCosti[0]?.id ?? "negozi");
+                    const EMOJI: Record<string, string> = { negozi: "🏬", condivisi: "🤝", altri: "🧾" };
+                    return (
+                        <>
+                            <div className="flex gap-2 flex-wrap">
+                                {sezioniCosti.map((s) => (
+                                    <button key={s.id} onClick={() => go(s.id)}
+                                        className={`text-sm px-4 py-2 rounded-lg border transition-colors ${attiva === s.id ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-200 font-bold" : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-slate-200"}`}>
+                                        {EMOJI[s.id]} {s.label}
+                                    </button>
+                                ))}
+                            </div>
+                            {sezioniCosti.length === 0 ? (
+                                <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Nessuna sezione Costi abilitata per il tuo ruolo.</div>
+                            ) : (
+                                <>
+                                    <MonthBar month={month} setMonth={setMonth} months={months} />
+                                    {!monthReady ? (
+                                        <MonthInitBanner month={month} months={months} rules={costRules} onDone={reloadMonths} />
+                                    ) : attiva === "negozi" ? (
+                                        <StoresView stores={stores} onRefresh={fetchAll} month={month} livePeople={livePeople} />
+                                    ) : attiva === "condivisi" ? (
+                                        <SharedCostsView month={month} livePeople={livePeople} />
+                                    ) : (
+                                        <AltriCostiView month={month} livePeople={livePeople} />
+                                    )}
+                                </>
+                            )}
+                        </>
+                    );
+                })()
             ) : sez === "marginalita" ? (
                 <MarginalitaView />
             ) : sez === "catalogo" ? (

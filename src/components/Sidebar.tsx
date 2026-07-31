@@ -376,7 +376,9 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                                                 sez === s.id ? "bg-indigo-500/15 text-indigo-300" : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
                                             )}
                                         >
-                                            <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", sez === s.id ? "bg-indigo-400" : "bg-slate-600")} />
+                                            {s.emoji
+                                                ? <span className={cn("text-[11px] leading-none shrink-0", sez !== s.id && "opacity-70")}>{s.emoji}</span>
+                                                : <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", sez === s.id ? "bg-indigo-400" : "bg-slate-600")} />}
                                             {s.name}
                                         </Link>
                                     ))}
