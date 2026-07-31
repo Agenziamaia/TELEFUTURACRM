@@ -17,7 +17,7 @@ import { SelectMulti } from "@/components/SelectPersona";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, capChoice, capAllowed } from "@/lib/capabilities";
+import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, CAP_CLIENTI_INTEGRA_DOC, capChoice, capAllowed } from "@/lib/capabilities";
 import { chiamaAircall } from "@/lib/dialer";
 import { numeroNazionale } from "@/lib/telefono";
 
@@ -132,12 +132,14 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     };
     useEffect(() => { reloadDocs(); /* eslint-disable-next-line */ }, [contratti]);
 
-    // Segnalazione 114: caricamento documenti/PDA DOPO la registrazione. Puo' farlo
-    // il creatore del contratto (venditore) e lo store manager (che vede il negozio).
-    const nomeUguale = (a?: string | null, b?: string | null) => { const x = (a || "").trim().toLowerCase(), y = (b || "").trim().toLowerCase(); return !!x && x === y; };
-    const isManagerDoc = seesWholeStore(uAll?.role) || seesAllStores(uAll?.role);
-    const contrattiCaricabili = isManagerDoc ? contratti : contratti.filter((c) => nomeUguale(c.venditore, uAll?.name));
-    const puoCaricareDoc = vedeAllegati && contrattiCaricabili.length > 0;
+    // INTEGRAZIONE DOCUMENTI (Luca 31/07, evoluzione della segnalazione 114):
+    // il caricamento dei documenti mancanti dopo la registrazione ora e' una
+    // CAPACITA' amministrabile dalla rotellina Clienti (Permessi → "Integra
+    // documenti"), di default per i ruoli del punto vendita da store manager
+    // in su. Solo AGGIUNTA: eliminare i documenti esistenti non e' previsto.
+    const puoIntegrareDoc = capAllowed(uAll?.role, "/clienti", CAP_CLIENTI_INTEGRA_DOC, permAll);
+    const contrattiCaricabili = puoIntegrareDoc ? contratti : [];
+    const puoCaricareDoc = vedeAllegati && puoIntegrareDoc && contratti.length > 0;
     const [caricaOpen, setCaricaOpen] = useState(false);
     const [upContract, setUpContract] = useState("");
     const [upType, setUpType] = useState("documento");

@@ -138,11 +138,17 @@ export const CAP_CLIENTI_ALLEGATI: CapDef = {
     desc: "Nella scheda cliente vede la sezione Documenti e PDA caricati (documenti, contratti, fatture).",
     default: () => true,   // oggi la vede chiunque apra la scheda
 };
+export const CAP_CLIENTI_INTEGRA_DOC: CapDef = {
+    id: "integra_documenti",
+    label: "Integra documenti",
+    desc: "Nella scheda cliente può CARICARE i documenti mancanti sui contratti già registrati (mai eliminare quelli esistenti). Regola Luca 31/07: di default solo i ruoli del punto vendita da store manager in su.",
+    default: (r) => ["store_manager", "direttore_commerciale", "amministrativo", "admin", "dev", "direttore_generale"].includes(r),
+};
 export const CAP_CLIENTI_EXTRA: CapGroupFlags = {
     mode: "flags",
     section: "/clienti",
     sectionLabel: "Clienti — funzioni",
-    caps: [CAP_CLIENTI_ALLEGATI],
+    caps: [CAP_CLIENTI_ALLEGATI, CAP_CLIENTI_INTEGRA_DOC],
 };
 
 // ─── FERIE (Collaboratori): maschera della sezione ───────────────────────────
