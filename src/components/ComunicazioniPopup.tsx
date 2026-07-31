@@ -84,9 +84,29 @@ export function ComunicazioniPopup() {
         return () => { supabase.removeChannel(ch); clearInterval(t); };
     }, [user?.id, carica]);
 
-    // Niente scappatoie (Luca 31/07): il pop-up di conferma resta davanti
-    // finche' non viene confermato — il "Piu' tardi" non esiste piu'.
-    const attuale = coda[0] || null;
+    // "PIU' TARDI" con ritorno ORARIO (Luca 31/07): niente archiviazione
+    // definitiva senza esito — il rinvio dura un'ora (salvato per utente) e
+    // il pop-up ricompare finche' non arriva una risposta vera. Il timer
+    // sotto fa da "cron" lato client: ogni minuto ricontrolla le scadenze.
+    const [rinvii, setRinvii] = useState<Record<number, number>>({});
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        if (!user?.id) return;
+        try { setRinvii(JSON.parse(localStorage.getItem(`popup_rinvii_${user.id}`) || "{}")); } catch { /* no-op */ }
+    }, [user?.id]);
+    useEffect(() => {
+        const t = setInterval(() => setTick((x) => x + 1), 60 * 1000);
+        return () => clearInterval(t);
+    }, []);
+    const adesso = Date.now();
+    const visibili = coda.filter((c) => !(rinvii[c.id] > adesso));
+    const attuale = visibili[0] || null;
+    const rinvia = () => {
+        if (!attuale || !user?.id) return;
+        const next = { ...rinvii, [attuale.id]: Date.now() + 60 * 60 * 1000 };
+        setRinvii(next);
+        try { localStorage.setItem(`popup_rinvii_${user.id}`, JSON.stringify(next)); } catch { /* no-op */ }
+    };
 
     // La sola visualizzazione conta come LETTURA (una volta per comunicazione).
     useEffect(() => {
@@ -153,9 +173,15 @@ export function ComunicazioniPopup() {
                 <div className="px-6 pb-5 text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto">
                     {attuale.content}
                 </div>
-                {/* SOLO conferma (Luca 31/07): niente "Piu' tardi". Con gli ESITI
-                    (mig. 116) la conferma E' la scelta di una risposta. */}
-                <div className="flex items-center justify-end gap-2.5 flex-wrap px-6 py-4 border-t border-white/10 bg-black/20">
+                {/* la conferma E' la scelta di una risposta (esiti, mig. 116);
+                    "Piu' tardi" e' solo un RINVIO di un'ora, piccolo e a sinistra
+                    (Luca 31/07): il pop-up torna finche' non c'e' l'esito */}
+                <div className="flex items-center justify-between gap-2.5 flex-wrap px-6 py-4 border-t border-white/10 bg-black/20">
+                    <button type="button" onClick={rinvia} title="Te lo ripropongo tra un'ora, finché non dai una risposta"
+                        className="px-2 py-1.5 rounded-lg text-[11px] text-slate-500 hover:text-slate-300 transition-colors shrink-0">
+                        Più tardi
+                    </button>
+                    <div className="flex items-center justify-end gap-2.5 flex-wrap">
                     {attuale.esiti?.length ? (
                         attuale.esiti.map((e) => (
                             <button
@@ -178,10 +204,11 @@ export function ComunicazioniPopup() {
                             {salvando ? "…" : "✓ Ho letto e confermo"}
                         </button>
                     )}
+                    </div>
                 </div>
-                {coda.length > 1 && (
+                {visibili.length > 1 && (
                     <div className="px-6 pb-3 -mt-1 text-[11px] text-slate-600 text-right">
-                        {coda.length - 1} altra/e in coda
+                        {visibili.length - 1} altra/e in coda
                     </div>
                 )}
             </div>
