@@ -132,7 +132,6 @@ export const NAVIGATION: NavEntry[] = [
             // Le tre voci "Costi ·" formano il MINI-HUB Costi (Luca 31/07),
             // PRIMA di Utenti: i sez (e quindi le chiavi di permesso) restano
             // quelli storici — negozi, condivisi, altri — concessi uno a uno.
-            { name: "Regole Usato", sez: "usato", icon: Smartphone, roles: ["admin", "dev"] },
             // MINI-HUB Costi (Luca 31/07): UNA voce che si esplode nelle tre
             // sezioni — permessi granulari per sub (chiavi &tab=..., mig. 115
             // ha migrato le vecchie chiavi ?sez=negozi|condivisi|altri)

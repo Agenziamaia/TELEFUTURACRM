@@ -1,8 +1,9 @@
 "use client";
 
 // REGOLE USATO (Luca 31/07, mig. 113): i tempi del laboratorio e il malus
-// €/giorno escono dal codice ed entrano a DB (usati_regole), modificabili
-// SOLO da qui (sezione riservata admin/dev via nav). Le regole guidano il
+// €/giorno stanno a DB (usati_regole). La tabella vive DENTRO la Gestione
+// Usati (bottone ⚙️ Regole, solo admin/dev) — come le regole del tracking
+// PDA vivono nel tracking, non in Amministrazione. Le regole guidano il
 // countdown nella scheda del telefono e la maturazione degli episodi in
 // usati_malus — il passato gia' maturato non viene ricalcolato a ritroso.
 import { useEffect, useState } from "react";

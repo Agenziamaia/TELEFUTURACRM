@@ -8,6 +8,7 @@ import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
 import { caricaRegoleUsato, sincronizzaMalusUsato, scadenzaCorrente, REGOLE_USATO_DEFAULT, type RegoleUsato, type EpisodioUsato } from "@/lib/usatiMalus";
+import { UsatoRegoleView } from "@/components/UsatoRegole";
 import {
   Smartphone, Tablet, Laptop, Watch,
   Calendar, Search, User, Building2, CalendarDays,
@@ -1311,6 +1312,10 @@ function GestioneUsatiInner() {
   // episodi malus del laboratorio: sincronizzati a ogni load (stile PDA)
   const [episodiMalus, setEpisodiMalus] = useState<EpisodioUsato[]>([]);
   const [showMalus, setShowMalus] = useState(false);
+  // REGOLE dentro la sezione (Luca 31/07: come il tracking PDA, non in
+  // Amministrazione) — modificabili solo dall'admin
+  const puoRegole = ["admin", "dev"].includes(user?.role || "");
+  const [showRegole, setShowRegole] = useState(false);
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   // i negozi arrivano in modo asincrono: alla prima load seleziona tutto
   const storesInit = useRef(false);
@@ -1617,6 +1622,12 @@ function GestioneUsatiInner() {
                 <div className="text-xs text-slate-600">{devices.filter(d => d.status === "in_vendita").length} disp.</div>
               </div>
             </div>
+            {puoRegole && (
+              <button onClick={() => setShowRegole(true)} title="Regole del laboratorio: giorni per fase e malus €/giorno"
+                className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-white/5 text-slate-300 border border-white/10 text-sm font-semibold hover:bg-white/10 transition-all">
+                ⚙️ Regole
+              </button>
+            )}
             {vedeMalus && (() => { const attivi = episodiMalus.filter(e => e.stato !== "compensato"); return (
               <button onClick={() => setShowMalus(true)}
                 className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-red-500/10 text-red-300 border border-red-500/30 text-sm font-semibold hover:bg-red-500/20 transition-all">
@@ -1775,6 +1786,22 @@ function GestioneUsatiInner() {
       {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { handleSaveDevice(u); setSelectedDevice(u); }} />}
       {showRegistra && <RegistraUsatoPanel onClose={() => setShowRegistra(false)} onSave={handleRegistra} />}
 
+      {/* ── REGOLE del laboratorio (Luca 31/07): dentro la sezione, come il
+          tracking PDA — solo admin ── */}
+      {showRegole && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setShowRegole(false)}>
+          <div className="glass-panel w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl border-white/10" onClick={e => e.stopPropagation()}>
+            <div className="flex-none px-5 py-4 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-white">⚙️ Regole del laboratorio</h3>
+              <button onClick={() => setShowRegole(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X size={20} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <UsatoRegoleView />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── ARCHIVIO MALUS LABORATORIO (Luca 31/07): episodi persistenti come
           il PDA — il sanato resta "attivo" finche' non viene compensato nella
           gara di commissioning dedicata. Compensa: solo amministrazione. ── */}
@@ -1817,7 +1844,7 @@ function GestioneUsatiInner() {
                 <button onClick={() => setShowMalus(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X size={20} /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                <p className="text-[11px] text-slate-500">Regole in Amministrazione → Regole Usato: {REGOLE_USATO_DEFAULT.lavorazione.giorni}g presa in carico, {REGOLE_USATO_DEFAULT.riparazione.giorni}g riparazione (giorni lavorativi lun–sab). Il telefono sanato smette di maturare ma l&apos;importo resta finché non viene compensato in gara.</p>
+                <p className="text-[11px] text-slate-500">Regole nel pulsante ⚙️ Regole qui in alto (solo admin): {REGOLE_USATO_DEFAULT.lavorazione.giorni}g presa in carico, {REGOLE_USATO_DEFAULT.riparazione.giorni}g riparazione (giorni lavorativi lun–sab). Il telefono sanato smette di maturare ma l&apos;importo resta finché non viene compensato in gara.</p>
                 <div>
                   <h4 className="text-xs font-bold text-red-400 uppercase tracking-widest mb-2">Stanno maturando ({inCorso.length} · {fmtEur(tot(inCorso))})</h4>
                   {inCorso.length === 0 ? <p className="text-sm text-slate-600">Nessun telefono oltre soglia. 👌</p> : <div className="space-y-2">{inCorso.map((e, i) => <Riga key={e.id || i} e={e} />)}</div>}
