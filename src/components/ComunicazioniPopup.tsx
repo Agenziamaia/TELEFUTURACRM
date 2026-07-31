@@ -38,18 +38,18 @@ export function ComunicazioniPopup() {
         if (!user?.id) return;
         try {
             // destinatari estesi (mig. 112) con fallback alla forma legacy
-            let res = await supabase
+            const esteso = await supabase
                 .from("comunicazioni")
                 .select("id, title, content, type, date_display, created_by_name, target_roles, target_stores, target_users, target_brands, kind")
                 .eq("kind", "popup")
                 .order("created_at", { ascending: true });
-            if (res.error) res = await supabase
+            const legacy = esteso.error ? await supabase
                 .from("comunicazioni")
                 .select("id, title, content, type, date_display, created_by_name, target_roles, kind")
                 .eq("kind", "popup")
-                .order("created_at", { ascending: true });
-            const { data: coms, error } = res;
-            if (error || !coms) return;
+                .order("created_at", { ascending: true }) : null;
+            const coms = ((legacy ? legacy.data : esteso.data) ?? null) as unknown as ComPopup[] | null;
+            if ((legacy ? legacy.error : null) || !coms) return;
             const brandsNegozio = await brandDelNegozio(user.negozio);
             const perMe = (coms as ComPopup[]).filter((c) =>
                 comunicazionePerMe(c, { userId: user.id, role: user.role || "", negozio: user.negozio, brandsNegozio }));

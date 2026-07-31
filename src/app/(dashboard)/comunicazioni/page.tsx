@@ -89,15 +89,16 @@ export default function Comunicazioni() {
 
     const fetchAll = useCallback(async () => {
         // prova con i destinatari estesi (mig. 112); fallback alla forma legacy
-        let res = await supabase
+        const esteso = await supabase
             .from("comunicazioni")
             .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, created_by, created_by_name")
             .order("created_at", { ascending: false });
-        if (res.error) res = await supabase
+        const legacy = esteso.error ? await supabase
             .from("comunicazioni")
             .select("id, title, date_display, type, content, kind, target_roles, created_by, created_by_name")
-            .order("created_at", { ascending: false });
-        const { data, error: e } = res;
+            .order("created_at", { ascending: false }) : null;
+        const data = ((legacy ? legacy.data : esteso.data) ?? []) as unknown as Comunicazione[];
+        const e = legacy ? legacy.error : null;
         if (e) { setError(e.message); setList([]); setLoading(false); return; }
         setError(null);
         setList((data ?? []) as Comunicazione[]);
