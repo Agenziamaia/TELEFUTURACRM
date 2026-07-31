@@ -13,12 +13,12 @@ import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { capAllowed, ruoliDestinatariComunicazioni, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
+import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
 import { comunicazionePerMe, brandDelNegozio } from "@/lib/comunicazioniTarget";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
-import { sameStore } from "@/lib/visibleStores";
+import { sameStore, useVisibleStores } from "@/lib/visibleStores";
 
 const STORAGE_KEY = "comunicazioni_read_ids";
 
@@ -79,6 +79,9 @@ export default function Comunicazioni() {
     const { perms } = useRolePermissions(role);
     const canCreate = capAllowed(role, CAP_COMUNICAZIONI.section, CAP_COM_CREA, perms);
     const destinatariPossibili = ruoliDestinatariComunicazioni(role, perms);
+    // ambito del mittente (negozi assegnati + visibilità + sede): serve a
+    // risolvere i ruoli destinatario marcati "solo il suo ambito"
+    const ambitoMittente = useVisibleStores();
     // Le ricevute (chi ha letto/confermato) le vede l'amministrazione e, per le
     // proprie comunicazioni, chi le ha create (es. lo store manager).
     const isAdminRicevute = ["amministrativo", "admin", "dev", "direttore_generale"].includes(role);
@@ -261,14 +264,44 @@ export default function Comunicazioni() {
             .map((nome) => utentiAttivi.find((u) => u.full_name === nome)?.id)
             .filter(Boolean) as string[];
         setSalvando(true);
+        // AMBITO destinatari (Luca 31/07): i ruoli marcati "solo il suo ambito"
+        // nella rotellina NON restano target di ruolo (raggiungerebbero tutta
+        // l'azienda) — si RISOLVONO qui nelle persone reali dei negozi visibili
+        // del mittente e finiscono in target_users.
+        let ruoliTarget = fTutti ? [] : [...fRuoli];
+        let idsAmbito: string[] = [];
+        const ruoliAmbito = ruoliTarget.filter((r) => destinatarioSoloAmbito(role, r, perms));
+        if (ruoliAmbito.length && !ambitoMittente.seesAll) {
+            ruoliTarget = ruoliTarget.filter((r) => !ruoliAmbito.includes(r));
+            const negoziMiei = ambitoMittente.stores.length ? ambitoMittente.stores : (user?.negozio ? [user.negozio] : []);
+            const { data: staff } = await supabase.from("app_users").select("id, role, primary_store").eq("active", true).in("role", ruoliAmbito);
+            const idsStaff = ((staff ?? []) as { id: string }[]).map((u) => u.id);
+            const { data: assegn } = idsStaff.length
+                ? await supabase.from("user_stores").select("user_id, store_name").in("user_id", idsStaff)
+                : { data: [] as { user_id: string; store_name: string }[] };
+            const negoziDi = new Map<string, string[]>();
+            ((assegn ?? []) as { user_id: string; store_name: string }[]).forEach((r) => {
+                const a = negoziDi.get(r.user_id) || []; a.push(String(r.store_name)); negoziDi.set(r.user_id, a);
+            });
+            idsAmbito = ((staff ?? []) as { id: string; primary_store: string | null }[]).filter((u) => {
+                const suoi = [...(negoziDi.get(u.id) || []), ...(u.primary_store ? [u.primary_store] : [])];
+                return suoi.some((s) => negoziMiei.some((m) => sameStore(s, m)));
+            }).map((u) => u.id);
+            if (!ruoliTarget.length && !idsAmbito.length && !idsPersone.length && !fNegozi.length && !fBrand.length) {
+                setSalvando(false);
+                setError(`Nei tuoi negozi non c'è nessuno con ruolo ${ruoliAmbito.map(roleLabel).join(", ")}: la comunicazione non avrebbe destinatari.`);
+                return;
+            }
+        }
+        const idsTarget = [...new Set([...idsPersone, ...idsAmbito])];
         const { error: e } = await supabase.from("comunicazioni").insert({
             title: fTitle.trim(),
             content: fContent.trim(),
             type: fType,
             kind: fKind,
-            target_roles: fTutti || !fRuoli.length ? null : fRuoli,
+            target_roles: fTutti || !ruoliTarget.length ? null : ruoliTarget,
             target_stores: fTutti || !fNegozi.length ? null : fNegozi,
-            target_users: fTutti || !idsPersone.length ? null : idsPersone,
+            target_users: fTutti || !idsTarget.length ? null : idsTarget,
             target_brands: fTutti || !fBrand.length ? null : fBrand,
             esiti: fEsiti.length ? fEsiti : null,
             created_by: user?.id || null,
@@ -616,12 +649,14 @@ export default function Comunicazioni() {
                                     )}
                                     {destinatariPossibili.map((rid) => {
                                         const sel = !fTutti && fRuoli.includes(rid);
+                                        const soloAmbito = destinatarioSoloAmbito(role, rid, perms);
                                         return (
                                             <button key={rid} type="button"
+                                                title={soloAmbito ? "Raggiunge solo le persone dei tuoi negozi" : undefined}
                                                 onClick={() => { setFTutti(false); setFRuoli((p) => p.includes(rid) ? p.filter((x) => x !== rid) : [...p, rid]); }}
                                                 className={cn("px-3.5 py-1.5 rounded-full border text-sm transition-all",
                                                     sel ? "border-violet-500 bg-violet-500/10 text-white" : "border-white/10 text-slate-400 hover:border-white/25")}>
-                                                {roleLabel(rid)}
+                                                {roleLabel(rid)}{soloAmbito && <span className="text-[10px] opacity-70"> · solo tuoi negozi</span>}
                                             </button>
                                         );
                                     })}

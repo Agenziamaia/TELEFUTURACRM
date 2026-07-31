@@ -223,15 +223,36 @@ export const CAP_COMUNICAZIONI: CapGroupFlags = {
     caps: [
         CAP_COM_CREA,
         CAP_COM_VERSO_TUTTI,
-        ...ROLES.map((r): CapDef => ({
-            id: `verso_${r.id}`,
-            label: `Destinatari: ${r.label}`,
-            desc: `Può indirizzare comunicazioni al ruolo ${r.label} (conta solo con "tutti i ruoli" spenta).`,
-            default: () => false,
-            requires: "crea",
-        })),
+        ...ROLES.flatMap((r): CapDef[] => [
+            {
+                id: `verso_${r.id}`,
+                label: `Destinatari: ${r.label}`,
+                desc: `Può indirizzare comunicazioni al ruolo ${r.label} (conta solo con "tutti i ruoli" spenta).`,
+                default: () => false,
+                requires: "crea",
+            },
+            // AMBITO (Luca 31/07): accesa = le comunicazioni verso questo ruolo
+            // raggiungono SOLO le persone dei negozi visibili del mittente
+            // (assegnati + visibilità + sede di login); alla creazione il
+            // ruolo viene RISOLTO nelle persone reali (target_users), quindi
+            // a database non resta mai un target di ruolo "aperto".
+            {
+                id: `verso_${r.id}_ambito`,
+                label: `↳ ${r.label}: solo il suo ambito`,
+                desc: `Le comunicazioni verso ${r.label} raggiungono solo le persone dei negozi che il mittente vede. Spenta: tutti i ${r.label} dell'azienda.`,
+                default: () => false,
+                requires: `verso_${r.id}`,
+            },
+        ]),
     ],
 };
+
+/** true se le comunicazioni di `role` verso il ruolo `destRole` sono limitate
+ *  al SUO ambito (persone dei negozi visibili del mittente) — Luca 31/07. */
+export function destinatarioSoloAmbito(role: string | null | undefined, destRole: string, perms: PermMap | null): boolean {
+    if (!role) return false;
+    return capAllowed(role, CAP_COMUNICAZIONI.section, { id: `verso_${destRole}_ambito`, label: "", desc: "", default: () => false }, perms);
+}
 
 /** Ruoli verso cui `role` puo' indirizzare una comunicazione (id da roles.ts). */
 export function ruoliDestinatariComunicazioni(role: string | null | undefined, perms: PermMap | null): string[] {
