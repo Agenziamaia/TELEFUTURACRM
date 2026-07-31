@@ -341,6 +341,10 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
     const searchParams = useSearchParams();
     const param = hub.param || "sez";
     const sez = pathname === hub.href ? searchParams.get(param) : null;
+    // apertura MANUALE delle voci esplodibili (freccetta): prevale
+    // sull'apertura automatica data dal trovarsi dentro la voce
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const [apertiManuale, setApertiManuale] = useState<Record<string, boolean>>({});
     return (
         <div className="pl-4 ml-2 border-l border-white/10 space-y-0.5">
             {hub.children.map((c) => {
@@ -357,23 +361,35 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                     const subAttiva = (id: string) => c.subsSez
                         ? sez === id
                         : sez === c.sez && tabAttivo === id;
-                    const dentro = sez === c.sez || (c.subsSez && subsVisibili.some((s) => s.id === sez));
+                    const dentro = sez === c.sez || !!(c.subsSez && subsVisibili.some((s) => s.id === sez));
+                    // la freccetta comanda: il click apre/chiude davvero (come
+                    // l'hub); senza intervento manuale vale l'automatico
+                    const aperto = apertiManuale[c.sez] ?? dentro;
                     const ChildIcon = c.icon;
                     return (
                         <div key={c.sez}>
-                            <Link
-                                href={`${hub.href}?${param}=${c.sez}`}
-                                onClick={onNavigate}
-                                className={cn(
-                                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
-                                    sez === c.sez ? "bg-indigo-500/15 text-indigo-300" : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
-                                )}
-                            >
-                                {ChildIcon && <ChildIcon className={cn("w-4 h-4", dentro ? "text-indigo-400" : "text-slate-500")} />}
-                                {c.name}
-                                <span className="ml-auto">{dentro ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}</span>
-                            </Link>
-                            {dentro && (
+                            <div className={cn(
+                                "flex items-center rounded-lg text-sm transition-colors",
+                                sez === c.sez ? "bg-indigo-500/15 text-indigo-300" : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
+                            )}>
+                                <Link
+                                    href={`${hub.href}?${param}=${c.sez}`}
+                                    onClick={onNavigate}
+                                    className="flex items-center gap-3 px-3 py-2 flex-1 min-w-0"
+                                >
+                                    {ChildIcon && <ChildIcon className={cn("w-4 h-4", dentro ? "text-indigo-400" : "text-slate-500")} />}
+                                    {c.name}
+                                </Link>
+                                <button
+                                    type="button"
+                                    onClick={() => setApertiManuale((p) => ({ ...p, [c.sez]: !aperto }))}
+                                    className="p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 shrink-0"
+                                    aria-label={aperto ? "Chiudi sotto-menu" : "Apri sotto-menu"}
+                                >
+                                    {aperto ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                                </button>
+                            </div>
+                            {aperto && (
                                 <div className="pl-4 ml-2 border-l border-white/10 space-y-0.5">
                                     {subsVisibili.map((s) => (
                                         <Link
