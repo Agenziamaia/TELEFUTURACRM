@@ -1055,6 +1055,45 @@ function CallerPageInner() {
         alert("Provenienza INTERNO: indica il NEGOZIO e il MESE/ANNO da cui e' stato estratto questo lead (le stesse informazioni delle liste del direttore).");
         return false;
     }
+    // AGGIORNA DATI senza esito (Luca 31/07): prima le modifiche ai campi
+    // (cellulare, brand, obiettivo, pertinenza...) si salvavano SOLO scegliendo
+    // un nuovo stato — correggere un dato richiedeva un esito finto.
+    async function aggiornaSoloDati() {
+        if (!editCall || modalMode !== "detail") return;
+        if (!anagraficaObbligatoriaOk(editCall)) return;
+        if (!provenienzaInternoOk(editCall)) return;
+        const pertinenza = (editCall.provenienza === "Interno" && editCall.negozio_provenienza)
+            ? editCall.negozio_provenienza
+            : editCall.negozio_pertinenza;
+        if (!String(pertinenza || "").trim()) { alert("NEGOZIO DI PERTINENZA obbligatorio: è il punto vendita congruo per il cliente."); return; }
+        const updates: Record<string, unknown> = {
+            tipo_cliente: editCall.tipo_cliente,
+            nome: editCall.nome, cognome: editCall.cognome,
+            ragione_sociale: editCall.ragione_sociale,
+            cf: editCall.cf, piva: editCall.piva,
+            numero: numeroNazionale(editCall.numero) || editCall.numero,
+            cellulare: numeroNazionale(editCall.cellulare) || numeroNazionale(editCall.numero),
+            brand: editCall.brand, obiettivo: editCall.obiettivo,
+            provenienza: editCall.provenienza, tipologia: editCall.tipologia,
+            negozio_provenienza: editCall.negozio_provenienza,
+            mese_provenienza: editCall.mese_provenienza,
+            anno_provenienza: editCall.anno_provenienza,
+            negozio_pertinenza: pertinenza,
+            indirizzo: editCall.indirizzo, agente: editCall.agente,
+            segnalatore: editCall.segnalatore, campagna: editCall.campagna,
+            note: editCall.note,
+        };
+        let { error } = await supabase.from("calls").update(updates).eq("id", editCall.id);
+        if (error && /column/i.test(error.message || "")) {
+            const { negozio_pertinenza: _np, ...legacy } = updates;
+            ({ error } = await supabase.from("calls").update(legacy).eq("id", editCall.id));
+        }
+        if (error) { alert("Dati NON aggiornati: " + error.message); return; }
+        await creaAnagraficaSeManca(editCall);
+        await fetchCalls();
+        closeModal();
+    }
+
     async function saveCall() {
         if (!editCall) return;
         const now = new Date().toISOString();
@@ -2628,6 +2667,15 @@ function CallerPageInner() {
 
                         <div className="flex-none px-6 py-4 border-t border-white/10 flex justify-end gap-3 bg-white/[0.02]">
                             <button onClick={closeModal} className="px-6 py-2.5 rounded-xl border border-white/10 text-slate-300 text-xs font-bold uppercase tracking-widest hover:bg-white/5">Annulla</button>
+                            {modalMode === "detail" && (
+                                <button
+                                    onClick={aggiornaSoloDati}
+                                    title="Salva le modifiche ai campi (anagrafica, dettagli chiamata, pertinenza) SENZA cambiare lo stato"
+                                    className="px-6 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs uppercase tracking-widest shadow-lg shadow-sky-500/20"
+                                >
+                                    Aggiorna Dati
+                                </button>
+                            )}
                             <button
                                 onClick={saveCall}
                                 disabled={modalMode === "detail" && !editCall.statoNew}
