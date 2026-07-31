@@ -1841,14 +1841,14 @@ function GestioneUsatiInner() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr>
-                      {[["#", "id"], ["Modello", "model"], ["IMEI", "imei"], ["Stato", "status"], ...(vedeCosti ? [["Acquisto", "purchase_price"]] : []), ["Vendita", "sale_price"], ["Negozio", "store"], ["Data Reg.", "created_at"]].map(([l, k]) => (
+                      {[["#", "id"], ["Modello", "model"], ["IMEI", "imei"], ["Stato", "status"], ...(vedeCosti ? [["Acquisto", "purchase_price"]] : []), ["Vendita", "sale_price"], ["Operatore", "venditore"], ["Negozio", "store"], ["Data Reg.", "created_at"]].map(([l, k]) => (
                         <th key={k} className={thCls} onClick={() => doSort(k)}>{l}{arrow(k)}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.length === 0 ? (
-                      <tr><td colSpan={vedeCosti ? 8 : 7} className="py-16 text-center text-slate-600 text-sm">Nessun dispositivo trovato</td></tr>
+                      <tr><td colSpan={vedeCosti ? 9 : 8} className="py-16 text-center text-slate-600 text-sm">Nessun dispositivo trovato</td></tr>
                     ) : sorted.map(d => (
                       <tr key={d.id} onClick={() => setSelectedDevice(d)}
                         className="border-b border-white/[0.03] cursor-pointer hover:bg-white/[0.03] transition-colors group">
@@ -1858,6 +1858,9 @@ function GestioneUsatiInner() {
                         <td className="px-4 py-3"><StatusBadge statusKey={d.status} /></td>
                         {vedeCosti && <td className="px-4 py-3 text-sm text-slate-400 font-semibold whitespace-nowrap">{fmtEur(d.purchase_price)}</td>}
                         <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap">{d.sale_price > 0 ? <span className="text-emerald-400">{fmtEur(d.sale_price)}</span> : <span className="text-slate-700">—</span>}</td>
+                        {/* chi ha ACQUISTATO il telefono (venditore della
+                            registrazione; per i vecchi dalla cronologia) */}
+                        <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{d.venditore || d.status_history.acquistato?.operatore || "—"}</td>
                         <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{d.store}</td>
                         <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtDate(d.created_at)}</td>
                       </tr>
