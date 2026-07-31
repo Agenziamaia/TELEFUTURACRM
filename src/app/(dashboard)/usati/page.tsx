@@ -7,6 +7,7 @@ import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
+import { caricaRegoleUsato, sincronizzaMalusUsato, scadenzaCorrente, REGOLE_USATO_DEFAULT, type RegoleUsato, type EpisodioUsato } from "@/lib/usatiMalus";
 import {
   Smartphone, Tablet, Laptop, Watch,
   Calendar, Search, User, Building2, CalendarDays,
@@ -450,6 +451,13 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   const [ibanCopied, setIbanCopied] = useState(false);
   const [indietroSel, setIndietroSel] = useState("");
 
+  // TEMPI DEL LABORATORIO (Luca 31/07): scadenze e malus visibili solo a chi
+  // ha la capacita' (tecnico senior + amministrativo in su di default)
+  const vedeMalus = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_MALUS, perms) && (user?.role !== "tecnico" || user?.grade === "tecnico_senior");
+  const [regole, setRegole] = useState<RegoleUsato>(REGOLE_USATO_DEFAULT);
+  useEffect(() => { if (vedeMalus) caricaRegoleUsato().then(setRegole); }, [vedeMalus]);
+  const scad = vedeMalus ? scadenzaCorrente(dev, regole) : null;
+
   // AUTOSALVATAGGIO (Luca 31/07): niente piu' tasto Salva — ogni azione
   // persiste subito, come nel resto del gestionale. Note e prezzo si salvano
   // quando si esce dal campo (onBlur).
@@ -566,6 +574,22 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
           <div>
             <div className="text-sm font-bold text-white mb-3"> Stato</div>
             <StatusBadge statusKey={dev.status} />
+            {/* scadenza della fase corrente (regole laboratorio, mig. 113) */}
+            {scad && (
+              <div className={cn("mt-3 px-3 py-2.5 rounded-xl border text-xs",
+                scad.oltre > 0 ? "bg-red-500/10 border-red-500/40" : "bg-white/[0.03] border-white/10")}>
+                <div className={cn("font-bold uppercase tracking-wider text-[10px]", scad.oltre > 0 ? "text-red-400" : "text-slate-400")}>
+                  ⏱ {scad.fase === "lavorazione" ? "Presa in carico" : "Riparazione"}
+                </div>
+                {scad.oltre > 0 ? (
+                  <div className="text-red-300 font-semibold mt-1">
+                    OLTRE SOGLIA da {scad.oltre} giorn{scad.oltre === 1 ? "o" : "i"} · malus maturato <b>{fmtEur(scad.importo)}</b>
+                  </div>
+                ) : (
+                  <div className="text-slate-300 mt-1">entro <b>{fmtDate(scad.scadenza)}</b> ({regole[scad.fase].malus > 0 ? `${fmtEur(regole[scad.fase].malus)}/giorno oltre soglia` : "senza malus"})</div>
+                )}
+              </div>
+            )}
             <div className="mt-4"><StatusTimeline currentStatus={dev.status} history={dev.status_history} /></div>
             {canAdvance && !puoMuovere(dev.status, user, lavoraLab) && (
               <div className="mt-4 text-[11px] text-slate-500 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5">
@@ -1282,6 +1306,11 @@ function GestioneUsatiInner() {
   // capacita' COSTI (Luca 31/07): senza, il prezzo di acquisto sparisce da
   // tabella, card mobile e bonifici (che espongono gli importi)
   const vedeCosti = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_COSTI, permsMain);
+  const vedeMalus = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_MALUS, permsMain) && (user?.role !== "tecnico" || user?.grade === "tecnico_senior");
+  const puoCompensare = RUOLI_SEMPRE.includes(user?.role || "");
+  // episodi malus del laboratorio: sincronizzati a ogni load (stile PDA)
+  const [episodiMalus, setEpisodiMalus] = useState<EpisodioUsato[]>([]);
+  const [showMalus, setShowMalus] = useState(false);
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   // i negozi arrivano in modo asincrono: alla prima load seleziona tutto
   const storesInit = useRef(false);
@@ -1334,6 +1363,20 @@ function GestioneUsatiInner() {
   useEffect(() => {
     fetchDevices();
   }, [fetchDevices]);
+
+  // SINCRONIZZA gli episodi malus (best-effort): ricostruzione deterministica
+  // da cronologia + ricambi, upsert in usati_malus; i compensati non si toccano
+  useEffect(() => {
+    if (!vedeMalus || !devices.length) return;
+    let vivo = true;
+    (async () => {
+      const regole = await caricaRegoleUsato();
+      const eps = await sincronizzaMalusUsato(devices, regole);
+      if (vivo) setEpisodiMalus(eps);
+    })();
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vedeMalus, devices]);
 
   const RICAMBIO_STATE_KEYS = RICAMBIO_STATES.map(s => s.key);
 
@@ -1548,6 +1591,13 @@ function GestioneUsatiInner() {
                 <div className="text-xs text-slate-600">{devices.filter(d => d.status === "in_vendita").length} disp.</div>
               </div>
             </div>
+            {vedeMalus && (() => { const attivi = episodiMalus.filter(e => e.stato !== "compensato"); return (
+              <button onClick={() => setShowMalus(true)}
+                className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-red-500/10 text-red-300 border border-red-500/30 text-sm font-semibold hover:bg-red-500/20 transition-all">
+                ⏱ Malus
+                {attivi.length > 0 && <span className="min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-black flex items-center justify-center">{attivi.length}</span>}
+              </button>
+            ); })()}
             {vedeCosti && <button onClick={() => setShowBonifici(true)}
               className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-blue-500/15 text-blue-300 border border-blue-500/40 text-sm font-semibold hover:bg-blue-500/25 transition-all">
               🏦 Bonifici
@@ -1698,6 +1748,69 @@ function GestioneUsatiInner() {
       {/* Modals */}
       {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { handleSaveDevice(u); setSelectedDevice(u); }} />}
       {showRegistra && <RegistraUsatoPanel onClose={() => setShowRegistra(false)} onSave={handleRegistra} />}
+
+      {/* ── ARCHIVIO MALUS LABORATORIO (Luca 31/07): episodi persistenti come
+          il PDA — il sanato resta "attivo" finche' non viene compensato nella
+          gara di commissioning dedicata. Compensa: solo amministrazione. ── */}
+      {showMalus && (() => {
+        const inCorso = episodiMalus.filter(e => e.stato === "in_corso");
+        const attivi = episodiMalus.filter(e => e.stato === "attivo");
+        const compensati = episodiMalus.filter(e => e.stato === "compensato");
+        const tot = (l: EpisodioUsato[]) => l.reduce((s, e) => s + (Number(e.importo) || 0), 0);
+        const compensa = async (e: EpisodioUsato) => {
+          const note = window.prompt(`Compensare il malus di ${e.tecnico || "—"} su ${e.model} (${fmtEur(Number(e.importo))})?\nNota (facoltativa):`);
+          if (note === null) return;
+          await supabase.from("usati_malus").update({
+            stato: "compensato", compensato_il: new Date().toISOString().slice(0, 10),
+            compensato_da: user?.name || "—", compensato_note: note || null,
+          }).eq("id", e.id!);
+          setEpisodiMalus(p => p.map(x => x.id === e.id ? { ...x, stato: "compensato", compensato_da: user?.name || "—" } : x));
+        };
+        const Riga = ({ e }: { e: EpisodioUsato }) => (
+          <div className="flex items-center gap-3 flex-wrap rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm">
+            <span className={cn("text-[10px] font-bold uppercase px-2 py-0.5 rounded",
+              e.stato === "in_corso" ? "bg-red-500/20 text-red-300" : e.stato === "attivo" ? "bg-amber-500/20 text-amber-300" : "bg-emerald-500/15 text-emerald-300")}>
+              {e.stato === "in_corso" ? "matura" : e.stato === "attivo" ? "da compensare" : "compensato"}
+            </span>
+            <button onClick={() => { const d = devices.find(x => x.id === e.usato_id); if (d) { setSelectedDevice(d); setShowMalus(false); } }}
+              className="font-bold text-white hover:text-blue-300 text-left">{e.model} <span className="text-slate-500 font-mono text-xs">· {e.imei}</span></button>
+            <span className="text-xs text-slate-400">{e.tecnico || "—"}</span>
+            <span className="text-xs text-slate-500">{e.fase === "lavorazione" ? "presa in carico" : "riparazione"} · dal {new Date(e.data_inizio).toLocaleDateString("it-IT")}{e.data_fine ? ` al ${new Date(e.data_fine).toLocaleDateString("it-IT")}` : ""}</span>
+            <span className="ml-auto text-sm font-bold text-red-300">{e.giorni}g · {fmtEur(Number(e.importo))}</span>
+            {e.stato === "attivo" && puoCompensare && (
+              <button onClick={() => compensa(e)} className="px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-xs font-bold">✓ Compensa</button>
+            )}
+            {e.stato === "compensato" && <span className="text-[11px] text-slate-500">da {e.compensato_da || "—"}</span>}
+          </div>
+        );
+        return (
+          <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setShowMalus(false)}>
+            <div className="glass-panel w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl border-white/10" onClick={e => e.stopPropagation()}>
+              <div className="flex-none px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-white">⏱ Malus laboratorio</h3>
+                <button onClick={() => setShowMalus(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X size={20} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                <p className="text-[11px] text-slate-500">Regole in Amministrazione → Regole Usato: {REGOLE_USATO_DEFAULT.lavorazione.giorni}g presa in carico, {REGOLE_USATO_DEFAULT.riparazione.giorni}g riparazione (giorni lavorativi lun–sab). Il telefono sanato smette di maturare ma l&apos;importo resta finché non viene compensato in gara.</p>
+                <div>
+                  <h4 className="text-xs font-bold text-red-400 uppercase tracking-widest mb-2">Stanno maturando ({inCorso.length} · {fmtEur(tot(inCorso))})</h4>
+                  {inCorso.length === 0 ? <p className="text-sm text-slate-600">Nessun telefono oltre soglia. 👌</p> : <div className="space-y-2">{inCorso.map((e, i) => <Riga key={e.id || i} e={e} />)}</div>}
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-amber-400 uppercase tracking-widest mb-2">Da compensare ({attivi.length} · {fmtEur(tot(attivi))})</h4>
+                  {attivi.length === 0 ? <p className="text-sm text-slate-600">Niente in attesa di compensazione.</p> : <div className="space-y-2">{attivi.map((e, i) => <Riga key={e.id || i} e={e} />)}</div>}
+                </div>
+                {compensati.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-widest mb-2">Compensati ({compensati.length} · {fmtEur(tot(compensati))})</h4>
+                    <div className="space-y-2">{compensati.map((e, i) => <Riga key={e.id || i} e={e} />)}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── PANNELLO BONIFICI (Luca 29/07): al posto del vecchio filtro. Nasce
           sui DA FARE (con 🚨 per gli istantanei); "Stampato" = passato a chi
