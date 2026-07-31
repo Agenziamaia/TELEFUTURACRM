@@ -11,7 +11,7 @@ import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
-import { sameStore } from "@/lib/visibleStores";
+import { stessoMagazzino } from "@/lib/visibleStores";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { numeroNazionale } from "@/lib/telefono";
 import { useAuth } from "@/context/AuthContext";
@@ -197,7 +197,9 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
     supabase.from("usati").select("id, imei, model, brand, sale_price, store").eq("status","in_vendita").then(({data})=>{
       if(!vivo)return;
       const tutti=(data||[]).map(r=>({id:r.id,imei:String(r.imei||""),model:r.model||"",brand:r.brand||"",prezzo:Number(r.sale_price)||0,store:r.store||""}));
-      setMagUsati(negozio?tutti.filter(t=>sameStore(t.store,negozio)):tutti);
+      // sede FISICA, non nome esatto: i negozi doppi (Magliana W3/Multi, Acilia,
+      // Collatina) condividono il magazzino — da uno dei due si scarica anche l'altro
+      setMagUsati(negozio?tutti.filter(t=>stessoMagazzino(t.store,negozio)):tutti);
     }).catch(()=>{});
     return()=>{vivo=false};
   },[show,selProd,negozio]);

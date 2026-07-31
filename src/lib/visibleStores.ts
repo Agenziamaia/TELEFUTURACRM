@@ -31,6 +31,20 @@ export function sameStore(a?: string | null, b?: string | null): boolean {
  *  legacy dei nomi composti (visibile "Magliana W3" ⇒ anche i contratti storici
  *  salvati come "Magliana"). Piu' preciso del vecchio ilike sulla radice, che a
  *  chi vedeva un solo Magliana mostrava anche l'altro. */
+/** Sede FISICA di un negozio: i punti vendita "doppi" (Magliana W3/Multi,
+ *  Acilia Multi/VS, Collatina W3/Multi) sono lo stesso locale con UN unico
+ *  magazzino. La sede e' la prima parola del nome ("Magliana W3" → "magliana"). */
+export function sedeFisica(nome?: string | null): string {
+    return String(nome || "").trim().toLowerCase().split(" ")[0];
+}
+
+/** true se i due negozi condividono la sede fisica (magazzino unificato):
+ *  chi lavora in uno dei due gemelli scarica/gestisce anche l'altro. */
+export function stessoMagazzino(a?: string | null, b?: string | null): boolean {
+    const x = sedeFisica(a), y = sedeFisica(b);
+    return !!x && !!y && x === y;
+}
+
 export function negozioInValues(stores: string[]): string[] {
     const out = new Set<string>();
     stores.forEach((s) => {

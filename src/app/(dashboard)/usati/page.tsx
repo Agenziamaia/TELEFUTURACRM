@@ -22,7 +22,7 @@ import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores, useSellers } from "@/lib/org";
 import { seesWholeStore } from "@/lib/roles";
-import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { useVisibleStores, stessoMagazzino } from "@/lib/visibleStores";
 import { useAuth } from "@/context/AuthContext";
 import { useSearchParams } from "next/navigation";
 
@@ -116,7 +116,9 @@ const RUOLI_NEGOZIO = ["venditore", "store_manager", "direttore_commerciale"];
 function puoMuovere(d: { status: UsatoStatus; store: string; target_store: string | null }, u: { role?: string; grade?: string | null } | null | undefined, lavoraLab: boolean, mieiNegozi: string[]): boolean {
     if (!u?.role) return false;
     if (RUOLI_SEMPRE.includes(u.role)) return true;
-    const mio = (negozio: string | null) => !!negozio && mieiNegozi.some((m) => sameStore(negozio, m));
+    // sede FISICA (Luca 31/07): i negozi doppi condividono il magazzino, quindi
+    // chi lavora in "Magliana Multi" muove anche i telefoni di "Magliana W3"
+    const mio = (negozio: string | null) => !!negozio && mieiNegozi.some((m) => stessoMagazzino(negozio, m));
     switch (d.status) {
         case "acquistato": return (RUOLI_NEGOZIO.includes(u.role) && mio(d.store)) || lavoraLab; // il SUO negozio spedisce al laboratorio
         case "in_transito":                                                    // il tecnico firma l'arrivo
@@ -412,18 +414,22 @@ function StatusTimeline({ currentStatus, history }: { currentStatus: UsatoStatus
 // Il cestino rimuove il ricambio inserito per errore — solo per chi gestisce
 // il telefono (laboratorio/amministrazione); il costo lo vede solo chi ha la
 // capacita' costi (rotellina Gestione Usato).
-function RicambioRow({ r, idx, onUpdate, onRemove, puoRimuovere, vedeCosti }: { r: Ricambio; idx: number; onUpdate: (i: number, r: Ricambio) => void; onRemove: (i: number) => void; puoRimuovere: boolean; vedeCosti: boolean }) {
+function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, vedeCosti }: { r: Ricambio; idx: number; onUpdate: (i: number, r: Ricambio) => void; onRemove: (i: number) => void; puoGestire: boolean; vedeCosti: boolean }) {
   const st = RICAMBIO_STATES.find(s => s.key === r.stato);
   return (
     <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm font-semibold text-slate-300"> {r.name}</span>
-        <select value={r.stato} onChange={e => onUpdate(idx, { ...r, stato: e.target.value as RicambioState })}
-          className={cn("bg-black/40 border rounded-lg px-2 py-1 text-xs font-semibold outline-none cursor-pointer border-white/10", st?.colorClass)}>
-          {RICAMBIO_STATES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </select>
+        {puoGestire ? (
+          <select value={r.stato} onChange={e => onUpdate(idx, { ...r, stato: e.target.value as RicambioState })}
+            className={cn("bg-black/40 border rounded-lg px-2 py-1 text-xs font-semibold outline-none cursor-pointer border-white/10", st?.colorClass)}>
+            {RICAMBIO_STATES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </select>
+        ) : (
+          <span className={cn("bg-black/40 border rounded-lg px-2 py-1 text-xs font-semibold border-white/10", st?.colorClass)}>{st?.label || r.stato}</span>
+        )}
         {r.stato === "arrivato" && r.arrivato_il && <span className="text-[10px] text-slate-600">arrivato {fmtDate(new Date(r.arrivato_il))}</span>}
-        {puoRimuovere && (
+        {puoGestire && (
           <button onClick={() => onRemove(idx)} title="Rimuovi il ricambio (inserito per errore)"
             className="ml-auto p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
             <Trash2 size={14} />
@@ -477,7 +483,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   // Dal passaggio in transito IN POI: solo il team amministrativo in su. ──
   const { stores: visStores } = useVisibleStores();
   const mieiNegozi = visStores.length ? visStores : (user?.negozio ? [user.negozio] : []);
-  const eMioNegozio = mieiNegozi.some((m) => sameStore(dev.store, m));
+  const eMioNegozio = mieiNegozi.some((m) => stessoMagazzino(dev.store, m));
   const vedeDocumenti = (() => {
     if (isAmministrazione) return true;
     if (dev.status !== "acquistato") return false;
@@ -800,9 +806,13 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="text-sm font-bold text-white"> Ricambi ({dev.ricambi.length})</div>
-                <button onClick={() => setShowAdd(!showAdd)} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 text-xs font-semibold hover:bg-blue-500/25 transition-all">+ Aggiungi</button>
+                {/* i ricambi li gestisce SOLO il laboratorio (capacita' lavora_usato:
+                    tecnico senior) e l'amministrazione — Luca 31/07 */}
+                {(lavoraLab || isAmministrazione) && (
+                  <button onClick={() => setShowAdd(!showAdd)} className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 text-xs font-semibold hover:bg-blue-500/25 transition-all">+ Aggiungi</button>
+                )}
               </div>
-              {showAdd && (
+              {(lavoraLab || isAmministrazione) && showAdd && (
                 <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 mb-3 space-y-2">
                   <div className="flex gap-2">
                     <select value={newRicambio} onChange={e => setNewRicambio(e.target.value)}
@@ -820,7 +830,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
               )}
               {dev.ricambi.length === 0 ? (
                 <div className="text-center py-4 text-sm text-slate-600 rounded-xl bg-white/[0.02] border border-white/5">Nessun ricambio richiesto</div>
-              ) : dev.ricambi.map((r, i) => <RicambioRow key={i} r={r} idx={i} onUpdate={updateRicambio} onRemove={removeRicambio} puoRimuovere={lavoraLab || isAmministrazione} vedeCosti={vedeCosti} />)}
+              ) : dev.ricambi.map((r, i) => <RicambioRow key={i} r={r} idx={i} onUpdate={updateRicambio} onRemove={removeRicambio} puoGestire={lavoraLab || isAmministrazione} vedeCosti={vedeCosti} />)}
             </div>
             {/* Documents — visibilita' ristretta (vedi vedeDocumenti sopra) */}
             {!vedeDocumenti ? (
@@ -1368,12 +1378,16 @@ function GestioneUsatiInner() {
   const [showRegole, setShowRegole] = useState(false);
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const filtriCompleti = ["direttore_commerciale", "direttore_generale", "amministrativo", "admin", "dev"].includes(user?.role || "");
+  // "i miei" = TUTTI i negozi visibili dell'utente (user_stores + visibilita' +
+  // primary, es. Emanuele su entrambe le Magliana) ESPANSI alla sede fisica:
+  // i gemelli condividono il magazzino, quindi contano come uno.
+  const { stores: visStores } = useVisibleStores();
   const mieiMatch = useCallback(() => {
-    const mio = user?.negozio || "";
-    const match = NEGOZI.filter(n => n && mio && (n === mio || n.startsWith(mio) || mio.startsWith(n)));
-    return match.length ? match : (mio ? [mio] : [...NEGOZI]);
+    const miei = visStores.length ? visStores : (user?.negozio ? [user.negozio] : []);
+    const match = NEGOZI.filter(n => miei.some(m => stessoMagazzino(n, m)));
+    return match.length ? match : [...NEGOZI];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [NEGOZI, user?.negozio]);
+  }, [NEGOZI, visStores, user?.negozio]);
   // ALL'APERTURA (Luca 31/07): "Mostra i miei" preselezionato per TUTTI i
   // ruoli — chi non ha un negozio assegnato (direzione/amministrazione senza
   // sede) parte comunque con tutti i punti vendita, non avendo un "suo".
