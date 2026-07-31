@@ -11,7 +11,7 @@ import type { EpisodioCaller } from "@/lib/callerMalus";
 
 type Riga = { stato: string; giorni_lavorare: number | null; giorni_warning: number | null; giorni_malus: number | null; malus_giorno: number | null; esente: boolean };
 
-export function CallerRegoleModal({ stati, onClose, onSaved }: { stati: string[]; onClose: () => void; onSaved: () => void }) {
+export function CallerRegoleModal({ stati, soloLettura = false, onClose, onSaved }: { stati: string[]; soloLettura?: boolean; onClose: () => void; onSaved: () => void }) {
     const [righe, setRighe] = useState<Record<string, Riga>>({});
     const [caricato, setCaricato] = useState(false);
     useEffect(() => {
@@ -41,6 +41,8 @@ export function CallerRegoleModal({ stati, onClose, onSaved }: { stati: string[]
         const r = righe[stato];
         const [v, setV] = useState<string>(r && r[campo] != null ? String(r[campo]) : "");
         useEffect(() => { setV(r && r[campo] != null ? String(r[campo]) : ""); }, [r, campo]);
+        // visibilita' per TUTTI, modifica solo admin (Luca 31/07)
+        if (soloLettura) return <span className={r?.esente ? "text-xs text-slate-600" : "text-xs font-semibold text-slate-200"}>{r?.esente ? "—" : (r && r[campo] != null ? `${r[campo]}${campo === "malus_giorno" ? " €" : ""}` : "—")}</span>;
         return (
             <input type="number" min="0" step={campo === "malus_giorno" ? "0.5" : "1"} value={v} disabled={!!r?.esente}
                 onChange={(e) => setV(e.target.value)}
@@ -56,7 +58,7 @@ export function CallerRegoleModal({ stati, onClose, onSaved }: { stati: string[]
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg text-slate-400"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="p-4 overflow-y-auto">
-                    <p className="text-[11px] text-slate-500 mb-3">Giorni LAVORATIVI (lun–sab) dall&apos;ultima attività sulla pratica (per richiami e appuntamenti si conta dopo la data fissata). Esente = lo stato non invecchia mai.</p>
+                    <p className="text-[11px] text-slate-500 mb-3">Giorni OPERATIVI del caller: conta solo un giorno in cui ha badgiato l&apos;inizio turno (anche un minuto). Per richiami e appuntamenti il conteggio parte dal giorno fissato sul calendario. Esente = lo stato non invecchia mai.{soloLettura ? " Le regole le modifica l'amministrazione." : ""}</p>
                     {!caricato ? <p className="text-sm text-slate-500">Carico…</p> : (
                         <table className="w-full text-sm">
                             <thead><tr className="text-[10px] uppercase tracking-wider text-slate-500 text-left">
@@ -73,10 +75,14 @@ export function CallerRegoleModal({ stati, onClose, onSaved }: { stati: string[]
                                             <td className="py-1.5 px-1 text-center"><CellaGiorni stato={s} campo="giorni_malus" /></td>
                                             <td className="py-1.5 px-1 text-center"><CellaGiorni stato={s} campo="malus_giorno" /></td>
                                             <td className="py-1.5 px-1 text-center">
-                                                <button onClick={() => salva(s, "esente", !r?.esente)} title={r?.esente ? "Esente — clicca per farlo invecchiare" : "Clicca per esentarlo"}
-                                                    className={`relative w-9 h-5 rounded-full transition-colors ${r?.esente ? "bg-slate-500/70" : "bg-white/10"}`}>
-                                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${r?.esente ? "left-[18px]" : "left-0.5"}`} />
-                                                </button>
+                                                {soloLettura ? (
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${r?.esente ? "bg-slate-500/15 text-slate-400 border-slate-500/30" : "bg-emerald-500/10 text-emerald-400/70 border-emerald-500/20"}`}>{r?.esente ? "Esente" : "Attivo"}</span>
+                                                ) : (
+                                                    <button onClick={() => salva(s, "esente", !r?.esente)} title={r?.esente ? "Esente — clicca per farlo invecchiare" : "Clicca per esentarlo"}
+                                                        className={`relative w-9 h-5 rounded-full transition-colors ${r?.esente ? "bg-slate-500/70" : "bg-white/10"}`}>
+                                                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${r?.esente ? "left-[18px]" : "left-0.5"}`} />
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     );
@@ -97,13 +103,16 @@ const CHIP: Record<string, string> = {
 };
 const LABEL: Record<string, string> = { in_corso: "⏳ In corso", attivo: "🟠 Attivo (da compensare)", compensato: "✅ Compensato" };
 
-export function ArchivioMalusCallerModal({ puoCompensare, utente, onClose }: { puoCompensare: boolean; utente: string; onClose: () => void }) {
+export function ArchivioMalusCallerModal({ puoCompensare, utente, soloCaller, onClose }: { puoCompensare: boolean; utente: string; soloCaller?: string; onClose: () => void }) {
     const [episodi, setEpisodi] = useState<EpisodioCaller[]>([]);
     const [caricato, setCaricato] = useState(false);
     const carica = useCallback(() => {
-        supabase.from("caller_malus").select("*").order("created_at", { ascending: false }).limit(500)
-            .then(({ data }) => { setEpisodi((data ?? []) as EpisodioCaller[]); setCaricato(true); });
-    }, []);
+        // soloCaller (Luca 31/07, come il tracking PDA): il caller vede SOLO il
+        // proprio storico — in corso, attivi e compensati
+        let q = supabase.from("caller_malus").select("*").order("created_at", { ascending: false }).limit(500);
+        if (soloCaller) q = q.eq("caller", soloCaller);
+        q.then(({ data }) => { setEpisodi((data ?? []) as EpisodioCaller[]); setCaricato(true); });
+    }, [soloCaller]);
     useEffect(() => { carica(); }, [carica]);
     const compensa = async (ep: EpisodioCaller) => {
         if (!window.confirm(`Segnare COMPENSATO il malus di ${ep.importo} € (${ep.caller || "—"}, ${ep.stato_pratica || "—"})?\nDa fare solo quando viene pagato nelle gare di commissioning.`)) return;
@@ -115,7 +124,7 @@ export function ArchivioMalusCallerModal({ puoCompensare, utente, onClose }: { p
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <div className="glass-card w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
                 <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
-                    <h3 className="text-lg font-bold text-white">⏱ Archivio Malus Call Center</h3>
+                    <h3 className="text-lg font-bold text-white">{soloCaller ? "⏱ Il mio storico malus" : "⏱ Archivio Malus Call Center"}</h3>
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg text-slate-400"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="px-4 pt-3 flex gap-2 flex-wrap text-[11px]">

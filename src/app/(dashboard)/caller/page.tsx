@@ -24,7 +24,7 @@ import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
-import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, type RegolaCaller, type FaseCaller } from "@/lib/callerMalus";
+import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller } from "@/lib/callerMalus";
 import { CallerRegoleModal, ArchivioMalusCallerModal } from "@/components/CallerRegole";
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -640,6 +640,12 @@ function CallerPageInner() {
     // si archivia in caller_malus (in_corso → attivo → compensato in gara)
     const [regoleCaller, setRegoleCaller] = useState<Map<string, RegolaCaller>>(new Map());
     useEffect(() => { caricaRegoleCaller().then(setRegoleCaller); }, []);
+    // GIORNI OPERATIVI dal BADGE (Luca 31/07): per il caller un giorno conta
+    // solo se ha timbrato l'inizio turno — anche un minuto; lun-sab e' solo il
+    // ripiego se la tabella turni non e' leggibile
+    const [giorniBadge, setGiorniBadge] = useState<Map<string, Set<string>> | null>(null);
+    const [badgePronto, setBadgePronto] = useState(false);
+    useEffect(() => { caricaGiorniBadge().then((m) => { setGiorniBadge(m); setBadgePronto(true); }); }, []);
     const [faseFilter, setFaseFilter] = useState<"" | FaseCaller>("");
     const faseInfo = useCallback((c: Call): { fase: FaseCaller; giorniMalus: number; importo: number; dalMalus: Date | null } => {
         const r = regoleCaller.get(c.stato);
@@ -647,11 +653,15 @@ function CallerPageInner() {
         const rif = dataRiferimento(c, c.stato, RIC_STATI, APP_STATI);
         if (!rif) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
         const oggi = new Date();
-        const fase = faseDi(lavorativiDopo(rif, oggi), r);
-        const dalMalus = fase === "malus" && r.giorni_malus != null ? aggiungiLavorativi(rif, r.giorni_malus) : null;
-        const giorniMalus = dalMalus ? lavorativiDopo(dalMalus, oggi) + 1 : 0;
-        return { fase, giorniMalus, importo: Math.round(giorniMalus * r.malus_giorno * 100) / 100, dalMalus };
-    }, [regoleCaller, RIC_STATI, APP_STATI]);
+        // il flusso parte SOLO dal giorno fissato (Luca 31/07): un appuntamento
+        // o richiamo per il 3 agosto tiene la pratica FERMA fino al 3 agosto
+        if (giornoYmd(rif) > giornoYmd(oggi)) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
+        const operativi = giorniBadge ? (giorniBadge.get(c.caller) || new Set<string>()) : null;
+        const fase = faseDi(lavorativiDopo(rif, oggi, operativi), r);
+        const dalMalus = fase === "malus" && r.giorni_malus != null ? aggiungiLavorativi(rif, r.giorni_malus, operativi) : null;
+        const giorniMalus = dalMalus ? lavorativiDopo(dalMalus, oggi, operativi) + 1 : 0;
+        return { fase: dalMalus || fase !== "malus" ? fase : "warning", giorniMalus, importo: Math.round(giorniMalus * r.malus_giorno * 100) / 100, dalMalus };
+    }, [regoleCaller, RIC_STATI, APP_STATI, giorniBadge]);
 
     const puoRegoleCaller = ["admin", "dev"].includes(user?.role || "");
     const [showRegoleCaller, setShowRegoleCaller] = useState(false);
@@ -660,7 +670,7 @@ function CallerPageInner() {
     // vede tutte le pratiche, quindi l'archivio resta completo)
     const malusSyncDone = useRef(false);
     useEffect(() => {
-        if (malusSyncDone.current || !isDirector || !regoleCaller.size || !calls.length) return;
+        if (malusSyncDone.current || !isDirector || !regoleCaller.size || !calls.length || !badgePronto) return;
         malusSyncDone.current = true;
         const pratiche = calls.map((c) => {
             const fi = faseInfo(c);
@@ -668,7 +678,7 @@ function CallerPageInner() {
             return { id: c.id, stato: c.stato, caller: c.caller, fase: fi.fase, giorniMalus: fi.giorniMalus, malusGiorno: r?.malus_giorno || 0, dalMalus: fi.dalMalus };
         });
         sincronizzaMalusCaller(pratiche);
-    }, [isDirector, regoleCaller, calls, faseInfo]);
+    }, [isDirector, regoleCaller, calls, faseInfo, badgePronto]);
 
     const matchFiltri = (c: Call, ignoraBrand = false, ignoraFase = false) => {
         if (!isDirector && c.caller !== currentCaller) return false;
@@ -1675,15 +1685,16 @@ function CallerPageInner() {
                                         )}
                                     </button>
                                 ))}
-                                {(isDirector || puoRegoleCaller) && (
-                                    <div className="flex flex-col gap-2 justify-center">
-                                        {isDirector && <button onClick={() => setShowArchivioMalus(true)} title="Archivio dei malus (in corso, attivi, compensati)" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⏱ Malus</button>}
-                                        {puoRegoleCaller && <button onClick={() => setShowRegoleCaller(true)} title="Regole: giorni e malus giornaliero per stato" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>}
-                                    </div>
-                                )}
+                                <div className="flex flex-col gap-2 justify-center">
+                                    {/* lo STORICO ce l'hanno anche i caller (Luca 31/07, come il
+                                        tracking PDA): ognuno vede solo i propri episodi */}
+                                    <button onClick={() => setShowArchivioMalus(true)} title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⏱ {isDirector ? "Malus" : "Storico"}</button>
+                                    {/* regole VISIBILI a tutti (Luca 31/07); i giorni li tocca solo l'admin */}
+                                    <button onClick={() => setShowRegoleCaller(true)} title={puoRegoleCaller ? "Regole: giorni e malus giornaliero per stato" : "Le regole di lavorazione (sola lettura)"} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>
+                                </div>
                             </div>
-                            {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
-                            {showArchivioMalus && <ArchivioMalusCallerModal puoCompensare={puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || "")} utente={user?.name || "—"} onClose={() => setShowArchivioMalus(false)} />}
+                            {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} soloLettura={!puoRegoleCaller} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
+                            {showArchivioMalus && <ArchivioMalusCallerModal puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} onClose={() => setShowArchivioMalus(false)} />}
 
                             {/* Filter bar */}
                             <div className="glass-panel p-5">
