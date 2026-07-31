@@ -96,6 +96,7 @@ export async function POST(request: Request) {
                 bridge = await bridgeVersoCaller({
                     direction, clienteNum, aircallUserId, agenteNome: agente,
                     answered: answeredBool, durata, clientId, startedIso: started,
+                    aircallCallId: d.id,
                 });
                 await supabase.from("call_events").update({ bridged: true }).eq("aircall_call_id", d.id);
             }
@@ -122,7 +123,7 @@ export async function GET() {
 async function bridgeVersoCaller(p: {
     direction: string | null; clienteNum: string; aircallUserId: number | null;
     agenteNome: string | null; answered: boolean; durata: number | null;
-    clientId: string | null; startedIso: string | null;
+    clientId: string | null; startedIso: string | null; aircallCallId: number;
 }): Promise<string> {
     // chi ha gestito la chiamata, dal mapping identita' (fallback sul nome)
     let callerName = ""; let callerRole = ""; let callerId: string | null = null;
@@ -142,10 +143,15 @@ async function bridgeVersoCaller(p: {
     // LAVORAZIONE IN SERIE (mig. 090): se il caller ha il preset ON, le 4 voci
     // (brand/obiettivo/provenienza/tipologia) si applicano da sole — alla
     // creazione, e sulle pratiche esistenti SOLO dove il campo e' vuoto.
-    let preset: { brand: string; obiettivo: string; provenienza: string; tipologia: string } | null = null;
+    // select("*"): cosi' l'origine interno (negozio/mese/anno, mig. 107) arriva
+    // quando c'e' senza rompere il ponte se la migrazione non e' ancora applicata
+    let preset: { brand: string; obiettivo: string; provenienza: string; tipologia: string; negozio_provenienza: string; mese_provenienza: string; anno_provenienza: string } | null = null;
     if (callerId) {
-        const { data: pr } = await supabase.from("caller_presets").select("attivo,brand,obiettivo,provenienza,tipologia").eq("user_id", callerId).maybeSingle();
-        if (pr?.attivo) preset = { brand: pr.brand || "", obiettivo: pr.obiettivo || "", provenienza: pr.provenienza || "", tipologia: pr.tipologia || "" };
+        const { data: pr } = await supabase.from("caller_presets").select("*").eq("user_id", callerId).maybeSingle();
+        if (pr?.attivo) preset = {
+            brand: pr.brand || "", obiettivo: pr.obiettivo || "", provenienza: pr.provenienza || "", tipologia: pr.tipologia || "",
+            negozio_provenienza: (pr.negozio_provenienza as string) || "", mese_provenienza: (pr.mese_provenienza as string) || "", anno_provenienza: (pr.anno_provenienza as string) || "",
+        };
     }
 
     const coda = codaNumero(p.clienteNum);
@@ -154,13 +160,13 @@ async function bridgeVersoCaller(p: {
     // trattini (inserimento umano / liste), secondo giro con le cifre
     // intervallate da % — "3 331 23 45 67" combacia lo stesso.
     let { data: prat } = await supabase.from("calls")
-        .select("id, stato, storico, brand, obiettivo, provenienza, tipologia")
+        .select("id, stato, storico, brand, obiettivo, provenienza, tipologia, negozio_provenienza, mese_provenienza, anno_provenienza")
         .or(`numero.ilike.%${coda}%,cellulare.ilike.%${coda}%`)
         .order("created_at", { ascending: false }).limit(1);
     if (!prat || !prat[0]) {
         const patt = coda.split("").join("%");
         ({ data: prat } = await supabase.from("calls")
-            .select("id, stato, storico, brand, obiettivo, provenienza, tipologia")
+            .select("id, stato, storico, brand, obiettivo, provenienza, tipologia, negozio_provenienza, mese_provenienza, anno_provenienza")
             .or(`numero.ilike.%${patt}%,cellulare.ilike.%${patt}%`)
             .order("created_at", { ascending: false }).limit(1));
     }
@@ -168,9 +174,22 @@ async function bridgeVersoCaller(p: {
 
     if (!esistente && p.direction !== "outbound") return "skip: inbound senza pratica";
 
-    const quando = (p.startedIso || new Date().toISOString()).slice(0, 16);
+    // ISO PIENO (fix fuso 31/07): la stringa troncata senza zona veniva riletta
+    // dal frontend come ora locale, spostando lo storico di 2 ore.
+    const quando = p.startedIso || new Date().toISOString();
     const esitoTxt = p.answered ? `risposta · ${p.durata ?? 0}s` : "nessuna risposta";
-    const voce = { data: quando, caller: callerName, campo: "Chiamata Aircall", da: "", a: `${p.direction || "outbound"} · ${esitoTxt}` };
+    // ARCHIVIO per voce (Luca 31/07): la voce di storico porta la fotografia dei
+    // Dettagli Chiamata e l'aggancio al registro Aircall (registrazione inclusa).
+    const dettagliVoce = (c: { brand?: string | null; obiettivo?: string | null; provenienza?: string | null; tipologia?: string | null }) => ({
+        brand: c.brand || "", obiettivo: c.obiettivo || "", provenienza: c.provenienza || "", tipologia: c.tipologia || "",
+        esito: esitoTxt, direzione: p.direction || "outbound", durata_sec: p.durata,
+    });
+    const voce = {
+        data: quando, caller: callerName, campo: "Chiamata Aircall", da: "",
+        a: `${p.direction || "outbound"} · ${esitoTxt}`,
+        aircall_call_id: p.aircallCallId,
+        dettagli: null as ReturnType<typeof dettagliVoce> | null,
+    };
 
     // progressione automatica dei "non risponde" (temperatura conservata)
     const prossimoNR = (statoAttuale: string): string => {
@@ -180,10 +199,7 @@ async function bridgeVersoCaller(p: {
     };
 
     if (esistente) {
-        const upd: Record<string, unknown> = {
-            data_chiamata: quando,
-            storico: [...(Array.isArray(esistente.storico) ? esistente.storico : []), voce],
-        };
+        const upd: Record<string, unknown> = { data_chiamata: quando };
         if (!p.answered) upd.stato = prossimoNR(esistente.stato);
         else upd.da_esitare = true;
         if (preset) {
@@ -193,8 +209,21 @@ async function bridgeVersoCaller(p: {
             if (!esistente.obiettivo && preset.obiettivo) upd.obiettivo = preset.obiettivo;
             if (!esistente.provenienza && preset.provenienza) upd.provenienza = preset.provenienza;
             if (!esistente.tipologia && preset.tipologia) upd.tipologia = preset.tipologia;
+            // origine del lead interno dal preset Serie (mig. 107)
+            if (!esistente.negozio_provenienza && preset.negozio_provenienza) upd.negozio_provenienza = preset.negozio_provenienza;
+            if (!esistente.mese_provenienza && preset.mese_provenienza) upd.mese_provenienza = preset.mese_provenienza;
+            if (!esistente.anno_provenienza && preset.anno_provenienza) upd.anno_provenienza = preset.anno_provenienza;
         }
+        // la voce archivia i valori EFFETTIVI (pratica + riempimenti del preset)
+        voce.dettagli = dettagliVoce({
+            brand: (upd.brand as string) ?? esistente.brand, obiettivo: (upd.obiettivo as string) ?? esistente.obiettivo,
+            provenienza: (upd.provenienza as string) ?? esistente.provenienza, tipologia: (upd.tipologia as string) ?? esistente.tipologia,
+        });
+        upd.storico = [...(Array.isArray(esistente.storico) ? esistente.storico : []), voce];
         const { error } = await supabase.from("calls").update(upd).eq("id", esistente.id);
+        // registro telefonico ↔ pratica (mig. 107): se la colonna non c'e'
+        // ancora, l'errore si ignora e il link arrivera' con la migrazione
+        if (!error) await supabase.from("call_events").update({ call_id: esistente.id }).eq("aircall_call_id", p.aircallCallId);
         return error ? "errore update: " + error.message : (p.answered ? "pratica aggiornata (da esitare)" : "pratica aggiornata (NR)");
     }
 
@@ -206,7 +235,11 @@ async function bridgeVersoCaller(p: {
         cli = data ?? null;
     }
     const tipo = (cli?.tipo as string) === "business" ? "business" : "consumer";
-    const { error } = await supabase.from("calls").insert({
+    voce.dettagli = dettagliVoce({
+        brand: preset?.brand || "", obiettivo: preset?.obiettivo || "",
+        provenienza: preset?.provenienza || "Aircall", tipologia: preset?.tipologia || "",
+    });
+    const { data: creata, error } = await supabase.from("calls").insert({
         tipo_cliente: tipo,
         nome: (cli?.nome as string) || "", cognome: (cli?.cognome as string) || "",
         ragione_sociale: (cli?.ragione_sociale as string) || "",
@@ -217,10 +250,14 @@ async function bridgeVersoCaller(p: {
         stato: p.answered ? "Nuovo" : "Cold NR1",
         data_chiamata: quando, caller: callerName,
         negozio_appuntamento: "", data_appuntamento: null, indirizzo: "", agente: "",
-        segnalatore: "", campagna: "", negozio_provenienza: "", mese_provenienza: "", anno_provenienza: "",
+        segnalatore: "", campagna: "",
+        negozio_provenienza: preset?.negozio_provenienza || "", mese_provenienza: preset?.mese_provenienza || "", anno_provenienza: preset?.anno_provenienza || "",
         whatsapp: "", note: "", data_richiamo: null,
         da_esitare: p.answered,
         storico: [voce],
-    });
+    }).select("id").single();
+    // registro telefonico ↔ pratica (mig. 107): errore ignorato finche' la
+    // colonna call_id non esiste
+    if (!error && creata?.id) await supabase.from("call_events").update({ call_id: creata.id }).eq("aircall_call_id", p.aircallCallId);
     return error ? "errore insert: " + error.message : "pratica creata" + (cli ? " con anagrafica cliente" : "");
 }
