@@ -33,6 +33,7 @@ export type Comunicazione = {
     target_stores?: string[] | null;
     target_users?: string[] | null;
     target_brands?: string[] | null;
+    esiti?: string[] | null;   // risposte cliccabili (mig. 116); null = solo conferma
     created_by: string | null;
     created_by_name: string | null;
 };
@@ -43,6 +44,7 @@ type Ricevuta = {
     user_name: string | null;
     letto_il: string | null;
     confermato_il: string | null;
+    esito?: string | null;     // quale risposta ha cliccato (mig. 116)
 };
 
 function getLocalReadSet(): Set<number> {
@@ -88,24 +90,32 @@ export default function Comunicazioni() {
     const [espansa, setEspansa] = useState<number | null>(null);    // pannello ricevute aperto
 
     const fetchAll = useCallback(async () => {
-        // prova con i destinatari estesi (mig. 112); fallback alla forma legacy
-        const esteso = await supabase
+        // select a scalare: completa (mig. 116, con esiti) → estesa (112) → legacy
+        const completa = await supabase
+            .from("comunicazioni")
+            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, esiti, created_by, created_by_name")
+            .order("created_at", { ascending: false });
+        const esteso = completa.error ? await supabase
             .from("comunicazioni")
             .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, created_by, created_by_name")
-            .order("created_at", { ascending: false });
-        const legacy = esteso.error ? await supabase
+            .order("created_at", { ascending: false }) : null;
+        const legacy = (esteso && esteso.error) ? await supabase
             .from("comunicazioni")
             .select("id, title, date_display, type, content, kind, target_roles, created_by, created_by_name")
             .order("created_at", { ascending: false }) : null;
-        const data = ((legacy ? legacy.data : esteso.data) ?? []) as unknown as Comunicazione[];
+        const data = ((legacy ? legacy.data : esteso ? esteso.data : completa.data) ?? []) as unknown as Comunicazione[];
         const e = legacy ? legacy.error : null;
         if (e) { setError(e.message); setList([]); setLoading(false); return; }
         setError(null);
         setList((data ?? []) as Comunicazione[]);
-        const { data: ric } = await supabase
+        const ricCompleta = await supabase
+            .from("comunicazioni_ricevute")
+            .select("comunicazione_id, user_id, user_name, letto_il, confermato_il, esito")
+            .limit(10000);
+        const { data: ric } = ricCompleta.error ? await supabase
             .from("comunicazioni_ricevute")
             .select("comunicazione_id, user_id, user_name, letto_il, confermato_il")
-            .limit(10000);
+            .limit(10000) : ricCompleta;
         const tutte = (ric ?? []) as Ricevuta[];
         setRicevute(tutte);
         if (user?.id) setMieRicevute(new Map(tutte.filter((r) => r.user_id === user.id).map((r) => [r.comunicazione_id, r])));
@@ -129,7 +139,7 @@ export default function Comunicazioni() {
         !!mieRicevute.get(id)?.letto_il || localRead.has(id), [mieRicevute, localRead]);
     const isConfermata = useCallback((id: number) => !!mieRicevute.get(id)?.confermato_il, [mieRicevute]);
 
-    const scriviRicevuta = useCallback(async (comId: number, conferma: boolean) => {
+    const scriviRicevuta = useCallback(async (comId: number, conferma: boolean, esito?: string) => {
         if (!user?.id) return;
         const esistente = mieRicevute.get(comId);
         const ora = new Date().toISOString();
@@ -139,9 +149,15 @@ export default function Comunicazioni() {
             user_name: user.name || null,
             letto_il: esistente?.letto_il || ora,
             confermato_il: conferma ? (esistente?.confermato_il || ora) : (esistente?.confermato_il ?? null),
+            esito: esito || esistente?.esito || null,
         };
-        const { error: e } = await supabase.from("comunicazioni_ricevute")
+        let { error: e } = await supabase.from("comunicazioni_ricevute")
             .upsert([riga], { onConflict: "comunicazione_id,user_id" });
+        if (e && /column/i.test(e.message)) {
+            // mig. 116 non applicata: si salva almeno lettura/conferma
+            const { esito: _x, ...legacy } = riga; void _x;
+            ({ error: e } = await supabase.from("comunicazioni_ricevute").upsert([legacy], { onConflict: "comunicazione_id,user_id" }));
+        }
         if (e) { setError(e.message); return; }
         setMieRicevute((p) => new Map(p).set(comId, riga));
         setRicevute((p) => {
@@ -168,6 +184,15 @@ export default function Comunicazioni() {
     const [fKind, setFKind] = useState<"bacheca" | "popup">("bacheca");
     const [fTutti, setFTutti] = useState(true);
     const [fRuoli, setFRuoli] = useState<string[]>([]);
+    // ESITI cliccabili (Luca 31/07, mig. 116): risposte a scelta del creatore
+    const [fEsiti, setFEsiti] = useState<string[]>([]);
+    const [fEsitoNuovo, setFEsitoNuovo] = useState("");
+    const aggiungiEsito = () => {
+        const v = fEsitoNuovo.trim();
+        if (!v || fEsiti.includes(v)) { setFEsitoNuovo(""); return; }
+        setFEsiti((p) => [...p, v]);
+        setFEsitoNuovo("");
+    };
     // destinatari ESTESI (Luca 31/07, mig. 112): negozi, persone, brand
     const [fNegozi, setFNegozi] = useState<string[]>([]);
     const [fPersone, setFPersone] = useState<string[]>([]);   // full_name selezionati
@@ -201,6 +226,7 @@ export default function Comunicazioni() {
             target_stores: fTutti || !fNegozi.length ? null : fNegozi,
             target_users: fTutti || !idsPersone.length ? null : idsPersone,
             target_brands: fTutti || !fBrand.length ? null : fBrand,
+            esiti: fEsiti.length ? fEsiti : null,
             created_by: user?.id || null,
             created_by_name: user?.name || null,
             date_display: dataDisplayOggi(),
@@ -209,12 +235,12 @@ export default function Comunicazioni() {
         if (e) {
             // niente fallback silenzioso: senza mig. 112 una comunicazione mirata
             // diventerebbe "per tutti" — meglio fermarsi e dirlo
-            setError(/column/i.test(e.message) ? "Destinatari estesi non ancora attivi sul database (mig. 112 da applicare)." : e.message);
+            setError(/column/i.test(e.message) ? "Funzione non ancora attiva sul database (mig. 112/116 da applicare)." : e.message);
             return;
         }
         setError(null);
         setFormOpen(false);
-        setFTitle(""); setFContent(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget();
+        setFTitle(""); setFContent(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget(); setFEsiti([]); setFEsitoNuovo("");
         fetchAll();
     };
 
@@ -340,11 +366,23 @@ export default function Comunicazioni() {
                                         </p>
 
                                         <div className="mt-4 flex items-center gap-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                                            {isPopup && perMe && (
+                                            {(isPopup || !!com.esiti?.length) && perMe && (
                                                 isConfermata(com.id) ? (
                                                     <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-400">
-                                                        <CheckCircle2 className="w-4 h-4" /> Confermata
+                                                        <CheckCircle2 className="w-4 h-4" /> Confermata{mieRicevute.get(com.id)?.esito ? ` — ${mieRicevute.get(com.id)!.esito}` : ""}
                                                     </span>
+                                                ) : com.esiti?.length ? (
+                                                    // ESITI cliccabili (Luca 31/07): la risposta E' la conferma
+                                                    com.esiti.map((es) => (
+                                                        <button
+                                                            key={es}
+                                                            type="button"
+                                                            onClick={() => scriviRicevuta(com.id, true, es)}
+                                                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors"
+                                                        >
+                                                            {es}
+                                                        </button>
+                                                    ))
                                                 ) : (
                                                     <button
                                                         type="button"
@@ -380,7 +418,11 @@ export default function Comunicazioni() {
                                                         <span className="ml-auto text-xs text-slate-500">
                                                             letta {r.letto_il ? new Date(r.letto_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
                                                         </span>
-                                                        {isPopup && (
+                                                        {/* l'ESITO scelto (mig. 116): chi ha cliccato cosa */}
+                                                        {r.esito && (
+                                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">{r.esito}</span>
+                                                        )}
+                                                        {(isPopup || !!com.esiti?.length) && (
                                                             r.confermato_il ? (
                                                                 <span className="text-xs font-bold text-emerald-400">
                                                                     ✓ confermata {new Date(r.confermato_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
@@ -449,6 +491,28 @@ export default function Comunicazioni() {
                                         </button>
                                     ))}
                                 </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Esiti cliccabili <span className="normal-case font-normal">(facoltativi — es. &quot;Parteciperò&quot; / &quot;Non parteciperò&quot;)</span></label>
+                                <p className="text-[11px] text-slate-500 mt-1">Se li imposti, il destinatario risponde cliccandone uno (che vale come conferma) e tu vedi chi ha scelto cosa nel dettaglio ricevute.</p>
+                                <div className="flex gap-2 mt-2">
+                                    <input value={fEsitoNuovo} onChange={(e) => setFEsitoNuovo(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); aggiungiEsito(); } }}
+                                        className={inputStyle} placeholder="Scrivi un esito e premi Invio…" />
+                                    <button type="button" onClick={aggiungiEsito}
+                                        className="px-4 rounded-xl border border-white/15 text-slate-300 text-sm font-bold hover:bg-white/10 shrink-0">＋</button>
+                                </div>
+                                {fEsiti.length > 0 && (
+                                    <div className="flex gap-2 mt-2 flex-wrap">
+                                        {fEsiti.map((es) => (
+                                            <span key={es} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-sky-500/40 bg-sky-500/10 text-sky-200 text-sm">
+                                                {es}
+                                                <button type="button" onClick={() => setFEsiti((p) => p.filter((x) => x !== es))}
+                                                    className="text-sky-400/70 hover:text-white text-xs">✕</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Destinatari — per ruolo</label>

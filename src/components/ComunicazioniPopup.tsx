@@ -24,32 +24,37 @@ type ComPopup = {
     target_stores?: string[] | null;
     target_users?: string[] | null;
     target_brands?: string[] | null;
+    esiti?: string[] | null;   // risposte cliccabili (mig. 116); null = solo conferma
     kind: string | null;
 };
 
 export function ComunicazioniPopup() {
     const { user } = useAuth();
     const [coda, setCoda] = useState<ComPopup[]>([]);
-    const [rimandate, setRimandate] = useState<Set<number>>(new Set());
     const lettureScritte = useRef<Set<number>>(new Set());
     const [salvando, setSalvando] = useState(false);
 
     const carica = useCallback(async () => {
         if (!user?.id) return;
         try {
-            // destinatari estesi (mig. 112) con fallback alla forma legacy
-            const esteso = await supabase
+            // select a scalare: completa (mig. 116) → senza esiti (mig. 112) → legacy
+            const completa = await supabase
+                .from("comunicazioni")
+                .select("id, title, content, type, date_display, created_by_name, target_roles, target_stores, target_users, target_brands, esiti, kind")
+                .eq("kind", "popup")
+                .order("created_at", { ascending: true });
+            const esteso = completa.error ? await supabase
                 .from("comunicazioni")
                 .select("id, title, content, type, date_display, created_by_name, target_roles, target_stores, target_users, target_brands, kind")
                 .eq("kind", "popup")
-                .order("created_at", { ascending: true });
-            const legacy = esteso.error ? await supabase
+                .order("created_at", { ascending: true }) : null;
+            const legacy = (esteso && esteso.error) ? await supabase
                 .from("comunicazioni")
                 .select("id, title, content, type, date_display, created_by_name, target_roles, kind")
                 .eq("kind", "popup")
                 .order("created_at", { ascending: true }) : null;
-            const coms = ((legacy ? legacy.data : esteso.data) ?? null) as unknown as ComPopup[] | null;
-            if ((legacy ? legacy.error : null) || !coms) return;
+            const coms = ((legacy ? legacy.data : esteso ? esteso.data : completa.data) ?? null) as unknown as ComPopup[] | null;
+            if (!coms) return;
             const brandsNegozio = await brandDelNegozio(user.negozio);
             const perMe = (coms as ComPopup[]).filter((c) =>
                 comunicazionePerMe(c, { userId: user.id, role: user.role || "", negozio: user.negozio, brandsNegozio }));
@@ -77,7 +82,9 @@ export function ComunicazioniPopup() {
         return () => { supabase.removeChannel(ch); clearInterval(t); };
     }, [user?.id, carica]);
 
-    const attuale = coda.find((c) => !rimandate.has(c.id)) || null;
+    // Niente scappatoie (Luca 31/07): il pop-up di conferma resta davanti
+    // finche' non viene confermato — il "Piu' tardi" non esiste piu'.
+    const attuale = coda[0] || null;
 
     // La sola visualizzazione conta come LETTURA (una volta per comunicazione).
     useEffect(() => {
@@ -91,17 +98,24 @@ export function ComunicazioniPopup() {
         }], { onConflict: "comunicazione_id,user_id", ignoreDuplicates: true }).then(() => { });
     }, [attuale, user?.id, user?.name]);
 
-    const conferma = async () => {
+    const conferma = async (esito?: string) => {
         if (!attuale || !user?.id) return;
         setSalvando(true);
         const ora = new Date().toISOString();
-        const { error } = await supabase.from("comunicazioni_ricevute").upsert([{
+        const riga: Record<string, unknown> = {
             comunicazione_id: attuale.id,
             user_id: user.id,
             user_name: user.name || null,
             letto_il: ora,
             confermato_il: ora,
-        }], { onConflict: "comunicazione_id,user_id" });
+        };
+        if (esito) riga.esito = esito;
+        let { error } = await supabase.from("comunicazioni_ricevute").upsert([riga], { onConflict: "comunicazione_id,user_id" });
+        if (error && esito && /column/i.test(error.message)) {
+            // mig. 116 non applicata: si salva almeno la conferma
+            delete riga.esito;
+            ({ error } = await supabase.from("comunicazioni_ricevute").upsert([riga], { onConflict: "comunicazione_id,user_id" }));
+        }
         setSalvando(false);
         if (!error) setCoda((p) => p.filter((c) => c.id !== attuale.id));
     };
@@ -137,23 +151,31 @@ export function ComunicazioniPopup() {
                 <div className="px-6 pb-5 text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto">
                     {attuale.content}
                 </div>
-                <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-white/10 bg-black/20">
-                    <button
-                        type="button"
-                        onClick={() => setRimandate((p) => new Set(p).add(attuale.id))}
-                        className="text-sm text-slate-500 hover:text-slate-300 transition-colors"
-                        title="Ricomparirà al prossimo accesso finché non la confermi"
-                    >
-                        Più tardi
-                    </button>
-                    <button
-                        type="button"
-                        disabled={salvando}
-                        onClick={conferma}
-                        className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors disabled:opacity-40"
-                    >
-                        {salvando ? "…" : "✓ Ho letto e confermo"}
-                    </button>
+                {/* SOLO conferma (Luca 31/07): niente "Piu' tardi". Con gli ESITI
+                    (mig. 116) la conferma E' la scelta di una risposta. */}
+                <div className="flex items-center justify-end gap-2.5 flex-wrap px-6 py-4 border-t border-white/10 bg-black/20">
+                    {attuale.esiti?.length ? (
+                        attuale.esiti.map((e) => (
+                            <button
+                                key={e}
+                                type="button"
+                                disabled={salvando}
+                                onClick={() => conferma(e)}
+                                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors disabled:opacity-40"
+                            >
+                                {salvando ? "…" : e}
+                            </button>
+                        ))
+                    ) : (
+                        <button
+                            type="button"
+                            disabled={salvando}
+                            onClick={() => conferma()}
+                            className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold transition-colors disabled:opacity-40"
+                        >
+                            {salvando ? "…" : "✓ Ho letto e confermo"}
+                        </button>
+                    )}
                 </div>
                 {coda.length > 1 && (
                     <div className="px-6 pb-3 -mt-1 text-[11px] text-slate-600 text-right">
