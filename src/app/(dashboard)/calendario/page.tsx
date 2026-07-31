@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
+import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video } from "lucide-react";
 import { cn } from "@/utils";
@@ -256,6 +256,11 @@ export default function Calendario() {
         notes: "",
     });
 
+    // ASSEGNAZIONE MULTIPLA (Luca 31/07): la stessa task si assegna a piu'
+    // operatori o piu' punti vendita — si creano N task gemelle, una a testa
+    const [taskModo, setTaskModo] = useState<"persone" | "negozi">("persone");
+    const [taskPersone, setTaskPersone] = useState<string[]>([]);
+    const [taskNegozi, setTaskNegozi] = useState<string[]>([]);
     // New task form state
     const [newTask, setNewTask] = useState<Partial<CalendarTask>>({
         title: "",
@@ -458,6 +463,9 @@ export default function Calendario() {
     // La settimanale parte sempre dalla settimana in corso (lunedi'); i giorni
     // mostrano gli impegni gia' espansi e cliccabili, il pannello a destra resta.
     const [calView, setCalView] = useState<"month" | "week" | "day">("month");
+    // domenica a scomparsa nella vista settimana (Luca 31/07): nascosta, gli
+    // altri giorni respirano di piu'
+    const [mostraDomenica, setMostraDomenica] = useState(true);
     // VISTA GIORNO (Luca 29/07): fasce orarie in verticale stile Google
     // Calendar — tutto il dettaglio della giornata a colpo d'occhio.
     const [dayDate, setDayDate] = useState(() =>
@@ -621,10 +629,13 @@ export default function Calendario() {
 
     const handleCreateTaskSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const assignee = newTask.assignedToStore ? "" : (newTask.assignedTo ?? "");
-        if (!newTask.date || !newTask.title || (!newTask.assignedToStore && !assignee)) return;
+        // multi-assegnazione (Luca 31/07): una task GEMELLA per ogni operatore
+        // o punto vendita scelto, cosi' ognuno lavora e chiude la propria
+        const persone = taskModo === "persone" ? (canAssignOthers ? taskPersone : [user?.name || ""]).filter(Boolean) : [];
+        const negozi = taskModo === "negozi" ? taskNegozi : [];
+        if (!newTask.date || !newTask.title || (!persone.length && !negozi.length)) return;
 
-        const payload = {
+        const base = {
             title: newTask.title,
             date: newTask.date,
             time: newTask.time || null,
@@ -632,17 +643,20 @@ export default function Calendario() {
             notes: newTask.notes || null,
             client_ref: newTask.clientRef || null,
             created_by: user?.name || "Sconosciuto",
-            assigned_to: assignee,
-            assigned_to_store: newTask.assignedToStore || null,
         };
-        const { data, error } = await supabase.from("calendar_tasks").insert(payload).select().single();
+        const rows = [
+            ...persone.map((p) => ({ ...base, assigned_to: p, assigned_to_store: null })),
+            ...negozi.map((n) => ({ ...base, assigned_to: "", assigned_to_store: n })),
+        ];
+        const { data, error } = await supabase.from("calendar_tasks").insert(rows).select();
         if (error) {
             alert("Errore salvataggio task: " + error.message);
             return;
         }
-        setTasks(prev => [...prev, mapTaskRow(data)]);
+        setTasks(prev => [...prev, ...((data ?? []) as Record<string, unknown>[]).map(mapTaskRow)]);
         setShowCreateTaskModal(false);
         setNewTask({ title: "", date: "", time: "", status: "da_fare", notes: "", clientRef: "", assignedTo: user?.name || "", assignedToStore: undefined });
+        setTaskPersone([]); setTaskNegozi([]); setTaskModo("persone");
     };
 
     const handleCreateMeetingSubmit = async (e: React.FormEvent) => {
@@ -1129,6 +1143,12 @@ export default function Calendario() {
                             {calView === "month" ? `${MONTHS_IT[viewMonth]} ${viewYear}` : calView === "week" ? weekLabel
                                 : (() => { const d = new Date(dayDate + "T12:00:00"); return `${DAYS_IT[(d.getDay() + 6) % 7]} ${d.getDate()} ${MONTHS_IT[d.getMonth()]} ${d.getFullYear()}`; })()}
                         </h3>
+                        {/* OGGI (Luca 31/07): torna al giorno corrente in qualsiasi vista */}
+                        <button
+                            onClick={() => { const t = new Date(); setViewYear(t.getFullYear()); setViewMonth(t.getMonth()); setWeekStart(mondayOf(todayStr)); setDayDate(todayStr); selectDate(todayStr); }}
+                            className="shrink-0 px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 text-xs font-bold text-slate-300 hover:bg-white/10 transition-colors">
+                            Oggi
+                        </button>
                         <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 shrink-0">
                             {([["month", "Mese"], ["week", "Settimana"], ["day", "Giorno"]] as [typeof calView, string][]).map(([id, lab]) => (
                                 <button
@@ -1232,9 +1252,16 @@ export default function Calendario() {
                     {/* Vista SETTIMANALE: impegni gia' espansi sotto ogni giorno e
                         cliccabili (l'appuntamento apre il suo dettaglio, la riunione il
                         suo); il pannello a destra resta e segue il giorno selezionato. */}
-                    {calView === "week" && (
-                        <div className="grid grid-cols-7 gap-1.5">
-                            {weekDays.map((dateStr) => {
+                    {calView === "week" && (<>
+                        <div className="flex justify-end -mb-3">
+                            <button onClick={() => setMostraDomenica(v => !v)}
+                                title={mostraDomenica ? "Nascondi la domenica: gli altri giorni si allargano" : "Mostra di nuovo la domenica"}
+                                className={cn("px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors", mostraDomenica ? "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10" : "bg-amber-500/15 border-amber-500/40 text-amber-300")}>
+                                {mostraDomenica ? "Nascondi domenica" : "Domenica nascosta — mostra"}
+                            </button>
+                        </div>
+                        <div className={cn("grid gap-1.5", mostraDomenica ? "grid-cols-7" : "grid-cols-6")}>
+                            {(mostraDomenica ? weekDays : weekDays.slice(0, 6)).map((dateStr) => {
                                 const wd = new Date(dateStr + "T12:00:00");
                                 const dayAppts = apptsByDate(dateStr);   // già in ordine di orario REALE
                                 const dayTasks = tasksByDate(dateStr);
@@ -1246,7 +1273,8 @@ export default function Calendario() {
                                     <div
                                         key={dateStr}
                                         className={cn(
-                                            "rounded-xl border flex flex-col min-h-[300px] max-h-[460px]",
+                                            // piu' respiro in verticale (Luca 31/07): lo spazio sotto c'era
+                                            "rounded-xl border flex flex-col min-h-[440px] max-h-[72vh]",
                                             isBlocked ? "bg-amber-500/10 border-amber-500/30" :
                                                 isSelected ? "border-indigo-500/50 bg-indigo-500/[0.07]" :
                                                     isToday ? "border-white/15 bg-white/[0.04]" : "border-white/8 bg-white/[0.02]",
@@ -1310,7 +1338,7 @@ export default function Calendario() {
                                 );
                             })}
                         </div>
-                    )}
+                    </>)}
 
                     {/* VISTA GIORNO (Luca 29/07): ore scandite in verticale stile Google
                         Calendar — tutta la giornata a colpo d'occhio, dettaglio inline. */}
@@ -1947,35 +1975,30 @@ export default function Calendario() {
                             </div>
 
                             <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Assegna a *</label>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Assegna a * <span className="normal-case font-normal text-slate-500">(selezione multipla: una task a testa)</span></label>
                                 <div className="flex gap-3 mb-2">
-                                    <button type="button" onClick={() => setNewTask(p => ({ ...p, assignedToStore: undefined, assignedTo: p.assignedTo || user?.name || "" }))}
-                                        className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", !newTask.assignedToStore ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/5 border-white/10 text-slate-400")}>
-                                        Operatore
+                                    <button type="button" onClick={() => setTaskModo("persone")}
+                                        className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", taskModo === "persone" ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/5 border-white/10 text-slate-400")}>
+                                        Operatori
                                     </button>
-                                    <button type="button" onClick={() => setNewTask(p => ({ ...p, assignedToStore: storeNames[0] ?? "", assignedTo: "" }))}
-                                        className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", newTask.assignedToStore ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/5 border-white/10 text-slate-400")}>
-                                        Punto vendita
+                                    <button type="button" onClick={() => setTaskModo("negozi")}
+                                        className={cn("flex-1 py-2 rounded-xl border text-sm font-medium", taskModo === "negozi" ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-300" : "bg-white/5 border-white/10 text-slate-400")}>
+                                        Punti vendita
                                     </button>
                                 </div>
-                                {newTask.assignedToStore ? (
-                                    <select className="glass-input w-full" value={newTask.assignedToStore} onChange={e => setNewTask(p => ({ ...p, assignedToStore: e.target.value }))} required>
-                                        {storeNames.map(s => <option key={s} value={s}>{s}</option>)}
-                                    </select>
+                                {taskModo === "negozi" ? (
+                                    <SelectMulti values={taskNegozi} onChange={setTaskNegozi} opzioni={storeNames} className="w-full bg-black/40 border border-white/10 rounded-xl text-sm py-2.5 px-3.5" />
                                 ) : (
                                     canAssignOthers ? (
-                                        <select className="glass-input w-full" value={newTask.assignedTo} onChange={e => setNewTask(p => ({ ...p, assignedTo: e.target.value }))} required>
-                                            <option value="">Seleziona operatore...</option>
-                                            <option value={user?.name}>{user?.name} (Tu)</option>
-                                            <optgroup label={seesAllVis ? "Altri" : `Team ${mieiNegozi.join(", ")}`}>
-                                                {assignableAgents.filter(a => a !== user?.name).map(a => <option key={a} value={a}>{a}</option>)}
-                                            </optgroup>
-                                        </select>
+                                        <SelectMulti values={taskPersone} onChange={setTaskPersone}
+                                            opzioni={[...(user?.name ? [user.name] : []), ...assignableAgents.filter(a => a !== user?.name)]}
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl text-sm py-2.5 px-3.5" />
                                     ) : (
-                                        <input className="glass-input w-full text-slate-400 bg-white/5" value={newTask.assignedTo || user?.name || ""} readOnly />
+                                        <input className="glass-input w-full text-slate-400 bg-white/5" value={user?.name || ""} readOnly />
                                     )
                                 )}
-                                {newTask.assignedToStore && <p className="text-xs text-slate-500 mt-1">La task sarà visibile a tutti gli utenti del punto vendita.</p>}
+                                {taskModo === "negozi" && <p className="text-xs text-slate-500 mt-1">Ogni punto vendita scelto riceve la sua task, visibile a tutto il suo staff.</p>}
+                                {taskModo === "persone" && canAssignOthers && taskPersone.length > 1 && <p className="text-xs text-slate-500 mt-1">Verranno create {taskPersone.length} task, una per operatore.</p>}
                             </div>
 
                             <div>

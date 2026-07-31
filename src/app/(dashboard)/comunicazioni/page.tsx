@@ -15,7 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
-import { comunicazionePerMe, brandDelNegozio } from "@/lib/comunicazioniTarget";
+import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
 import { sameStore, useVisibleStores } from "@/lib/visibleStores";
@@ -135,6 +135,10 @@ export default function Comunicazioni() {
     // l'amministrazione) vede anche le altre.
     const [brandsNegozio, setBrandsNegozio] = useState<string[]>([]);
     useEffect(() => { brandDelNegozio(user?.negozio).then(setBrandsNegozio); }, [user?.negozio]);
+    // negozi ASSEGNATI (user_stores): chi lavora su piu' punti vendita riceve
+    // le comunicazioni mirate a ciascuno di essi, non solo alla sede di login
+    const [mieiAssegnati, setMieiAssegnati] = useState<string[]>([]);
+    useEffect(() => { negoziAssegnati(user?.id).then(setMieiAssegnati); }, [user?.id]);
     // FILTRI bacheca (Luca 31/07): periodo per TUTTI; destinatari (negozio,
     // persona, brand, ruolo — gli stessi criteri della creazione, esiti esclusi)
     // dall'amministrativo in su. "Per tutti" passa ogni filtro destinatario.
@@ -148,7 +152,7 @@ export default function Comunicazioni() {
     const resetFiltri = () => { setFiltroDa(""); setFiltroA(""); setFiltroNegozio(""); setFiltroPersona(""); setFiltroBrand(""); setFiltroRuolo(""); };
 
     const visibili = useMemo(() => list.filter((c) =>
-        comunicazionePerMe(c, { userId: user?.id, role, negozio: user?.negozio, brandsNegozio })
+        comunicazionePerMe(c, { userId: user?.id, role, negozio: user?.negozio, negozi: mieiAssegnati, brandsNegozio })
         || c.created_by === user?.id || isAdminRicevute
     ), [list, role, user?.id, user?.negozio, brandsNegozio, isAdminRicevute]);
 
@@ -215,13 +219,28 @@ export default function Comunicazioni() {
     const [fPersone, setFPersone] = useState<string[]>([]);   // full_name selezionati
     const [fBrand, setFBrand] = useState<string[]>([]);
     const NEGOZI = useStores();
-    const [utentiAttivi, setUtentiAttivi] = useState<{ id: string; full_name: string }[]>([]);
+    const [utentiAttivi, setUtentiAttivi] = useState<{ id: string; full_name: string; role?: string | null; primary_store?: string | null }[]>([]);
     useEffect(() => {
         // servono anche per il FILTRO persona dell'amministrazione, non solo per il form
         if (!((formOpen && canCreate) || isAdminRicevute) || utentiAttivi.length) return;
-        supabase.from("app_users").select("id, full_name").eq("active", true).order("full_name")
-            .then(({ data }) => setUtentiAttivi((data ?? []) as { id: string; full_name: string }[]));
+        supabase.from("app_users").select("id, full_name, role, primary_store").eq("active", true).order("full_name")
+            .then(({ data }) => setUtentiAttivi((data ?? []) as typeof utentiAttivi));
     }, [formOpen, canCreate, isAdminRicevute, utentiAttivi.length]);
+    const puoTutti = destinatariPossibili.length === ROLES.length;
+    // PERSONE selezionabili (Luca 31/07): senza "tutti i ruoli" si scelgono
+    // SOLO persone dei ruoli abilitati; se il ruolo e' "solo ambito", solo
+    // quelle dei negozi visibili del mittente. Negozi e brand come target
+    // restano riservati a chi ha "tutti i ruoli".
+    const personeSelezionabili = useMemo(() => {
+        if (puoTutti) return utentiAttivi;
+        return utentiAttivi.filter((u) => {
+            if (!u.role || !destinatariPossibili.includes(u.role)) return false;
+            if (!destinatarioSoloAmbito(role, u.role, perms)) return true;
+            if (ambitoMittente.seesAll) return true;
+            const miei = ambitoMittente.stores.length ? ambitoMittente.stores : (user?.negozio ? [user.negozio] : []);
+            return !!u.primary_store && miei.some((m) => sameStore(u.primary_store!, m));
+        });
+    }, [utentiAttivi, puoTutti, destinatariPossibili, role, perms, ambitoMittente, user?.negozio]);
     // applicazione dei filtri sulla bacheca (dopo utentiAttivi: serve la mappa nome→id)
     const filtrate = useMemo(() => {
         const senzaTarget = (c: Comunicazione) => !(c.target_roles?.length || c.target_stores?.length || c.target_users?.length || c.target_brands?.length);
@@ -252,7 +271,6 @@ export default function Comunicazioni() {
     };
 
     const [salvando, setSalvando] = useState(false);
-    const puoTutti = destinatariPossibili.length === ROLES.length;
     useEffect(() => { if (!puoTutti) setFTutti(false); }, [puoTutti]);
     const azzeraTarget = () => { setFRuoli([]); setFNegozi([]); setFPersone([]); setFBrand([]); };
 
@@ -419,7 +437,7 @@ export default function Comunicazioni() {
                         const styles = getTypeStyles(com.type);
                         const Icon = styles.icon;
                         const isPopup = com.kind === "popup";
-                        const perMe = comunicazionePerMe(com, { userId: user?.id, role, negozio: user?.negozio, brandsNegozio });
+                        const perMe = comunicazionePerMe(com, { userId: user?.id, role, negozio: user?.negozio, negozi: mieiAssegnati, brandsNegozio });
                         const vedeRicevute = isAdminRicevute || mia;
                         const cnt = vedeRicevute ? contatori(com.id, com.created_by) : null;
                         const dettaglio = espansa === com.id
@@ -668,26 +686,31 @@ export default function Comunicazioni() {
                             {/* destinatari ESTESI (Luca 31/07): negozi, persone, brand —
                                 i criteri si SOMMANO (basta rientrare in uno) */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {/* NEGOZI (= tutto lo staff, ruoli compresi) solo per chi puo'
+                                    scrivere a tutti i ruoli: con destinatari limitati sarebbe
+                                    una porta laterale (Luca 31/07, caso Schekella) */}
+                                {puoTutti && (
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…per negozio <span className="normal-case font-normal">(tutto lo staff)</span></label>
+                                        <SelectMulti
+                                            values={fNegozi}
+                                            onChange={(v) => { if (v.length) setFTutti(false); setFNegozi(v); }}
+                                            opzioni={NEGOZI}
+                                            className="w-full mt-2 bg-black/40 border border-white/10 rounded-xl text-sm py-2.5 px-3.5"
+                                        />
+                                    </div>
+                                )}
                                 <div>
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…per negozio <span className="normal-case font-normal">(tutto lo staff)</span></label>
-                                    <SelectMulti
-                                        values={fNegozi}
-                                        onChange={(v) => { if (v.length) setFTutti(false); setFNegozi(v); }}
-                                        opzioni={NEGOZI}
-                                        className="w-full mt-2 bg-black/40 border border-white/10 rounded-xl text-sm py-2.5 px-3.5"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…a persone singole</label>
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…a persone singole {!puoTutti && <span className="normal-case font-normal">(solo dei ruoli che puoi raggiungere)</span>}</label>
                                     <SelectMulti
                                         values={fPersone}
                                         onChange={(v) => { if (v.length) setFTutti(false); setFPersone(v); }}
-                                        opzioni={utentiAttivi.map((u) => u.full_name)}
+                                        opzioni={personeSelezionabili.map((u) => u.full_name)}
                                         className="w-full mt-2 bg-black/40 border border-white/10 rounded-xl text-sm py-2.5 px-3.5"
                                     />
                                 </div>
                             </div>
-                            <div>
+                            {puoTutti && <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">…per brand <span className="normal-case font-normal">(chi sta in un negozio che lo tratta)</span></label>
                                 <div className="flex gap-2 mt-2 flex-wrap">
                                     {BRANDS.map((b) => {
@@ -702,7 +725,7 @@ export default function Comunicazioni() {
                                         );
                                     })}
                                 </div>
-                            </div>
+                            </div>}
                         </div>
                         <div className="flex items-center justify-end gap-2.5 py-4 px-6 border-t border-white/10">
                             <button type="button" onClick={() => setFormOpen(false)} className="px-4 py-2.5 rounded-xl border border-white/10 text-slate-300 text-sm">Annulla</button>
