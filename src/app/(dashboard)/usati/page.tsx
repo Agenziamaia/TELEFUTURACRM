@@ -1338,6 +1338,29 @@ function GestioneUsatiInner() {
   // pannello BONIFICI (al posto del filtro) + deep-link ?id= dai task ⚡
   const [showBonifici, setShowBonifici] = useState(false);
   const [mostraFatti, setMostraFatti] = useState(false);
+  // FILTRI bonifici (Luca 31/07): email, IBAN, nome cliente, negozio, periodo
+  // — valgono sui DA FARE e sui FATTI; export CSV sui filtrati
+  const [bonNome, setBonNome] = useState("");
+  const [bonEmail, setBonEmail] = useState("");
+  const [bonIban, setBonIban] = useState("");
+  const [bonNegozio, setBonNegozio] = useState("");
+  const [bonDa, setBonDa] = useState("");
+  const [bonA, setBonA] = useState("");
+  // anagrafiche dei venditori-clienti (mig. 113): nome ed email nelle righe
+  const [bonClienti, setBonClienti] = useState<Record<string, { nome: string; email: string }>>({});
+  useEffect(() => {
+    if (!showBonifici) return;
+    const ids = [...new Set(devices.filter(d => d.pagamento?.metodo === "bonifico" && d.client_id).map(d => d.client_id!))];
+    if (!ids.length) { setBonClienti({}); return; }
+    supabase.from("clients").select("id,nome,cognome,ragione_sociale,email").in("id", ids)
+      .then(({ data }) => {
+        const m: Record<string, { nome: string; email: string }> = {};
+        (data ?? []).forEach((c: { id: string; nome: string | null; cognome: string | null; ragione_sociale: string | null; email: string | null }) => {
+          m[c.id] = { nome: c.ragione_sociale || `${c.nome || ""} ${c.cognome || ""}`.trim(), email: c.email || "" };
+        });
+        setBonClienti(m);
+      });
+  }, [showBonifici, devices]);
   const searchParams = useSearchParams();
   const _deepDone = useRef(false);
   useEffect(() => {
@@ -1818,9 +1841,48 @@ function GestioneUsatiInner() {
           (visibile col toggle). Click sul telefono = apre la scheda. ── */}
       {showBonifici && (() => {
         const conStato = (d: Device) => (d.pagamento.bonifico_stato || (d.pagamento.bonifico_effettuato ? "fatto" : "da_fare")) as "da_fare" | "stampato" | "fatto";
+        // FILTRI (Luca 31/07): il periodo guarda l'acquisto per i DA FARE e la
+        // data di esecuzione per i FATTI
+        const cliDi = (d: Device) => (d.client_id && bonClienti[d.client_id]) || { nome: "", email: "" };
+        const passa = (d: Device, dataRef: Date | null) => {
+          const cli = cliDi(d);
+          if (bonNome && !cli.nome.toLowerCase().includes(bonNome.toLowerCase())) return false;
+          if (bonEmail && !cli.email.toLowerCase().includes(bonEmail.toLowerCase())) return false;
+          if (bonIban && !String(d.pagamento.iban || "").toLowerCase().replace(/\s/g, "").includes(bonIban.toLowerCase().replace(/\s/g, ""))) return false;
+          if (bonNegozio && d.store !== bonNegozio) return false;
+          if (bonDa || bonA) {
+            if (!dataRef || isNaN(dataRef.getTime())) return false;
+            const g = isoDate(dataRef);
+            if (bonDa && g < bonDa) return false;
+            if (bonA && g > bonA) return false;
+          }
+          return true;
+        };
         const tutti = devices.filter(d => d.pagamento?.metodo === "bonifico");
-        const daFare = tutti.filter(d => conStato(d) !== "fatto").sort((a, b) => (b.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0) - (a.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0));
-        const fatti = tutti.filter(d => conStato(d) === "fatto");
+        const daFare = tutti.filter(d => conStato(d) !== "fatto" && passa(d, d.purchase_date))
+          .sort((a, b) => (b.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0) - (a.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0));
+        const fatti = tutti.filter(d => conStato(d) === "fatto" && passa(d, d.pagamento.bonifico_date || d.purchase_date));
+        const filtriAttivi = !!(bonNome || bonEmail || bonIban || bonNegozio || bonDa || bonA);
+        // EXPORT CSV sui filtrati (stesso formato leggibile dei report presenze)
+        const esporta = (lista: Device[], nome: string) => {
+          const righe = [["Data acquisto", "Modello", "IMEI", "Negozio", "Cliente", "Email", "IBAN", "Importo", "Tipo", "Stato", "Eseguito il", "Eseguito da"].join(";")];
+          lista.forEach((d) => {
+            const cli = cliDi(d);
+            righe.push([
+              fmtDate(d.purchase_date), d.model, d.imei, d.store, cli.nome, cli.email,
+              d.pagamento.iban || "", String(d.purchase_price).replace(".", ","),
+              d.pagamento.bonifico_tipo === "istantaneo" ? "istantaneo" : "ordinario",
+              conStato(d),
+              d.pagamento.bonifico_date ? fmtDate(d.pagamento.bonifico_date) : "",
+              d.pagamento.bonifico_operatore || "",
+            ].map(v => String(v).replaceAll(";", ",")).join(";"));
+          });
+          const blob = new Blob(["﻿" + righe.join("\n")], { type: "text/csv;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const el = document.createElement("a");
+          el.href = url; el.download = `bonifici_${nome}_${new Date().toISOString().slice(0, 10)}.csv`; el.click();
+          URL.revokeObjectURL(url);
+        };
         const setStatoBon = async (d: Device, stato: "stampato" | "fatto") => {
           const pag = { ...d.pagamento, bonifico_stato: stato, bonifico_effettuato: stato === "fatto", bonifico_operatore: stato === "fatto" ? (user?.name || "—") : d.pagamento.bonifico_operatore, bonifico_date: stato === "fatto" ? new Date() : d.pagamento.bonifico_date };
           const upd = { ...d, pagamento: pag };
@@ -1828,12 +1890,18 @@ function GestioneUsatiInner() {
         };
         const Riga = ({ d, storico }: { d: Device; storico?: boolean }) => {
           const st = conStato(d);
+          const cli = cliDi(d);
           return (
             <div className="flex items-center gap-3 flex-wrap rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
               {d.pagamento.bonifico_tipo === "istantaneo" && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">🚨 istantaneo</span>}
               <button onClick={() => { setSelectedDevice(d); setShowBonifici(false); }} className="text-sm font-bold text-white hover:text-blue-300 text-left">
                 {d.model} <span className="text-slate-500 font-mono text-xs">· {d.imei}</span>
               </button>
+              {/* il CLIENTE ora si vede (Luca 31/07): prima in questa schermata
+                  non compariva nemmeno; per i registrati prima della mig. 113
+                  l'anagrafica non esiste e resta il trattino */}
+              <span className="text-xs font-semibold text-blue-200">{cli.nome || "—"}</span>
+              {cli.email && <span className="text-[11px] text-slate-500">✉️ {cli.email}</span>}
               <span className="text-xs text-slate-500">{d.store}</span>
               <span className="text-xs font-bold text-emerald-300">€{d.purchase_price}</span>
               {d.pagamento.iban && <span className="text-[11px] font-mono text-slate-500">{d.pagamento.iban}</span>}
@@ -1861,14 +1929,48 @@ function GestioneUsatiInner() {
                 <button onClick={() => setShowBonifici(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X size={20} /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {/* ── FILTRI (Luca 31/07): valgono su DA FARE e FATTI ── */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 rounded-xl bg-white/[0.02] border border-white/5">
+                  <input value={bonNome} onChange={e => setBonNome(e.target.value)} placeholder="Nome / cognome cliente…"
+                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none" />
+                  <input value={bonEmail} onChange={e => setBonEmail(e.target.value)} placeholder="Email…"
+                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none" />
+                  <input value={bonIban} onChange={e => setBonIban(e.target.value)} placeholder="IBAN…"
+                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none font-mono" />
+                  <select value={bonNegozio} onChange={e => setBonNegozio(e.target.value)}
+                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none">
+                    <option value="">Tutti i negozi</option>
+                    {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  <input type="date" value={bonDa} onChange={e => setBonDa(e.target.value)} title="Periodo dal (acquisto per i da fare, esecuzione per i fatti)"
+                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 outline-none" />
+                  <div className="flex gap-2">
+                    <input type="date" value={bonA} onChange={e => setBonA(e.target.value)} title="Periodo al"
+                      className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 outline-none min-w-0" />
+                    {filtriAttivi && (
+                      <button onClick={() => { setBonNome(""); setBonEmail(""); setBonIban(""); setBonNegozio(""); setBonDa(""); setBonA(""); }}
+                        title="Azzera i filtri" className="px-2.5 rounded-lg border border-white/10 text-slate-400 hover:text-white text-xs">✕</button>
+                    )}
+                  </div>
+                </div>
                 <div>
-                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Da effettuare ({daFare.length})</h4>
-                  {daFare.length === 0 && <p className="text-sm text-slate-600">Nessun bonifico in attesa. 👌</p>}
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Da effettuare ({daFare.length}{filtriAttivi ? " filtrati" : ""})</h4>
+                    <button onClick={() => esporta(daFare, "da_effettuare")} disabled={!daFare.length}
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">⬇️ Esporta CSV</button>
+                  </div>
+                  {daFare.length === 0 && <p className="text-sm text-slate-600">Nessun bonifico in attesa{filtriAttivi ? " coi filtri attivi" : ""}. 👌</p>}
                   <div className="space-y-2">{daFare.map(d => <Riga key={String(d.id)} d={d} />)}</div>
                 </div>
-                <button onClick={() => setMostraFatti(v => !v)} className="text-xs font-bold text-slate-400 hover:text-white uppercase tracking-widest">
-                  {mostraFatti ? "▾ Nascondi lo storico" : `▸ Mostra anche i bonifici fatti (${fatti.length})`}
-                </button>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button onClick={() => setMostraFatti(v => !v)} className="text-xs font-bold text-slate-400 hover:text-white uppercase tracking-widest">
+                    {mostraFatti ? "▾ Nascondi lo storico" : `▸ Mostra anche i bonifici fatti (${fatti.length}${filtriAttivi ? " filtrati" : ""})`}
+                  </button>
+                  {mostraFatti && (
+                    <button onClick={() => esporta(fatti, "fatti")} disabled={!fatti.length}
+                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">⬇️ Esporta CSV</button>
+                  )}
+                </div>
                 {mostraFatti && (
                   <div className="space-y-2">{fatti.map(d => <Riga key={String(d.id)} d={d} storico />)}</div>
                 )}
