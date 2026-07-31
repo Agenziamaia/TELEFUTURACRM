@@ -1991,7 +1991,7 @@ function GestioneUsatiInner() {
                     export unico su cio' che si sta guardando */}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex bg-black/40 p-1 rounded-xl border border-white/10">
-                    {([["da_fare", `Da effettuare (${daFare.length})`], ["fatti", `Fatti (${fatti.length})`], ["entrambi", `Entrambi (${filtrati.length})`]] as const).map(([k, lab]) => (
+                    {([["da_fare", `Da fare (${daFare.length})`], ["fatti", `Fatti (${fatti.length})`], ["entrambi", `Tutti (${filtrati.length})`]] as const).map(([k, lab]) => (
                       <button key={k} type="button" onClick={() => setBonVista(k)}
                         className={cn("px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all",
                           bonVista === k ? "bg-blue-500/20 text-blue-200 border border-blue-500/30" : "text-slate-400 hover:text-white")}>
