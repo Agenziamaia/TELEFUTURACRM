@@ -79,6 +79,9 @@ interface Device {
   // mig. 113: cliente da cui e' stato acquistato + venditore che ha registrato
   client_id: string | null;
   venditore: string;
+  // mig. 117: prezzo EFFETTIVO di vendita (chiesto all'esito Venduto) —
+  // sale_price resta il prezzo di listino in vetrina
+  sold_price: number;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -218,6 +221,7 @@ type UsatiRow = {
   allegato_dichiarazione: string | null;
   client_id?: string | null;
   venditore?: string | null;
+  sold_price?: number | null;
 };
 
 function parseDate(s: string | null): Date {
@@ -260,6 +264,7 @@ function rowToDevice(r: UsatiRow): Device {
     allegato_dichiarazione: r.allegato_dichiarazione ?? null,
     client_id: r.client_id ?? null,
     venditore: r.venditore || "",
+    sold_price: Number(r.sold_price) || 0,
   };
 }
 
@@ -293,6 +298,7 @@ function deviceToRow(d: Device): Record<string, unknown> {
     grado_usura: d.grado_usura,
     allegato_documento: d.allegato_documento,
     allegato_dichiarazione: d.allegato_dichiarazione,
+    sold_price: d.sold_price || null,
   };
 }
 
@@ -536,7 +542,14 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
     // e non era vendibile dal negozio che lo aveva ricevuto).
     if (next === "in_vendita" && dev.target_store) { u.store = dev.target_store; u.target_store = null; }
     if (next === "in_vendita") u.listed_date = new Date();
-    if (next === "venduto") u.sold_date = new Date();
+    if (next === "venduto") {
+      // prezzo EFFETTIVO di vendita (mig. 117): si archivia sul telefono —
+      // puo' differire dal listino in vetrina (sconti, trattative)
+      const risposta = window.prompt("A che prezzo e' stato VENDUTO? (€)", dev.sale_price > 0 ? String(dev.sale_price) : "");
+      if (risposta === null) return;
+      u.sold_price = parseFloat(risposta.replace(",", ".")) || 0;
+      u.sold_date = new Date();
+    }
     persist(u);
   };
   // PASSO INDIETRO (Luca 31/07): dall'amministrativo in su si corregge un
@@ -1526,7 +1539,12 @@ function GestioneUsatiInner() {
   const handleSaveDevice = useCallback(async (u: Device) => {
     const row = deviceToRow(u);
     const prima = devices.find(d => d.id === u.id);
-    const { error: e } = await supabase.from("usati").update(row).eq("id", u.id);
+    let { error: e } = await supabase.from("usati").update(row).eq("id", u.id);
+    if (e && /column/i.test(e.message)) {
+      // mig. 117 non ancora applicata: si salva senza il prezzo di vendita effettivo
+      const { sold_price: _sp, ...legacy } = row; void _sp;
+      ({ error: e } = await supabase.from("usati").update(legacy).eq("id", u.id));
+    }
     if (!e) setDevices(p => p.map(d => d.id === u.id ? u : d));
     // ── RICAMBI DA ORDINARE (Luca 29/07): task ⚡ ai designati dell'incarico
     //    per ogni ricambio NUOVO in stato "da ordinare" (non già segnalato) ──
@@ -1843,18 +1861,19 @@ function GestioneUsatiInner() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr>
-                      {[["#", "id"], ["Modello", "model"], ["IMEI", "imei"], ["Stato", "status"], ...(vedeCosti ? [["Acquisto", "purchase_price"]] : []), ["Vendita", "sale_price"], ["Operatore", "venditore"], ["Negozio", "store"], ["Data Reg.", "created_at"]].map(([l, k]) => (
+                      {/* ordine colonne deciso da Luca 31/07 (via il #id) */}
+                      {[["Data Reg.", "created_at"], ["Modello", "model"], ["IMEI", "imei"], ["Stato", "status"], ...(vedeCosti ? [["Acquisto", "purchase_price"]] : []), ["Vendita", "sale_price"], ["Operatore", "venditore"], ["Negozio", "store"], ["Data vend.", "sold_date"], ["Venduto", "sold_price"]].map(([l, k]) => (
                         <th key={k} className={thCls} onClick={() => doSort(k)}>{l}{arrow(k)}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {sorted.length === 0 ? (
-                      <tr><td colSpan={vedeCosti ? 9 : 8} className="py-16 text-center text-slate-600 text-sm">Nessun dispositivo trovato</td></tr>
+                      <tr><td colSpan={vedeCosti ? 10 : 9} className="py-16 text-center text-slate-600 text-sm">Nessun dispositivo trovato</td></tr>
                     ) : sorted.map(d => (
                       <tr key={d.id} onClick={() => setSelectedDevice(d)}
                         className="border-b border-white/[0.03] cursor-pointer hover:bg-white/[0.03] transition-colors group">
-                        <td className="px-4 py-3 text-xs text-slate-600 font-mono">#{d.id}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtDate(d.created_at)}</td>
                         <td className="px-4 py-3 text-sm font-medium text-slate-200 group-hover:text-white transition-colors whitespace-nowrap">{d.model}</td>
                         <td className="px-4 py-3 text-xs font-mono text-slate-500 whitespace-nowrap">{d.imei}</td>
                         <td className="px-4 py-3"><StatusBadge statusKey={d.status} /></td>
@@ -1864,7 +1883,8 @@ function GestioneUsatiInner() {
                             registrazione; per i vecchi dalla cronologia) */}
                         <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{d.venditore || d.status_history.acquistato?.operatore || "—"}</td>
                         <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{d.store}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtDate(d.created_at)}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{d.sold_date ? fmtDate(d.sold_date) : <span className="text-slate-700">—</span>}</td>
+                        <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap">{d.sold_price > 0 ? <span className="text-rose-300">{fmtEur(d.sold_price)}</span> : <span className="text-slate-700">—</span>}</td>
                       </tr>
                     ))}
                   </tbody>
