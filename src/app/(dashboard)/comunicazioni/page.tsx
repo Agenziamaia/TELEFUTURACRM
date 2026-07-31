@@ -192,10 +192,12 @@ export default function Comunicazioni() {
         setLocalRead((p) => new Set(p).add(comId));
     }, [user?.id, user?.name, mieRicevute]);
 
+    // le PROPRIE comunicazioni non sono mai "da leggere" (Luca 31/07: l'invito
+    // riunione che spediva risultava una notifica per lui stesso)
     const handleMarkAllRead = async () => {
-        for (const c of visibili) if (!isLetta(c.id)) await scriviRicevuta(c.id, false);
+        for (const c of visibili) if (!isLetta(c.id) && c.created_by !== user?.id) await scriviRicevuta(c.id, false);
     };
-    const unreadCount = visibili.filter((c) => !isLetta(c.id)).length;
+    const unreadCount = visibili.filter((c) => !isLetta(c.id) && c.created_by !== user?.id).length;
 
     // ─── Creazione ───────────────────────────────────────────────────────────
     const [formOpen, setFormOpen] = useState(false);

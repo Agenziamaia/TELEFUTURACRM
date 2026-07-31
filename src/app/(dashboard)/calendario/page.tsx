@@ -748,18 +748,11 @@ export default function Calendario() {
     };
 
     const handleMeetingBrandChange = (brand: string) => {
-        setNewMeeting(prev => {
-            const autoRecipients: MeetingRecipient[] =
-                brand && brand !== "Corporate / Aziendale"
-                    ? meetingUsers.filter(u => u.brands.includes(brand)).map(u => ({
-                        id: u.id,
-                        name: u.name,
-                        store: u.store,
-                        status: "invited",
-                    }))
-                    : [];
-            return { ...prev, brand, recipients: autoRecipients };
-        });
+        // NIENTE auto-selezione di tutti gli operatori del brand (Luca 31/07:
+        // sceglieva UN invitato e si ritrovava 30 inviti partiti a sua
+        // insaputa). Per invitare un brand intero c'e' la colonna "Brand
+        // (selezione rapida)" tra i destinatari — scelta esplicita.
+        setNewMeeting(prev => ({ ...prev, brand }));
     };
 
     const handleToggleRecipient = (userId: string) => {
@@ -2371,7 +2364,7 @@ export default function Calendario() {
                     onClick={() => setShowMeetingDetailModal(false)}
                 >
                     <div
-                        className="glass-card p-6 w-full max-w-xl"
+                        className="glass-card p-6 w-full max-w-4xl max-h-[85vh] overflow-y-auto"
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-4">
