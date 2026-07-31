@@ -1877,7 +1877,7 @@ function GestioneUsatiInner() {
                   <thead>
                     <tr>
                       {/* ordine colonne deciso da Luca 31/07 (via il #id) */}
-                      {[["Data Reg.", "created_at"], ["Modello", "model"], ["IMEI", "imei"], ["Stato", "status"], ...(vedeCosti ? [["Acquisto", "purchase_price"]] : []), ["Vendita", "sale_price"], ["Operatore", "venditore"], ["Negozio", "store"], ["Data vend.", "sold_date"], ["Venduto", "sold_price"]].map(([l, k]) => (
+                      {[["Data Acq.", "created_at"], ["Modello", "model"], ["IMEI", "imei"], ["Stato", "status"], ...(vedeCosti ? [["Acquisto", "purchase_price"]] : []), ["Vendita", "sale_price"], ["Operatore", "venditore"], ["Negozio", "store"], ["Data vend.", "sold_date"], ["Venduto", "sold_price"]].map(([l, k]) => (
                         <th key={k} className={thCls} onClick={() => doSort(k)}>{l}{arrow(k)}</th>
                       ))}
                     </tr>
