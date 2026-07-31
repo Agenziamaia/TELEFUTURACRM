@@ -96,6 +96,15 @@ interface CalendarMeeting {
 }
 
 const MEETING_BRANDS = ["Wind3", "Vodafone", "Tim", "Fastweb", "Corporate / Aziendale"];
+// il brand della riunione ("Wind3") e quello degli operatori (user_brands:
+// "WindTre") non coincidono alla lettera: confronto TOLLERANTE (Luca 31/07,
+// caso Wind3 oscurato nella selezione rapida)
+function brandCoincide(a: string, b: string): boolean {
+    const n = (s: string) => s.toLowerCase().replace(/[\s/]/g, "");
+    const w3 = (s: string) => s === "wind3" || s === "windtre" || s === "w3";
+    const x = n(a), y = n(b);
+    return x === y || (w3(x) && w3(y));
+}
 
 // id e' l'uuid di app_users (gli operatori arrivano dagli utenti reali, non piu'
 // dalla tabella seed calendar_operators).
@@ -730,7 +739,15 @@ export default function Calendario() {
 
     const handleCreateMeetingSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMeeting.title || !newMeeting.date || !newMeeting.startTime || !newMeeting.endTime || !newMeeting.brand) return;
+        // niente piu' click "morto" (Luca 31/07): se manca un campo lo si DICE
+        const mancanti = [
+            !newMeeting.title && "Titolo",
+            !newMeeting.date && "Data",
+            !newMeeting.startTime && "Ora inizio",
+            !newMeeting.endTime && "Ora fine",
+            !newMeeting.brand && "Brand",
+        ].filter(Boolean);
+        if (mancanti.length) { alert("Per salvare la riunione compila: " + mancanti.join(", ")); return; }
 
         const payload = {
             title: newMeeting.title,
@@ -796,11 +813,19 @@ export default function Calendario() {
     };
 
     const handleMeetingBrandChange = (brand: string) => {
-        // NIENTE auto-selezione di tutti gli operatori del brand (Luca 31/07:
-        // sceglieva UN invitato e si ritrovava 30 inviti partiti a sua
-        // insaputa). Per invitare un brand intero c'e' la colonna "Brand
-        // (selezione rapida)" tra i destinatari — scelta esplicita.
-        setNewMeeting(prev => ({ ...prev, brand }));
+        // AUTO-SELEZIONE TRASPARENTE (Luca 31/07, secondo giro): scegliere il
+        // brand in alto porta dentro tutti i suoi operatori, ma il riepilogo
+        // esploso prima delle Note (con le ✕) li mostra uno per uno e permette
+        // di toglierli — niente piu' inviti a sorpresa.
+        setNewMeeting(prev => {
+            const autoRecipients: MeetingRecipient[] =
+                brand && brand !== "Corporate / Aziendale"
+                    ? meetingUsers.filter(u => u.brands.some(x => brandCoincide(x, brand))).map(u => ({
+                        id: u.id, name: u.name, store: u.store, status: "invited" as const,
+                    }))
+                    : [];
+            return { ...prev, brand, recipients: autoRecipients };
+        });
     };
 
     const handleToggleRecipient = (userId: string) => {
@@ -2354,8 +2379,11 @@ export default function Calendario() {
                                             🏷️ Brand (selezione rapida)
                                         </p>
                                         <div className="space-y-1.5">
-                                            {MEETING_BRANDS.map(b => {
-                                                const brandUsers = meetingUsers.filter(u => u.brands.includes(b));
+                                            {/* i brand REALI degli operatori (user_brands), non la lista
+                                                fissa: Wind3/WindTre coincidono, e compaiono anche Sky,
+                                                Energia, Iliad (Luca 31/07) */}
+                                            {Array.from(new Set(meetingUsers.flatMap(u => u.brands))).sort().map(b => {
+                                                const brandUsers = meetingUsers.filter(u => u.brands.some(x => brandCoincide(x, b)));
                                                 return (
                                                     <button
                                                         key={b}
@@ -2374,6 +2402,26 @@ export default function Calendario() {
                                 </div>
                             </div>
 
+                            {/* RIEPILOGO ESPLOSO degli invitati (Luca 31/07): tutti quelli
+                                selezionati — anche dall'auto-selezione del brand — uno per
+                                uno, con la ✕ per togliere chi non serve */}
+                            {newMeeting.recipients.length > 0 && (
+                                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/8">
+                                    <p className="text-[11px] font-semibold text-slate-400 mb-2">
+                                        Invitati selezionati ({newMeeting.recipients.length})
+                                    </p>
+                                    <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                                        {newMeeting.recipients.map(r => (
+                                            <span key={r.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-sky-500/30 bg-sky-500/10 text-sky-100 text-xs">
+                                                {r.name}{r.store ? <span className="text-[10px] text-slate-500">· {r.store}</span> : null}
+                                                <button type="button" onClick={() => handleToggleRecipient(r.id)}
+                                                    title={`Togli ${r.name} dagli invitati`}
+                                                    className="text-sky-400/70 hover:text-white text-xs leading-none">✕</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Note</label>
                                 <textarea
