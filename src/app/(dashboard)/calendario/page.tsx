@@ -256,6 +256,10 @@ export default function Calendario() {
         notes: "",
     });
 
+    // DETTAGLIO TASK (Luca 31/07): cliccando una task nel calendario centrale
+    // (settimana/giorno) o nel pannello a destra si apre il modale — con
+    // modifica dei campi e AGGIUNTA di nuovi assegnatari (task gemelle)
+    const [taskDettaglio, setTaskDettaglio] = useState<CalendarTask | null>(null);
     // ASSEGNAZIONE MULTIPLA (Luca 31/07): la stessa task si assegna a piu'
     // operatori o piu' punti vendita — si creano N task gemelle, una a testa
     const [taskModo, setTaskModo] = useState<"persone" | "negozi">("persone");
@@ -1254,10 +1258,12 @@ export default function Calendario() {
                         suo); il pannello a destra resta e segue il giorno selezionato. */}
                     {calView === "week" && (<>
                         <div className="flex justify-end -mb-3">
+                            {/* volutamente DISCRETO (Luca 31/07): se l'ho nascosta non
+                                voglio che il pulsante si faccia notare */}
                             <button onClick={() => setMostraDomenica(v => !v)}
                                 title={mostraDomenica ? "Nascondi la domenica: gli altri giorni si allargano" : "Mostra di nuovo la domenica"}
-                                className={cn("px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors", mostraDomenica ? "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10" : "bg-amber-500/15 border-amber-500/40 text-amber-300")}>
-                                {mostraDomenica ? "Nascondi domenica" : "Domenica nascosta — mostra"}
+                                className="px-2.5 py-1 rounded-lg text-[11px] text-slate-600 hover:text-slate-300 transition-colors">
+                                {mostraDomenica ? "Nascondi domenica" : "Mostra domenica"}
                             </button>
                         </div>
                         <div className={cn("grid gap-1.5", mostraDomenica ? "grid-cols-7" : "grid-cols-6")}>
@@ -1311,8 +1317,8 @@ export default function Calendario() {
                                                 ...dayTasks.map((t) => ({ min: t.time ? minutiDi(t.time) : -1, jsx: (
                                                     <button
                                                         key={`t-${t.id}`}
-                                                        onClick={() => selectDate(dateStr)}
-                                                        title="Apri il giorno: la task si gestisce dal pannello a destra"
+                                                        onClick={() => { selectDate(dateStr); setTaskDettaglio(t); }}
+                                                        title="Apri la task (dettaglio e modifica)"
                                                         className="w-full text-left px-1.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
                                                     >
                                                         <div className="font-semibold text-emerald-200 truncate">{t.time ? `${t.time} ` : ""}{t.title}</div>
@@ -1340,6 +1346,20 @@ export default function Calendario() {
                         </div>
                     </>)}
 
+                    {/* DETTAGLIO TASK (Luca 31/07): modifica + nuovi assegnatari */}
+                    {taskDettaglio && (
+                        <TaskDettaglioModal
+                            t={taskDettaglio}
+                            puoGestire={canAssignOthers || taskDettaglio.createdBy === user?.name}
+                            persone={[...(user?.name ? [user.name] : []), ...assignableAgents.filter(a => a !== user?.name)]}
+                            negozi={storeNames}
+                            esiti={esitiPer("task")}
+                            onClose={() => setTaskDettaglio(null)}
+                            onAggiornata={(nt) => setTasks(prev => prev.map(x => x.id === nt.id ? nt : x))}
+                            onCopie={(ns) => setTasks(prev => [...prev, ...ns])}
+                        />
+                    )}
+
                     {/* VISTA GIORNO (Luca 29/07): ore scandite in verticale stile Google
                         Calendar — tutta la giornata a colpo d'occhio, dettaglio inline. */}
                     {calView === "day" && (() => {
@@ -1362,7 +1382,7 @@ export default function Calendario() {
                                 key: `t-${t.id}`, min: minutiDi(t.time), durata: 45,
                                 titolo: `${t.time} · ${t.title}`, sotto: t.assignedToStore || t.assignedTo || "",
                                 classi: "border-emerald-500/40 bg-emerald-500/15",
-                                onClick: () => selectDate(dayDate),
+                                onClick: () => setTaskDettaglio(t),
                             })),
                             ...dayMeetings.map((m): Ev => ({
                                 key: `m-${m.id}`, min: minutiDi(m.startTime),
@@ -1542,7 +1562,8 @@ export default function Calendario() {
                                                 <div className="flex items-start gap-2 max-w-[70%]">
                                                     <div className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                                                     <button
-                                                        onClick={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
+                                                        onClick={() => setTaskDettaglio(t)}
+                                                        title="Apri la task (dettaglio e modifica)"
                                                         className="flex-1 text-left"
                                                     >
                                                         <span className={cn(
@@ -2502,6 +2523,128 @@ export default function Calendario() {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+// ─── DETTAGLIO TASK (Luca 31/07) ─────────────────────────────────────────────
+// Cliccando una task nel calendario centrale o nel pannello a destra si apre
+// questo modale: campi modificabili (per chi la gestisce), stato, e AGGIUNTA
+// di nuovi assegnatari — persone o punti vendita — che genera task gemelle.
+function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, onAggiornata, onCopie }: {
+    t: CalendarTask;
+    puoGestire: boolean;
+    persone: string[];
+    negozi: string[];
+    esiti: { chiave: string; etichetta: string; colore: string; attiva: boolean }[];
+    onClose: () => void;
+    onAggiornata: (t: CalendarTask) => void;
+    onCopie: (nuove: CalendarTask[]) => void;
+}) {
+    const [titolo, setTitolo] = useState(t.title);
+    const [data, setData] = useState(t.date);
+    const [ora, setOra] = useState(t.time || "");
+    const [note, setNote] = useState(t.notes || "");
+    const [stato, setStato] = useState<TaskStatus>(t.status);
+    const [addPersone, setAddPersone] = useState<string[]>([]);
+    const [addNegozi, setAddNegozi] = useState<string[]>([]);
+    const [busy, setBusy] = useState(false);
+
+    const salva = async () => {
+        if (busy) return;
+        setBusy(true);
+        const patch: Record<string, unknown> = { status: stato };
+        if (puoGestire) {
+            patch.title = titolo.trim() || t.title;
+            patch.date = data;
+            patch.time = ora || null;
+            patch.notes = note || null;
+        }
+        const { data: upd, error } = await supabase.from("calendar_tasks").update(patch).eq("id", t.id).select().single();
+        if (error) { setBusy(false); alert("Salvataggio non riuscito: " + error.message); return; }
+        onAggiornata(mapTaskRow(upd as Record<string, unknown>));
+        if (puoGestire && (addPersone.length || addNegozi.length)) {
+            const base = {
+                title: (patch.title as string) || t.title, date: data, time: ora || null, status: "da_fare",
+                notes: note || null, client_ref: t.clientRef || null, created_by: t.createdBy || "—",
+            };
+            const rows = [
+                ...addPersone.filter((p) => p !== t.assignedTo).map((p) => ({ ...base, assigned_to: p, assigned_to_store: null })),
+                ...addNegozi.filter((n) => n !== t.assignedToStore).map((n) => ({ ...base, assigned_to: "", assigned_to_store: n })),
+            ];
+            if (rows.length) {
+                const { data: ins, error: e2 } = await supabase.from("calendar_tasks").insert(rows).select();
+                if (e2) alert("Task gemelle NON create: " + e2.message);
+                else onCopie(((ins ?? []) as Record<string, unknown>[]).map(mapTaskRow));
+            }
+        }
+        setBusy(false);
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            <div className="glass-card w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                    <h3 className="text-lg font-bold text-white">✅ Task</h3>
+                    <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg text-slate-400"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="p-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Titolo</label>
+                        <input className="glass-input w-full" value={titolo} onChange={(e) => setTitolo(e.target.value)} disabled={!puoGestire} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Data</label>
+                            <input type="date" className="glass-input w-full" value={data} onChange={(e) => setData(e.target.value)} disabled={!puoGestire} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Ora</label>
+                            <input type="time" className="glass-input w-full" value={ora} onChange={(e) => setOra(e.target.value)} disabled={!puoGestire} />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Assegnata a</label>
+                            <input className="glass-input w-full text-slate-300 bg-white/5" value={t.assignedToStore ? `🏬 ${t.assignedToStore}` : (t.assignedTo || "—")} readOnly />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Stato</label>
+                            <select className="glass-input w-full" value={stato} onChange={(e) => setStato(e.target.value as TaskStatus)}>
+                                {esiti.filter((x) => x.attiva || x.chiave === stato).map((x) => <option key={x.chiave} value={x.chiave}>{x.etichetta}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Note</label>
+                        <textarea className="glass-input w-full resize-none" rows={2} value={note} onChange={(e) => setNote(e.target.value)} disabled={!puoGestire} />
+                    </div>
+                    {puoGestire && (
+                        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/8 space-y-3">
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aggiungi assegnatari <span className="normal-case font-normal">(task gemelle, una a testa)</span></p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[11px] text-slate-500 mb-1">Operatori</label>
+                                    <SelectMulti values={addPersone} onChange={setAddPersone} opzioni={persone} className="w-full bg-black/40 border border-white/10 rounded-xl text-sm py-2 px-3" />
+                                </div>
+                                <div>
+                                    <label className="block text-[11px] text-slate-500 mb-1">Punti vendita</label>
+                                    <SelectMulti values={addNegozi} onChange={setAddNegozi} opzioni={negozi} className="w-full bg-black/40 border border-white/10 rounded-xl text-sm py-2 px-3" />
+                                </div>
+                            </div>
+                            {(addPersone.length + addNegozi.length) > 0 && <p className="text-[11px] text-slate-500">Al salvataggio verranno create {addPersone.length + addNegozi.length} task gemelle.</p>}
+                        </div>
+                    )}
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                        <p className="text-[11px] text-slate-600">Creata da {t.createdBy || "—"}</p>
+                        <div className="flex gap-2">
+                            <button onClick={onClose} className="px-4 py-2 rounded-xl border border-white/10 text-slate-300 text-sm">Chiudi</button>
+                            <button onClick={salva} disabled={busy} className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-40">{busy ? "Salvo…" : "Salva"}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
