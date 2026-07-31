@@ -313,6 +313,9 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
     // Chiusura FORZATA di un turno rimasto aperto: solo pack amministrazione.
     const canForce = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     const [forceId, setForceId] = useState<number | null>(null);
+    // TIMELINE anche sul turno LIVE (Luca 31/07): click sulla card "In
+    // Servizio" → pause fatte finora e quella eventualmente in corso
+    const [timelineLive, setTimelineLive] = useState<ShiftRow | null>(null);
     const forzaChiusura = async (sh: ShiftRow) => {
         const now = new Date();
         let pause = Number(sh.total_pause_minutes) || 0;
@@ -450,7 +453,10 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                 {filteredActive.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         {filteredActive.map(s => (
-                            <div key={s.id} className="glass-panel p-4 flex flex-col gap-3 relative overflow-hidden group">
+                            <div key={s.id}
+                                onClick={() => canForce && setTimelineLive(s)}
+                                title={canForce ? "Clicca per la timeline live (entrata e pause di oggi)" : undefined}
+                                className={cn("glass-panel p-4 flex flex-col gap-3 relative overflow-hidden group", canForce && "cursor-pointer hover:bg-white/[0.04] transition-colors")}>
                                 <div className="absolute top-0 right-0 p-2 opacity-5 mt-1 mr-1">
                                     <Clock className="w-12 h-12" />
                                 </div>
@@ -479,7 +485,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                                     </div>
                                 </div>
                                 {canForce && (
-                                    <div className="relative z-10">
+                                    <div className="relative z-10" onClick={(e) => e.stopPropagation()}>
                                         {forceId === s.id ? (
                                             <div className="flex gap-2">
                                                 <button onClick={() => forzaChiusura(s)} className="flex-1 text-[11px] py-1.5 rounded-lg bg-rose-500/20 border border-rose-500/50 text-rose-300 hover:bg-rose-500/30 font-bold">Conferma chiusura</button>
@@ -503,6 +509,8 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                     </div>
                 )}
             </div>
+
+            {timelineLive && <TimelineTurnoModal shift={timelineLive} onClose={() => setTimelineLive(null)} />}
 
             {/* Lo storico vive nel pannello Presenze qui sotto (filtri periodo/persona/negozio + export) */}
         </div>
@@ -916,28 +924,36 @@ function PresenzeAdmin() {
             )}
 
             {/* ── Modale TIMELINE della giornata (Luca 31/07) ── */}
-            {timelineShift && (() => {
-                const s = timelineShift;
-                const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
-                const evs = Array.isArray(s.eventi) && s.eventi.length
-                    ? [...s.eventi].sort((a, b) => a.t.localeCompare(b.t)) : null;
-                const durataMin = (daIso: string, aIso: string | null) =>
-                    Math.max(0, Math.round(((aIso ? new Date(aIso).getTime() : Date.now()) - new Date(daIso).getTime()) / 60000));
-                const STILE: Record<EventoTurno["tipo"], { icona: string; label: string; cls: string }> = {
-                    inizio: { icona: "▶", label: "Entrata", cls: "text-emerald-300 border-emerald-500/40 bg-emerald-500/10" },
-                    pausa: { icona: "⏸", label: "In pausa", cls: "text-amber-300 border-amber-500/40 bg-amber-500/10" },
-                    ripresa: { icona: "▶", label: "Ripresa", cls: "text-sky-300 border-sky-500/40 bg-sky-500/10" },
-                    fine: { icona: "■", label: "Fine turno", cls: "text-rose-300 border-rose-500/40 bg-rose-500/10" },
-                    correzione: { icona: "✏️", label: "Correzione", cls: "text-slate-300 border-white/20 bg-white/[0.04]" },
-                };
-                return (
-                    <div className="fixed inset-0 bg-black/70 z-[1300] flex items-center justify-center p-4"
-                        onClick={() => setTimelineShift(null)} role="dialog" aria-modal="true">
-                        <div className="w-full max-w-md p-6 rounded-2xl border border-white/10 shadow-2xl bg-[#12141f] max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-start justify-between mb-1">
-                                <h3 className="text-base font-bold text-white">🕐 Timeline badgiatura</h3>
-                                <button onClick={() => setTimelineShift(null)} className="text-slate-500 hover:text-white text-sm">✕</button>
-                            </div>
+            {timelineShift && <TimelineTurnoModal shift={timelineShift} onClose={() => setTimelineShift(null)} />}
+        </div>
+    );
+}
+
+// ── TIMELINE di un turno (Luca 31/07): usata dallo storico presenze E dalle
+// card "In Servizio" — sul turno LIVE mostra le pause fatte finora e quella
+// eventualmente in corso. Turni senza eventi: riepilogo entrata/pausa/uscita.
+function TimelineTurnoModal({ shift, onClose }: { shift: ShiftRow; onClose: () => void }) {
+    const s = shift;
+    const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+    const evs = Array.isArray(s.eventi) && s.eventi.length
+        ? [...s.eventi].sort((a, b) => a.t.localeCompare(b.t)) : null;
+    const durataMin = (daIso: string, aIso: string | null) =>
+        Math.max(0, Math.round(((aIso ? new Date(aIso).getTime() : Date.now()) - new Date(daIso).getTime()) / 60000));
+    const STILE: Record<EventoTurno["tipo"], { icona: string; label: string; cls: string }> = {
+        inizio: { icona: "▶", label: "Entrata", cls: "text-emerald-300 border-emerald-500/40 bg-emerald-500/10" },
+        pausa: { icona: "⏸", label: "In pausa", cls: "text-amber-300 border-amber-500/40 bg-amber-500/10" },
+        ripresa: { icona: "▶", label: "Ripresa", cls: "text-sky-300 border-sky-500/40 bg-sky-500/10" },
+        fine: { icona: "■", label: "Fine turno", cls: "text-rose-300 border-rose-500/40 bg-rose-500/10" },
+        correzione: { icona: "✏️", label: "Correzione", cls: "text-slate-300 border-white/20 bg-white/[0.04]" },
+    };
+    return (
+        <div className="fixed inset-0 bg-black/70 z-[1300] flex items-center justify-center p-4"
+            onClick={onClose} role="dialog" aria-modal="true">
+            <div className="w-full max-w-md p-6 rounded-2xl border border-white/10 shadow-2xl bg-[#12141f] max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-start justify-between mb-1">
+                    <h3 className="text-base font-bold text-white">🕐 Timeline badgiatura{!s.ended_at && <span className="ml-2 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 align-middle">live</span>}</h3>
+                    <button onClick={onClose} className="text-slate-500 hover:text-white text-sm">✕</button>
+                </div>
                             <p className="text-xs text-slate-500 mb-4">
                                 {s.employee_name}{s.store ? ` · ${s.store}` : ""} — {new Date(s.started_at).toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
                             </p>
@@ -976,18 +992,14 @@ function PresenzeAdmin() {
                                     {s.ended_at
                                         ? <div className="flex items-center gap-2"><span className="text-rose-300">■</span><b className="text-white">{fmtT(s.ended_at)}</b><span className="text-slate-300">Fine turno</span></div>
                                         : <div className="text-emerald-400 font-bold text-xs">Turno ancora in corso</div>}
-                                    <p className="text-[11px] text-slate-500 pt-2">Il dettaglio delle singole pause c&apos;è solo per i turni timbrati dal 31/07/2026 in poi (prima si salvava soltanto il totale).</p>
                                 </div>
                             )}
                             <div className="mt-4 p-3 rounded-xl bg-white/[0.03] border border-white/8 text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
                                 <span>Pausa totale: <b className="text-amber-300">{Math.round(s.total_pause_minutes || 0)}m</b></span>
                                 {s.ended_at && <span>Ore nette: <b className="text-emerald-300">{fmtOre(oreNette(s))}</b></span>}
                             </div>
-                        </div>
-                    </div>
-                );
-            })()}
         </div>
+    </div>
     );
 }
 
