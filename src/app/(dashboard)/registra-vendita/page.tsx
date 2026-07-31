@@ -218,7 +218,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
         setImporto(editItem.importo!=null?String(editItem.importo):"");
         setModel(editItem.model||"");
         setImei(editItem.imei||"");
-        if(found.needsImei&&Array.isArray(editItem.units)&&editItem.units.length)setUsatoUnits(editItem.units.map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId||null,prezzo:u.prezzo!=null?String(u.prezzo):"",manuale:!!u.manuale})));
+        if(found.needsImei&&Array.isArray(editItem.units)&&editItem.units.length)setUsatoUnits(editItem.units.map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId||null,prezzo:u.prezzo!=null?String(u.prezzo):""})));
         if(found.price===null)setPrice(String(editItem.price||""));
       }
     } else if(show&&!editItem){
@@ -244,7 +244,9 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
     const pVal=p.isTelCash?(parseFloat(importo)||0):(p.price!==null?p.price:parseFloat(price)||0);
     const mVal=p.type==="fixed"?(p.fixedMargin||0):p.type==="pct"?(pVal*(p.pctMargin||0)/100):0;
     if(p.needsImei){
-      const units=usatoUnits.filter(u=>u.imei||u.model).map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId||null,prezzo:(u.prezzo!=null&&String(u.prezzo).trim()!=="")?(parseFloat(String(u.prezzo).replace(",","."))||null):null,manuale:!!u.manuale}));
+      // SOLO telefoni scelti dal magazzino (Luca 31/07): niente IMEI a mano.
+      const units=usatoUnits.filter(u=>u.usatoId).map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId,prezzo:(u.prezzo!=null&&String(u.prezzo).trim()!=="")?(parseFloat(String(u.prezzo).replace(",","."))||null):null}));
+      if(units.length===0)return;
       const _im=units.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
       if(new Set(_im).size!==_im.length)return;
       const q=units.length||1;
@@ -256,6 +258,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
   };
   const _usImeis=usatoUnits.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
   const hasDupImei=!!(selProd&&selProd.needsImei)&&(new Set(_usImeis).size!==_usImeis.length);
+  const unitMissing=!!(selProd&&selProd.needsImei)&&!usatoUnits.some(u=>u.usatoId);
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
     <style>{`@keyframes margSlideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
     <div style={{background:"rgba(255,255,255,0.02)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:640,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
@@ -303,7 +306,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
           </div>}
           {selProd.needsImei&&<div style={{marginBottom:12}}>
             <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:6,textTransform:"uppercase"}}>Dispositivi usati ({usatoUnits.length}) — magazzino di {negozio||"—"}</div>
-            {magUsati.length===0&&<div style={{fontSize:11,color:"#fd7e14",fontWeight:600,marginBottom:8}}>⚠ Nessun telefono In Vendita nel magazzino di {negozio||"questo negozio"} — puoi comunque inserire un IMEI a mano (senza scarico).</div>}
+            {magUsati.length===0&&<div style={{fontSize:11,color:"#fd7e14",fontWeight:600,marginBottom:8}}>⚠ Nessun telefono In Vendita nel magazzino di {negozio||"questo negozio"}: per venderlo, l'usato deve prima essere In Vendita su Gestione Usati.</div>}
             {usatoUnits.map((u,i)=>{
               const _di=String(u.imei||"").replace(/\D/g,"");const done=_di.length===15;
               const dup=done&&usatoUnits.some((x,j)=>j!==i&&String(x.imei||"").replace(/\D/g,"")===_di);
@@ -330,14 +333,6 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
                         style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(u.prezzo??"").trim()===""?"2px solid #fd7e14":"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
                     </div>
                   </div>
-                ):u.manuale?(
-                  <>
-                    <input value={u.imei} onChange={e=>onUnitImei(i,e.target.value)} placeholder="IMEI (15 cifre)" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:dup?"2px solid #dc3545":done?"2px solid #fd7e14":"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace",marginBottom:6}}/>
-                    <input value={u.model} onChange={e=>setUnit(i,"model",e.target.value)} placeholder="Modello" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",background:"rgba(255,255,255,0.04)"}}/>
-                    {dup?<div style={{fontSize:10,color:"#dc3545",fontWeight:700,marginTop:4}}>⛔ IMEI duplicato — già inserito in un'altra unità</div>
-                      :<div style={{fontSize:10,color:"#fd7e14",fontWeight:700,marginTop:4}}>⚠ Fuori magazzino: NON verrà scaricato da Gestione Usati</div>}
-                    <button onClick={()=>clearUnit(i)} style={{marginTop:6,padding:"4px 10px",borderRadius:8,border:"none",background:"transparent",color:"#6f42c1",fontSize:11,fontWeight:700,cursor:"pointer"}}>↩ torna alla ricerca a magazzino</button>
-                  </>
                 ):(
                   <>
                     <input value={u.cerca||""} onChange={e=>setUnit(i,"cerca",e.target.value)} placeholder={`Cerca per modello o IMEI nel magazzino di ${negozio||"—"}…`}
@@ -352,9 +347,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
                         </button>
                       ))}
                     </div>}
-                    {q.length>=2&&hits.length===0&&<div style={{fontSize:10,color:"#fd7e14",fontWeight:700,marginTop:4}}>Nessun telefono In Vendita corrisponde nel magazzino di {negozio||"—"}.</div>}
-                    <button onClick={()=>{setUsatoUnits(prev=>{const a=[...prev];a[i]={imei:qd.length===15?qd:"",model:"",manuale:true};return a;});}}
-                      style={{marginTop:6,padding:"4px 10px",borderRadius:8,border:"none",background:"transparent",color:"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>Non è a magazzino? Inserisci IMEI a mano</button>
+                    {q.length>=2&&hits.length===0&&<div style={{fontSize:10,color:"#fd7e14",fontWeight:700,marginTop:4}}>Nessun telefono In Vendita corrisponde nel magazzino di {negozio||"—"}: si vendono solo usati presenti a magazzino.</div>}
                   </>
                 )}
               </div>
@@ -364,6 +357,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
             <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:importoMissing?"2px solid #dc3545":"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
             {selProd.isTelCash&&<div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>
           {hasDupImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Sono presenti IMEI duplicati: correggili per registrare</div>}
+          {unitMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(253,126,20,0.12)",border:"1px solid #fdd3ad",color:"#fd7e14",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Seleziona il telefono dal magazzino usati: si vendono solo dispositivi presenti a magazzino</div>}
           {importoMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
           <button onClick={handleAdd} disabled={hasDupImei||importoMissing} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:(hasDupImei||importoMissing)?"#cfcfcf":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:(hasDupImei||importoMissing)?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
         </div>)}

@@ -1374,15 +1374,15 @@ function GestioneUsatiInner() {
     return match.length ? match : (mio ? [mio] : [...NEGOZI]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [NEGOZI, user?.negozio]);
-  // ALL'APERTURA (Luca 31/07): per i ruoli di negozio partono gia' selezionati
-  // SOLO i propri usati ("Mostra i miei" preselezionato); i ruoli direzionali
-  // vedono tutto come prima
+  // ALL'APERTURA (Luca 31/07): "Mostra i miei" preselezionato per TUTTI i
+  // ruoli — chi non ha un negozio assegnato (direzione/amministrazione senza
+  // sede) parte comunque con tutti i punti vendita, non avendo un "suo".
   const storesInit = useRef(false);
   useEffect(() => {
     if (storesInit.current || !NEGOZI.length || !user) return;
     storesInit.current = true;
-    setSelectedStores(filtriCompleti ? [...NEGOZI] : mieiMatch());
-  }, [NEGOZI, user, filtriCompleti, mieiMatch]);
+    setSelectedStores(mieiMatch());
+  }, [NEGOZI, user, mieiMatch]);
   const mostraImiei = () => setSelectedStores(mieiMatch());
   const firma = (a: string[]) => JSON.stringify([...a].sort());
   const mieiAttivo = !!user?.negozio && firma(selectedStores) === firma(mieiMatch());
@@ -1535,7 +1535,7 @@ function GestioneUsatiInner() {
     }
   };
 
-  const resetFilters = () => { setSelectedStores(filtriCompleti ? [...NEGOZI] : mieiMatch()); setSelectedStatuses([...STATUS_KEYS]); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setActiveKpi(null); };
+  const resetFilters = () => { setSelectedStores(mieiMatch()); setSelectedStatuses([...STATUS_KEYS]); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setActiveKpi(null); };
 
   const handleSaveDevice = useCallback(async (u: Device) => {
     const row = deviceToRow(u);
