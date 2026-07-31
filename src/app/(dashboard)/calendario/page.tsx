@@ -687,6 +687,47 @@ export default function Calendario() {
         setTaskPersone([]); setTaskNegozi([]); setTaskModo("persone");
     };
 
+    // ANNULLAMENTO riunione (Luca 31/07): chi puo' crearle puo' annullarle.
+    // L'invito (pop-up) viene RITIRATO — chi non l'aveva ancora visto non
+    // ricevera' nulla; chi l'aveva GIA' visto (letto/risposto) riceve
+    // l'avviso di cancellazione in Comunicazioni (bacheca, non pop-up).
+    const eliminaRiunione = async (m: CalendarMeeting) => {
+        if (!window.confirm(`Annullare la riunione "${m.title}" del ${m.date}?\nChi aveva già visto l'invito riceverà l'avviso in Comunicazioni; chi non l'aveva ancora visto non riceverà nulla.`)) return;
+        try {
+            // 1. si ritrova l'invito: dal collegamento meeting_id (mig. 122) o,
+            //    per gli inviti vecchi, dal titolo
+            let inv = await supabase.from("comunicazioni").select("id").eq("meeting_id", m.id).maybeSingle();
+            if (inv.error && /meeting_id|column/i.test(inv.error.message || "")) {
+                inv = await supabase.from("comunicazioni").select("id").eq("kind", "popup").eq("title", `📅 Riunione: ${m.title}`).order("created_at", { ascending: false }).limit(1).maybeSingle();
+            }
+            const invitoId = (inv.data as { id?: number } | null)?.id;
+            let avvisati: string[] = [];
+            if (invitoId) {
+                const { data: ric } = await supabase.from("comunicazioni_ricevute").select("user_id, letto_il").eq("comunicazione_id", invitoId);
+                avvisati = ((ric ?? []) as { user_id: string; letto_il: string | null }[]).filter((r) => r.letto_il).map((r) => r.user_id);
+                await supabase.from("comunicazioni_ricevute").delete().eq("comunicazione_id", invitoId);
+                await supabase.from("comunicazioni").delete().eq("id", invitoId);
+            }
+            // 2. avviso in BACHECA solo a chi l'aveva vista
+            if (avvisati.length) {
+                await supabase.from("comunicazioni").insert({
+                    title: `❌ Riunione annullata: ${m.title}`,
+                    content: `La riunione "${m.title}" prevista per il ${m.date} dalle ${m.startTime} alle ${m.endTime} è stata ANNULLATA.`,
+                    type: "warning",
+                    kind: "bacheca",
+                    target_users: [...new Set(avvisati)],
+                    created_by: user?.id || null,
+                    created_by_name: user?.name || null,
+                    date_display: new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" }),
+                });
+            }
+        } catch { /* la riunione si elimina comunque */ }
+        const { error } = await supabase.from("calendar_meetings").delete().eq("id", m.id);
+        if (error) { alert("Riunione NON eliminata: " + error.message); return; }
+        setMeetings(prev => prev.filter(x => x.id !== m.id));
+        setShowMeetingDetailModal(false);
+    };
+
     const handleCreateMeetingSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newMeeting.title || !newMeeting.date || !newMeeting.startTime || !newMeeting.endTime || !newMeeting.brand) return;
@@ -716,7 +757,8 @@ export default function Calendario() {
         if (newMeeting.recipients.length) {
             const quando = `${newMeeting.date} dalle ${newMeeting.startTime} alle ${newMeeting.endTime}`;
             const dove = newMeeting.type === "in_person" ? (newMeeting.location ? `di persona — ${newMeeting.location}` : "di persona") : (newMeeting.link ? `in videochiamata — ${newMeeting.link}` : "in videochiamata");
-            const { error: comErr } = await supabase.from("comunicazioni").insert({
+            const invito: Record<string, unknown> = {
+                meeting_id: (data as { id?: number })?.id ?? null,
                 title: `📅 Riunione: ${newMeeting.title}`,
                 content: [`Sei invitato alla riunione "${newMeeting.title}"${newMeeting.brand ? ` (${newMeeting.brand})` : ""}.`, `Quando: ${quando}`, `Dove: ${dove}`, newMeeting.notes ? `Note: ${newMeeting.notes}` : ""].filter(Boolean).join("\n"),
                 type: "info",
@@ -729,7 +771,13 @@ export default function Calendario() {
                 created_by: user?.id || null,
                 created_by_name: user?.name || null,
                 date_display: new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" }),
-            });
+            };
+            let { error: comErr } = await supabase.from("comunicazioni").insert(invito);
+            if (comErr && /meeting_id|column/i.test(comErr.message || "")) {
+                // mig. 122 non ancora applicata: invito senza collegamento
+                delete invito.meeting_id;
+                ({ error: comErr } = await supabase.from("comunicazioni").insert(invito));
+            }
             if (comErr) alert("Riunione salvata, ma il pop-up di invito NON è partito: " + comErr.message);
         }
         setShowCreateMeetingModal(false); setCercaOperatore(""); setCercaNegozio("");
@@ -2364,7 +2412,7 @@ export default function Calendario() {
                     onClick={() => setShowMeetingDetailModal(false)}
                 >
                     <div
-                        className="glass-card p-6 w-full max-w-4xl max-h-[85vh] overflow-y-auto"
+                        className="glass-card p-6 w-[96vw] max-w-6xl max-h-[92vh] overflow-y-auto"
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-4">
@@ -2374,12 +2422,23 @@ export default function Calendario() {
                                     {selectedMeeting.date} · {selectedMeeting.startTime}–{selectedMeeting.endTime}
                                 </p>
                             </div>
-                            <button
-                                onClick={() => setShowMeetingDetailModal(false)}
-                                className="text-slate-500 hover:text-slate-300"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {/* chi puo' CREARE riunioni puo' anche ANNULLARLE (Luca 31/07) */}
+                                {canCreateMeeting && (
+                                    <button
+                                        onClick={() => eliminaRiunione(selectedMeeting)}
+                                        className="px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-bold hover:bg-rose-500/25 transition-colors"
+                                    >
+                                        🗑 Annulla riunione
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setShowMeetingDetailModal(false)}
+                                    className="text-slate-500 hover:text-slate-300"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         <div className="space-y-3 text-sm">
@@ -2454,7 +2513,9 @@ export default function Calendario() {
                                     </div>
                                 </div>
 
-                                <div className="space-y-1.5 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                                {/* a colonne (Luca 31/07): con 30 invitati la lista singola
+                                    non bastava — 3 colonne su schermo largo, tanta altezza */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5 max-h-[55vh] overflow-y-auto custom-scrollbar pr-1">
                                     {selectedMeeting.recipients.length === 0 && (
                                         <p className="text-xs text-slate-500">
                                             Nessun invitato selezionato.
