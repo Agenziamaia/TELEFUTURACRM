@@ -8,16 +8,17 @@
 // (cap:/comunicazioni:*). Le letture ora stanno a DB (comunicazioni_ricevute):
 // il localStorage resta solo come eredita' del vecchio "letto" locale.
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Bell, Info, AlertTriangle, CheckCircle2, Plus, Eye, X } from "lucide-react";
+import { Bell, Info, AlertTriangle, CheckCircle2, Plus, Eye, X, Trash2 } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { capAllowed, ruoliDestinatariComunicazioni, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
+import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
 import { comunicazionePerMe, brandDelNegozio } from "@/lib/comunicazioniTarget";
-import { SelectMulti } from "@/components/SelectPersona";
+import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
+import { sameStore, useVisibleStores } from "@/lib/visibleStores";
 
 const STORAGE_KEY = "comunicazioni_read_ids";
 
@@ -36,6 +37,7 @@ export type Comunicazione = {
     esiti?: string[] | null;   // risposte cliccabili (mig. 116); null = solo conferma
     created_by: string | null;
     created_by_name: string | null;
+    created_at?: string | null;   // per il filtro periodo
 };
 
 type Ricevuta = {
@@ -77,6 +79,9 @@ export default function Comunicazioni() {
     const { perms } = useRolePermissions(role);
     const canCreate = capAllowed(role, CAP_COMUNICAZIONI.section, CAP_COM_CREA, perms);
     const destinatariPossibili = ruoliDestinatariComunicazioni(role, perms);
+    // ambito del mittente (negozi assegnati + visibilità + sede): serve a
+    // risolvere i ruoli destinatario marcati "solo il suo ambito"
+    const ambitoMittente = useVisibleStores();
     // Le ricevute (chi ha letto/confermato) le vede l'amministrazione e, per le
     // proprie comunicazioni, chi le ha create (es. lo store manager).
     const isAdminRicevute = ["amministrativo", "admin", "dev", "direttore_generale"].includes(role);
@@ -93,15 +98,15 @@ export default function Comunicazioni() {
         // select a scalare: completa (mig. 116, con esiti) → estesa (112) → legacy
         const completa = await supabase
             .from("comunicazioni")
-            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, esiti, created_by, created_by_name")
+            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, esiti, created_by, created_by_name, created_at")
             .order("created_at", { ascending: false });
         const esteso = completa.error ? await supabase
             .from("comunicazioni")
-            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, created_by, created_by_name")
+            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, created_by, created_by_name, created_at")
             .order("created_at", { ascending: false }) : null;
         const legacy = (esteso && esteso.error) ? await supabase
             .from("comunicazioni")
-            .select("id, title, date_display, type, content, kind, target_roles, created_by, created_by_name")
+            .select("id, title, date_display, type, content, kind, target_roles, created_by, created_by_name, created_at")
             .order("created_at", { ascending: false }) : null;
         const data = ((legacy ? legacy.data : esteso ? esteso.data : completa.data) ?? []) as unknown as Comunicazione[];
         const e = legacy ? legacy.error : null;
@@ -130,6 +135,18 @@ export default function Comunicazioni() {
     // l'amministrazione) vede anche le altre.
     const [brandsNegozio, setBrandsNegozio] = useState<string[]>([]);
     useEffect(() => { brandDelNegozio(user?.negozio).then(setBrandsNegozio); }, [user?.negozio]);
+    // FILTRI bacheca (Luca 31/07): periodo per TUTTI; destinatari (negozio,
+    // persona, brand, ruolo — gli stessi criteri della creazione, esiti esclusi)
+    // dall'amministrativo in su. "Per tutti" passa ogni filtro destinatario.
+    const [filtroDa, setFiltroDa] = useState("");
+    const [filtroA, setFiltroA] = useState("");
+    const [filtroNegozio, setFiltroNegozio] = useState("");
+    const [filtroPersona, setFiltroPersona] = useState("");
+    const [filtroBrand, setFiltroBrand] = useState("");
+    const [filtroRuolo, setFiltroRuolo] = useState("");
+    const filtriAttivi = !!(filtroDa || filtroA || filtroNegozio || filtroPersona || filtroBrand || filtroRuolo);
+    const resetFiltri = () => { setFiltroDa(""); setFiltroA(""); setFiltroNegozio(""); setFiltroPersona(""); setFiltroBrand(""); setFiltroRuolo(""); };
+
     const visibili = useMemo(() => list.filter((c) =>
         comunicazionePerMe(c, { userId: user?.id, role, negozio: user?.negozio, brandsNegozio })
         || c.created_by === user?.id || isAdminRicevute
@@ -200,10 +217,40 @@ export default function Comunicazioni() {
     const NEGOZI = useStores();
     const [utentiAttivi, setUtentiAttivi] = useState<{ id: string; full_name: string }[]>([]);
     useEffect(() => {
-        if (!formOpen || !canCreate || utentiAttivi.length) return;
+        // servono anche per il FILTRO persona dell'amministrazione, non solo per il form
+        if (!((formOpen && canCreate) || isAdminRicevute) || utentiAttivi.length) return;
         supabase.from("app_users").select("id, full_name").eq("active", true).order("full_name")
             .then(({ data }) => setUtentiAttivi((data ?? []) as { id: string; full_name: string }[]));
-    }, [formOpen, canCreate, utentiAttivi.length]);
+    }, [formOpen, canCreate, isAdminRicevute, utentiAttivi.length]);
+    // applicazione dei filtri sulla bacheca (dopo utentiAttivi: serve la mappa nome→id)
+    const filtrate = useMemo(() => {
+        const senzaTarget = (c: Comunicazione) => !(c.target_roles?.length || c.target_stores?.length || c.target_users?.length || c.target_brands?.length);
+        const idPersona = filtroPersona ? utentiAttivi.find((u) => u.full_name === filtroPersona)?.id : null;
+        const idRuolo = filtroRuolo ? (ROLES.find((r) => r.label === filtroRuolo)?.id || filtroRuolo) : null;
+        return visibili.filter((c) => {
+            if (filtroDa || filtroA) {
+                const d = (c.created_at || "").slice(0, 10);
+                if (filtroDa && (!d || d < filtroDa)) return false;
+                if (filtroA && (!d || d > filtroA)) return false;
+            }
+            if (filtroNegozio && !(senzaTarget(c) || c.target_stores?.some((s) => sameStore(s, filtroNegozio)))) return false;
+            if (idPersona && !(senzaTarget(c) || c.target_users?.includes(idPersona))) return false;
+            if (filtroBrand && !(senzaTarget(c) || c.target_brands?.includes(filtroBrand))) return false;
+            if (idRuolo && !(senzaTarget(c) || c.target_roles?.includes(idRuolo))) return false;
+            return true;
+        });
+    }, [visibili, filtroDa, filtroA, filtroNegozio, filtroPersona, filtroBrand, filtroRuolo, utentiAttivi]);
+
+    // ELIMINAZIONE (Luca 31/07): l'autore o l'amministrazione fanno pulizia —
+    // via anche le ricevute collegate
+    const eliminaComunicazione = async (com: Comunicazione) => {
+        if (!window.confirm(`Eliminare la comunicazione "${com.title}"?\nSparisce per tutti, insieme alle sue ricevute.`)) return;
+        await supabase.from("comunicazioni_ricevute").delete().eq("comunicazione_id", com.id);
+        const { error } = await supabase.from("comunicazioni").delete().eq("id", com.id);
+        if (error) { alert("Eliminazione non riuscita: " + error.message); return; }
+        fetchAll();
+    };
+
     const [salvando, setSalvando] = useState(false);
     const puoTutti = destinatariPossibili.length === ROLES.length;
     useEffect(() => { if (!puoTutti) setFTutti(false); }, [puoTutti]);
@@ -217,14 +264,44 @@ export default function Comunicazioni() {
             .map((nome) => utentiAttivi.find((u) => u.full_name === nome)?.id)
             .filter(Boolean) as string[];
         setSalvando(true);
+        // AMBITO destinatari (Luca 31/07): i ruoli marcati "solo il suo ambito"
+        // nella rotellina NON restano target di ruolo (raggiungerebbero tutta
+        // l'azienda) — si RISOLVONO qui nelle persone reali dei negozi visibili
+        // del mittente e finiscono in target_users.
+        let ruoliTarget = fTutti ? [] : [...fRuoli];
+        let idsAmbito: string[] = [];
+        const ruoliAmbito = ruoliTarget.filter((r) => destinatarioSoloAmbito(role, r, perms));
+        if (ruoliAmbito.length && !ambitoMittente.seesAll) {
+            ruoliTarget = ruoliTarget.filter((r) => !ruoliAmbito.includes(r));
+            const negoziMiei = ambitoMittente.stores.length ? ambitoMittente.stores : (user?.negozio ? [user.negozio] : []);
+            const { data: staff } = await supabase.from("app_users").select("id, role, primary_store").eq("active", true).in("role", ruoliAmbito);
+            const idsStaff = ((staff ?? []) as { id: string }[]).map((u) => u.id);
+            const { data: assegn } = idsStaff.length
+                ? await supabase.from("user_stores").select("user_id, store_name").in("user_id", idsStaff)
+                : { data: [] as { user_id: string; store_name: string }[] };
+            const negoziDi = new Map<string, string[]>();
+            ((assegn ?? []) as { user_id: string; store_name: string }[]).forEach((r) => {
+                const a = negoziDi.get(r.user_id) || []; a.push(String(r.store_name)); negoziDi.set(r.user_id, a);
+            });
+            idsAmbito = ((staff ?? []) as { id: string; primary_store: string | null }[]).filter((u) => {
+                const suoi = [...(negoziDi.get(u.id) || []), ...(u.primary_store ? [u.primary_store] : [])];
+                return suoi.some((s) => negoziMiei.some((m) => sameStore(s, m)));
+            }).map((u) => u.id);
+            if (!ruoliTarget.length && !idsAmbito.length && !idsPersone.length && !fNegozi.length && !fBrand.length) {
+                setSalvando(false);
+                setError(`Nei tuoi negozi non c'è nessuno con ruolo ${ruoliAmbito.map(roleLabel).join(", ")}: la comunicazione non avrebbe destinatari.`);
+                return;
+            }
+        }
+        const idsTarget = [...new Set([...idsPersone, ...idsAmbito])];
         const { error: e } = await supabase.from("comunicazioni").insert({
             title: fTitle.trim(),
             content: fContent.trim(),
             type: fType,
             kind: fKind,
-            target_roles: fTutti || !fRuoli.length ? null : fRuoli,
+            target_roles: fTutti || !ruoliTarget.length ? null : ruoliTarget,
             target_stores: fTutti || !fNegozi.length ? null : fNegozi,
-            target_users: fTutti || !idsPersone.length ? null : idsPersone,
+            target_users: fTutti || !idsTarget.length ? null : idsTarget,
             target_brands: fTutti || !fBrand.length ? null : fBrand,
             esiti: fEsiti.length ? fEsiti : null,
             created_by: user?.id || null,
@@ -300,7 +377,43 @@ export default function Comunicazioni() {
                 <div className="py-12 text-center text-slate-400">Caricamento...</div>
             ) : (
                 <div className="space-y-4">
-                    {visibili.map((com) => {
+                    <div className="glass-card p-4">
+                        <div className="flex flex-wrap items-end gap-3">
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dal</label>
+                                <input type="date" value={filtroDa} onChange={(e) => setFiltroDa(e.target.value)} className="block mt-1 bg-black/40 border border-white/10 rounded-xl text-sm py-2 px-3 text-slate-200 outline-none" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Al</label>
+                                <input type="date" value={filtroA} onChange={(e) => setFiltroA(e.target.value)} className="block mt-1 bg-black/40 border border-white/10 rounded-xl text-sm py-2 px-3 text-slate-200 outline-none" />
+                            </div>
+                            {isAdminRicevute && (
+                                <>
+                                    <div className="min-w-[170px]">
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Negozio</label>
+                                        <SelectOpzioni value={filtroNegozio} onChange={setFiltroNegozio} opzioni={NEGOZI} placeholder="Tutti — scrivi per filtrare" className="glass-input rounded-xl py-2 w-full mt-1" />
+                                    </div>
+                                    <div className="min-w-[190px]">
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Persona</label>
+                                        <SelectOpzioni value={filtroPersona} onChange={setFiltroPersona} opzioni={utentiAttivi.map((u) => u.full_name)} placeholder="Tutte — scrivi per filtrare" className="glass-input rounded-xl py-2 w-full mt-1" />
+                                    </div>
+                                    <div className="min-w-[150px]">
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Brand</label>
+                                        <SelectOpzioni value={filtroBrand} onChange={setFiltroBrand} opzioni={BRANDS} placeholder="Tutti" className="glass-input rounded-xl py-2 w-full mt-1" />
+                                    </div>
+                                    <div className="min-w-[170px]">
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Ruolo</label>
+                                        <SelectOpzioni value={filtroRuolo} onChange={setFiltroRuolo} opzioni={ROLES.map((r) => r.label)} placeholder="Tutti" className="glass-input rounded-xl py-2 w-full mt-1" />
+                                    </div>
+                                </>
+                            )}
+                            {filtriAttivi && (
+                                <button onClick={resetFiltri} className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">✕ Azzera filtri</button>
+                            )}
+                            {filtriAttivi && <span className="text-xs text-slate-500">{filtrate.length} su {visibili.length}</span>}
+                        </div>
+                    </div>
+                    {filtrate.map((com) => {
                         const mia = !!user?.id && com.created_by === user.id;
                         const read = isLetta(com.id) || mia;   // la propria non e' mai "Nuovo"
                         const styles = getTypeStyles(com.type);
@@ -325,12 +438,20 @@ export default function Comunicazioni() {
                                     !read && "border-l-4 border-l-primary"
                                 )}
                             >
-                                {!read && (
-                                    <div className="absolute top-6 right-6 flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                                        <span className="text-xs font-semibold text-primary uppercase tracking-wider">Nuovo</span>
-                                    </div>
-                                )}
+                                <div className="absolute top-6 right-6 flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                                    {!read && (
+                                        <span className="flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                                            <span className="text-xs font-semibold text-primary uppercase tracking-wider">Nuovo</span>
+                                        </span>
+                                    )}
+                                    {(isAdminRicevute || mia) && (
+                                        <button onClick={() => eliminaComunicazione(com)} title="Elimina comunicazione (per tutti)"
+                                            className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors">
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </div>
 
                                 <div className="flex gap-4">
                                     <div className={cn("shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border", styles.bg, styles.border, styles.color)}>
@@ -445,7 +566,7 @@ export default function Comunicazioni() {
                 </div>
             )}
 
-            {!loading && visibili.length === 0 && !error && (
+            {!loading && filtrate.length === 0 && !error && (
                 <div className="py-12 text-center text-slate-500">Nessuna comunicazione.</div>
             )}
 
@@ -528,12 +649,14 @@ export default function Comunicazioni() {
                                     )}
                                     {destinatariPossibili.map((rid) => {
                                         const sel = !fTutti && fRuoli.includes(rid);
+                                        const soloAmbito = destinatarioSoloAmbito(role, rid, perms);
                                         return (
                                             <button key={rid} type="button"
+                                                title={soloAmbito ? "Raggiunge solo le persone dei tuoi negozi" : undefined}
                                                 onClick={() => { setFTutti(false); setFRuoli((p) => p.includes(rid) ? p.filter((x) => x !== rid) : [...p, rid]); }}
                                                 className={cn("px-3.5 py-1.5 rounded-full border text-sm transition-all",
                                                     sel ? "border-violet-500 bg-violet-500/10 text-white" : "border-white/10 text-slate-400 hover:border-white/25")}>
-                                                {roleLabel(rid)}
+                                                {roleLabel(rid)}{soloAmbito && <span className="text-[10px] opacity-70"> · solo tuoi negozi</span>}
                                             </button>
                                         );
                                     })}

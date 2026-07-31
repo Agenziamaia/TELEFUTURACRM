@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, Suspense } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, Suspense } from "react";
 import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -23,6 +23,9 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
+import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, type RegolaCaller, type FaseCaller } from "@/lib/callerMalus";
+import { CallerRegoleModal, ArchivioMalusCallerModal } from "@/components/CallerRegole";
 
 /* ─────────────────────────────────────────────────────────────────────
    CONSTANTS
@@ -110,6 +113,12 @@ interface Call {
     whatsapp: string;
     note: string;
     data_richiamo: string;
+    // fasce orarie (mig. 118): in alternativa all'orario preciso
+    fascia_appuntamento: string;
+    fascia_richiamo: string;
+    // punto vendita CONGRUO per il cliente (mig. 118): per i lead interni
+    // coincide col negozio di provenienza, per gli altri va scelto sempre
+    negozio_pertinenza: string;
     lista_origine?: string | null;
     da_esitare?: boolean;
     storico: StoricoEntry[];
@@ -204,6 +213,9 @@ function mapRowToCall(row: Record<string, unknown>): Call {
         whatsapp: (row.whatsapp as string) || "",
         note: (row.note as string) || "",
         data_richiamo: (row.data_richiamo as string) || "",
+        fascia_appuntamento: (row.fascia_appuntamento as string) || "",
+        fascia_richiamo: (row.fascia_richiamo as string) || "",
+        negozio_pertinenza: (row.negozio_pertinenza as string) || "",
         lista_origine: (row.lista_origine as string) || null,
         da_esitare: !!row.da_esitare,
         storico: (row.storico as StoricoEntry[]) || [],
@@ -260,6 +272,30 @@ function formatTimeShort(d: string): string {
     return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
 }
 
+// Data con orario preciso OPPURE fascia (Luca 31/07): il flag Mattina/Pomeriggio
+// sostituisce l'orario — l'input diventa solo-data e la fascia viaggia a parte.
+function InputDataOra({ valore, fascia, onCambia }: { valore: string; fascia: string; onCambia: (valore: string, fascia: string) => void }) {
+    const conFascia = eFascia(fascia);
+    const scegli = (f: string) => {
+        if (f) onCambia((valore || "").slice(0, 10), f);
+        else onCambia(valore && valore.length === 10 ? `${valore}T10:00` : (valore || ""), "");
+    };
+    return (
+        <div className="space-y-1.5">
+            <div className="flex gap-1.5 flex-wrap">
+                {[["", "🕐 Orario preciso"], ["mattina", `${FASCE.mattina.emoji} Mattina`], ["pomeriggio", `${FASCE.pomeriggio.emoji} Pomeriggio`]].map(([k, l]) => (
+                    <button key={k} type="button" onClick={() => scegli(k)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${(conFascia ? fascia : "") === k ? "bg-violet-500/20 border-violet-500/50 text-violet-300" : "bg-black/30 border-white/10 text-slate-400 hover:text-slate-200"}`}>{l}</button>
+                ))}
+            </div>
+            <input type={conFascia ? "date" : "datetime-local"} className="glass-input rounded-lg py-2 w-full"
+                value={conFascia ? (valore || "").slice(0, 10) : (valore || "")}
+                onChange={(e) => onCambia(e.target.value, conFascia ? fascia : "")} />
+            {conFascia && <p className="text-[10px] text-amber-400/90">{fasciaLabel(fascia)} — senza orario preciso</p>}
+        </div>
+    );
+}
+
 // datetime-local vuole l'ora LOCALE "YYYY-MM-DDTHH:mm"; toISOString() e' UTC e
 // mostrava/salvava tutto con 2 ore di scarto (filo aperto 30/07, chiuso 31/07).
 function toLocalInput(d: Date | string): string {
@@ -299,6 +335,7 @@ function blankCall(callerName: string, isDirector: boolean): Call {
         indirizzo: "", agente: "", segnalatore: "", campagna: "",
         negozio_provenienza: "", mese_provenienza: "", anno_provenienza: "",
         whatsapp: "", note: "", data_richiamo: "",
+        fascia_appuntamento: "", fascia_richiamo: "", negozio_pertinenza: "",
         lista_origine: null,
         storico: [],
     };
@@ -351,18 +388,31 @@ function CallerPageInner() {
     // con automatismi (NR → WhatsApp, richiami, appuntamenti → calendario)
     // sono riconosciuti PER NOME: valgono finche' il nome resta quello.
     const [opzioniDb, setOpzioniDb] = useState<Record<string, string[]>>({});
+    // COMPORTAMENTI degli stati (mig. 119): appuntamento/richiamo/non_risposto,
+    // configurabili dal pannello — prima erano riconosciuti PER NOME nel codice
+    const [comportamenti, setComportamenti] = useState<Record<string, string>>({});
     useEffect(() => {
-        supabase.from("caller_opzioni").select("categoria, voce, attiva, ordine").order("ordine")
-            .then(({ data }) => {
-                if (!data?.length) return;
-                const m: Record<string, string[]> = {};
-                (data as { categoria: string; voce: string; attiva: boolean }[])
-                    .filter((r) => r.attiva)
-                    .forEach((r) => { (m[r.categoria] ||= []).push(r.voce); });
-                setOpzioniDb(m);
+        (async () => {
+            const tent = await supabase.from("caller_opzioni").select("categoria, voce, attiva, ordine, comportamento").order("ordine");
+            const legacy = tent.error ? await supabase.from("caller_opzioni").select("categoria, voce, attiva, ordine").order("ordine") : null;
+            const data = ((legacy ? legacy.data : tent.data) ?? null) as unknown as { categoria: string; voce: string; attiva: boolean; comportamento?: string | null }[] | null;
+            if (!data?.length) return;
+            const m: Record<string, string[]> = {};
+            const comp: Record<string, string> = {};
+            (data as { categoria: string; voce: string; attiva: boolean; comportamento?: string | null }[]).forEach((r) => {
+                if (r.attiva) (m[r.categoria] ||= []).push(r.voce);
+                if (r.categoria === "stato" && r.comportamento) comp[r.voce] = r.comportamento;
             });
+            setOpzioniDb(m);
+            setComportamenti(comp);
+        })();
     }, []);
     const STATI_OPT = opzioniDb.stato?.length ? opzioniDb.stato : [...STATI];
+    // gruppi DINAMICI dal pannello; finche' la mig. 119 non c'e', valgono le
+    // liste storiche in codice
+    const APP_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "appuntamento").map(([s]) => s); return v.length ? v : APPUNTAMENTO_STATI; }, [comportamenti]);
+    const RIC_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "richiamo").map(([s]) => s); return v.length ? v : RICHIAMO_STATI; }, [comportamenti]);
+    const NRD_STATI = useMemo(() => { const v = Object.entries(comportamenti).filter(([, c]) => c === "non_risposto").map(([s]) => s); return v.length ? v : NR_STATI; }, [comportamenti]);
     const PROVENIENZE_OPT = opzioniDb.provenienza?.length ? opzioniDb.provenienza : [...PROVENIENZE];
     const TIPOLOGIE_OPT = opzioniDb.tipologia?.length ? opzioniDb.tipologia : [...TIPOLOGIE];
     const OBIETTIVI_OPT = opzioniDb.obiettivo?.length ? opzioniDb.obiettivo : [...OBIETTIVI];
@@ -534,6 +584,30 @@ function CallerPageInner() {
         init();
     }, []);
 
+    // BOZZA della pratica aperta (Luca 31/07): cliccando WhatsApp dal modale
+    // si esce dalla pagina e prima si perdeva TUTTO il compilato. Ora la bozza
+    // si salva in sessione e al rientro su /caller (pulsante indietro in alto
+    // a sinistra o navigazione) il modale si riapre da solo con i dati scritti.
+    // Vale SOLO per questo flusso: senza bozza salvata non cambia nulla.
+    const salvaBozza = () => {
+        if (!editCall) return;
+        try { sessionStorage.setItem("caller_bozza", JSON.stringify({ editCall, modalMode, t: Date.now() })); } catch { /* no-op */ }
+    };
+    const [bozzaFatta, setBozzaFatta] = useState(false);
+    useEffect(() => {
+        if (bozzaFatta || loading) return;
+        setBozzaFatta(true);
+        try {
+            const raw = sessionStorage.getItem("caller_bozza");
+            if (!raw) return;
+            sessionStorage.removeItem("caller_bozza");
+            const b = JSON.parse(raw) as { editCall: Call; modalMode: "new" | "detail"; t: number };
+            if (!b?.editCall || Date.now() - (b.t || 0) > 60 * 60 * 1000) return;
+            setModalMode(b.modalMode || "detail");
+            setEditCall(b.editCall);
+        } catch { /* bozza corrotta: si ignora */ }
+    }, [bozzaFatta, loading]);
+
     // Arrivo dallo storico chiamate del cliente (Luca 31/07): /caller?apri=<id>
     // apre la pratica in dettaglio appena i dati sono carichi.
     const apriId = searchParams.get("apri");
@@ -560,9 +634,46 @@ function CallerPageInner() {
     // FACCETTE COERENTI (Luca 30/07): i contatori dei brand rispettano TUTTI
     // gli altri filtri attivi (caller, date, stato...) ignorando solo la
     // selezione brand stessa — prima erano fissi e non seguivano i filtri.
-    const matchFiltri = (c: Call, ignoraBrand = false) => {
+    // ── DA LAVORARE / WARNING / MALUS (Luca 31/07, stile Dragon PDA) ──
+    // regole per stato (giorni lavorativi + €/gg) in caller_regole, modificabili
+    // dall'admin col bottone ⚙️; le pratiche in malus maturano un importo che
+    // si archivia in caller_malus (in_corso → attivo → compensato in gara)
+    const [regoleCaller, setRegoleCaller] = useState<Map<string, RegolaCaller>>(new Map());
+    useEffect(() => { caricaRegoleCaller().then(setRegoleCaller); }, []);
+    const [faseFilter, setFaseFilter] = useState<"" | FaseCaller>("");
+    const faseInfo = useCallback((c: Call): { fase: FaseCaller; giorniMalus: number; importo: number; dalMalus: Date | null } => {
+        const r = regoleCaller.get(c.stato);
+        if (!r || r.esente) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
+        const rif = dataRiferimento(c, c.stato, RIC_STATI, APP_STATI);
+        if (!rif) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
+        const oggi = new Date();
+        const fase = faseDi(lavorativiDopo(rif, oggi), r);
+        const dalMalus = fase === "malus" && r.giorni_malus != null ? aggiungiLavorativi(rif, r.giorni_malus) : null;
+        const giorniMalus = dalMalus ? lavorativiDopo(dalMalus, oggi) + 1 : 0;
+        return { fase, giorniMalus, importo: Math.round(giorniMalus * r.malus_giorno * 100) / 100, dalMalus };
+    }, [regoleCaller, RIC_STATI, APP_STATI]);
+
+    const puoRegoleCaller = ["admin", "dev"].includes(user?.role || "");
+    const [showRegoleCaller, setShowRegoleCaller] = useState(false);
+    const [showArchivioMalus, setShowArchivioMalus] = useState(false);
+    // sincronizzazione episodi (una volta per sessione, solo direzione/admin:
+    // vede tutte le pratiche, quindi l'archivio resta completo)
+    const malusSyncDone = useRef(false);
+    useEffect(() => {
+        if (malusSyncDone.current || !isDirector || !regoleCaller.size || !calls.length) return;
+        malusSyncDone.current = true;
+        const pratiche = calls.map((c) => {
+            const fi = faseInfo(c);
+            const r = regoleCaller.get(c.stato);
+            return { id: c.id, stato: c.stato, caller: c.caller, fase: fi.fase, giorniMalus: fi.giorniMalus, malusGiorno: r?.malus_giorno || 0, dalMalus: fi.dalMalus };
+        });
+        sincronizzaMalusCaller(pratiche);
+    }, [isDirector, regoleCaller, calls, faseInfo]);
+
+    const matchFiltri = (c: Call, ignoraBrand = false, ignoraFase = false) => {
         if (!isDirector && c.caller !== currentCaller) return false;
         if (soloDaEsitare && !c.da_esitare) return false;
+        if (!ignoraFase && faseFilter && faseInfo(c).fase !== faseFilter) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
         if (fNome) {
             const search = fNome.toLowerCase();
@@ -607,7 +718,19 @@ function CallerPageInner() {
         return true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista]);
+    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const faseCounts = useMemo(() => {
+        const cnt = { da_lavorare: 0, warning: 0, malus: 0, importo: 0 };
+        calls.forEach((c) => {
+            if (!matchFiltri(c, false, true)) return;
+            const fi = faseInfo(c);
+            if (fi.fase === "da_lavorare") cnt.da_lavorare++;
+            else if (fi.fase === "warning") cnt.warning++;
+            else if (fi.fase === "malus") { cnt.malus++; cnt.importo += fi.importo; }
+        });
+        return cnt;
+    }, [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const brandCounts = useMemo(() => {
         const scoped = calls.filter((c) => matchFiltri(c, true));
@@ -746,7 +869,7 @@ function CallerPageInner() {
     // (collegamento calls.appointment_id, mig. 088); created_by = il caller, che
     // alimenta anche la visibilità clienti "con appuntamento preso".
     async function sincronizzaAppuntamento(c: Call, callId: string) {
-        if (!APPUNTAMENTO_STATI.includes(c.stato)) return;
+        if (!APP_STATI.includes(c.stato)) return;
         const dt = (c.data_appuntamento || "").trim();
         if (!dt) { alert("Appuntamento NON portato in calendario: manca la data e ora."); return; }
         const [dataApp, oraApp] = dt.includes("T") ? dt.split("T") : [dt, "10:00"];
@@ -755,9 +878,13 @@ function CallerPageInner() {
             alert("Appuntamento salvato sulla pratica ma NON portato in calendario: indica il negozio dell'appuntamento oppure l'agente.");
             return;
         }
+        // FASCIA (mig. 118): senza orario preciso il time tecnico e' l'inizio
+        // della fascia (ordina il calendario), la fascia viaggia sull'evento
+        const fasciaApp = eFascia(c.fascia_appuntamento) ? c.fascia_appuntamento : null;
         const payload: Record<string, unknown> = {
             date: dataApp,
-            time: oraApp || "10:00",
+            time: fasciaApp ? fasciaStart(fasciaApp)! : (oraApp || "10:00"),
+            fascia: fasciaApp,
             type: inNegozio ? "incoming" : "outgoing",
             store: inNegozio ? c.negozio_appuntamento : null,
             agente: inNegozio ? "" : c.agente,
@@ -771,12 +898,15 @@ function CallerPageInner() {
         };
         const { data: linked } = await supabase.from("calls").select("appointment_id").eq("id", callId).maybeSingle();
         const existing = linked?.appointment_id as number | null | undefined;
+        const { fascia: _fx, ...payloadLegacy } = payload;   // fallback pre-mig. 118
         if (existing) {
-            const { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            let { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(payloadLegacy).eq("id", existing));
             if (error) alert("Appuntamento in calendario NON aggiornato: " + error.message);
             return;
         }
-        const { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        let { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert(payloadLegacy).select("id").single());
         if (error) { alert("Appuntamento NON portato in calendario: " + error.message); return; }
         if (ins?.id) {
             const { error: linkErr } = await supabase.from("calls").update({ appointment_id: ins.id }).eq("id", callId);
@@ -793,9 +923,11 @@ function CallerPageInner() {
     // stesso evento invece di duplicarlo.
     async function sincronizzaRichiamo(c: Call, callId: string, dataRichiamo: string) {
         const [dataR, oraR] = dataRichiamo.includes("T") ? dataRichiamo.split("T") : [dataRichiamo, "10:00"];
+        const fasciaR = eFascia(c.fascia_richiamo) ? c.fascia_richiamo : null;
         const payload: Record<string, unknown> = {
             date: dataR,
-            time: (oraR || "10:00").slice(0, 5),
+            time: fasciaR ? fasciaStart(fasciaR)! : (oraR || "10:00").slice(0, 5),
+            fascia: fasciaR,
             type: "richiamo",
             store: null, agente: "",
             customer_name: c.tipo_cliente === "business" ? (c.ragione_sociale || `${c.nome} ${c.cognome}`.trim()) : `${c.nome} ${c.cognome}`.trim(),
@@ -807,12 +939,15 @@ function CallerPageInner() {
         };
         const { data: linked } = await supabase.from("calls").select("richiamo_event_id").eq("id", callId).maybeSingle();
         const existing = (linked as { richiamo_event_id?: number | null } | null)?.richiamo_event_id;
+        const { fascia: _fx, ...payloadLegacy } = payload;   // fallback pre-mig. 118
         if (existing) {
-            const { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            let { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(payloadLegacy).eq("id", existing));
             if (error) alert("Richiamo salvato sulla pratica ma calendario NON aggiornato: " + error.message);
             return;
         }
-        const { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        let { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert(payloadLegacy).select("id").single());
         if (error) { alert("Richiamo salvato sulla pratica ma NON portato in calendario: " + error.message); return; }
         if (ins?.id) {
             const { error: linkErr } = await supabase.from("calls").update({ richiamo_event_id: ins.id }).eq("id", callId);
@@ -893,6 +1028,10 @@ function CallerPageInner() {
             if (!anagraficaObbligatoriaOk(editCall)) return;
             if (!provenienzaInternoOk(editCall)) return;
             const newCall: Call = { ...editCall };
+            // NEGOZIO DI PERTINENZA obbligatorio (Luca 31/07), anche sui Non
+            // risponde: per i lead interni coincide con la provenienza
+            if (newCall.provenienza === "Interno" && newCall.negozio_provenienza) newCall.negozio_pertinenza = newCall.negozio_provenienza;
+            if (!String(newCall.negozio_pertinenza || "").trim()) { alert("NEGOZIO DI PERTINENZA obbligatorio (anche se non risponde): è il punto vendita congruo per il cliente — serve ai richiami per sapere dove mandarlo."); return; }
             // archivio SENZA +39 e senza spazi (Luca 31/07)
             newCall.numero = numeroNazionale(newCall.numero) || newCall.numero;
             newCall.cellulare = numeroNazionale(newCall.cellulare) || numeroNazionale(newCall.numero);
@@ -915,10 +1054,18 @@ function CallerPageInner() {
                 segnalatore: newCall.segnalatore, campagna: newCall.campagna,
                 negozio_provenienza: newCall.negozio_provenienza, mese_provenienza: newCall.mese_provenienza, anno_provenienza: newCall.anno_provenienza,
                 whatsapp: newCall.whatsapp, note: newCall.note, data_richiamo: newCall.data_richiamo,
+                fascia_appuntamento: newCall.fascia_appuntamento || null,
+                fascia_richiamo: newCall.fascia_richiamo || null,
+                negozio_pertinenza: newCall.negozio_pertinenza || null,
                 lista_origine: newCall.lista_origine,
                 storico: newCall.storico,
             };
-            const { data: creata, error } = await supabase.from("calls").insert(payload).select("id").single();
+            let { data: creata, error } = await supabase.from("calls").insert(payload).select("id").single();
+            if (error && /column/i.test(error.message || "")) {
+                // mig. 118 non ancora applicata: si salva senza i campi nuovi
+                const { fascia_appuntamento: _f1, fascia_richiamo: _f2, negozio_pertinenza: _np, ...legacy } = payload;
+                ({ data: creata, error } = await supabase.from("calls").insert(legacy).select("id").single());
+            }
             if (error) {
                 alert("Errore salvataggio: " + error.message);
                 return;
@@ -932,7 +1079,7 @@ function CallerPageInner() {
             // esito APPUNTAMENTO: senza data e senza negozio (o agente) il
             // calendario non si puo' popolare — meglio fermarsi e dirlo subito
             // (prima il ponte falliva in silenzio: caso del test di Luca).
-            if (APPUNTAMENTO_STATI.includes(editCall.statoNew)) {
+            if (APP_STATI.includes(editCall.statoNew)) {
                 const dataOk = editCall.dataAppuntamentoNew || editCall.data_appuntamento;
                 const luogoOk = editCall.negozioAppNew || editCall.negozio_appuntamento || editCall.agente;
                 if (!dataOk) { alert("Per fissare l'appuntamento serve la DATA E ORA: compilala e risalva."); return; }
@@ -940,6 +1087,11 @@ function CallerPageInner() {
             }
             if (!anagraficaObbligatoriaOk(editCall)) return;
             if (!provenienzaInternoOk(editCall)) return;
+            // pertinenza obbligatoria anche agli esiti successivi (Luca 31/07)
+            const pertinenza = (editCall.provenienza === "Interno" && editCall.negozio_provenienza)
+                ? editCall.negozio_provenienza
+                : editCall.negozio_pertinenza;
+            if (!String(pertinenza || "").trim()) { alert("NEGOZIO DI PERTINENZA obbligatorio (anche se non risponde): è il punto vendita congruo per il cliente — serve ai richiami per sapere dove mandarlo."); return; }
             const original = calls.find(c => c.id === editCall.id);
             if (!original) return;
             const newStorico: StoricoEntry[] = [
@@ -964,19 +1116,24 @@ function CallerPageInner() {
             updates.negozio_provenienza = editCall.negozio_provenienza;
             updates.mese_provenienza = editCall.mese_provenienza;
             updates.anno_provenienza = editCall.anno_provenienza;
+            updates.negozio_pertinenza = pertinenza;
 
-            if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
-                newStorico.push({ data: now, caller: currentCaller, campo: "Data richiamo", da: "", a: formatDate(editCall.dataRichiamoNew) });
+            if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
+                const eF = fasciaLabel(editCall.fascia_richiamo);
+                newStorico.push({ data: now, caller: currentCaller, campo: "Data richiamo", da: "", a: eF ? `${formatDateShort(editCall.dataRichiamoNew)} · ${eF}` : formatDate(editCall.dataRichiamoNew) });
                 updates.data_richiamo = editCall.dataRichiamoNew;
+                updates.fascia_richiamo = editCall.fascia_richiamo || null;
             }
-            if (APPUNTAMENTO_STATI.includes(editCall.statoNew) && editCall.dataAppuntamentoNew) {
-                newStorico.push({ data: now, caller: currentCaller, campo: "Data appuntamento", da: "", a: formatDate(editCall.dataAppuntamentoNew) });
+            if (APP_STATI.includes(editCall.statoNew) && editCall.dataAppuntamentoNew) {
+                const eF = fasciaLabel(editCall.fascia_appuntamento);
+                newStorico.push({ data: now, caller: currentCaller, campo: "Data appuntamento", da: "", a: eF ? `${formatDateShort(editCall.dataAppuntamentoNew)} · ${eF}` : formatDate(editCall.dataAppuntamentoNew) });
                 updates.data_appuntamento = editCall.dataAppuntamentoNew;
+                updates.fascia_appuntamento = editCall.fascia_appuntamento || null;
             }
-            if (APPUNTAMENTO_STATI.includes(editCall.statoNew) && editCall.negozioAppNew) {
+            if (APP_STATI.includes(editCall.statoNew) && editCall.negozioAppNew) {
                 updates.negozio_appuntamento = editCall.negozioAppNew;
             }
-            if (NR_STATI.includes(editCall.statoNew) && editCall.whatsappNew) {
+            if (NRD_STATI.includes(editCall.statoNew) && editCall.whatsappNew) {
                 newStorico.push({ data: now, caller: currentCaller, campo: "WhatsApp", da: "", a: editCall.whatsappNew });
             }
             if (editCall.noteUpdate) {
@@ -984,16 +1141,21 @@ function CallerPageInner() {
             }
             updates.storico = newStorico;
 
-            const { error } = await supabase.from("calls").update(updates).eq("id", editCall.id);
+            let { error } = await supabase.from("calls").update(updates).eq("id", editCall.id);
+            if (error && /column/i.test(error.message || "")) {
+                // mig. 118 non ancora applicata: si aggiorna senza i campi nuovi
+                const { fascia_appuntamento: _f1, fascia_richiamo: _f2, negozio_pertinenza: _np, ...legacy } = updates;
+                ({ error } = await supabase.from("calls").update(legacy).eq("id", editCall.id));
+            }
             if (error) {
                 alert("Errore aggiornamento: " + error.message);
                 return;
             }
             await creaAnagraficaSeManca(editCall);
-            if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
+            if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
                 await sincronizzaRichiamo({ ...original, ...editCall }, editCall.id, editCall.dataRichiamoNew);
             }
-            if (APPUNTAMENTO_STATI.includes(editCall.statoNew)) {
+            if (APP_STATI.includes(editCall.statoNew)) {
                 await sincronizzaAppuntamento(
                     {
                         ...original, ...editCall, stato: editCall.statoNew,
@@ -1307,9 +1469,9 @@ function CallerPageInner() {
     const statiDisponibili = isDirector ? STATI_OPT : STATI_OPT.filter(s => s !== "Nuovo");
 
     /* ── Detail mode flags ── */
-    const statoNewIsNR = !!editCall && NR_STATI.includes(editCall.statoNew || "");
-    const statoNewIsRichiamo = !!editCall && RICHIAMO_STATI.includes(editCall.statoNew || "");
-    const statoNewIsAppuntamento = !!editCall && APPUNTAMENTO_STATI.includes(editCall.statoNew || "");
+    const statoNewIsNR = !!editCall && NRD_STATI.includes(editCall.statoNew || "");
+    const statoNewIsRichiamo = !!editCall && RIC_STATI.includes(editCall.statoNew || "");
+    const statoNewIsAppuntamento = !!editCall && APP_STATI.includes(editCall.statoNew || "");
 
     const isBusiness = editCall && editCall.tipo_cliente === "business";
     const isDTS = editCall && editCall.tipologia === "DTS";
@@ -1317,8 +1479,8 @@ function CallerPageInner() {
     const isSegnalazione = editCall && editCall.provenienza === "Segnalazione";
     const isMarketing = editCall && editCall.provenienza === "Marketing";
     const isInterno = editCall && editCall.provenienza === "Interno";
-    const needsWhatsapp = editCall && NR_STATI.includes(editCall.stato);
-    const needsRichiamo = editCall && RICHIAMO_STATI.includes(editCall.stato);
+    const needsWhatsapp = editCall && NRD_STATI.includes(editCall.stato);
+    const needsRichiamo = editCall && RIC_STATI.includes(editCall.stato);
 
     const isListeView = currentView === "liste";
 
@@ -1493,6 +1655,35 @@ function CallerPageInner() {
                                     );
                                 })}
                             </div>
+
+                            {/* DA LAVORARE / WARNING / MALUS (Luca 31/07, stile Dragon PDA):
+                                contatori-filtro sul perimetro filtrato; ⚙️ regole (admin) e
+                                ⏱ archivio malus (direzione) in alto a destra della riga */}
+                            <div className="flex gap-3 items-stretch">
+                                {([
+                                    ["da_lavorare", "📋 Da Lavorare", faseCounts.da_lavorare, "border-sky-500/40 bg-sky-500/10 text-sky-300"],
+                                    ["warning", "⚠️ Warning", faseCounts.warning, "border-amber-500/40 bg-amber-500/10 text-amber-300"],
+                                    ["malus", "💸 Malus", faseCounts.malus, "border-rose-500/40 bg-rose-500/10 text-rose-300"],
+                                ] as const).map(([k, l, n, cls]) => (
+                                    <button key={k} onClick={() => setFaseFilter(faseFilter === k ? "" : k)}
+                                        title={faseFilter === k ? "Filtro attivo — clicca per toglierlo" : `Mostra solo le pratiche ${l}`}
+                                        className={`flex-1 rounded-2xl border px-3 py-3 text-left transition-all ${cls} ${faseFilter === k ? "ring-2 ring-white/30 brightness-125" : faseFilter ? "opacity-50 hover:opacity-80" : "hover:brightness-110"}`}>
+                                        <div className="text-sm font-bold">{l}</div>
+                                        <div className="text-2xl font-black tabular-nums leading-tight">{n}</div>
+                                        {k === "malus" && isDirector && faseCounts.importo > 0 && (
+                                            <div className="text-[11px] font-semibold">−{faseCounts.importo.toFixed(2).replace(".", ",")} € maturati</div>
+                                        )}
+                                    </button>
+                                ))}
+                                {(isDirector || puoRegoleCaller) && (
+                                    <div className="flex flex-col gap-2 justify-center">
+                                        {isDirector && <button onClick={() => setShowArchivioMalus(true)} title="Archivio dei malus (in corso, attivi, compensati)" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⏱ Malus</button>}
+                                        {puoRegoleCaller && <button onClick={() => setShowRegoleCaller(true)} title="Regole: giorni e malus giornaliero per stato" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>}
+                                    </div>
+                                )}
+                            </div>
+                            {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
+                            {showArchivioMalus && <ArchivioMalusCallerModal puoCompensare={puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || "")} utente={user?.name || "—"} onClose={() => setShowArchivioMalus(false)} />}
 
                             {/* Filter bar */}
                             <div className="glass-panel p-5">
@@ -1937,7 +2128,7 @@ function CallerPageInner() {
                                                     <button type="button" title="Chiama questo numero con Aircall"
                                                         onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                    <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                    <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
                                                         className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
                                                         <MessageSquare className="w-4 h-4" />
                                                     </Link>
@@ -1951,7 +2142,7 @@ function CallerPageInner() {
                                                     <button type="button" title="Chiama questo numero con Aircall"
                                                         onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                    <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                    <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
                                                         className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
                                                         <MessageSquare className="w-4 h-4" />
                                                     </Link>
@@ -1992,6 +2183,21 @@ function CallerPageInner() {
                                                 </select>
                                             </FormGroup>
                                         </div>
+
+                                        <FormGroup label="Negozio di Pertinenza *">
+                                            {/* il punto vendita CONGRUO per il cliente (Luca 31/07): per i
+                                                lead interni coincide con la provenienza; per gli altri va
+                                                scelto SEMPRE, anche sui Non risponde — ai richiami sappiamo
+                                                gia' dove mandare il cliente */}
+                                            <select className="glass-input rounded-lg py-2 w-full"
+                                                value={isInterno && editCall.negozio_provenienza ? editCall.negozio_provenienza : editCall.negozio_pertinenza}
+                                                disabled={!!(isInterno && editCall.negozio_provenienza)}
+                                                onChange={(e) => updateField("negozio_pertinenza", e.target.value)}>
+                                                <option value="">Seleziona negozio...</option>
+                                                {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
+                                            </select>
+                                            {isInterno && <p className="text-[10px] text-slate-500 mt-1">Lead interno: coincide col negozio di provenienza.</p>}
+                                        </FormGroup>
 
                                         {isSegnalazione && (
                                             <FormGroup label="Segnalatore">
@@ -2046,15 +2252,15 @@ function CallerPageInner() {
                                         )}
                                         {(isDTS || isOutbound) && (
                                             <FormGroup label="Data e Ora Appuntamento">
-                                                <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.data_appuntamento} onChange={(e) => updateField("data_appuntamento", e.target.value)} />
+                                                <InputDataOra valore={editCall.data_appuntamento} fascia={editCall.fascia_appuntamento || ""}
+                                                    onCambia={(v, f) => { updateField("data_appuntamento", v); updateField("fascia_appuntamento", f); }} />
                                             </FormGroup>
                                         )}
 
                                         <FormGroup label="Stato">
-                                            <select className="glass-input rounded-lg py-2 w-full" value={editCall.stato} onChange={(e) => updateField("stato", e.target.value)}>
-                                                <option value="">Seleziona...</option>
-                                                {statiDisponibili.map(s => <option key={s} value={s}>{s}</option>)}
-                                            </select>
+                                            {/* tendina STANDARD del CRM (SelectOpzioni), voci dal pannello
+                                                amministrativo (caller_opzioni categoria "stato") */}
+                                            <SelectOpzioni value={editCall.stato} onChange={(v) => updateField("stato", v)} opzioni={statiDisponibili} placeholder="Scrivi o scegli l'esito…" className="glass-input rounded-lg py-2 w-full" />
                                         </FormGroup>
 
                                         {needsWhatsapp && (
@@ -2070,7 +2276,8 @@ function CallerPageInner() {
                                         )}
                                         {needsRichiamo && (
                                             <FormGroup label="Data e Ora Richiamo">
-                                                <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.data_richiamo} onChange={(e) => updateField("data_richiamo", e.target.value)} />
+                                                <InputDataOra valore={editCall.data_richiamo} fascia={editCall.fascia_richiamo || ""}
+                                                    onCambia={(v, f) => { updateField("data_richiamo", v); updateField("fascia_richiamo", f); }} />
                                             </FormGroup>
                                         )}
 
@@ -2155,7 +2362,7 @@ function CallerPageInner() {
                                                             <button type="button" title="Richiama con Aircall"
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
                                                                 className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                            <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                            <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
                                                                 className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
                                                                 <MessageSquare className="w-4 h-4" />
                                                             </Link>
@@ -2170,7 +2377,7 @@ function CallerPageInner() {
                                                             <button type="button" title="Richiama con Aircall"
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
                                                                 className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                            <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                            <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
                                                                 className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
                                                                 <MessageSquare className="w-4 h-4" />
                                                             </Link>
@@ -2246,7 +2453,8 @@ function CallerPageInner() {
                                         {editCall.tipologia === "DTS" && <SummaryItem label="Negozio Appuntamento" value={editCall.negozio_appuntamento} />}
                                         {editCall.tipologia === "Outbound" && <SummaryItem label="Indirizzo" value={editCall.indirizzo} />}
                                         {editCall.tipologia === "Outbound" && <SummaryItem label="Agente" value={editCall.agente} />}
-                                        {(editCall.tipologia === "DTS" || editCall.tipologia === "Outbound") && <SummaryItem label="Data Appuntamento" value={editCall.data_appuntamento ? formatDate(editCall.data_appuntamento) : ""} />}
+                                        {(editCall.tipologia === "DTS" || editCall.tipologia === "Outbound") && <SummaryItem label="Data Appuntamento" value={editCall.data_appuntamento ? (fasciaLabel(editCall.fascia_appuntamento) ? `${formatDateShort(editCall.data_appuntamento)} · ${fasciaLabel(editCall.fascia_appuntamento)}` : formatDate(editCall.data_appuntamento)) : ""} />}
+                                        <SummaryItem label="Negozio di Pertinenza" value={editCall.negozio_pertinenza || (editCall.provenienza === "Interno" ? editCall.negozio_provenienza : "")} />
                                         <SummaryItem label="Data Chiamata" value={formatDate(editCall.data_chiamata)} />
                                         <SummaryItem label="Caller" value={editCall.caller} />
                                         {editCall.data_richiamo && <SummaryItem label="Prossimo Richiamo" value={formatDate(editCall.data_richiamo)} />}
@@ -2272,10 +2480,11 @@ function CallerPageInner() {
                                             <ArrowRight className="w-5 h-5 text-violet-300 mt-5" />
                                             <div className="flex-1">
                                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Stato New</label>
-                                                <select className="glass-input rounded-lg py-2 w-full mt-1" value={editCall.statoNew || ""} onChange={(e) => updateField("statoNew", e.target.value)}>
-                                                    <option value="">Seleziona nuovo stato...</option>
-                                                    {STATI.filter(s => s !== "Nuovo").map(s => <option key={s} value={s}>{s}</option>)}
-                                                </select>
+                                                {/* le voci arrivano dal PANNELLO AMMINISTRATIVO (caller_opzioni):
+                                                    prima la lista era hardcoded e mostrava ancora i DTS rimossi */}
+                                                <div className="mt-1">
+                                                    <SelectOpzioni value={editCall.statoNew || ""} onChange={(v) => updateField("statoNew", v)} opzioni={STATI_OPT.filter(s => s !== "Nuovo")} placeholder="Scrivi o scegli il nuovo stato…" className="glass-input rounded-lg py-2 w-full" />
+                                                </div>
                                             </div>
                                         </div>
 
@@ -2292,13 +2501,15 @@ function CallerPageInner() {
                                         )}
                                         {statoNewIsRichiamo && (
                                             <FormGroup label="Data e Ora Richiamo">
-                                                <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.dataRichiamoNew || ""} onChange={(e) => updateField("dataRichiamoNew", e.target.value)} />
+                                                <InputDataOra valore={editCall.dataRichiamoNew || ""} fascia={editCall.fascia_richiamo || ""}
+                                                    onCambia={(v, f) => { updateField("dataRichiamoNew", v); updateField("fascia_richiamo", f); }} />
                                             </FormGroup>
                                         )}
                                         {statoNewIsAppuntamento && (
                                             <>
                                                 <FormGroup label="Data e Ora Appuntamento *">
-                                                    <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.dataAppuntamentoNew || ""} onChange={(e) => updateField("dataAppuntamentoNew", e.target.value)} />
+                                                    <InputDataOra valore={editCall.dataAppuntamentoNew || ""} fascia={editCall.fascia_appuntamento || ""}
+                                                        onCambia={(v, f) => { updateField("dataAppuntamentoNew", v); updateField("fascia_appuntamento", f); }} />
                                                 </FormGroup>
                                                 <FormGroup label="Negozio Appuntamento *">
                                                     {/* senza negozio l'appuntamento NON arriva sul calendario del punto vendita */}
