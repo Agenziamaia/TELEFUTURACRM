@@ -18,7 +18,22 @@ import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, capAllowed } from "@/l
 import { useVisibleStores } from "@/lib/visibleStores";
 import { SelectOpzioni } from "@/components/SelectPersona";
 
-type ShiftRow = { id: number; employee_name: string; store: string; started_at: string; ended_at: string | null; pause_started_at: string | null; total_pause_minutes: number };
+type EventoTurno = { t: string; tipo: "inizio" | "pausa" | "ripresa" | "fine" | "correzione"; note?: string };
+type ShiftRow = { id: number; employee_name: string; store: string; started_at: string; ended_at: string | null; pause_started_at: string | null; total_pause_minutes: number; eventi?: EventoTurno[] | null };
+
+// ── TIMELINE BADGIATURA (Luca 31/07): prima si salvava solo il TOTALE delle
+// pause; i singoli passaggi (quando in pausa, quando ha ripreso) andavano
+// persi. Ora ogni azione lascia un evento in shifts.eventi (mig. 110) e lo
+// storico presenze apre la giornata col dettaglio. I turni precedenti alla
+// migrazione mostrano solo entrata/uscita + pausa totale.
+const conEvento = (s: ShiftRow, tipo: EventoTurno["tipo"], note?: string): EventoTurno[] =>
+    [...(Array.isArray(s.eventi) ? s.eventi : []), { t: new Date().toISOString(), tipo, ...(note ? { note } : {}) }];
+async function updateTurnoConEvento(id: number, patch: Record<string, unknown>, eventi: EventoTurno[]) {
+    let { error } = await supabase.from("shifts").update({ ...patch, eventi }).eq("id", id);
+    // colonna eventi assente (mig. 110 da applicare): il turno si aggiorna comunque
+    if (error && /eventi|column/i.test(error.message)) ({ error } = await supabase.from("shifts").update(patch).eq("id", id));
+    return error;
+}
 
 export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     const { user } = useAuth();
@@ -92,26 +107,34 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
 
     const handleStart = async () => {
         if (!user?.name) return;
-        const { data, error } = await supabase.from("shifts").insert({ employee_name: user.name, store: user.negozio ?? "" }).select().single();
+        const payload: Record<string, unknown> = { employee_name: user.name, store: user.negozio ?? "", eventi: [{ t: new Date().toISOString(), tipo: "inizio" }] };
+        let { data, error } = await supabase.from("shifts").insert(payload).select().single();
+        if (error && /eventi|column/i.test(error.message)) {
+            delete payload.eventi;
+            ({ data, error } = await supabase.from("shifts").insert(payload).select().single());
+        }
         if (!error && data) setActiveShift(data as ShiftRow);
     };
     const handlePause = async () => {
         if (!activeShift) return;
-        await supabase.from("shifts").update({ pause_started_at: new Date().toISOString() }).eq("id", activeShift.id);
-        setActiveShift(prev => prev ? { ...prev, pause_started_at: new Date().toISOString() } : null);
+        const ts = new Date().toISOString();
+        const eventi = conEvento(activeShift, "pausa");
+        await updateTurnoConEvento(activeShift.id, { pause_started_at: ts }, eventi);
+        setActiveShift(prev => prev ? { ...prev, pause_started_at: ts, eventi } : null);
     };
     const handleResume = async () => {
         if (!activeShift?.pause_started_at) return;
         const extra = (Date.now() - new Date(activeShift.pause_started_at).getTime()) / 60000;
         const newTotal = (Number(activeShift.total_pause_minutes) || 0) + extra;
-        await supabase.from("shifts").update({ pause_started_at: null, total_pause_minutes: newTotal }).eq("id", activeShift.id);
-        setActiveShift(prev => prev ? { ...prev, pause_started_at: null, total_pause_minutes: newTotal } : null);
+        const eventi = conEvento(activeShift, "ripresa");
+        await updateTurnoConEvento(activeShift.id, { pause_started_at: null, total_pause_minutes: newTotal }, eventi);
+        setActiveShift(prev => prev ? { ...prev, pause_started_at: null, total_pause_minutes: newTotal, eventi } : null);
     };
     const handleStop = async () => {
         if (!activeShift) return;
         let totalPause = Number(activeShift.total_pause_minutes) || 0;
         if (activeShift.pause_started_at) totalPause += (Date.now() - new Date(activeShift.pause_started_at).getTime()) / 60000;
-        await supabase.from("shifts").update({ ended_at: new Date().toISOString(), pause_started_at: null, total_pause_minutes: totalPause }).eq("id", activeShift.id);
+        await updateTurnoConEvento(activeShift.id, { ended_at: new Date().toISOString(), pause_started_at: null, total_pause_minutes: totalPause }, conEvento(activeShift, "fine"));
         setActiveShift(null);
         await fetchTeamStats();
     };
@@ -294,7 +317,8 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
         const now = new Date();
         let pause = Number(sh.total_pause_minutes) || 0;
         if (sh.pause_started_at) pause += Math.max(0, (now.getTime() - new Date(sh.pause_started_at).getTime()) / 60000);
-        await supabase.from("shifts").update({ ended_at: now.toISOString(), pause_started_at: null, total_pause_minutes: pause }).eq("id", sh.id);
+        await updateTurnoConEvento(sh.id, { ended_at: now.toISOString(), pause_started_at: null, total_pause_minutes: pause },
+            conEvento(sh, "fine", "chiusura forzata dall'amministrazione"));
         setForceId(null);
         await fetchShifts();
         onRefresh();
@@ -614,6 +638,10 @@ function PresenzeAdmin() {
     // Al salvataggio si sceglie se AVVISARE il caller (messaggio in chat dal
     // profilo di chi corregge) o correggere in silenzio.
     const canEditShift = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    // TIMELINE della giornata (Luca 31/07): dall'amministrativo in su il click
+    // sulla riga apre il dettaglio — entrata, ogni pausa con durata, riprese,
+    // uscita. I turni senza eventi (pre-mig. 110) mostrano il riepilogo.
+    const [timelineShift, setTimelineShift] = useState<ShiftRow | null>(null);
     const [editShift, setEditShift] = useState<ShiftRow | null>(null);
     const [editEntrata, setEditEntrata] = useState("");
     const [editUscita, setEditUscita] = useState("");
@@ -637,9 +665,9 @@ function PresenzeAdmin() {
         if (fine <= ini) { setEditErr("L'uscita deve essere dopo l'entrata."); return; }
         setSalvando(true);
         setEditErr(null);
-        const { error } = await supabase.from("shifts")
-            .update({ started_at: ini.toISOString(), ended_at: fine.toISOString() })
-            .eq("id", editShift.id);
+        const error = await updateTurnoConEvento(editShift.id,
+            { started_at: ini.toISOString(), ended_at: fine.toISOString() },
+            conEvento(editShift, "correzione", `entrata/uscita corrette da ${user?.name || "amministrazione"}`));
         if (error) { setSalvando(false); setEditErr(error.message); return; }
         const aggiornato: ShiftRow = { ...editShift, started_at: ini.toISOString(), ended_at: fine.toISOString() };
         setRows((prev) => prev.map((r) => r.id === editShift.id ? aggiornato : r));
@@ -804,7 +832,10 @@ function PresenzeAdmin() {
                         {filtered.length === 0 ? (
                             <tr><td colSpan={(canDeleteShift || canEditShift) ? 8 : 7} className="px-3 py-8 text-center text-slate-500">Nessuna presenza nel periodo.</td></tr>
                         ) : filtered.map((x) => (
-                            <tr key={x.id} className="border-t border-white/5 text-slate-300">
+                            <tr key={x.id}
+                                onClick={() => canEditShift && setTimelineShift(x)}
+                                title={canEditShift ? "Clicca per la timeline della giornata (entrata, pause, uscita)" : undefined}
+                                className={cn("border-t border-white/5 text-slate-300", canEditShift && "cursor-pointer hover:bg-white/[0.04] transition-colors")}>
                                 <td className="px-3 py-2">{new Date(x.started_at).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })}</td>
                                 <td className="px-3 py-2 font-medium text-white">{x.employee_name}</td>
                                 <td className="px-3 py-2 text-slate-400">{x.store || "—"}</td>
@@ -813,7 +844,7 @@ function PresenzeAdmin() {
                                 <td className="px-3 py-2 text-right text-amber-400/80">{Math.round(x.total_pause_minutes || 0)}m</td>
                                 <td className="px-3 py-2 text-right font-bold text-slate-100">{fmtOre(oreNette(x))}</td>
                                 {(canDeleteShift || canEditShift) && (
-                                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                                    <td className="px-3 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                                         {canEditShift && (
                                             <button onClick={() => apriModifica(x)} title="Correggi entrata/uscita del turno"
                                                 className="p-1 rounded-md text-slate-600 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors">✏️</button>
@@ -883,6 +914,79 @@ function PresenzeAdmin() {
                     </div>
                 </div>
             )}
+
+            {/* ── Modale TIMELINE della giornata (Luca 31/07) ── */}
+            {timelineShift && (() => {
+                const s = timelineShift;
+                const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+                const evs = Array.isArray(s.eventi) && s.eventi.length
+                    ? [...s.eventi].sort((a, b) => a.t.localeCompare(b.t)) : null;
+                const durataMin = (daIso: string, aIso: string | null) =>
+                    Math.max(0, Math.round(((aIso ? new Date(aIso).getTime() : Date.now()) - new Date(daIso).getTime()) / 60000));
+                const STILE: Record<EventoTurno["tipo"], { icona: string; label: string; cls: string }> = {
+                    inizio: { icona: "▶", label: "Entrata", cls: "text-emerald-300 border-emerald-500/40 bg-emerald-500/10" },
+                    pausa: { icona: "⏸", label: "In pausa", cls: "text-amber-300 border-amber-500/40 bg-amber-500/10" },
+                    ripresa: { icona: "▶", label: "Ripresa", cls: "text-sky-300 border-sky-500/40 bg-sky-500/10" },
+                    fine: { icona: "■", label: "Fine turno", cls: "text-rose-300 border-rose-500/40 bg-rose-500/10" },
+                    correzione: { icona: "✏️", label: "Correzione", cls: "text-slate-300 border-white/20 bg-white/[0.04]" },
+                };
+                return (
+                    <div className="fixed inset-0 bg-black/70 z-[1300] flex items-center justify-center p-4"
+                        onClick={() => setTimelineShift(null)} role="dialog" aria-modal="true">
+                        <div className="w-full max-w-md p-6 rounded-2xl border border-white/10 shadow-2xl bg-[#12141f] max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-start justify-between mb-1">
+                                <h3 className="text-base font-bold text-white">🕐 Timeline badgiatura</h3>
+                                <button onClick={() => setTimelineShift(null)} className="text-slate-500 hover:text-white text-sm">✕</button>
+                            </div>
+                            <p className="text-xs text-slate-500 mb-4">
+                                {s.employee_name}{s.store ? ` · ${s.store}` : ""} — {new Date(s.started_at).toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+                            </p>
+                            {evs ? (
+                                <div className="space-y-0">
+                                    {evs.map((ev, i) => {
+                                        const st = STILE[ev.tipo] || STILE.correzione;
+                                        // durata pausa: dall'evento "pausa" al successivo ripresa/fine
+                                        const fineP = ev.tipo === "pausa" ? (evs.slice(i + 1).find((x) => x.tipo === "ripresa" || x.tipo === "fine")?.t ?? null) : null;
+                                        return (
+                                            <div key={i} className="flex gap-3">
+                                                <div className="flex flex-col items-center">
+                                                    <span className={cn("w-7 h-7 rounded-full border flex items-center justify-center text-xs shrink-0", st.cls)}>{st.icona}</span>
+                                                    {i < evs.length - 1 && <span className="w-px flex-1 min-h-[14px] bg-white/10" />}
+                                                </div>
+                                                <div className="pb-3.5 text-sm">
+                                                    <span className="font-bold text-white tabular-nums">{fmtT(ev.t)}</span>
+                                                    <span className="text-slate-300 ml-2">{st.label}</span>
+                                                    {ev.tipo === "pausa" && (
+                                                        <span className="text-amber-400/90 ml-2 text-xs font-bold">
+                                                            {fineP ? `${durataMin(ev.t, fineP)} min di pausa` : `in pausa da ${durataMin(ev.t, null)} min`}
+                                                        </span>
+                                                    )}
+                                                    {ev.note && <div className="text-[11px] text-slate-500 mt-0.5">{ev.note}</div>}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex items-center gap-2"><span className="text-emerald-300">▶</span><b className="text-white">{fmtT(s.started_at)}</b><span className="text-slate-300">Entrata</span></div>
+                                    {(s.total_pause_minutes || 0) > 0.5 && (
+                                        <div className="flex items-center gap-2"><span className="text-amber-300">⏸</span><span className="text-slate-300">Pause totali: <b className="text-amber-300">{Math.round(s.total_pause_minutes)} min</b></span></div>
+                                    )}
+                                    {s.ended_at
+                                        ? <div className="flex items-center gap-2"><span className="text-rose-300">■</span><b className="text-white">{fmtT(s.ended_at)}</b><span className="text-slate-300">Fine turno</span></div>
+                                        : <div className="text-emerald-400 font-bold text-xs">Turno ancora in corso</div>}
+                                    <p className="text-[11px] text-slate-500 pt-2">Il dettaglio delle singole pause c&apos;è solo per i turni timbrati dal 31/07/2026 in poi (prima si salvava soltanto il totale).</p>
+                                </div>
+                            )}
+                            <div className="mt-4 p-3 rounded-xl bg-white/[0.03] border border-white/8 text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
+                                <span>Pausa totale: <b className="text-amber-300">{Math.round(s.total_pause_minutes || 0)}m</b></span>
+                                {s.ended_at && <span>Ore nette: <b className="text-emerald-300">{fmtOre(oreNette(s))}</b></span>}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }
@@ -919,10 +1023,16 @@ export function BadgeWidget() {
     const status = !shift ? "fermo" : shift.pause_started_at ? "pausa" : "attivo";
     const pad = (n: number) => String(n).padStart(2, "0");
     const hh = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60), ss = sec % 60;
-    const start = async () => { if (!user?.name) return; const { data } = await supabase.from("shifts").insert({ employee_name: user.name, store: user.negozio ?? "" }).select().single(); if (data) setShift(data as ShiftRow); };
-    const pausa = async () => { if (!shift) return; const ts = new Date().toISOString(); await supabase.from("shifts").update({ pause_started_at: ts }).eq("id", shift.id); setShift({ ...shift, pause_started_at: ts }); };
-    const riprendi = async () => { if (!shift?.pause_started_at) return; const tot = (Number(shift.total_pause_minutes) || 0) + (Date.now() - new Date(shift.pause_started_at).getTime()) / 60000; await supabase.from("shifts").update({ pause_started_at: null, total_pause_minutes: tot }).eq("id", shift.id); setShift({ ...shift, pause_started_at: null, total_pause_minutes: tot }); };
-    const fine = async () => { if (!shift) return; if (!window.confirm("Chiudere il turno?")) return; let tot = Number(shift.total_pause_minutes) || 0; if (shift.pause_started_at) tot += (Date.now() - new Date(shift.pause_started_at).getTime()) / 60000; await supabase.from("shifts").update({ ended_at: new Date().toISOString(), pause_started_at: null, total_pause_minutes: tot }).eq("id", shift.id); setShift(null); };
+    const start = async () => {
+        if (!user?.name) return;
+        const payload: Record<string, unknown> = { employee_name: user.name, store: user.negozio ?? "", eventi: [{ t: new Date().toISOString(), tipo: "inizio" }] };
+        let { data, error } = await supabase.from("shifts").insert(payload).select().single();
+        if (error && /eventi|column/i.test(error.message)) { delete payload.eventi; ({ data } = await supabase.from("shifts").insert(payload).select().single()); }
+        if (data) setShift(data as ShiftRow);
+    };
+    const pausa = async () => { if (!shift) return; const ts = new Date().toISOString(); const eventi = conEvento(shift, "pausa"); await updateTurnoConEvento(shift.id, { pause_started_at: ts }, eventi); setShift({ ...shift, pause_started_at: ts, eventi }); };
+    const riprendi = async () => { if (!shift?.pause_started_at) return; const tot = (Number(shift.total_pause_minutes) || 0) + (Date.now() - new Date(shift.pause_started_at).getTime()) / 60000; const eventi = conEvento(shift, "ripresa"); await updateTurnoConEvento(shift.id, { pause_started_at: null, total_pause_minutes: tot }, eventi); setShift({ ...shift, pause_started_at: null, total_pause_minutes: tot, eventi }); };
+    const fine = async () => { if (!shift) return; if (!window.confirm("Chiudere il turno?")) return; let tot = Number(shift.total_pause_minutes) || 0; if (shift.pause_started_at) tot += (Date.now() - new Date(shift.pause_started_at).getTime()) / 60000; await updateTurnoConEvento(shift.id, { ended_at: new Date().toISOString(), pause_started_at: null, total_pause_minutes: tot }, conEvento(shift, "fine")); setShift(null); };
     const btn = "px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border transition-colors";
     return (
         <div className="flex items-center gap-3 px-4 py-2 rounded-xl border border-white/10 bg-white/[0.03]">
