@@ -11,7 +11,7 @@ import type { EpisodioCaller } from "@/lib/callerMalus";
 
 type Riga = { stato: string; giorni_lavorare: number | null; giorni_warning: number | null; giorni_malus: number | null; malus_giorno: number | null; esente: boolean };
 
-export function CallerRegoleModal({ stati, onClose, onSaved }: { stati: string[]; onClose: () => void; onSaved: () => void }) {
+export function CallerRegoleModal({ stati, soloLettura = false, onClose, onSaved }: { stati: string[]; soloLettura?: boolean; onClose: () => void; onSaved: () => void }) {
     const [righe, setRighe] = useState<Record<string, Riga>>({});
     const [caricato, setCaricato] = useState(false);
     useEffect(() => {
@@ -41,6 +41,8 @@ export function CallerRegoleModal({ stati, onClose, onSaved }: { stati: string[]
         const r = righe[stato];
         const [v, setV] = useState<string>(r && r[campo] != null ? String(r[campo]) : "");
         useEffect(() => { setV(r && r[campo] != null ? String(r[campo]) : ""); }, [r, campo]);
+        // visibilita' per TUTTI, modifica solo admin (Luca 31/07)
+        if (soloLettura) return <span className={r?.esente ? "text-xs text-slate-600" : "text-xs font-semibold text-slate-200"}>{r?.esente ? "—" : (r && r[campo] != null ? `${r[campo]}${campo === "malus_giorno" ? " €" : ""}` : "—")}</span>;
         return (
             <input type="number" min="0" step={campo === "malus_giorno" ? "0.5" : "1"} value={v} disabled={!!r?.esente}
                 onChange={(e) => setV(e.target.value)}
@@ -56,7 +58,7 @@ export function CallerRegoleModal({ stati, onClose, onSaved }: { stati: string[]
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg text-slate-400"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="p-4 overflow-y-auto">
-                    <p className="text-[11px] text-slate-500 mb-3">Giorni LAVORATIVI (lun–sab) dall&apos;ultima attività sulla pratica (per richiami e appuntamenti si conta dopo la data fissata). Esente = lo stato non invecchia mai.</p>
+                    <p className="text-[11px] text-slate-500 mb-3">Giorni LAVORATIVI (lun–sab) dall&apos;ultima attività sulla pratica (per richiami e appuntamenti si conta dopo la data fissata). Esente = lo stato non invecchia mai.{soloLettura ? " Le regole le modifica l'amministrazione." : ""}</p>
                     {!caricato ? <p className="text-sm text-slate-500">Carico…</p> : (
                         <table className="w-full text-sm">
                             <thead><tr className="text-[10px] uppercase tracking-wider text-slate-500 text-left">
@@ -73,10 +75,14 @@ export function CallerRegoleModal({ stati, onClose, onSaved }: { stati: string[]
                                             <td className="py-1.5 px-1 text-center"><CellaGiorni stato={s} campo="giorni_malus" /></td>
                                             <td className="py-1.5 px-1 text-center"><CellaGiorni stato={s} campo="malus_giorno" /></td>
                                             <td className="py-1.5 px-1 text-center">
-                                                <button onClick={() => salva(s, "esente", !r?.esente)} title={r?.esente ? "Esente — clicca per farlo invecchiare" : "Clicca per esentarlo"}
-                                                    className={`relative w-9 h-5 rounded-full transition-colors ${r?.esente ? "bg-slate-500/70" : "bg-white/10"}`}>
-                                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${r?.esente ? "left-[18px]" : "left-0.5"}`} />
-                                                </button>
+                                                {soloLettura ? (
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${r?.esente ? "bg-slate-500/15 text-slate-400 border-slate-500/30" : "bg-emerald-500/10 text-emerald-400/70 border-emerald-500/20"}`}>{r?.esente ? "Esente" : "Attivo"}</span>
+                                                ) : (
+                                                    <button onClick={() => salva(s, "esente", !r?.esente)} title={r?.esente ? "Esente — clicca per farlo invecchiare" : "Clicca per esentarlo"}
+                                                        className={`relative w-9 h-5 rounded-full transition-colors ${r?.esente ? "bg-slate-500/70" : "bg-white/10"}`}>
+                                                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${r?.esente ? "left-[18px]" : "left-0.5"}`} />
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     );

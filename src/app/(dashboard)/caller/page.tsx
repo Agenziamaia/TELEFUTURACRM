@@ -1679,10 +1679,11 @@ function CallerPageInner() {
                                     {/* lo STORICO ce l'hanno anche i caller (Luca 31/07, come il
                                         tracking PDA): ognuno vede solo i propri episodi */}
                                     <button onClick={() => setShowArchivioMalus(true)} title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⏱ {isDirector ? "Malus" : "Storico"}</button>
-                                    {puoRegoleCaller && <button onClick={() => setShowRegoleCaller(true)} title="Regole: giorni e malus giornaliero per stato" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>}
+                                    {/* regole VISIBILI a tutti (Luca 31/07); i giorni li tocca solo l'admin */}
+                                    <button onClick={() => setShowRegoleCaller(true)} title={puoRegoleCaller ? "Regole: giorni e malus giornaliero per stato" : "Le regole di lavorazione (sola lettura)"} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>
                                 </div>
                             </div>
-                            {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
+                            {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} soloLettura={!puoRegoleCaller} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
                             {showArchivioMalus && <ArchivioMalusCallerModal puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} onClose={() => setShowArchivioMalus(false)} />}
 
                             {/* Filter bar */}
