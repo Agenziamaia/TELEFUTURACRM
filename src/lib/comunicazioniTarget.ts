@@ -18,7 +18,7 @@ export type TargetEstesi = {
 
 export function comunicazionePerMe(
     c: TargetEstesi,
-    io: { userId?: string | null; role?: string | null; negozio?: string | null; brandsNegozio?: string[] },
+    io: { userId?: string | null; role?: string | null; negozio?: string | null; negozi?: string[]; brandsNegozio?: string[] },
 ): boolean {
     // l'AUTORE non e' mai destinatario della propria comunicazione (Luca 31/07):
     // niente popup, niente conferma, non compare tra le ricevute attese
@@ -27,9 +27,24 @@ export function comunicazionePerMe(
     if (!haTarget) return true;
     if (c.target_roles?.length && io.role && c.target_roles.includes(io.role)) return true;
     if (c.target_users?.length && io.userId && c.target_users.includes(io.userId)) return true;
-    if (c.target_stores?.length && io.negozio && c.target_stores.some((s) => sameStore(s, io.negozio))) return true;
+    // "tutto lo staff del negozio": conta la sede di login E i negozi ASSEGNATI
+    // (Luca 31/07: chi lavora su due punti vendita riceve per entrambi)
+    if (c.target_stores?.length) {
+        const miei = [io.negozio, ...(io.negozi || [])].filter(Boolean) as string[];
+        if (miei.some((m) => c.target_stores!.some((s) => sameStore(s, m)))) return true;
+    }
     if (c.target_brands?.length && io.brandsNegozio?.length && c.target_brands.some((b) => io.brandsNegozio!.includes(b))) return true;
     return false;
+}
+
+/** Negozi ASSEGNATI a un utente (user_stores) — per la consegna delle
+ *  comunicazioni mirate a negozio; [] se la tabella non e' leggibile. */
+export async function negoziAssegnati(userId: string | null | undefined): Promise<string[]> {
+    if (!userId) return [];
+    try {
+        const { data } = await supabase.from("user_stores").select("store_name").eq("user_id", userId);
+        return ((data ?? []) as { store_name: string | null }[]).map((r) => String(r.store_name || "")).filter(Boolean);
+    } catch { return []; }
 }
 
 /** Brand trattati dal negozio dell'utente (stores.brands, mig. 112);

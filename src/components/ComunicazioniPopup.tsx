@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Info, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { comunicazionePerMe, brandDelNegozio } from "@/lib/comunicazioniTarget";
+import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 
 type ComPopup = {
     id: number;
@@ -57,8 +57,9 @@ export function ComunicazioniPopup() {
             const coms = ((legacy ? legacy.data : esteso ? esteso.data : completa.data) ?? null) as unknown as ComPopup[] | null;
             if (!coms) return;
             const brandsNegozio = await brandDelNegozio(user.negozio);
+            const negozi = await negoziAssegnati(user.id);
             const perMe = (coms as ComPopup[]).filter((c) =>
-                comunicazionePerMe(c, { userId: user.id, role: user.role || "", negozio: user.negozio, brandsNegozio }));
+                comunicazionePerMe(c, { userId: user.id, role: user.role || "", negozio: user.negozio, negozi, brandsNegozio }));
             if (!perMe.length) { setCoda([]); return; }
             const { data: ric } = await supabase
                 .from("comunicazioni_ricevute")
