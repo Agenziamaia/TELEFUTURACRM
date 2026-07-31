@@ -1709,12 +1709,12 @@ function GestioneUsatiInner() {
               <Building2 size={14} /> Mostra i miei{mieiAttivo ? " ✓" : ""}
             </button>
           )}
-          <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
           <button onClick={() => setSelectedStores([...NEGOZI])} title="Disponibilità di tutti i telefoni in tutti i punti vendita"
             className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
               tuttiAttivo ? "bg-white/15 border-white/30 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
             🌍 Mostra tutti{tuttiAttivo ? " ✓" : ""}
           </button>
+          <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
           <MultiSelect label="Stato" options={STATUS_KEYS} selected={selectedStatuses} onChange={setSelectedStatuses}
             renderOpt={o => <span className="flex items-center gap-1.5">{statusMap[o as UsatoStatus]?.icon} {statusMap[o as UsatoStatus]?.label}</span>} />
           <MultiSelect label="Brand" options={Object.keys(PHONE_BRANDS_MODELS)} selected={brandFilter} onChange={setBrandFilter} />
