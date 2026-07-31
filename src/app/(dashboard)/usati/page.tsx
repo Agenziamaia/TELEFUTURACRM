@@ -454,7 +454,6 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   const [showAdd, setShowAdd] = useState(false);
   const [targetStore, setTargetStore] = useState(dev.target_store || "");
   const [noteTecnico, setNoteTecnico] = useState(dev.note_tecnico || "");
-  const [editSalePrice, setEditSalePrice] = useState(dev.sale_price > 0);
   const [salePriceVal, setSalePriceVal] = useState(String(dev.sale_price || ""));
   const [ibanCopied, setIbanCopied] = useState(false);
   const [indietroSel, setIndietroSel] = useState("");
@@ -504,7 +503,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   const next = canAdvance && lcIdx >= 0 && lcIdx < LIFECYCLE.length - 1 ? LIFECYCLE[lcIdx + 1] : null;
   const needsStore = dev.status === "pronto";
   const totalRicambi = dev.ricambi.reduce((s, r) => s + (r.cost || 0), 0);
-  const spVal = editSalePrice ? (parseFloat(salePriceVal) || 0) : 0;
+  const spVal = parseFloat(salePriceVal) || 0;
   const margin = spVal - dev.purchase_price - totalRicambi;
 
   const addRicambio = () => {
@@ -574,7 +573,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
 
   const toggleBonifico = () => {
     const nowEff = !dev.pagamento.bonifico_effettuato;
-    const upd: Device = { ...dev, pagamento: { ...dev.pagamento, bonifico_effettuato: nowEff, bonifico_operatore: nowEff ? "Admin" : null, bonifico_date: nowEff ? new Date() : null }, note_tecnico: noteTecnico, sale_price: editSalePrice ? (parseFloat(salePriceVal) || 0) : 0 };
+    const upd: Device = { ...dev, pagamento: { ...dev.pagamento, bonifico_effettuato: nowEff, bonifico_operatore: nowEff ? (user?.name || "Amministrazione") : null, bonifico_date: nowEff ? new Date() : null }, note_tecnico: noteTecnico };
     setDev(upd); onSave(upd);
   };
   const getFileUrl = (path: string) => supabase.storage.from("usati_attachments").getPublicUrl(path).data.publicUrl;
@@ -706,20 +705,23 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                     <div className="text-sm text-slate-600" title={dev.client_id ? "" : "Registrato prima del collegamento anagrafica (31/07): il dato non esiste"}>—</div>
                   )}
                 </div>
-                {/* Sale price */}
+                {/* Prezzo di VENDITA — campo SEMPRE visibile ed editabile per
+                    chi ne ha diritto (Luca 31/07: "non trovo il campo"); si
+                    salva da solo uscendo dal campo */}
                 <div>
                   <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Prezzo Vendita</div>
-                  {editSalePrice ? (
+                  {puoPrezzo ? (
                     <div className="flex items-center gap-1.5">
                       <input type="number" step="1" min="0" value={salePriceVal} onChange={e => setSalePriceVal(e.target.value)}
                         onBlur={() => persist({ ...dev, sale_price: parseFloat(salePriceVal) || 0 })}
-                        className="w-24 bg-black/40 border border-emerald-500/30 rounded-lg px-2 py-1 text-sm text-emerald-400 font-bold outline-none" />
+                        placeholder="es. 350"
+                        className="w-24 bg-black/40 border border-emerald-500/30 rounded-lg px-2 py-1 text-sm text-emerald-400 font-bold outline-none placeholder:text-slate-600 placeholder:font-normal" />
                       <span className="text-xs text-slate-500">€</span>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-slate-500"> Non impostato</span>
-                      {puoPrezzo && <button onClick={() => setEditSalePrice(true)} className="text-[11px] px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all">Imposta</button>}
+                    <div>
+                      <div className="text-sm text-white font-medium">{dev.sale_price > 0 ? fmtEur(dev.sale_price) : "—"}</div>
+                      <div className="text-[10px] text-slate-600">lo imposta {dev.store} (o l&apos;amministrazione)</div>
                     </div>
                   )}
                 </div>
@@ -777,7 +779,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             {vedeCosti && (
               <div className="flex gap-4 p-3 rounded-xl bg-white/[0.02] border border-white/5">
                 <div><div className="text-[10px] text-slate-500 uppercase">Costo Ricambi</div><div className="text-sm font-semibold text-orange-400">{fmtEur(totalRicambi)}</div></div>
-                <div><div className="text-[10px] text-slate-500 uppercase">Margine</div><div className={cn("text-sm font-bold", editSalePrice && salePriceVal ? (margin >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500")}>{editSalePrice && salePriceVal ? fmtEur(margin) : ""}</div></div>
+                <div><div className="text-[10px] text-slate-500 uppercase">Margine</div><div className={cn("text-sm font-bold", salePriceVal ? (margin >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500")}>{salePriceVal ? fmtEur(margin) : "—"}</div></div>
               </div>
             )}
             {/* Ricambi */}
