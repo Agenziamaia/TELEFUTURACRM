@@ -119,6 +119,9 @@ interface Call {
     // punto vendita CONGRUO per il cliente (mig. 118): per i lead interni
     // coincide col negozio di provenienza, per gli altri va scelto sempre
     negozio_pertinenza: string;
+    // pratica ASSORBITA (mig. 123): il cliente ha risposto su un'altra riga —
+    // sparisce dal caller, resta a database per lo storico
+    assorbita_da?: string | null;
     lista_origine?: string | null;
     da_esitare?: boolean;
     storico: StoricoEntry[];
@@ -216,6 +219,7 @@ function mapRowToCall(row: Record<string, unknown>): Call {
         fascia_appuntamento: (row.fascia_appuntamento as string) || "",
         fascia_richiamo: (row.fascia_richiamo as string) || "",
         negozio_pertinenza: (row.negozio_pertinenza as string) || "",
+        assorbita_da: (row.assorbita_da as string) || null,
         lista_origine: (row.lista_origine as string) || null,
         da_esitare: !!row.da_esitare,
         storico: (row.storico as StoricoEntry[]) || [],
@@ -681,6 +685,9 @@ function CallerPageInner() {
     }, [isDirector, regoleCaller, calls, faseInfo, badgePronto]);
 
     const matchFiltri = (c: Call, ignoraBrand = false, ignoraFase = false) => {
+        // le pratiche ASSORBITE (il cliente ha risposto su un'altra riga)
+        // non si portano avanti: vivono solo nello storico del cliente
+        if (c.assorbita_da) return false;
         if (!isDirector && c.caller !== currentCaller) return false;
         if (soloDaEsitare && !c.da_esitare) return false;
         if (!ignoraFase && faseFilter && faseInfo(c).fase !== faseFilter) return false;
@@ -992,19 +999,25 @@ function CallerPageInner() {
                 // associarlo come numero aggiuntivo (famiglie con piu' utenze)
                 try {
                     const cli = ex[0] as { id: string; cellulare: string | null; nome?: string | null; cognome?: string | null; ragione_sociale?: string | null };
-                    const chiamato = numeroNazionale(c.numero) || numeroNazionale(c.cellulare);
                     const princ = numeroNazionale(cli.cellulare || "") || String(cli.cellulare || "");
                     const nomeCli = cli.ragione_sociale || `${cli.nome || ""} ${cli.cognome || ""}`.trim() || cli.id;
-                    if (chiamato && !princ) {
-                        // il cliente non ha alcun numero: questo diventa il principale
-                        const { data: dup } = await supabase.from("clients").select("id").eq("cellulare", chiamato).neq("id", cli.id).limit(1);
-                        if (!dup?.length && window.confirm(`${nomeCli} è già in anagrafica ma SENZA numero.\nVuoi impostare ${chiamato} come suo numero principale?`)) {
-                            await supabase.from("clients").update({ cellulare: chiamato }).eq("id", cli.id);
+                    // si considerano ENTRAMBI i numeri della pratica (chiamato E
+                    // recapito alternativo): il caso Cassio — il secondo numero
+                    // stava nel campo cellulare e non veniva mai proposto
+                    const numeriPratica = [...new Set([numeroNazionale(c.numero), numeroNazionale(c.cellulare)].filter(Boolean))] as string[];
+                    for (const n of numeriPratica) {
+                        if (!princ) {
+                            const { data: dup } = await supabase.from("clients").select("id").eq("cellulare", n).neq("id", cli.id).limit(1);
+                            if (!dup?.length && window.confirm(`${nomeCli} è già in anagrafica ma SENZA numero.\nVuoi impostare ${n} come suo numero principale?`)) {
+                                await supabase.from("clients").update({ cellulare: n }).eq("id", cli.id);
+                            }
+                            continue;
                         }
-                    } else if (chiamato && princ && chiamato !== princ) {
-                        const { data: gia } = await supabase.from("client_numeri").select("id").eq("client_id", cli.id).eq("numero", chiamato).limit(1);
-                        if (!gia?.length && window.confirm(`${nomeCli} ha già un numero associato (principale: ${princ}).\nVuoi associare ${chiamato} come numero AGGIUNTIVO?\n(L'etichetta — moglie, figlio, lavoro… — si imposta poi dalla scheda cliente.)`)) {
-                            const { error: en } = await supabase.from("client_numeri").insert({ client_id: cli.id, numero: chiamato });
+                        if (n === princ) continue;
+                        const { data: gia } = await supabase.from("client_numeri").select("id").eq("client_id", cli.id).eq("numero", n).limit(1);
+                        if (gia?.length) continue;
+                        if (window.confirm(`${nomeCli} ha già un numero associato (principale: ${princ}).\nVuoi associare ${n} come numero AGGIUNTIVO?\n(L'etichetta — moglie, figlio, lavoro… — si imposta poi dalla scheda cliente.)`)) {
+                            const { error: en } = await supabase.from("client_numeri").insert({ client_id: cli.id, numero: n });
                             if (en && !/duplicate/i.test(en.message)) alert("Numero NON associato: " + en.message + (/(relation|table)/i.test(en.message) ? " — manca la migrazione 121?" : ""));
                         }
                     }
@@ -1055,6 +1068,29 @@ function CallerPageInner() {
         alert("Provenienza INTERNO: indica il NEGOZIO e il MESE/ANNO da cui e' stato estratto questo lead (le stesse informazioni delle liste del direttore).");
         return false;
     }
+    // ASSORBIMENTO pratiche gemelle (Luca 31/07, mig. 123): quando il cliente
+    // HA RISPOSTO su una riga (esito vero: appuntamento, richiamo, non
+    // interessato...), le ALTRE pratiche dello stesso CF ferme su "Nuovo" o
+    // sui non-risposto spariscono dalla sezione caller — restano a database
+    // (e nello storico del cliente: l'ho chiamato su tre numeri) ma non si
+    // portano avanti righe doppie.
+    async function assorbiPraticheGemelle(c: Call, callId: string) {
+        const statoRef = c.statoNew || c.stato;
+        if (!statoRef || statoRef === "Nuovo" || NRD_STATI.includes(statoRef)) return;
+        const idf = String((c.tipo_cliente === "business" ? c.piva : c.cf) || "").trim().toUpperCase();
+        if (!idf) return;
+        try {
+            const campoIdf = c.tipo_cliente === "business" ? "piva" : "cf";
+            const { data: gemelle } = await supabase.from("calls").select("id, stato").ilike(campoIdf, idf).neq("id", callId);
+            const daAssorbire = ((gemelle ?? []) as { id: string; stato: string }[])
+                .filter((g) => g.stato === "Nuovo" || NRD_STATI.includes(g.stato))
+                .map((g) => g.id);
+            if (!daAssorbire.length) return;
+            const { error } = await supabase.from("calls").update({ assorbita_da: callId }).in("id", daAssorbire);
+            if (error && !/column/i.test(error.message || "")) console.warn("assorbimento non riuscito:", error.message);
+        } catch { /* niente assorbimento: le righe restano visibili */ }
+    }
+
     // AGGIORNA DATI senza esito (Luca 31/07): prima le modifiche ai campi
     // (cellulare, brand, obiettivo, pertinenza...) si salvavano SOLO scegliendo
     // un nuovo stato — correggere un dato richiedeva un esito finto.
@@ -1090,6 +1126,7 @@ function CallerPageInner() {
         }
         if (error) { alert("Dati NON aggiornati: " + error.message); return; }
         await creaAnagraficaSeManca(editCall);
+        await assorbiPraticheGemelle(editCall, editCall.id);
         await fetchCalls();
         closeModal();
     }
@@ -1145,6 +1182,7 @@ function CallerPageInner() {
             }
             if (creata?.id) await sincronizzaAppuntamento(newCall, String(creata.id));
             await creaAnagraficaSeManca(newCall);
+            if (creata?.id) await assorbiPraticheGemelle(newCall, String(creata.id));
             await fetchCalls();
         } else {
             // Detail mode: update only stato and append history
@@ -1225,6 +1263,7 @@ function CallerPageInner() {
                 return;
             }
             await creaAnagraficaSeManca(editCall);
+            await assorbiPraticheGemelle(editCall, editCall.id);
             if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
                 await sincronizzaRichiamo({ ...original, ...editCall }, editCall.id, editCall.dataRichiamoNew);
             }
