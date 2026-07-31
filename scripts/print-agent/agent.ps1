@@ -37,7 +37,7 @@ while ($true) {
 
       $ok = $true; $resp = ""
       try {
-        $pr = Invoke-WebRequest -Uri $printerUrl -Method Post -Body $soap `
+        $pr = Invoke-WebRequest -UseBasicParsing -Uri $printerUrl -Method Post -Body $soap `
               -ContentType "text/xml; charset=UTF-8" -Headers @{ SOAPAction = '""' } -TimeoutSec 30
         $resp = $pr.Content
       } catch { $ok = $false; $resp = $_.Exception.Message }

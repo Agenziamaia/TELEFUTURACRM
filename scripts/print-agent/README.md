@@ -41,9 +41,10 @@ comando qui sopra.
 Conferma che il PC raggiunge la stampante e che il protocollo risponde:
 ```powershell
 $soap = '<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><printerCommand><queryPrinterStatus /></printerCommand></s:Body></s:Envelope>'
-(Invoke-WebRequest -Uri "http://192.168.1.50/cgi-bin/fpmate.cgi" -Method Post -Body $soap -ContentType "text/xml; charset=UTF-8" -Headers @{ SOAPAction='""' }).Content
+(Invoke-WebRequest -UseBasicParsing -Uri "http://192.168.1.50/cgi-bin/fpmate.cgi" -Method Post -Body $soap -ContentType "text/xml; charset=UTF-8" -Headers @{ SOAPAction='""' }).Content
 ```
-Deve tornare un XML con lo stato stampante.
+Deve tornare un XML con lo stato stampante. (`-UseBasicParsing` evita l'avviso di
+sicurezza di Windows PowerShell 5.1 sull'analisi della risposta.)
 
 **2) Test dell'intera catena (CRM → coda → agente → stampante).**
 Avvia `agent.ps1`, poi metti in coda un job di stato (sola lettura):
