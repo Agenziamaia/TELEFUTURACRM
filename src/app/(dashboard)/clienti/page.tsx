@@ -34,6 +34,7 @@ interface Cliente {
     data_nascita?: string | null;   // facoltativo dalla migrazione 065
     iban?: string | null;
     acquisito_da?: string | null;
+    creato_da?: string | null;
     intestatario_diverso?: boolean;
     intestatario_nome?: string | null;
     intestatario_cognome?: string | null;
@@ -70,6 +71,7 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
         data_nascita: (row.data_nascita as string | null) ?? null,
         iban: (row.iban as string | null) ?? null,
         acquisito_da: (row.acquisito_da as string | null) ?? null,
+        creato_da: (row.creato_da as string | null) ?? null,
         intestatario_diverso: !!row.intestatario_diverso,
         intestatario_nome: (row.intestatario_nome as string | null) ?? null,
         intestatario_cognome: (row.intestatario_cognome as string | null) ?? null,
@@ -877,7 +879,7 @@ export default function ClientiPage() {
     const NEGOZI = useStores();
     const [utentiFiltro, setUtentiFiltro] = useState<{ full_name: string; match_name: string | null }[]>([]);
     const [contrattiGest, setContrattiGest] = useState<{ client_id: string | null; venditore: string | null; negozio: string | null }[] | null>(null);
-    const [acquisitiGest, setAcquisitiGest] = useState<{ id: string; acquisito_da: string | null }[]>([]);
+    const [acquisitiGest, setAcquisitiGest] = useState<{ id: string; acquisito_da: string | null; creato_da?: string | null }[]>([]);
     useEffect(() => {
         if (!canApproveAccess) return;
         supabase.from("app_users").select("full_name, match_name").eq("active", true).order("full_name")
@@ -894,7 +896,10 @@ export default function ClientiPage() {
         if (!vedeGestitoDa && !(canApproveAccess && (filterGestitoDa.length || filterNegozioGestito.length))) return;
         (async () => {
             const { data: cs } = await supabase.from("contracts").select("client_id, venditore, negozio").limit(10000);
-            const { data: acq } = await supabase.from("clients").select("id, acquisito_da").limit(5000);
+            // creato_da (mig. 108): il caller che ha creato l'anagrafica conta
+            // come gestore; fallback senza colonna finche' non e' applicata
+            const tentativo = await supabase.from("clients").select("id, acquisito_da, creato_da").limit(5000);
+            const acq = tentativo.data ?? (await supabase.from("clients").select("id, acquisito_da").limit(5000)).data;
             setContrattiGest((cs ?? []) as never);
             setAcquisitiGest((acq ?? []) as never);
         })();
@@ -926,6 +931,10 @@ export default function ClientiPage() {
             set = new Set(contrattiGest
                 .filter((c) => c.client_id && nomiSel.has(String(c.venditore || "").trim().toLowerCase()))
                 .map((c) => c.client_id as string));
+            // + anagrafiche CREATE dalla persona (caller, mig. 108)
+            acquisitiGest.forEach((c) => {
+                if (nomiSel.has(String(c.creato_da || "").trim().toLowerCase())) set!.add(c.id);
+            });
         }
         if (filterNegozioGestito.length) {
             const s = new Set<string>();
@@ -1192,10 +1201,13 @@ export default function ClientiPage() {
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-xs font-medium text-slate-400">Gestiti dal negozio</label>
+                                            {/* "Ufficio Commerciale" = anagrafiche nate dal call center
+                                                (mig. 108): cosi' si includono/escludono dai ragionamenti
+                                                di marketing (es. SMS compleanno solo a chi e' stato in negozio) */}
                                             <SelectMulti
                                                 values={filterNegozioGestito}
                                                 onChange={(v) => { setFilterNegozioGestito(v); setCurrentPage(1); }}
-                                                opzioni={NEGOZI}
+                                                opzioni={[...NEGOZI, "Ufficio Commerciale"]}
                                                 className="w-full glass-input text-sm rounded-lg py-2"
                                             />
                                         </div>
@@ -1387,9 +1399,11 @@ export default function ClientiPage() {
                                                 </td>
                                                 {vedeGestitoDa && (() => {
                                                     // Chi l'ha gestito: venditori delle sue pratiche + negozi;
-                                                    // senza pratiche resta il negozio di acquisizione.
+                                                    // senza pratiche resta il negozio di acquisizione. Il caller
+                                                    // che ha CREATO l'anagrafica (mig. 108) conta come gestore.
                                                     const g = gestioneDi.get(cliente.id);
-                                                    const venditori = g?.venditori || [];
+                                                    const venditori = [...(g?.venditori || [])];
+                                                    if (cliente.creato_da && !venditori.includes(cliente.creato_da)) venditori.push(cliente.creato_da);
                                                     const negozi = g?.negozi?.length ? g.negozi : (cliente.acquisito_da ? [cliente.acquisito_da] : []);
                                                     return (
                                                         <td className="px-6 py-4">

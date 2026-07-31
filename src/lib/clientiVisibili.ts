@@ -106,13 +106,20 @@ export function useClientiVisibili(): ClientiVisibili {
                     const t = String(a.customer_phone || "").replace(/\D/g, "");
                     if (t) telSet.add(t);
                 });
-                const { data: cls } = await supabase.from("clients").select("id,cf_piva,cellulare").limit(5000);
+                // creato_da (mig. 108): il caller vede anche le anagrafiche che
+                // ha CREATO lui chiamando — pure senza appuntamento (caso
+                // Barbieri: mai risposto, ma il cliente e' suo). Fallback senza
+                // la colonna finche' la migrazione non e' applicata.
+                const tentativo = await supabase.from("clients").select("id,cf_piva,cellulare,creato_da").limit(5000);
+                const cls = tentativo.data ?? (await supabase.from("clients").select("id,cf_piva,cellulare").limit(5000)).data;
                 if (!vivo) return;
+                const nomiNorm = new Set(nomi.map((n) => n.trim().toLowerCase()));
                 const set = new Set<string>();
-                ((cls ?? []) as { id: string; cf_piva: string | null; cellulare: string | null }[]).forEach((c) => {
+                ((cls ?? []) as { id: string; cf_piva: string | null; cellulare: string | null; creato_da?: string | null }[]).forEach((c) => {
                     const cf = String(c.cf_piva || "").toUpperCase().trim();
                     const t = String(c.cellulare || "").replace(/\D/g, "");
-                    if ((cf && cfSet.has(cf)) || (t && telSet.has(t))) set.add(c.id);
+                    const creatore = String(c.creato_da || "").trim().toLowerCase();
+                    if ((cf && cfSet.has(cf)) || (t && telSet.has(t)) || (creatore && nomiNorm.has(creatore))) set.add(c.id);
                 });
                 setMieiClienti(set);
                 await ricaricaAccessi();

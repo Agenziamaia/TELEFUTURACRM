@@ -846,7 +846,7 @@ function CallerPageInner() {
                 const { data: dup } = await supabase.from("clients").select("id").ilike("cellulare", cel).limit(1);
                 if (dup && dup.length) cel = "";
             }
-            const { error } = await supabase.from("clients").insert({
+            const payload: Record<string, unknown> = {
                 // stesso set di campi del Registra Vendita: clients ha molte
                 // colonne NOT NULL senza default (id, email, indirizzo, ...)
                 id: `CL-${idf.replace(/\s/g, "")}-${Date.now()}`,
@@ -855,7 +855,19 @@ function CallerPageInner() {
                 cellulare: cel || "", email: "", indirizzo: "", cap: "", citta: "", iban: "",
                 nome_ref: "", cognome_ref: "",
                 data_nascita: dataNascitaDaCF(idf),
-            });
+                // ATTRIBUZIONE (Luca 31/07, caso Barbieri): l'anagrafica nata qui
+                // e' GESTITA dal caller che ha chiamato, con sede l'ufficio
+                // commerciale — distinta dai clienti acquisiti in negozio.
+                creato_da: c.caller || currentCaller,
+                acquisito_da: "Ufficio Commerciale",
+            };
+            let { error } = await supabase.from("clients").insert(payload);
+            if (error && /column/i.test(error.message)) {
+                // mig. 108 non ancora applicata: meglio l'anagrafica senza
+                // attribuzione che nessuna anagrafica
+                delete payload.creato_da; delete payload.acquisito_da;
+                ({ error } = await supabase.from("clients").insert(payload));
+            }
             if (error) alert("Esito salvato, ma anagrafica NON creata: " + error.message);
         } catch { /* l'esito resta salvato comunque */ }
     }
