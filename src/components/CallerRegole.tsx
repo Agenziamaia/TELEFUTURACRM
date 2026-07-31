@@ -97,13 +97,16 @@ const CHIP: Record<string, string> = {
 };
 const LABEL: Record<string, string> = { in_corso: "⏳ In corso", attivo: "🟠 Attivo (da compensare)", compensato: "✅ Compensato" };
 
-export function ArchivioMalusCallerModal({ puoCompensare, utente, onClose }: { puoCompensare: boolean; utente: string; onClose: () => void }) {
+export function ArchivioMalusCallerModal({ puoCompensare, utente, soloCaller, onClose }: { puoCompensare: boolean; utente: string; soloCaller?: string; onClose: () => void }) {
     const [episodi, setEpisodi] = useState<EpisodioCaller[]>([]);
     const [caricato, setCaricato] = useState(false);
     const carica = useCallback(() => {
-        supabase.from("caller_malus").select("*").order("created_at", { ascending: false }).limit(500)
-            .then(({ data }) => { setEpisodi((data ?? []) as EpisodioCaller[]); setCaricato(true); });
-    }, []);
+        // soloCaller (Luca 31/07, come il tracking PDA): il caller vede SOLO il
+        // proprio storico — in corso, attivi e compensati
+        let q = supabase.from("caller_malus").select("*").order("created_at", { ascending: false }).limit(500);
+        if (soloCaller) q = q.eq("caller", soloCaller);
+        q.then(({ data }) => { setEpisodi((data ?? []) as EpisodioCaller[]); setCaricato(true); });
+    }, [soloCaller]);
     useEffect(() => { carica(); }, [carica]);
     const compensa = async (ep: EpisodioCaller) => {
         if (!window.confirm(`Segnare COMPENSATO il malus di ${ep.importo} € (${ep.caller || "—"}, ${ep.stato_pratica || "—"})?\nDa fare solo quando viene pagato nelle gare di commissioning.`)) return;
@@ -115,7 +118,7 @@ export function ArchivioMalusCallerModal({ puoCompensare, utente, onClose }: { p
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <div className="glass-card w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
                 <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
-                    <h3 className="text-lg font-bold text-white">⏱ Archivio Malus Call Center</h3>
+                    <h3 className="text-lg font-bold text-white">{soloCaller ? "⏱ Il mio storico malus" : "⏱ Archivio Malus Call Center"}</h3>
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg text-slate-400"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="px-4 pt-3 flex gap-2 flex-wrap text-[11px]">

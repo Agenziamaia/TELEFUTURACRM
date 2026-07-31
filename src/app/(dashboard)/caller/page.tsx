@@ -1675,15 +1675,15 @@ function CallerPageInner() {
                                         )}
                                     </button>
                                 ))}
-                                {(isDirector || puoRegoleCaller) && (
-                                    <div className="flex flex-col gap-2 justify-center">
-                                        {isDirector && <button onClick={() => setShowArchivioMalus(true)} title="Archivio dei malus (in corso, attivi, compensati)" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⏱ Malus</button>}
-                                        {puoRegoleCaller && <button onClick={() => setShowRegoleCaller(true)} title="Regole: giorni e malus giornaliero per stato" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>}
-                                    </div>
-                                )}
+                                <div className="flex flex-col gap-2 justify-center">
+                                    {/* lo STORICO ce l'hanno anche i caller (Luca 31/07, come il
+                                        tracking PDA): ognuno vede solo i propri episodi */}
+                                    <button onClick={() => setShowArchivioMalus(true)} title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⏱ {isDirector ? "Malus" : "Storico"}</button>
+                                    {puoRegoleCaller && <button onClick={() => setShowRegoleCaller(true)} title="Regole: giorni e malus giornaliero per stato" className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>}
+                                </div>
                             </div>
                             {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
-                            {showArchivioMalus && <ArchivioMalusCallerModal puoCompensare={puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || "")} utente={user?.name || "—"} onClose={() => setShowArchivioMalus(false)} />}
+                            {showArchivioMalus && <ArchivioMalusCallerModal puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} onClose={() => setShowArchivioMalus(false)} />}
 
                             {/* Filter bar */}
                             <div className="glass-panel p-5">
