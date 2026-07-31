@@ -690,6 +690,28 @@ export default function Calendario() {
             return;
         }
         setMeetings(prev => [...prev, mapMeetingRow(data)]);
+        // INVITO come COMUNICAZIONE POP-UP (Luca 31/07): gli invitati ricevono
+        // il pop-up con Accetto/Rifiuto (esiti cliccabili), resta nello storico
+        // comunicazioni e chi ha risposto cosa si vede nel dettaglio ricevute.
+        if (newMeeting.recipients.length) {
+            const quando = `${newMeeting.date} dalle ${newMeeting.startTime} alle ${newMeeting.endTime}`;
+            const dove = newMeeting.type === "in_person" ? (newMeeting.location ? `di persona — ${newMeeting.location}` : "di persona") : (newMeeting.link ? `in videochiamata — ${newMeeting.link}` : "in videochiamata");
+            const { error: comErr } = await supabase.from("comunicazioni").insert({
+                title: `📅 Riunione: ${newMeeting.title}`,
+                content: [`Sei invitato alla riunione "${newMeeting.title}"${newMeeting.brand ? ` (${newMeeting.brand})` : ""}.`, `Quando: ${quando}`, `Dove: ${dove}`, newMeeting.notes ? `Note: ${newMeeting.notes}` : ""].filter(Boolean).join("\n"),
+                type: "info",
+                kind: "popup",
+                target_roles: null,
+                target_stores: null,
+                target_users: newMeeting.recipients.map((r) => r.id),
+                target_brands: null,
+                esiti: ["Accetto", "Rifiuto"],
+                created_by: user?.id || null,
+                created_by_name: user?.name || null,
+                date_display: new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" }),
+            });
+            if (comErr) alert("Riunione salvata, ma il pop-up di invito NON è partito: " + comErr.message);
+        }
         setShowCreateMeetingModal(false); setCercaOperatore(""); setCercaNegozio("");
         setNewMeeting({
             title: "",
