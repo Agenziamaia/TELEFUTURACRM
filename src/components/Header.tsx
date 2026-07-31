@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRoles } from "@/lib/useRoles";
 import { cn } from "@/utils";
 import { useRef, useEffect, useState } from "react";
+import { campiMancanti, caricaProfilo } from "@/lib/profilo";
 
 const CRM_BACK_EVENT = "crm-back";
 
@@ -42,6 +43,22 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
         return () => { vivo = false; };
     }, [viewAs]);
     const canSwitchRole = !!user?.canSwitchRole;
+    // PROFILO (Luca 31/07): pallino rosso se mancano dati; avviso una volta
+    // per sessione con l'invito a completarli
+    const [profiloIncompleto, setProfiloIncompleto] = useState(false);
+    const [avvisoProfilo, setAvvisoProfilo] = useState(false);
+    useEffect(() => {
+        if (!user?.id) { setProfiloIncompleto(false); return; }
+        let vivo = true;
+        caricaProfilo(user.id).then((r) => {
+            if (!vivo || !r) return;
+            const manca = campiMancanti(r).length > 0;
+            setProfiloIncompleto(manca);
+            if (manca && !sessionStorage.getItem("profilo_avvisato")) setAvvisoProfilo(true);
+        });
+        return () => { vivo = false; };
+    }, [user?.id]);
+    const chiudiAvviso = () => { setAvvisoProfilo(false); try { sessionStorage.setItem("profilo_avvisato", "1"); } catch { /* no-op */ } };
     const lastPathRef = useRef<string | null>(null);
     const previousPathRef = useRef<string | null>(null);
 
@@ -347,19 +364,35 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                     <LogOut className="h-5 w-5" />
                 </button>
 
-                {/* User Profile */}
-                <div className="flex items-center gap-3 pl-4 border-l border-white/10 cursor-pointer">
+                {/* User Profile — cliccabile (Luca 31/07): porta a /profilo; il
+                    pallino rosso segnala i dati mancanti da completare */}
+                <button onClick={() => router.push("/profilo")} title="Il mio profilo"
+                    className="flex items-center gap-3 pl-4 border-l border-white/10 cursor-pointer text-left">
                     <div className="hidden text-right md:block">
                         <p className="text-sm font-medium text-white leading-none">{user?.name || "Ospite"}</p>
                         <p className={cn("text-xs mt-1", viewAs ? "text-amber-300 font-semibold" : "text-slate-400")}>
                             {user?.role ? roleLabel(user.role) : "Nessun Ruolo"}{viewAsUser ? ` (simulato: ${viewAsUser.name})` : viewAs ? " (simulato)" : ""}
                         </p>
                     </div>
-                    <div className="w-9 h-9 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border-2 border-indigo-500/40 flex items-center justify-center overflow-hidden">
-                        {user?.name ? getInitials(user.name) : 'A'}
+                    <div className="relative">
+                        <div className="w-9 h-9 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border-2 border-indigo-500/40 flex items-center justify-center overflow-hidden">
+                            {user?.name ? getInitials(user.name) : 'A'}
+                        </div>
+                        {profiloIncompleto && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border-2 border-[#0f111a] animate-pulse" />}
+                    </div>
+                </button>
+            </div>
+            {/* avviso UNA volta per sessione: profilo da completare */}
+            {avvisoProfilo && (
+                <div className="fixed top-20 right-4 z-[70] glass-card p-4 border-l-4 border-l-amber-500 shadow-2xl max-w-xs">
+                    <p className="text-sm font-bold text-amber-300">Il tuo profilo non è completo</p>
+                    <p className="text-xs text-slate-400 mt-1">Devi completare le informazioni mancanti: clicca sull&apos;icona del profilo in alto a destra.</p>
+                    <div className="flex gap-2 mt-3">
+                        <button onClick={() => { chiudiAvviso(); router.push("/profilo"); }} className="px-3 py-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold hover:bg-amber-500/30">Completa ora</button>
+                        <button onClick={chiudiAvviso} className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 text-xs font-bold hover:bg-white/10">Più tardi</button>
                     </div>
                 </div>
-            </div>
+            )}
         </header>
     );
 }

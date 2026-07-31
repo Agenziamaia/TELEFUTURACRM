@@ -24,6 +24,7 @@ import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel }
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
 import { DashboardTargetAdmin } from "@/components/DashboardTargetAdmin";
+import { RichiesteProfiloBox } from "@/components/RichiesteProfilo";
 import {
     ROLES,
     AREAS,
@@ -422,6 +423,8 @@ function AmministrazioneInner() {
                         <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Funzione non abilitata per il tuo ruolo.</div>
                     ) : (
                     <>
+                    {/* richieste di modifica profilo dai collaboratori (mig. 120) */}
+                    <RichiesteProfiloBox gestore={user?.name || "Amministrazione"} />
                     {/* Filtri */}
                     <div className="glass-panel p-4 flex flex-wrap gap-3 items-center">
                         <div className="relative flex-1 min-w-[220px]">
