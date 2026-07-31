@@ -856,8 +856,33 @@ function CallerPageInner() {
             } else {
                 updated.ragione_sociale = trovato.ragione_sociale || "";
             }
-            updated.numero = trovato.numero || "";
-            updated.cellulare = trovato.cellulare || "";
+            // REGOLA FERMA (Luca 31/07, caso Cassio): il NUMERO CHIAMATO e' un
+            // fatto storico — arriva da Aircall e NON si sovrascrive MAI, per
+            // nessun motivo. Si compila solo se la pratica ne era priva.
+            // Il recapito alternativo scritto a mano non si tocca.
+            const chiamato = numeroNazionale(editCall.numero) || String(editCall.numero || "").trim();
+            const anagrafico = numeroNazionale(trovato.numero || "") || String(trovato.numero || "").trim();
+            if (!chiamato) {
+                updated.numero = trovato.numero || "";
+            } else if (anagrafico && anagrafico !== chiamato) {
+                // anagrafica con un numero DIVERSO: si propone SUBITO di
+                // associare il chiamato come numero aggiuntivo del cliente
+                const chi = editCall.tipo_cliente === "business"
+                    ? (trovato.ragione_sociale || "Il cliente")
+                    : (`${trovato.nome || ""} ${trovato.cognome || ""}`.trim() || "Il cliente");
+                if (window.confirm(`${chi} in anagrafica ha il numero ${anagrafico}, ma questa chiamata è al ${chiamato}.\nVuoi associare ${chiamato} come numero AGGIUNTIVO del cliente?\n(Il numero chiamato NON viene modificato: potrai dargli un'etichetta dalla scheda cliente.)`)) {
+                    try {
+                        const { data: cli } = await supabase.from("clients").select("id").eq("cf_piva", value.trim().toUpperCase()).maybeSingle();
+                        if (cli?.id) {
+                            const { data: gia } = await supabase.from("client_numeri").select("id").eq("client_id", cli.id).eq("numero", chiamato).limit(1);
+                            if (!gia?.length) {
+                                const { error: en } = await supabase.from("client_numeri").insert({ client_id: cli.id, numero: chiamato });
+                                if (en && !/duplicate/i.test(en.message)) alert("Numero NON associato: " + en.message + (/(relation|table)/i.test(en.message) ? " — manca la migrazione 121?" : ""));
+                            }
+                        }
+                    } catch { /* si riproverà al salvataggio (creaAnagraficaSeManca) */ }
+                }
+            }
             updated.clienteRiconosciuto = true;
         } else {
             updated.clienteRiconosciuto = false;
@@ -867,11 +892,12 @@ function CallerPageInner() {
 
     function resetClienteLookup() {
         if (!editCall) return;
+        // il numero chiamato e il recapito alternativo NON si azzerano: sono
+        // dati della chiamata, non dell'anagrafica (Luca 31/07)
         setEditCall({
             ...editCall,
             nome: "", cognome: "", ragione_sociale: "",
             cf: "", piva: "",
-            numero: "", cellulare: "",
             clienteRiconosciuto: false,
         });
     }
@@ -2470,7 +2496,8 @@ function CallerPageInner() {
                                                 <div>
                                                     <label className="text-[10px] text-slate-500 uppercase tracking-widest">Numero</label>
                                                     <div className="flex gap-1.5 mt-1">
-                                                        <input className="glass-input w-full rounded-lg py-2" value={editCall.numero} onChange={(e) => updateField("numero", e.target.value)} placeholder="333 123 4567" />
+                                                        {/* numero CHIAMATO = fatto storico, mai modificabile (Luca 31/07) */}
+                                                        <input className="glass-input w-full rounded-lg py-2 opacity-80 cursor-not-allowed" value={editCall.numero} readOnly title="Numero chiamato: dato certo della chiamata, non modificabile" placeholder="333 123 4567" />
                                                         {String(editCall.numero || "").replace(/\D/g, "").length >= 6 && (<>
                                                             <button type="button" title="Richiama con Aircall"
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
