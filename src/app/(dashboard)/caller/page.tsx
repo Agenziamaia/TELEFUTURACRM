@@ -1102,18 +1102,29 @@ function CallerPageInner() {
     // portano avanti righe doppie.
     async function assorbiPraticheGemelle(c: Call, callId: string) {
         const statoRef = c.statoNew || c.stato;
-        if (!statoRef || statoRef === "Nuovo" || NRD_STATI.includes(statoRef)) return;
         const idf = String((c.tipo_cliente === "business" ? c.piva : c.cf) || "").trim().toUpperCase();
-        if (!idf) return;
+        if (!statoRef || !idf) return;
+        const eDebole = (s: string) => s === "Nuovo" || NRD_STATI.includes(s);
         try {
             const campoIdf = c.tipo_cliente === "business" ? "piva" : "cf";
-            const { data: gemelle } = await supabase.from("calls").select("id, stato").ilike(campoIdf, idf).neq("id", callId);
-            const daAssorbire = ((gemelle ?? []) as { id: string; stato: string }[])
-                .filter((g) => g.stato === "Nuovo" || NRD_STATI.includes(g.stato))
-                .map((g) => g.id);
-            if (!daAssorbire.length) return;
-            const { error } = await supabase.from("calls").update({ assorbita_da: callId }).in("id", daAssorbire);
-            if (error && !/column/i.test(error.message || "")) console.warn("assorbimento non riuscito:", error.message);
+            const { data: gemelle } = await supabase.from("calls").select("id, stato, assorbita_da").ilike(campoIdf, idf).neq("id", callId);
+            const rows = (gemelle ?? []) as { id: string; stato: string; assorbita_da: string | null }[];
+            if (!eDebole(statoRef)) {
+                // la riga corrente e' quella VINCENTE (il cliente ha risposto):
+                // assorbe le gemelle ferme su Nuovo / non risposto
+                const daAssorbire = rows.filter((g) => eDebole(g.stato) && !g.assorbita_da).map((g) => g.id);
+                if (!daAssorbire.length) return;
+                const { error } = await supabase.from("calls").update({ assorbita_da: callId }).in("id", daAssorbire);
+                if (error && !/column/i.test(error.message || "")) console.warn("assorbimento non riuscito:", error.message);
+            } else {
+                // la riga corrente e' DEBOLE (Nuovo/NR): se il cliente ha gia'
+                // una riga vincente — es. sto solo riportando il CF sulle
+                // chiamate fallite di stamattina — e' la CORRENTE a sparire
+                const vincente = rows.find((g) => !eDebole(g.stato) && !g.assorbita_da);
+                if (!vincente) return;
+                const { error } = await supabase.from("calls").update({ assorbita_da: vincente.id }).eq("id", callId);
+                if (error && !/column/i.test(error.message || "")) console.warn("assorbimento non riuscito:", error.message);
+            }
         } catch { /* niente assorbimento: le righe restano visibili */ }
     }
 
@@ -1915,11 +1926,13 @@ function CallerPageInner() {
                                                 </td>
                                                 {/* La cornetta sta sul NUMERO, non sul nome (Luca 30/07). */}
                                                 <td className="px-4 py-3">
-                                                    {(c.cellulare || c.numero) ? (
+                                                    {/* in lista si mostra il numero CHIAMATO (quello che ha
+                                                        creato la riga), non il recapito alternativo (Luca 31/07) */}
+                                                    {(c.numero || c.cellulare) ? (
                                                         <div className="flex items-center gap-2">
-                                                            <span className="font-mono text-[13px] text-slate-200 whitespace-nowrap">{c.cellulare || c.numero}</span>
+                                                            <span className="font-mono text-[13px] text-slate-200 whitespace-nowrap">{c.numero || c.cellulare}</span>
                                                             <button
-                                                                onClick={async (e) => { e.stopPropagation(); const r = await chiamaAircall(c.cellulare || c.numero, user?.id); alert(r.msg); }}
+                                                                onClick={async (e) => { e.stopPropagation(); const r = await chiamaAircall(c.numero || c.cellulare, user?.id); alert(r.msg); }}
                                                                 title="Chiama con Aircall"
                                                                 className="p-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-[11px] leading-none shrink-0"
                                                             >📞</button>
