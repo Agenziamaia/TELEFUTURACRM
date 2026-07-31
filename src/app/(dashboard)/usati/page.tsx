@@ -1337,7 +1337,10 @@ function GestioneUsatiInner() {
   const [activeKpi, setActiveKpi] = useState<string | null>(null);
   // pannello BONIFICI (al posto del filtro) + deep-link ?id= dai task ⚡
   const [showBonifici, setShowBonifici] = useState(false);
-  const [mostraFatti, setMostraFatti] = useState(false);
+  // SWITCH unico (Luca 31/07): da effettuare / fatti / entrambi — niente due
+  // sezioni; filtri ed export valgono su cio' che lo switch mostra. All'apertura
+  // riparte sempre dai DA EFFETTUARE.
+  const [bonVista, setBonVista] = useState<"da_fare" | "fatti" | "entrambi">("da_fare");
   // FILTRI bonifici (Luca 31/07): email, IBAN, nome cliente, negozio, periodo
   // — valgono sui DA FARE e sui FATTI; export CSV sui filtrati
   const [bonNome, setBonNome] = useState("");
@@ -1621,7 +1624,7 @@ function GestioneUsatiInner() {
                 {attivi.length > 0 && <span className="min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-black flex items-center justify-center">{attivi.length}</span>}
               </button>
             ); })()}
-            {vedeCosti && <button onClick={() => setShowBonifici(true)}
+            {vedeCosti && <button onClick={() => { setBonVista("da_fare"); setShowBonifici(true); }}
               className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-blue-500/15 text-blue-300 border border-blue-500/40 text-sm font-semibold hover:bg-blue-500/25 transition-all">
               🏦 Bonifici
               {(() => { const n = devices.filter(d => d.pagamento?.metodo === "bonifico" && (d.pagamento.bonifico_stato || (d.pagamento.bonifico_effettuato ? "fatto" : "da_fare")) !== "fatto").length; return n > 0 ? <span className="min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-black text-[11px] font-black flex items-center justify-center">{n}</span> : null; })()}
@@ -1859,9 +1862,13 @@ function GestioneUsatiInner() {
           return true;
         };
         const tutti = devices.filter(d => d.pagamento?.metodo === "bonifico");
-        const daFare = tutti.filter(d => conStato(d) !== "fatto" && passa(d, d.purchase_date))
+        // periodo: acquisto per i da fare, esecuzione per i fatti (per riga)
+        const riferimento = (d: Device) => conStato(d) === "fatto" ? (d.pagamento.bonifico_date || d.purchase_date) : d.purchase_date;
+        const filtrati = tutti.filter(d => passa(d, riferimento(d)));
+        const daFare = filtrati.filter(d => conStato(d) !== "fatto")
           .sort((a, b) => (b.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0) - (a.pagamento.bonifico_tipo === "istantaneo" ? 1 : 0));
-        const fatti = tutti.filter(d => conStato(d) === "fatto" && passa(d, d.pagamento.bonifico_date || d.purchase_date));
+        const fatti = filtrati.filter(d => conStato(d) === "fatto");
+        const mostrati = bonVista === "da_fare" ? daFare : bonVista === "fatti" ? fatti : [...daFare, ...fatti];
         const filtriAttivi = !!(bonNome || bonEmail || bonIban || bonNegozio || bonDa || bonA);
         // EXPORT CSV sui filtrati (stesso formato leggibile dei report presenze)
         const esporta = (lista: Device[], nome: string) => {
@@ -1953,27 +1960,31 @@ function GestioneUsatiInner() {
                     )}
                   </div>
                 </div>
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Da effettuare ({daFare.length}{filtriAttivi ? " filtrati" : ""})</h4>
-                    <button onClick={() => esporta(daFare, "da_effettuare")} disabled={!daFare.length}
-                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">⬇️ Esporta CSV</button>
+                {/* SWITCH unico (Luca 31/07): una lista sola, filtri unici,
+                    export unico su cio' che si sta guardando */}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex bg-black/40 p-1 rounded-xl border border-white/10">
+                    {([["da_fare", `Da effettuare (${daFare.length})`], ["fatti", `Fatti (${fatti.length})`], ["entrambi", `Entrambi (${filtrati.length})`]] as const).map(([k, lab]) => (
+                      <button key={k} type="button" onClick={() => setBonVista(k)}
+                        className={cn("px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all",
+                          bonVista === k ? "bg-blue-500/20 text-blue-200 border border-blue-500/30" : "text-slate-400 hover:text-white")}>
+                        {lab}
+                      </button>
+                    ))}
                   </div>
-                  {daFare.length === 0 && <p className="text-sm text-slate-600">Nessun bonifico in attesa{filtriAttivi ? " coi filtri attivi" : ""}. 👌</p>}
-                  <div className="space-y-2">{daFare.map(d => <Riga key={String(d.id)} d={d} />)}</div>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <button onClick={() => setMostraFatti(v => !v)} className="text-xs font-bold text-slate-400 hover:text-white uppercase tracking-widest">
-                    {mostraFatti ? "▾ Nascondi lo storico" : `▸ Mostra anche i bonifici fatti (${fatti.length}${filtriAttivi ? " filtrati" : ""})`}
+                  <button onClick={() => esporta(mostrati, bonVista)} disabled={!mostrati.length}
+                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
+                    ⬇️ Esporta CSV ({mostrati.length})
                   </button>
-                  {mostraFatti && (
-                    <button onClick={() => esporta(fatti, "fatti")} disabled={!fatti.length}
-                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">⬇️ Esporta CSV</button>
-                  )}
                 </div>
-                {mostraFatti && (
-                  <div className="space-y-2">{fatti.map(d => <Riga key={String(d.id)} d={d} storico />)}</div>
+                {mostrati.length === 0 && (
+                  <p className="text-sm text-slate-600">
+                    {bonVista === "da_fare" ? "Nessun bonifico in attesa" : bonVista === "fatti" ? "Nessun bonifico eseguito" : "Nessun bonifico"}{filtriAttivi ? " coi filtri attivi" : ""}.{bonVista === "da_fare" ? " 👌" : ""}
+                  </p>
                 )}
+                <div className="space-y-2">
+                  {mostrati.map(d => <Riga key={String(d.id)} d={d} storico={conStato(d) === "fatto"} />)}
+                </div>
               </div>
             </div>
           </div>
