@@ -14,6 +14,7 @@ import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
 import { fasciaLabel } from "@/lib/fasce";
+import { RicercaCliente } from "@/components/RicercaCliente";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto).
 // "richiamo" = richiamo telefonico fissato dal call center (Luca 31/07): nasce
@@ -2043,6 +2044,19 @@ export default function Calendario() {
                                         </button>
                                     ))}
                                 </div>
+                                {/* ricerca STANDARD del CRM (Luca 31/07): identica a Registra
+                                    Vendita — un click compila CF, nome e telefono */}
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Cliente esistente</label>
+                                <RicercaCliente
+                                    tipo={newAppt.tipoCliente === "business" ? "business" : "consumer"}
+                                    className="mb-3"
+                                    onScelto={(c) => setNewAppt(p => ({
+                                        ...p,
+                                        cfPiva: c.cf_piva || "",
+                                        customerName: c.ragione_sociale || `${c.nome || ""} ${c.cognome || ""}`.trim(),
+                                        customerPhone: numeroNazionale(c.cellulare || "") || c.cellulare || "",
+                                    }))}
+                                />
                                 <label className="block text-xs font-medium text-slate-400 mb-1.5">{newAppt.tipoCliente === "business" ? "Partita IVA *" : "Codice Fiscale *"}</label>
                                 <input type="text" className="glass-input w-full font-mono uppercase"
                                     placeholder={newAppt.tipoCliente === "business" ? "es. 01234567890" : "es. RSSMRA80A01H501U"}
