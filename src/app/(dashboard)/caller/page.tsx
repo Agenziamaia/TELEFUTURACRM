@@ -584,6 +584,30 @@ function CallerPageInner() {
         init();
     }, []);
 
+    // BOZZA della pratica aperta (Luca 31/07): cliccando WhatsApp dal modale
+    // si esce dalla pagina e prima si perdeva TUTTO il compilato. Ora la bozza
+    // si salva in sessione e al rientro su /caller (pulsante indietro in alto
+    // a sinistra o navigazione) il modale si riapre da solo con i dati scritti.
+    // Vale SOLO per questo flusso: senza bozza salvata non cambia nulla.
+    const salvaBozza = () => {
+        if (!editCall) return;
+        try { sessionStorage.setItem("caller_bozza", JSON.stringify({ editCall, modalMode, t: Date.now() })); } catch { /* no-op */ }
+    };
+    const [bozzaFatta, setBozzaFatta] = useState(false);
+    useEffect(() => {
+        if (bozzaFatta || loading) return;
+        setBozzaFatta(true);
+        try {
+            const raw = sessionStorage.getItem("caller_bozza");
+            if (!raw) return;
+            sessionStorage.removeItem("caller_bozza");
+            const b = JSON.parse(raw) as { editCall: Call; modalMode: "new" | "detail"; t: number };
+            if (!b?.editCall || Date.now() - (b.t || 0) > 60 * 60 * 1000) return;
+            setModalMode(b.modalMode || "detail");
+            setEditCall(b.editCall);
+        } catch { /* bozza corrotta: si ignora */ }
+    }, [bozzaFatta, loading]);
+
     // Arrivo dallo storico chiamate del cliente (Luca 31/07): /caller?apri=<id>
     // apre la pratica in dettaglio appena i dati sono carichi.
     const apriId = searchParams.get("apri");
@@ -2104,7 +2128,7 @@ function CallerPageInner() {
                                                     <button type="button" title="Chiama questo numero con Aircall"
                                                         onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                    <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                    <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
                                                         className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
                                                         <MessageSquare className="w-4 h-4" />
                                                     </Link>
@@ -2118,7 +2142,7 @@ function CallerPageInner() {
                                                     <button type="button" title="Chiama questo numero con Aircall"
                                                         onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                    <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                    <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
                                                         className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
                                                         <MessageSquare className="w-4 h-4" />
                                                     </Link>
@@ -2338,7 +2362,7 @@ function CallerPageInner() {
                                                             <button type="button" title="Richiama con Aircall"
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
                                                                 className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                            <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                            <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
                                                                 className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
                                                                 <MessageSquare className="w-4 h-4" />
                                                             </Link>
@@ -2353,7 +2377,7 @@ function CallerPageInner() {
                                                             <button type="button" title="Richiama con Aircall"
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
                                                                 className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                            <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} title="Scrivi su WhatsApp dal CRM"
+                                                            <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
                                                                 className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
                                                                 <MessageSquare className="w-4 h-4" />
                                                             </Link>
