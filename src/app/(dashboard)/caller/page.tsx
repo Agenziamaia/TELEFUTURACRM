@@ -2399,40 +2399,40 @@ function CallerPageInner() {
                                             {editCall.clienteRiconosciuto && <p className="text-[11px] text-emerald-400 font-bold">✓ Cliente riconosciuto in anagrafica: dati compilati automaticamente</p>}
                                             {/* le stesse prime 4 tendine dell'Inserimento Manuale (Dettagli Chiamata) */}
                                             <p className="text-[11px] font-bold text-amber-300 uppercase tracking-widest pt-1">Dettagli chiamata</p>
+                                            {/* tendine STANDARD del CRM (SelectOpzioni) anche qui — Luca 31/07 */}
                                             <div className="grid grid-cols-2 gap-3">
                                                 <FormGroup label="Brand">
-                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.brand} onChange={(e) => updateField("brand", e.target.value)}>
-                                                        <option value="">Seleziona...</option>
-                                                        {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                                                    </select>
+                                                    <SelectOpzioni value={editCall.brand} onChange={(v) => updateField("brand", v)} opzioni={BRANDS} placeholder="Scrivi o scegli…" className="glass-input rounded-lg py-2 w-full" />
                                                 </FormGroup>
                                                 <FormGroup label="Obiettivo">
-                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.obiettivo} onChange={(e) => updateField("obiettivo", e.target.value)}>
-                                                        <option value="">Seleziona...</option>
-                                                        {OBIETTIVI_OPT.map(o => <option key={o} value={o}>{o}</option>)}
-                                                    </select>
+                                                    <SelectOpzioni value={editCall.obiettivo} onChange={(v) => updateField("obiettivo", v)} opzioni={OBIETTIVI_OPT} placeholder="Scrivi o scegli…" className="glass-input rounded-lg py-2 w-full" />
                                                 </FormGroup>
                                                 <FormGroup label="Provenienza">
-                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.provenienza} onChange={(e) => updateField("provenienza", e.target.value)}>
-                                                        <option value="">Seleziona...</option>
-                                                        {PROVENIENZE_OPT.map(pr => <option key={pr} value={pr}>{pr}</option>)}
-                                                    </select>
+                                                    <SelectOpzioni value={editCall.provenienza} onChange={(v) => updateField("provenienza", v)} opzioni={PROVENIENZE_OPT} placeholder="Scrivi o scegli…" className="glass-input rounded-lg py-2 w-full" />
                                                 </FormGroup>
                                                 <FormGroup label="Tipologia">
-                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.tipologia} onChange={(e) => updateField("tipologia", e.target.value)}>
-                                                        <option value="">Seleziona...</option>
-                                                        {TIPOLOGIE_OPT.map(t => <option key={t} value={t}>{t}</option>)}
-                                                    </select>
+                                                    <SelectOpzioni value={editCall.tipologia} onChange={(v) => updateField("tipologia", v)} opzioni={TIPOLOGIE_OPT} placeholder="Scrivi o scegli…" className="glass-input rounded-lg py-2 w-full" />
                                                 </FormGroup>
+                                                {/* SEMPRE editabile (Luca 31/07): si puo' aver sbagliato
+                                                    l'esito o deciso un negozio diverso — per i lead interni
+                                                    resta agganciato alla provenienza */}
+                                                <div className="col-span-2">
+                                                    <FormGroup label="Negozio di Pertinenza *">
+                                                        <SelectOpzioni
+                                                            value={editCall.provenienza === "Interno" && editCall.negozio_provenienza ? editCall.negozio_provenienza : editCall.negozio_pertinenza}
+                                                            onChange={(v) => updateField("negozio_pertinenza", v)}
+                                                            opzioni={NEGOZI} placeholder="Scrivi o scegli il negozio…"
+                                                            disabled={!!(editCall.provenienza === "Interno" && editCall.negozio_provenienza)}
+                                                            className="glass-input rounded-lg py-2 w-full" />
+                                                        {editCall.provenienza === "Interno" && !!editCall.negozio_provenienza && <p className="text-[10px] text-slate-500 mt-1">Lead interno: coincide col negozio di provenienza.</p>}
+                                                    </FormGroup>
+                                                </div>
                                                 {/* lead interno: origine obbligatoria anche all'esito del
                                                     caller — stesse info delle liste del direttore (Luca 31/07) */}
                                                 {editCall.provenienza === "Interno" && (
                                                     <div className="col-span-2 grid grid-cols-3 gap-3">
                                                         <FormGroup label="Negozio Provenienza">
-                                                            <select className="glass-input rounded-lg py-2 w-full" value={editCall.negozio_provenienza} onChange={(e) => updateField("negozio_provenienza", e.target.value)}>
-                                                                <option value="">Negozio...</option>
-                                                                {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
-                                                            </select>
+                                                            <SelectOpzioni value={editCall.negozio_provenienza} onChange={(v) => updateField("negozio_provenienza", v)} opzioni={NEGOZI} placeholder="Negozio…" className="glass-input rounded-lg py-2 w-full" />
                                                         </FormGroup>
                                                         <FormGroup label="Mese">
                                                             <select className="glass-input rounded-lg py-2 w-full" value={editCall.mese_provenienza} onChange={(e) => updateField("mese_provenienza", e.target.value)}>
