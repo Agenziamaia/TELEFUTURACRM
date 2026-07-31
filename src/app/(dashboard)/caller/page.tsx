@@ -23,6 +23,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
 
 /* ─────────────────────────────────────────────────────────────────────
    CONSTANTS
@@ -110,6 +111,12 @@ interface Call {
     whatsapp: string;
     note: string;
     data_richiamo: string;
+    // fasce orarie (mig. 118): in alternativa all'orario preciso
+    fascia_appuntamento: string;
+    fascia_richiamo: string;
+    // punto vendita CONGRUO per il cliente (mig. 118): per i lead interni
+    // coincide col negozio di provenienza, per gli altri va scelto sempre
+    negozio_pertinenza: string;
     lista_origine?: string | null;
     da_esitare?: boolean;
     storico: StoricoEntry[];
@@ -204,6 +211,9 @@ function mapRowToCall(row: Record<string, unknown>): Call {
         whatsapp: (row.whatsapp as string) || "",
         note: (row.note as string) || "",
         data_richiamo: (row.data_richiamo as string) || "",
+        fascia_appuntamento: (row.fascia_appuntamento as string) || "",
+        fascia_richiamo: (row.fascia_richiamo as string) || "",
+        negozio_pertinenza: (row.negozio_pertinenza as string) || "",
         lista_origine: (row.lista_origine as string) || null,
         da_esitare: !!row.da_esitare,
         storico: (row.storico as StoricoEntry[]) || [],
@@ -260,6 +270,30 @@ function formatTimeShort(d: string): string {
     return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
 }
 
+// Data con orario preciso OPPURE fascia (Luca 31/07): il flag Mattina/Pomeriggio
+// sostituisce l'orario — l'input diventa solo-data e la fascia viaggia a parte.
+function InputDataOra({ valore, fascia, onCambia }: { valore: string; fascia: string; onCambia: (valore: string, fascia: string) => void }) {
+    const conFascia = eFascia(fascia);
+    const scegli = (f: string) => {
+        if (f) onCambia((valore || "").slice(0, 10), f);
+        else onCambia(valore && valore.length === 10 ? `${valore}T10:00` : (valore || ""), "");
+    };
+    return (
+        <div className="space-y-1.5">
+            <div className="flex gap-1.5 flex-wrap">
+                {[["", "🕐 Orario preciso"], ["mattina", `${FASCE.mattina.emoji} Mattina`], ["pomeriggio", `${FASCE.pomeriggio.emoji} Pomeriggio`]].map(([k, l]) => (
+                    <button key={k} type="button" onClick={() => scegli(k)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${(conFascia ? fascia : "") === k ? "bg-violet-500/20 border-violet-500/50 text-violet-300" : "bg-black/30 border-white/10 text-slate-400 hover:text-slate-200"}`}>{l}</button>
+                ))}
+            </div>
+            <input type={conFascia ? "date" : "datetime-local"} className="glass-input rounded-lg py-2 w-full"
+                value={conFascia ? (valore || "").slice(0, 10) : (valore || "")}
+                onChange={(e) => onCambia(e.target.value, conFascia ? fascia : "")} />
+            {conFascia && <p className="text-[10px] text-amber-400/90">{fasciaLabel(fascia)} — senza orario preciso</p>}
+        </div>
+    );
+}
+
 // datetime-local vuole l'ora LOCALE "YYYY-MM-DDTHH:mm"; toISOString() e' UTC e
 // mostrava/salvava tutto con 2 ore di scarto (filo aperto 30/07, chiuso 31/07).
 function toLocalInput(d: Date | string): string {
@@ -299,6 +333,7 @@ function blankCall(callerName: string, isDirector: boolean): Call {
         indirizzo: "", agente: "", segnalatore: "", campagna: "",
         negozio_provenienza: "", mese_provenienza: "", anno_provenienza: "",
         whatsapp: "", note: "", data_richiamo: "",
+        fascia_appuntamento: "", fascia_richiamo: "", negozio_pertinenza: "",
         lista_origine: null,
         storico: [],
     };
@@ -755,9 +790,13 @@ function CallerPageInner() {
             alert("Appuntamento salvato sulla pratica ma NON portato in calendario: indica il negozio dell'appuntamento oppure l'agente.");
             return;
         }
+        // FASCIA (mig. 118): senza orario preciso il time tecnico e' l'inizio
+        // della fascia (ordina il calendario), la fascia viaggia sull'evento
+        const fasciaApp = eFascia(c.fascia_appuntamento) ? c.fascia_appuntamento : null;
         const payload: Record<string, unknown> = {
             date: dataApp,
-            time: oraApp || "10:00",
+            time: fasciaApp ? fasciaStart(fasciaApp)! : (oraApp || "10:00"),
+            fascia: fasciaApp,
             type: inNegozio ? "incoming" : "outgoing",
             store: inNegozio ? c.negozio_appuntamento : null,
             agente: inNegozio ? "" : c.agente,
@@ -771,12 +810,15 @@ function CallerPageInner() {
         };
         const { data: linked } = await supabase.from("calls").select("appointment_id").eq("id", callId).maybeSingle();
         const existing = linked?.appointment_id as number | null | undefined;
+        const { fascia: _fx, ...payloadLegacy } = payload;   // fallback pre-mig. 118
         if (existing) {
-            const { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            let { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(payloadLegacy).eq("id", existing));
             if (error) alert("Appuntamento in calendario NON aggiornato: " + error.message);
             return;
         }
-        const { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        let { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert(payloadLegacy).select("id").single());
         if (error) { alert("Appuntamento NON portato in calendario: " + error.message); return; }
         if (ins?.id) {
             const { error: linkErr } = await supabase.from("calls").update({ appointment_id: ins.id }).eq("id", callId);
@@ -793,9 +835,11 @@ function CallerPageInner() {
     // stesso evento invece di duplicarlo.
     async function sincronizzaRichiamo(c: Call, callId: string, dataRichiamo: string) {
         const [dataR, oraR] = dataRichiamo.includes("T") ? dataRichiamo.split("T") : [dataRichiamo, "10:00"];
+        const fasciaR = eFascia(c.fascia_richiamo) ? c.fascia_richiamo : null;
         const payload: Record<string, unknown> = {
             date: dataR,
-            time: (oraR || "10:00").slice(0, 5),
+            time: fasciaR ? fasciaStart(fasciaR)! : (oraR || "10:00").slice(0, 5),
+            fascia: fasciaR,
             type: "richiamo",
             store: null, agente: "",
             customer_name: c.tipo_cliente === "business" ? (c.ragione_sociale || `${c.nome} ${c.cognome}`.trim()) : `${c.nome} ${c.cognome}`.trim(),
@@ -807,12 +851,15 @@ function CallerPageInner() {
         };
         const { data: linked } = await supabase.from("calls").select("richiamo_event_id").eq("id", callId).maybeSingle();
         const existing = (linked as { richiamo_event_id?: number | null } | null)?.richiamo_event_id;
+        const { fascia: _fx, ...payloadLegacy } = payload;   // fallback pre-mig. 118
         if (existing) {
-            const { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            let { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(payloadLegacy).eq("id", existing));
             if (error) alert("Richiamo salvato sulla pratica ma calendario NON aggiornato: " + error.message);
             return;
         }
-        const { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        let { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert(payloadLegacy).select("id").single());
         if (error) { alert("Richiamo salvato sulla pratica ma NON portato in calendario: " + error.message); return; }
         if (ins?.id) {
             const { error: linkErr } = await supabase.from("calls").update({ richiamo_event_id: ins.id }).eq("id", callId);
@@ -893,6 +940,10 @@ function CallerPageInner() {
             if (!anagraficaObbligatoriaOk(editCall)) return;
             if (!provenienzaInternoOk(editCall)) return;
             const newCall: Call = { ...editCall };
+            // NEGOZIO DI PERTINENZA obbligatorio (Luca 31/07), anche sui Non
+            // risponde: per i lead interni coincide con la provenienza
+            if (newCall.provenienza === "Interno" && newCall.negozio_provenienza) newCall.negozio_pertinenza = newCall.negozio_provenienza;
+            if (!String(newCall.negozio_pertinenza || "").trim()) { alert("NEGOZIO DI PERTINENZA obbligatorio (anche se non risponde): è il punto vendita congruo per il cliente — serve ai richiami per sapere dove mandarlo."); return; }
             // archivio SENZA +39 e senza spazi (Luca 31/07)
             newCall.numero = numeroNazionale(newCall.numero) || newCall.numero;
             newCall.cellulare = numeroNazionale(newCall.cellulare) || numeroNazionale(newCall.numero);
@@ -915,10 +966,18 @@ function CallerPageInner() {
                 segnalatore: newCall.segnalatore, campagna: newCall.campagna,
                 negozio_provenienza: newCall.negozio_provenienza, mese_provenienza: newCall.mese_provenienza, anno_provenienza: newCall.anno_provenienza,
                 whatsapp: newCall.whatsapp, note: newCall.note, data_richiamo: newCall.data_richiamo,
+                fascia_appuntamento: newCall.fascia_appuntamento || null,
+                fascia_richiamo: newCall.fascia_richiamo || null,
+                negozio_pertinenza: newCall.negozio_pertinenza || null,
                 lista_origine: newCall.lista_origine,
                 storico: newCall.storico,
             };
-            const { data: creata, error } = await supabase.from("calls").insert(payload).select("id").single();
+            let { data: creata, error } = await supabase.from("calls").insert(payload).select("id").single();
+            if (error && /column/i.test(error.message || "")) {
+                // mig. 118 non ancora applicata: si salva senza i campi nuovi
+                const { fascia_appuntamento: _f1, fascia_richiamo: _f2, negozio_pertinenza: _np, ...legacy } = payload;
+                ({ data: creata, error } = await supabase.from("calls").insert(legacy).select("id").single());
+            }
             if (error) {
                 alert("Errore salvataggio: " + error.message);
                 return;
@@ -940,6 +999,11 @@ function CallerPageInner() {
             }
             if (!anagraficaObbligatoriaOk(editCall)) return;
             if (!provenienzaInternoOk(editCall)) return;
+            // pertinenza obbligatoria anche agli esiti successivi (Luca 31/07)
+            const pertinenza = (editCall.provenienza === "Interno" && editCall.negozio_provenienza)
+                ? editCall.negozio_provenienza
+                : editCall.negozio_pertinenza;
+            if (!String(pertinenza || "").trim()) { alert("NEGOZIO DI PERTINENZA obbligatorio (anche se non risponde): è il punto vendita congruo per il cliente — serve ai richiami per sapere dove mandarlo."); return; }
             const original = calls.find(c => c.id === editCall.id);
             if (!original) return;
             const newStorico: StoricoEntry[] = [
@@ -964,14 +1028,19 @@ function CallerPageInner() {
             updates.negozio_provenienza = editCall.negozio_provenienza;
             updates.mese_provenienza = editCall.mese_provenienza;
             updates.anno_provenienza = editCall.anno_provenienza;
+            updates.negozio_pertinenza = pertinenza;
 
             if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
-                newStorico.push({ data: now, caller: currentCaller, campo: "Data richiamo", da: "", a: formatDate(editCall.dataRichiamoNew) });
+                const eF = fasciaLabel(editCall.fascia_richiamo);
+                newStorico.push({ data: now, caller: currentCaller, campo: "Data richiamo", da: "", a: eF ? `${formatDateShort(editCall.dataRichiamoNew)} · ${eF}` : formatDate(editCall.dataRichiamoNew) });
                 updates.data_richiamo = editCall.dataRichiamoNew;
+                updates.fascia_richiamo = editCall.fascia_richiamo || null;
             }
             if (APPUNTAMENTO_STATI.includes(editCall.statoNew) && editCall.dataAppuntamentoNew) {
-                newStorico.push({ data: now, caller: currentCaller, campo: "Data appuntamento", da: "", a: formatDate(editCall.dataAppuntamentoNew) });
+                const eF = fasciaLabel(editCall.fascia_appuntamento);
+                newStorico.push({ data: now, caller: currentCaller, campo: "Data appuntamento", da: "", a: eF ? `${formatDateShort(editCall.dataAppuntamentoNew)} · ${eF}` : formatDate(editCall.dataAppuntamentoNew) });
                 updates.data_appuntamento = editCall.dataAppuntamentoNew;
+                updates.fascia_appuntamento = editCall.fascia_appuntamento || null;
             }
             if (APPUNTAMENTO_STATI.includes(editCall.statoNew) && editCall.negozioAppNew) {
                 updates.negozio_appuntamento = editCall.negozioAppNew;
@@ -984,7 +1053,12 @@ function CallerPageInner() {
             }
             updates.storico = newStorico;
 
-            const { error } = await supabase.from("calls").update(updates).eq("id", editCall.id);
+            let { error } = await supabase.from("calls").update(updates).eq("id", editCall.id);
+            if (error && /column/i.test(error.message || "")) {
+                // mig. 118 non ancora applicata: si aggiorna senza i campi nuovi
+                const { fascia_appuntamento: _f1, fascia_richiamo: _f2, negozio_pertinenza: _np, ...legacy } = updates;
+                ({ error } = await supabase.from("calls").update(legacy).eq("id", editCall.id));
+            }
             if (error) {
                 alert("Errore aggiornamento: " + error.message);
                 return;
@@ -1993,6 +2067,21 @@ function CallerPageInner() {
                                             </FormGroup>
                                         </div>
 
+                                        <FormGroup label="Negozio di Pertinenza *">
+                                            {/* il punto vendita CONGRUO per il cliente (Luca 31/07): per i
+                                                lead interni coincide con la provenienza; per gli altri va
+                                                scelto SEMPRE, anche sui Non risponde — ai richiami sappiamo
+                                                gia' dove mandare il cliente */}
+                                            <select className="glass-input rounded-lg py-2 w-full"
+                                                value={isInterno && editCall.negozio_provenienza ? editCall.negozio_provenienza : editCall.negozio_pertinenza}
+                                                disabled={!!(isInterno && editCall.negozio_provenienza)}
+                                                onChange={(e) => updateField("negozio_pertinenza", e.target.value)}>
+                                                <option value="">Seleziona negozio...</option>
+                                                {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
+                                            </select>
+                                            {isInterno && <p className="text-[10px] text-slate-500 mt-1">Lead interno: coincide col negozio di provenienza.</p>}
+                                        </FormGroup>
+
                                         {isSegnalazione && (
                                             <FormGroup label="Segnalatore">
                                                 <SelectPersona value={editCall.segnalatore} onChange={(v) => updateField("segnalatore", v)} opzioni={VENDITORI} placeholder="Scrivi il venditore…" className="glass-input rounded-lg py-2 w-full" />
@@ -2046,15 +2135,15 @@ function CallerPageInner() {
                                         )}
                                         {(isDTS || isOutbound) && (
                                             <FormGroup label="Data e Ora Appuntamento">
-                                                <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.data_appuntamento} onChange={(e) => updateField("data_appuntamento", e.target.value)} />
+                                                <InputDataOra valore={editCall.data_appuntamento} fascia={editCall.fascia_appuntamento || ""}
+                                                    onCambia={(v, f) => { updateField("data_appuntamento", v); updateField("fascia_appuntamento", f); }} />
                                             </FormGroup>
                                         )}
 
                                         <FormGroup label="Stato">
-                                            <select className="glass-input rounded-lg py-2 w-full" value={editCall.stato} onChange={(e) => updateField("stato", e.target.value)}>
-                                                <option value="">Seleziona...</option>
-                                                {statiDisponibili.map(s => <option key={s} value={s}>{s}</option>)}
-                                            </select>
+                                            {/* tendina STANDARD del CRM (SelectOpzioni), voci dal pannello
+                                                amministrativo (caller_opzioni categoria "stato") */}
+                                            <SelectOpzioni value={editCall.stato} onChange={(v) => updateField("stato", v)} opzioni={statiDisponibili} placeholder="Scrivi o scegli l'esito…" className="glass-input rounded-lg py-2 w-full" />
                                         </FormGroup>
 
                                         {needsWhatsapp && (
@@ -2070,7 +2159,8 @@ function CallerPageInner() {
                                         )}
                                         {needsRichiamo && (
                                             <FormGroup label="Data e Ora Richiamo">
-                                                <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.data_richiamo} onChange={(e) => updateField("data_richiamo", e.target.value)} />
+                                                <InputDataOra valore={editCall.data_richiamo} fascia={editCall.fascia_richiamo || ""}
+                                                    onCambia={(v, f) => { updateField("data_richiamo", v); updateField("fascia_richiamo", f); }} />
                                             </FormGroup>
                                         )}
 
@@ -2246,7 +2336,8 @@ function CallerPageInner() {
                                         {editCall.tipologia === "DTS" && <SummaryItem label="Negozio Appuntamento" value={editCall.negozio_appuntamento} />}
                                         {editCall.tipologia === "Outbound" && <SummaryItem label="Indirizzo" value={editCall.indirizzo} />}
                                         {editCall.tipologia === "Outbound" && <SummaryItem label="Agente" value={editCall.agente} />}
-                                        {(editCall.tipologia === "DTS" || editCall.tipologia === "Outbound") && <SummaryItem label="Data Appuntamento" value={editCall.data_appuntamento ? formatDate(editCall.data_appuntamento) : ""} />}
+                                        {(editCall.tipologia === "DTS" || editCall.tipologia === "Outbound") && <SummaryItem label="Data Appuntamento" value={editCall.data_appuntamento ? (fasciaLabel(editCall.fascia_appuntamento) ? `${formatDateShort(editCall.data_appuntamento)} · ${fasciaLabel(editCall.fascia_appuntamento)}` : formatDate(editCall.data_appuntamento)) : ""} />}
+                                        <SummaryItem label="Negozio di Pertinenza" value={editCall.negozio_pertinenza || (editCall.provenienza === "Interno" ? editCall.negozio_provenienza : "")} />
                                         <SummaryItem label="Data Chiamata" value={formatDate(editCall.data_chiamata)} />
                                         <SummaryItem label="Caller" value={editCall.caller} />
                                         {editCall.data_richiamo && <SummaryItem label="Prossimo Richiamo" value={formatDate(editCall.data_richiamo)} />}
@@ -2272,10 +2363,11 @@ function CallerPageInner() {
                                             <ArrowRight className="w-5 h-5 text-violet-300 mt-5" />
                                             <div className="flex-1">
                                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Stato New</label>
-                                                <select className="glass-input rounded-lg py-2 w-full mt-1" value={editCall.statoNew || ""} onChange={(e) => updateField("statoNew", e.target.value)}>
-                                                    <option value="">Seleziona nuovo stato...</option>
-                                                    {STATI.filter(s => s !== "Nuovo").map(s => <option key={s} value={s}>{s}</option>)}
-                                                </select>
+                                                {/* le voci arrivano dal PANNELLO AMMINISTRATIVO (caller_opzioni):
+                                                    prima la lista era hardcoded e mostrava ancora i DTS rimossi */}
+                                                <div className="mt-1">
+                                                    <SelectOpzioni value={editCall.statoNew || ""} onChange={(v) => updateField("statoNew", v)} opzioni={STATI_OPT.filter(s => s !== "Nuovo")} placeholder="Scrivi o scegli il nuovo stato…" className="glass-input rounded-lg py-2 w-full" />
+                                                </div>
                                             </div>
                                         </div>
 
@@ -2292,13 +2384,15 @@ function CallerPageInner() {
                                         )}
                                         {statoNewIsRichiamo && (
                                             <FormGroup label="Data e Ora Richiamo">
-                                                <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.dataRichiamoNew || ""} onChange={(e) => updateField("dataRichiamoNew", e.target.value)} />
+                                                <InputDataOra valore={editCall.dataRichiamoNew || ""} fascia={editCall.fascia_richiamo || ""}
+                                                    onCambia={(v, f) => { updateField("dataRichiamoNew", v); updateField("fascia_richiamo", f); }} />
                                             </FormGroup>
                                         )}
                                         {statoNewIsAppuntamento && (
                                             <>
                                                 <FormGroup label="Data e Ora Appuntamento *">
-                                                    <input type="datetime-local" className="glass-input rounded-lg py-2 w-full" value={editCall.dataAppuntamentoNew || ""} onChange={(e) => updateField("dataAppuntamentoNew", e.target.value)} />
+                                                    <InputDataOra valore={editCall.dataAppuntamentoNew || ""} fascia={editCall.fascia_appuntamento || ""}
+                                                        onCambia={(v, f) => { updateField("dataAppuntamentoNew", v); updateField("fascia_appuntamento", f); }} />
                                                 </FormGroup>
                                                 <FormGroup label="Negozio Appuntamento *">
                                                     {/* senza negozio l'appuntamento NON arriva sul calendario del punto vendita */}

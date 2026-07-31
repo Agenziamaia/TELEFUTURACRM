@@ -13,6 +13,7 @@ import { numeroNazionale } from "@/lib/telefono";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
+import { fasciaLabel } from "@/lib/fasce";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto).
 // "richiamo" = richiamo telefonico fissato dal call center (Luca 31/07): nasce
@@ -25,6 +26,9 @@ interface Appointment {
     id: number;
     date: string; // "YYYY-MM-DD"
     time: string;
+    /** mattina | pomeriggio (mig. 118): fascia al posto dell'orario preciso —
+     *  time resta l'inizio fascia come orario tecnico di ordinamento */
+    fascia?: string;
     type: AppointmentType;
     agente: string;
     store?: string;
@@ -102,6 +106,7 @@ function mapAppointmentRow(r: Record<string, unknown>): Appointment {
         id: Number(r.id),
         date: r.date as string,
         time: r.time as string,
+        fascia: (r.fascia as string) || undefined,
         type: r.type as AppointmentType,
         agente: (r.agente as string) ?? "",
         store: r.store as string | undefined,
@@ -1074,7 +1079,7 @@ export default function Calendario() {
                                         <div>
                                             <h5 className="text-white font-medium">{appt.customerName}</h5>
                                             <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {appt.time}</span>
+                                                <span className={cn("flex items-center gap-1", appt.fascia && "text-amber-400 font-semibold")}><Clock className="w-3 h-3" /> {fasciaLabel(appt.fascia) || appt.time}</span>
                                                 <span className="flex items-center gap-1 text-slate-500"><User className="w-3 h-3" /> {appt.agente}</span>
                                             </div>
                                         </div>
@@ -1271,7 +1276,7 @@ export default function Calendario() {
                                                                     a.type === "richiamo" ? "border-pink-500/30 bg-pink-500/10" : "border-amber-500/30 bg-amber-500/10",
                                                         )}
                                                     >
-                                                        <div className="font-semibold text-slate-200 truncate">{a.time} {a.customerName}</div>
+                                                        <div className="font-semibold text-slate-200 truncate">{a.fascia ? <span className="text-amber-300">{fasciaLabel(a.fascia)}</span> : a.time} {a.customerName}</div>
                                                         <div className="text-slate-400 truncate">{a.type === "incoming" ? (a.store || "Inbound") : a.type === "richiamo" ? `☎ ${a.createdBy || "richiamo"}` : (a.agente || "—")}</div>
                                                     </button>
                                                 ) })),
@@ -1319,7 +1324,7 @@ export default function Calendario() {
                         const evs: Ev[] = [
                             ...dayAppts.filter(a => minutiDi(a.time) < 24 * 60).map((a): Ev => ({
                                 key: `a-${a.id}`, min: minutiDi(a.time), durata: 60,
-                                titolo: `${a.time} · ${a.customerName}`,
+                                titolo: `${fasciaLabel(a.fascia) || a.time} · ${a.customerName}`,
                                 sotto: a.type === "incoming" ? `🏬 ${a.store || "Inbound"}` : a.type === "richiamo" ? `☎ Richiamo · ${a.createdBy || "call center"}` : `🧑‍💼 ${a.agente || "—"}${a.customerAddress ? " · " + a.customerAddress : ""}`,
                                 extra: a.customerPhone ? `📞 ${a.customerPhone}` : undefined,
                                 classi: a.type === "incoming" ? "border-blue-500/40 bg-blue-500/15" : a.type === "self_generated" ? "border-purple-500/40 bg-purple-500/15" : a.type === "richiamo" ? "border-pink-500/40 bg-pink-500/15" : "border-amber-500/40 bg-amber-500/15",
@@ -1439,7 +1444,7 @@ export default function Calendario() {
                                             className="w-full text-left p-3 rounded-xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] transition-all"
                                         >
                                             <div className="flex items-center justify-between mb-1">
-                                                <span className="text-sm font-semibold text-white truncate max-w-[200px]">{a.time} — {a.customerName}</span>
+                                                <span className="text-sm font-semibold text-white truncate max-w-[200px]">{a.fascia ? <span className="text-amber-300">{fasciaLabel(a.fascia)}</span> : a.time} — {a.customerName}</span>
                                                 <span className={cn("text-[10px] px-2 py-0.5 rounded-full border font-medium", esitoClasse(a.status, a.type))}>
                                                     {esitoLabel(a.status, a.type)}
                                                 </span>
@@ -1707,7 +1712,7 @@ export default function Calendario() {
                                 </span>
                             </div>
                             <div className="p-3 rounded-xl bg-white/[0.03] border border-white/8 space-y-2">
-                                <div className="flex items-center gap-2 text-slate-300"><Clock className="w-4 h-4 text-slate-500" />{selectedAppointment.date} alle {selectedAppointment.time}</div>
+                                <div className="flex items-center gap-2 text-slate-300"><Clock className="w-4 h-4 text-slate-500" />{selectedAppointment.date}{selectedAppointment.fascia ? <span className="text-amber-300 font-semibold"> — {fasciaLabel(selectedAppointment.fascia)}</span> : <> alle {selectedAppointment.time}</>}</div>
                                 <div className="flex items-center gap-2 text-slate-300"><User className="w-4 h-4 text-slate-500" />{selectedAppointment.customerName}</div>
                                 <div className="flex items-center gap-2 text-slate-300"><Phone className="w-4 h-4 text-slate-500" />{selectedAppointment.customerPhone}</div>
                                 {selectedAppointment.cfPiva && <div className="flex items-center gap-2 text-slate-300 font-mono"><Search className="w-4 h-4 text-slate-500" /><span className="text-[10px] uppercase text-slate-500 font-sans">{selectedAppointment.tipoCliente === "business" ? "P.IVA" : "C.F."}</span>{selectedAppointment.cfPiva}</div>}
