@@ -69,6 +69,15 @@ interface StoricoEntry {
     campo: string;
     da: string;
     a: string;
+    // ── ARCHIVIO per voce (Luca 31/07): ogni evento porta con se' la fotografia
+    // dei Dettagli Chiamata al momento in cui e' successo, cosi' lo storico e'
+    // interrogabile (anche dalle AI) senza dipendere dallo stato ATTUALE della
+    // pratica. aircall_call_id aggancia il registro telefonico (registrazione).
+    aircall_call_id?: number | null;
+    dettagli?: {
+        brand?: string; obiettivo?: string; provenienza?: string; tipologia?: string;
+        esito?: string; direzione?: string; durata_sec?: number | null;
+    } | null;
 }
 
 interface Call {
@@ -243,6 +252,22 @@ function formatDateShort(d: string): string {
     return `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}/${dt.getFullYear()}`;
 }
 
+function formatTimeShort(d: string): string {
+    if (!d) return "—";
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return "—";
+    return `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+}
+
+// datetime-local vuole l'ora LOCALE "YYYY-MM-DDTHH:mm"; toISOString() e' UTC e
+// mostrava/salvava tutto con 2 ore di scarto (filo aperto 30/07, chiuso 31/07).
+function toLocalInput(d: Date | string): string {
+    const dt = typeof d === "string" ? new Date(d) : d;
+    if (isNaN(dt.getTime())) return "";
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}T${p(dt.getHours())}:${p(dt.getMinutes())}`;
+}
+
 function statoBadgeClasses(stato: string): string {
     if (stato === "Nuovo") return "bg-blue-500/15 border-blue-500/30 text-blue-300";
     if (stato.startsWith("Cold")) return "bg-cyan-500/15 border-cyan-500/30 text-cyan-300";
@@ -267,7 +292,7 @@ function blankCall(callerName: string, isDirector: boolean): Call {
         numero: "", cellulare: "",
         brand: "", provenienza: "", tipologia: "", obiettivo: "",
         stato: isDirector ? "Nuovo" : "",
-        data_chiamata: new Date().toISOString().slice(0, 16),
+        data_chiamata: toLocalInput(new Date()),
         caller: callerName,
         negozio_appuntamento: "", data_appuntamento: "",
         indirizzo: "", agente: "", segnalatore: "", campagna: "",
@@ -362,12 +387,13 @@ function CallerPageInner() {
         </div>
     );
     const currentCaller = user?.name || "";
-    const roleFromSession: Role =
+    // Vista SOLO dal ruolo di sessione (Luca 31/07): lo switch caller/direttore/
+    // admin che stava nell'header e' stato tolto — per cambiare prospettiva si
+    // rientra con l'utente giusto dal menu in alto.
+    const currentRole: Role =
         ["admin", "dev", "direttore_generale"].includes(user?.role || "") ? "admin"
       : ["direttore_cc", "direttore_ob", "direttore_commerciale", "store_manager", "amministrativo"].includes(user?.role || "") ? "direttore"
       : "caller";
-    const [currentRole, setCurrentRole] = useState<Role>(roleFromSession);
-    useEffect(() => { setCurrentRole(roleFromSession); }, [roleFromSession]);
     const isDirector = currentRole === "direttore" || currentRole === "admin";
 
     /* ── Data state ── */
@@ -379,11 +405,19 @@ function CallerPageInner() {
     const canDeleteRows = ["admin", "dev"].includes(user?.role || "");
     const [delConfirmId, setDelConfirmId] = useState<string | null>(null);
     async function eliminaCallCascata(c: Call) {
-        const { data: row } = await supabase.from("calls").select("appointment_id").eq("id", c.id).maybeSingle();
-        const apptId = (row as { appointment_id?: number | null } | null)?.appointment_id;
-        if (apptId) {
+        // richiamo_event_id esiste dalla mig. 107: se manca ancora, si ripiega
+        // sulla sola appointment_id invece di bloccare l'eliminazione.
+        type LinkRow = { appointment_id?: number | null; richiamo_event_id?: number | null };
+        let row: LinkRow | null = null;
+        const tent = await supabase.from("calls").select("appointment_id, richiamo_event_id").eq("id", c.id).maybeSingle();
+        if (tent.error) {
+            const fb = await supabase.from("calls").select("appointment_id").eq("id", c.id).maybeSingle();
+            row = (fb.data ?? null) as unknown as LinkRow | null;
+        } else row = (tent.data ?? null) as unknown as LinkRow | null;
+        for (const apptId of [row?.appointment_id, row?.richiamo_event_id]) {
+            if (!apptId) continue;
             const { error: e1 } = await supabase.from("appointments").delete().eq("id", apptId);
-            if (e1) { alert("Appuntamento collegato NON eliminato (riga lasciata intatta): " + e1.message); return; }
+            if (e1) { alert("Evento in calendario collegato NON eliminato (riga lasciata intatta): " + e1.message); return; }
         }
         const { error } = await supabase.from("calls").delete().eq("id", c.id);
         if (error) { alert("Riga non eliminata: " + error.message); return; }
@@ -399,6 +433,24 @@ function CallerPageInner() {
     const [modalMode, setModalMode] = useState<"new" | "detail">("new");
     const [editCall, setEditCall] = useState<Call | null>(null);
     const [hoverRow, setHoverRow] = useState<string | null>(null);
+
+    /* ── Storico CLICCABILE (Luca 31/07): la voce si espande coi dettagli
+       archiviati (brand/obiettivo/provenienza/tipologia/esito) e, se la voce
+       nasce da una chiamata Aircall, col registro telefonico: operatore,
+       direzione, durata e registrazione (recupero pigro per aircall_call_id). ── */
+    interface EventoAircall { direction?: string | null; agente_nome?: string | null; duration_sec?: number | null; recording_url?: string | null; answered?: boolean | null; negozio?: string | null }
+    const [storicoOpen, setStoricoOpen] = useState<number | null>(null);
+    const [eventoAircall, setEventoAircall] = useState<Record<number, EventoAircall | "carico" | "assente">>({});
+    async function apriVoceStorico(i: number, s: StoricoEntry) {
+        setStoricoOpen((prev) => (prev === i ? null : i));
+        const acId = s.aircall_call_id;
+        if (!acId || eventoAircall[acId]) return;
+        setEventoAircall((p) => ({ ...p, [acId]: "carico" }));
+        const { data } = await supabase.from("call_events")
+            .select("direction, agente_nome, duration_sec, recording_url, answered, negozio")
+            .eq("aircall_call_id", acId).maybeSingle();
+        setEventoAircall((p) => ({ ...p, [acId]: (data as EventoAircall) || "assente" }));
+    }
 
     /* ── Lista wizard state ── */
     const [listaOpen, setListaOpen] = useState(false);
@@ -514,6 +566,14 @@ function CallerPageInner() {
         // Date a RANGE (estremi inclusi). NB: col range attivo una pratica SENZA
         // data appuntamento resta fuori (il vecchio filtro la lasciava passare).
         const dataDi = (s: string | null | undefined) => String(s || "").slice(0, 10);
+        // data_chiamata e' un ISTANTE (timestamptz): la data va letta in ora
+        // LOCALE, non affettando la stringa UTC — le chiamate dopo mezzanotte
+        // slittavano al giorno prima (filo aperto 30/07).
+        const dataLocaleDi = (s: string | null | undefined) => {
+            if (!s) return "";
+            const dt = new Date(s);
+            return isNaN(dt.getTime()) ? dataDi(s) : toLocalInput(dt).slice(0, 10);
+        };
         if (fDataAppDa || fDataAppA) {
             const d = dataDi(c.data_appuntamento);
             if (!d) return false;
@@ -521,7 +581,7 @@ function CallerPageInner() {
             if (fDataAppA && d > fDataAppA) return false;
         }
         if (fDataChiamataDa || fDataChiamataA) {
-            const d = dataDi(c.data_chiamata);
+            const d = dataLocaleDi(c.data_chiamata);
             if (fDataChiamataDa && d < fDataChiamataDa) return false;
             if (fDataChiamataA && d > fDataChiamataA) return false;
         }
@@ -600,6 +660,7 @@ function CallerPageInner() {
     function closeModal() {
         setModalOpen(false);
         setEditCall(null);
+        setStoricoOpen(null);
     }
 
     function updateField<K extends keyof Call>(field: K, value: Call[K]) {
@@ -711,6 +772,42 @@ function CallerPageInner() {
         }
     }
 
+    // ── PONTE Richiamo → Calendario (Luca 31/07): "Appuntamento telefonico" e
+    // "Da richiamare" con data/ora fissata creano un evento type "richiamo" nel
+    // calendario (prima non accadeva NULLA: la data restava solo sulla pratica).
+    // La visibilita' e' gia' coperta dalle regole del calendario: chi lo crea lo
+    // vede, la direzione CC vede quelli di tutto il team. Il collegamento
+    // calls.richiamo_event_id (mig. 107) fa si' che il ri-fissaggio AGGIORNI lo
+    // stesso evento invece di duplicarlo.
+    async function sincronizzaRichiamo(c: Call, callId: string, dataRichiamo: string) {
+        const [dataR, oraR] = dataRichiamo.includes("T") ? dataRichiamo.split("T") : [dataRichiamo, "10:00"];
+        const payload: Record<string, unknown> = {
+            date: dataR,
+            time: (oraR || "10:00").slice(0, 5),
+            type: "richiamo",
+            store: null, agente: "",
+            customer_name: c.tipo_cliente === "business" ? (c.ragione_sociale || `${c.nome} ${c.cognome}`.trim()) : `${c.nome} ${c.cognome}`.trim(),
+            customer_phone: c.cellulare || c.numero || "",
+            cf_piva: c.cf || c.piva || null,
+            notes: ["Richiamo fissato dal call center", c.noteUpdate || c.note].filter(Boolean).join(" — "),
+            status: "scheduled",
+            created_by: c.caller || currentCaller,
+        };
+        const { data: linked } = await supabase.from("calls").select("richiamo_event_id").eq("id", callId).maybeSingle();
+        const existing = (linked as { richiamo_event_id?: number | null } | null)?.richiamo_event_id;
+        if (existing) {
+            const { error } = await supabase.from("appointments").update(payload).eq("id", existing);
+            if (error) alert("Richiamo salvato sulla pratica ma calendario NON aggiornato: " + error.message);
+            return;
+        }
+        const { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+        if (error) { alert("Richiamo salvato sulla pratica ma NON portato in calendario: " + error.message); return; }
+        if (ins?.id) {
+            const { error: linkErr } = await supabase.from("calls").update({ richiamo_event_id: ins.id }).eq("id", callId);
+            if (linkErr) console.warn("collegamento richiamo non salvato (mig. 107 da applicare?):", linkErr.message);
+        }
+    }
+
     // ANAGRAFICA SEMPRE OBBLIGATORIA (Luca 29/07): anche sui "Non risponde" —
     // nome/cognome (o ragione sociale) + CF/P.IVA. Così l'anagrafica del
     // cliente nasce subito e lo storico chiamate si traccia per cliente.
@@ -756,14 +853,29 @@ function CallerPageInner() {
         if (c.tipo_cliente === "business") return !String(c.ragione_sociale || "").trim() || !String(c.piva || "").trim();
         return !String(c.nome || "").trim() || !String(c.cognome || "").trim() || !String(c.cf || "").trim();
     }
+    // Provenienza "Interno": negozio + mese/anno obbligatori per CHIUNQUE la
+    // selezioni (Luca 31/07) — prima li chiedeva solo il flusso liste del
+    // direttore, e i lead interni lavorati dai caller nascevano senza origine.
+    function provenienzaInternoOk(c: Call): boolean {
+        if (c.provenienza !== "Interno") return true;
+        if (c.negozio_provenienza && c.mese_provenienza && c.anno_provenienza) return true;
+        alert("Provenienza INTERNO: indica il NEGOZIO e il MESE/ANNO da cui e' stato estratto questo lead (le stesse informazioni delle liste del direttore).");
+        return false;
+    }
     async function saveCall() {
         if (!editCall) return;
-        const now = new Date().toISOString().slice(0, 16);
+        const now = new Date().toISOString();
         if (modalMode === "new") {
             if (!anagraficaObbligatoriaOk(editCall)) return;
+            if (!provenienzaInternoOk(editCall)) return;
             const newCall: Call = { ...editCall };
             if (!String(newCall.cellulare || "").trim()) newCall.cellulare = String(newCall.numero || "").replace(/\D/g, "");
-            newCall.storico = [{ data: newCall.data_chiamata, caller: newCall.caller, campo: "Creazione", da: "", a: newCall.stato }];
+            // l'input datetime-local e' in ora LOCALE: al DB va l'istante vero
+            const dataChiamataIso = newCall.data_chiamata ? new Date(newCall.data_chiamata).toISOString() : now;
+            newCall.storico = [{
+                data: dataChiamataIso, caller: newCall.caller, campo: "Creazione", da: "", a: newCall.stato,
+                dettagli: { brand: newCall.brand, obiettivo: newCall.obiettivo, provenienza: newCall.provenienza, tipologia: newCall.tipologia, esito: newCall.stato },
+            }];
             const payload: Record<string, unknown> = {
                 tipo_cliente: newCall.tipo_cliente,
                 nome: newCall.nome, cognome: newCall.cognome, ragione_sociale: newCall.ragione_sociale,
@@ -771,7 +883,7 @@ function CallerPageInner() {
                 numero: newCall.numero, cellulare: newCall.cellulare,
                 brand: newCall.brand, provenienza: newCall.provenienza,
                 tipologia: newCall.tipologia, obiettivo: newCall.obiettivo,
-                stato: newCall.stato, data_chiamata: newCall.data_chiamata, caller: newCall.caller,
+                stato: newCall.stato, data_chiamata: dataChiamataIso, caller: newCall.caller,
                 negozio_appuntamento: newCall.negozio_appuntamento, data_appuntamento: newCall.data_appuntamento,
                 indirizzo: newCall.indirizzo, agente: newCall.agente,
                 segnalatore: newCall.segnalatore, campagna: newCall.campagna,
@@ -801,11 +913,15 @@ function CallerPageInner() {
                 if (!luogoOk) { alert("Per fissare l'appuntamento serve il NEGOZIO (o l'agente): selezionalo e risalva."); return; }
             }
             if (!anagraficaObbligatoriaOk(editCall)) return;
+            if (!provenienzaInternoOk(editCall)) return;
             const original = calls.find(c => c.id === editCall.id);
             if (!original) return;
             const newStorico: StoricoEntry[] = [
                 ...(original.storico || []),
-                { data: now, caller: currentCaller, campo: "Stato", da: original.stato, a: editCall.statoNew }
+                {
+                    data: now, caller: currentCaller, campo: "Stato", da: original.stato, a: editCall.statoNew,
+                    dettagli: { brand: editCall.brand, obiettivo: editCall.obiettivo, provenienza: editCall.provenienza, tipologia: editCall.tipologia, esito: editCall.statoNew },
+                }
             ];
             const updates: Record<string, unknown> = { stato: editCall.statoNew, storico: newStorico, da_esitare: false };
             // post-chiamata: l'anagrafica completata dal caller viaggia con l'esito
@@ -818,6 +934,10 @@ function CallerPageInner() {
             // ...e con lei i Dettagli Chiamata (le 4 tendine dell'Inserimento Manuale)
             updates.brand = editCall.brand; updates.obiettivo = editCall.obiettivo;
             updates.provenienza = editCall.provenienza; updates.tipologia = editCall.tipologia;
+            // origine del lead interno: viaggia con l'esito come le altre 4 voci
+            updates.negozio_provenienza = editCall.negozio_provenienza;
+            updates.mese_provenienza = editCall.mese_provenienza;
+            updates.anno_provenienza = editCall.anno_provenienza;
 
             if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
                 newStorico.push({ data: now, caller: currentCaller, campo: "Data richiamo", da: "", a: formatDate(editCall.dataRichiamoNew) });
@@ -844,6 +964,9 @@ function CallerPageInner() {
                 return;
             }
             await creaAnagraficaSeManca(editCall);
+            if (RICHIAMO_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
+                await sincronizzaRichiamo({ ...original, ...editCall }, editCall.id, editCall.dataRichiamoNew);
+            }
             if (APPUNTAMENTO_STATI.includes(editCall.statoNew)) {
                 await sincronizzaAppuntamento(
                     {
@@ -893,20 +1016,34 @@ function CallerPageInner() {
        e' ON, chiamate e inserimenti nascono gia' settati (anche lato server,
        via ponte Aircall — tabella caller_presets, mig. 090). ── */
     const [serieOpen, setSerieOpen] = useState(false);
-    const [serie, setSerie] = useState({ attivo: false, brand: "", obiettivo: "", provenienza: "", tipologia: "" });
+    // Serie con ORIGINE del lead interno (Luca 31/07): se la provenienza del
+    // preset e' "Interno", anche negozio + mese/anno viaggiano col preset —
+    // stesse informazioni chieste al direttore quando assegna le liste.
+    const [serie, setSerie] = useState({ attivo: false, brand: "", obiettivo: "", provenienza: "", tipologia: "", negozio_provenienza: "", mese_provenienza: "", anno_provenienza: "" });
     const [serieBusy, setSerieBusy] = useState(false);
     useEffect(() => {
         if (!user?.id) return;
-        supabase.from("caller_presets").select("attivo,brand,obiettivo,provenienza,tipologia").eq("user_id", user.id).maybeSingle()
-            .then(({ data }) => { if (data) setSerie({ attivo: !!data.attivo, brand: data.brand || "", obiettivo: data.obiettivo || "", provenienza: data.provenienza || "", tipologia: data.tipologia || "" }); });
+        supabase.from("caller_presets").select("*").eq("user_id", user.id).maybeSingle()
+            .then(({ data }) => {
+                if (data) setSerie({
+                    attivo: !!data.attivo, brand: data.brand || "", obiettivo: data.obiettivo || "",
+                    provenienza: data.provenienza || "", tipologia: data.tipologia || "",
+                    negozio_provenienza: data.negozio_provenienza || "", mese_provenienza: data.mese_provenienza || "", anno_provenienza: data.anno_provenienza || "",
+                });
+            });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
     async function salvaSerie(next: typeof serie) {
         if (!user?.id || serieBusy) return;
         setSerieBusy(true);
-        const { error } = await supabase.from("caller_presets").upsert({
-            user_id: user.id, ...next, updated_at: new Date().toISOString(),
-        }, { onConflict: "user_id" });
+        const payload = { user_id: user.id, ...next, updated_at: new Date().toISOString() };
+        let { error } = await supabase.from("caller_presets").upsert(payload, { onConflict: "user_id" });
+        if (error && /column/i.test(error.message)) {
+            // mig. 107 non ancora applicata: salva il preset senza l'origine interno
+            const { negozio_provenienza: _n, mese_provenienza: _m, anno_provenienza: _a, ...legacy } = payload;
+            void _n; void _m; void _a;
+            ({ error } = await supabase.from("caller_presets").upsert(legacy, { onConflict: "user_id" }));
+        }
         setSerieBusy(false);
         if (error) { alert("Preset non salvato: " + error.message); return; }
         setSerie(next);
@@ -918,6 +1055,9 @@ function CallerPageInner() {
         obiettivo: c.obiettivo || serie.obiettivo,
         provenienza: c.provenienza || serie.provenienza,
         tipologia: c.tipologia || serie.tipologia,
+        negozio_provenienza: c.negozio_provenienza || serie.negozio_provenienza,
+        mese_provenienza: c.mese_provenienza || serie.mese_provenienza,
+        anno_provenienza: c.anno_provenienza || serie.anno_provenienza,
     });
 
     /* ── Lista MANUALE (richiesta Luca 26/07): il direttore assegna numeri
@@ -1199,19 +1339,6 @@ function CallerPageInner() {
                 </div>
 
                 <div className="flex items-center gap-2 flex-wrap">
-                    {/* TODO: remove role switcher in production - use real session role */}
-                    <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
-                        {(["caller", "direttore", "admin"] as const).map((r) => (
-                            <button
-                                key={r}
-                                onClick={() => setCurrentRole(r)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all ${currentRole === r ? "bg-violet-500/20 text-violet-300 border border-violet-500/20" : "text-slate-400 hover:text-white"}`}
-                            >
-                                {r}
-                            </button>
-                        ))}
-                    </div>
-
                     {isDirector && (
                         <button
                             onClick={() => setCurrentView(currentView === "calls" ? "liste" : "calls")}
@@ -1250,7 +1377,10 @@ function CallerPageInner() {
                         </button>
                     )}
                     {!isListeView && (() => {
-                        const daEsitare = calls.filter((c) => c.da_esitare && (isDirector || c.caller === currentCaller)).length;
+                        // Il conteggio segue i FILTRI attivi (Luca 31/07): con un
+                        // caller selezionato conta solo le sue pratiche da esitare.
+                        // matchFiltri include gia' la restrizione per ruolo.
+                        const daEsitare = calls.filter((c) => c.da_esitare && matchFiltri(c)).length;
                         // Da informativo a PULSANTE-FILTRO (Luca 30/07): cliccato mostra
                         // solo le pratiche ancora da esitare; ri-cliccato torna a tutte.
                         return (daEsitare > 0 || soloDaEsitare) ? (
@@ -1404,13 +1534,14 @@ function CallerPageInner() {
                                             <Th>Tipologia</Th>
                                             <Th>Obiettivo</Th>
                                             <Th>Data Chiamata</Th>
+                                            <Th>Ora</Th>
                                             <Th>Caller</Th>
                                             <Th>Stato</Th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {loading && (<tr><td colSpan={9} className="text-center py-12 text-slate-500">Caricamento...</td></tr>)}
-                                        {!loading && filtered.length === 0 && (<tr><td colSpan={9} className="text-center py-12 text-slate-500">Nessuna call trovata</td></tr>)}
+                                        {loading && (<tr><td colSpan={10} className="text-center py-12 text-slate-500">Caricamento...</td></tr>)}
+                                        {!loading && filtered.length === 0 && (<tr><td colSpan={10} className="text-center py-12 text-slate-500">Nessuna call trovata</td></tr>)}
                                         {filtered.map((c) => (
                                             <tr
                                                 key={c.id}
@@ -1446,6 +1577,8 @@ function CallerPageInner() {
                                                 <td className="px-4 py-3 text-slate-300">{c.tipologia || "—"}</td>
                                                 <td className="px-4 py-3 text-slate-300">{c.obiettivo || "—"}</td>
                                                 <td className="px-4 py-3 font-mono text-xs text-slate-400">{formatDateShort(c.data_chiamata)}</td>
+                                                {/* orario della chiamata (Luca 31/07): colonna piccola, ora LOCALE */}
+                                                <td className="px-2 py-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">{formatTimeShort(c.data_chiamata)}</td>
                                                 <td className="px-4 py-3 text-slate-300">{c.caller}</td>
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center gap-2">
@@ -1606,6 +1739,31 @@ function CallerPageInner() {
                                     </select>
                                 </FormGroup>
                             </div>
+                            {serie.provenienza === "Interno" && (
+                                <div className="p-3 bg-violet-500/[0.06] border border-violet-500/25 rounded-xl space-y-2">
+                                    <p className="text-[10px] font-bold text-violet-300 uppercase tracking-widest">Origine del lead interno — come nelle liste del direttore</p>
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <FormGroup label="Negozio">
+                                            <select className="glass-input rounded-lg py-2 w-full" value={serie.negozio_provenienza} onChange={(e) => salvaSerie({ ...serie, negozio_provenienza: e.target.value })}>
+                                                <option value="">Negozio...</option>
+                                                {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
+                                            </select>
+                                        </FormGroup>
+                                        <FormGroup label="Mese">
+                                            <select className="glass-input rounded-lg py-2 w-full" value={serie.mese_provenienza} onChange={(e) => salvaSerie({ ...serie, mese_provenienza: e.target.value })}>
+                                                <option value="">Mese...</option>
+                                                {MESI.map(m => <option key={m} value={m}>{m}</option>)}
+                                            </select>
+                                        </FormGroup>
+                                        <FormGroup label="Anno">
+                                            <select className="glass-input rounded-lg py-2 w-full" value={serie.anno_provenienza} onChange={(e) => salvaSerie({ ...serie, anno_provenienza: e.target.value })}>
+                                                <option value="">Anno...</option>
+                                                {ANNI.map(a => <option key={a} value={a}>{a}</option>)}
+                                            </select>
+                                        </FormGroup>
+                                    </div>
+                                </div>
+                            )}
                             <p className="text-[11px] text-slate-500">Il preset è personale e salvato a sistema: vale anche per le pratiche create in automatico dalle tue chiamate Aircall.</p>
                         </div>
                         <div className="px-6 py-4 border-t border-white/10 bg-white/[0.02] flex justify-end">
@@ -1896,7 +2054,7 @@ function CallerPageInner() {
 
                                         <div className="grid grid-cols-2 gap-3">
                                             <FormGroup label="Data Chiamata">
-                                                <input type="datetime-local" className="glass-input rounded-lg py-2 w-full opacity-60" value={editCall.data_chiamata} readOnly />
+                                                <input type="datetime-local" className="glass-input rounded-lg py-2 w-full opacity-60" value={toLocalInput(editCall.data_chiamata)} readOnly />
                                             </FormGroup>
                                             <FormGroup label="Caller">
                                                 <input className="glass-input rounded-lg py-2 w-full opacity-60" value={editCall.caller} readOnly />
@@ -2022,6 +2180,30 @@ function CallerPageInner() {
                                                         {TIPOLOGIE_OPT.map(t => <option key={t} value={t}>{t}</option>)}
                                                     </select>
                                                 </FormGroup>
+                                                {/* lead interno: origine obbligatoria anche all'esito del
+                                                    caller — stesse info delle liste del direttore (Luca 31/07) */}
+                                                {editCall.provenienza === "Interno" && (
+                                                    <div className="col-span-2 grid grid-cols-3 gap-3">
+                                                        <FormGroup label="Negozio Provenienza">
+                                                            <select className="glass-input rounded-lg py-2 w-full" value={editCall.negozio_provenienza} onChange={(e) => updateField("negozio_provenienza", e.target.value)}>
+                                                                <option value="">Negozio...</option>
+                                                                {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
+                                                            </select>
+                                                        </FormGroup>
+                                                        <FormGroup label="Mese">
+                                                            <select className="glass-input rounded-lg py-2 w-full" value={editCall.mese_provenienza} onChange={(e) => updateField("mese_provenienza", e.target.value)}>
+                                                                <option value="">Mese...</option>
+                                                                {MESI.map(m => <option key={m} value={m}>{m}</option>)}
+                                                            </select>
+                                                        </FormGroup>
+                                                        <FormGroup label="Anno">
+                                                            <select className="glass-input rounded-lg py-2 w-full" value={editCall.anno_provenienza} onChange={(e) => updateField("anno_provenienza", e.target.value)}>
+                                                                <option value="">Anno...</option>
+                                                                {ANNI.map(a => <option key={a} value={a}>{a}</option>)}
+                                                            </select>
+                                                        </FormGroup>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -2110,16 +2292,54 @@ function CallerPageInner() {
                                         <>
                                             <SectionTitle>Storico Lavorazioni</SectionTitle>
                                             <div className="space-y-1">
-                                                {editCall.storico.map((s, i) => (
-                                                    <div key={i} className="flex gap-3 py-2 border-b border-white/5 text-xs">
-                                                        <span className="font-mono text-[11px] font-bold text-slate-300 min-w-[120px]">{formatDate(s.data)}</span>
-                                                        <span className="text-violet-300 font-semibold min-w-[110px]">{s.caller}</span>
-                                                        <span className="flex-1 text-slate-400">
-                                                            <strong className="text-white">{s.campo}</strong>
-                                                            {s.da ? ` : ${s.da} → ${s.a}` : ` : ${s.a}`}
-                                                        </span>
-                                                    </div>
-                                                ))}
+                                                {editCall.storico.map((s, i) => {
+                                                    const cliccabile = !!(s.dettagli || s.aircall_call_id);
+                                                    const aperta = storicoOpen === i;
+                                                    const ev = s.aircall_call_id ? eventoAircall[s.aircall_call_id] : undefined;
+                                                    return (
+                                                        <div key={i} className="border-b border-white/5">
+                                                            <div
+                                                                onClick={() => cliccabile && apriVoceStorico(i, s)}
+                                                                title={cliccabile ? "Clicca per i dettagli della chiamata" : undefined}
+                                                                className={`flex gap-3 py-2 text-xs ${cliccabile ? "cursor-pointer hover:bg-white/[0.03] rounded-md" : ""}`}
+                                                            >
+                                                                <span className="font-mono text-[11px] font-bold text-slate-300 min-w-[120px]">{formatDate(s.data)}</span>
+                                                                <span className="text-violet-300 font-semibold min-w-[110px]">{s.caller}</span>
+                                                                <span className="flex-1 text-slate-400">
+                                                                    <strong className="text-white">{s.campo}</strong>
+                                                                    {s.da ? ` : ${s.da} → ${s.a}` : ` : ${s.a}`}
+                                                                </span>
+                                                                {cliccabile && <span className="text-slate-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
+                                                            </div>
+                                                            {aperta && (
+                                                                <div className="mb-2 p-3 bg-black/25 border border-white/10 rounded-lg grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-400">
+                                                                    {s.dettagli?.brand && <span>Brand: <strong className="text-slate-200">{s.dettagli.brand}</strong></span>}
+                                                                    {s.dettagli?.obiettivo && <span>Obiettivo: <strong className="text-slate-200">{s.dettagli.obiettivo}</strong></span>}
+                                                                    {s.dettagli?.provenienza && <span>Provenienza: <strong className="text-slate-200">{s.dettagli.provenienza}</strong></span>}
+                                                                    {s.dettagli?.tipologia && <span>Tipologia: <strong className="text-slate-200">{s.dettagli.tipologia}</strong></span>}
+                                                                    {s.dettagli?.esito && <span>Esito: <strong className="text-slate-200">{s.dettagli.esito}</strong></span>}
+                                                                    {s.dettagli?.direzione && <span>Direzione: <strong className="text-slate-200">{s.dettagli.direzione === "inbound" ? "Inbound ↙" : "Outbound ↗"}</strong></span>}
+                                                                    {typeof s.dettagli?.durata_sec === "number" && <span>Durata: <strong className="text-slate-200">{s.dettagli.durata_sec}s</strong></span>}
+                                                                    {s.aircall_call_id ? (
+                                                                        ev === "carico" || ev === undefined ? (
+                                                                            <span className="col-span-2 text-slate-500">Recupero il registro Aircall…</span>
+                                                                        ) : ev === "assente" ? (
+                                                                            <span className="col-span-2 text-slate-500">Registro Aircall non trovato per questa voce</span>
+                                                                        ) : (
+                                                                            <>
+                                                                                {ev.agente_nome && <span>Operatore: <strong className="text-slate-200">{ev.agente_nome}</strong></span>}
+                                                                                {ev.direction && <span>Telefonata: <strong className="text-slate-200">{ev.direction === "inbound" ? "Inbound ↙" : "Outbound ↗"}</strong>{ev.answered ? " · risposta" : " · non risposta"}{typeof ev.duration_sec === "number" ? ` · ${ev.duration_sec}s` : ""}</span>}
+                                                                                {ev.recording_url && (
+                                                                                    <a className="col-span-2 text-emerald-300 font-bold hover:underline" href={ev.recording_url} target="_blank" rel="noreferrer">▶ Ascolta la registrazione</a>
+                                                                                )}
+                                                                            </>
+                                                                        )
+                                                                    ) : null}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         </>
                                     )}

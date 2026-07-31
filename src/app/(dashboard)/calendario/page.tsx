@@ -13,8 +13,11 @@ import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
 
-// Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto)
-type AppointmentType = "incoming" | "outgoing" | "self_generated";
+// Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto).
+// "richiamo" = richiamo telefonico fissato dal call center (Luca 31/07): nasce
+// dall'esito Caller, non dal modale di creazione; lo vede chi lo ha fissato e
+// la direzione CC (regole di visibilita' gia' in visibleAppointments).
+type AppointmentType = "incoming" | "outgoing" | "self_generated" | "richiamo";
 type AppointmentStatus = "scheduled" | "attivato" | "ko" | "in_gestione" | "da_richiamare" | "da_rifissare" | "annullato";
 
 interface Appointment {
@@ -934,6 +937,7 @@ export default function Calendario() {
                     ["incoming", "Inbound", "bg-blue-400", "border-blue-500/40 bg-blue-500/15 text-blue-200"],
                     ["outgoing", "Outbound", "bg-amber-400", "border-amber-500/40 bg-amber-500/15 text-amber-200"],
                     ["self_generated", "Auto-Generato", "bg-purple-400", "border-purple-500/40 bg-purple-500/15 text-purple-200"],
+                    ["richiamo", "Richiami CC", "bg-pink-400", "border-pink-500/40 bg-pink-500/15 text-pink-200"],
                     ["task", "Task", "bg-emerald-500", "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"],
                     ["meeting", "Riunioni", "bg-sky-400", "border-sky-500/40 bg-sky-500/15 text-sky-200"],
                 ] as [string, string, string, string][]).map(([id, label, dot, activeCls]) => {
@@ -1080,9 +1084,10 @@ export default function Calendario() {
                                             "text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border",
                                             appt.type === "incoming" ? "bg-blue-500/10 text-blue-400 border-blue-500/20" :
                                                 appt.type === "self_generated" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
-                                                    "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                                    appt.type === "richiamo" ? "bg-pink-500/10 text-pink-400 border-pink-500/20" :
+                                                        "bg-amber-500/10 text-amber-400 border-amber-500/20"
                                         )}>
-                                            {appt.type}
+                                            {appt.type === "richiamo" ? "richiamo ☎" : appt.type}
                                         </span>
                                         <span className={cn(
                                             "text-[10px] uppercase font-bold tracking-wider px-2.5 py-1 rounded-full border",
@@ -1195,7 +1200,8 @@ export default function Calendario() {
                                                     className={cn("w-1.5 h-1.5 rounded-full",
                                                         a.type === "incoming" ? "bg-blue-400" :
                                                             a.type === "self_generated" ? "bg-purple-400" :
-                                                                "bg-amber-400"
+                                                                a.type === "richiamo" ? "bg-pink-400" :
+                                                                    "bg-amber-400"
                                                     )}
                                                 />
                                             ))}
@@ -1260,11 +1266,12 @@ export default function Calendario() {
                                                         className={cn(
                                                             "w-full text-left px-1.5 py-1 rounded-lg border text-[10px] leading-tight transition-colors hover:bg-white/[0.08]",
                                                             a.type === "incoming" ? "border-blue-500/30 bg-blue-500/10" :
-                                                                a.type === "self_generated" ? "border-purple-500/30 bg-purple-500/10" : "border-amber-500/30 bg-amber-500/10",
+                                                                a.type === "self_generated" ? "border-purple-500/30 bg-purple-500/10" :
+                                                                    a.type === "richiamo" ? "border-pink-500/30 bg-pink-500/10" : "border-amber-500/30 bg-amber-500/10",
                                                         )}
                                                     >
                                                         <div className="font-semibold text-slate-200 truncate">{a.time} {a.customerName}</div>
-                                                        <div className="text-slate-400 truncate">{a.type === "incoming" ? (a.store || "Inbound") : (a.agente || "—")}</div>
+                                                        <div className="text-slate-400 truncate">{a.type === "incoming" ? (a.store || "Inbound") : a.type === "richiamo" ? `☎ ${a.createdBy || "richiamo"}` : (a.agente || "—")}</div>
                                                     </button>
                                                 ) })),
                                                 ...dayTasks.map((t) => ({ min: t.time ? minutiDi(t.time) : -1, jsx: (
@@ -1312,9 +1319,9 @@ export default function Calendario() {
                             ...dayAppts.filter(a => minutiDi(a.time) < 24 * 60).map((a): Ev => ({
                                 key: `a-${a.id}`, min: minutiDi(a.time), durata: 60,
                                 titolo: `${a.time} · ${a.customerName}`,
-                                sotto: a.type === "incoming" ? `🏬 ${a.store || "Inbound"}` : `🧑‍💼 ${a.agente || "—"}${a.customerAddress ? " · " + a.customerAddress : ""}`,
+                                sotto: a.type === "incoming" ? `🏬 ${a.store || "Inbound"}` : a.type === "richiamo" ? `☎ Richiamo · ${a.createdBy || "call center"}` : `🧑‍💼 ${a.agente || "—"}${a.customerAddress ? " · " + a.customerAddress : ""}`,
                                 extra: a.customerPhone ? `📞 ${a.customerPhone}` : undefined,
-                                classi: a.type === "incoming" ? "border-blue-500/40 bg-blue-500/15" : a.type === "self_generated" ? "border-purple-500/40 bg-purple-500/15" : "border-amber-500/40 bg-amber-500/15",
+                                classi: a.type === "incoming" ? "border-blue-500/40 bg-blue-500/15" : a.type === "self_generated" ? "border-purple-500/40 bg-purple-500/15" : a.type === "richiamo" ? "border-pink-500/40 bg-pink-500/15" : "border-amber-500/40 bg-amber-500/15",
                                 onClick: () => { setSelectedAppointment(a); setShowModal(true); },
                             })),
                             ...dayTasks.filter(t => t.time && minutiDi(t.time) < 24 * 60).map((t): Ev => ({

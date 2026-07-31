@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { areaOf } from "@/lib/roles";
-import { registraTelefono } from "@/lib/dialer";
+import { registraTelefono, registraApriTelefono, segnalaTelefonoConnesso } from "@/lib/dialer";
 
 export function AircallPhoneDock() {
     const { user } = useAuth();
@@ -23,6 +23,12 @@ export function AircallPhoneDock() {
     const phoneRef = useRef<{ send: (e: string, p?: unknown, cb?: (ok: boolean, d?: unknown) => void) => void } | null>(null);
 
     const visibile = !!user && (areaOf(user.role) === "cc" || ["admin", "dev"].includes(user.role));
+
+    // il dialer puo' APRIRE il pannello da solo (fix 31/07: quando Aircall non
+    // riesce ad avviare la chiamata, la via d'uscita e' il ☎ qui nel CRM)
+    useEffect(() => {
+        if (visibile) registraApriTelefono(() => setOpen(true));
+    }, [visibile]);
 
     // il telefono si carica alla PRIMA apertura e poi resta montato (nascosto):
     // così il login Aircall sopravvive tra un'apertura e l'altra.
@@ -37,8 +43,8 @@ export function AircallPhoneDock() {
                 const AircallWorkspace = mod.default;
                 const phone = new AircallWorkspace({
                     domToLoadWorkspace: "#aircall-phone-container",
-                    onLogin: () => setConnesso(true),
-                    onLogout: () => setConnesso(false),
+                    onLogin: () => { setConnesso(true); segnalaTelefonoConnesso(true); },
+                    onLogout: () => { setConnesso(false); segnalaTelefonoConnesso(false); },
                 });
                 phoneRef.current = phone;
                 registraTelefono((numero, cb) => phone.send("dial_number", { phone_number: numero }, cb));
