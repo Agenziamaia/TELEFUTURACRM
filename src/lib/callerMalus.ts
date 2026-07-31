@@ -37,24 +37,57 @@ export async function caricaRegoleCaller(): Promise<Map<string, RegolaCaller>> {
     return m;
 }
 
-/** giorni LAVORATIVI (lun-sab) trascorsi DOPO il giorno `da` fino ad `a` compreso */
-export function lavorativiDopo(da: Date, a: Date): number {
+const ymdLoc = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const giornoYmd = ymdLoc;
+
+/** Giorni OPERATIVI trascorsi DOPO il giorno `da` fino ad `a` compreso.
+ *  Con `operativi` (i giorni in cui il caller ha BADGIATO) conta SOLO quelli:
+ *  i caller non seguono lun-sab, il giorno vale se timbrato — anche un minuto
+ *  (Luca 31/07). Senza set: fallback lun-sab. */
+export function lavorativiDopo(da: Date, a: Date, operativi?: Set<string> | null): number {
     let n = 0;
     const cur = new Date(da.getFullYear(), da.getMonth(), da.getDate());
     const fine = new Date(a.getFullYear(), a.getMonth(), a.getDate());
     while (cur < fine) {
         cur.setDate(cur.getDate() + 1);
-        if (cur.getDay() !== 0) n++;
+        if (operativi ? operativi.has(ymdLoc(cur)) : cur.getDay() !== 0) n++;
     }
     return n;
 }
 
-/** il giorno che cade `n` giorni lavorativi dopo `da` */
-export function aggiungiLavorativi(da: Date, n: number): Date {
+/** Il giorno che cade `n` giorni operativi dopo `da`; null se col set badge
+ *  quei giorni non sono ancora maturati (il malus non e' iniziato). */
+export function aggiungiLavorativi(da: Date, n: number, operativi?: Set<string> | null): Date | null {
     const d = new Date(da.getFullYear(), da.getMonth(), da.getDate());
-    let rest = n;
-    while (rest > 0) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0) rest--; }
+    let rest = n, guardia = 0;
+    const oggi = new Date();
+    while (rest > 0) {
+        d.setDate(d.getDate() + 1);
+        if (++guardia > 730) return null;
+        if (operativi && d > oggi) return null;   // il futuro non e' mai badgiato
+        if (operativi ? operativi.has(ymdLoc(d)) : d.getDay() !== 0) rest--;
+    }
     return d;
+}
+
+/** Giorni in cui ogni collaboratore ha BADGIATO l'inizio turno (shifts):
+ *  Map nome → insieme di giorni "YYYY-MM-DD". null = tabella non leggibile. */
+export async function caricaGiorniBadge(finestraGiorni = 120): Promise<Map<string, Set<string>> | null> {
+    try {
+        const dal = new Date(); dal.setDate(dal.getDate() - finestraGiorni);
+        const { data, error } = await supabase.from("shifts").select("employee_name, started_at").gte("started_at", dal.toISOString()).limit(20000);
+        if (error) return null;
+        const m = new Map<string, Set<string>>();
+        ((data ?? []) as { employee_name: string | null; started_at: string | null }[]).forEach((r) => {
+            if (!r.employee_name || !r.started_at) return;
+            const d = new Date(r.started_at);
+            if (isNaN(d.getTime())) return;
+            const set = m.get(r.employee_name) || new Set<string>();
+            set.add(ymdLoc(d));
+            m.set(r.employee_name, set);
+        });
+        return m;
+    } catch { return null; }
 }
 
 /** Riferimento dell'invecchiamento: l'ULTIMA attivita' sulla pratica (ultimo

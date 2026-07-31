@@ -58,7 +58,7 @@ export function CallerRegoleModal({ stati, soloLettura = false, onClose, onSaved
                     <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg text-slate-400"><X className="w-5 h-5" /></button>
                 </div>
                 <div className="p-4 overflow-y-auto">
-                    <p className="text-[11px] text-slate-500 mb-3">Giorni LAVORATIVI (lun–sab) dall&apos;ultima attività sulla pratica (per richiami e appuntamenti si conta dopo la data fissata). Esente = lo stato non invecchia mai.{soloLettura ? " Le regole le modifica l'amministrazione." : ""}</p>
+                    <p className="text-[11px] text-slate-500 mb-3">Giorni OPERATIVI del caller: conta solo un giorno in cui ha badgiato l&apos;inizio turno (anche un minuto). Per richiami e appuntamenti il conteggio parte dal giorno fissato sul calendario. Esente = lo stato non invecchia mai.{soloLettura ? " Le regole le modifica l'amministrazione." : ""}</p>
                     {!caricato ? <p className="text-sm text-slate-500">Carico…</p> : (
                         <table className="w-full text-sm">
                             <thead><tr className="text-[10px] uppercase tracking-wider text-slate-500 text-left">
