@@ -243,9 +243,10 @@ export default function DocumentazionePage() {
     // Solo Direttore Commerciale (e superuser) puo' modificare i file (richiesta Luca #14).
     const { user } = useAuth();
     const canEdit = ["direttore_commerciale", "amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
-    const [isAdmin, setIsAdmin] = useState(false);
+    // Niente piu' toggle "Modalita' Admin" (Luca 31/07): per chi puo' modificare,
+    // matite/cestini/cartelle sono SEMPRE visibili — un'esperienza unica.
+    const isAdmin = canEdit;
     const [showArchived, setShowArchived] = useState(false);
-    useEffect(() => { if (!canEdit && isAdmin) setIsAdmin(false); }, [canEdit, isAdmin]);
 
     // Segnalazione 73: categorie/sezioni gestibili dal Direttore Commerciale in su.
     const [dbCats, setDbCats] = useState<{ id: number; brand_id: string | null; cat_key: string; name: string; descrizione: string | null; sort: number; archived: boolean }[]>([]);
@@ -423,20 +424,6 @@ export default function DocumentazionePage() {
                                     showArchived ? "bg-amber-500/20 border-amber-500/40 text-amber-400" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10")}
                             >
                                 <Archive className="w-3.5 h-3.5" /> {showArchived ? "Nascondi OLD" : `OLD (${archivedCount})`}
-                            </button>
-                        )}
-                        {/* Modifica riservata al Direttore Commerciale (richiesta Luca #14). */}
-                        {canEdit && (
-                            <button
-                                onClick={() => setIsAdmin(!isAdmin)}
-                                className={cn(
-                                    "px-4 py-2 rounded-xl text-sm font-semibold transition-all border",
-                                    isAdmin
-                                        ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-400"
-                                        : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
-                                )}
-                            >
-                                {isAdmin ? "Modalità Admin" : "Modalità Utente"}
                             </button>
                         )}
                         {brandId && (

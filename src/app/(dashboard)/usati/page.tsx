@@ -542,14 +542,9 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
     // e non era vendibile dal negozio che lo aveva ricevuto).
     if (next === "in_vendita" && dev.target_store) { u.store = dev.target_store; u.target_store = null; }
     if (next === "in_vendita") u.listed_date = new Date();
-    if (next === "venduto") {
-      // prezzo EFFETTIVO di vendita (mig. 117): si archivia sul telefono —
-      // puo' differire dal listino in vetrina (sconti, trattative)
-      const risposta = window.prompt("A che prezzo e' stato VENDUTO? (€)", dev.sale_price > 0 ? String(dev.sale_price) : "");
-      if (risposta === null) return;
-      u.sold_price = parseFloat(risposta.replace(",", ".")) || 0;
-      u.sold_date = new Date();
-    }
+    // VENDUTO nasce SOLO dallo scarico in Registra Vendita (Luca 31/07), che
+    // archivia prezzo effettivo e cliente: qui il passaggio manuale non esiste.
+    if (next === "venduto") return;
     persist(u);
   };
   // PASSO INDIETRO (Luca 31/07): dall'amministrativo in su si corregge un
@@ -643,11 +638,17 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                     {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
                 )}
-                {next && <button onClick={advanceStatus} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/30 transition-all">
+                {next && next !== "venduto" && <button onClick={advanceStatus} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/30 transition-all">
                   {needsStore ? <>📤 Invia a {targetStore || "…"}</>
                     : dev.status === "invio_in_negozio" ? <>✅ Accetta in negozio{dev.target_store ? ` (${dev.target_store})` : ""}</>
                     : <>{statusMap[next]?.icon} {statusMap[next]?.label}</>}
                 </button>}
+                {next === "venduto" && (
+                  <div className="text-xs text-slate-400 bg-white/5 border border-white/10 rounded-xl px-3 py-2 leading-relaxed">
+                    🛒 La vendita si registra da <span className="font-semibold text-slate-200">Registra Vendita</span>: cerca il telefono
+                    nel magazzino usati, associa cliente e prezzo — qui passerà a <span className="font-semibold text-slate-200">Venduto</span> da solo.
+                  </div>
+                )}
                 {dev.status === "in_vendita" && (
                   <div className="flex flex-col gap-2 border-t border-white/10 pt-3 mt-1">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Trasferisci a un altro negozio</div>

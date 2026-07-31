@@ -11,6 +11,7 @@ import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
+import { sameStore } from "@/lib/visibleStores";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
 import { numeroNazionale } from "@/lib/telefono";
 import { useAuth } from "@/context/AuthContext";
@@ -143,6 +144,36 @@ async function loadUsedWarehouse(){
 }
 if(typeof window!=="undefined")loadUsedWarehouse();
 const lookupUsato=(imei)=>{const d=String(imei||"").replace(/\D/g,"");return d.length===15?(USED_WAREHOUSE[d]||""):"";};
+// SCARICO MAGAZZINO USATI (Luca 31/07): la vendita da qui e' l'UNICO punto che
+// porta un telefono a "venduto" su Gestione Usati (il passaggio manuale in quella
+// pagina non esiste piu'). Si scaricano solo i dispositivi IN VENDITA — un telefono
+// in altra fase va prima portato in vetrina dalla pagina usati.
+async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback){
+  for(const mi of (items||[])){
+    if(mi.productId!=="vendita_usato")continue;
+    for(const u of (Array.isArray(mi.units)?mi.units:[])){
+      try{
+        const imeiDigits=String(u.imei||"").replace(/\D/g,"");
+        let row=null;
+        if(u.usatoId){const r=await supabase.from("usati").select("id,status,status_history,sale_price").eq("id",u.usatoId).maybeSingle();row=r.data||null;}
+        if(!row&&imeiDigits.length===15){const r=await supabase.from("usati").select("id,status,status_history,sale_price").eq("imei",imeiDigits).eq("status","in_vendita").maybeSingle();row=r.data||null;}
+        if(!row||row.status!=="in_vendita")continue;
+        const hist=(row.status_history&&typeof row.status_history==="object")?row.status_history:{};
+        const prezzo=parseFloat(String(u.prezzo??"").replace(",","."))||Number(row.sale_price)||null;
+        const soldIso=dateStr?new Date(dateStr+"T12:00:00").toISOString():new Date().toISOString();
+        const upd={status:"venduto",sold_date:soldIso,sold_price:prezzo,client_id:clientId||null,
+          status_history:{...hist,venduto:{date:new Date().toISOString(),operatore:`${mi.vendor||mi.venditore||vendFallback||"—"} — scarico da Registra Vendita`}}};
+        let {error}=await supabase.from("usati").update(upd).eq("id",row.id);
+        if(error&&/column/i.test(error.message||"")){
+          // fallback difensivo se client_id/sold_price non esistessero ancora
+          const{client_id:_c,sold_price:_s,...rest}=upd;
+          ({error}=await supabase.from("usati").update(rest).eq("id",row.id));
+        }
+        if(error)console.error("Scarico usato fallito:",error.message);
+      }catch(e){console.error("Scarico usato fallito:",e);}
+    }
+  }
+}
 const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
   const [selCat,setSelCat]=useState(0);
   const [selProd,setSelProd]=useState(null);
@@ -153,7 +184,29 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
   const [imei,setImei]=useState("");
   const [usatoUnits,setUsatoUnits]=useState([{imei:"",model:""}]);
   const setUnit=(i,k,v)=>{setUsatoUnits(prev=>{const a=[...prev];a[i]={...a[i],[k]:v};return a;});};
+  const clearUnit=(i)=>{setUsatoUnits(prev=>{const a=[...prev];a[i]={imei:"",model:""};return a;});};
   const onUnitImei=(i,raw)=>{const v=raw.replace(/\D/g,"").slice(0,15);setUsatoUnits(prev=>{const a=[...prev];a[i]={...a[i],imei:v};return a;});if(v.length===15){supabase.from("usati").select("model").eq("imei",v).maybeSingle().then(r=>{if(r&&r.data&&r.data.model)setUsatoUnits(prev=>{const a=[...prev];if(a[i])a[i]={...a[i],model:r.data.model};return a;})}).catch(()=>{})}};
+  // MAGAZZINO USATI collegato (Luca 31/07): i telefoni IN VENDITA del negozio si
+  // scelgono da una lista (cerchi per modello o IMEI), il prezzo si precompila dal
+  // listino e alla registrazione il telefono viene SCARICATO (venduto) anche su
+  // Gestione Usati.
+  const [magUsati,setMagUsati]=useState([]);
+  useEffect(()=>{
+    if(!(show&&selProd&&selProd.needsImei))return;
+    let vivo=true;
+    supabase.from("usati").select("id, imei, model, brand, sale_price, store").eq("status","in_vendita").then(({data})=>{
+      if(!vivo)return;
+      const tutti=(data||[]).map(r=>({id:r.id,imei:String(r.imei||""),model:r.model||"",brand:r.brand||"",prezzo:Number(r.sale_price)||0,store:r.store||""}));
+      setMagUsati(negozio?tutti.filter(t=>sameStore(t.store,negozio)):tutti);
+    }).catch(()=>{});
+    return()=>{vivo=false};
+  },[show,selProd,negozio]);
+  // importo totale della voce = somma dei prezzi delle unita' scelte dal magazzino
+  useEffect(()=>{
+    if(!(show&&selProd&&selProd.needsImei))return;
+    const somma=usatoUnits.reduce((s,u)=>s+(parseFloat(String(u.prezzo??"").replace(",","."))||0),0);
+    if(somma>0)setImporto(String(Math.round(somma*100)/100));
+  },[usatoUnits,selProd,show]);
   useEffect(()=>{
     if(show&&editItem){
       const found=MARG_PRODUCTS.flatMap(c=>c.items).find(p=>p.id===editItem.productId);
@@ -165,7 +218,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
         setImporto(editItem.importo!=null?String(editItem.importo):"");
         setModel(editItem.model||"");
         setImei(editItem.imei||"");
-        if(found.needsImei&&Array.isArray(editItem.units)&&editItem.units.length)setUsatoUnits(editItem.units.map(u=>({imei:u.imei||"",model:u.model||""})));
+        if(found.needsImei&&Array.isArray(editItem.units)&&editItem.units.length)setUsatoUnits(editItem.units.map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId||null,prezzo:u.prezzo!=null?String(u.prezzo):"",manuale:!!u.manuale})));
         if(found.price===null)setPrice(String(editItem.price||""));
       }
     } else if(show&&!editItem){
@@ -191,7 +244,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
     const pVal=p.isTelCash?(parseFloat(importo)||0):(p.price!==null?p.price:parseFloat(price)||0);
     const mVal=p.type==="fixed"?(p.fixedMargin||0):p.type==="pct"?(pVal*(p.pctMargin||0)/100):0;
     if(p.needsImei){
-      const units=usatoUnits.filter(u=>u.imei||u.model);
+      const units=usatoUnits.filter(u=>u.imei||u.model).map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId||null,prezzo:(u.prezzo!=null&&String(u.prezzo).trim()!=="")?(parseFloat(String(u.prezzo).replace(",","."))||null):null,manuale:!!u.manuale}));
       const _im=units.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
       if(new Set(_im).size!==_im.length)return;
       const q=units.length||1;
@@ -249,13 +302,61 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
             </div>
           </div>}
           {selProd.needsImei&&<div style={{marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:6,textTransform:"uppercase"}}>Dispositivi usati ({usatoUnits.length})</div>
-            {usatoUnits.map((u,i)=>{const found=lookupUsato(u.imei);const _di=String(u.imei||"").replace(/\D/g,"");const done=_di.length===15;const dup=done&&usatoUnits.some((x,j)=>j!==i&&String(x.imei||"").replace(/\D/g,"")===_di);return (
+            <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:6,textTransform:"uppercase"}}>Dispositivi usati ({usatoUnits.length}) — magazzino di {negozio||"—"}</div>
+            {magUsati.length===0&&<div style={{fontSize:11,color:"#fd7e14",fontWeight:600,marginBottom:8}}>⚠ Nessun telefono In Vendita nel magazzino di {negozio||"questo negozio"} — puoi comunque inserire un IMEI a mano (senza scarico).</div>}
+            {usatoUnits.map((u,i)=>{
+              const _di=String(u.imei||"").replace(/\D/g,"");const done=_di.length===15;
+              const dup=done&&usatoUnits.some((x,j)=>j!==i&&String(x.imei||"").replace(/\D/g,"")===_di);
+              const q=String(u.cerca||"").trim().toLowerCase();
+              const qd=q.replace(/\D/g,"");
+              const presi=usatoUnits.map((x,j)=>j!==i?x.usatoId:null).filter(Boolean);
+              const hits=q.length>=2?magUsati.filter(m=>!presi.includes(m.id)&&((`${m.brand} ${m.model}`).toLowerCase().includes(q)||(qd.length>=4&&m.imei.replace(/\D/g,"").includes(qd)))).slice(0,8):[];
+              return (
               <div key={i} style={{marginBottom:8,padding:10,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)"}}>
                 <div style={{fontSize:10,fontWeight:800,color:"#6f42c1",marginBottom:5}}>Unità #{i+1}</div>
-                <input value={u.imei} onChange={e=>onUnitImei(i,e.target.value)} placeholder="IMEI (15 cifre)" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:dup?"2px solid #dc3545":done?(found?"2px solid #28a745":"2px solid #fd7e14"):"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace",marginBottom:6}}/>
-                <input value={u.model} onChange={e=>setUnit(i,"model",e.target.value)} placeholder="Modello (auto da magazzino)" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",background:(found&&u.model===found)?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}}/>
-                {dup?<div style={{fontSize:10,color:"#dc3545",fontWeight:700,marginTop:4}}>⛔ IMEI duplicato — già inserito in un'altra unità</div>:done&&(found?<div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:4}}>✓ Trovato a magazzino — modello auto-compilato</div>:<div style={{fontSize:10,color:"#fd7e14",fontWeight:700,marginTop:4}}>⚠ IMEI non presente a magazzino — inserisci il modello a mano</div>)}
+                {u.usatoId?(
+                  <div style={{padding:10,borderRadius:8,border:"2px solid #28a745",background:"rgba(40,167,69,0.10)"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0"}}>✓ {u.model||"—"}</div>
+                        <div style={{fontSize:11,color:"#8892b0",fontFamily:"monospace"}}>IMEI {u.imei}</div>
+                        <div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:2}}>Dal magazzino usati — verrà scaricato alla registrazione</div>
+                      </div>
+                      <button onClick={()=>clearUnit(i)} style={{padding:"5px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.04)",color:"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✕ cambia</button>
+                    </div>
+                    <div style={{marginTop:8}}>
+                      <div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:3}}>Prezzo di VENDITA €</div>
+                      <input value={u.prezzo??""} onChange={e=>setUnit(i,"prezzo",e.target.value)} type="number" min="0" step="0.01" placeholder="es. 199"
+                        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(u.prezzo??"").trim()===""?"2px solid #fd7e14":"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
+                    </div>
+                  </div>
+                ):u.manuale?(
+                  <>
+                    <input value={u.imei} onChange={e=>onUnitImei(i,e.target.value)} placeholder="IMEI (15 cifre)" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:dup?"2px solid #dc3545":done?"2px solid #fd7e14":"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace",marginBottom:6}}/>
+                    <input value={u.model} onChange={e=>setUnit(i,"model",e.target.value)} placeholder="Modello" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",background:"rgba(255,255,255,0.04)"}}/>
+                    {dup?<div style={{fontSize:10,color:"#dc3545",fontWeight:700,marginTop:4}}>⛔ IMEI duplicato — già inserito in un'altra unità</div>
+                      :<div style={{fontSize:10,color:"#fd7e14",fontWeight:700,marginTop:4}}>⚠ Fuori magazzino: NON verrà scaricato da Gestione Usati</div>}
+                    <button onClick={()=>clearUnit(i)} style={{marginTop:6,padding:"4px 10px",borderRadius:8,border:"none",background:"transparent",color:"#6f42c1",fontSize:11,fontWeight:700,cursor:"pointer"}}>↩ torna alla ricerca a magazzino</button>
+                  </>
+                ):(
+                  <>
+                    <input value={u.cerca||""} onChange={e=>setUnit(i,"cerca",e.target.value)} placeholder={`Cerca per modello o IMEI nel magazzino di ${negozio||"—"}…`}
+                      style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/>
+                    {hits.length>0&&<div style={{marginTop:6,borderRadius:8,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden"}}>
+                      {hits.map(m=>(
+                        <button key={m.id} onClick={()=>{setUsatoUnits(prev=>{const a=[...prev];a[i]={imei:m.imei,model:`${m.brand?m.brand+" ":""}${m.model}`.trim(),usatoId:m.id,prezzo:m.prezzo>0?String(m.prezzo):""};return a;});}}
+                          style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.05)",background:"rgba(255,255,255,0.02)",cursor:"pointer"}}>
+                          <span style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>📱 {m.brand?m.brand+" ":""}{m.model}</span>
+                          <span style={{fontSize:11,color:"#8892b0",fontFamily:"monospace",marginLeft:8}}>IMEI {m.imei}</span>
+                          {m.prezzo>0&&<span style={{fontSize:12,fontWeight:800,color:"#28a745",marginLeft:8}}>€ {m.prezzo}</span>}
+                        </button>
+                      ))}
+                    </div>}
+                    {q.length>=2&&hits.length===0&&<div style={{fontSize:10,color:"#fd7e14",fontWeight:700,marginTop:4}}>Nessun telefono In Vendita corrisponde nel magazzino di {negozio||"—"}.</div>}
+                    <button onClick={()=>{setUsatoUnits(prev=>{const a=[...prev];a[i]={imei:qd.length===15?qd:"",model:"",manuale:true};return a;});}}
+                      style={{marginTop:6,padding:"4px 10px",borderRadius:8,border:"none",background:"transparent",color:"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>Non è a magazzino? Inserisci IMEI a mano</button>
+                  </>
+                )}
               </div>
             );})}
           </div>}
@@ -4360,7 +4461,7 @@ export default function CRM() {
           codice_attivazione: "VENDITA-DIRETTA",
           data_registrazione: dateStr,
           data_attivazione: dateStr,   // compilata subito: e' la data di registrazione (Luca)
-          dettagli: { product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei },
+          dettagli: { product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei, units: Array.isArray(mi.units) ? mi.units : null },
           is_demo: false
         });
       });
@@ -4398,6 +4499,10 @@ export default function CRM() {
           if (attErr) console.error("Attachment Meta Error:", attErr);
         }
       }
+
+      // scarico magazzino usati: i telefoni scelti dal magazzino passano a
+      // "venduto" su Gestione Usati, con prezzo effettivo e cliente collegato
+      await scaricaUsatiVenduti(margList, clientId, dateStr, selVend);
 
       setUploading(false);
       sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
@@ -4463,11 +4568,12 @@ export default function CRM() {
         // salvataggio scriveva "Nuovo" fisso e non valorizzava l'esito negozio.
         prodotto:mi.product,stato:"Attivo",stato_negozio:"attivato",venditore:mi.vendor||selVend,negozio:mi.store||selNeg,
         codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:dateStr,
-        dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei},
+        dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei,units:Array.isArray(mi.units)?mi.units:null},
         is_demo:false,
       }));
       const {error}=await supabase.from("contracts").insert(rows);
       if(error)throw error;
+      await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend);
       setMargSaveForm({nome:"",cognome:"",tel:"",anonimo:false});
       setShowMargSave(false);
       fullReset();
