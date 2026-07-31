@@ -3842,7 +3842,10 @@ export default function CRM() {
   const [showMargList,setShowMargList]=useState(false);
   const [showMargSection,setShowMargSection]=useState(false);
   const [showMargSave,setShowMargSave]=useState(false);
-  const [margSaveForm,setMargSaveForm]=useState({nome:"",cognome:"",tel:"",anonimo:false});
+  // anagrafica COMPLETA come nel flusso brand (Luca 31/07): privato/business
+  // con CF/P.IVA, residenza, email — non solo nome+telefono
+  const MARG_FORM_VUOTO={tipo:"privato",nome:"",cognome:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cf:"",tel:"",email:"",via:"",cap:"",citta:"",anonimo:false};
+  const [margSaveForm,setMargSaveForm]=useState({...MARG_FORM_VUOTO});
   // RICERCA ANAGRAFICA nel checkout (Luca 31/07): stesso campo unico di
   // Registra Vendita / Registra Usato — cognome, nome, cellulare o CF; se
   // esiste si seleziona, altrimenti si crea con i campi sotto.
@@ -4556,7 +4559,11 @@ export default function CRM() {
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
     if(margSaving)return;
     const anon=margSaveForm.anonimo;
-    if(!anon&&!margCliSel&&!(margSaveForm.nome.trim()&&margSaveForm.cognome.trim()&&margSaveForm.tel.trim()))return;
+    if(!anon&&!margCliSel){
+      const f=margSaveForm;
+      const okAna=f.tipo==="business"?(f.ragioneSociale.trim()&&f.tel.trim()):(f.nome.trim()&&f.cognome.trim()&&f.tel.trim());
+      if(!okAna)return;
+    }
     setMargSaving(true);
     try{
       const dateStr=dataVendita||new Date().toISOString().split("T")[0];
@@ -4573,21 +4580,43 @@ export default function CRM() {
         // anagrafica ESISTENTE scelta dalla ricerca: si usa quella, niente doppioni
         clientId=margCliSel.id;
       }else{
-        const tel=margSaveForm.tel.trim();
-        // univocita' cellulare anche qui: se e' di un altro cliente, fermati
-        const {data:own}=await supabase.from("clients").select("id,nome,cognome,ragione_sociale,tipo").eq("cellulare",tel)
-          .ilike("nome",margSaveForm.nome.trim()).ilike("cognome",margSaveForm.cognome.trim()).limit(1);
-        if(!(own&&own[0])){
+        // stessa logica del flusso brand: CF = match certo; senza CF si
+        // riconosce solo con telefono + nome (o ragione sociale); univocita'
+        // cellulare; il merge non cancella i dati gia' salvati (segn. 40)
+        const f=margSaveForm;
+        const business=f.tipo==="business";
+        const cfPiva=(f.cf||"").trim();
+        const tel=f.tel.trim();
+        let existing=null;
+        if(cfPiva){
+          const {data}=await supabase.from("clients").select("id").eq("cf_piva",cfPiva).limit(1);
+          existing=data&&data[0];
+        }else if(tel){
+          let q=supabase.from("clients").select("id").eq("cellulare",tel);
+          q=business?q.ilike("ragione_sociale",(f.ragioneSociale||"").trim()):q.ilike("nome",f.nome.trim()).ilike("cognome",f.cognome.trim());
+          const {data}=await q.limit(1);
+          existing=data&&data[0];
+        }
+        if(!existing&&tel){
           const dup=await trovaDuplicati({cellulare:tel});
           if(dup.cellulare){sT(`⚠️ Cellulare già associato a “${dup.cellulare.label}”: usa un altro numero o registra dalla sua scheda`);setMargSaving(false);return;}
         }
-        const {data:ex}=await supabase.from("clients").select("id")
-          .eq("cellulare",tel).ilike("nome",margSaveForm.nome.trim())
-          .ilike("cognome",margSaveForm.cognome.trim()).limit(1);
-        clientId=(ex&&ex[0]&&ex[0].id)||`CL-${tel.replace(/\D/g,"")||"ND"}-${Date.now()}`;
+        let prev={};
+        if(existing&&existing.id){const {data:full}=await supabase.from("clients").select("*").eq("id",existing.id).maybeSingle();if(full)prev=full;}
+        const keep=(nuovo,campo)=>{const v=(nuovo??"").toString().trim();if(v)return v;const old=prev[campo];return old==null?"":String(old);};
+        const idBase=cfPiva||tel.replace(/\D/g,"")||"ND";
+        clientId=(existing&&existing.id)||`CL-${idBase.replace(/\s/g,"")}-${Date.now()}`;
         const {error:ce}=await supabase.from("clients").upsert({
-          id:clientId,tipo:"consumer",nome:margSaveForm.nome.trim(),cognome:margSaveForm.cognome.trim(),
-          cellulare:tel,email:"",cf_piva:null,indirizzo:"",cap:"",citta:"",is_demo:false,
+          id:clientId,tipo:business?"business":"consumer",
+          nome:keep(f.nome,"nome"),cognome:keep(f.cognome,"cognome"),
+          ragione_sociale:keep(f.ragioneSociale,"ragione_sociale"),
+          nome_ref:keep(f.nomeRef,"nome_ref"),cognome_ref:keep(f.cognomeRef,"cognome_ref"),
+          cellulare:numeroNazionale(keep(f.tel,"cellulare"))||keep(f.tel,"cellulare"),
+          email:keep(f.email,"email"),cf_piva:cfPiva||null,
+          data_nascita:dataNascitaDaCF(cfPiva)||(prev.data_nascita??null),
+          indirizzo:keep(f.via,"indirizzo"),cap:keep(f.cap,"cap"),citta:keep(f.citta,"citta"),
+          acquisito_da:prev.acquisito_da||selNeg||null,
+          is_demo:false,
         },{onConflict:"id"});
         if(ce)throw ce;
       }
@@ -4605,7 +4634,7 @@ export default function CRM() {
       const {error}=await supabase.from("contracts").insert(rows);
       if(error)throw error;
       await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend);
-      setMargSaveForm({nome:"",cognome:"",tel:"",anonimo:false});
+      setMargSaveForm({...MARG_FORM_VUOTO});
       setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
       setShowMargSave(false);
       fullReset();
@@ -4871,7 +4900,7 @@ export default function CRM() {
           {!onlyMarg&&<button onClick={finalSubmit} disabled={tp===0||submitting} style={{padding:"12px 36px",borderRadius:10,border:"none",background:(tp>0&&!submitting)?"linear-gradient(135deg,#28a745,#20c997)":"rgba(255,255,255,0.1)",color:"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":`💾 Salva contratto (${tp})`}</button>}
         </div>
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
-          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:16,width:"100%",maxWidth:420,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px"}}>
+          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,color:"#f8fafc",marginBottom:4}}>💾 Salva Vendita Prodotti</div>
             <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>Riepilogo: {margItems.length} prodott{margItems.length===1?"o":"i"} registrat{margItems.length===1?"o":"i"}</div>
             <div style={{background:"rgba(111,66,193,0.12)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
@@ -4910,11 +4939,38 @@ export default function CRM() {
                   {margCliCerca.trim().length>=3&&margCliHits.length===0&&<div style={{fontSize:10,color:"#fd7e14",fontWeight:700,marginTop:4}}>Nessuna anagrafica trovata: compila i campi sotto per crearla.</div>}
                 </div>
                 <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>Oppure crea una nuova anagrafica</div>
-                <div style={{display:"flex",gap:10}}>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Nome <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.nome} onChange={e=>setMargSaveForm(p=>({...p,nome:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Cognome <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.cognome} onChange={e=>setMargSaveForm(p=>({...p,cognome:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                <div style={{display:"flex",gap:8}}>
+                  {[["privato","👤 Privato"],["business","🏢 Business"]].map(([k,l])=>(
+                    <button key={k} onClick={()=>setMargSaveForm(p=>({...p,tipo:k}))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",border:margSaveForm.tipo===k?"2px solid #6f42c1":"1px solid rgba(255,255,255,0.1)",background:margSaveForm.tipo===k?"rgba(111,66,193,0.15)":"rgba(255,255,255,0.03)",color:margSaveForm.tipo===k?"#a78bfa":"#8892b0"}}>{l}</button>
+                  ))}
                 </div>
-                <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Telefono <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.tel} onChange={e=>setMargSaveForm(p=>({...p,tel:e.target.value}))} placeholder="Es. 3391234567" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                {margSaveForm.tipo==="business"?(
+                  <>
+                    <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Ragione Sociale <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.ragioneSociale} onChange={e=>setMargSaveForm(p=>({...p,ragioneSociale:e.target.value}))} placeholder="Es. Rossi S.r.l." style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                    <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>P.IVA / CF</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. 01234567890" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
+                    <div style={{display:"flex",gap:10}}>
+                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Nome Referente</div><input value={margSaveForm.nomeRef} onChange={e=>setMargSaveForm(p=>({...p,nomeRef:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Cognome Referente</div><input value={margSaveForm.cognomeRef} onChange={e=>setMargSaveForm(p=>({...p,cognomeRef:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                    </div>
+                  </>
+                ):(
+                  <>
+                    <div style={{display:"flex",gap:10}}>
+                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Nome <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.nome} onChange={e=>setMargSaveForm(p=>({...p,nome:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Cognome <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.cognome} onChange={e=>setMargSaveForm(p=>({...p,cognome:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                    </div>
+                    <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Codice Fiscale</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. RSSMRA80A01H501U" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
+                  </>
+                )}
+                <div style={{display:"flex",gap:10}}>
+                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Telefono <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.tel} onChange={e=>setMargSaveForm(p=>({...p,tel:e.target.value}))} placeholder="Es. 3391234567" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Email</div><input value={margSaveForm.email} onChange={e=>setMargSaveForm(p=>({...p,email:e.target.value}))} placeholder="Es. mario@mail.it" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                </div>
+                <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{margSaveForm.tipo==="business"?"Indirizzo sede":"Indirizzo di residenza"}</div><input value={margSaveForm.via} onChange={e=>setMargSaveForm(p=>({...p,via:e.target.value}))} placeholder="Es. Via Roma 1" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                <div style={{display:"flex",gap:10}}>
+                  <div style={{width:110}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>CAP</div><input value={margSaveForm.cap} onChange={e=>setMargSaveForm(p=>({...p,cap:e.target.value.replace(/\D/g,"").slice(0,5)}))} placeholder="00100" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Città</div><input value={margSaveForm.citta} onChange={e=>setMargSaveForm(p=>({...p,citta:e.target.value}))} placeholder="Es. Roma" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                </div>
               </div>
             ))}
             <div style={{display:"flex",gap:10,marginTop:4}}>
