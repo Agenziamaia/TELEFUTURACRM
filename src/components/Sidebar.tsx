@@ -344,11 +344,20 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
     return (
         <div className="pl-4 ml-2 border-l border-white/10 space-y-0.5">
             {hub.children.map((c) => {
-                // ── voce ESPANDIBILE (mini-hub): link madre + sotto-voci
-                // dirette a ?sez=<id>, aperte quando ci sei dentro ──
+                // ── voce ESPANDIBILE: link madre + sotto-voci, aperte quando ci
+                // sei dentro. Due modelli (Luca 31/07): subsSez=true → sotto-voci
+                // come SEZIONI (?sez=<id>, mini-hub Costi); altrimenti come
+                // FUNZIONI della voce (?sez=<voce>&tab=<id>, gruppo Utenti) ──
                 if (c.esplodi && c.subs?.length) {
                     const subsVisibili = c.subs.filter((s) => subOk(c, s.id, s.roles));
-                    const dentro = sez === c.sez || subsVisibili.some((s) => s.id === sez);
+                    const tabAttivo = searchParams.get("tab") || subsVisibili[0]?.id || "";
+                    const subHref = (id: string) => c.subsSez
+                        ? `${hub.href}?${param}=${id}`
+                        : `${hub.href}?${param}=${c.sez}&tab=${id}`;
+                    const subAttiva = (id: string) => c.subsSez
+                        ? sez === id
+                        : sez === c.sez && tabAttivo === id;
+                    const dentro = sez === c.sez || (c.subsSez && subsVisibili.some((s) => s.id === sez));
                     const ChildIcon = c.icon;
                     return (
                         <div key={c.sez}>
@@ -369,16 +378,16 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                                     {subsVisibili.map((s) => (
                                         <Link
                                             key={s.id}
-                                            href={`${hub.href}?${param}=${s.id}`}
+                                            href={subHref(s.id)}
                                             onClick={onNavigate}
                                             className={cn(
                                                 "flex items-center gap-3 px-3 py-1.5 rounded-lg text-[13px] transition-colors",
-                                                sez === s.id ? "bg-indigo-500/15 text-indigo-300" : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
+                                                subAttiva(s.id) ? "bg-indigo-500/15 text-indigo-300" : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
                                             )}
                                         >
                                             {s.emoji
-                                                ? <span className={cn("text-[11px] leading-none shrink-0", sez !== s.id && "opacity-70")}>{s.emoji}</span>
-                                                : <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", sez === s.id ? "bg-indigo-400" : "bg-slate-600")} />}
+                                                ? <span className={cn("text-[11px] leading-none shrink-0", !subAttiva(s.id) && "opacity-70")}>{s.emoji}</span>
+                                                : <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", subAttiva(s.id) ? "bg-indigo-400" : "bg-slate-600")} />}
                                             {s.name}
                                         </Link>
                                     ))}

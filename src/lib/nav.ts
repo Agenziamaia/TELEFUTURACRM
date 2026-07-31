@@ -30,9 +30,11 @@ export type NavItem = { type: "link"; name: string; href: string; icon: NavIcon;
 // riportata piu' piccola nel menu di sinistra (Luca 31/07)
 export type NavHubSub = { id: string; name: string; roles: string[]; emoji?: string };
 // esplodi: la voce si apre nella sidebar mostrando le subs come sotto-link
-// diretti a ?sez=<sub.id> (mini-hub Costi, Luca 31/07); le subs restano
+// (Luca 31/07). subsSez=true → le subs sono SEZIONI vere e i link vanno a
+// ?sez=<sub.id> (mini-hub Costi); senza, le subs sono FUNZIONI della voce e
+// i link vanno a ?sez=<voce>&tab=<sub.id> (gruppo Utenti). Le subs restano
 // amministrabili una a una dalla pagina Permessi (chiavi hubSubKey).
-export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string; roles?: string[]; subs?: NavHubSub[]; esplodi?: boolean };
+export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string; roles?: string[]; subs?: NavHubSub[]; esplodi?: boolean; subsSez?: boolean };
 export type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: NavIcon; roles: string[]; children: NavHubChild[] };
 export type NavEntry = NavGroup | NavItem | NavHub;
 
@@ -138,7 +140,7 @@ export const NAVIGATION: NavEntry[] = [
             // sezioni — permessi granulari per sub (chiavi &tab=..., mig. 115
             // ha migrato le vecchie chiavi ?sez=negozi|condivisi|altri)
             {
-                name: "Costi", sez: "costi", icon: Euro, roles: ["admin", "dev"], esplodi: true,
+                name: "Costi", sez: "costi", icon: Euro, roles: ["admin", "dev"], esplodi: true, subsSez: true,
                 subs: [
                     { id: "negozi", name: "Negozi", roles: ["admin", "dev"], emoji: "🏬" },
                     { id: "condivisi", name: "Costi condivisi", roles: ["admin", "dev"], emoji: "🤝" },
@@ -146,13 +148,13 @@ export const NAVIGATION: NavEntry[] = [
                 ],
             },
             {
-                name: "Utenti", sez: "utenti", icon: Users, roles: [...ADMINS, "amministrativo"],
+                name: "Utenti", sez: "utenti", icon: Users, roles: [...ADMINS, "amministrativo"], esplodi: true,
                 subs: [
-                    { id: "lista", name: "Lista utenti", roles: [...ADMINS, "amministrativo"] },
-                    { id: "permessi", name: "Permessi", roles: ["admin", "dev"] },
-                    { id: "ruoli", name: "Ruoli", roles: [...ADMINS, "amministrativo"] },
+                    { id: "lista", name: "Lista utenti", roles: [...ADMINS, "amministrativo"], emoji: "👥" },
+                    { id: "permessi", name: "Permessi", roles: ["admin", "dev"], emoji: "🔐" },
+                    { id: "ruoli", name: "Ruoli", roles: [...ADMINS, "amministrativo"], emoji: "🏷️" },
                     // permessi "di capacità": funzioni designate a persone (es. ferie)
-                    { id: "incarichi", name: "Incarichi", roles: ["admin", "dev"] },
+                    { id: "incarichi", name: "Incarichi", roles: ["admin", "dev"], emoji: "🎯" },
                 ],
             },
             { name: "Marginalità", sez: "marginalita", icon: Package, roles: ["admin", "dev"] },
