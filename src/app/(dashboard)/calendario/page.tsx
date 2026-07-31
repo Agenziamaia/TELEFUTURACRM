@@ -9,6 +9,7 @@ import { usePageView } from "@/lib/pageView";
 import { useAuth } from "@/context/AuthContext";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { supabase } from "@/lib/supabaseClient";
+import { numeroNazionale } from "@/lib/telefono";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
@@ -591,7 +592,7 @@ export default function Calendario() {
             // la via vale anche per gli AUTOGENERATI (prima veniva scartata, Luca 29/07)
             customer_address: newAppt.type !== "incoming" ? (newAppt.customerAddress || null) : null,
             customer_name: newAppt.customerName,
-            customer_phone: newAppt.customerPhone,
+            customer_phone: numeroNazionale(newAppt.customerPhone) || newAppt.customerPhone,
             cf_piva: newAppt.cfPiva || null,
             tipo_cliente: newAppt.tipoCliente,
             notes: newAppt.notes || "",

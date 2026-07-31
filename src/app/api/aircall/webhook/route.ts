@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { codaNumero, soloCifre } from "@/lib/aircall";
+import { numeroNazionale } from "@/lib/telefono";
 import { areaOf } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
@@ -245,7 +246,10 @@ async function bridgeVersoCaller(p: {
         ragione_sociale: (cli?.ragione_sociale as string) || "",
         cf: tipo === "consumer" ? ((cli?.cf_piva as string) || "") : "",
         piva: tipo === "business" ? ((cli?.cf_piva as string) || "") : "",
-        numero: p.clienteNum, cellulare: (cli?.cellulare as string) || soloCifre(p.clienteNum),
+        // archivio SENZA +39 (Luca 31/07): il prefisso arriva da Aircall ma non
+        // si salva; lo rimettono le integrazioni all'invio
+        numero: numeroNazionale(p.clienteNum) || p.clienteNum,
+        cellulare: numeroNazionale((cli?.cellulare as string) || p.clienteNum) || soloCifre(p.clienteNum),
         brand: preset?.brand || "", provenienza: preset?.provenienza || "Aircall", tipologia: preset?.tipologia || "", obiettivo: preset?.obiettivo || "",
         stato: p.answered ? "Nuovo" : "Cold NR1",
         data_chiamata: quando, caller: callerName,

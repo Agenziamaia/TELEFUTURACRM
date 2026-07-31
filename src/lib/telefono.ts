@@ -23,6 +23,19 @@ export function normalizzaE164(s: string | null | undefined): string | null {
     return null;
 }
 
+/** ARCHIVIO SENZA PREFISSO (Luca 31/07: si lavora solo con l'Italia, il +39
+ *  in anagrafica non serve): solo cifre, via 00/0039/+39. Un cellulare di 10
+ *  cifre che inizia per 39x (391, 392, 393...) resta intero — stessa regola
+ *  di normalizzaE164. Il prefisso lo aggiungono le integrazioni al momento
+ *  dell'invio: normalizzaE164 per Aircall, "39"+ per WhatsApp. Torna "" se
+ *  non ci sono cifre: chi salva usi `numeroNazionale(v) || v`. */
+export function numeroNazionale(s: string | null | undefined): string {
+    let cifre = String(s || "").replace(/\D/g, "");
+    if (cifre.startsWith("00")) cifre = cifre.slice(2);
+    if (cifre.startsWith("39") && cifre.length >= 11) cifre = cifre.slice(2);
+    return cifre;
+}
+
 /** Messaggio unico per il numero rifiutato: dice COSA correggere. */
 export function msgNumeroNonValido(raw: string | null | undefined): string {
     const n = String(raw || "").trim() || "—";

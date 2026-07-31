@@ -19,6 +19,7 @@ import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, capChoice, capAllowed } from "@/lib/capabilities";
 import { chiamaAircall } from "@/lib/dialer";
+import { numeroNazionale } from "@/lib/telefono";
 
 interface Cliente {
     id: string;
@@ -548,7 +549,9 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             ragione_sociale: tipo === "business" ? ragioneSociale : null,
             nome_ref: tipo === "business" ? nome : null,
             cognome_ref: tipo === "business" ? cognome : null,
-            cellulare,
+            // archivio SENZA +39 (Luca 31/07): il prefisso lo aggiungono le
+            // integrazioni all'invio
+            cellulare: numeroNazionale(cellulare) || cellulare,
             email,
             cf_piva: cfPiva.trim() || null,
             // data di nascita DERIVATA dal CF (mai chiesta nel form)
@@ -1622,7 +1625,7 @@ function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; c
                                                 <span className="text-slate-400">{String(e.agente_nome || "—")}</span>
                                                 {e.missed ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-300">persa</span>
                                                     : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">risposta · {durata(e.duration_sec)}</span>}
-                                                <span className="ml-auto text-xs text-slate-500 font-mono">{String(e.cliente_num || "")}</span>
+                                                <span className="ml-auto text-xs text-slate-500 font-mono">{numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || "")}</span>
                                             </div>
                                             {!!e.recording_url && (
                                                 <div className="mt-2 flex items-center gap-3">

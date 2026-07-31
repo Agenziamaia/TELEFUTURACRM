@@ -14,6 +14,7 @@ import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
+import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { useStores, useSellers, useCallers } from "@/lib/org";
@@ -762,7 +763,7 @@ function CallerPageInner() {
             agente: inNegozio ? "" : c.agente,
             customer_address: inNegozio ? null : (c.indirizzo || null),
             customer_name: c.tipo_cliente === "business" ? (c.ragione_sociale || `${c.nome} ${c.cognome}`.trim()) : `${c.nome} ${c.cognome}`.trim(),
-            customer_phone: c.cellulare || c.numero || "",
+            customer_phone: numeroNazionale(c.cellulare || c.numero) || c.cellulare || c.numero || "",
             cf_piva: c.cf || c.piva || null,
             notes: ["Fissato dal call center", c.note].filter(Boolean).join(" — "),
             status: "scheduled",
@@ -798,7 +799,7 @@ function CallerPageInner() {
             type: "richiamo",
             store: null, agente: "",
             customer_name: c.tipo_cliente === "business" ? (c.ragione_sociale || `${c.nome} ${c.cognome}`.trim()) : `${c.nome} ${c.cognome}`.trim(),
-            customer_phone: c.cellulare || c.numero || "",
+            customer_phone: numeroNazionale(c.cellulare || c.numero) || c.cellulare || c.numero || "",
             cf_piva: c.cf || c.piva || null,
             notes: ["Richiamo fissato dal call center", c.noteUpdate || c.note].filter(Boolean).join(" — "),
             status: "scheduled",
@@ -841,7 +842,7 @@ function CallerPageInner() {
         try {
             const { data: ex } = await supabase.from("clients").select("id").ilike("cf_piva", idf).limit(1);
             if (ex && ex.length) return;
-            let cel = String(c.numero || "").replace(/\D/g, "") || String(c.cellulare || "").replace(/\D/g, "");
+            let cel = numeroNazionale(c.numero) || numeroNazionale(c.cellulare);
             if (cel) {
                 const { data: dup } = await supabase.from("clients").select("id").ilike("cellulare", cel).limit(1);
                 if (dup && dup.length) cel = "";
@@ -892,7 +893,9 @@ function CallerPageInner() {
             if (!anagraficaObbligatoriaOk(editCall)) return;
             if (!provenienzaInternoOk(editCall)) return;
             const newCall: Call = { ...editCall };
-            if (!String(newCall.cellulare || "").trim()) newCall.cellulare = String(newCall.numero || "").replace(/\D/g, "");
+            // archivio SENZA +39 e senza spazi (Luca 31/07)
+            newCall.numero = numeroNazionale(newCall.numero) || newCall.numero;
+            newCall.cellulare = numeroNazionale(newCall.cellulare) || numeroNazionale(newCall.numero);
             // l'input datetime-local e' in ora LOCALE: al DB va l'istante vero
             const dataChiamataIso = newCall.data_chiamata ? new Date(newCall.data_chiamata).toISOString() : now;
             newCall.storico = [{
@@ -952,8 +955,8 @@ function CallerPageInner() {
             updates.nome = editCall.nome; updates.cognome = editCall.cognome;
             updates.ragione_sociale = editCall.ragione_sociale;
             updates.cf = editCall.cf; updates.piva = editCall.piva;
-            updates.numero = editCall.numero;
-            updates.cellulare = String(editCall.cellulare || "").trim() || String(editCall.numero || "").replace(/\D/g, "");
+            updates.numero = numeroNazionale(editCall.numero) || editCall.numero;
+            updates.cellulare = numeroNazionale(editCall.cellulare) || numeroNazionale(editCall.numero);
             // ...e con lei i Dettagli Chiamata (le 4 tendine dell'Inserimento Manuale)
             updates.brand = editCall.brand; updates.obiettivo = editCall.obiettivo;
             updates.provenienza = editCall.provenienza; updates.tipologia = editCall.tipologia;
@@ -1114,7 +1117,7 @@ function CallerPageInner() {
             cognome: manTipo === "consumer" ? r.cognome.trim() : "",
             ragione_sociale: manTipo === "business" ? r.nome.trim() : "",
             cf: "", piva: "",
-            numero: r.numero.trim(), cellulare: r.numero.replace(/\D/g, ""),
+            numero: numeroNazionale(r.numero) || r.numero.trim(), cellulare: numeroNazionale(r.numero),
             brand: "", provenienza: "", tipologia: "", obiettivo: "",
             stato: "Nuovo", data_chiamata: dataAssegnazione, caller: manCaller,
             negozio_appuntamento: "", data_appuntamento: null, indirizzo: "", agente: "",

@@ -8,6 +8,7 @@ import { calculateCF, _CNA, _PNA } from "@/lib/cf";
 import { getDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { numeroNazionale } from "@/lib/telefono";
 import { useStores, useSellers } from "@/lib/org";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 
@@ -508,7 +509,7 @@ export default function InviaPda() {
         nome: isBus ? (ana.referente || "Ragione Sociale") : (ana.nome || ""),
         cognome: isBus ? "" : (ana.cognome || ""),
         ragione_sociale: isBus ? (ana.ragioneSociale || "") : "",
-        cellulare: isBus ? (ana.mobile || "") : (ana.cellulare || ""),
+        cellulare: numeroNazionale(isBus ? ana.mobile : ana.cellulare) || (isBus ? (ana.mobile || "") : (ana.cellulare || "")),
         email: ana.email || "",
         cf_piva: lookupValue || (isBus ? ana.piva : ana.cf) || "",
         indirizzo: isBus ? (ana.sedeLegale || "") : (ana.domicilio || ""),

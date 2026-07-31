@@ -12,6 +12,7 @@ import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
+import { numeroNazionale } from "@/lib/telefono";
 import { useAuth } from "@/context/AuthContext";
 import QRCode from "qrcode";
 const ReqCtx = createContext(null);
@@ -4219,7 +4220,8 @@ export default function CRM() {
         ragione_sociale: keep(ana.ragioneSociale, "ragione_sociale"),
         nome_ref: keep(ana.nomeRef, "nome_ref"),
         cognome_ref: keep(ana.cognomeRef, "cognome_ref"),
-        cellulare: keep(ana.cellulare || ana.recapito, "cellulare"),
+        // archivio SENZA +39 (Luca 31/07): prefisso solo all'invio nelle integrazioni
+        cellulare: numeroNazionale(keep(ana.cellulare || ana.recapito, "cellulare")) || keep(ana.cellulare || ana.recapito, "cellulare"),
         email: keep(ana.email, "email"),
         cf_piva: cfPiva || null,
         // data di nascita derivata dal CF; se il CF manca resta quella nota
