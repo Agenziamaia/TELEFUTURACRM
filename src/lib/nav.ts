@@ -126,6 +126,12 @@ export const NAVIGATION: NavEntry[] = [
         children: [
             // Ogni SEZIONE dell'hub ha i suoi ruoli (decidibili una a una dalla
             // pagina Permessi); Utenti ha anche le sue FUNZIONI interne (subs).
+            // Le tre voci "Costi ·" formano il MINI-HUB Costi (Luca 31/07),
+            // PRIMA di Utenti: i sez (e quindi le chiavi di permesso) restano
+            // quelli storici — negozi, condivisi, altri — concessi uno a uno.
+            { name: "Costi · Negozi", sez: "negozi", icon: Store, roles: ["admin", "dev"] },
+            { name: "Costi · Condivisi", sez: "condivisi", icon: Building2, roles: ["admin", "dev"] },
+            { name: "Costi · Altri", sez: "altri", icon: Tag, roles: ["admin", "dev"] },
             {
                 name: "Utenti", sez: "utenti", icon: Users, roles: [...ADMINS, "amministrativo"],
                 subs: [
@@ -136,9 +142,6 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "incarichi", name: "Incarichi", roles: ["admin", "dev"] },
                 ],
             },
-            { name: "Negozi", sez: "negozi", icon: Store, roles: ["admin", "dev"] },
-            { name: "Costi condivisi", sez: "condivisi", icon: Building2, roles: ["admin", "dev"] },
-            { name: "Altri costi", sez: "altri", icon: Tag, roles: ["admin", "dev"] },
             { name: "Marginalità", sez: "marginalita", icon: Package, roles: ["admin", "dev"] },
             { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
             { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },

@@ -121,6 +121,7 @@ interface Store {
     cost: number | null;
     shared_percent: number | null;
     store_category: string | null;
+    brands?: string[] | null;   // brand trattati (mig. 112): comunicazioni per brand
 }
 
 const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[]; visibility: string[] } = {
@@ -170,12 +171,18 @@ export default function AmministrazionePage() {
     );
 }
 
-// Sezioni del hub Amministrazione: ogni card apre la sua pagina piena (?sez=)
-const SEZIONI = [
+// Sezioni del hub Amministrazione: ogni card apre la sua pagina piena (?sez=).
+// "costi" e' un MINI-HUB (Luca 31/07): raggruppa Negozi, Costi condivisi e
+// Altri costi — le tre sezioni conservano le loro chiavi di permesso
+// (?sez=negozi|condivisi|altri), quindi dalla pagina Permessi si concede
+// ciascuna voce singolarmente, esattamente come prima.
+type Sezione = { id: string; label: string; icon: React.ComponentType<{ className?: string }>; desc: string; gruppo?: string };
+const SEZIONI: Sezione[] = [
+    { id: "costi", label: "Costi", icon: Euro, desc: "Il mini-hub dei costi: Negozi, Costi condivisi e Altri costi — in sequenza, con permessi separati per ogni sezione." },
     { id: "utenti", label: "Utenti", icon: Users, desc: "Lista utenti con costi e allegati; permessi di visibilità per ruolo; ruoli e organigramma." },
-    { id: "negozi", label: "Negozi", icon: StoreIcon, desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
-    { id: "condivisi", label: "Costi condivisi", icon: Building2, desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
-    { id: "altri", label: "Altri costi", icon: Tag, desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
+    { id: "negozi", label: "Negozi", icon: StoreIcon, gruppo: "costi", desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
+    { id: "condivisi", label: "Costi condivisi", icon: Building2, gruppo: "costi", desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
+    { id: "altri", label: "Altri costi", icon: Tag, gruppo: "costi", desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
     { id: "marginalita", label: "Marginalità", icon: Package, desc: "Catalogo prodotti e servizi: IVA, costi e margini, valore visibile per le gare, legami coi brand." },
     { id: "catalogo", label: "Catalogo", icon: Layers, desc: "Catalogo operatori a 6 livelli: brand, tipo cliente, categorie, prodotti, offerte e opzioni — la base del Registra Vendita." },
     { id: "callcenter", label: "Call Center", icon: Phone, desc: "Opzioni della sezione Caller: esiti/stati, provenienze, tipologie e obiettivi — aggiungi, rinomina, riordina, spegni." },
@@ -183,7 +190,9 @@ const SEZIONI = [
     { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
     { id: "direzione", label: "Direzione Inserimento", icon: Compass, desc: "Mappa, per ogni negozio, su quale codice inserire ogni brand/categoria — alimenta la bussola in Home (sola lettura)." },
     { id: "obiettivi", label: "Obiettivi Home", icon: Target, desc: "Target contratti del mese per rete, negozio e venditore — la barra 'Obiettivo' nella Home." },
-] as const;
+];
+// ordine FISSO del mini-hub Costi (Luca 31/07): Negozi → Condivisi → Altri
+const COSTI_IDS = ["negozi", "condivisi", "altri"];
 
 function AmministrazioneInner() {
     const { user } = useAuth();
@@ -208,8 +217,13 @@ function AmministrazioneInner() {
         const sub = child?.subs?.find((x) => x.id === id);
         return child && sub ? effectiveAllowed(user?.role, hubSubKey(hubAmm, child, id), sub.roles, perms) : true;
     };
-    const sezioniVisibili = SEZIONI.filter((s) => sezOk(s.id));
-    const current = SEZIONI.find((s) => s.id === sez && sezOk(s.id));
+    // il mini-hub Costi compare se ALMENO UNA delle sue sezioni e' permessa;
+    // le sezioni raggruppate non stanno nella griglia principale
+    const costiVisibile = COSTI_IDS.some((id) => sezOk(id));
+    const sezioniVisibili = SEZIONI.filter((s) =>
+        !s.gruppo && (s.id === "costi" ? costiVisibile : sezOk(s.id)));
+    const sezioniCosti = SEZIONI.filter((s) => s.gruppo === "costi" && sezOk(s.id));
+    const current = SEZIONI.find((s) => s.id === sez && (s.id === "costi" ? costiVisibile : sezOk(s.id)));
     const [users, setUsers] = useState<AppUser[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [loading, setLoading] = useState(true);
@@ -311,10 +325,10 @@ function AmministrazioneInner() {
                 <div>
                     {current && (
                         <button
-                            onClick={() => go()}
+                            onClick={() => go(current.gruppo)}
                             className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300 transition-colors mb-1"
                         >
-                            <ArrowLeft className="w-3.5 h-3.5" /> Amministrazione
+                            <ArrowLeft className="w-3.5 h-3.5" /> {current.gruppo === "costi" ? "Costi" : "Amministrazione"}
                         </button>
                     )}
                     <h1 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -355,7 +369,42 @@ function AmministrazioneInner() {
 
             {tableMissing && <TableMissingBanner />}
 
-            {!current ? (
+            {/* pillole del mini-hub Costi: dentro una delle tre sezioni si
+                salta alle sorelle senza tornare indietro */}
+            {current?.gruppo === "costi" && sezioniCosti.length > 1 && (
+                <div className="flex gap-2 flex-wrap">
+                    {sezioniCosti.map((s) => (
+                        <button key={s.id} onClick={() => go(s.id)}
+                            className={`px-4 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all ${sez === s.id ? "border-indigo-400/70 bg-indigo-500/15 text-indigo-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25"}`}>
+                            {s.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+
+            {sez === "costi" && current ? (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {sezioniCosti.map((s) => {
+                        const Icon = s.icon;
+                        return (
+                            <button
+                                key={s.id}
+                                onClick={() => go(s.id)}
+                                className="glass-panel p-5 rounded-2xl text-left hover:bg-white/5 transition-colors group"
+                            >
+                                <div className="flex items-start justify-between">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center mb-3">
+                                        <Icon className="w-5 h-5 text-emerald-300" />
+                                    </div>
+                                    <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-300 transition-colors" />
+                                </div>
+                                <p className="text-white font-semibold">{s.label}</p>
+                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">{s.desc}</p>
+                            </button>
+                        );
+                    })}
+                </div>
+            ) : !current ? (
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {sezioniVisibili.map((s) => {
                         const Icon = s.icon;
@@ -1714,6 +1763,34 @@ function baseName(name: string): string {
     return name.replace(/ (W3|Multi|VS)$/, "");
 }
 
+// Brand trattati dal punto vendita (mig. 112): alimentano le comunicazioni
+// mirate per brand ("chi sta in un negozio che tratta X"). Click = attiva/
+// spegni, salvataggio immediato; i "Multi" ne accendono piu' d'uno.
+function BrandChipsNegozio({ store, onRefresh }: { store: Store; onRefresh: () => void }) {
+    const [busy, setBusy] = useState(false);
+    const attivi = Array.isArray(store.brands) ? store.brands : [];
+    const toggle = async (b: string) => {
+        if (busy) return;
+        setBusy(true);
+        const next = attivi.includes(b) ? attivi.filter((x) => x !== b) : [...attivi, b];
+        const { error } = await supabase.from("stores").update({ brands: next }).eq("id", store.id);
+        setBusy(false);
+        if (error) { alert(/column/i.test(error.message) ? "Brand del negozio non ancora attivi sul database (mig. 112 da applicare)." : error.message); return; }
+        onRefresh();
+    };
+    return (
+        <div className="flex flex-wrap gap-1 mt-2" onClick={(e) => e.stopPropagation()}
+            title="Brand trattati dal negozio: servono alle comunicazioni mirate per brand">
+            {BRANDS.map((b) => (
+                <button key={b} type="button" onClick={() => toggle(b)} disabled={busy}
+                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider border transition-colors ${attivi.includes(b) ? "border-sky-400/60 bg-sky-500/15 text-sky-200" : "border-white/10 text-slate-600 hover:text-slate-400"}`}>
+                    {b}
+                </button>
+            ))}
+        </div>
+    );
+}
+
 function StoresView({ stores, onRefresh, month, livePeople }: { stores: Store[]; onRefresh: () => void; month: string; livePeople: boolean }) {
     const [detail, setDetail] = useState<Store | null>(null);
     const [aggregate, setAggregate] = useState<{ base: string; stores: Store[] } | null>(null);
@@ -1771,17 +1848,20 @@ function StoresView({ stores, onRefresh, month, livePeople }: { stores: Store[];
                     if (subs.length === 1) {
                         const s = subs[0];
                         return (
-                            <div key={s.id} className="glass-card p-4 rounded-xl flex items-center gap-3 hover:bg-white/[0.04] transition-colors">
-                                <button onClick={() => setDetail(s)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                                    <div className="w-10 h-10 rounded-lg bg-indigo-500/15 flex items-center justify-center shrink-0">
-                                        <StoreIcon className="w-5 h-5 text-indigo-400" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <p className="text-white font-medium truncate">{s.name}</p>
-                                        <p className="text-xs text-slate-500">{s.company || "—"}</p>
-                                    </div>
-                                </button>
-                                {renderDel(s.id)}
+                            <div key={s.id} className="glass-card p-4 rounded-xl hover:bg-white/[0.04] transition-colors">
+                                <div className="flex items-center gap-3">
+                                    <button onClick={() => setDetail(s)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                                        <div className="w-10 h-10 rounded-lg bg-indigo-500/15 flex items-center justify-center shrink-0">
+                                            <StoreIcon className="w-5 h-5 text-indigo-400" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-white font-medium truncate">{s.name}</p>
+                                            <p className="text-xs text-slate-500">{s.company || "—"}</p>
+                                        </div>
+                                    </button>
+                                    {renderDel(s.id)}
+                                </div>
+                                <BrandChipsNegozio store={s} onRefresh={onRefresh} />
                             </div>
                         );
                     }
@@ -1806,12 +1886,15 @@ function StoresView({ stores, onRefresh, month, livePeople }: { stores: Store[];
                                         <ChevronRight className="w-4 h-4 text-slate-600 ml-auto" />
                                     </button>
                                     {subs.map((s) => (
-                                        <div key={s.id} className="w-full px-4 py-2.5 flex items-center gap-2 text-sm text-slate-200 hover:bg-white/[0.04] transition-colors">
-                                            <button onClick={() => setDetail(s)} className="flex-1 text-left flex items-center gap-2">
-                                                {s.name}
-                                                <ChevronRight className="w-4 h-4 text-slate-600 ml-auto" />
-                                            </button>
-                                            {renderDel(s.id)}
+                                        <div key={s.id} className="w-full px-4 py-2.5 text-sm text-slate-200 hover:bg-white/[0.04] transition-colors">
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={() => setDetail(s)} className="flex-1 text-left flex items-center gap-2">
+                                                    {s.name}
+                                                    <ChevronRight className="w-4 h-4 text-slate-600 ml-auto" />
+                                                </button>
+                                                {renderDel(s.id)}
+                                            </div>
+                                            <BrandChipsNegozio store={s} onRefresh={onRefresh} />
                                         </div>
                                     ))}
                                 </div>
