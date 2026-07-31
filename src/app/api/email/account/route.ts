@@ -52,6 +52,29 @@ export async function POST(request: Request) {
                 const { data: ow } = await supabase.from("app_users").select("primary_store").eq("id", b.ownerUserId).maybeSingle();
                 negozio = ow?.primary_store || null;
             }
+
+            // Se la casella e' GIA' collegata (stesso indirizzo), la RI-collego invece
+            // di fallire con "duplicate key ...email_address_key": aggiorno credenziali
+            // e impostazioni. Cosi' "Collega" vale anche come "ri-collega" (es. password
+            // cambiata o casella riassegnata). last_uid resta invariato -> niente
+            // re-import della posta gia' scaricata.
+            const { data: existing } = await supabase.from("email_accounts")
+                .select("id").eq("email_address", email).maybeSingle();
+            if (existing) {
+                const upd: any = {
+                    username: acc.username, pass_enc: acc.pass_enc,
+                    imap_host: acc.imap_host, imap_port: acc.imap_port,
+                    smtp_host: acc.smtp_host, smtp_port: acc.smtp_port,
+                    negozio, owner_user_id: b.ownerUserId || null, status: "attiva", last_error: null,
+                };
+                if (acc.display_name) upd.display_name = acc.display_name;
+                const { data, error } = await supabase.from("email_accounts")
+                    .update(upd).eq("id", existing.id)
+                    .select("id, email_address, negozio, display_name, status").single();
+                if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+                return NextResponse.json({ ok: true, account: data, reconnected: true });
+            }
+
             const { data, error } = await supabase.from("email_accounts").insert({
                 ...acc, negozio, owner_user_id: b.ownerUserId || null, status: "attiva",
             }).select("id, email_address, negozio, display_name, status").single();

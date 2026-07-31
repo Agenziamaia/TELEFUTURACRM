@@ -517,6 +517,7 @@ function ConnectModal({ onClose, ownerUserId, negozio }: { onClose: () => void; 
         const res = await api("/api/email/account", { action: "connect", email: email.trim(), password, displayName: display.trim() || null, negozio, ownerUserId, imapHost: imapHost || undefined, smtpHost: smtpHost || undefined });
         setBusy(false);
         if (res?.error) { alert(res.error); return; }
+        if (res?.reconnected) alert("Questa casella era già collegata: l'ho ri-collegata con le credenziali appena inserite.");
         onClose();
     };
     return (
