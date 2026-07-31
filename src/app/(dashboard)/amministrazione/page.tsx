@@ -212,6 +212,13 @@ function AmministrazioneInner() {
     const { roles: allRoles } = useRoles();
     const hubAmm = hubByHref("/amministrazione")!;
     const sezOk = (id: string) => {
+        // le tre sezioni del mini-hub Costi sono SUB della voce "costi" (nav):
+        // le chiavi di permesso sono quelle sub (&tab=..., migrate con mig. 115)
+        if (COSTI_IDS.includes(id)) {
+            const costiChild = hubAmm.children.find((c) => c.sez === "costi");
+            const sub = costiChild?.subs?.find((x) => x.id === id);
+            return costiChild && sub ? effectiveAllowed(user?.role, hubSubKey(hubAmm, costiChild, id), sub.roles, perms) : true;
+        }
         const child = hubAmm.children.find((c) => c.sez === id);
         return child ? effectiveAllowed(user?.role, hubChildKey(hubAmm, child), child.roles ?? hubAmm.roles, perms) : true;
     };

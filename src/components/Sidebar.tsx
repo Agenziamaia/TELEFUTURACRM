@@ -43,7 +43,7 @@ Pin, PinOff,
 
 // Struttura menù + logica permessi: fonte unica in src/lib/nav.ts
 // (amministrabile da Amministrazione → Permessi, tabella role_permissions).
-import { NAVIGATION, effectiveAllowed, hubChildKey, groupKey, type NavHub, type NavEntry } from "@/lib/nav";
+import { NAVIGATION, effectiveAllowed, hubChildKey, hubSubKey, groupKey, type NavHub, type NavHubChild, type NavEntry } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
 
 interface SidebarProps {
@@ -328,7 +328,15 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
     const { perms } = useRolePermissions(user?.role);
     // Le sezioni interne dell'hub seguono i permessi (default: roles del child,
     // o quelli dell'hub se il child non li dichiara) — amministrabili una a una.
-    hub = { ...hub, children: hub.children.filter((c) => effectiveAllowed(user?.role, hubChildKey(hub, c), c.roles ?? hub.roles, perms)) };
+    // Una voce "esplodi" (mini-hub Costi) resta visibile se ALMENO UNA delle
+    // sue sotto-voci e' permessa, anche quando la voce madre non lo e'.
+    const subOk = (c: NavHubChild, subId: string, subRoles: string[]) =>
+        effectiveAllowed(user?.role, hubSubKey(hub, c, subId), subRoles, perms);
+    hub = {
+        ...hub, children: hub.children.filter((c) =>
+            effectiveAllowed(user?.role, hubChildKey(hub, c), c.roles ?? hub.roles, perms)
+            || (c.esplodi && (c.subs ?? []).some((s) => subOk(c, s.id, s.roles)))),
+    };
     const pathname = usePathname();
     const searchParams = useSearchParams();
     const param = hub.param || "sez";
@@ -336,6 +344,47 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
     return (
         <div className="pl-4 ml-2 border-l border-white/10 space-y-0.5">
             {hub.children.map((c) => {
+                // ── voce ESPANDIBILE (mini-hub): link madre + sotto-voci
+                // dirette a ?sez=<id>, aperte quando ci sei dentro ──
+                if (c.esplodi && c.subs?.length) {
+                    const subsVisibili = c.subs.filter((s) => subOk(c, s.id, s.roles));
+                    const dentro = sez === c.sez || subsVisibili.some((s) => s.id === sez);
+                    const ChildIcon = c.icon;
+                    return (
+                        <div key={c.sez}>
+                            <Link
+                                href={`${hub.href}?${param}=${c.sez}`}
+                                onClick={onNavigate}
+                                className={cn(
+                                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+                                    sez === c.sez ? "bg-indigo-500/15 text-indigo-300" : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
+                                )}
+                            >
+                                {ChildIcon && <ChildIcon className={cn("w-4 h-4", dentro ? "text-indigo-400" : "text-slate-500")} />}
+                                {c.name}
+                                <span className="ml-auto">{dentro ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}</span>
+                            </Link>
+                            {dentro && (
+                                <div className="pl-4 ml-2 border-l border-white/10 space-y-0.5">
+                                    {subsVisibili.map((s) => (
+                                        <Link
+                                            key={s.id}
+                                            href={`${hub.href}?${param}=${s.id}`}
+                                            onClick={onNavigate}
+                                            className={cn(
+                                                "flex items-center gap-3 px-3 py-1.5 rounded-lg text-[13px] transition-colors",
+                                                sez === s.id ? "bg-indigo-500/15 text-indigo-300" : "text-slate-400 hover:bg-white/5 hover:text-slate-200",
+                                            )}
+                                        >
+                                            <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", sez === s.id ? "bg-indigo-400" : "bg-slate-600")} />
+                                            {s.name}
+                                        </Link>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
                 const isActive = sez === c.sez;
                 const ChildIcon = c.icon;
                 return (

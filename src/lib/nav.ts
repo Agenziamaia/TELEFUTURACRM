@@ -27,7 +27,10 @@ export type NavLink = { name: string; href: string; icon: NavIcon; roles: string
 export type NavGroup = { type: "group"; label: string; icon: NavIcon; roles?: string[]; children: NavLink[] };
 export type NavItem = { type: "link"; name: string; href: string; icon: NavIcon; roles: string[] };
 export type NavHubSub = { id: string; name: string; roles: string[] };
-export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string; roles?: string[]; subs?: NavHubSub[] };
+// esplodi: la voce si apre nella sidebar mostrando le subs come sotto-link
+// diretti a ?sez=<sub.id> (mini-hub Costi, Luca 31/07); le subs restano
+// amministrabili una a una dalla pagina Permessi (chiavi hubSubKey).
+export type NavHubChild = { name: string; sez: string; icon?: NavIcon; color?: string; roles?: string[]; subs?: NavHubSub[]; esplodi?: boolean };
 export type NavHub = { type: "hub"; name: string; href: string; param?: string; icon: NavIcon; roles: string[]; children: NavHubChild[] };
 export type NavEntry = NavGroup | NavItem | NavHub;
 
@@ -130,9 +133,17 @@ export const NAVIGATION: NavEntry[] = [
             // PRIMA di Utenti: i sez (e quindi le chiavi di permesso) restano
             // quelli storici — negozi, condivisi, altri — concessi uno a uno.
             { name: "Regole Usato", sez: "usato", icon: Smartphone, roles: ["admin", "dev"] },
-            { name: "Costi · Negozi", sez: "negozi", icon: Store, roles: ["admin", "dev"] },
-            { name: "Costi · Condivisi", sez: "condivisi", icon: Building2, roles: ["admin", "dev"] },
-            { name: "Costi · Altri", sez: "altri", icon: Tag, roles: ["admin", "dev"] },
+            // MINI-HUB Costi (Luca 31/07): UNA voce che si esplode nelle tre
+            // sezioni — permessi granulari per sub (chiavi &tab=..., mig. 115
+            // ha migrato le vecchie chiavi ?sez=negozi|condivisi|altri)
+            {
+                name: "Costi", sez: "costi", icon: Store, roles: ["admin", "dev"], esplodi: true,
+                subs: [
+                    { id: "negozi", name: "Negozi", roles: ["admin", "dev"] },
+                    { id: "condivisi", name: "Costi condivisi", roles: ["admin", "dev"] },
+                    { id: "altri", name: "Altri costi", roles: ["admin", "dev"] },
+                ],
+            },
             {
                 name: "Utenti", sez: "utenti", icon: Users, roles: [...ADMINS, "amministrativo"],
                 subs: [
