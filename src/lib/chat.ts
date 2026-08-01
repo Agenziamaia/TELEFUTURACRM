@@ -318,6 +318,20 @@ export async function sendMessage(
   }
 }
 
+/** Invia una GIF scelta dal picker (Giphy): si allega la URL direttamente,
+ *  senza upload — l'img la anima come una GIF (mime image/gif). */
+export async function sendGif(convId: string, meId: string, gifUrl: string): Promise<void> {
+  const { data: msg, error } = await supabase
+    .from("chat_messages")
+    .insert({ conversation_id: convId, sender_id: meId, body: null })
+    .select("id")
+    .single();
+  if (error) throw error;
+  const { error: aErr } = await supabase.from("chat_attachments")
+    .insert({ message_id: msg.id, url: gifUrl, name: "GIF", mime: "image/gif" });
+  if (aErr) throw aErr;
+}
+
 /**
  * Segna letto usando l'orologio del SERVER (RPC), non quello del browser:
  * con clock skew il segnalibro poteva restare indietro rispetto ai messaggi

@@ -9,7 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
 import {
-  getInbox, listMessages, getParticipants, sendMessage, markRead,
+  getInbox, listMessages, getParticipants, sendMessage, sendGif, markRead,
   subscribeMessages, subscribeInbox, subscribeReceipts, subscribeReactions, toggleReaction, refHref,
   splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
   listDirectory, addParticipants, removeParticipant,
@@ -84,6 +84,36 @@ function ChatPageInner() {
     try { await toggleReaction(msgId, meId!, meName, emoji); await reloadMessages(selId!); }
     catch (e) { alert((e as Error)?.message || "Reazione non riuscita"); }
   };
+  // GIF (picker Giphy) — richiesta Francesco. La chiave sta SOLO lato server
+  // (/api/gif/search); selezionando una GIF la invio come allegato.
+  const [showGif, setShowGif] = useState(false);
+  const [gifQuery, setGifQuery] = useState("");
+  const [gifItems, setGifItems] = useState<{ id: string; preview: string; gif: string }[]>([]);
+  const [gifLoading, setGifLoading] = useState(false);
+  const [gifErr, setGifErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!showGif) return;
+    setGifLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch("/api/gif/search?q=" + encodeURIComponent(gifQuery.trim())).then((x) => x.json());
+        setGifItems(r.items || []); setGifErr(r.error || null);
+      } catch { setGifErr("Errore nel caricamento GIF"); setGifItems([]); }
+      finally { setGifLoading(false); }
+    }, gifQuery ? 350 : 0);
+    return () => clearTimeout(t);
+  }, [showGif, gifQuery]);
+  const inviaGif = async (gifUrl: string) => {
+    if (!selId || !meId) return;
+    setShowGif(false); setGifQuery("");
+    try { await sendGif(selId, meId, gifUrl); await reloadMessages(selId); }
+    catch (e) { alert((e as Error)?.message || "Invio GIF non riuscito"); }
+  };
+  // il tasto GIF compare solo se il server ha la chiave Giphy configurata
+  const [gifEnabled, setGifEnabled] = useState(false);
+  useEffect(() => {
+    fetch("/api/gif/search?check=1").then((r) => r.json()).then((r) => setGifEnabled(!!r.enabled)).catch(() => { });
+  }, []);
   const isAdmin = !!user && (seesAllStores(user.role) || user.role === "dev");
   // "Devo poter vedere i membri di un gruppo. Visibilita' dal manager in su" (Luca):
   // store manager, direzioni di area e chi vede tutti i negozi.
@@ -680,7 +710,7 @@ function ChatPageInner() {
                 </button>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
                 <span className="relative shrink-0">
-                  <button type="button" title="Emoji" onClick={() => setShowEmoji(v => !v)}
+                  <button type="button" title="Emoji" onClick={() => { setShowEmoji(v => !v); setShowGif(false); }}
                     className={`p-2 rounded-lg transition-colors ${showEmoji ? "text-amber-300 bg-white/10" : "text-slate-400 hover:text-amber-300 hover:bg-white/10"}`}>
                     <Smile className="w-5 h-5" />
                   </button>
@@ -695,6 +725,33 @@ function ChatPageInner() {
                     </div>
                   )}
                 </span>
+                {/* GIF picker (Giphy) — richiesta Francesco. Solo se la chiave è configurata */}
+                {gifEnabled && <span className="relative shrink-0">
+                  <button type="button" title="GIF" onClick={() => { setShowGif(v => !v); setShowEmoji(false); }}
+                    className={`px-2 py-1.5 rounded-lg text-[11px] font-black tracking-wide transition-colors ${showGif ? "text-fuchsia-300 bg-white/10" : "text-slate-400 hover:text-fuchsia-300 hover:bg-white/10"}`}>
+                    GIF
+                  </button>
+                  {showGif && (
+                    <div className="absolute bottom-full mb-2 left-0 z-40 w-80 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl p-2">
+                      <input autoFocus value={gifQuery} onChange={(e) => setGifQuery(e.target.value)} placeholder="Cerca una GIF…"
+                        className="glass-input w-full h-9 text-sm mb-2" />
+                      <div className="max-h-64 overflow-y-auto">
+                        {gifErr ? <p className="text-xs text-slate-500 p-4 text-center">{gifErr}</p>
+                          : gifLoading && gifItems.length === 0 ? <p className="text-xs text-slate-500 p-4 text-center">Carico…</p>
+                            : gifItems.length === 0 ? <p className="text-xs text-slate-500 p-4 text-center">Nessuna GIF.</p>
+                              : <div className="grid grid-cols-2 gap-1.5">
+                                {gifItems.map((g) => (
+                                  <button key={g.id} type="button" onClick={() => inviaGif(g.gif)}
+                                    className="rounded-lg overflow-hidden hover:ring-2 hover:ring-fuchsia-400/60 bg-black/30">
+                                    <img src={g.preview || g.gif} alt="gif" loading="lazy" className="w-full h-24 object-cover" />
+                                  </button>
+                                ))}
+                              </div>}
+                      </div>
+                      <p className="text-[9px] text-slate-600 text-right mt-1 pr-1">via GIPHY</p>
+                    </div>
+                  )}
+                </span>}
                 <textarea value={text} onChange={onTextChange} onPaste={onPaste}
                   onKeyDown={(e) => {
                     if (mention && mentionRows.length > 0) {
