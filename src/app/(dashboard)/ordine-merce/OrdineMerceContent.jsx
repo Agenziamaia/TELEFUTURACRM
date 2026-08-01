@@ -6,6 +6,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 // chiudere/ricaricare la pagina SENZA inviare l'ordine, e riprenderlo piu' tardi.
 const CART_STORAGE_KEY = "ordine-merce-cart-v1";
 import { supabase } from "@/lib/supabaseClient";
+import { brandsDispositivi, modelliDispositivi } from "@/lib/dispositivi";
 import { useStores } from "@/lib/org";
 import { useAuth } from "@/context/AuthContext";
 import { sameStore } from "@/lib/visibleStores";
@@ -463,6 +464,30 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [coverBrand, setCoverBrand] = useState(null);
   const [coverModel, setCoverModel] = useState(null);
   const [coverSearch, setCoverSearch] = useState("");
+  // CATALOGO DISPOSITIVI UNIVERSALE (Luca 02/08, mig. 133): marche e modelli
+  // delle cover dalla fonte unica quando la tabella e' popolata; le liste
+  // cablate qui sopra restano il ripiego. I modelli si caricano alla scelta
+  // della marca; gli id db usano il prefisso "db:".
+  const [coverBrandsDb, setCoverBrandsDb] = useState(null);
+  const [coverModelsDb, setCoverModelsDb] = useState({});
+  useEffect(() => {
+    let vivo = true;
+    brandsDispositivi("smartphone", []).then(brands => {
+      if (!vivo || !brands.length) return;
+      const noti = new Map(PHONE_BRANDS.map(pb => [pb.name.toLowerCase(), pb.color]));
+      setCoverBrandsDb(brands.slice(0, 30).map(b => ({ id: "db:" + b, name: b, color: noti.get(b.toLowerCase()) || "#64748b" })));
+    }).catch(() => { /* ripiego cablato */ });
+    return () => { vivo = false; };
+  }, []);
+  useEffect(() => {
+    if (!coverBrand || !String(coverBrand).startsWith("db:") || coverModelsDb[coverBrand]) return;
+    let vivo = true;
+    modelliDispositivi("smartphone", String(coverBrand).slice(3), []).then(mods => {
+      if (vivo) setCoverModelsDb(p => ({ ...p, [coverBrand]: mods.map(m => ({ id: coverBrand + ":" + m, name: m })) }));
+    }).catch(() => { /* ripiego cablato */ });
+    return () => { vivo = false; };
+  }, [coverBrand, coverModelsDb]);
+  const coverBrandList = coverBrandsDb || COVER_BRANDS;
   const [activeExtraCat, setActiveExtraCat] = useState(null);
   const [itemSearch, setItemSearch] = useState("");
   const [extraSearchAll, setExtraSearchAll] = useState("");   // ricerca su TUTTI gli Extra (Luca 01/08 sera)
@@ -1115,8 +1140,8 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                       <div style={{ marginTop: 10 }}>
                         <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Seleziona Marca Telefono:</p>
                         <div style={s.chipRow}>
-                          {COVER_BRANDS.map(pb => {
-                            const models = PHONE_CATALOG[pb.id];
+                          {coverBrandList.map(pb => {
+                            const models = String(pb.id).startsWith("db:") ? [true] : PHONE_CATALOG[pb.id];
                             if (!models || models.length === 0) return null;
                             return (
                               <div key={pb.id} style={{
@@ -1131,7 +1156,8 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                           })}
                         </div>
                         {coverBrand && (() => {
-                          const allModels = PHONE_CATALOG[coverBrand] || [];
+                          const daDb = String(coverBrand).startsWith("db:");
+                          const allModels = daDb ? (coverModelsDb[coverBrand] || []) : (PHONE_CATALOG[coverBrand] || []);
                           const filtered = coverSearch ? allModels.filter(m => m.name.toLowerCase().includes(coverSearch.toLowerCase())) : allModels;
                           return (
                             <div style={{ marginTop: 10 }}>
@@ -1139,7 +1165,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                                 placeholder="🔍 Cerca modello..." value={coverSearch} onChange={e => setCoverSearch(e.target.value)} />
                               <div style={{ borderRadius: 8, border: `1px solid ${C.border}`, overflow: "hidden", maxHeight: 300, overflowY: "auto" }}>
                                 {filtered.map(model => {
-                                  const brandName = COVER_BRANDS.find(b => b.id === coverBrand)?.name || coverBrand;
+                                  const brandName = coverBrandList.find(b => b.id === coverBrand)?.name || coverBrand;
                                   const coverName = `Cover ${brandName} ${model.name}`;
                                   const existing = cartHas(coverName, "prodotti", undefined, undefined, "cover", undefined);
                                   const findIdx = () => cart.findIndex(c => cartKey(c) === cartKey({ name: coverName, cat: "prodotti", subCat: "cover" }));
@@ -1150,16 +1176,16 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                                         <div style={s.qtyControl}>
                                           <button style={s.qtyBtn} onClick={() => { const idx = findIdx(); if (idx >= 0) updateCartQty(idx, existing.qty - 1); }}>−</button>
                                           <input style={s.qtyInput} value={existing.qty} onChange={e => { const idx = findIdx(); if (idx >= 0) updateCartQty(idx, e.target.value); }} />
-                                          <button style={s.qtyBtn} onClick={() => addToCart({ name: coverName, cat: "prodotti", subCat: "cover", coverBrand, coverModel: model.name })}>+</button>
+                                          <button style={s.qtyBtn} onClick={() => addToCart({ name: coverName, cat: "prodotti", subCat: "cover", coverBrand: brandName, coverModel: model.name })}>+</button>
                                         </div>
                                       ) : (
                                         <button style={{ ...s.btn, padding: "4px 12px", fontSize: 11, background: "transparent", border: `1px solid ${C.border}`, color: C.textSec }}
-                                          onClick={() => addToCart({ name: coverName, cat: "prodotti", subCat: "cover", coverBrand, coverModel: model.name })}>+ Aggiungi</button>
+                                          onClick={() => addToCart({ name: coverName, cat: "prodotti", subCat: "cover", coverBrand: brandName, coverModel: model.name })}>+ Aggiungi</button>
                                       )}
                                     </div>
                                   );
                                 })}
-                                {filtered.length === 0 && <p style={{ padding: 12, fontSize: 12, color: C.grayLight, textAlign: "center" }}>Nessun modello trovato</p>}
+                                {filtered.length === 0 && <p style={{ padding: 12, fontSize: 12, color: C.grayLight, textAlign: "center" }}>{daDb && !coverModelsDb[coverBrand] ? "Carico i modelli\u2026" : "Nessun modello trovato"}</p>}
                               </div>
                             </div>
                           );
