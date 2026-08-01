@@ -78,6 +78,7 @@ function ChatPageInner() {
     "📱","💻","📞","📧","📎","📌","🗓️","⏰","🛒","📦","🚚","🔧","🧩","🏪","☕","🍕",
   ];
   const [reactFor, setReactFor] = useState<string | null>(null);   // msg col menu reazioni aperto
+  const [reactPickerFor, setReactPickerFor] = useState<string | null>(null);   // msg col picker COMPLETO aperto
   const [showEmoji, setShowEmoji] = useState(false);               // picker nel compositore
   // "segna come da leggere": il badge torna e la chat si deseleziona (se
   // restasse aperta si ri-segnerebbe letta da sola)
@@ -607,16 +608,29 @@ function ChatPageInner() {
                 const btnReagisci = (
                   <span className="relative shrink-0">
                     <button type="button" title="Reagisci"
-                      onClick={() => setReactFor(reactFor === m.id ? null : m.id)}
+                      onClick={() => { setReactPickerFor(null); setReactFor(reactFor === m.id ? null : m.id); }}
                       className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-white/10 transition-opacity">
                       <SmilePlus className="w-4 h-4" />
                     </button>
-                    {reactFor === m.id && (
+                    {reactFor === m.id && !reactPickerFor && (
                       <div className={`absolute bottom-full mb-1 z-30 flex gap-0.5 px-1.5 py-1 rounded-full bg-[#171622] border border-white/15 shadow-2xl ${mine ? "right-0" : "left-0"}`}>
                         {QUICK_REACTIONS.map((e) => (
                           <button key={e} type="button" onClick={() => onReact(m.id, e)}
                             className="text-lg leading-none p-1 rounded-full hover:bg-white/10 hover:scale-125 transition-transform">{e}</button>
                         ))}
+                        {/* + = qualsiasi emoji (Luca 02/08): apre la griglia completa */}
+                        <button type="button" title="Tutte le emoji" onClick={() => setReactPickerFor(m.id)}
+                          className="text-sm font-black leading-none px-1.5 rounded-full text-slate-300 hover:bg-white/10">＋</button>
+                      </div>
+                    )}
+                    {reactFor === m.id && reactPickerFor === m.id && (
+                      <div className={`absolute bottom-full mb-1 z-30 w-64 max-h-48 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl ${mine ? "right-0" : "left-0"}`}>
+                        <div className="grid grid-cols-8 gap-0.5">
+                          {EMOJI_SET.map((e) => (
+                            <button key={e} type="button" onClick={() => { setReactPickerFor(null); onReact(m.id, e); }}
+                              className="text-lg leading-none p-1 rounded-lg hover:bg-white/10">{e}</button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </span>

@@ -2926,17 +2926,18 @@ const _sceltaVals=(nome,categoria)=>{
 // Restano da chiedere solo IMEI, modello, importo rata e codice pratica.
 const MOBILE_CATS_AGGANCIO=["Mobile Wallet","Mobile Ric. Auto"];
 const _numeroMobile=(v)=>String(v["Numero di Cellulare"]||v["Numero Definitivo"]||v["Numero Provvisorio"]||"").trim();
-const mobiliAgganciabili=(group,catSales,cart,brandId)=>{
+const mobiliAgganciabili=(cats,sales,cart,brandId)=>{
   const out=[];
-  // selezione corrente (stesso macro-gruppo: mobile e telefono a rate convivono)
-  (catSales||[]).forEach((row,ri)=>{if(!row)return;(group.subs||[]).forEach(s2=>{
+  // selezione corrente: TUTTI i gruppi (il mobile sta in "Mobile Ric. Auto"/
+  // "Mobile Wallet", il telefono a rate in un ALTRO gruppo)
+  (cats||[]).forEach(g=>((sales||{})[g.id]||[]).forEach((row,ri)=>{if(!row)return;(g.subs||[]).forEach(s2=>{
     const d=row[s2.id];if(!(d&&d.active)||!s2.isCatalogo)return;
     if(!MOBILE_CATS_AGGANCIO.includes(s2.catCategoria))return;
     const f=d.fields||{};
     const codice=String(f["Codice Contratto"]||"").trim();
     const numero=_numeroMobile(f);
     if(codice||numero)out.push({etichetta:`${s2.catProdotto} #${ri+1}${numero?" · "+numero:""}`,codice,numero});
-  });});
+  });}));
   // mobile gia' nel CARRELLO dello stesso brand
   (cart||[]).forEach(gr=>{if(gr.brandId!==brandId)return;(gr.items||[]).forEach(it=>{
     if(!MOBILE_CATS_AGGANCIO.includes(it.catalogo?.categoria))return;
@@ -3172,7 +3173,7 @@ const subBadge=(d,dupFn,sub,missing)=>{
   return {st:"ok",label:"✓ Completo",bg:"rgba(40,167,69,0.12)",fg:"#28a745"};
 };
 
-const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,onOpenVFModal,dupCheck,cartAggancio,brandId}) => {
+const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,onOpenVFModal,dupCheck,mobiliRate}) => {
   const _r = rawSd || {};
   const sd = {active:true,fields:_r.fields||{},contract:_r.contract||{},gnp:_r.gnp||false,gnpNum:_r.gnpNum||"",gnpOp:_r.gnpOp||"",secondaLinea:_r.secondaLinea||false,gnp2L:_r.gnp2L!=null?_r.gnp2L:null,gnp2LBrand:_r.gnp2LBrand||"",gnp2LNum:_r.gnp2LNum||"",domiciliazione:_r.domiciliazione||false,opProvenienza:_r.opProvenienza||"",codiceOverride:_r.codiceOverride||"",addons:_r.addons||{},domiciliato:_r.domiciliato!=null?_r.domiciliato:null,convergente:_r.convergente!=null?_r.convergente:null,tipMob:_r.tipMob!=null?_r.tipMob:null,mnp:_r.mnp!=null?_r.mnp:null,easyPay:_r.easyPay!=null?_r.easyPay:null,tnpGa:_r.tnpGa!=null?_r.tnpGa:null,tnpTipo:_r.tnpTipo||"",tnpModello:_r.tnpModello||"",tnpImei:_r.tnpImei||"",tnpCount:_r.tnpCount||null,tnpModelli:_r.tnpModelli||[],tnpImeis:_r.tnpImeis||[],packAccessori:_r.packAccessori!=null?_r.packAccessori:null,packAccessoriVal:_r.packAccessoriVal||"",packAccessoriQta:_r.packAccessoriQta||"",cbTnp:_r.cbTnp||false,cbTnpTipo:_r.cbTnpTipo||"",cbTnpModello:_r.cbTnpModello||"",cbTnpImei:_r.cbTnpImei||"",cbTnpCount:_r.cbTnpCount||null,cbTnpModelli:_r.cbTnpModelli||[],cbTnpImeis:_r.cbTnpImeis||[],cbPackAccessori:_r.cbPackAccessori!=null?_r.cbPackAccessori:null,cbPackAccessoriVal:_r.cbPackAccessoriVal||"",cbPackAccessoriQta:_r.cbPackAccessoriQta||"",cbTnpCell:_r.cbTnpCell||"",cbTnpCC:_r.cbTnpCC||"",cbTnpCodIns:_r.cbTnpCodIns||"",cbTnpReload:_r.cbTnpReload!=null?_r.cbTnpReload:null,cbTnpReloadSel:_r.cbTnpReloadSel||{},cbCambio:_r.cbCambio||false,cbCambioVal:_r.cbCambioVal||"",cbCambioCell:_r.cbCambioCell||"",cbCambioCC:_r.cbCambioCC||"",cbCambioCodIns:_r.cbCambioCodIns||"",cbAddon:_r.cbAddon||false,cbAddonSel:_r.cbAddonSel||{},rfModello:_r.rfModello||"",rfImei:_r.rfImei||"",cbRf:_r.cbRf||false,cbAddonCodIns:_r.cbAddonCodIns||"",cbAddonSecCell:_r.cbAddonSecCell||"",cbAddonRoCell:_r.cbAddonRoCell||"",cbAddonRoImei:_r.cbAddonRoImei||"",cbRfCodIns:_r.cbRfCodIns||"",tnpGaReload:_r.tnpGaReload!=null?_r.tnpGaReload:null,tnpGaReloadSel:_r.tnpGaReloadSel||{},reloadForever:_r.reloadForever!=null?_r.reloadForever:null,securitySel:_r.securitySel||{},voceCasaCb:_r.voceCasaCb!=null?_r.voceCasaCb:null,protectaCodIns:_r.protectaCodIns||"",vfOffers:_r.vfOffers||{},vfContratti:_r.vfContratti||{},vfOffer:_r.vfOffer||null,vfMnp:_r.vfMnp||null,vfMnpBrand:_r.vfMnpBrand||"",vfMnpNum:_r.vfMnpNum||"",vfDomicilio:_r.vfDomicilio||null,vfConvergenza:_r.vfConvergenza||null,vfNumFisso:_r.vfNumFisso||"",vfTnp:_r.vfTnp||null,vfFConvergenza:_r.vfFConvergenza||null,vfFGnp:_r.vfFGnp||null,vfFGnpBrand:_r.vfFGnpBrand||"",vfFGnpNum:_r.vfFGnpNum||"",vfFLockIn:_r.vfFLockIn||null,
     vfTnpList:_r.vfTnpList||[],cbTnpList:_r.cbTnpList||[],
@@ -3222,7 +3223,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
         {_bd&&<span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999,background:_bd.bg,color:_bd.fg,whiteSpace:"nowrap"}}>{_bd.label}</span>}
       </div>
 
-      {sub.isCatalogo&&<CatalogoSub sub={sub} sd={sd} uF={uF} gid={group.id} si={si} sc={sessionCode} color={group.color} mobili={sub.catCategoria==="Telefono a Rate"?mobiliAgganciabili(group,catSales,cartAggancio,brandId):[]}/>}
+      {sub.isCatalogo&&<CatalogoSub sub={sub} sd={sd} uF={uF} gid={group.id} si={si} sc={sessionCode} color={group.color} mobili={sub.catCategoria==="Telefono a Rate"?(mobiliRate||[]):[]}/>}
 
       {/* MOBILE flow: Tipologia → MNP → EasyPay → Dropdown */}
       {sub.isMobile&&(
@@ -4169,6 +4170,8 @@ export default function CRM() {
     return items;
   },[cats,sales,sesCode]);
 
+  // candidati per l'aggancio del telefono a rate: TUTTA la selezione + carrello
+  const mobiliAggancioRate=mobiliAgganciabili(cats,sales,cart,brand);
   const podPdrMap=(()=>{const map={};const scan=(so)=>{if(!so)return;Object.keys(so).forEach(cat=>{(so[cat]||[]).forEach(row=>{if(!row||typeof row!=="object")return;Object.keys(row).forEach(sid=>{const d=row[sid];if(!d||typeof d!=="object")return;const add=(t,val)=>{if(val&&String(val).trim()){const k=t+":"+String(val).trim().toUpperCase();map[k]=(map[k]||0)+1;}};add("POD",d.fwPod);add("PDR",d.fwPdr);add("POD",d.enPod);add("PDR",d.enPdr);// Codice contratto ripetuto fra piu' prodotti dello stesso brand (segnalazione 17):
                      // prima passava senza alcun avviso.
                      if(d.contract){add("POD",d.contract.pod);add("PDR",d.contract.pdr);}// Segnalazione 28: dentro UN prodotto lo stesso codice puo' comparire piu' volte
@@ -5240,7 +5243,7 @@ export default function CRM() {
               {group.subs.map(sub=><button key={sub.id} onClick={()=>togSub(group.id,si,sub.id,group.radio?group.subs.map(s=>s.id):null)} style={{padding:"13px 28px",borderRadius:10,border:(sale[sub.id]&&sale[sub.id].active)?"2px solid "+group.color:"2px solid rgba(255,255,255,0.1)",background:(sale[sub.id]&&sale[sub.id].active)?group.color:"rgba(255,255,255,0.04)",color:(sale[sub.id]&&sale[sub.id].active)?"#fff":"#8892b0",cursor:"pointer",fontSize:13,fontWeight:700}}>{sub.title}</button>)}
             </div>
             {group.subs.filter(sub=>sale[sub.id]&&sale[sub.id].active).map(sub=>
-              <SubCard key={sub.id} sub={sub} rawSd={sale[sub.id]||{}} group={group} si={si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} cartAggancio={cart} brandId={brand}/>
+              <SubCard key={sub.id} sub={sub} rawSd={sale[sub.id]||{}} group={group} si={si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} mobiliRate={mobiliAggancioRate}/>
             )}
           </div>)}
         </div>;})}

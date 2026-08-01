@@ -852,6 +852,10 @@ function Drawer({
   delegatoNome?: string | null;
   episodiMalus?: EpisodioMalus[];
 }) {
+  // nome VERO di chi modifica nello storico (Luca 02/08): niente piu'
+  // "Venditore"/"Amministrazione" generici
+  const { user: utenteCorrente } = useAuth();
+  const nomeUtente = utenteCorrente?.name || "—";
   const [notaNegozio, setNotaNegozio] = useState("");
   const [notaAdmin, setNotaAdmin] = useState("");
   const [editStatoN, setEditStatoN] = useState(row.statoNegozio);
@@ -885,7 +889,7 @@ function Drawer({
           data: oggi,
           tipo: "stato_negozio",
           testo: "Esito negozio aggiornato: " + getStatoN(editStatoN).label,
-          utente: "Venditore",
+          utente: nomeUtente,
           ruolo: "negozio",
         });
       }
@@ -894,7 +898,7 @@ function Drawer({
           data: oggi,
           tipo: "nota_negozio",
           testo: notaNegozio.trim(),
-          utente: "Venditore",
+          utente: nomeUtente,
           ruolo: "negozio",
         });
       }
@@ -906,7 +910,7 @@ function Drawer({
           data: oggi,
           tipo: "stato_admin",
           testo: "Esito admin aggiornato: " + getStatoA(editStatoA).label,
-          utente: "Amministrazione",
+          utente: nomeUtente,
           ruolo: "admin",
         });
       }
@@ -915,7 +919,7 @@ function Drawer({
           data: oggi,
           tipo: "nota_admin",
           testo: notaAdmin.trim(),
-          utente: "Amministrazione",
+          utente: nomeUtente,
           ruolo: "admin",
         });
       }
