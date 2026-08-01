@@ -126,8 +126,10 @@ export async function POST(request: Request) {
                 const msg = m?.message || {};
                 const body = msg.conversation || msg.extendedTextMessage?.text
                     || msg.imageMessage?.caption || msg.videoMessage?.caption
-                    || (msg.imageMessage ? "[Immagine]" : msg.documentMessage ? "[Documento]" : msg.audioMessage ? "[Audio]" : msg.videoMessage ? "[Video]" : "") || "";
-                const mime = msg.imageMessage?.mimetype || msg.documentMessage?.mimetype || msg.audioMessage?.mimetype || msg.videoMessage?.mimetype || null;
+                    || (msg.imageMessage ? "[Immagine]" : msg.documentMessage ? "[Documento]" : msg.audioMessage ? "[Audio]" : msg.videoMessage ? "[Video]" : msg.stickerMessage ? "[Sticker]" : "") || "";
+                // #wa: gli sticker (emoji animate / GIF) arrivano come stickerMessage
+                // (image/webp): senza mime non venivano scaricati e comparivano vuoti.
+                const mime = msg.imageMessage?.mimetype || msg.documentMessage?.mimetype || msg.audioMessage?.mimetype || msg.videoMessage?.mimetype || msg.stickerMessage?.mimetype || (msg.stickerMessage ? "image/webp" : null);
                 const ts = toIsoMs(m?.messageTimestamp);
                 // media in ARRIVO (o inviato da un altro dispositivo): scaricalo e
                 // salvalo subito, ora che il file cifrato e' ancora sul CDN.
