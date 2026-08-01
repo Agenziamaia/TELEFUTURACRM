@@ -700,7 +700,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                 dedicata nei filtri). Solo amministrazione e tecnico senior.
                 GRANDE quando era stato comprato apposta ed e' arrivato. */}
             {(isAmministrazione || lavoraLab) && !["venduto", "smontato"].includes(dev.status) && (
-              dev.acquisto_per_ricambi && ["in_transito", "ricevuto", "in_lavorazione"].includes(dev.status) ? (
+              (dev.acquisto_per_ricambi || dev.grado_usura === "ricambi") && ["in_transito", "ricevuto", "in_lavorazione"].includes(dev.status) ? (
                 <button onClick={smonta}
                   className="mt-4 w-full flex items-center justify-center gap-2 px-3 py-3.5 rounded-xl bg-red-600 text-white text-sm font-black uppercase tracking-wide border-2 border-red-400 hover:bg-red-500 transition-all animate-pulse">
                   🧩 SMONTA E USA PER PEZZI DI RICAMBIO
@@ -736,7 +736,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             {/* Badges */}
             <div className="flex flex-wrap gap-2">
               {dev.provenienza_subito && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-400 border border-orange-500/30"> Provenienza Subito.it</span>}
-              {dev.acquisto_per_ricambi && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/30">🧩 Comprato per ricambi</span>}
+              {(dev.acquisto_per_ricambi || dev.grado_usura === "ricambi") && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/30">🧩 Comprato per ricambi</span>}
               <span className={cn("inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border",
                 dev.pagamento.metodo === "bonifico" ? "bg-blue-500/10 text-blue-400 border-blue-500/30" : "bg-white/5 text-slate-400 border-white/10")}>
                 {dev.pagamento.metodo === "contanti" ? "" : dev.pagamento.metodo === "buono" ? "" : ""} {dev.pagamento.metodo === "contanti" ? "Contanti" : dev.pagamento.metodo === "buono" ? "Buono" : "Bonifico"}
@@ -1003,7 +1003,6 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const imeiValido = imeiNumerico ? imei.length === 15 : imei.trim().length > 0;
   const [prezzoAcquisto, setPrezzoAcquisto] = useState("");
   const [gradoUsura, setGradoUsura] = useState("");
-  const [perRicambi, setPerRicambi] = useState(false);   // comprato per farne pezzi (Luca 01/08)
   const [hasExtraMargine, setHasExtraMargine] = useState(false);
   const [extraMargineImporto, setExtraMargineImporto] = useState("");
   const [metodoPagamento, setMetodoPagamento] = useState<"contanti" | "buono" | "bonifico" | "">("");
@@ -1143,7 +1142,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       onSave({
         venditore, negozio, provenienzaSubito, tipoCliente, anagrafica: ana, clientId: selClientId,
         tipoProdotto, brand, model, capacita, colore, imei,
-        prezzoAcquisto: parseFloat(prezzoAcquisto) || 0, gradoUsura, perRicambi,
+        prezzoAcquisto: parseFloat(prezzoAcquisto) || 0, gradoUsura, perRicambi: gradoUsura === "ricambi",
         extraMargine: hasExtraMargine ? { importo: parseFloat(extraMargineImporto) || 0, venditore } : null,
         metodoPagamento, iban: metodoPagamento === "bonifico" ? ibanPag : null,
         tipoBonifico: metodoPagamento === "bonifico" ? tipoBonifico : null,
@@ -1326,14 +1325,6 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
             <label className={lbl + " mb-0 whitespace-nowrap"}>Importo Extra Margine () *</label>
             <input type="number" step="1" min="0" value={extraMargineImporto} onChange={e => setExtraMargineImporto(e.target.value)} placeholder="es. 30" className="w-32 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none" />
           </div>}
-          {/* COMPRATO PER RICAMBI (Luca 01/08, mig. 128): tracciato dall'acquisto —
-              all'arrivo in laboratorio l'amministrazione trova il bottone SMONTA */}
-          <label className={cn("mt-3 flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all",
-            perRicambi ? "bg-fuchsia-500/10 border-fuchsia-500/40" : "bg-white/[0.02] border-white/5 hover:border-white/10")}>
-            <input type="checkbox" checked={perRicambi} onChange={e => setPerRicambi(e.target.checked)} className="w-4 h-4 accent-fuchsia-500 cursor-pointer" />
-            <span className={cn("text-sm font-bold", perRicambi ? "text-fuchsia-300" : "text-slate-300")}>🧩 Acquistato per pezzi di ricambio</span>
-            <span className="text-[11px] text-slate-500">verrà smontato in laboratorio, non torna in vendita</span>
-          </label>
         </>}
       </div>
     );
@@ -1451,7 +1442,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-start justify-center pt-6 px-4" onClick={onClose}>
-      <div className="bg-[#12141f] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-[#12141f] border border-white/10 rounded-2xl w-full max-w-4xl max-h-[92vh] overflow-auto shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="sticky top-0 bg-[#12141f] border-b border-white/10 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
           <div className="text-lg font-bold text-white"> Registra Usato</div>
           <button onClick={onClose} className="text-slate-500 hover:text-white text-xl transition-colors"></button>
