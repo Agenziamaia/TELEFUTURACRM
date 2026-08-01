@@ -647,7 +647,8 @@ function ChatPageInner() {
                     {showDay && <div className="text-center my-3"><span className="text-[11px] text-slate-500 bg-white/5 px-3 py-1 rounded-full">{showDay}</span></div>}
                     <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}>
                       {mine && <>{btnInfo}{btnInoltra}{btnReagisci}{btnRispondi}</>}
-                      <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
+                      <div onDoubleClick={() => setReplyTo(m)} title="Doppio click per rispondere"
+                        className={`max-w-[75%] rounded-2xl px-3.5 py-2 select-text ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
                         {!mine && selConv.type === "group" && (
                           <p className="text-[11px] font-semibold text-indigo-300 mb-0.5">{senderName[m.sender_id] || "—"}</p>
                         )}

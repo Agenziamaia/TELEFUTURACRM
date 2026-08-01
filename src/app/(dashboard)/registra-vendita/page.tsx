@@ -3010,9 +3010,9 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px"}}>
           {campi.map(cmp=>{
             if(cmp.nome==="Codice Inserimento")return <SCd key={cmp.nome} session={sc} codici={codici} val={f[cmp.nome]||""} onCh={v=>setF(cmp.nome,v)}/>;
-            if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
-            if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{cmp.nome} <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>{cmp.nota&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{cmp.nota}</div>}</div>);
-            return <TF key={cmp.nome} l={cmp.nome} r v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p={cmp.nota||""}/>;
+            if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
+            if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"#dc3545"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>{cmp.nota&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{cmp.nota}</div>}</div>);
+            return <TF key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p={cmp.nota||""}/>;
           })}
         </div>
       </div>
@@ -3035,7 +3035,7 @@ const subComplete=(sub,d)=>{
     const _campi=risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,f["Offerta"]||"",_att);
     for(const cmp of _campi){
       if(cmp.nome==="Codice Inserimento"){if(!_NE(f[cmp.nome])&&!_NE(_sesRef.v))return false;}
-      else if(!_NE(f[cmp.nome]))return false;
+      else if(!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;
     }
     return true;
   }

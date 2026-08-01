@@ -14,6 +14,9 @@ export interface CampoVendita {
     tipo: "testo" | "numero" | "data" | "scelta";
     nota: string;
     conferma: boolean;
+    /** true = il campo NON blocca il completamento (Luca 02/08: ICCID
+     *  facoltativo su FWA W3 Business); si imposta dalle regole a DB */
+    facoltativo?: boolean;
 }
 
 interface Regola {
