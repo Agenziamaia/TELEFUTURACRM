@@ -670,9 +670,13 @@ function ChatPageInner() {
                 return (
                   <div key={m.id} id={`msg-${m.id}`}>
                     {showDay && <div className="text-center my-3"><span className="text-[11px] text-slate-500 bg-white/5 px-3 py-1 rounded-full">{showDay}</span></div>}
-                    <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}>
+                    {/* Doppio click A FIANCO del messaggio = rispondi (Luca 02/08):
+                        sul testo il doppio click deve solo selezionare, come nativo. */}
+                    <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}
+                      title="Doppio click a fianco del messaggio per rispondere"
+                      onDoubleClick={(e) => { if ((e.target as HTMLElement).closest("button")) return; setReplyTo(m); }}>
                       {mine && <>{btnInfo}{btnModifica}{btnInoltra}{btnReagisci}{btnRispondi}</>}
-                      <div onDoubleClick={() => setReplyTo(m)} title="Doppio click per rispondere"
+                      <div onDoubleClick={(e) => e.stopPropagation()}
                         className={`max-w-[75%] rounded-2xl px-3.5 py-2 select-text ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
                         {!mine && selConv.type === "group" && (
                           <p className="text-[11px] font-semibold text-indigo-300 mb-0.5">{senderName[m.sender_id] || "—"}</p>
