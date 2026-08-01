@@ -26,6 +26,12 @@ export function ScreenshotEditor({ src, iniziaInRitaglio, onDone, onCancel }: {
     const [ritaglio, setRitaglio] = useState(!!iniziaInRitaglio);
     const [selezione, setSelezione] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
     const drawing = useRef(false);
+    // Modalita' "seleziona area" (Luca 02/08): il PRIMO rilascio del mouse
+    // applica il ritaglio da solo — un gesto e via, niente click in piu'.
+    // selRef specchia la selezione: lo stato al pointer-up puo' essere
+    // indietro di un move rispetto all'ultimo trascinamento.
+    const autoRitaglio = useRef(!!iniziaInRitaglio);
+    const selRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 
     useEffect(() => {
         const i = new Image();
@@ -76,21 +82,29 @@ export function ScreenshotEditor({ src, iniziaInRitaglio, onDone, onCancel }: {
     const giu = (e: React.PointerEvent) => {
         drawing.current = true;
         const p = coord(e);
-        if (ritaglio) setSelezione({ x1: p.x, y1: p.y, x2: p.x, y2: p.y });
+        if (ritaglio) { selRef.current = { x1: p.x, y1: p.y, x2: p.x, y2: p.y }; setSelezione(selRef.current); }
         else setTratti(t => [...t, { tipo: strumento, colore, punti: [p] }]);
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
     };
     const muovi = (e: React.PointerEvent) => {
         if (!drawing.current) return;
         const p = coord(e);
-        if (ritaglio) setSelezione(s => s ? { ...s, x2: p.x, y2: p.y } : s);
+        if (ritaglio) setSelezione(s => { const v = s ? { ...s, x2: p.x, y2: p.y } : s; selRef.current = v; return v; });
         else setTratti(t => { const u = [...t]; const ult = u[u.length - 1]; if (!ult) return t; u[u.length - 1] = { ...ult, punti: strumento === "matita" ? [...ult.punti, p] : [ult.punti[0], p] }; return u; });
     };
-    const su = () => { drawing.current = false; };
+    const su = () => {
+        drawing.current = false;
+        const sel = selRef.current;
+        if (ritaglio && autoRitaglio.current && sel && Math.abs(sel.x2 - sel.x1) >= 10 && Math.abs(sel.y2 - sel.y1) >= 10) {
+            autoRitaglio.current = false;
+            applicaRitaglio(sel);
+        }
+    };
 
-    const applicaRitaglio = () => {
-        if (!selezione || !img) { setRitaglio(false); return; }
-        const { x1, y1, x2, y2 } = selezione;
+    const applicaRitaglio = (sel?: { x1: number; y1: number; x2: number; y2: number }) => {
+        const scelta = sel || selezione;
+        if (!scelta || !img) { setRitaglio(false); return; }
+        const { x1, y1, x2, y2 } = scelta;
         const x = Math.max(0, Math.min(x1, x2)), y = Math.max(0, Math.min(y1, y2));
         const w = Math.min(img.naturalWidth - x, Math.abs(x2 - x1)), h = Math.min(img.naturalHeight - y, Math.abs(y2 - y1));
         if (w < 10 || h < 10) { setRitaglio(false); setSelezione(null); return; }
@@ -145,7 +159,7 @@ export function ScreenshotEditor({ src, iniziaInRitaglio, onDone, onCancel }: {
                     className="p-2 rounded-lg border bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 disabled:opacity-40"><Undo2 className="w-4 h-4" /></button>
                 <span className="flex-1" />
                 {ritaglio && selezione && (
-                    <button onClick={applicaRitaglio} className="px-3 py-2 rounded-lg bg-amber-500 text-black text-xs font-black">✂ Applica ritaglio</button>
+                    <button onClick={() => applicaRitaglio()} className="px-3 py-2 rounded-lg bg-amber-500 text-black text-xs font-black">✂ Applica ritaglio</button>
                 )}
                 <button onClick={allega} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center gap-1.5"><Check className="w-4 h-4" /> Allega</button>
                 <button onClick={onCancel} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"><X className="w-5 h-5" /></button>
@@ -156,7 +170,7 @@ export function ScreenshotEditor({ src, iniziaInRitaglio, onDone, onCancel }: {
                     className="max-w-full max-h-full rounded-lg shadow-2xl touch-none"
                     style={{ cursor: ritaglio ? "crosshair" : "crosshair" }} />
             </div>
-            <p className="text-center text-[11px] text-slate-500 pb-2">{ritaglio ? "Trascina per selezionare l'area, poi «Applica ritaglio»" : "Disegna sull'immagine — Annulla toglie l'ultimo tratto"}</p>
+            <p className="text-center text-[11px] text-slate-500 pb-2">{ritaglio ? "Trascina per selezionare l'area — al rilascio il ritaglio si applica da solo" : "Disegna sull'immagine — Annulla toglie l'ultimo tratto"}</p>
         </div>
     );
 }

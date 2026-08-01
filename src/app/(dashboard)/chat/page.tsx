@@ -142,7 +142,9 @@ function ChatPageInner() {
   const fareScreenshot = async (area: boolean) => {
     setShotMenu(false);
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      // preferCurrentTab: il picker del browser (obbligatorio, non si puo'
+      // saltare) parte gia' sulla scheda del CRM — un click e via
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, preferCurrentTab: true, selfBrowserSurface: "include" } as DisplayMediaStreamOptions);
       const video = document.createElement("video");
       video.srcObject = stream; video.muted = true;
       await video.play();
