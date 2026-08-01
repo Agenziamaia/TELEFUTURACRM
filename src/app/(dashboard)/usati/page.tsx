@@ -146,7 +146,13 @@ function faseGestitaDa(d: { status: UsatoStatus; store: string; target_store: st
 
 const STATI_LABORATORIO = ["in_transito", "ricevuto", "in_lavorazione", "pronto"];
 const inLaboratorio = (d: { status: UsatoStatus }) => STATI_LABORATORIO.includes(d.status);
-const sedeCorrente = (d: { status: UsatoStatus; store: string }) => inLaboratorio(d) ? "Laboratorio" : d.store;
+// colonna Negozio (modello Luca 01/08): in transito nessuno ("—"), in
+// laboratorio "Laboratorio", dall'invio in poi il punto vendita di
+// DESTINAZIONE (advanceStatus lo scrive in store al momento dell'invio)
+const sedeVisibile = (d: { status: UsatoStatus; store: string }) =>
+  d.status === "in_transito" ? "—"
+  : ["ricevuto", "in_lavorazione", "pronto"].includes(d.status) ? "🔬 Laboratorio"
+  : d.store;
 
 const KPI_CARDS = [
   { key: "_all", label: "Totale", icon: "📊", colorClass: "text-indigo-400", bgClass: "bg-indigo-500/10", borderClass: "border-indigo-500/30" },
@@ -569,6 +575,10 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
     const u: Device = { ...dev, status: next!, note_tecnico: noteTecnico,
       status_history: { ...dev.status_history, [next!]: { date: new Date(), operatore } } };
     if (needsStore) u.target_store = targetStore;
+    // dall'INVIO il telefono e' del negozio di destinazione (Luca 01/08):
+    // prima restava intestato all'origine e il "Mostra i miei" del negozio
+    // ricevente non lo vedeva (caso Eros/Baleniere)
+    if (next === "invio_in_negozio" && targetStore) u.store = targetStore;
     // Accettazione: quando il negozio destinazione accetta (invio -> in vendita),
     // il dispositivo passa in carico a LUI (prima restava sul magazzino mittente
     // e non era vendibile dal negozio che lo aveva ricevuto).
@@ -603,7 +613,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   // accettarlo — solo all'accettazione passa in carico a lui. Ripetibile.
   const sendToStore = () => {
     if (!targetStore) return;
-    persist({ ...dev, status: "invio_in_negozio", target_store: targetStore, note_tecnico: noteTecnico,
+    persist({ ...dev, status: "invio_in_negozio", store: targetStore, target_store: targetStore, note_tecnico: noteTecnico,
       status_history: { ...dev.status_history, invio_in_negozio: { date: new Date(), operatore } } });
   };
   const setKO = () => persist({ ...dev, status: "ko", note_tecnico: noteTecnico,
@@ -773,7 +783,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                   </>
                 ) : (
                   <>
-                    {([["Modello", dev.model, false], ["IMEI", dev.imei, true], ["Negozio", inLaboratorio(dev) ? `🔬 Laboratorio (da ${dev.store})` : dev.store, false]] as [string, string, boolean][]).map(([l, v, mono]) => (
+                    {([["Modello", dev.model, false], ["IMEI", dev.imei, true], ["Negozio", dev.status === "in_transito" ? `— (da ${dev.store})` : ["ricevuto", "in_lavorazione", "pronto"].includes(dev.status) ? `🔬 Laboratorio (da ${dev.store})` : dev.store, false]] as [string, string, boolean][]).map(([l, v, mono]) => (
                       <div key={l}>
                         <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">{l}</div>
                         <div className={cn("text-sm text-white font-medium", mono && "font-mono")}>{v}</div>
@@ -2060,7 +2070,7 @@ function GestioneUsatiInner() {
                   <div className="flex items-center gap-3 text-xs text-slate-500">
                     <span className="font-mono">{d.imei.slice(0, 8)}…</span>
                     <span className="text-slate-700">·</span>
-                    <span>{inLaboratorio(d) ? "🔬 Laboratorio" : d.store}</span>
+                    <span>{sedeVisibile(d)}</span>
                     <span className="text-slate-700">·</span>
                     <span>{fmtDate(d.created_at)}</span>
                   </div>
@@ -2100,7 +2110,7 @@ function GestioneUsatiInner() {
                         {/* chi ha ACQUISTATO il telefono (venditore della
                             registrazione; per i vecchi dalla cronologia) */}
                         <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{d.venditore || d.status_history.acquistato?.operatore || "—"}</td>
-                        <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{inLaboratorio(d) ? "🔬 Laboratorio" : d.store}</td>
+                        <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{sedeVisibile(d)}</td>
                         <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{d.sold_date ? fmtDate(d.sold_date) : <span className="text-slate-700">—</span>}</td>
                         <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap">{d.sold_price > 0 ? <span className="text-rose-300">{fmtEur(d.sold_price)}</span> : <span className="text-slate-700">—</span>}</td>
                       </tr>
