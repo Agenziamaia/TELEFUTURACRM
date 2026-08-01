@@ -1547,6 +1547,9 @@ function GestioneUsatiInner() {
   // punti vendita col preset acquistato / arrivo in negozio / in vendita
   const STATI_NEGOZIO_DEFAULT = ["acquistato", "invio_in_negozio", "in_vendita"];
   const STATI_MAGAZZINO = ["in_transito", "ricevuto", "in_lavorazione", "pronto"];
+  // "in viaggio": non stanno in nessun negozio, aspettano un'accettazione
+  // (dal laboratorio o dal punto vendita di destinazione) — Luca 01/08
+  const STATI_TRANSITO = ["in_transito", "invio_in_negozio"];
   // amministrazione: tutto TRANNE i venduti (Luca 01/08: la tabella col
   // tempo si sporcherebbe) — si accendono dalla tessera quando servono
   const PRESET_STATI = isAmminMain ? STATUS_KEYS.filter(k => !['venduto', 'ko', 'smontato'].includes(k)) : [...STATI_NEGOZIO_DEFAULT];
@@ -1980,6 +1983,13 @@ function GestioneUsatiInner() {
             className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
               magAttivo ? "bg-blue-500/25 border-blue-400/60 text-blue-100" : "bg-blue-500/10 border-blue-500/30 text-blue-200 hover:bg-blue-500/20")}>
             🔧 Mostra magazzino{magAttivo ? " ✓" : ""}
+          </button>); })()}
+          {isAmminMain && (() => { const trAttivo = JSON.stringify([...selectedStatuses].sort()) === JSON.stringify([...STATI_TRANSITO].sort()); return (
+          <button onClick={() => { setSoloDaPrezzare(false); setSelectedStatuses(trAttivo ? [...PRESET_STATI] : [...STATI_TRANSITO]); }}
+            title="Telefoni in viaggio: in transito verso il laboratorio o in arrivo nei negozi — in attesa di accettazione"
+            className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
+              trAttivo ? "bg-orange-500/25 border-orange-400/60 text-orange-100" : "bg-orange-500/10 border-orange-500/30 text-orange-200 hover:bg-orange-500/20")}>
+            🚚 Mostra in transito{trAttivo ? " ✓" : ""}
           </button>); })()}
           {isAmminMain && (
             <button onClick={() => setSoloDaPrezzare(v => !v)}
