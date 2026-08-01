@@ -158,6 +158,8 @@ export function ComunicazioniPopup() {
 
     return (
         <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+            {/* buone notizie (type success): esplosione di coriandoli all'apertura */}
+            {attuale.type === "success" && <Confetti key={attuale.id} />}
             <div className="w-full max-w-[560px] rounded-2xl border shadow-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200"
                 style={{ background: "#12141f", borderColor: stile.border }}>
                 <div className="flex items-start gap-4 p-6 pb-4">
@@ -219,4 +221,58 @@ export function ComunicazioniPopup() {
             </div>
         </div>
     );
+}
+
+// Esplosione di coriandoli / fuochi d'artificio all'apertura di una "buona
+// notizia". Canvas autonomo (nessuna dipendenza), pointer-events none così non
+// blocca i pulsanti, one-shot (~3s poi si ferma). Rispetta prefers-reduced-motion.
+function Confetti() {
+    const ref = useRef<HTMLCanvasElement | null>(null);
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+        const canvas = ref.current; if (!canvas) return;
+        const ctx = canvas.getContext("2d"); if (!ctx) return;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        let W = window.innerWidth, H = window.innerHeight;
+        const setup = () => { W = window.innerWidth; H = window.innerHeight; canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
+        setup();
+        const colors = ["#34d399", "#10b981", "#fbbf24", "#f472b6", "#60a5fa", "#a78bfa", "#f87171", "#facc15", "#22d3ee"];
+        type P = { x: number; y: number; vx: number; vy: number; size: number; color: string; rot: number; vr: number; shape: number };
+        const parts: P[] = [];
+        const burst = (cx: number, cy: number, n: number, power: number) => {
+            for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const s = power * (0.35 + Math.random() * 0.9);
+                parts.push({ x: cx, y: cy, vx: Math.cos(a) * s, vy: Math.sin(a) * s - power * 0.5, size: 5 + Math.random() * 7, color: colors[(Math.random() * colors.length) | 0], rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.35, shape: (Math.random() * 3) | 0 });
+            }
+        };
+        // due esplosioni ravvicinate = effetto fuochi d'artificio
+        burst(W * 0.5, H * 0.34, 140, 11);
+        const t2 = setTimeout(() => burst(W * 0.5, H * 0.30, 90, 13), 220);
+        const start = Date.now();
+        let raf = 0;
+        const tick = () => {
+            const t = Date.now() - start;
+            ctx.clearRect(0, 0, W, H);
+            let alive = false;
+            for (const p of parts) {
+                p.vy += 0.24; p.vx *= 0.992; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+                const life = Math.max(0, 1 - t / 2900);
+                if (life <= 0 || p.y > H + 30) continue;
+                alive = true;
+                ctx.save(); ctx.globalAlpha = life; ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.color;
+                if (p.shape === 0) ctx.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6);
+                else if (p.shape === 1) { ctx.beginPath(); ctx.arc(0, 0, p.size * 0.45, 0, Math.PI * 2); ctx.fill(); }
+                else { ctx.beginPath(); ctx.moveTo(0, -p.size * 0.5); ctx.lineTo(p.size * 0.5, p.size * 0.4); ctx.lineTo(-p.size * 0.5, p.size * 0.4); ctx.closePath(); ctx.fill(); }
+                ctx.restore();
+            }
+            if (alive && t < 3400) raf = requestAnimationFrame(tick);
+            else ctx.clearRect(0, 0, W, H);
+        };
+        raf = requestAnimationFrame(tick);
+        window.addEventListener("resize", setup);
+        return () => { cancelAnimationFrame(raf); clearTimeout(t2); window.removeEventListener("resize", setup); };
+    }, []);
+    return <canvas ref={ref} aria-hidden style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none", zIndex: 6000 }} />;
 }
