@@ -14,6 +14,7 @@ import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
 import { fasciaLabel } from "@/lib/fasce";
+import { RicercaCliente } from "@/components/RicercaCliente";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto).
 // "richiamo" = richiamo telefonico fissato dal call center (Luca 31/07): nasce
@@ -96,6 +97,15 @@ interface CalendarMeeting {
 }
 
 const MEETING_BRANDS = ["Wind3", "Vodafone", "Tim", "Fastweb", "Corporate / Aziendale"];
+// il brand della riunione ("Wind3") e quello degli operatori (user_brands:
+// "WindTre") non coincidono alla lettera: confronto TOLLERANTE (Luca 31/07,
+// caso Wind3 oscurato nella selezione rapida)
+function brandCoincide(a: string, b: string): boolean {
+    const n = (s: string) => s.toLowerCase().replace(/[\s/]/g, "");
+    const w3 = (s: string) => s === "wind3" || s === "windtre" || s === "w3";
+    const x = n(a), y = n(b);
+    return x === y || (w3(x) && w3(y));
+}
 
 // id e' l'uuid di app_users (gli operatori arrivano dagli utenti reali, non piu'
 // dalla tabella seed calendar_operators).
@@ -256,6 +266,10 @@ export default function Calendario() {
         notes: "",
     });
 
+    // DETTAGLIO TASK (Luca 31/07): cliccando una task nel calendario centrale
+    // (settimana/giorno) o nel pannello a destra si apre il modale — con
+    // modifica dei campi e AGGIUNTA di nuovi assegnatari (task gemelle)
+    const [taskDettaglio, setTaskDettaglio] = useState<CalendarTask | null>(null);
     // ASSEGNAZIONE MULTIPLA (Luca 31/07): la stessa task si assegna a piu'
     // operatori o piu' punti vendita — si creano N task gemelle, una a testa
     const [taskModo, setTaskModo] = useState<"persone" | "negozi">("persone");
@@ -273,6 +287,10 @@ export default function Calendario() {
     });
 
     // New meeting form state
+    // ricerca nei destinatari della riunione (Luca 31/07): con tanti utenti
+    // e negozi le liste vanno filtrate scrivendo
+    const [cercaOperatore, setCercaOperatore] = useState("");
+    const [cercaNegozio, setCercaNegozio] = useState("");
     const [newMeeting, setNewMeeting] = useState<{
         title: string;
         date: string;
@@ -466,6 +484,26 @@ export default function Calendario() {
     // domenica a scomparsa nella vista settimana (Luca 31/07): nascosta, gli
     // altri giorni respirano di piu'
     const [mostraDomenica, setMostraDomenica] = useState(true);
+    // PREFERENZA PER ACCOUNT (Luca 31/07): la vista scelta (mese/settimana/
+    // giorno) e la domenica nascosta restano salvate — niente piu' ritorno
+    // al mensile a ogni apertura. Si risalva solo DOPO aver caricato.
+    const vistaCaricata = useRef(false);
+    useEffect(() => {
+        if (!user?.id || vistaCaricata.current) return;
+        vistaCaricata.current = true;
+        try {
+            const raw = localStorage.getItem(`calendario_vista_${user.id}`);
+            if (raw) {
+                const p = JSON.parse(raw) as { calView?: string; mostraDomenica?: boolean };
+                if (p.calView === "month" || p.calView === "week" || p.calView === "day") setCalView(p.calView);
+                if (typeof p.mostraDomenica === "boolean") setMostraDomenica(p.mostraDomenica);
+            }
+        } catch { /* preferenza corrotta: si riparte dal default */ }
+    }, [user?.id]);
+    useEffect(() => {
+        if (!user?.id || !vistaCaricata.current) return;
+        try { localStorage.setItem(`calendario_vista_${user.id}`, JSON.stringify({ calView, mostraDomenica })); } catch { /* no-op */ }
+    }, [user?.id, calView, mostraDomenica]);
     // VISTA GIORNO (Luca 29/07): fasce orarie in verticale stile Google
     // Calendar — tutto il dettaglio della giornata a colpo d'occhio.
     const [dayDate, setDayDate] = useState(() =>
@@ -494,7 +532,7 @@ export default function Calendario() {
         setSelectedDate(dateStr);
         setShowCreateModal(false);
         setShowCreateTaskModal(false);
-        setShowCreateMeetingModal(false);
+        setShowCreateMeetingModal(false); setCercaOperatore(""); setCercaNegozio("");
         setSelectedAppointment(null);
         setSelectedMeeting(null);
         setShowModal(false);
@@ -659,9 +697,58 @@ export default function Calendario() {
         setTaskPersone([]); setTaskNegozi([]); setTaskModo("persone");
     };
 
+    // ANNULLAMENTO riunione (Luca 31/07): chi puo' crearle puo' annullarle.
+    // L'invito (pop-up) viene RITIRATO — chi non l'aveva ancora visto non
+    // ricevera' nulla; chi l'aveva GIA' visto (letto/risposto) riceve
+    // l'avviso di cancellazione in Comunicazioni (bacheca, non pop-up).
+    const eliminaRiunione = async (m: CalendarMeeting) => {
+        if (!window.confirm(`Annullare la riunione "${m.title}" del ${m.date}?\nChi aveva già visto l'invito riceverà l'avviso in Comunicazioni; chi non l'aveva ancora visto non riceverà nulla.`)) return;
+        try {
+            // 1. si ritrova l'invito: dal collegamento meeting_id (mig. 122) o,
+            //    per gli inviti vecchi, dal titolo
+            let inv = await supabase.from("comunicazioni").select("id").eq("meeting_id", m.id).maybeSingle();
+            if (inv.error && /meeting_id|column/i.test(inv.error.message || "")) {
+                inv = await supabase.from("comunicazioni").select("id").eq("kind", "popup").eq("title", `📅 Riunione: ${m.title}`).order("created_at", { ascending: false }).limit(1).maybeSingle();
+            }
+            const invitoId = (inv.data as { id?: number } | null)?.id;
+            let avvisati: string[] = [];
+            if (invitoId) {
+                const { data: ric } = await supabase.from("comunicazioni_ricevute").select("user_id, letto_il").eq("comunicazione_id", invitoId);
+                avvisati = ((ric ?? []) as { user_id: string; letto_il: string | null }[]).filter((r) => r.letto_il).map((r) => r.user_id);
+                await supabase.from("comunicazioni_ricevute").delete().eq("comunicazione_id", invitoId);
+                await supabase.from("comunicazioni").delete().eq("id", invitoId);
+            }
+            // 2. avviso in BACHECA solo a chi l'aveva vista
+            if (avvisati.length) {
+                await supabase.from("comunicazioni").insert({
+                    title: `❌ Riunione annullata: ${m.title}`,
+                    content: `La riunione "${m.title}" prevista per il ${m.date} dalle ${m.startTime} alle ${m.endTime} è stata ANNULLATA.`,
+                    type: "warning",
+                    kind: "bacheca",
+                    target_users: [...new Set(avvisati)],
+                    created_by: user?.id || null,
+                    created_by_name: user?.name || null,
+                    date_display: new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" }),
+                });
+            }
+        } catch { /* la riunione si elimina comunque */ }
+        const { error } = await supabase.from("calendar_meetings").delete().eq("id", m.id);
+        if (error) { alert("Riunione NON eliminata: " + error.message); return; }
+        setMeetings(prev => prev.filter(x => x.id !== m.id));
+        setShowMeetingDetailModal(false);
+    };
+
     const handleCreateMeetingSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMeeting.title || !newMeeting.date || !newMeeting.startTime || !newMeeting.endTime || !newMeeting.brand) return;
+        // niente piu' click "morto" (Luca 31/07): se manca un campo lo si DICE
+        const mancanti = [
+            !newMeeting.title && "Titolo",
+            !newMeeting.date && "Data",
+            !newMeeting.startTime && "Ora inizio",
+            !newMeeting.endTime && "Ora fine",
+            !newMeeting.brand && "Brand",
+        ].filter(Boolean);
+        if (mancanti.length) { alert("Per salvare la riunione compila: " + mancanti.join(", ")); return; }
 
         const payload = {
             title: newMeeting.title,
@@ -682,7 +769,36 @@ export default function Calendario() {
             return;
         }
         setMeetings(prev => [...prev, mapMeetingRow(data)]);
-        setShowCreateMeetingModal(false);
+        // INVITO come COMUNICAZIONE POP-UP (Luca 31/07): gli invitati ricevono
+        // il pop-up con Accetto/Rifiuto (esiti cliccabili), resta nello storico
+        // comunicazioni e chi ha risposto cosa si vede nel dettaglio ricevute.
+        if (newMeeting.recipients.length) {
+            const quando = `${newMeeting.date} dalle ${newMeeting.startTime} alle ${newMeeting.endTime}`;
+            const dove = newMeeting.type === "in_person" ? (newMeeting.location ? `di persona — ${newMeeting.location}` : "di persona") : (newMeeting.link ? `in videochiamata — ${newMeeting.link}` : "in videochiamata");
+            const invito: Record<string, unknown> = {
+                meeting_id: (data as { id?: number })?.id ?? null,
+                title: `📅 Riunione: ${newMeeting.title}`,
+                content: [`Sei invitato alla riunione "${newMeeting.title}"${newMeeting.brand ? ` (${newMeeting.brand})` : ""}.`, `Quando: ${quando}`, `Dove: ${dove}`, newMeeting.notes ? `Note: ${newMeeting.notes}` : ""].filter(Boolean).join("\n"),
+                type: "info",
+                kind: "popup",
+                target_roles: null,
+                target_stores: null,
+                target_users: newMeeting.recipients.map((r) => r.id),
+                target_brands: null,
+                esiti: ["Accetto", "Rifiuto"],
+                created_by: user?.id || null,
+                created_by_name: user?.name || null,
+                date_display: new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" }),
+            };
+            let { error: comErr } = await supabase.from("comunicazioni").insert(invito);
+            if (comErr && /meeting_id|column/i.test(comErr.message || "")) {
+                // mig. 122 non ancora applicata: invito senza collegamento
+                delete invito.meeting_id;
+                ({ error: comErr } = await supabase.from("comunicazioni").insert(invito));
+            }
+            if (comErr) alert("Riunione salvata, ma il pop-up di invito NON è partito: " + comErr.message);
+        }
+        setShowCreateMeetingModal(false); setCercaOperatore(""); setCercaNegozio("");
         setNewMeeting({
             title: "",
             date: "",
@@ -698,14 +814,15 @@ export default function Calendario() {
     };
 
     const handleMeetingBrandChange = (brand: string) => {
+        // AUTO-SELEZIONE TRASPARENTE (Luca 31/07, secondo giro): scegliere il
+        // brand in alto porta dentro tutti i suoi operatori, ma il riepilogo
+        // esploso prima delle Note (con le ✕) li mostra uno per uno e permette
+        // di toglierli — niente piu' inviti a sorpresa.
         setNewMeeting(prev => {
             const autoRecipients: MeetingRecipient[] =
                 brand && brand !== "Corporate / Aziendale"
-                    ? meetingUsers.filter(u => u.brands.includes(brand)).map(u => ({
-                        id: u.id,
-                        name: u.name,
-                        store: u.store,
-                        status: "invited",
+                    ? meetingUsers.filter(u => u.brands.some(x => brandCoincide(x, brand))).map(u => ({
+                        id: u.id, name: u.name, store: u.store, status: "invited" as const,
                     }))
                     : [];
             return { ...prev, brand, recipients: autoRecipients };
@@ -1254,10 +1371,12 @@ export default function Calendario() {
                         suo); il pannello a destra resta e segue il giorno selezionato. */}
                     {calView === "week" && (<>
                         <div className="flex justify-end -mb-3">
+                            {/* volutamente DISCRETO (Luca 31/07): se l'ho nascosta non
+                                voglio che il pulsante si faccia notare */}
                             <button onClick={() => setMostraDomenica(v => !v)}
                                 title={mostraDomenica ? "Nascondi la domenica: gli altri giorni si allargano" : "Mostra di nuovo la domenica"}
-                                className={cn("px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors", mostraDomenica ? "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10" : "bg-amber-500/15 border-amber-500/40 text-amber-300")}>
-                                {mostraDomenica ? "Nascondi domenica" : "Domenica nascosta — mostra"}
+                                className="px-2.5 py-1 rounded-lg text-[11px] text-slate-600 hover:text-slate-300 transition-colors">
+                                {mostraDomenica ? "Nascondi domenica" : "Mostra domenica"}
                             </button>
                         </div>
                         <div className={cn("grid gap-1.5", mostraDomenica ? "grid-cols-7" : "grid-cols-6")}>
@@ -1311,8 +1430,8 @@ export default function Calendario() {
                                                 ...dayTasks.map((t) => ({ min: t.time ? minutiDi(t.time) : -1, jsx: (
                                                     <button
                                                         key={`t-${t.id}`}
-                                                        onClick={() => selectDate(dateStr)}
-                                                        title="Apri il giorno: la task si gestisce dal pannello a destra"
+                                                        onClick={() => { selectDate(dateStr); setTaskDettaglio(t); }}
+                                                        title="Apri la task (dettaglio e modifica)"
                                                         className="w-full text-left px-1.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-[10px] leading-tight hover:bg-white/[0.08] transition-colors"
                                                     >
                                                         <div className="font-semibold text-emerald-200 truncate">{t.time ? `${t.time} ` : ""}{t.title}</div>
@@ -1340,6 +1459,20 @@ export default function Calendario() {
                         </div>
                     </>)}
 
+                    {/* DETTAGLIO TASK (Luca 31/07): modifica + nuovi assegnatari */}
+                    {taskDettaglio && (
+                        <TaskDettaglioModal
+                            t={taskDettaglio}
+                            puoGestire={canAssignOthers || taskDettaglio.createdBy === user?.name}
+                            persone={[...(user?.name ? [user.name] : []), ...assignableAgents.filter(a => a !== user?.name)]}
+                            negozi={storeNames}
+                            esiti={esitiPer("task")}
+                            onClose={() => setTaskDettaglio(null)}
+                            onAggiornata={(nt) => setTasks(prev => prev.map(x => x.id === nt.id ? nt : x))}
+                            onCopie={(ns) => setTasks(prev => [...prev, ...ns])}
+                        />
+                    )}
+
                     {/* VISTA GIORNO (Luca 29/07): ore scandite in verticale stile Google
                         Calendar — tutta la giornata a colpo d'occhio, dettaglio inline. */}
                     {calView === "day" && (() => {
@@ -1362,7 +1495,7 @@ export default function Calendario() {
                                 key: `t-${t.id}`, min: minutiDi(t.time), durata: 45,
                                 titolo: `${t.time} · ${t.title}`, sotto: t.assignedToStore || t.assignedTo || "",
                                 classi: "border-emerald-500/40 bg-emerald-500/15",
-                                onClick: () => selectDate(dayDate),
+                                onClick: () => setTaskDettaglio(t),
                             })),
                             ...dayMeetings.map((m): Ev => ({
                                 key: `m-${m.id}`, min: minutiDi(m.startTime),
@@ -1542,7 +1675,8 @@ export default function Calendario() {
                                                 <div className="flex items-start gap-2 max-w-[70%]">
                                                     <div className="mt-1 w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                                                     <button
-                                                        onClick={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
+                                                        onClick={() => setTaskDettaglio(t)}
+                                                        title="Apri la task (dettaglio e modifica)"
                                                         className="flex-1 text-left"
                                                     >
                                                         <span className={cn(
@@ -1910,6 +2044,19 @@ export default function Calendario() {
                                         </button>
                                     ))}
                                 </div>
+                                {/* ricerca STANDARD del CRM (Luca 31/07): identica a Registra
+                                    Vendita — un click compila CF, nome e telefono */}
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5">Cliente esistente</label>
+                                <RicercaCliente
+                                    tipo={newAppt.tipoCliente === "business" ? "business" : "consumer"}
+                                    className="mb-3"
+                                    onScelto={(c) => setNewAppt(p => ({
+                                        ...p,
+                                        cfPiva: c.cf_piva || "",
+                                        customerName: c.ragione_sociale || `${c.nome || ""} ${c.cognome || ""}`.trim(),
+                                        customerPhone: numeroNazionale(c.cellulare || "") || c.cellulare || "",
+                                    }))}
+                                />
                                 <label className="block text-xs font-medium text-slate-400 mb-1.5">{newAppt.tipoCliente === "business" ? "Partita IVA *" : "Codice Fiscale *"}</label>
                                 <input type="text" className="glass-input w-full font-mono uppercase"
                                     placeholder={newAppt.tipoCliente === "business" ? "es. 01234567890" : "es. RSSMRA80A01H501U"}
@@ -2019,7 +2166,7 @@ export default function Calendario() {
             {showCreateMeetingModal && (
                 <div
                     className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-                    onClick={() => setShowCreateMeetingModal(false)}
+                    onClick={() => { setShowCreateMeetingModal(false); setCercaOperatore(""); setCercaNegozio(""); }}
                 >
                     <div
                         className="glass-card p-6 w-full max-w-2xl animate-in slide-in-from-bottom-4 zoom-in-95 duration-200"
@@ -2169,14 +2316,16 @@ export default function Calendario() {
                                     </span>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-h-52 overflow-y-auto custom-scrollbar pr-1">
                                     <div>
                                         <p className="text-[11px] font-semibold text-slate-400 mb-1 flex items-center gap-1">
                                             <Users className="w-3 h-3" />
                                             Operatori
                                         </p>
+                                        <input value={cercaOperatore} onChange={(e) => setCercaOperatore(e.target.value)} placeholder="Cerca operatore…"
+                                            className="w-full mb-1.5 bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-sky-500/50" />
                                         <div className="space-y-1.5">
-                                            {meetingUsers.map(u => {
+                                            {meetingUsers.filter(u => { const q = cercaOperatore.trim().toLowerCase(); return !q || u.name.toLowerCase().includes(q) || (u.store || "").toLowerCase().includes(q); }).map(u => {
                                                 const checked = !!newMeeting.recipients.find(r => r.id === u.id);
                                                 return (
                                                     <button
@@ -2213,8 +2362,10 @@ export default function Calendario() {
                                             <MapPin className="w-3 h-3" />
                                             Punti vendita (selezione rapida)
                                         </p>
+                                        <input value={cercaNegozio} onChange={(e) => setCercaNegozio(e.target.value)} placeholder="Cerca punto vendita…"
+                                            className="w-full mb-1.5 bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-sky-500/50" />
                                         <div className="space-y-1.5">
-                                            {storeNames.map(store => (
+                                            {storeNames.filter(s => { const q = cercaNegozio.trim().toLowerCase(); return !q || s.toLowerCase().includes(q); }).map(store => (
                                                 <button
                                                     key={store}
                                                     type="button"
@@ -2234,9 +2385,57 @@ export default function Calendario() {
                                             ))}
                                         </div>
                                     </div>
+
+                                    {/* selezione rapida per BRAND (Luca 31/07): un click
+                                        seleziona tutti gli operatori associati al brand */}
+                                    <div>
+                                        <p className="text-[11px] font-semibold text-slate-400 mb-1 flex items-center gap-1">
+                                            🏷️ Brand (selezione rapida)
+                                        </p>
+                                        <div className="space-y-1.5">
+                                            {/* i brand REALI degli operatori (user_brands), non la lista
+                                                fissa: Wind3/WindTre coincidono, e compaiono anche Sky,
+                                                Energia, Iliad (Luca 31/07) */}
+                                            {Array.from(new Set(meetingUsers.flatMap(u => u.brands))).sort().map(b => {
+                                                const brandUsers = meetingUsers.filter(u => u.brands.some(x => brandCoincide(x, b)));
+                                                return (
+                                                    <button
+                                                        key={b}
+                                                        type="button"
+                                                        disabled={!brandUsers.length}
+                                                        onClick={() => brandUsers.forEach(u => handleToggleRecipient(u.id))}
+                                                        className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg border bg-white/5 border-white/10 text-xs text-slate-300 hover:bg-white/10 disabled:opacity-40"
+                                                    >
+                                                        <span>{b}</span>
+                                                        <span className="text-[10px] text-slate-500">{brandUsers.length} operatori</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
+                            {/* RIEPILOGO ESPLOSO degli invitati (Luca 31/07): tutti quelli
+                                selezionati — anche dall'auto-selezione del brand — uno per
+                                uno, con la ✕ per togliere chi non serve */}
+                            {newMeeting.recipients.length > 0 && (
+                                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/8">
+                                    <p className="text-[11px] font-semibold text-slate-400 mb-2">
+                                        Invitati selezionati ({newMeeting.recipients.length})
+                                    </p>
+                                    <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                                        {newMeeting.recipients.map(r => (
+                                            <span key={r.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-sky-500/30 bg-sky-500/10 text-sky-100 text-xs">
+                                                {r.name}{r.store ? <span className="text-[10px] text-slate-500">· {r.store}</span> : null}
+                                                <button type="button" onClick={() => handleToggleRecipient(r.id)}
+                                                    title={`Togli ${r.name} dagli invitati`}
+                                                    className="text-sky-400/70 hover:text-white text-xs leading-none">✕</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Note</label>
                                 <textarea
@@ -2275,7 +2474,7 @@ export default function Calendario() {
                     onClick={() => setShowMeetingDetailModal(false)}
                 >
                     <div
-                        className="glass-card p-6 w-full max-w-xl"
+                        className="glass-card p-6 w-[96vw] max-w-6xl max-h-[92vh] overflow-y-auto"
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-4">
@@ -2285,12 +2484,23 @@ export default function Calendario() {
                                     {selectedMeeting.date} · {selectedMeeting.startTime}–{selectedMeeting.endTime}
                                 </p>
                             </div>
-                            <button
-                                onClick={() => setShowMeetingDetailModal(false)}
-                                className="text-slate-500 hover:text-slate-300"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {/* annulla SOLO chi l'ha indetta, o l'amministrativo in su (Luca 31/07) */}
+                                {(selectedMeeting.createdBy === user?.name || ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "")) && (
+                                    <button
+                                        onClick={() => eliminaRiunione(selectedMeeting)}
+                                        className="px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-bold hover:bg-rose-500/25 transition-colors"
+                                    >
+                                        🗑 Annulla riunione
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setShowMeetingDetailModal(false)}
+                                    className="text-slate-500 hover:text-slate-300"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
 
                         <div className="space-y-3 text-sm">
@@ -2365,7 +2575,9 @@ export default function Calendario() {
                                     </div>
                                 </div>
 
-                                <div className="space-y-1.5 max-h-52 overflow-y-auto custom-scrollbar pr-1">
+                                {/* a colonne (Luca 31/07): con 30 invitati la lista singola
+                                    non bastava — 3 colonne su schermo largo, tanta altezza */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-1.5 max-h-[55vh] overflow-y-auto custom-scrollbar pr-1">
                                     {selectedMeeting.recipients.length === 0 && (
                                         <p className="text-xs text-slate-500">
                                             Nessun invitato selezionato.
@@ -2502,6 +2714,128 @@ export default function Calendario() {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+// ─── DETTAGLIO TASK (Luca 31/07) ─────────────────────────────────────────────
+// Cliccando una task nel calendario centrale o nel pannello a destra si apre
+// questo modale: campi modificabili (per chi la gestisce), stato, e AGGIUNTA
+// di nuovi assegnatari — persone o punti vendita — che genera task gemelle.
+function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, onAggiornata, onCopie }: {
+    t: CalendarTask;
+    puoGestire: boolean;
+    persone: string[];
+    negozi: string[];
+    esiti: { chiave: string; etichetta: string; colore: string; attiva: boolean }[];
+    onClose: () => void;
+    onAggiornata: (t: CalendarTask) => void;
+    onCopie: (nuove: CalendarTask[]) => void;
+}) {
+    const [titolo, setTitolo] = useState(t.title);
+    const [data, setData] = useState(t.date);
+    const [ora, setOra] = useState(t.time || "");
+    const [note, setNote] = useState(t.notes || "");
+    const [stato, setStato] = useState<TaskStatus>(t.status);
+    const [addPersone, setAddPersone] = useState<string[]>([]);
+    const [addNegozi, setAddNegozi] = useState<string[]>([]);
+    const [busy, setBusy] = useState(false);
+
+    const salva = async () => {
+        if (busy) return;
+        setBusy(true);
+        const patch: Record<string, unknown> = { status: stato };
+        if (puoGestire) {
+            patch.title = titolo.trim() || t.title;
+            patch.date = data;
+            patch.time = ora || null;
+            patch.notes = note || null;
+        }
+        const { data: upd, error } = await supabase.from("calendar_tasks").update(patch).eq("id", t.id).select().single();
+        if (error) { setBusy(false); alert("Salvataggio non riuscito: " + error.message); return; }
+        onAggiornata(mapTaskRow(upd as Record<string, unknown>));
+        if (puoGestire && (addPersone.length || addNegozi.length)) {
+            const base = {
+                title: (patch.title as string) || t.title, date: data, time: ora || null, status: "da_fare",
+                notes: note || null, client_ref: t.clientRef || null, created_by: t.createdBy || "—",
+            };
+            const rows = [
+                ...addPersone.filter((p) => p !== t.assignedTo).map((p) => ({ ...base, assigned_to: p, assigned_to_store: null })),
+                ...addNegozi.filter((n) => n !== t.assignedToStore).map((n) => ({ ...base, assigned_to: "", assigned_to_store: n })),
+            ];
+            if (rows.length) {
+                const { data: ins, error: e2 } = await supabase.from("calendar_tasks").insert(rows).select();
+                if (e2) alert("Task gemelle NON create: " + e2.message);
+                else onCopie(((ins ?? []) as Record<string, unknown>[]).map(mapTaskRow));
+            }
+        }
+        setBusy(false);
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            <div className="glass-card w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+                    <h3 className="text-lg font-bold text-white">✅ Task</h3>
+                    <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-lg text-slate-400"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="p-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Titolo</label>
+                        <input className="glass-input w-full" value={titolo} onChange={(e) => setTitolo(e.target.value)} disabled={!puoGestire} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Data</label>
+                            <input type="date" className="glass-input w-full" value={data} onChange={(e) => setData(e.target.value)} disabled={!puoGestire} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Ora</label>
+                            <input type="time" className="glass-input w-full" value={ora} onChange={(e) => setOra(e.target.value)} disabled={!puoGestire} />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Assegnata a</label>
+                            <input className="glass-input w-full text-slate-300 bg-white/5" value={t.assignedToStore ? `🏬 ${t.assignedToStore}` : (t.assignedTo || "—")} readOnly />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Stato</label>
+                            <select className="glass-input w-full" value={stato} onChange={(e) => setStato(e.target.value as TaskStatus)}>
+                                {esiti.filter((x) => x.attiva || x.chiave === stato).map((x) => <option key={x.chiave} value={x.chiave}>{x.etichetta}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Note</label>
+                        <textarea className="glass-input w-full resize-none" rows={2} value={note} onChange={(e) => setNote(e.target.value)} disabled={!puoGestire} />
+                    </div>
+                    {puoGestire && (
+                        <div className="p-3 rounded-xl bg-white/[0.03] border border-white/8 space-y-3">
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aggiungi assegnatari <span className="normal-case font-normal">(task gemelle, una a testa)</span></p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-[11px] text-slate-500 mb-1">Operatori</label>
+                                    <SelectMulti values={addPersone} onChange={setAddPersone} opzioni={persone} className="w-full bg-black/40 border border-white/10 rounded-xl text-sm py-2 px-3" />
+                                </div>
+                                <div>
+                                    <label className="block text-[11px] text-slate-500 mb-1">Punti vendita</label>
+                                    <SelectMulti values={addNegozi} onChange={setAddNegozi} opzioni={negozi} className="w-full bg-black/40 border border-white/10 rounded-xl text-sm py-2 px-3" />
+                                </div>
+                            </div>
+                            {(addPersone.length + addNegozi.length) > 0 && <p className="text-[11px] text-slate-500">Al salvataggio verranno create {addPersone.length + addNegozi.length} task gemelle.</p>}
+                        </div>
+                    )}
+                    <div className="flex items-center justify-between gap-3 pt-1">
+                        <p className="text-[11px] text-slate-600">Creata da {t.createdBy || "—"}</p>
+                        <div className="flex gap-2">
+                            <button onClick={onClose} className="px-4 py-2 rounded-xl border border-white/10 text-slate-300 text-sm">Chiudi</button>
+                            <button onClick={salva} disabled={busy} className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-40">{busy ? "Salvo…" : "Salva"}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

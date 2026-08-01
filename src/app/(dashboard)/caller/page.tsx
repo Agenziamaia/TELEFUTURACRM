@@ -119,6 +119,9 @@ interface Call {
     // punto vendita CONGRUO per il cliente (mig. 118): per i lead interni
     // coincide col negozio di provenienza, per gli altri va scelto sempre
     negozio_pertinenza: string;
+    // pratica ASSORBITA (mig. 123): il cliente ha risposto su un'altra riga —
+    // sparisce dal caller, resta a database per lo storico
+    assorbita_da?: string | null;
     lista_origine?: string | null;
     da_esitare?: boolean;
     storico: StoricoEntry[];
@@ -216,6 +219,7 @@ function mapRowToCall(row: Record<string, unknown>): Call {
         fascia_appuntamento: (row.fascia_appuntamento as string) || "",
         fascia_richiamo: (row.fascia_richiamo as string) || "",
         negozio_pertinenza: (row.negozio_pertinenza as string) || "",
+        assorbita_da: (row.assorbita_da as string) || null,
         lista_origine: (row.lista_origine as string) || null,
         da_esitare: !!row.da_esitare,
         storico: (row.storico as StoricoEntry[]) || [],
@@ -681,6 +685,9 @@ function CallerPageInner() {
     }, [isDirector, regoleCaller, calls, faseInfo, badgePronto]);
 
     const matchFiltri = (c: Call, ignoraBrand = false, ignoraFase = false) => {
+        // le pratiche ASSORBITE (il cliente ha risposto su un'altra riga)
+        // non si portano avanti: vivono solo nello storico del cliente
+        if (c.assorbita_da) return false;
         if (!isDirector && c.caller !== currentCaller) return false;
         if (soloDaEsitare && !c.da_esitare) return false;
         if (!ignoraFase && faseFilter && faseInfo(c).fase !== faseFilter) return false;
@@ -849,8 +856,33 @@ function CallerPageInner() {
             } else {
                 updated.ragione_sociale = trovato.ragione_sociale || "";
             }
-            updated.numero = trovato.numero || "";
-            updated.cellulare = trovato.cellulare || "";
+            // REGOLA FERMA (Luca 31/07, caso Cassio): il NUMERO CHIAMATO e' un
+            // fatto storico — arriva da Aircall e NON si sovrascrive MAI, per
+            // nessun motivo. Si compila solo se la pratica ne era priva.
+            // Il recapito alternativo scritto a mano non si tocca.
+            const chiamato = numeroNazionale(editCall.numero) || String(editCall.numero || "").trim();
+            const anagrafico = numeroNazionale(trovato.numero || "") || String(trovato.numero || "").trim();
+            if (!chiamato) {
+                updated.numero = trovato.numero || "";
+            } else if (anagrafico && anagrafico !== chiamato) {
+                // anagrafica con un numero DIVERSO: si propone SUBITO di
+                // associare il chiamato come numero aggiuntivo del cliente
+                const chi = editCall.tipo_cliente === "business"
+                    ? (trovato.ragione_sociale || "Il cliente")
+                    : (`${trovato.nome || ""} ${trovato.cognome || ""}`.trim() || "Il cliente");
+                if (window.confirm(`${chi} in anagrafica ha il numero ${anagrafico}, ma questa chiamata è al ${chiamato}.\nVuoi associare ${chiamato} come numero AGGIUNTIVO del cliente?\n(Il numero chiamato NON viene modificato: potrai dargli un'etichetta dalla scheda cliente.)`)) {
+                    try {
+                        const { data: cli } = await supabase.from("clients").select("id").eq("cf_piva", value.trim().toUpperCase()).maybeSingle();
+                        if (cli?.id) {
+                            const { data: gia } = await supabase.from("client_numeri").select("id").eq("client_id", cli.id).eq("numero", chiamato).limit(1);
+                            if (!gia?.length) {
+                                const { error: en } = await supabase.from("client_numeri").insert({ client_id: cli.id, numero: chiamato });
+                                if (en && !/duplicate/i.test(en.message)) alert("Numero NON associato: " + en.message + (/(relation|table)/i.test(en.message) ? " — manca la migrazione 121?" : ""));
+                            }
+                        }
+                    } catch { /* si riproverà al salvataggio (creaAnagraficaSeManca) */ }
+                }
+            }
             updated.clienteRiconosciuto = true;
         } else {
             updated.clienteRiconosciuto = false;
@@ -860,11 +892,12 @@ function CallerPageInner() {
 
     function resetClienteLookup() {
         if (!editCall) return;
+        // il numero chiamato e il recapito alternativo NON si azzerano: sono
+        // dati della chiamata, non dell'anagrafica (Luca 31/07)
         setEditCall({
             ...editCall,
             nome: "", cognome: "", ragione_sociale: "",
             cf: "", piva: "",
-            numero: "", cellulare: "",
             clienteRiconosciuto: false,
         });
     }
@@ -985,8 +1018,38 @@ function CallerPageInner() {
         const idf = String((c.tipo_cliente === "business" ? c.piva : c.cf) || "").trim().toUpperCase();
         if (!idf) return;
         try {
-            const { data: ex } = await supabase.from("clients").select("id").ilike("cf_piva", idf).limit(1);
-            if (ex && ex.length) return;
+            const { data: ex } = await supabase.from("clients").select("id, cellulare, nome, cognome, ragione_sociale").ilike("cf_piva", idf).limit(1);
+            if (ex && ex.length) {
+                // CLIENTE GIA' IN ANAGRAFICA (Luca 31/07, mig. 121): se sto
+                // lavorando un numero DIVERSO dal suo principale, proponi di
+                // associarlo come numero aggiuntivo (famiglie con piu' utenze)
+                try {
+                    const cli = ex[0] as { id: string; cellulare: string | null; nome?: string | null; cognome?: string | null; ragione_sociale?: string | null };
+                    const princ = numeroNazionale(cli.cellulare || "") || String(cli.cellulare || "");
+                    const nomeCli = cli.ragione_sociale || `${cli.nome || ""} ${cli.cognome || ""}`.trim() || cli.id;
+                    // si considerano ENTRAMBI i numeri della pratica (chiamato E
+                    // recapito alternativo): il caso Cassio — il secondo numero
+                    // stava nel campo cellulare e non veniva mai proposto
+                    const numeriPratica = [...new Set([numeroNazionale(c.numero), numeroNazionale(c.cellulare)].filter(Boolean))] as string[];
+                    for (const n of numeriPratica) {
+                        if (!princ) {
+                            const { data: dup } = await supabase.from("clients").select("id").eq("cellulare", n).neq("id", cli.id).limit(1);
+                            if (!dup?.length && window.confirm(`${nomeCli} è già in anagrafica ma SENZA numero.\nVuoi impostare ${n} come suo numero principale?`)) {
+                                await supabase.from("clients").update({ cellulare: n }).eq("id", cli.id);
+                            }
+                            continue;
+                        }
+                        if (n === princ) continue;
+                        const { data: gia } = await supabase.from("client_numeri").select("id").eq("client_id", cli.id).eq("numero", n).limit(1);
+                        if (gia?.length) continue;
+                        if (window.confirm(`${nomeCli} ha già un numero associato (principale: ${princ}).\nVuoi associare ${n} come numero AGGIUNTIVO?\n(L'etichetta — moglie, figlio, lavoro… — si imposta poi dalla scheda cliente.)`)) {
+                            const { error: en } = await supabase.from("client_numeri").insert({ client_id: cli.id, numero: n });
+                            if (en && !/duplicate/i.test(en.message)) alert("Numero NON associato: " + en.message + (/(relation|table)/i.test(en.message) ? " — manca la migrazione 121?" : ""));
+                        }
+                    }
+                } catch { /* associazione saltata: l'esito resta salvato */ }
+                return;
+            }
             let cel = numeroNazionale(c.numero) || numeroNazionale(c.cellulare);
             if (cel) {
                 const { data: dup } = await supabase.from("clients").select("id").ilike("cellulare", cel).limit(1);
@@ -1031,6 +1094,80 @@ function CallerPageInner() {
         alert("Provenienza INTERNO: indica il NEGOZIO e il MESE/ANNO da cui e' stato estratto questo lead (le stesse informazioni delle liste del direttore).");
         return false;
     }
+    // ASSORBIMENTO pratiche gemelle (Luca 31/07, mig. 123): quando il cliente
+    // HA RISPOSTO su una riga (esito vero: appuntamento, richiamo, non
+    // interessato...), le ALTRE pratiche dello stesso CF ferme su "Nuovo" o
+    // sui non-risposto spariscono dalla sezione caller — restano a database
+    // (e nello storico del cliente: l'ho chiamato su tre numeri) ma non si
+    // portano avanti righe doppie.
+    async function assorbiPraticheGemelle(c: Call, callId: string) {
+        const statoRef = c.statoNew || c.stato;
+        const idf = String((c.tipo_cliente === "business" ? c.piva : c.cf) || "").trim().toUpperCase();
+        if (!statoRef || !idf) return;
+        const eDebole = (s: string) => s === "Nuovo" || NRD_STATI.includes(s);
+        try {
+            const campoIdf = c.tipo_cliente === "business" ? "piva" : "cf";
+            const { data: gemelle } = await supabase.from("calls").select("id, stato, assorbita_da").ilike(campoIdf, idf).neq("id", callId);
+            const rows = (gemelle ?? []) as { id: string; stato: string; assorbita_da: string | null }[];
+            if (!eDebole(statoRef)) {
+                // la riga corrente e' quella VINCENTE (il cliente ha risposto):
+                // assorbe le gemelle ferme su Nuovo / non risposto
+                const daAssorbire = rows.filter((g) => eDebole(g.stato) && !g.assorbita_da).map((g) => g.id);
+                if (!daAssorbire.length) return;
+                const { error } = await supabase.from("calls").update({ assorbita_da: callId }).in("id", daAssorbire);
+                if (error && !/column/i.test(error.message || "")) console.warn("assorbimento non riuscito:", error.message);
+            } else {
+                // la riga corrente e' DEBOLE (Nuovo/NR): se il cliente ha gia'
+                // una riga vincente — es. sto solo riportando il CF sulle
+                // chiamate fallite di stamattina — e' la CORRENTE a sparire
+                const vincente = rows.find((g) => !eDebole(g.stato) && !g.assorbita_da);
+                if (!vincente) return;
+                const { error } = await supabase.from("calls").update({ assorbita_da: vincente.id }).eq("id", callId);
+                if (error && !/column/i.test(error.message || "")) console.warn("assorbimento non riuscito:", error.message);
+            }
+        } catch { /* niente assorbimento: le righe restano visibili */ }
+    }
+
+    // AGGIORNA DATI senza esito (Luca 31/07): prima le modifiche ai campi
+    // (cellulare, brand, obiettivo, pertinenza...) si salvavano SOLO scegliendo
+    // un nuovo stato — correggere un dato richiedeva un esito finto.
+    async function aggiornaSoloDati() {
+        if (!editCall || modalMode !== "detail") return;
+        if (!anagraficaObbligatoriaOk(editCall)) return;
+        if (!provenienzaInternoOk(editCall)) return;
+        const pertinenza = (editCall.provenienza === "Interno" && editCall.negozio_provenienza)
+            ? editCall.negozio_provenienza
+            : editCall.negozio_pertinenza;
+        if (!String(pertinenza || "").trim()) { alert("NEGOZIO DI PERTINENZA obbligatorio: è il punto vendita congruo per il cliente."); return; }
+        const updates: Record<string, unknown> = {
+            tipo_cliente: editCall.tipo_cliente,
+            nome: editCall.nome, cognome: editCall.cognome,
+            ragione_sociale: editCall.ragione_sociale,
+            cf: editCall.cf, piva: editCall.piva,
+            numero: numeroNazionale(editCall.numero) || editCall.numero,
+            cellulare: numeroNazionale(editCall.cellulare) || numeroNazionale(editCall.numero),
+            brand: editCall.brand, obiettivo: editCall.obiettivo,
+            provenienza: editCall.provenienza, tipologia: editCall.tipologia,
+            negozio_provenienza: editCall.negozio_provenienza,
+            mese_provenienza: editCall.mese_provenienza,
+            anno_provenienza: editCall.anno_provenienza,
+            negozio_pertinenza: pertinenza,
+            indirizzo: editCall.indirizzo, agente: editCall.agente,
+            segnalatore: editCall.segnalatore, campagna: editCall.campagna,
+            note: editCall.note,
+        };
+        let { error } = await supabase.from("calls").update(updates).eq("id", editCall.id);
+        if (error && /column/i.test(error.message || "")) {
+            const { negozio_pertinenza: _np, ...legacy } = updates;
+            ({ error } = await supabase.from("calls").update(legacy).eq("id", editCall.id));
+        }
+        if (error) { alert("Dati NON aggiornati: " + error.message); return; }
+        await creaAnagraficaSeManca(editCall);
+        await assorbiPraticheGemelle(editCall, editCall.id);
+        await fetchCalls();
+        closeModal();
+    }
+
     async function saveCall() {
         if (!editCall) return;
         const now = new Date().toISOString();
@@ -1082,6 +1219,7 @@ function CallerPageInner() {
             }
             if (creata?.id) await sincronizzaAppuntamento(newCall, String(creata.id));
             await creaAnagraficaSeManca(newCall);
+            if (creata?.id) await assorbiPraticheGemelle(newCall, String(creata.id));
             await fetchCalls();
         } else {
             // Detail mode: update only stato and append history
@@ -1162,6 +1300,7 @@ function CallerPageInner() {
                 return;
             }
             await creaAnagraficaSeManca(editCall);
+            await assorbiPraticheGemelle(editCall, editCall.id);
             if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
                 await sincronizzaRichiamo({ ...original, ...editCall }, editCall.id, editCall.dataRichiamoNew);
             }
@@ -1787,11 +1926,13 @@ function CallerPageInner() {
                                                 </td>
                                                 {/* La cornetta sta sul NUMERO, non sul nome (Luca 30/07). */}
                                                 <td className="px-4 py-3">
-                                                    {(c.cellulare || c.numero) ? (
+                                                    {/* in lista si mostra il numero CHIAMATO (quello che ha
+                                                        creato la riga), non il recapito alternativo (Luca 31/07) */}
+                                                    {(c.numero || c.cellulare) ? (
                                                         <div className="flex items-center gap-2">
-                                                            <span className="font-mono text-[13px] text-slate-200 whitespace-nowrap">{c.cellulare || c.numero}</span>
+                                                            <span className="font-mono text-[13px] text-slate-200 whitespace-nowrap">{c.numero || c.cellulare}</span>
                                                             <button
-                                                                onClick={async (e) => { e.stopPropagation(); const r = await chiamaAircall(c.cellulare || c.numero, user?.id); alert(r.msg); }}
+                                                                onClick={async (e) => { e.stopPropagation(); const r = await chiamaAircall(c.numero || c.cellulare, user?.id); alert(r.msg); }}
                                                                 title="Chiama con Aircall"
                                                                 className="p-1 rounded-md border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-[11px] leading-none shrink-0"
                                                             >📞</button>
@@ -2368,7 +2509,8 @@ function CallerPageInner() {
                                                 <div>
                                                     <label className="text-[10px] text-slate-500 uppercase tracking-widest">Numero</label>
                                                     <div className="flex gap-1.5 mt-1">
-                                                        <input className="glass-input w-full rounded-lg py-2" value={editCall.numero} onChange={(e) => updateField("numero", e.target.value)} placeholder="333 123 4567" />
+                                                        {/* numero CHIAMATO = fatto storico, mai modificabile (Luca 31/07) */}
+                                                        <input className="glass-input w-full rounded-lg py-2 opacity-80 cursor-not-allowed" value={editCall.numero} readOnly title="Numero chiamato: dato certo della chiamata, non modificabile" placeholder="333 123 4567" />
                                                         {String(editCall.numero || "").replace(/\D/g, "").length >= 6 && (<>
                                                             <button type="button" title="Richiama con Aircall"
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
@@ -2399,40 +2541,40 @@ function CallerPageInner() {
                                             {editCall.clienteRiconosciuto && <p className="text-[11px] text-emerald-400 font-bold">✓ Cliente riconosciuto in anagrafica: dati compilati automaticamente</p>}
                                             {/* le stesse prime 4 tendine dell'Inserimento Manuale (Dettagli Chiamata) */}
                                             <p className="text-[11px] font-bold text-amber-300 uppercase tracking-widest pt-1">Dettagli chiamata</p>
+                                            {/* tendine STANDARD del CRM (SelectOpzioni) anche qui — Luca 31/07 */}
                                             <div className="grid grid-cols-2 gap-3">
                                                 <FormGroup label="Brand">
-                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.brand} onChange={(e) => updateField("brand", e.target.value)}>
-                                                        <option value="">Seleziona...</option>
-                                                        {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                                                    </select>
+                                                    <SelectOpzioni value={editCall.brand} onChange={(v) => updateField("brand", v)} opzioni={BRANDS} placeholder="Scrivi o scegli…" className="glass-input rounded-lg py-2 w-full" />
                                                 </FormGroup>
                                                 <FormGroup label="Obiettivo">
-                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.obiettivo} onChange={(e) => updateField("obiettivo", e.target.value)}>
-                                                        <option value="">Seleziona...</option>
-                                                        {OBIETTIVI_OPT.map(o => <option key={o} value={o}>{o}</option>)}
-                                                    </select>
+                                                    <SelectOpzioni value={editCall.obiettivo} onChange={(v) => updateField("obiettivo", v)} opzioni={OBIETTIVI_OPT} placeholder="Scrivi o scegli…" className="glass-input rounded-lg py-2 w-full" />
                                                 </FormGroup>
                                                 <FormGroup label="Provenienza">
-                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.provenienza} onChange={(e) => updateField("provenienza", e.target.value)}>
-                                                        <option value="">Seleziona...</option>
-                                                        {PROVENIENZE_OPT.map(pr => <option key={pr} value={pr}>{pr}</option>)}
-                                                    </select>
+                                                    <SelectOpzioni value={editCall.provenienza} onChange={(v) => updateField("provenienza", v)} opzioni={PROVENIENZE_OPT} placeholder="Scrivi o scegli…" className="glass-input rounded-lg py-2 w-full" />
                                                 </FormGroup>
                                                 <FormGroup label="Tipologia">
-                                                    <select className="glass-input rounded-lg py-2 w-full" value={editCall.tipologia} onChange={(e) => updateField("tipologia", e.target.value)}>
-                                                        <option value="">Seleziona...</option>
-                                                        {TIPOLOGIE_OPT.map(t => <option key={t} value={t}>{t}</option>)}
-                                                    </select>
+                                                    <SelectOpzioni value={editCall.tipologia} onChange={(v) => updateField("tipologia", v)} opzioni={TIPOLOGIE_OPT} placeholder="Scrivi o scegli…" className="glass-input rounded-lg py-2 w-full" />
                                                 </FormGroup>
+                                                {/* SEMPRE editabile (Luca 31/07): si puo' aver sbagliato
+                                                    l'esito o deciso un negozio diverso — per i lead interni
+                                                    resta agganciato alla provenienza */}
+                                                <div className="col-span-2">
+                                                    <FormGroup label="Negozio di Pertinenza *">
+                                                        <SelectOpzioni
+                                                            value={editCall.provenienza === "Interno" && editCall.negozio_provenienza ? editCall.negozio_provenienza : editCall.negozio_pertinenza}
+                                                            onChange={(v) => updateField("negozio_pertinenza", v)}
+                                                            opzioni={NEGOZI} placeholder="Scrivi o scegli il negozio…"
+                                                            disabled={!!(editCall.provenienza === "Interno" && editCall.negozio_provenienza)}
+                                                            className="glass-input rounded-lg py-2 w-full" />
+                                                        {editCall.provenienza === "Interno" && !!editCall.negozio_provenienza && <p className="text-[10px] text-slate-500 mt-1">Lead interno: coincide col negozio di provenienza.</p>}
+                                                    </FormGroup>
+                                                </div>
                                                 {/* lead interno: origine obbligatoria anche all'esito del
                                                     caller — stesse info delle liste del direttore (Luca 31/07) */}
                                                 {editCall.provenienza === "Interno" && (
                                                     <div className="col-span-2 grid grid-cols-3 gap-3">
                                                         <FormGroup label="Negozio Provenienza">
-                                                            <select className="glass-input rounded-lg py-2 w-full" value={editCall.negozio_provenienza} onChange={(e) => updateField("negozio_provenienza", e.target.value)}>
-                                                                <option value="">Negozio...</option>
-                                                                {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
-                                                            </select>
+                                                            <SelectOpzioni value={editCall.negozio_provenienza} onChange={(v) => updateField("negozio_provenienza", v)} opzioni={NEGOZI} placeholder="Negozio…" className="glass-input rounded-lg py-2 w-full" />
                                                         </FormGroup>
                                                         <FormGroup label="Mese">
                                                             <select className="glass-input rounded-lg py-2 w-full" value={editCall.mese_provenienza} onChange={(e) => updateField("mese_provenienza", e.target.value)}>
@@ -2604,6 +2746,15 @@ function CallerPageInner() {
 
                         <div className="flex-none px-6 py-4 border-t border-white/10 flex justify-end gap-3 bg-white/[0.02]">
                             <button onClick={closeModal} className="px-6 py-2.5 rounded-xl border border-white/10 text-slate-300 text-xs font-bold uppercase tracking-widest hover:bg-white/5">Annulla</button>
+                            {modalMode === "detail" && (
+                                <button
+                                    onClick={aggiornaSoloDati}
+                                    title="Salva le modifiche ai campi (anagrafica, dettagli chiamata, pertinenza) SENZA cambiare lo stato"
+                                    className="px-6 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs uppercase tracking-widest shadow-lg shadow-sky-500/20"
+                                >
+                                    Aggiorna Dati
+                                </button>
+                            )}
                             <button
                                 onClick={saveCall}
                                 disabled={modalMode === "detail" && !editCall.statoNew}

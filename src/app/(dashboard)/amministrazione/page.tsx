@@ -572,6 +572,7 @@ function AmministrazioneInner() {
                         setShowForm(true);
                         setDetail(null);
                     }}
+                    onStatoCambiato={() => { setDetail(null); fetchAll(); }}
                 />
             )}
         </div>
@@ -987,12 +988,8 @@ function UserForm({
                         <Field label="IBAN">
                             <input className="glass-input w-full" value={f.iban || ""} onChange={(e) => set("iban", e.target.value)} placeholder="IT.." />
                         </Field>
-                        <Field label="Stato">
-                            <select className="glass-input w-full" value={f.status || "attivo"} onChange={(e) => set("status", e.target.value)}>
-                                <option value="attivo">Attivo</option>
-                                <option value="licenziato">Licenziato</option>
-                            </select>
-                        </Field>
+                        {/* lo STATO non si tocca piu' dalla matita (Luca 31/07): si
+                            licenzia/riassume col pulsantone nella scheda utente */}
                         <Field label="Tipo di contratto">
                             <select className="glass-input w-full" value={f.contract_type || ""} onChange={(e) => set("contract_type", e.target.value)}>
                                 <option value="">— seleziona —</option>
@@ -1204,7 +1201,19 @@ interface Activity {
     appointments: { id: string; date: string; status: string; customer_name: string; store: string }[];
 }
 
-function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; onEdit?: () => void }) {
+function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClose: () => void; onEdit?: () => void; onStatoCambiato?: () => void }) {
+    // LICENZIA / RIASSUMI col pulsantone (Luca 31/07): niente piu' matita per
+    // cambiare lo stato — conferma esplicita, poi il licenziato sparisce dalla
+    // lista (resta visibile col flag "Mostra licenziati")
+    const cambiaStato = async (nuovo: "attivo" | "licenziato") => {
+        const msg = nuovo === "licenziato"
+            ? `Licenziare ${u.full_name}?\nSparirà dalla lista utenti (lo ritrovi col flag "Mostra licenziati") e non potrà più accedere al CRM.`
+            : `Riassumere ${u.full_name}?\nTorna Attivo, con accesso e visibilità come prima.`;
+        if (!window.confirm(msg)) return;
+        const { error } = await supabase.from("app_users").update({ status: nuovo, active: nuovo !== "licenziato" }).eq("id", u.id);
+        if (error) { alert("Cambio stato NON riuscito: " + error.message); return; }
+        onStatoCambiato?.();
+    };
     const detailRules = useRoleCosts();
     const matchName = u.match_name || u.full_name;
     const area = areaOf(u.role);
@@ -1476,6 +1485,21 @@ function UserDetail({ u, onClose, onEdit }: { u: AppUser; onClose: () => void; o
                                     <p className="text-sm text-slate-300">{u.note}</p>
                                 </div>
                             )}
+
+                            {/* pulsantone LICENZIA / RIASSUMI sotto i dati (Luca 31/07) */}
+                            <div className="glass-card p-4 rounded-xl">
+                                {u.status === "licenziato" ? (
+                                    <button onClick={() => cambiaStato("attivo")}
+                                        className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black uppercase tracking-widest transition-colors">
+                                        ✅ Riassumi
+                                    </button>
+                                ) : (
+                                    <button onClick={() => cambiaStato("licenziato")}
+                                        className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-black uppercase tracking-widest transition-colors">
+                                        🔴 Licenzia
+                                    </button>
+                                )}
+                            </div>
                             <p className="text-xs text-slate-500">
                                 L&apos;attività è collegata tramite il nome <span className="text-slate-300">{matchName}</span> presente nelle
                                 varie sezioni del CRM.

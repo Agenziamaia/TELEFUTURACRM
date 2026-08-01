@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { numeroNazionale } from "@/lib/telefono";
 import { useStores, useSellers } from "@/lib/org";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { RicercaCliente } from "@/components/RicercaCliente";
 
 // ── COSTANTI ──────────────────────────────────────────────────────────────────
 
@@ -339,53 +340,37 @@ export default function InviaPda() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
-  const doLookup = async () => {
-    if (!lookupValue) return;
-    try {
-      const { data, error } = await supabase
-        .from("clients")
-        .select("*")
-        .eq("cf_piva", lookupValue.toUpperCase())
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        setClienteFound(true);
-        setLookupDone(true);
-        if (data.tipo === "consumer") {
-          setAnConsumer(p => ({
-            ...p,
-            nome: data.nome || "",
-            cognome: data.cognome || "",
-            cf: data.cf_piva || "",
-            email: data.email || "",
-            cellulare: data.cellulare || "",
-            domicilio: data.indirizzo || "",
-          }));
-          setTipoCliente("privato");
-        } else {
-          setAnBusiness(p => ({
-            ...p,
-            ragioneSociale: data.ragione_sociale || "",
-            piva: data.cf_piva || "",
-            referente: data.nome || "",
-            email: data.email || "",
-            mobile: data.cellulare || "",
-            sedeLegale: data.indirizzo || "",
-          }));
-          setTipoCliente("business");
-        }
-        showToast("✅ Cliente trovato nel database");
-      } else {
-        setClienteFound(false);
-        setLookupDone(true);
-        showToast("ℹ️ Cliente non trovato, inserimento manuale");
-      }
-    } catch (err) {
-      console.error("Lookup error:", err);
-      showToast("❌ Errore ricerca cliente");
+  // RICERCA STANDARD (Luca 31/07): stesso campo unico di Registra Vendita —
+  // la vecchia doLookup cercava SOLO il CF esatto col bottone e non trovava
+  // nulla al minimo scarto. Ora la selezione arriva da <RicercaCliente/>.
+  const applicaClientePda = (data) => {
+    setClienteFound(true);
+    setLookupDone(true);
+    setLookupValue(data.cf_piva || "");
+    if (data.tipo === "consumer") {
+      setAnConsumer(p => ({
+        ...p,
+        nome: data.nome || "",
+        cognome: data.cognome || "",
+        cf: data.cf_piva || "",
+        email: data.email || "",
+        cellulare: data.cellulare || "",
+        domicilio: data.indirizzo || "",
+      }));
+      setTipoCliente("privato");
+    } else {
+      setAnBusiness(p => ({
+        ...p,
+        ragioneSociale: data.ragione_sociale || "",
+        piva: data.cf_piva || "",
+        referente: data.nome || "",
+        email: data.email || "",
+        mobile: data.cellulare || "",
+        sedeLegale: data.indirizzo || "",
+      }));
+      setTipoCliente("business");
     }
+    showToast("✅ Cliente trovato nel database");
   };
 
   const doCF = () => {
@@ -1996,16 +1981,16 @@ export default function InviaPda() {
 
                 {tipoCliente && (
                   <div className="bg-white/[0.03] rounded-2xl p-6 mb-8 border border-white/5">
-                    <Label text={tipoCliente === "privato" ? "Codice Fiscale" : "Partita IVA"} required note="Ricerca cliente esistente" />
-                    <div className="flex gap-3 mt-3">
-                      <input type="text" className="flex-1 glass-input font-mono tracking-widest uppercase" placeholder={tipoCliente === "privato" ? "RSSMRA80A..." : "1234567..."}
-                        value={lookupValue} onChange={e => setLookupValue(e.target.value)} />
-                      <button onClick={doLookup}
-                        className="px-6 py-2 bg-violet-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-violet-600/25 hover:bg-violet-500 transition-all flex items-center gap-2">
-                        <Search className="w-4 h-4" /> Cerca
-                      </button>
+                    <Label text="Cliente esistente" required note="Cerca per CF/P.IVA, cellulare, nome e cognome o ragione sociale" />
+                    <div className="flex gap-3 mt-3 items-start">
+                      {/* ricerca STANDARD del CRM, identica a Registra Vendita (Luca 31/07) */}
+                      <RicercaCliente
+                        tipo={tipoCliente === "privato" ? "consumer" : "business"}
+                        className="flex-1"
+                        onScelto={applicaClientePda}
+                      />
                       <button onClick={() => { setClienteFound(false); setLookupDone(true); }}
-                        className="px-6 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-sm font-bold border border-white/10 transition-all flex items-center gap-2">
+                        className="px-6 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-sm font-bold border border-white/10 transition-all flex items-center gap-2 shrink-0">
                         <User className="w-4 h-4" /> Nuovo
                       </button>
                     </div>
