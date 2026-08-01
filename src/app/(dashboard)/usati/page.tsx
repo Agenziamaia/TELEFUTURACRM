@@ -718,8 +718,10 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             )}
             {/* PASSO INDIETRO (Luca 31/07): correzione errori, solo
                 amministrativo in su, con conferma esplicita */}
+            {/* in FONDO alla colonna con stacco netto (Luca 01/08): attaccata
+                alle selezioni di stato si confondeva con il flusso normale */}
             {isAmministrazione && (LIFECYCLE.indexOf(dev.status as any) > 0 || ["ko", "venduto", "smontato"].includes(dev.status)) && (
-              <div className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-3">
+              <div className="mt-14 flex flex-col gap-2 border-t-2 border-dashed border-amber-500/20 pt-4 opacity-90">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80">↩ Correzione stato (amministrazione)</div>
                 <select value={indietroSel} onChange={e => setIndietroSel(e.target.value)}
                   className="w-full bg-black/40 border border-amber-500/20 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
