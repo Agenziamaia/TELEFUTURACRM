@@ -554,12 +554,15 @@ export function CatalogoView() {
                                                                 <>
                                                                     <span className="truncate flex items-center gap-1.5">
                                                                         {k.nome}
-                                                                        {k.gruppo_singolo && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300" title={`Gruppo "${k.gruppo_singolo}": tra queste opzioni se ne sceglie UNA sola`}>1 sola</span>}
+                                                                        {k.gruppo_singolo && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300" title={`Gruppo "${k.gruppo_singolo}": tra le opzioni con questo gruppo se ne sceglie UNA sola`}>1 sola · {k.gruppo_singolo}</span>}
                                                                         {k.tipo === "numero" && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300" title="Alla selezione chiede una quantità">n°</span>}
                                                                     </span>
                                                                     <span className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                        <button title={k.gruppo_singolo ? "Rendi cumulabile" : "Rendi a scelta singola (gruppo reload)"}
-                                                                            onClick={() => run("Gruppo opzione", () => supabase.from("catalog_opzioni").update({ gruppo_singolo: k.gruppo_singolo ? null : "reload" }).eq("id", k.id))}
+                                                                        {/* GRUPPI NOMINABILI (Luca 02/08): opzioni con lo STESSO nome di
+                                                                            gruppo si escludono a vicenda (es. "security" per Security vs
+                                                                            Security Pro, separato da "reload"); vuoto = cumulabile */}
+                                                                        <button title={k.gruppo_singolo ? `Gruppo "${k.gruppo_singolo}" — clicca per cambiarlo o svuotarlo` : "Metti in un gruppo di incompatibilità: le opzioni con lo stesso gruppo si escludono a vicenda"}
+                                                                            onClick={() => { const g = window.prompt('Gruppo di incompatibilità: le opzioni della STESSA offerta con lo stesso nome di gruppo si escludono a vicenda (se ne sceglie una sola).\nEsempi: "reload", "security". Vuoto = cumulabile con tutto.', k.gruppo_singolo || ""); if (g === null) return; run("Gruppo opzione", () => supabase.from("catalog_opzioni").update({ gruppo_singolo: g.trim().toLowerCase() || null }).eq("id", k.id)); }}
                                                                             className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase", k.gruppo_singolo ? "bg-violet-500/25 text-violet-200" : "bg-white/5 text-slate-500 hover:text-white")}>1</button>
                                                                         <button title={k.tipo === "numero" ? "Togli la quantità" : "Chiedi una quantità alla selezione"}
                                                                             onClick={() => run("Tipo opzione", () => supabase.from("catalog_opzioni").update({ tipo: k.tipo === "numero" ? null : "numero" }).eq("id", k.id))}
