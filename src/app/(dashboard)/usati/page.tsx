@@ -1625,6 +1625,7 @@ function GestioneUsatiInner() {
           indirizzo: (isBus ? anaD.sedeLegale : anaD.domicilio) || "", cap: "", citta: "",
           iban: anaD.iban || "",
           data_nascita: isBus ? null : dataNascitaDaCF(idf),
+          is_demo: false,
           creato_da: data.venditore || "",
           acquisito_da: data.negozio || null,
         };

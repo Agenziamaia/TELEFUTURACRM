@@ -617,7 +617,8 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                 if (err) throw err;
             } else {
                 const idBase = cfPiva.trim() || cellulare.replace(/\D/g, "") || "ND";
-                const insertPayload = { id: `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`, ...basePayload, acquisito_da: acquisito || null };
+                // is_demo esplicito: il default del DB e' true e marchiava "demo" i clienti veri
+                const insertPayload = { id: `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`, ...basePayload, acquisito_da: acquisito || null, is_demo: false };
                 const { error: err } = await supabase.from("clients").insert([insertPayload]);
                 if (err) throw err;
             }

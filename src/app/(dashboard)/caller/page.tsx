@@ -1070,6 +1070,9 @@ function CallerPageInner() {
                 nome_ref: c.tipo_cliente === "business" ? (c.nome || "") : "",
                 cognome_ref: c.tipo_cliente === "business" ? (c.cognome || "") : "",
                 data_nascita: dataNascitaDaCF(idf),
+                // cliente REALE: senza il campo scattava il default true del DB
+                // e l'anagrafica risultava "demo" (trovato su 18 business, 01/08)
+                is_demo: false,
                 // ATTRIBUZIONE (Luca 31/07, caso Barbieri): l'anagrafica nata qui
                 // e' GESTITA dal caller che ha chiamato, con sede l'ufficio
                 // commerciale — distinta dai clienti acquisiti in negozio.
