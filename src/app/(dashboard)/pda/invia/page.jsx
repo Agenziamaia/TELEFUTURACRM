@@ -363,7 +363,10 @@ export default function InviaPda() {
         ...p,
         ragioneSociale: data.ragione_sociale || "",
         piva: data.cf_piva || "",
-        referente: data.nome || "",
+        // il referente canonico sta in nome_ref/cognome_ref (nome resta il
+        // ripiego per lo storico caller pre-mig. 124)
+        referente: [data.nome_ref || data.nome, data.cognome_ref || data.cognome].filter(Boolean).join(" "),
+        numeroFisso: data.telefono_fisso || "",
         email: data.email || "",
         mobile: data.cellulare || "",
         sedeLegale: data.indirizzo || "",

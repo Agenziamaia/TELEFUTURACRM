@@ -11,7 +11,7 @@ import { numeroNazionale } from "@/lib/telefono";
 
 type Numero = { id: number; numero: string; etichetta: string | null };
 
-export function NumeriCliente({ clientId, principale }: { clientId: string; principale: string }) {
+export function NumeriCliente({ clientId, principale, tipo }: { clientId: string; principale: string; tipo?: string | null }) {
     const [numeri, setNumeri] = useState<Numero[]>([]);
     const [principaleVivo, setPrincipaleVivo] = useState(principale);
     const [nuovo, setNuovo] = useState("");
@@ -51,9 +51,11 @@ export function NumeriCliente({ clientId, principale }: { clientId: string; prin
     };
 
     const rendiPrincipale = async (r: Numero) => {
-        // il cellulare principale e' un dato UNIVOCO tra i clienti: si controlla
-        const { data: dup } = await supabase.from("clients").select("id").eq("cellulare", r.numero).neq("id", clientId).limit(1);
-        if (dup?.length) { alert("Questo numero è il principale di un ALTRO cliente: non può diventare principale qui."); return; }
+        // il cellulare principale e' univoco TRA CLIENTI DELLO STESSO TIPO:
+        // la coppia consumer+business puo' condividerlo (Luca 01/08)
+        const { data: dup } = await supabase.from("clients").select("id, tipo").eq("cellulare", r.numero).neq("id", clientId).limit(5);
+        const bloccante = (dup ?? []).find((d: { tipo: string | null }) => !tipo || (d.tipo || "consumer") === tipo);
+        if (bloccante) { alert("Questo numero è il principale di un ALTRO cliente dello stesso tipo: non può diventare principale qui.\n(Lo stesso numero può stare solo su una consumer e una business insieme.)"); return; }
         if (!window.confirm(`Rendere ${r.numero} il numero PRINCIPALE?${principaleVivo ? `\nL'attuale principale (${principaleVivo}) resta tra i numeri aggiuntivi.` : ""}`)) return;
         const { error } = await supabase.from("clients").update({ cellulare: r.numero }).eq("id", clientId);
         if (error) { alert("Cambio non riuscito: " + error.message); return; }

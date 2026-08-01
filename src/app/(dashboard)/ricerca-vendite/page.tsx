@@ -84,6 +84,7 @@ const CLIENT_FIELDS: EditField[] = [
     { key: "ragione_sociale", label: "Ragione sociale" },
     { key: "cf_piva", label: "Codice fiscale / P.IVA" },
     { key: "cellulare", label: "Cellulare" },
+    { key: "telefono_fisso", label: "Telefono fisso" },
     { key: "email", label: "Email" },
     { key: "indirizzo", label: "Indirizzo" },
     { key: "cap", label: "CAP" },
@@ -210,7 +211,19 @@ export default function RicercaContratto() {
     const deepLinked = useRef(false);
     useEffect(() => {
         const id = new URLSearchParams(window.location.search).get("id");
-        if (id) setFilterCodice(id);
+        if (!id) return;
+        setFilterCodice(id);
+        // Luca 01/08: dalla scheda cliente il click su una vendita di marginalità
+        // arrivava qui ma NON si apriva: nello stato di default la tessera 💰 è
+        // spenta e la query esclude brand Extra/Marginalità, quindi il contratto
+        // cercato non entrava mai in lista (bisognava cliccare il sacchetto a
+        // mano). Leggo il brand del contratto e, se è extra, accendo la sua
+        // tessera come farebbe il click dell'utente.
+        (async () => {
+            const { data } = await supabase.from("contracts").select("brand").eq("id", id).maybeSingle();
+            const b = String(data?.brand || "");
+            if (["extra", "marginalità", "marginalita"].includes(b.toLowerCase())) setSelBrands(new Set([b]));
+        })();
     }, []);
     useEffect(() => {
         if (deepLinked.current || contractList.length === 0) return;
@@ -511,7 +524,7 @@ export default function RicercaContratto() {
                 // Anagrafica COMPLETA anche dalla lista: il dettaglio aperto da qui
                 // mostrava "—" su tutti i campi non selezionati (il DB era pieno,
                 // la query portava solo i 4 campi delle colonne).
-                .select("*, clients!inner(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)", { count: "exact" });
+                .select("*, clients!inner(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)", { count: "exact" });
 
             // Apply Server-side filters
             if (filterVenditore && filterVenditore !== "Tutti") query = query.eq("venditore", filterVenditore);
@@ -697,7 +710,7 @@ export default function RicercaContratto() {
         const hit = contractList.find(c => c.id === id);
         if (hit) { openContract(hit, "view"); return; }
         const { data } = await supabase.from("contracts")
-            .select("*, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
+            .select("*, clients(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
             .eq("id", id).maybeSingle();
         if (!data) { alert("Contratto " + id + " non trovato."); return; }
         openContract(mapContractToRow(data as any, (data as any).clients), "view");
@@ -848,7 +861,7 @@ export default function RicercaContratto() {
         if (selectedContract && selectedContract.id === req.contract_id) {
             const { data: fresh } = await supabase
                 .from("contracts")
-                .select("*, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
+                .select("*, clients(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
                 .eq("id", req.contract_id).single();
             if (fresh) {
                 const cl = (fresh as any).clients || null;

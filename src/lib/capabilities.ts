@@ -263,7 +263,29 @@ export function ruoliDestinatariComunicazioni(role: string | null | undefined, p
     ).map((r) => r.id);
 }
 
+// ─── CHIUSURA LINEA: chi invia e chi gestisce (Luca 01/08) ───────────────────
+// Due livelli decisi da Permessi: l'accesso SEMPLICE (inviare e seguire le
+// proprie disdette) e la GESTIONE (tabella globale con Gestita/Rigetta).
+export const CAP_DISDETTE_INVIA: CapDef = {
+    id: "invia",
+    label: "Invia disdette (accesso semplice)",
+    desc: "Modulo di invio e dashboard delle proprie richieste (lo store manager vede anche quelle del team). Spenta = pagina in sola consultazione.",
+    default: () => true,
+};
+export const CAP_DISDETTE_GESTISCE: CapDef = {
+    id: "gestisce",
+    label: "Gestisce le disdette (vista direzione)",
+    desc: "Tabella globale di tutte le richieste con ordinamento a urgenza e azioni Segna Gestita / Rigetta con motivo. Chi gestisce può anche inviare. Default: direttore commerciale in su e amministrazione.",
+    default: (r) => ["admin", "dev", "direttore_generale", "direttore_commerciale", "amministrativo"].includes(r),
+};
+export const CAP_DISDETTE: CapGroupFlags = {
+    mode: "flags",
+    section: "/chiusura-linea",
+    sectionLabel: "Chiusura Linea",
+    caps: [CAP_DISDETTE_INVIA, CAP_DISDETTE_GESTISCE],
+};
+
 /** Catalogo completo: la pagina Permessi lo rende amministrabile da solo.
  *  Piu' gruppi possono condividere la stessa sezione: l'ingranaggio li mostra
  *  impilati nello stesso pannello. */
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE];

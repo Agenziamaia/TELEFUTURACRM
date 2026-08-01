@@ -915,11 +915,11 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   // cognome, ragione sociale o numero e le anagrafiche collegate compaiono
   // sotto; ne scegli una o procedi con la creazione. L'id del cliente scelto
   // viaggia fino al salvataggio (mig. 113: prima l'anagrafica veniva persa).
-  type ClienteHit = { id: string; tipo: string; nome: string | null; cognome: string | null; ragione_sociale: string | null; cf_piva: string | null; cellulare: string | null; email: string | null; indirizzo: string | null; citta: string | null; iban: string | null };
+  type ClienteHit = { id: string; tipo: string; nome: string | null; cognome: string | null; ragione_sociale: string | null; nome_ref: string | null; cognome_ref: string | null; cf_piva: string | null; cellulare: string | null; telefono_fisso: string | null; email: string | null; indirizzo: string | null; citta: string | null; iban: string | null };
   const [risultati, setRisultati] = useState<ClienteHit[]>([]);
   const [cercando, setCercando] = useState(false);
   const [selClientId, setSelClientId] = useState<string | null>(null);
-  const [ana, setAna] = useState({ nome: "", cognome: "", cf: "", piva: "", email: "", cellulare: "", domicilio: "", iban: "", ragioneSociale: "", referente: "", pec: "", sdi: "", sedeLegale: "" });
+  const [ana, setAna] = useState({ nome: "", cognome: "", cf: "", piva: "", email: "", cellulare: "", fisso: "", domicilio: "", iban: "", ragioneSociale: "", referente: "", pec: "", sdi: "", sedeLegale: "" });
   const [tipoProdotto, setTipoProdotto] = useState("");
   const [brand, setBrand] = useState("");
   const [model, setModel] = useState("");
@@ -953,7 +953,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       const parole = v.split(" ").filter(Boolean);
       const cifre = v.replace(/\D/g, "");
       let q = supabase.from("clients")
-        .select("id,tipo,nome,cognome,ragione_sociale,cf_piva,cellulare,email,indirizzo,citta,iban")
+        .select("id,tipo,nome,cognome,ragione_sociale,nome_ref,cognome_ref,cf_piva,cellulare,telefono_fisso,email,indirizzo,citta,iban")
         .eq("tipo", tipoCliente).limit(6);
       if (parole.length >= 2) {
         q = q.or(`and(nome.ilike.%${parole[0]}%,cognome.ilike.%${parole[1]}%),and(nome.ilike.%${parole[1]}%,cognome.ilike.%${parole[0]}%),ragione_sociale.ilike.%${v}%`);
@@ -978,7 +978,10 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       email: c.email || "", cellulare: c.cellulare || "",
       domicilio: [c.indirizzo, c.citta].filter(Boolean).join(", "),
       ragioneSociale: c.ragione_sociale || "", piva: c.ragione_sociale ? (c.cf_piva || "") : "",
-      referente: "", pec: "", sdi: "", sedeLegale: [c.indirizzo, c.citta].filter(Boolean).join(", "), iban: c.iban || "",
+      // referente dal dato canonico (prima veniva AZZERATO scegliendo un cliente esistente)
+      referente: [c.nome_ref || (c.ragione_sociale ? c.nome : ""), c.cognome_ref || (c.ragione_sociale ? c.cognome : "")].filter(Boolean).join(" "),
+      fisso: c.telefono_fisso || "",
+      pec: "", sdi: "", sedeLegale: [c.indirizzo, c.citta].filter(Boolean).join(", "), iban: c.iban || "",
     });
   };
 
@@ -1346,6 +1349,7 @@ function AnaFields({ tipoCliente, ana, setAna, inp, lbl }: any) {
       <div><label className={lbl}>Ragione Sociale *</label><input value={ana.ragioneSociale} onChange={e => setAna({ ...ana, ragioneSociale: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>Partita IVA *</label><input value={ana.piva} onChange={e => setAna({ ...ana, piva: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>Referente *</label><input value={ana.referente} onChange={e => setAna({ ...ana, referente: e.target.value })} className={inp} /></div>
+      <div><label className={lbl}>Telefono fisso</label><input value={ana.fisso} onChange={e => setAna({ ...ana, fisso: e.target.value.replace(/\D/g, "").slice(0, 11) })} className={inp} placeholder="facoltativo" /></div>
       <div><label className={lbl}>Cellulare</label><input value={ana.cellulare} onChange={e => setAna({ ...ana, cellulare: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>Email</label><input value={ana.email} onChange={e => setAna({ ...ana, email: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>PEC</label><input value={ana.pec} onChange={e => setAna({ ...ana, pec: e.target.value })} className={inp} /></div>
@@ -1616,10 +1620,12 @@ function GestioneUsatiInner() {
           ragione_sociale: anaD.ragioneSociale || "",
           nome_ref: isBus ? (anaD.referente || "") : "", cognome_ref: "",
           cellulare: numeroNazionale(anaD.cellulare) || "",
+          telefono_fisso: isBus ? (anaD.fisso || null) : null,
           email: anaD.email || "",
           indirizzo: (isBus ? anaD.sedeLegale : anaD.domicilio) || "", cap: "", citta: "",
           iban: anaD.iban || "",
           data_nascita: isBus ? null : dataNascitaDaCF(idf),
+          is_demo: false,
           creato_da: data.venditore || "",
           acquisito_da: data.negozio || null,
         };
