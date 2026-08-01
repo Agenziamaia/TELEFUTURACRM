@@ -663,6 +663,74 @@ export default function Comunicazioni() {
                                     </div>
                                 )}
                             </div>
+                            {/* ANTEPRIMA DESTINATARIO (Luca 02/08): il mittente vede in
+                                diretta ESATTAMENTE come arrivera' — il modale di conferma
+                                per i pop-up, la card di bacheca per le altre. Solo
+                                visuale: i bottoni non fanno nulla. */}
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Anteprima — così la vede chi la riceve</label>
+                                <div className="mt-2 rounded-2xl border border-dashed border-white/15 bg-black/30 p-3 sm:p-4 pointer-events-none select-none">
+                                    {(() => {
+                                        const st = fType === "warning"
+                                            ? { color: "#fbbf24", bg: "rgba(251,191,36,.12)", border: "rgba(251,191,36,.35)", Icona: AlertTriangle }
+                                            : fType === "success"
+                                                ? { color: "#34d399", bg: "rgba(52,211,153,.12)", border: "rgba(52,211,153,.35)", Icona: CheckCircle2 }
+                                                : { color: "#60a5fa", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
+                                        const titolo = fTitle.trim() || "Titolo della comunicazione";
+                                        const testo = fContent.trim() || "Il testo che scrivi sopra comparirà qui.";
+                                        const firma = `${dataDisplayOggi()} — ${user?.name || ""}`;
+                                        if (fKind === "popup") return (
+                                            <div className="rounded-2xl border shadow-2xl overflow-hidden mx-auto max-w-[520px]" style={{ background: "#12141f", borderColor: st.border }}>
+                                                <div className="flex items-start gap-3.5 p-5 pb-3.5">
+                                                    <div className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border" style={{ background: st.bg, borderColor: st.border, color: st.color }}>
+                                                        <st.Icona className="w-6 h-6" />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: st.color }}>Comunicazione da confermare</div>
+                                                        <h3 className="text-lg font-bold text-white leading-tight">{titolo}</h3>
+                                                        <p className="text-xs text-slate-500 mt-1">{firma}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="px-5 pb-4 text-sm text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[30vh] overflow-hidden">{testo}</div>
+                                                <div className="flex items-center justify-between gap-2 flex-wrap px-5 py-3.5 border-t border-white/10 bg-black/20">
+                                                    <span className="px-2 py-1 rounded-lg text-[11px] text-slate-500">Più tardi</span>
+                                                    <div className="flex items-center justify-end gap-2 flex-wrap">
+                                                        {fEsiti.length ? fEsiti.map((e) => (
+                                                            <span key={e} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold">{e}</span>
+                                                        )) : <span className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold">✓ Ho letto e confermo</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                        return (
+                                            <div className="glass-card p-5 relative overflow-hidden border-l-4 border-l-primary">
+                                                <div className="absolute top-5 right-5 flex items-center gap-2">
+                                                    <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                                                    <span className="text-xs font-semibold text-primary uppercase tracking-wider">Nuovo</span>
+                                                </div>
+                                                <div className="flex gap-3.5">
+                                                    <div className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border" style={{ background: st.bg, borderColor: st.border, color: st.color }}>
+                                                        <st.Icona className="w-6 h-6" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <h3 className="text-lg font-semibold text-white">{titolo}</h3>
+                                                        <p className="text-sm text-slate-500">{firma}</p>
+                                                        {fEsiti.length > 0 && (
+                                                            <div className="flex items-center gap-2 flex-wrap mt-2">
+                                                                {fEsiti.map((e) => (
+                                                                    <span key={e} className="px-3 py-1 rounded-full border border-sky-500/40 bg-sky-500/10 text-sky-200 text-xs font-bold">{e}</span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        <p className="text-sm text-slate-300 mt-2.5 leading-relaxed whitespace-pre-wrap">{testo}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                                <p className="text-[11px] text-slate-600 mt-1.5">La campanella in alto squilla per chi rientra nei destinatari{fKind === "popup" ? "; il pop-up compare al centro dello schermo appena aprono il CRM" : ""}.</p>
+                            </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Destinatari — per ruolo</label>
                                 <div className="flex gap-2 mt-2 flex-wrap">
