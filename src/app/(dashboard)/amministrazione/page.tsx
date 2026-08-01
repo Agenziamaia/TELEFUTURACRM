@@ -2563,7 +2563,10 @@ function UserAllegati({ userId }: { userId: string }) {
     const load = async () => {
         const { data, error } = await supabase.from("user_attachments")
             .select("id,category,file_url,file_name,created_at").eq("user_id", userId).order("created_at", { ascending: false });
-        if (error) { setManca085(true); return; }
+        // il vecchio banner "serve la migrazione 085" scattava su QUALSIASI
+        // errore momentaneo e restava li' (Luca 01/08): la 085 e' in produzione
+        // da settimane — solo una VERA tabella mancante mostra l'avviso
+        if (error) { if (/(relation|table|does not exist)/i.test(error.message)) setManca085(true); return; }
         setManca085(false);
         setRows((data ?? []) as typeof rows);
     };
@@ -2593,7 +2596,7 @@ function UserAllegati({ userId }: { userId: string }) {
         <div className="mt-4 pt-4 border-t border-white/10">
             <h3 className="text-sm font-bold text-slate-200 mb-3">📎 Allegati</h3>
             {manca085 ? (
-                <p className="text-xs text-amber-400">Funzione in attivazione: serve la migrazione 085 sul database.</p>
+                <p className="text-xs text-amber-400">Allegati non disponibili (tabella assente): avvisa chi gestisce il database.</p>
             ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
                     {CATEGORIE_ALLEGATI.map((c) => {

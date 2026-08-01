@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "react";
+import { createPortal } from "react-dom";
+import QRCode from "qrcode";
 import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { numeroNazionale } from "@/lib/telefono";
@@ -1009,6 +1011,54 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const [tipoBonifico, setTipoBonifico] = useState<"ordinario" | "istantaneo">("ordinario");
   const [allegDoc, setAllegDoc] = useState<File | null>(null);
   const [allegDich, setAllegDich] = useState<File | null>(null);
+  // ── Carica dal telefono via QR (Luca 01/08): STESSO meccanismo di Registra
+  // Vendita (qr_uploads + /m/u/<token>) per documento e dichiarazione. Kind
+  // "doc": foto O scansione multi-pagina unita in un unico PDF — perfetto per
+  // le caselle a file singolo dell'usato.
+  const [qrBox, setQrBox] = useState<"doc" | "dich" | null>(null);
+  const [qrToken, setQrToken] = useState<string | null>(null);
+  const [qrImg, setQrImg] = useState<string | null>(null);
+  const [qrRecv, setQrRecv] = useState<{ n: number } | null>(null);
+  const openQr = async (box: "doc" | "dich") => {
+    try {
+      const token = (window.crypto?.randomUUID?.() || (Date.now() + "-" + Math.random().toString(36).slice(2)));
+      const { error } = await supabase.from("qr_uploads").insert({ token, box_type: box === "doc" ? "documento_usato" : "dichiarazione_usato", kind: "doc", status: "attesa" });
+      if (error) { alert("QR non generato: " + error.message); return; }
+      const url = `${window.location.origin}/m/u/${token}`;
+      const img = await QRCode.toDataURL(url, { width: 240, margin: 1 });
+      setQrBox(box); setQrToken(token); setQrImg(img); setQrRecv(null);
+    } catch (e) { alert("QR non generato: " + ((e as Error)?.message || e)); }
+  };
+  const closeQr = () => { setQrBox(null); setQrToken(null); setQrImg(null); setQrRecv(null); };
+  useEffect(() => {
+    if (!qrToken) return;
+    let alive = true;
+    const t = setInterval(async () => {
+      const { data } = await supabase.from("qr_uploads").select("status,files").eq("token", qrToken).maybeSingle();
+      if (!alive || !data) return;
+      const files = Array.isArray(data.files) ? data.files : [];
+      if (data.status === "caricato" && files.length) {
+        clearInterval(t);
+        try {
+          const f = files[0];   // casella a file singolo: pagine gia' unite dal telefono
+          const resp = await fetch(f.url);
+          const blob = await resp.blob();
+          const file = new File([blob], f.name || "allegato", { type: f.mime || blob.type });
+          if (qrBox === "doc") setAllegDoc(file); else setAllegDich(file);
+          setQrRecv({ n: 1 });
+        } catch (e) { alert("Ricezione file non riuscita: " + ((e as Error)?.message || e)); }
+        try {
+          for (const f of files) {
+            const marker = "/qr-uploads/"; const i = String(f.url).indexOf(marker);
+            if (i >= 0) await supabase.storage.from("qr-uploads").remove([decodeURIComponent(String(f.url).slice(i + marker.length))]);
+          }
+        } catch { }
+        try { await supabase.from("qr_uploads").delete().eq("token", qrToken); } catch { }
+        setTimeout(() => { if (alive) closeQr(); }, 1600);
+      }
+    }, 2000);
+    return () => { alive = false; clearInterval(t); };
+  }, [qrToken, qrBox]);
   const [isUploading, setIsUploading] = useState(false);
 
   // Ricerca LIVE sulla tabella clients (debounce 300ms): stessa esperienza del
@@ -1330,12 +1380,33 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
     );
     if (step === 5) return (
       <div className="space-y-5">
+        {qrBox && createPortal(<div onClick={closeQr} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#11141d", border: "1px solid rgba(255,255,255,.08)", borderRadius: 16, width: "100%", maxWidth: 360, padding: 24, margin: "0 16px", textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <div style={{ fontWeight: 800, fontSize: 16, color: "#f8fafc" }}>📱 Carica dal telefono</div>
+              <button onClick={closeQr} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 18, cursor: "pointer" }}>✕</button>
+            </div>
+            {qrRecv ? (
+              <div style={{ padding: "22px 0" }}><div style={{ fontSize: 48, marginBottom: 8 }}>✅</div><div style={{ fontSize: 16, fontWeight: 800, color: "#34d399" }}>Ricevuto!</div><div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>File agganciato alla casella.</div></div>
+            ) : (<>
+              <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 14 }}>Inquadra il QR con la fotocamera del telefono e carica {qrBox === "doc" ? "il documento d'identità" : "la dichiarazione firmata"} — foto o scansione: più pagine vengono unite in un unico PDF.</div>
+              {qrImg ? <img src={qrImg} alt="QR" style={{ width: 216, height: 216, borderRadius: 12, background: "#fff", padding: 8, boxSizing: "border-box", display: "block", margin: "0 auto" }} /> : <div style={{ width: 216, height: 216, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b" }}>Genero…</div>}
+              <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: "#f59e0b", display: "inline-block" }} />In attesa della scansione…</div>
+            </>)}
+          </div>
+        </div>, document.body)}
         {[
           { key: "doc", label: "Documento di Identità *", val: allegDoc, set: setAllegDoc },
           { key: "dich", label: "Dichiarazione di Vendita (firmata) *", val: allegDich, set: setAllegDich }
         ].map(f => (
           <div key={f.key}>
-            <label className={lbl}>{f.label}</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className={lbl + " !mb-0"}>{f.label}</label>
+              <button type="button" onClick={() => openQr(f.key as "doc" | "dich")}
+                className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition-all">
+                📱 Carica dal telefono
+              </button>
+            </div>
             <div className={`relative border-2 border-dashed rounded-xl transition-all ${f.val ? "bg-emerald-500/5 border-emerald-500/40" : "bg-white/[0.01] border-white/10 hover:border-white/20"}`}>
               <input
                 type="file"
