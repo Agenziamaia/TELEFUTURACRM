@@ -1550,8 +1550,10 @@ function GestioneUsatiInner() {
     // visibili ancora VUOTA e l'apertura ricadeva su "Mostra tutti" (Luca 01/08)
     if (storesInit.current || !NEGOZI.length || !user || !visLoaded) return;
     storesInit.current = true;
-    setSelectedStores(mieiMatch());
-  }, [NEGOZI, user, visLoaded, mieiMatch]);
+    if (isAmminMain) { setSelectedStores([...NEGOZI]); setSelectedStatuses([...STATUS_KEYS]); }
+    else setSelectedStores(mieiMatch());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [NEGOZI, user, visLoaded, mieiMatch, isAmminMain]);
   const mostraImiei = () => setSelectedStores(mieiMatch());
   const firma = (a: string[]) => JSON.stringify([...a].sort());
   const mieiAttivo = !!user?.negozio && firma(selectedStores) === firma(mieiMatch());
@@ -1567,6 +1569,9 @@ function GestioneUsatiInner() {
   // filtro stato perche' quei telefoni vivono nella pipeline laboratorio
   const [soloDaPrezzare, setSoloDaPrezzare] = useState(false);
   const isAmminMain = RUOLI_SEMPRE.includes(user?.role || "");
+  // il preset d'apertura dipende dal ruolo: l'amministrazione parte SENZA
+  // filtri (tutti gli stati, tutti i negozi), i negozi col loro preset
+  const PRESET_STATI = isAmminMain ? [...STATUS_KEYS] : [...STATI_NEGOZIO_DEFAULT];
   const [dateField, setDateField] = useState("created_at");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -1719,13 +1724,13 @@ function GestioneUsatiInner() {
     // Vendite); Totale = tutti gli stati, secondo click = torna al preset
     if (sk === "_all") {
       const tutti = selectedStatuses.length === STATUS_KEYS.length;
-      setSelectedStatuses(tutti ? [...STATI_NEGOZIO_DEFAULT] : [...STATUS_KEYS]);
+      setSelectedStatuses(tutti ? [...PRESET_STATI] : [...STATUS_KEYS]);
     } else {
       setSelectedStatuses(p => p.includes(sk) ? p.filter(x => x !== sk) : [...p, sk]);
     }
   };
 
-  const resetFilters = () => { setSelectedStores(mieiMatch()); setSelectedStatuses([...STATI_NEGOZIO_DEFAULT]); setSoloDaPrezzare(false); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setActiveKpi(null); };
+  const resetFilters = () => { setSelectedStores(isAmminMain ? [...NEGOZI] : mieiMatch()); setSelectedStatuses([...PRESET_STATI]); setSoloDaPrezzare(false); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setActiveKpi(null); };
 
   const handleSaveDevice = useCallback(async (u: Device) => {
     const row = deviceToRow(u);
@@ -1957,7 +1962,7 @@ function GestioneUsatiInner() {
             🌍 Mostra tutti{tuttiAttivo ? " ✓" : ""}
           </button>
           {(() => { const magAttivo = JSON.stringify([...selectedStatuses].sort()) === JSON.stringify([...STATI_MAGAZZINO].sort()); return (
-          <button onClick={() => { setSoloDaPrezzare(false); setSelectedStatuses(magAttivo ? [...STATI_NEGOZIO_DEFAULT] : [...STATI_MAGAZZINO]); }}
+          <button onClick={() => { setSoloDaPrezzare(false); setSelectedStatuses(magAttivo ? [...PRESET_STATI] : [...STATI_MAGAZZINO]); }}
             title="I telefoni in lavorazione: in transito, ricevuti, in lavorazione e pronti"
             className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
               magAttivo ? "bg-blue-500/25 border-blue-400/60 text-blue-100" : "bg-blue-500/10 border-blue-500/30 text-blue-200 hover:bg-blue-500/20")}>
