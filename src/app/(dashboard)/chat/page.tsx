@@ -10,7 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
 import {
   getInbox, listMessages, getParticipants, sendMessage, markRead,
-  subscribeMessages, subscribeInbox, subscribeReceipts, refHref,
+  subscribeMessages, subscribeInbox, subscribeReceipts, subscribeReactions, toggleReaction, refHref,
   splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
   listDirectory, addParticipants, removeParticipant,
 } from "@/lib/chat";
@@ -20,7 +20,7 @@ import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { cn } from "@/utils";
@@ -67,6 +67,23 @@ function lastSeen(s) {
 function ChatPageInner() {
   const { user } = useAuth();
   const meId = user?.id;
+  const meName = user?.name || "";
+  // reazioni rapide stile Telegram + set del picker del compositore
+  const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏", "🔥", "👏"];
+  const EMOJI_SET = [
+    "😀","😁","😂","🤣","😊","😍","😘","😎","🤩","🥳","😉","🙃","😅","😇","🤗","🤔",
+    "😐","🙄","😴","🤯","😱","😭","😢","😤","😡","🥶","🤒","🤫","🫡","🤝","👍","👎",
+    "👏","🙏","💪","🤞","✌️","👌","🤙","👋","🫶","❤️","🧡","💛","💚","💙","💜","🖤",
+    "💯","🔥","⭐","✨","🎉","🎊","🏆","🥇","⚡","💡","✅","❌","⚠️","❓","❗","💰",
+    "📱","💻","📞","📧","📎","📌","🗓️","⏰","🛒","📦","🚚","🔧","🧩","🏪","☕","🍕",
+  ];
+  const [reactFor, setReactFor] = useState<string | null>(null);   // msg col menu reazioni aperto
+  const [showEmoji, setShowEmoji] = useState(false);               // picker nel compositore
+  const onReact = async (msgId: string, emoji: string) => {
+    setReactFor(null);
+    try { await toggleReaction(msgId, meId!, meName, emoji); await reloadMessages(selId!); }
+    catch (e) { alert((e as Error)?.message || "Reazione non riuscita"); }
+  };
   const isAdmin = !!user && (seesAllStores(user.role) || user.role === "dev");
   // "Devo poter vedere i membri di un gruppo. Visibilita' dal manager in su" (Luca):
   // store manager, direzioni di area e chi vede tutti i negozi.
@@ -191,8 +208,9 @@ function ChatPageInner() {
     reloadMessages(selId);
     loadParts();
     const offMsg = subscribeMessages(selId, () => reloadMessages(selId));
+    const offReact = subscribeReactions(selId, () => reloadMessages(selId));
     const offRcpt = subscribeReceipts(selId, loadParts);
-    return () => { offMsg(); offRcpt(); };
+    return () => { offMsg(); offReact(); offRcpt(); };
   }, [selId]);
 
   // #125: gestione membri del gruppo (solo l'amministratore del gruppo).
@@ -285,6 +303,7 @@ function ChatPageInner() {
     if (f.length) { e.preventDefault(); addFiles(e.clipboardData.files); }
   };
   const onSend = async () => {
+    setShowEmoji(false);
     if (!selId || !meId || sending) return;
     if (!text.trim() && files.length === 0 && refs.length === 0) return;
     setSending(true);
@@ -458,6 +477,24 @@ function ChatPageInner() {
                     <Reply className="w-4 h-4" />
                   </button>
                 );
+                // REAZIONI stile Telegram (mig. 130): faccina al passaggio, menu rapido
+                const btnReagisci = (
+                  <span className="relative shrink-0">
+                    <button type="button" title="Reagisci"
+                      onClick={() => setReactFor(reactFor === m.id ? null : m.id)}
+                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-white/10 transition-opacity">
+                      <SmilePlus className="w-4 h-4" />
+                    </button>
+                    {reactFor === m.id && (
+                      <div className={`absolute bottom-full mb-1 z-30 flex gap-0.5 px-1.5 py-1 rounded-full bg-[#171622] border border-white/15 shadow-2xl ${mine ? "right-0" : "left-0"}`}>
+                        {QUICK_REACTIONS.map((e) => (
+                          <button key={e} type="button" onClick={() => onReact(m.id, e)}
+                            className="text-lg leading-none p-1 rounded-full hover:bg-white/10 hover:scale-125 transition-transform">{e}</button>
+                        ))}
+                      </div>
+                    )}
+                  </span>
+                );
                 // #126: solo l'amministratore del gruppo vede il tasto "i" (chi ha letto e quando)
                 const btnInfo = (selConv.type === "group" && iAmGroupAdmin) ? (
                   <button type="button" title="Chi ha letto" onClick={() => setInfoMsg(m)}
@@ -469,7 +506,7 @@ function ChatPageInner() {
                   <div key={m.id} id={`msg-${m.id}`}>
                     {showDay && <div className="text-center my-3"><span className="text-[11px] text-slate-500 bg-white/5 px-3 py-1 rounded-full">{showDay}</span></div>}
                     <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}>
-                      {mine && <>{btnInfo}{btnRispondi}</>}
+                      {mine && <>{btnInfo}{btnReagisci}{btnRispondi}</>}
                       <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
                         {!mine && selConv.type === "group" && (
                           <p className="text-[11px] font-semibold text-indigo-300 mb-0.5">{senderName[m.sender_id] || "—"}</p>
@@ -529,6 +566,23 @@ function ChatPageInner() {
                             })}
                           </div>
                         )}
+                        {(m.reactions || []).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {Object.entries((m.reactions || []).reduce((acc: Record<string, { n: number; mia: boolean; chi: string[] }>, r) => {
+                              const g = acc[r.emoji] || { n: 0, mia: false, chi: [] };
+                              g.n += 1; if (r.user_id === meId) g.mia = true; g.chi.push(r.user_name || "—");
+                              acc[r.emoji] = g; return acc;
+                            }, {})).map(([emoji, g]) => (
+                              <button key={emoji} type="button" onClick={() => onReact(m.id, emoji)} title={g.chi.join(", ")}
+                                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[12px] border transition-colors ${g.mia
+                                  ? (mine ? "bg-white/25 border-white/50" : "bg-indigo-500/25 border-indigo-400/60")
+                                  : (mine ? "bg-black/20 border-white/20 hover:bg-black/30" : "bg-white/5 border-white/10 hover:bg-white/10")}`}>
+                                <span className="leading-none">{emoji}</span>
+                                <span className={`leading-none font-semibold ${mine ? "text-indigo-100" : "text-slate-300"}`}>{g.n}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                         <p className={`text-[10px] mt-0.5 flex items-center gap-1 justify-end ${mine ? "text-indigo-200/70" : "text-slate-500"}`}>
                           {fmtTime(m.created_at)}
                           {mine && selConv.type === "dm" && (() => {
@@ -539,7 +593,7 @@ function ChatPageInner() {
                           })()}
                         </p>
                       </div>
-                      {!mine && <>{btnRispondi}{btnInfo}</>}
+                      {!mine && <>{btnRispondi}{btnReagisci}{btnInfo}</>}
                     </div>
                   </div>
                 );
@@ -625,6 +679,22 @@ function ChatPageInner() {
                   <Tag className="w-5 h-5" />
                 </button>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+                <span className="relative shrink-0">
+                  <button type="button" title="Emoji" onClick={() => setShowEmoji(v => !v)}
+                    className={`p-2 rounded-lg transition-colors ${showEmoji ? "text-amber-300 bg-white/10" : "text-slate-400 hover:text-amber-300 hover:bg-white/10"}`}>
+                    <Smile className="w-5 h-5" />
+                  </button>
+                  {showEmoji && (
+                    <div className="absolute bottom-full mb-2 left-0 z-40 w-72 max-h-56 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl">
+                      <div className="grid grid-cols-8 gap-0.5">
+                        {EMOJI_SET.map((e) => (
+                          <button key={e} type="button" onClick={() => setText((t) => t + e)}
+                            className="text-xl leading-none p-1.5 rounded-lg hover:bg-white/10">{e}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </span>
                 <textarea value={text} onChange={onTextChange} onPaste={onPaste}
                   onKeyDown={(e) => {
                     if (mention && mentionRows.length > 0) {

@@ -36,11 +36,14 @@ export function refHref(r: ChatRef): string {
   return `/calendario?appuntamento=${encodeURIComponent(r.id)}`;
 }
 
+export interface ChatReaction { emoji: string; user_id: string; user_name: string }
 export interface ChatMessage {
   id: string; sender_id: string | null; body: string | null; created_at: string;
   edited_at: string | null; attachments: ChatAttachment[]; refs: ChatRef[];
   // Segnalazione 74: id del messaggio a cui questo risponde (stile WhatsApp).
   reply_to: string | null;
+  // reazioni emoji stile Telegram (mig. 130)
+  reactions: ChatReaction[];
 }
 export interface Participant {
   user_id: string; is_admin: boolean; full_name: string; role: string; primary_store: string | null;
@@ -131,19 +134,52 @@ export function subscribeReceipts(convId: string, onChange: () => void) {
 }
 
 export async function listMessages(convId: string): Promise<ChatMessage[]> {
-  const { data, error } = await supabase
+  // con le reazioni embeddate; se la mig. 130 non e' ancora a bordo si
+  // ripiega sulla select storica: la chat non resta mai a terra
+  let res = await supabase
     .from("chat_messages")
-    .select("id, sender_id, body, created_at, edited_at, refs, reply_to, chat_attachments(id, url, name, mime, size_bytes)")
+    .select("id, sender_id, body, created_at, edited_at, refs, reply_to, chat_attachments(id, url, name, mime, size_bytes), chat_reactions(emoji, user_id, user_name)")
     .eq("conversation_id", convId)
     .is("deleted_at", null)
     .order("created_at", { ascending: true });
-  if (error) throw error;
-  return (data || []).map((m: any) => ({
+  if (res.error) {
+    res = (await supabase
+      .from("chat_messages")
+      .select("id, sender_id, body, created_at, edited_at, refs, reply_to, chat_attachments(id, url, name, mime, size_bytes)")
+      .eq("conversation_id", convId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })) as typeof res;
+    if (res.error) throw res.error;
+  }
+  return ((res.data || []) as any[]).map((m: any) => ({
     id: m.id, sender_id: m.sender_id, body: m.body, created_at: m.created_at,
     edited_at: m.edited_at, attachments: m.chat_attachments || [],
     refs: Array.isArray(m.refs) ? m.refs : [],
     reply_to: m.reply_to ?? null,
+    reactions: Array.isArray(m.chat_reactions) ? m.chat_reactions : [],
   }));
+}
+
+/** Reazione emoji stile Telegram: click = metti, ri-click = togli (riga per
+ *  (messaggio, utente, emoji): niente conflitti tra reazioni simultanee). */
+export async function toggleReaction(messageId: string, meId: string, meName: string, emoji: string): Promise<void> {
+  const { error } = await supabase.from("chat_reactions").insert({ message_id: messageId, user_id: meId, user_name: meName, emoji });
+  if (error) {
+    if (/duplicate/i.test(error.message)) {
+      await supabase.from("chat_reactions").delete().eq("message_id", messageId).eq("user_id", meId).eq("emoji", emoji);
+    } else if (/(relation|table)/i.test(error.message)) {
+      throw new Error("Manca la migrazione 130 (chat_reactions)");
+    } else throw error;
+  }
+}
+
+/** Realtime: qualunque reazione cambia -> ricarico i messaggi aperti. */
+export function subscribeReactions(convId: string, onChange: () => void) {
+  const channel = supabase
+    .channel(`chat_react_${convId}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "chat_reactions" }, () => onChange())
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
 }
 
 /**
