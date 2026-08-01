@@ -11,6 +11,14 @@ export const metadata: Metadata = {
   description: 'Rebuild of test.gestionedoc.it',
 }
 
+// NIENTE pagine prerenderizzate in cache (Luca 01/08, caso "reset password
+// vecchio"): le route statiche uscivano con Cache-Control s-maxage=1 ANNO
+// dalla full-route cache di Next — dopo un deploy gli utenti potevano
+// continuare a ricevere l'HTML della build PRECEDENTE (x-nextjs-cache: HIT).
+// Con force-dynamic ogni richiesta rende l'HTML fresco della build corrente:
+// per una SPA autenticata come questa il costo e' irrilevante, la coerenza no.
+export const dynamic = 'force-dynamic'
+
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
