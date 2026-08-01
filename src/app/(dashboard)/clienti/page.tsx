@@ -175,10 +175,25 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
 
     const nomeCompleto = cliente.tipo === "business" ? (cliente.ragioneSociale || "—") : `${cliente.nome || ""} ${cliente.cognome || ""}`.trim();
     const iniziale = (nomeCompleto || "?").charAt(0).toUpperCase();
-    // Timeline 360°: eventi REALI (contratti registrati + documenti caricati), in ordine.
+    // DISDETTE nella Timeline 360° (Luca 01/08): ogni transizione dei ticket
+    // Chiusura Linea scrive un evento nello storico jsonb — qui si rilegge.
+    const [eventiDisdette, setEventiDisdette] = useState<{ key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null }[]>([]);
+    useEffect(() => {
+        (async () => {
+            const { data, error } = await supabase.from("richieste_disdette").select("id, brand, storico").eq("client_id", cliente.id);
+            if (error) { setEventiDisdette([]); return; }   // tabella assente pre-mig. 125: timeline invariata
+            setEventiDisdette((data ?? []).flatMap((r: { id: string; brand: string; storico: unknown }) =>
+                (Array.isArray(r.storico) ? r.storico : []).map((e: { quando?: string; testo?: string }, i: number) => ({
+                    key: `ds${r.id}_${i}`, when: String(e.quando || ""), color: "#f43f5e", icon: "✂️",
+                    title: String(e.testo || ""), desc: `${r.id} · ${r.brand}`, stato: null as string | null,
+                }))));
+        })();
+    }, [cliente.id]);
+    // Timeline 360°: eventi REALI (contratti registrati + documenti caricati + disdette), in ordine.
     const timeline = [
         ...contratti.filter((c) => c.data).map((c) => ({ key: "c" + c.id, when: c.data as string, color: "#38bdf8", icon: "✍️", title: "Contratto registrato", desc: `${c.brand} · ${c.categoria}${c.venditore ? " — " + c.venditore : ""}`, stato: c.stato })),
         ...docs.filter((d) => d.created_at).map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "#f59e0b", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
+        ...eventiDisdette.filter((e) => e.when),
     ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
 
     return (
