@@ -9,6 +9,7 @@ import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
+import { erroreIbanIT } from "@/lib/iban";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { stessoMagazzino } from "@/lib/visibleStores";
@@ -1063,7 +1064,7 @@ const TF = ({l,r,v,o,p,pf,dis,nt,err}) => {
   else if(paresIban&&(L.includes("cod")||isImei))vErr="Sembra un IBAN: qui va il codice, non l'IBAN";
   else if(isIccid&&v&&v.length!==19)vErr="ICCID: 19 cifre richieste";
   else if(isImei&&v&&v.length!==15)vErr="IMEI: 15 cifre richieste";
-  else if(isIban&&v&&v.length!==27)vErr="IBAN: 27 caratteri richiesti ("+v.length+"/27)";
+  else if(isIban&&v&&erroreIbanIT(v))vErr=erroreIbanIT(v)||"";
   else if(isPod&&v&&!(v.length>=14&&v.length<=15&&/^IT/.test(v)))vErr="POD: IT + 14-15 caratteri";
   else if(isPdr&&v&&v.length!==14)vErr="PDR: 14 cifre richieste";
   else if(isNum&&v&&v.length<numMin)vErr="Min "+numMin+" cifre";
@@ -4284,6 +4285,8 @@ export default function CRM() {
         sT("⚠️ Campi obbligatori mancanti: " + anaMissing.join(", "));
         return;
       }
+      const _ibanErr = (ana.iban || "").trim() ? erroreIbanIT(ana.iban) : null;
+      if (_ibanErr) { sT("⚠️ IBAN non valido: " + _ibanErr); return; }
 
       // 2. Cliente gia' in anagrafica? Con il CF e' un match certo; senza CF
       //    riconosciamo lo stesso cliente solo se coincidono telefono E nome

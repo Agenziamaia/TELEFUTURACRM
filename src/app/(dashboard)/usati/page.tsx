@@ -7,6 +7,7 @@ import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
+import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
 import { caricaRegoleUsato, sincronizzaMalusUsato, scadenzaCorrente, REGOLE_USATO_DEFAULT, type RegoleUsato, type EpisodioUsato } from "@/lib/usatiMalus";
 import { UsatoRegoleView } from "@/components/UsatoRegole";
 import {
@@ -987,11 +988,13 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
 
   const canNext = () => {
     if (step === 1) return !!(venditore && negozio);
-    if (step === 2) return !!(tipoCliente && clienteFound !== null);
+    if (step === 2) return !!(tipoCliente && clienteFound !== null) && (!ana.iban || !erroreIbanIT(ana.iban));
     // Segnalazione 58: le 15 cifre valgono SOLO per smartphone e tablet.
     // Portatili e watch hanno un seriale alfanumerico, anche piu' corto.
     if (step === 3) return !!(tipoProdotto && brand && model && capacita && colore && imeiValido && prezzoAcquisto && gradoUsura && (!hasExtraMargine || extraMargineImporto));
-    if (step === 4) return !!(metodoPagamento && (metodoPagamento !== "bonifico" || ibanPag));
+    // IBAN del bonifico VALIDATO (Luca 01/08): struttura IT+2 cifre+CIN e
+    // 27 caratteri con verifica mod-97 — prima bastava che non fosse vuoto
+    if (step === 4) return !!(metodoPagamento && (metodoPagamento !== "bonifico" || (ibanPag && !erroreIbanIT(ibanPag))));
     if (step === 5) return !!(allegDoc && allegDich);
     return false;
   };
@@ -1239,11 +1242,12 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
           </div>
         )}
         {metodoPagamento === "bonifico" && <div>
-          <label className={lbl}>IBAN *</label>
+          <label className={lbl}>IBAN * <span className="normal-case font-normal text-slate-500">(IT + 2 cifre + lettera, 27 caratteri)</span></label>
           <div className="flex gap-2">
-            <input value={ibanPag} onChange={e => setIbanPag(e.target.value)} placeholder="IT60X0542811101000000123456" className={inp + " flex-1"} />
-            {ana.iban && <button onClick={() => setIbanPag(ana.iban)} className="px-3 py-2 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 text-xs font-semibold hover:bg-blue-500/25 transition-all whitespace-nowrap"> Copia IBAN da anagrafica</button>}
+            <input value={ibanPag} onChange={e => setIbanPag(normalizzaIban(e.target.value))} placeholder="IT60X0542811101000000123456" className={inp + " flex-1 font-mono"} />
+            {ana.iban && <button onClick={() => setIbanPag(normalizzaIban(ana.iban))} className="px-3 py-2 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 text-xs font-semibold hover:bg-blue-500/25 transition-all whitespace-nowrap"> Copia IBAN da anagrafica</button>}
           </div>
+          {!!ibanPag && !!erroreIbanIT(ibanPag) && <p className="text-[11px] text-rose-400 font-semibold mt-1.5">⚠ {erroreIbanIT(ibanPag)}</p>}
         </div>}
       </div>
     );
@@ -1341,7 +1345,7 @@ function AnaFields({ tipoCliente, ana, setAna, inp, lbl }: any) {
       <div><label className={lbl}>Email</label><input value={ana.email} onChange={e => setAna({ ...ana, email: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>Cellulare</label><input value={ana.cellulare} onChange={e => setAna({ ...ana, cellulare: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>Domicilio</label><IndirizzoAutocomplete value={ana.domicilio} onChange={v => setAna({ ...ana, domicilio: v })} onPick={s => setAna({ ...ana, domicilio: s.completo })} className={inp} placeholder="Via e civico: scegli dalla lista" /></div>
-      <div className="col-span-2"><label className={lbl}>IBAN</label><input value={ana.iban} onChange={e => setAna({ ...ana, iban: e.target.value })} placeholder="IT60X0542811101000000123456" className={inp} /></div>
+      <div className="col-span-2"><label className={lbl}>IBAN</label><input value={ana.iban} onChange={e => setAna({ ...ana, iban: normalizzaIban(e.target.value) })} placeholder="IT60X0542811101000000123456" className={inp + " font-mono"} />{!!ana.iban && !!erroreIbanIT(ana.iban) && <p className="text-[11px] text-rose-400 font-semibold mt-1">⚠ {erroreIbanIT(ana.iban)}</p>}</div>
     </div>
   );
   return (
@@ -1355,7 +1359,7 @@ function AnaFields({ tipoCliente, ana, setAna, inp, lbl }: any) {
       <div><label className={lbl}>PEC</label><input value={ana.pec} onChange={e => setAna({ ...ana, pec: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>Codice Univoco / SDI</label><input value={ana.sdi} onChange={e => setAna({ ...ana, sdi: e.target.value })} className={inp} /></div>
       <div><label className={lbl}>Sede Legale</label><IndirizzoAutocomplete value={ana.sedeLegale} onChange={v => setAna({ ...ana, sedeLegale: v })} onPick={s => setAna({ ...ana, sedeLegale: s.completo })} className={inp} placeholder="Via e civico: scegli dalla lista" /></div>
-      <div className="col-span-2"><label className={lbl}>IBAN</label><input value={ana.iban} onChange={e => setAna({ ...ana, iban: e.target.value })} placeholder="IT60X0542811101000000123456" className={inp} /></div>
+      <div className="col-span-2"><label className={lbl}>IBAN</label><input value={ana.iban} onChange={e => setAna({ ...ana, iban: normalizzaIban(e.target.value) })} placeholder="IT60X0542811101000000123456" className={inp + " font-mono"} />{!!ana.iban && !!erroreIbanIT(ana.iban) && <p className="text-[11px] text-rose-400 font-semibold mt-1">⚠ {erroreIbanIT(ana.iban)}</p>}</div>
     </div>
   );
 }
@@ -1385,7 +1389,9 @@ function GestioneUsatiInner() {
   // "i miei" = TUTTI i negozi visibili dell'utente (user_stores + visibilita' +
   // primary, es. Emanuele su entrambe le Magliana) ESPANSI alla sede fisica:
   // i gemelli condividono il magazzino, quindi contano come uno.
-  const { stores: visStores } = useVisibleStores();
+  const { stores: visStores, loaded: visLoaded } = useVisibleStores();
+  // il laboratorio DEVE vedere gli in transito anche su "i miei": firma gli arrivi
+  const lavoraLabMain = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_LAVORA, permsMain) && (user?.role !== "tecnico" || user?.grade === "tecnico_senior");
   const mieiMatch = useCallback(() => {
     const miei = visStores.length ? visStores : (user?.negozio ? [user.negozio] : []);
     const match = NEGOZI.filter(n => miei.some(m => stessoMagazzino(n, m)));
@@ -1397,10 +1403,12 @@ function GestioneUsatiInner() {
   // sede) parte comunque con tutti i punti vendita, non avendo un "suo".
   const storesInit = useRef(false);
   useEffect(() => {
-    if (storesInit.current || !NEGOZI.length || !user) return;
+    // senza aspettare visLoaded il preset si calcolava su una lista di negozi
+    // visibili ancora VUOTA e l'apertura ricadeva su "Mostra tutti" (Luca 01/08)
+    if (storesInit.current || !NEGOZI.length || !user || !visLoaded) return;
     storesInit.current = true;
     setSelectedStores(mieiMatch());
-  }, [NEGOZI, user, mieiMatch]);
+  }, [NEGOZI, user, visLoaded, mieiMatch]);
   const mostraImiei = () => setSelectedStores(mieiMatch());
   const firma = (a: string[]) => JSON.stringify([...a].sort());
   const mieiAttivo = !!user?.negozio && firma(selectedStores) === firma(mieiMatch());
@@ -1496,6 +1504,10 @@ function GestioneUsatiInner() {
   // che hanno gia' il LORO stato e devono seguire tutti gli altri filtri
   const passaFiltri = useCallback((d: Device, conStato = true) => {
     if (!selectedStores.includes(d.store)) return false;
+    // IN TRANSITO = dato al corriere: sparisce dalla disponibilita' del
+    // negozio con "Mostra i miei" (si rivede su "Mostra tutti"); resta
+    // visibile a chi lavora il laboratorio, che ne firma l'arrivo (Luca 01/08)
+    if (mieiAttivo && !lavoraLabMain && d.status === "in_transito") return false;
     if (conStato && !selectedStatuses.includes(d.status)) return false;
     if (dateFrom) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) < dateFrom) return false; }
     if (dateTo) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) > dateTo) return false; }
@@ -1505,7 +1517,7 @@ function GestioneUsatiInner() {
     if (prezzoA && (d.sale_price || 0) > (parseFloat(prezzoA) || Infinity)) return false;
     if (ricambiFilter.length > 0) { if (!d.ricambi.some(r => ricambiFilter.includes(r.stato))) return false; }
     return true;
-  }, [selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter]);
+  }, [selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter, mieiAttivo, lavoraLabMain]);
   const filtered = useMemo(() => devices.filter(d => passaFiltri(d)), [devices, passaFiltri]);
 
   // ── INVENTARIO e VETRINA (Luca 31/07): due contatori VERI, sul filtrato.

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CAMPI_PROFILO, campiMancanti, caricaProfilo, type RigaProfilo } from "@/lib/profilo";
+import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
 import { User as UserIcon, Pencil, KeyRound, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 type Richiesta = { id: number; campo: string; valore_nuovo: string; stato: string };
@@ -43,9 +44,14 @@ export default function ProfiloPage() {
     const inAttesa = (campo: string) => richieste.find((r) => r.campo === campo);
 
     const salva = async (campo: string, label: string) => {
-        const nuovo = editVal.trim();
+        let nuovo = editVal.trim();
+        if (!nuovo || !user?.id || !riga) { setEditCampo(null); return; }
+        if (campo === "iban") {
+            nuovo = normalizzaIban(nuovo);
+            const e = erroreIbanIT(nuovo);
+            if (e) { setMsg("⚠ IBAN non valido: " + e); return; }   // resta in modifica
+        }
         setEditCampo(null);
-        if (!nuovo || !user?.id || !riga) return;
         const attuale = String((riga as Record<string, unknown>)[campo] ?? "").trim();
         if (nuovo === attuale) return;
         if (!attuale) {
