@@ -109,6 +109,13 @@ export default function Dashboard() {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("month");
+  // Filtro ANNO + MESE (Luca 01/08): sostituisce "Tutto". period="custom" con {y,m} (m 0-based).
+  const [filtro, setFiltro] = useState<{ y: number; m: number } | null>(null);
+  const [filtroOpen, setFiltroOpen] = useState(false);
+  const [tmpM, setTmpM] = useState<number>(new Date().getMonth());
+  const [tmpY, setTmpY] = useState<number>(new Date().getFullYear());
+  const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+  const ANNI = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
 
   // layout personalizzabile
   const [order, setOrder] = useState(DEFAULT_ORDER);
@@ -145,6 +152,13 @@ export default function Dashboard() {
 
   const byPeriod = (list) => {
     if (period === "all") return list;
+    if (period === "custom" && filtro) {
+      const from = `${filtro.y}-${String(filtro.m + 1).padStart(2, "0")}-01`;
+      const ny = filtro.m === 11 ? filtro.y + 1 : filtro.y;
+      const nm = filtro.m === 11 ? 0 : filtro.m + 1;
+      const to = `${ny}-${String(nm + 1).padStart(2, "0")}-01`;
+      return list.filter((c) => { const d = c.data_registrazione || ""; return d >= from && d < to; });
+    }
     const now = new Date();
     const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     return list.filter((c) => (c.data_registrazione || "") >= from);
@@ -156,7 +170,7 @@ export default function Dashboard() {
     return all.filter((c) => norm(c.venditore) === norm(user?.name));
   }, [all, level, visKey, user?.name]);
 
-  const mine = useMemo(() => byPeriod(scoped), [scoped, period]);
+  const mine = useMemo(() => byPeriod(scoped), [scoped, period, filtro]);
   const groupBy = (list, key) => {
     const m = {};
     list.forEach((c) => { const k = (c[key] || "—").toString(); m[k] = (m[k] || 0) + 1; });
@@ -204,7 +218,7 @@ export default function Dashboard() {
       if (!m[v].negozio && c.negozio) m[v].negozio = c.negozio;
     });
     return Object.values(m).sort((a, b) => b.n - a.n).slice(0, 10).map((x, i) => ({ ...x, rank: i + 1 }));
-  }, [all, period]);
+  }, [all, period, filtro]);
 
   const isVenditore = level === "own";
   const commsVisibili = useMemo(() => comms.filter((c) => {
@@ -232,7 +246,7 @@ export default function Dashboard() {
   const SECTIONS = {
     kpi: (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi icon={FileText} label="Contratti" value={mine.length} color="#6366f1" sub={period === "month" ? "registrati questo mese" : "totali a sistema"} />
+        <Kpi icon={FileText} label="Contratti" value={mine.length} color="#6366f1" sub={period === "month" ? "registrati questo mese" : period === "custom" && filtro ? `registrati a ${MESI[filtro.m].toLowerCase()} ${filtro.y}` : "totali a sistema"} />
         <Kpi icon={CheckCircle2} label="Attivi" value={attivi} color="#22c55e" sub={mine.length ? `${Math.round((attivi / mine.length) * 100)}% del periodo` : "—"} />
         <Kpi icon={Clock} label="In lavorazione" value={lavorazione} color="#f59e0b" sub="da completare" />
         <Kpi icon={Users} label="Clienti" value={clienti} color="#a855f7" sub="serviti nel periodo" />
@@ -254,7 +268,7 @@ export default function Dashboard() {
         </WidgetShell>
 
         {/* Obiettivo (reale dai target Home) */}
-        <WidgetShell icon={TargetIcon} title={targetTitle} accent="#818cf8" action={<span className="text-[10px] text-slate-500">{period === "month" ? "Mese corrente" : "Totale"}</span>}>
+        <WidgetShell icon={TargetIcon} title={targetTitle} accent="#818cf8" action={<span className="text-[10px] text-slate-500">{period === "month" ? "Mese corrente" : period === "custom" && filtro ? `${MESI[filtro.m]} ${filtro.y}` : "Totale"}</span>}>
           <div className="p-5">
             <div className="flex items-end justify-between mb-2">
               <div>
@@ -375,10 +389,33 @@ export default function Dashboard() {
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${editMode ? "bg-emerald-500 text-white border-emerald-500" : "bg-white/5 text-slate-400 border-white/10 hover:text-white hover:bg-white/10"}`}>
             {editMode ? <><Check className="w-3.5 h-3.5" /> Fatto</> : <><LayoutGrid className="w-3.5 h-3.5" /> Modifica</>}
           </button>
-          <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10">
-            {[["month", "Questo mese"], ["all", "Tutto"]].map(([id, lab]) => (
-              <button key={id} onClick={() => setPeriod(id)} className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${period === id ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>{lab}</button>
-            ))}
+          <div className="flex gap-1 p-1 rounded-lg bg-white/5 border border-white/10 relative">
+            <button onClick={() => { setPeriod("month"); setFiltroOpen(false); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${period === "month" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>Questo mese</button>
+            <button onClick={() => { if (filtro) { setTmpM(filtro.m); setTmpY(filtro.y); } setFiltroOpen((o) => !o); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1 ${period === "custom" || period === "all" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-white"}`}>
+              {period === "custom" && filtro ? `${MESI[filtro.m]} ${filtro.y}` : period === "all" ? "Tutto" : "Filtro"} <span className="text-[9px]">▾</span>
+            </button>
+            {filtroOpen && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setFiltroOpen(false)} />
+                <div className="absolute right-0 top-full mt-2 z-30 w-60 glass-card p-3 space-y-2.5 border-white/10 shadow-2xl">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Scegli mese e anno</div>
+                  <div className="flex gap-2">
+                    <select value={tmpM} onChange={(e) => setTmpM(parseInt(e.target.value))} className="glass-input !h-9 text-xs flex-1">
+                      {MESI.map((mm, i) => <option key={i} value={i}>{mm}</option>)}
+                    </select>
+                    <select value={tmpY} onChange={(e) => setTmpY(parseInt(e.target.value))} className="glass-input !h-9 text-xs w-[84px]">
+                      {ANNI.map((yy) => <option key={yy} value={yy}>{yy}</option>)}
+                    </select>
+                  </div>
+                  <button onClick={() => { setFiltro({ y: tmpY, m: tmpM }); setPeriod("custom"); setFiltroOpen(false); }}
+                    className="w-full py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold">Applica</button>
+                  <button onClick={() => { setPeriod("all"); setFiltro(null); setFiltroOpen(false); }}
+                    className="w-full text-[11px] text-slate-500 hover:text-slate-300 transition-colors">oppure mostra tutto lo storico</button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
