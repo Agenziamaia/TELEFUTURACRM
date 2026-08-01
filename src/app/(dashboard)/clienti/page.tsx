@@ -181,7 +181,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
 
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="glass-panel w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border-white/10">
+            {/* max-w-6xl (Luca 01/08): a 4xl le due colonne stavano strette e si leggeva piccolo */}
+            <div className="glass-panel w-full max-w-6xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl border-white/10">
                 {/* MODAL HEADER */}
                 <div className="flex-none px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
                     <div className="flex items-center gap-4 min-w-0">

@@ -210,7 +210,19 @@ export default function RicercaContratto() {
     const deepLinked = useRef(false);
     useEffect(() => {
         const id = new URLSearchParams(window.location.search).get("id");
-        if (id) setFilterCodice(id);
+        if (!id) return;
+        setFilterCodice(id);
+        // Luca 01/08: dalla scheda cliente il click su una vendita di marginalità
+        // arrivava qui ma NON si apriva: nello stato di default la tessera 💰 è
+        // spenta e la query esclude brand Extra/Marginalità, quindi il contratto
+        // cercato non entrava mai in lista (bisognava cliccare il sacchetto a
+        // mano). Leggo il brand del contratto e, se è extra, accendo la sua
+        // tessera come farebbe il click dell'utente.
+        (async () => {
+            const { data } = await supabase.from("contracts").select("brand").eq("id", id).maybeSingle();
+            const b = String(data?.brand || "");
+            if (["extra", "marginalità", "marginalita"].includes(b.toLowerCase())) setSelBrands(new Set([b]));
+        })();
     }, []);
     useEffect(() => {
         if (deepLinked.current || contractList.length === 0) return;
