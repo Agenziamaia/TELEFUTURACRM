@@ -2919,7 +2919,37 @@ const _sceltaVals=(nome,categoria)=>{
   if(nome==="Operatore GNP")return GNP_FISSO_BRANDS;
   return [];
 };
-const CatalogoSub=({sub,sd,uF,gid,si,sc,color})=>{
+// TELEFONO A RATE su nuova attivazione (Luca 01/08): il telefono venduto a
+// rate FUORI customer base sta quasi sempre sul mobile appena registrato —
+// invece di far ridigitare codice contratto e numero, si propone l'aggancio
+// al mobile della selezione/carrello e i due campi si compilano da soli.
+// Restano da chiedere solo IMEI, modello, importo rata e codice pratica.
+const MOBILE_CATS_AGGANCIO=["Mobile Wallet","Mobile Ric. Auto"];
+const _numeroMobile=(v)=>String(v["Numero di Cellulare"]||v["Numero Definitivo"]||v["Numero Provvisorio"]||"").trim();
+const mobiliAgganciabili=(group,catSales,cart,brandId)=>{
+  const out=[];
+  // selezione corrente (stesso macro-gruppo: mobile e telefono a rate convivono)
+  (catSales||[]).forEach((row,ri)=>{if(!row)return;(group.subs||[]).forEach(s2=>{
+    const d=row[s2.id];if(!(d&&d.active)||!s2.isCatalogo)return;
+    if(!MOBILE_CATS_AGGANCIO.includes(s2.catCategoria))return;
+    const f=d.fields||{};
+    const codice=String(f["Codice Contratto"]||"").trim();
+    const numero=_numeroMobile(f);
+    if(codice||numero)out.push({etichetta:`${s2.catProdotto} #${ri+1}${numero?" · "+numero:""}`,codice,numero});
+  });});
+  // mobile gia' nel CARRELLO dello stesso brand
+  (cart||[]).forEach(gr=>{if(gr.brandId!==brandId)return;(gr.items||[]).forEach(it=>{
+    if(!MOBILE_CATS_AGGANCIO.includes(it.catalogo?.categoria))return;
+    const det=it.details||{};
+    const codice=String(det["Codice Contratto"]||"").trim();
+    const numero=_numeroMobile(det);
+    if(codice||numero)out.push({etichetta:`${it.catalogo?.prodotto||"Mobile"} (carrello)${numero?" · "+numero:""}`,codice,numero});
+  });});
+  // dedup su codice+numero (stesso mobile visto due volte)
+  const visti=new Set();
+  return out.filter(m=>{const k=m.codice+"|"+m.numero;if(visti.has(k))return false;visti.add(k);return true;});
+};
+const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
   const f=sd.fields||{};
   const off=f["Offerta"]||"";
   const offerte=sub.catOfferte||[];
@@ -2956,6 +2986,20 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color})=>{
               <button onClick={()=>togOpz(o)} style={{padding:"6px 12px",borderRadius:999,cursor:"pointer",border:on?"2px solid "+color:"1px solid rgba(255,255,255,0.15)",background:on?color+"26":"rgba(255,255,255,0.03)",color:on?"#fff":"#8892b0",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
               {on&&o.tipo==="numero"&&<input type="number" min="1" value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{const q=Math.max(1,parseInt(e.target.value||"1",10)||1);setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",fontSize:12,background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>}
             </span>);})}
+        </div>
+      </div>
+    )}
+    {sub.catCategoria==="Telefono a Rate"&&!/\bCB\b/i.test(sub.catProdotto)&&(mobili||[]).length>0&&(!_NE(f["Codice Contratto"])||!_NE(f["Numero di Cellulare"]))&&(
+      <div style={{marginTop:10,padding:"10px 12px",background:"rgba(111,66,193,0.08)",borderRadius:8,border:"1px dashed rgba(111,66,193,0.55)"}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#a78bfa",marginBottom:6}}>📎 Nuova attivazione: vuoi agganciarlo al mobile che stai registrando?</div>
+        <div style={{fontSize:10,color:"#8892b0",marginBottom:8}}>Codice contratto e numero si compilano da soli — restano da inserire solo IMEI, modello, rata e pratica di finanziamento.</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {(mobili||[]).map((m,mi)=>(
+            <button key={mi} onClick={()=>{if(m.codice)setF("Codice Contratto",m.codice);if(m.numero)setF("Numero di Cellulare",m.numero);}}
+              style={{padding:"7px 14px",borderRadius:8,border:"2px solid rgba(111,66,193,0.7)",background:"rgba(111,66,193,0.18)",color:"#c4b5fd",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              ✓ Aggancia a {m.etichetta}
+            </button>
+          ))}
         </div>
       </div>
     )}
@@ -3128,7 +3172,7 @@ const subBadge=(d,dupFn,sub,missing)=>{
   return {st:"ok",label:"✓ Completo",bg:"rgba(40,167,69,0.12)",fg:"#28a745"};
 };
 
-const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,onOpenVFModal,dupCheck}) => {
+const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,onOpenVFModal,dupCheck,cartAggancio,brandId}) => {
   const _r = rawSd || {};
   const sd = {active:true,fields:_r.fields||{},contract:_r.contract||{},gnp:_r.gnp||false,gnpNum:_r.gnpNum||"",gnpOp:_r.gnpOp||"",secondaLinea:_r.secondaLinea||false,gnp2L:_r.gnp2L!=null?_r.gnp2L:null,gnp2LBrand:_r.gnp2LBrand||"",gnp2LNum:_r.gnp2LNum||"",domiciliazione:_r.domiciliazione||false,opProvenienza:_r.opProvenienza||"",codiceOverride:_r.codiceOverride||"",addons:_r.addons||{},domiciliato:_r.domiciliato!=null?_r.domiciliato:null,convergente:_r.convergente!=null?_r.convergente:null,tipMob:_r.tipMob!=null?_r.tipMob:null,mnp:_r.mnp!=null?_r.mnp:null,easyPay:_r.easyPay!=null?_r.easyPay:null,tnpGa:_r.tnpGa!=null?_r.tnpGa:null,tnpTipo:_r.tnpTipo||"",tnpModello:_r.tnpModello||"",tnpImei:_r.tnpImei||"",tnpCount:_r.tnpCount||null,tnpModelli:_r.tnpModelli||[],tnpImeis:_r.tnpImeis||[],packAccessori:_r.packAccessori!=null?_r.packAccessori:null,packAccessoriVal:_r.packAccessoriVal||"",packAccessoriQta:_r.packAccessoriQta||"",cbTnp:_r.cbTnp||false,cbTnpTipo:_r.cbTnpTipo||"",cbTnpModello:_r.cbTnpModello||"",cbTnpImei:_r.cbTnpImei||"",cbTnpCount:_r.cbTnpCount||null,cbTnpModelli:_r.cbTnpModelli||[],cbTnpImeis:_r.cbTnpImeis||[],cbPackAccessori:_r.cbPackAccessori!=null?_r.cbPackAccessori:null,cbPackAccessoriVal:_r.cbPackAccessoriVal||"",cbPackAccessoriQta:_r.cbPackAccessoriQta||"",cbTnpCell:_r.cbTnpCell||"",cbTnpCC:_r.cbTnpCC||"",cbTnpCodIns:_r.cbTnpCodIns||"",cbTnpReload:_r.cbTnpReload!=null?_r.cbTnpReload:null,cbTnpReloadSel:_r.cbTnpReloadSel||{},cbCambio:_r.cbCambio||false,cbCambioVal:_r.cbCambioVal||"",cbCambioCell:_r.cbCambioCell||"",cbCambioCC:_r.cbCambioCC||"",cbCambioCodIns:_r.cbCambioCodIns||"",cbAddon:_r.cbAddon||false,cbAddonSel:_r.cbAddonSel||{},rfModello:_r.rfModello||"",rfImei:_r.rfImei||"",cbRf:_r.cbRf||false,cbAddonCodIns:_r.cbAddonCodIns||"",cbAddonSecCell:_r.cbAddonSecCell||"",cbAddonRoCell:_r.cbAddonRoCell||"",cbAddonRoImei:_r.cbAddonRoImei||"",cbRfCodIns:_r.cbRfCodIns||"",tnpGaReload:_r.tnpGaReload!=null?_r.tnpGaReload:null,tnpGaReloadSel:_r.tnpGaReloadSel||{},reloadForever:_r.reloadForever!=null?_r.reloadForever:null,securitySel:_r.securitySel||{},voceCasaCb:_r.voceCasaCb!=null?_r.voceCasaCb:null,protectaCodIns:_r.protectaCodIns||"",vfOffers:_r.vfOffers||{},vfContratti:_r.vfContratti||{},vfOffer:_r.vfOffer||null,vfMnp:_r.vfMnp||null,vfMnpBrand:_r.vfMnpBrand||"",vfMnpNum:_r.vfMnpNum||"",vfDomicilio:_r.vfDomicilio||null,vfConvergenza:_r.vfConvergenza||null,vfNumFisso:_r.vfNumFisso||"",vfTnp:_r.vfTnp||null,vfFConvergenza:_r.vfFConvergenza||null,vfFGnp:_r.vfFGnp||null,vfFGnpBrand:_r.vfFGnpBrand||"",vfFGnpNum:_r.vfFGnpNum||"",vfFLockIn:_r.vfFLockIn||null,
     vfTnpList:_r.vfTnpList||[],cbTnpList:_r.cbTnpList||[],
@@ -3178,7 +3222,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
         {_bd&&<span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999,background:_bd.bg,color:_bd.fg,whiteSpace:"nowrap"}}>{_bd.label}</span>}
       </div>
 
-      {sub.isCatalogo&&<CatalogoSub sub={sub} sd={sd} uF={uF} gid={group.id} si={si} sc={sessionCode} color={group.color}/>}
+      {sub.isCatalogo&&<CatalogoSub sub={sub} sd={sd} uF={uF} gid={group.id} si={si} sc={sessionCode} color={group.color} mobili={sub.catCategoria==="Telefono a Rate"?mobiliAgganciabili(group,catSales,cartAggancio,brandId):[]}/>}
 
       {/* MOBILE flow: Tipologia → MNP → EasyPay → Dropdown */}
       {sub.isMobile&&(
@@ -5196,7 +5240,7 @@ export default function CRM() {
               {group.subs.map(sub=><button key={sub.id} onClick={()=>togSub(group.id,si,sub.id,group.radio?group.subs.map(s=>s.id):null)} style={{padding:"13px 28px",borderRadius:10,border:(sale[sub.id]&&sale[sub.id].active)?"2px solid "+group.color:"2px solid rgba(255,255,255,0.1)",background:(sale[sub.id]&&sale[sub.id].active)?group.color:"rgba(255,255,255,0.04)",color:(sale[sub.id]&&sale[sub.id].active)?"#fff":"#8892b0",cursor:"pointer",fontSize:13,fontWeight:700}}>{sub.title}</button>)}
             </div>
             {group.subs.filter(sub=>sale[sub.id]&&sale[sub.id].active).map(sub=>
-              <SubCard key={sub.id} sub={sub} rawSd={sale[sub.id]||{}} group={group} si={si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck}/>
+              <SubCard key={sub.id} sub={sub} rawSd={sale[sub.id]||{}} group={group} si={si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} cartAggancio={cart} brandId={brand}/>
             )}
           </div>)}
         </div>;})}
