@@ -84,13 +84,15 @@ export function NumeriCliente({ clientId, principale }: { clientId: string; prin
                         className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
             ))}
-            <div className="flex items-center gap-2 pt-1">
+            {/* wrap-friendly: in colonne strette (scheda cliente) gli input riempiono
+                la riga e il tasto Aggiungi va a capo invece di uscire dalla card */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
                 <input value={nuovo} onChange={(e) => setNuovo(e.target.value)} placeholder="Nuovo numero…"
-                    className="w-[150px] bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs font-mono text-slate-200 outline-none focus:border-indigo-500/50" />
+                    className="flex-1 min-w-[120px] bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs font-mono text-slate-200 outline-none focus:border-indigo-500/50" />
                 <input value={etich} onChange={(e) => setEtich(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") aggiungi(); }} placeholder="etichetta (facoltativa)"
                     className="flex-1 min-w-[120px] bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500/50" />
                 <button onClick={aggiungi} disabled={!nuovo.trim()} title="Aggiungi il numero"
-                    className="px-2.5 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold hover:bg-indigo-500/25 disabled:opacity-40 flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Aggiungi</button>
+                    className="shrink-0 px-2.5 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-xs font-bold hover:bg-indigo-500/25 disabled:opacity-40 flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Aggiungi</button>
             </div>
         </div>
     );
