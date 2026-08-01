@@ -2,7 +2,9 @@
 "use client";
 
 
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { supabase } from "@/lib/supabaseClient";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
@@ -130,6 +132,44 @@ function ChatPageInner() {
   const reloadInbox = async () => { if (!meId) return; try { setInbox(await getInbox(meId)); } catch {} };
   useEffect(() => { reloadInbox(); }, [meId]);
   useEffect(() => { if (!meId) return; return subscribeInbox(reloadInbox); }, [meId]);
+
+  // ── Badge NON LETTI per canale (chat interna / WhatsApp / mail) sui tab ────
+  // Chat: somma dei non letti della mia inbox (già caricata). WhatsApp e mail:
+  // non letti delle istanze/caselle mie o del mio negozio (come le rispettive
+  // inbox). Realtime sugli INSERT + refresh periodico per il calo alla lettura.
+  const { stores: myStores } = useVisibleStores();
+  const chatUnread = useMemo(() => inbox.reduce((s: number, c: any) => s + (c.unread || 0), 0), [inbox]);
+  const [waUnread, setWaUnread] = useState(0);
+  const [mailUnread, setMailUnread] = useState(0);
+  const loadChannelCounts = useCallback(async () => {
+    if (!meId) return;
+    try {
+      const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio");
+      const mine = (insts || []).filter((i: any) => i.owner_user_id === meId || (i.negozio && myStores.some((s) => sameStore(i.negozio, s)))).map((i: any) => i.id);
+      if (mine.length) {
+        const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine);
+        setWaUnread((data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0));
+      } else setWaUnread(0);
+    } catch { /* ignora */ }
+    try {
+      const { data: accs } = await supabase.from("email_accounts").select("id, owner_user_id, negozio");
+      const mine = (accs || []).filter((a: any) => a.owner_user_id === meId || (a.negozio && myStores.some((s) => sameStore(a.negozio, s)))).map((a: any) => a.id);
+      if (mine.length) {
+        const { data } = await supabase.from("email_conversations").select("unread, trashed, spam, archived").in("account_id", mine);
+        setMailUnread((data || []).filter((c: any) => !c.trashed && !c.spam && !c.archived).reduce((s: number, c: any) => s + (c.unread || 0), 0));
+      } else setMailUnread(0);
+    } catch { /* ignora */ }
+  }, [meId, myStores]);
+  useEffect(() => {
+    if (!meId) return;
+    loadChannelCounts();
+    const ch = supabase.channel("chat_tab_counts")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "wa_messages" }, () => loadChannelCounts())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "email_messages" }, () => loadChannelCounts())
+      .subscribe();
+    const t = setInterval(loadChannelCounts, 15000);
+    return () => { supabase.removeChannel(ch); clearInterval(t); };
+  }, [meId, loadChannelCounts]);
   // apri una conversazione specifica se arrivi da un toast (/chat?c=<id>)
   useEffect(() => {
     const c = new URLSearchParams(window.location.search).get("c");
@@ -278,16 +318,19 @@ function ChatPageInner() {
           className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
             mode === "chat" ? "bg-indigo-500/15 text-indigo-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
           <MessageSquare className="w-4 h-4" /> Chat interna
+          {chatUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{chatUnread > 99 ? "99+" : chatUnread}</span>}
         </button>
         <button onClick={() => setMode("whatsapp")}
           className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
             mode === "whatsapp" ? "bg-emerald-500/15 text-emerald-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
           <MessageCircle className="w-4 h-4" /> WhatsApp
+          {waUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center">{waUnread > 99 ? "99+" : waUnread}</span>}
         </button>
         <button onClick={() => setMode("email")}
           className={cn("flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
             mode === "email" ? "bg-sky-500/15 text-sky-200" : "text-slate-400 hover:text-white hover:bg-white/5")}>
           <Mail className="w-4 h-4" /> Email
+          {mailUnread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{mailUnread > 99 ? "99+" : mailUnread}</span>}
         </button>
       </div>
 
