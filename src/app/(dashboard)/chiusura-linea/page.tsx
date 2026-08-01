@@ -28,8 +28,9 @@ import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { cn } from "@/utils";
 import { Loader2, Scissors, Upload, X, FileText, Search } from "lucide-react";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capAllowed, CAP_DISDETTE, CAP_DISDETTE_INVIA, CAP_DISDETTE_GESTISCE } from "@/lib/capabilities";
 
-const DIREZIONE = ["admin", "dev", "direttore_generale", "direttore_commerciale", "amministrativo"];
 const BRANDS = ["WindTre", "Vodafone", "Fastweb", "TIM", "Iliad", "Sky", "Very Mobile", "Ho. Mobile", "Kena Mobile", "Altro"];
 
 type FileRef = { url: string; name: string };
@@ -285,8 +286,8 @@ async function taskAiDesignati(titolo: string, dettaglio: string, autore: string
 }
 
 // ── DETTAGLIO TICKET (modale) ────────────────────────────────────────────
-function DettaglioTicket({ t, direzione, onClose, onAggiornata, msg }: {
-    t: Ticket; direzione: boolean; onClose: () => void; onAggiornata: () => void; msg: (m: string) => void;
+function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg }: {
+    t: Ticket; direzione: boolean; puoInviare: boolean; onClose: () => void; onAggiornata: () => void; msg: (m: string) => void;
 }) {
     const { user } = useAuth();
     const [rigetto, setRigetto] = useState(false);
@@ -380,8 +381,8 @@ function DettaglioTicket({ t, direzione, onClose, onAggiornata, msg }: {
                     </div>
                 )}
 
-                {/* CONSULENTE: reintegro dopo il rigetto */}
-                {!direzione && t.status === "da_integrare" && (
+                {/* CONSULENTE: reintegro dopo il rigetto (serve la capacita' di invio) */}
+                {!direzione && puoInviare && t.status === "da_integrare" && (
                     <div className="p-4 rounded-xl border border-rose-500/30 bg-rose-500/5 space-y-3">
                         <div>
                             <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1">Nota dalla Direzione:</p>
@@ -427,7 +428,11 @@ function DettaglioTicket({ t, direzione, onClose, onAggiornata, msg }: {
 // ── PAGINA ───────────────────────────────────────────────────────────────
 export default function ChiusuraLineaPage() {
     const { user } = useAuth();
-    const direzione = DIREZIONE.includes(user?.role || "");
+    // due livelli decisi da Amministrazione → Utenti → Permessi (rotellina
+    // "Chiusura Linea"): accesso semplice (invia) e gestione (vista direzione)
+    const { perms } = useRolePermissions(user?.role);
+    const direzione = capAllowed(user?.role, CAP_DISDETTE.section, CAP_DISDETTE_GESTISCE, perms);
+    const puoInviare = direzione || capAllowed(user?.role, CAP_DISDETTE.section, CAP_DISDETTE_INVIA, perms);
     const wholeStore = seesWholeStore(user?.role);
     const { stores: visStores, loaded: visLoaded } = useVisibleStores();
     const negozi = useStores();
@@ -498,7 +503,7 @@ export default function ChiusuraLineaPage() {
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                     <div>
                         <h1 className="text-2xl font-black text-white flex items-center gap-2.5"><Scissors className="w-6 h-6 text-indigo-400" /> Chiusura Linea</h1>
-                        <p className="text-sm text-slate-500 mt-0.5">{direzione ? "Gestione globale delle richieste di disdetta" : "Invio e monitoraggio delle tue richieste di disdetta"}</p>
+                        <p className="text-sm text-slate-500 mt-0.5">{direzione ? "Gestione globale delle richieste di disdetta" : puoInviare ? "Invio e monitoraggio delle tue richieste di disdetta" : "Consultazione delle richieste di disdetta"}</p>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                         <div className="relative">
@@ -520,8 +525,10 @@ export default function ChiusuraLineaPage() {
 
                 {toast && <div className="px-4 py-2.5 rounded-xl border border-indigo-400/40 bg-indigo-500/10 text-sm font-semibold text-indigo-200">{toast}</div>}
 
-                <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr] gap-6 items-start">
-                    <FormInvio onInviata={load} msg={msg} />
+                <div className={cn("grid grid-cols-1 gap-6 items-start", puoInviare && "lg:grid-cols-[350px_1fr]")}>
+                    {puoInviare ? <FormInvio onInviata={load} msg={msg} /> : (
+                        <p className="text-xs text-slate-500 -mb-2">Consultazione: il tuo ruolo non ha la capacità di invio (si concede da Amministrazione → Utenti → Permessi → rotellina Chiusura Linea).</p>
+                    )}
 
                     {loading ? (
                         <div className="flex items-center gap-3 text-slate-400 py-16 justify-center"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento richieste…</div>
@@ -585,7 +592,7 @@ export default function ChiusuraLineaPage() {
                 </div>
             </div>
 
-            {sel && <DettaglioTicket t={sel} direzione={direzione} onClose={() => setSel(null)} onAggiornata={load} msg={msg} />}
+            {sel && <DettaglioTicket t={sel} direzione={direzione} puoInviare={puoInviare} onClose={() => setSel(null)} onAggiornata={load} msg={msg} />}
         </div>
     );
 }
