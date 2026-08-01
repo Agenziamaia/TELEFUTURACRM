@@ -18,6 +18,7 @@ import type { ChatMessage, DirUser } from "@/lib/chat";
 import { roleLabel, seesAllStores, seesWholeStore } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
+import { ScreenshotEditor } from "./_components/ScreenshotEditor";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil } from "lucide-react";
@@ -133,7 +134,13 @@ function ChatPageInner() {
   //    CRM); il file finisce tra gli allegati del messaggio in scrittura ──
   const [recording, setRecording] = useState(false);
   const recRef = useRef<{ rec: MediaRecorder; stream: MediaStream } | null>(null);
-  const fareScreenshot = async () => {
+  // due modalita' (Luca 02/08): finestra intera O selezione manuale di
+  // un'area col tratteggio; in entrambi i casi si passa dall'EDITOR
+  // (matita/cerchio/rettangolo/freccia stile WhatsApp) prima di allegare
+  const [shotMenu, setShotMenu] = useState(false);
+  const [shotEdit, setShotEdit] = useState<{ src: string; ritaglio: boolean } | null>(null);
+  const fareScreenshot = async (area: boolean) => {
+    setShotMenu(false);
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const video = document.createElement("video");
@@ -144,8 +151,7 @@ function ChatPageInner() {
       canvas.width = video.videoWidth; canvas.height = video.videoHeight;
       canvas.getContext("2d")!.drawImage(video, 0, 0);
       stream.getTracks().forEach(t => t.stop());
-      const blob: Blob | null = await new Promise(r => canvas.toBlob(r, "image/png"));
-      if (blob) setFiles((p: File[]) => [...p, new File([blob], `screenshot-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`, { type: "image/png" })]);
+      setShotEdit({ src: canvas.toDataURL("image/png"), ritaglio: area });
     } catch { /* annullato dal picker */ }
   };
   const toggleRegistrazione = async () => {
@@ -848,10 +854,22 @@ function ChatPageInner() {
                   <Tag className="w-5 h-5" />
                 </button>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-                <button type="button" title="Screenshot dello schermo (si allega al messaggio)" onClick={fareScreenshot}
-                  className="p-2 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-white/10 transition-colors shrink-0">
-                  <Camera className="w-5 h-5" />
-                </button>
+                <span className="relative shrink-0">
+                  <button type="button" title="Screenshot (finestra intera o area)" onClick={() => setShotMenu(v => !v)}
+                    className={`p-2 rounded-lg transition-colors ${shotMenu ? "text-sky-300 bg-white/10" : "text-slate-400 hover:text-sky-300 hover:bg-white/10"}`}>
+                    <Camera className="w-5 h-5" />
+                  </button>
+                  {shotMenu && (
+                    <div className="absolute bottom-full mb-2 left-0 z-40 flex gap-1.5 p-1.5 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl">
+                      <button type="button" title="Cattura la finestra/schermo intero" onClick={() => fareScreenshot(false)}
+                        className="w-12 h-12 rounded-xl bg-white/5 border border-white/15 hover:bg-white/10 flex items-center justify-center text-xl">🖥️</button>
+                      <button type="button" title="Seleziona un'area a mano (tratteggio)" onClick={() => fareScreenshot(true)}
+                        className="w-12 h-12 rounded-xl bg-white/5 border-2 border-dashed border-white/30 hover:bg-white/10 flex items-center justify-center">
+                        <span className="w-6 h-5 border-2 border-dashed border-slate-300 rounded-sm" />
+                      </button>
+                    </div>
+                  )}
+                </span>
                 <button type="button" onClick={toggleRegistrazione}
                   title={recording ? "Ferma la registrazione (si allega al messaggio)" : "Registra lo schermo (clicca di nuovo per fermare)"}
                   className={`p-2 rounded-lg transition-colors shrink-0 ${recording ? "text-red-400 bg-red-500/15 animate-pulse" : "text-slate-400 hover:text-red-400 hover:bg-white/10"}`}>
@@ -920,6 +938,12 @@ function ChatPageInner() {
         )}
       </section>
       </div>
+      )}
+
+      {shotEdit && (
+        <ScreenshotEditor src={shotEdit.src} iniziaInRitaglio={shotEdit.ritaglio}
+          onDone={(f) => { setFiles((p: File[]) => [...p, f]); setShotEdit(null); }}
+          onCancel={() => setShotEdit(null)} />
       )}
 
       {forwardMsg && (
