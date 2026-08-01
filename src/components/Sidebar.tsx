@@ -105,28 +105,32 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
     const vede = (href: string, roles: string[], group?: string) => effectiveAllowed(user?.role, href, roles, perms, group);
     const feriePendenti = useFeriePendenti(user?.id, user?.role);
 
-    // Totale NON LETTI di TUTTI i canali (chat interna + WhatsApp + mail) -> badge
-    // sulla voce "Chat". Prima contava solo la chat interna, quindi con non letti
-    // solo su WhatsApp/mail il badge non compariva.
+    // NON LETTI per CANALE -> tre badge distinti sulla voce "Chat":
+    // chat interna (indaco), WhatsApp (verde), mail (azzurro). WhatsApp/mail
+    // contano istanze/caselle mie o del mio negozio (come le rispettive inbox).
     const { stores: myStores } = useVisibleStores();
     const [chatUnread, setChatUnread] = useState(0);
+    const [waUnread, setWaUnread] = useState(0);
+    const [mailUnread, setMailUnread] = useState(0);
     useEffect(() => {
-        if (!user?.id) { setChatUnread(0); return; }
+        if (!user?.id) { setChatUnread(0); setWaUnread(0); setMailUnread(0); return; }
         let alive = true;
         const load = async () => {
-            let tot = 0;
-            try { const rows = await getInbox(user.id); tot += rows.reduce((s, r) => s + (r.unread || 0), 0); } catch { }
+            try { const rows = await getInbox(user.id); if (alive) setChatUnread(rows.reduce((s, r) => s + (r.unread || 0), 0)); } catch { }
             try {
                 const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio");
                 const mine = (insts || []).filter((i: any) => i.owner_user_id === user.id || (i.negozio && myStores.some((s) => sameStore(i.negozio, s)))).map((i: any) => i.id);
-                if (mine.length) { const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine); tot += (data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
+                let n = 0;
+                if (mine.length) { const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine); n = (data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
+                if (alive) setWaUnread(n);
             } catch { }
             try {
                 const { data: accs } = await supabase.from("email_accounts").select("id, owner_user_id, negozio");
                 const mine = (accs || []).filter((a: any) => a.owner_user_id === user.id || (a.negozio && myStores.some((s) => sameStore(a.negozio, s)))).map((a: any) => a.id);
-                if (mine.length) { const { data } = await supabase.from("email_conversations").select("unread, trashed, spam, archived").in("account_id", mine); tot += (data || []).filter((c: any) => !c.trashed && !c.spam && !c.archived).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
+                let n = 0;
+                if (mine.length) { const { data } = await supabase.from("email_conversations").select("unread, trashed, spam, archived").in("account_id", mine); n = (data || []).filter((c: any) => !c.trashed && !c.spam && !c.archived).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
+                if (alive) setMailUnread(n);
             } catch { }
-            if (alive) setChatUnread(tot);
         };
         load();
         const off = subscribeInbox(load);
@@ -233,9 +237,11 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                     >
                                         <item.icon className={cn("w-5 h-5", isActive ? "text-indigo-400" : "text-slate-500")} />
                                         {item.name}
-                                        {item.href === "/chat" && chatUnread > 0 && (
-                                            <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">
-                                                {chatUnread > 99 ? "99+" : chatUnread}
+                                        {item.href === "/chat" && (chatUnread > 0 || waUnread > 0 || mailUnread > 0) && (
+                                            <span className="ml-auto flex items-center gap-1">
+                                                {chatUnread > 0 && <span title="Chat interna" className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{chatUnread > 99 ? "99+" : chatUnread}</span>}
+                                                {waUnread > 0 && <span title="WhatsApp" className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center">{waUnread > 99 ? "99+" : waUnread}</span>}
+                                                {mailUnread > 0 && <span title="Mail" className="min-w-[18px] h-[18px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{mailUnread > 99 ? "99+" : mailUnread}</span>}
                                             </span>
                                         )}
                                     </Link>
