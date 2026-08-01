@@ -835,8 +835,8 @@ function ChatPageInner() {
                 {/* GIF picker (Giphy) — richiesta Francesco. Solo se la chiave è configurata */}
                 {gifEnabled && <span className="relative shrink-0">
                   <button type="button" title="GIF" onClick={() => { setShowGif(v => !v); setShowEmoji(false); }}
-                    className={`px-2 py-1.5 rounded-lg text-[11px] font-black tracking-wide transition-colors ${showGif ? "text-fuchsia-300 bg-white/10" : "text-slate-400 hover:text-fuchsia-300 hover:bg-white/10"}`}>
-                    GIF
+                    className={`p-2 rounded-lg transition-colors ${showGif ? "text-fuchsia-300 bg-white/10" : "text-slate-400 hover:text-fuchsia-300 hover:bg-white/10"}`}>
+                    <span className="block h-5 leading-5 text-[11px] font-black tracking-wide">GIF</span>
                   </button>
                   {showGif && (
                     <div className="absolute bottom-full mb-2 left-0 z-40 w-80 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl p-2">
