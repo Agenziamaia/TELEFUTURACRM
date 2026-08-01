@@ -374,6 +374,39 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   // chi ne gestisce piu' d'uno vede gli ordini di tutti e sceglie per quale ordina.
   const negoziMiei = (propMyStores && propMyStores.length) ? propMyStores : (myStore ? [myStore] : []);
   const isControlled = propRole != null;
+  // ARTICOLI ordinabili da DB (mig. 129, amministrabili da Amministrazione →
+  // Ordine Merce); a tabella vuota o errore restano le liste cablate storiche.
+  const [prodottiCat, setProdottiCat] = useState(PRODOTTI_CAT);
+  const [extraCat, setExtraCat] = useState(EXTRA_CAT);
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase.from("ordine_merce_articoli")
+        .select("sezione,categoria,categoria_label,categoria_icona,nome,ordine,attivo")
+        .eq("attivo", true).order("ordine").order("nome");
+      if (error || !data || !data.length) return;
+      const costruisci = (sezione, base) => {
+        const rows = data.filter(r => r.sezione === sezione);
+        if (!rows.length) return null;
+        const out = {};
+        rows.forEach(r => {
+          if (!out[r.categoria]) out[r.categoria] = { label: r.categoria_label || r.categoria, icon: r.categoria_icona || "", items: [] };
+          out[r.categoria].items.push(r.nome);
+        });
+        // le COVER restano dal codice: si scelgono per modello, non da lista
+        if (sezione === "prodotti" && base.cover) {
+          const conCover = {};
+          Object.keys(base).concat(Object.keys(out)).forEach(k => { if (!conCover[k]) conCover[k] = k === "cover" ? base.cover : out[k]; });
+          Object.keys(conCover).forEach(k => { if (!conCover[k]) delete conCover[k]; });
+          return conCover;
+        }
+        return out;
+      };
+      const np = costruisci("prodotti", PRODOTTI_CAT);
+      const ne = costruisci("extra", EXTRA_CAT);
+      if (np) setProdottiCat(np);
+      if (ne) setExtraCat(ne);
+    })();
+  }, []);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
@@ -432,6 +465,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [coverSearch, setCoverSearch] = useState("");
   const [activeExtraCat, setActiveExtraCat] = useState(null);
   const [itemSearch, setItemSearch] = useState("");
+  const [extraSearchAll, setExtraSearchAll] = useState("");   // ricerca su TUTTI gli Extra (Luca 01/08 sera)
   const [inkModel, setInkModel] = useState(""); // printer model for ink items
   const [inkPending, setInkPending] = useState(null); // which ink item is being configured
   const [cart, setCart] = useState([]); // [{name, qty, cat, brand?, sub?, subCat?}]
@@ -1065,7 +1099,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                   <div>
                     <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Seleziona Categoria:</p>
                     <div style={s.chipRow}>
-                      {Object.entries(PRODOTTI_CAT).map(([key, cat]) => (
+                      {Object.entries(prodottiCat).map(([key, cat]) => (
                         <div key={key} style={{
                           ...s.chip,
                           borderColor: activeProdCat === key ? C.primary : C.border,
@@ -1134,13 +1168,13 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                     )}
 
                     {/* Standard item picker for non-cover categories */}
-                    {activeProdCat && activeProdCat !== "cover" && PRODOTTI_CAT[activeProdCat] && PRODOTTI_CAT[activeProdCat].items && (
+                    {activeProdCat && activeProdCat !== "cover" && prodottiCat[activeProdCat] && prodottiCat[activeProdCat].items && (
                       <div>
                         <input style={{ ...s.input, width: "100%", marginTop: 10, boxSizing: "border-box" }}
-                          placeholder={"🔍 Cerca in " + PRODOTTI_CAT[activeProdCat].label + "..."}
+                          placeholder={"🔍 Cerca in " + prodottiCat[activeProdCat].label + "..."}
                           value={itemSearch} onChange={e => setItemSearch(e.target.value)} />
                         {renderItemPicker(
-                          PRODOTTI_CAT[activeProdCat].items.filter(i => !itemSearch || i.toLowerCase().includes(itemSearch.toLowerCase())),
+                          prodottiCat[activeProdCat].items.filter(i => !itemSearch || i.toLowerCase().includes(itemSearch.toLowerCase())),
                           "prodotti", { subCat: activeProdCat }
                         )}
                       </div>
@@ -1151,9 +1185,28 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                 {/* ── EXTRA section ── */}
                 {activeSection === "extra" && (
                   <div>
-                    <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Seleziona Categoria:</p>
-                    <div style={s.chipRow}>
-                      {Object.entries(EXTRA_CAT).map(([key, cat]) => (
+                    {/* RICERCA GLOBALE (Luca 01/08 sera): scrivi l'articolo senza
+                        conoscere la categoria — i risultati arrivano da TUTTE le
+                        categorie Extra con lo stesso picker delle quantita' */}
+                    <input style={{ ...s.input, width: "100%", marginBottom: 10, boxSizing: "border-box" }}
+                      placeholder="🔍 Cerca in tutti gli articoli Extra… (es. rotoli, penne, caffè)"
+                      value={extraSearchAll} onChange={e => setExtraSearchAll(e.target.value)} />
+                    {extraSearchAll.trim() && Object.entries(extraCat).map(([key, cat]) => {
+                      const hit = (cat.items || []).filter(i => i.toLowerCase().includes(extraSearchAll.trim().toLowerCase()));
+                      if (!hit.length) return null;
+                      return (
+                        <div key={"srch-" + key} style={{ marginBottom: 6 }}>
+                          <p style={{ fontSize: 12, fontWeight: 700, opacity: .7, margin: "4px 0 2px" }}>{cat.icon} {cat.label}</p>
+                          {renderItemPicker(hit, "extra", { subCat: key })}
+                        </div>
+                      );
+                    })}
+                    {extraSearchAll.trim() && !Object.values(extraCat).some(cat => (cat.items || []).some(i => i.toLowerCase().includes(extraSearchAll.trim().toLowerCase()))) && (
+                      <p style={{ fontSize: 12, opacity: .6, marginBottom: 8 }}>Nessun articolo corrisponde.</p>
+                    )}
+                    {!extraSearchAll.trim() && <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Seleziona Categoria:</p>}
+                    {!extraSearchAll.trim() && <div style={s.chipRow}>
+                      {Object.entries(extraCat).map(([key, cat]) => (
                         <div key={key} style={{
                           ...s.chip,
                           borderColor: activeExtraCat === key ? C.primary : C.border,
@@ -1162,14 +1215,14 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                           {cat.icon} {cat.label}
                         </div>
                       ))}
-                    </div>
-                    {activeExtraCat && EXTRA_CAT[activeExtraCat] && (
+                    </div>}
+                    {!extraSearchAll.trim() && activeExtraCat && extraCat[activeExtraCat] && (
                       <div>
                         <input style={{ ...s.input, width: "100%", marginTop: 10, boxSizing: "border-box" }}
-                          placeholder={"🔍 Cerca in " + EXTRA_CAT[activeExtraCat].label + "..."}
+                          placeholder={"🔍 Cerca in " + extraCat[activeExtraCat].label + "..."}
                           value={itemSearch} onChange={e => setItemSearch(e.target.value)} />
                         {renderItemPicker(
-                          EXTRA_CAT[activeExtraCat].items.filter(i => !itemSearch || i.toLowerCase().includes(itemSearch.toLowerCase())),
+                          extraCat[activeExtraCat].items.filter(i => !itemSearch || i.toLowerCase().includes(itemSearch.toLowerCase())),
                           "extra", { subCat: activeExtraCat }
                         )}
                       </div>

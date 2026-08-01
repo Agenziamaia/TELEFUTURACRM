@@ -144,6 +144,10 @@ function faseGestitaDa(d: { status: UsatoStatus; store: string; target_store: st
     return `Fase gestita dal negozio che ha il dispositivo (${d.store})`;
 }
 
+const STATI_LABORATORIO = ["in_transito", "ricevuto", "in_lavorazione", "pronto"];
+const inLaboratorio = (d: { status: UsatoStatus }) => STATI_LABORATORIO.includes(d.status);
+const sedeCorrente = (d: { status: UsatoStatus; store: string }) => inLaboratorio(d) ? "Laboratorio" : d.store;
+
 const KPI_CARDS = [
   { key: "_all", label: "Totale", icon: "📊", colorClass: "text-indigo-400", bgClass: "bg-indigo-500/10", borderClass: "border-indigo-500/30" },
   { key: "acquistato", label: "Acquistato", icon: "🛒", colorClass: "text-slate-400", bgClass: "bg-slate-500/10", borderClass: "border-slate-500/30" },
@@ -767,7 +771,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                   </>
                 ) : (
                   <>
-                    {([["Modello", dev.model, false], ["IMEI", dev.imei, true], ["Negozio", dev.store, false]] as [string, string, boolean][]).map(([l, v, mono]) => (
+                    {([["Modello", dev.model, false], ["IMEI", dev.imei, true], ["Negozio", inLaboratorio(dev) ? `🔬 Laboratorio (da ${dev.store})` : dev.store, false]] as [string, string, boolean][]).map(([l, v, mono]) => (
                       <div key={l}>
                         <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">{l}</div>
                         <div className={cn("text-sm text-white font-medium", mono && "font-mono")}>{v}</div>
@@ -1654,15 +1658,14 @@ function GestioneUsatiInner() {
   const ricambiDaPrezzare = useCallback((d: Device) =>
     d.ricambi.some(r => !r.cost || r.cost <= 0) && !["venduto", "ko"].includes(d.status), []);
   const passaFiltri = useCallback((d: Device, conStato = true) => {
-    if (!selectedStores.includes(d.store)) return false;
+    // nelle fasi di lavorazione il telefono e' del LABORATORIO, non di un
+    // negozio (Luca 01/08 sera): il filtro negozi non lo vincola — entra ed
+    // esce solo con gli stati (chip o "Mostra magazzino")
+    if (!inLaboratorio(d) && !selectedStores.includes(d.store)) return false;
     // vista amministrazione "ricambi da prezzare": ignora il filtro stato
     // (quei telefoni stanno in laboratorio) e mostra solo chi ha ricambi
     // senza prezzo (Luca 01/08)
     if (soloDaPrezzare) return ricambiDaPrezzare(d);
-    // IN TRANSITO = dato al corriere: sparisce dalla disponibilita' del
-    // negozio con "Mostra i miei" (si rivede su "Mostra tutti"); resta
-    // visibile a chi lavora il laboratorio, che ne firma l'arrivo (Luca 01/08)
-    if (mieiAttivo && !lavoraLabMain && d.status === "in_transito") return false;
     if (conStato && !selectedStatuses.includes(d.status)) return false;
     if (dateFrom) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) < dateFrom) return false; }
     if (dateTo) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) > dateTo) return false; }
@@ -1687,13 +1690,17 @@ function GestioneUsatiInner() {
   const inventoryValue = useMemo(() => inventarioList.reduce((s, d) => s + (d.sale_price > 0 ? d.sale_price : (vedeCosti ? d.purchase_price : 0)), 0), [inventarioList, vedeCosti]);
   const vetrinaValue = useMemo(() => vetrinaList.reduce((s, d) => s + d.sale_price, 0), [vetrinaList]);
 
+  // Luca 01/08 sera: i numeri contavano sul FILTRATO, quindi con il preset
+  // "venduto" segnava 0 pur avendone; ora contano su tutti i filtri TRANNE
+  // lo stato (stessa logica delle tessere brand di Ricerca Vendite)
+  const kpiBase = useMemo(() => devices.filter(d => passaFiltri(d, false)), [devices, passaFiltri]);
   const kpiData = useMemo(() => {
     const c: Record<string, number> = {};
     STATUS_KEYS.forEach(k => c[k] = 0);
-    filtered.forEach(d => { c[d.status] = (c[d.status] || 0) + 1; });
-    c._all = filtered.filter(d => d.status !== "venduto" && d.status !== "ko").length;
+    kpiBase.forEach(d => { c[d.status] = (c[d.status] || 0) + 1; });
+    c._all = kpiBase.filter(d => !["venduto", "ko", "smontato"].includes(d.status)).length;
     return c;
-  }, [filtered]);
+  }, [kpiBase]);
 
   const sorted = useMemo(() => [...filtered].sort((a, b) => {
     if (!sortKey) return 0;
@@ -1708,15 +1715,13 @@ function GestioneUsatiInner() {
   const arrow = (key: string) => sortKey === key ? (sortDir === "asc" ? " " : " ") : "";
 
   const handleKpiClick = (sk: string) => {
+    // tessera = interruttore del suo stato (come le tessere brand di Ricerca
+    // Vendite); Totale = tutti gli stati, secondo click = torna al preset
     if (sk === "_all") {
-      const allExcl = STATUS_KEYS.filter(k => k !== "venduto" && k !== "ko");
-      const isActive = selectedStatuses.length === allExcl.length && allExcl.every(k => selectedStatuses.includes(k));
-      if (isActive) { setSelectedStatuses([...STATUS_KEYS]); setActiveKpi(null); }
-      else { setSelectedStatuses(allExcl); setActiveKpi("_all"); }
+      const tutti = selectedStatuses.length === STATUS_KEYS.length;
+      setSelectedStatuses(tutti ? [...STATI_NEGOZIO_DEFAULT] : [...STATUS_KEYS]);
     } else {
-      const isSingle = selectedStatuses.length === 1 && selectedStatuses[0] === sk;
-      if (isSingle) { setSelectedStatuses([...STATUS_KEYS]); setActiveKpi(null); }
-      else { setSelectedStatuses([sk]); setActiveKpi(sk); }
+      setSelectedStatuses(p => p.includes(sk) ? p.filter(x => x !== sk) : [...p, sk]);
     }
   };
 
@@ -1993,17 +1998,20 @@ function GestioneUsatiInner() {
         {/* KPI Cards — bigger */}
         <div className="px-4 sm:px-6 pb-4">
           <div className="grid grid-cols-5 gap-3">
-            {KPI_CARDS.map(k => (
+            {KPI_CARDS.map(k => {
+              const on = k.key === "_all" ? selectedStatuses.length === STATUS_KEYS.length : selectedStatuses.includes(k.key);
+              return (
               <button key={k.key} onClick={() => handleKpiClick(k.key)}
+                title={k.key === "_all" ? (on ? "Torna al preset del negozio" : "Mostra tutti gli stati") : (on ? `Togli ${k.label} dal filtro` : `Aggiungi ${k.label} al filtro`)}
                 className={cn("px-3 py-3 rounded-xl border transition-all text-left overflow-hidden",
-                  activeKpi === k.key ? `${k.bgClass} ${k.borderClass}` : "bg-white/[0.02] border-white/5 hover:border-white/10")}>
+                  on ? `${k.bgClass} ${k.borderClass} ring-1 ring-white/10` : "bg-white/[0.02] border-white/5 opacity-60 hover:opacity-90 hover:border-white/10")}>
                 <div className="flex items-center gap-1.5 mb-1 min-w-0">
                   <span className="text-base flex-shrink-0">{k.icon}</span>
-                  <span className={cn("text-[10px] sm:text-xs font-semibold uppercase tracking-wide truncate", activeKpi === k.key ? k.colorClass : "text-slate-500")}>{k.label}</span>
+                  <span className={cn("text-[10px] sm:text-xs font-semibold uppercase tracking-wide truncate", on ? k.colorClass : "text-slate-500")}>{k.label}{on ? " ✓" : ""}</span>
                 </div>
-                <div className={cn("text-xl sm:text-2xl font-bold", activeKpi === k.key ? k.colorClass : "text-white")}>{kpiData[k.key] ?? 0}</div>
+                <div className={cn("text-xl sm:text-2xl font-bold", on ? k.colorClass : "text-white")}>{kpiData[k.key] ?? 0}</div>
               </button>
-            ))}
+            );})}
           </div>
         </div>
         {/* Search bar — end of sticky area. PER TUTTI (Luca 31/07: filtro
@@ -2046,7 +2054,7 @@ function GestioneUsatiInner() {
                   <div className="flex items-center gap-3 text-xs text-slate-500">
                     <span className="font-mono">{d.imei.slice(0, 8)}…</span>
                     <span className="text-slate-700">·</span>
-                    <span>{d.store}</span>
+                    <span>{inLaboratorio(d) ? <>🔬 Laboratorio <span className="text-slate-600">(da {d.store})</span></> : d.store}</span>
                     <span className="text-slate-700">·</span>
                     <span>{fmtDate(d.created_at)}</span>
                   </div>
@@ -2086,7 +2094,7 @@ function GestioneUsatiInner() {
                         {/* chi ha ACQUISTATO il telefono (venditore della
                             registrazione; per i vecchi dalla cronologia) */}
                         <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{d.venditore || d.status_history.acquistato?.operatore || "—"}</td>
-                        <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{d.store}</td>
+                        <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{inLaboratorio(d) ? <>🔬 Laboratorio <span className="text-slate-600">(da {d.store})</span></> : d.store}</td>
                         <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{d.sold_date ? fmtDate(d.sold_date) : <span className="text-slate-700">—</span>}</td>
                         <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap">{d.sold_price > 0 ? <span className="text-rose-300">{fmtEur(d.sold_price)}</span> : <span className="text-slate-700">—</span>}</td>
                       </tr>

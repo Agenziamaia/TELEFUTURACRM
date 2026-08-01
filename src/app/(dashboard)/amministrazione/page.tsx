@@ -15,6 +15,7 @@ import { CallCenterView } from "./_views/callcenter";
 import { CalendarioEsitiView } from "./_views/calendario_esiti";
 import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox } from "./_views/debiti";
+import { OrdineMerceArticoliView } from "./_views/ordinemerce";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -542,6 +543,8 @@ function AmministrazioneInner() {
                 <DirezioneInserimentoAdmin />
             ) : sez === "obiettivi" ? (
                 <DashboardTargetAdmin />
+            ) : sez === "ordinemerce" ? (
+                <OrdineMerceArticoliView />
             ) : sez === "callcenter" ? (
                 <CallCenterView />
             ) : sez === "calendario" ? (

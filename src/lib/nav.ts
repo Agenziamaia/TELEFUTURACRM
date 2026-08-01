@@ -164,6 +164,8 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Marginalità", sez: "marginalita", icon: Package, roles: ["admin", "dev"] },
             { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
             { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },
+            // articoli ordinabili di Ordine Merce (Luca 01/08): amministrativo in su
+            { name: "Ordine Merce", sez: "ordinemerce", icon: Package, roles: [...ADMINS, "amministrativo"] },
             { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
             { name: "Target", sez: "target", icon: ClipboardList, roles: ["admin", "dev"] },
             { name: "Direzione Inserimento", sez: "direzione", icon: Compass, roles: ["admin", "dev"] },
