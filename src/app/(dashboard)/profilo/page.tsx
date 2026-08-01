@@ -13,13 +13,30 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CAMPI_PROFILO, campiMancanti, caricaProfilo, type RigaProfilo } from "@/lib/profilo";
 import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
-import { User as UserIcon, Pencil, KeyRound, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { User as UserIcon, Pencil, KeyRound, AlertTriangle, CheckCircle2, Type } from "lucide-react";
 
 type Richiesta = { id: number; campo: string; valore_nuovo: string; stato: string };
 
 export default function ProfiloPage() {
     const { user } = useAuth();
     const [riga, setRiga] = useState<RigaProfilo | null>(null);
+    // DIMENSIONE TESTI (Luca 02/08): preferenza per dispositivo, applicata
+    // subito e al boot dallo script nel layout (chiave tf_fs = "sm,lg").
+    const [fsPref, setFsPref] = useState<{ sm: string; lg: string }>({ sm: "0", lg: "0" });
+    useEffect(() => {
+        try {
+            const v = (localStorage.getItem("tf_fs") || "0,0").split(",");
+            setFsPref({ sm: v[0] || "0", lg: v[1] || "0" });
+        } catch { /* localStorage assente */ }
+    }, []);
+    const applicaFs = (gruppo: "sm" | "lg", livello: string) => {
+        const next = { ...fsPref, [gruppo]: livello };
+        setFsPref(next);
+        try { localStorage.setItem("tf_fs", next.sm + "," + next.lg); } catch { /* niente persistenza */ }
+        const d = document.documentElement;
+        if (next.sm === "0") d.removeAttribute("data-fs-sm"); else d.setAttribute("data-fs-sm", next.sm);
+        if (next.lg === "0") d.removeAttribute("data-fs-lg"); else d.setAttribute("data-fs-lg", next.lg);
+    };
     const [richieste, setRichieste] = useState<Richiesta[]>([]);
     const [editCampo, setEditCampo] = useState<string | null>(null);
     const [editVal, setEditVal] = useState("");
@@ -198,6 +215,30 @@ export default function ProfiloPage() {
                         );
                     })()}
                 </div>
+            </div>
+
+            {/* DIMENSIONE TESTI (Luca 02/08): due gruppi per posizionamento —
+                i piccoli (contenuti) e i grandi (titoli/menu) — tre livelli
+                ciascuno. La scelta vale sul dispositivo in uso. */}
+            <div className="glass-card p-4">
+                <p className="text-sm font-bold text-white flex items-center gap-2"><Type className="w-4 h-4 text-indigo-300" /> Dimensione testi</p>
+                <p className="text-[11px] text-slate-500 mt-0.5 mb-2">Vale su questo dispositivo: la regolazione si applica subito, su tutto il CRM.</p>
+                {([["sm", "Testi piccoli", "contenuti, tabelle, etichette"], ["lg", "Testi grandi", "titoli e menu"]] as const).map(([g, lab, hint]) => (
+                    <div key={g} className="flex items-center justify-between gap-3 py-2.5 border-t border-white/5">
+                        <div>
+                            <p className="text-sm text-slate-200 font-semibold">{lab}</p>
+                            <p className="text-[11px] text-slate-500">{hint}</p>
+                        </div>
+                        <div className="flex gap-1">
+                            {[["0", "Normale"], ["1", "Grande"], ["2", "Molto grande"]].map(([lv, nome]) => (
+                                <button key={lv} onClick={() => applicaFs(g, lv)}
+                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${fsPref[g] === lv ? "bg-indigo-500/25 border-indigo-400/60 text-indigo-200" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white"}`}>
+                                    {nome}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                ))}
             </div>
 
             <div className="glass-card p-4">
