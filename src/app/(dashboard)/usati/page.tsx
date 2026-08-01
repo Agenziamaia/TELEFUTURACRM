@@ -1546,7 +1546,7 @@ function GestioneUsatiInner() {
   // stati di APERTURA per ruolo (Luca 01/08): amministrazione senza filtri,
   // punti vendita col preset acquistato / arrivo in negozio / in vendita
   const STATI_NEGOZIO_DEFAULT = ["acquistato", "invio_in_negozio", "in_vendita"];
-  const STATI_MAGAZZINO = ["in_transito", "ricevuto", "in_lavorazione", "pronto"];
+  const STATI_MAGAZZINO = ["ricevuto", "in_lavorazione", "pronto"];   // SOLO cio' che il laboratorio ha accettato
   // "in viaggio": non stanno in nessun negozio, aspettano un'accettazione
   // (dal laboratorio o dal punto vendita di destinazione) — Luca 01/08
   const STATI_TRANSITO = ["in_transito", "invio_in_negozio"];
@@ -1705,10 +1705,18 @@ function GestioneUsatiInner() {
   // lo SM di Donna Olimpia parte col SUO dato, con "Mostra tutti" ha il
   // globale. Valore inventario: prezzo vendita se impostato, altrimenti il
   // costo d'acquisto — ma SOLO per chi ha la capacita' costi (niente fughe).
+  // TRE VALORI (Luca 01/08): Inventario = SOLO il laboratorio (ricevuto/
+  // lavorazione/pronto); In Transito = in viaggio (transito + arrivo in
+  // negozio); Vetrina = in vendita. STATI_FERMI resta per gli altri usi.
   const STATI_FERMI: UsatoStatus[] = ["acquistato", "in_transito", "ricevuto", "in_lavorazione", "pronto", "invio_in_negozio"];
-  const inventarioList = useMemo(() => devices.filter(d => passaFiltri(d, false) && STATI_FERMI.includes(d.status)), [devices, passaFiltri]); // eslint-disable-line react-hooks/exhaustive-deps
+  const STATI_INVENTARIO: UsatoStatus[] = ["ricevuto", "in_lavorazione", "pronto"];
+  const STATI_VIAGGIO: UsatoStatus[] = ["in_transito", "invio_in_negozio"];
+  const inventarioList = useMemo(() => devices.filter(d => passaFiltri(d, false) && STATI_INVENTARIO.includes(d.status)), [devices, passaFiltri]); // eslint-disable-line react-hooks/exhaustive-deps
+  const transitoList = useMemo(() => devices.filter(d => passaFiltri(d, false) && STATI_VIAGGIO.includes(d.status)), [devices, passaFiltri]); // eslint-disable-line react-hooks/exhaustive-deps
   const vetrinaList = useMemo(() => devices.filter(d => passaFiltri(d, false) && d.status === "in_vendita"), [devices, passaFiltri]);
-  const inventoryValue = useMemo(() => inventarioList.reduce((s, d) => s + (d.sale_price > 0 ? d.sale_price : (vedeCosti ? d.purchase_price : 0)), 0), [inventarioList, vedeCosti]);
+  const valore = (list: Device[]) => list.reduce((s, d) => s + (d.sale_price > 0 ? d.sale_price : (vedeCosti ? d.purchase_price : 0)), 0);
+  const inventoryValue = useMemo(() => valore(inventarioList), [inventarioList, vedeCosti]); // eslint-disable-line react-hooks/exhaustive-deps
+  const transitoValue = useMemo(() => valore(transitoList), [transitoList, vedeCosti]); // eslint-disable-line react-hooks/exhaustive-deps
   const vetrinaValue = useMemo(() => vetrinaList.reduce((s, d) => s + d.sale_price, 0), [vetrinaList]);
 
   // Luca 01/08 sera: i numeri contavano sul FILTRATO, quindi con il preset
@@ -1911,18 +1919,28 @@ function GestioneUsatiInner() {
                 e cliccati filtrano la lista sui loro stati (ri-click = tutte) */}
             <div className="hidden sm:flex gap-3">
               {(() => {
-                const invAttivo = selectedStatuses.length === STATI_FERMI.length && STATI_FERMI.every(s => selectedStatuses.includes(s));
+                const invAttivo = selectedStatuses.length === STATI_INVENTARIO.length && STATI_INVENTARIO.every(s => selectedStatuses.includes(s));
+                const traAttivo = selectedStatuses.length === STATI_VIAGGIO.length && STATI_VIAGGIO.every(s => selectedStatuses.includes(s));
                 const vetAttivo = selectedStatuses.length === 1 && selectedStatuses[0] === "in_vendita";
                 return (
                   <>
                     <button type="button"
-                      onClick={() => { if (invAttivo) { setSelectedStatuses([...STATUS_KEYS]); setActiveKpi(null); } else { setSelectedStatuses([...STATI_FERMI]); setActiveKpi(null); } }}
-                      title="Valore dei telefoni FERMI (non in vendita) secondo i filtri attivi — clicca per vederli in lista"
+                      onClick={() => { if (invAttivo) { setSelectedStatuses([...PRESET_STATI]); setActiveKpi(null); } else { setSelectedStatuses([...STATI_INVENTARIO]); setActiveKpi(null); } }}
+                      title="Valore dei telefoni IN LABORATORIO (ricevuti, in lavorazione, pronti) — clicca per vederli in lista"
                       className={cn("px-4 py-3 rounded-xl border text-right min-w-[120px] transition-all",
                         invAttivo ? "bg-purple-500/25 border-purple-400/60" : "bg-purple-500/10 border-purple-500/20 hover:bg-purple-500/20")}>
                       <div className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Inventario</div>
                       <div className="text-base font-bold text-purple-300">{fmtEur(inventoryValue)}</div>
-                      <div className="text-xs text-slate-600">{inventarioList.length} disp. fermi</div>
+                      <div className="text-xs text-slate-600">{inventarioList.length} in laboratorio</div>
+                    </button>
+                    <button type="button"
+                      onClick={() => { if (traAttivo) { setSelectedStatuses([...PRESET_STATI]); setActiveKpi(null); } else { setSelectedStatuses([...STATI_VIAGGIO]); setActiveKpi(null); } }}
+                      title="Valore dei telefoni IN VIAGGIO (in transito e in arrivo nei negozi) — clicca per vederli in lista"
+                      className={cn("px-4 py-3 rounded-xl border text-right min-w-[120px] transition-all",
+                        traAttivo ? "bg-orange-500/25 border-orange-400/60" : "bg-orange-500/10 border-orange-500/20 hover:bg-orange-500/20")}>
+                      <div className="text-xs text-slate-500 uppercase font-semibold tracking-wide">In Transito</div>
+                      <div className="text-base font-bold text-orange-300">{fmtEur(transitoValue)}</div>
+                      <div className="text-xs text-slate-600">{transitoList.length} in viaggio</div>
                     </button>
                     <button type="button"
                       onClick={() => { if (vetAttivo) { setSelectedStatuses([...STATUS_KEYS]); setActiveKpi(null); } else { setSelectedStatuses(["in_vendita"]); setActiveKpi("in_vendita"); } }}
@@ -1979,10 +1997,10 @@ function GestioneUsatiInner() {
           </button>
           {(() => { const magAttivo = JSON.stringify([...selectedStatuses].sort()) === JSON.stringify([...STATI_MAGAZZINO].sort()); return (
           <button onClick={() => { setSoloDaPrezzare(false); setSelectedStatuses(magAttivo ? [...PRESET_STATI] : [...STATI_MAGAZZINO]); }}
-            title="I telefoni in lavorazione: in transito, ricevuti, in lavorazione e pronti"
+            title="I telefoni che il laboratorio ha in casa: ricevuti, in lavorazione e pronti"
             className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
               magAttivo ? "bg-blue-500/25 border-blue-400/60 text-blue-100" : "bg-blue-500/10 border-blue-500/30 text-blue-200 hover:bg-blue-500/20")}>
-            🔧 Mostra magazzino{magAttivo ? " ✓" : ""}
+            🔬 Mostra laboratorio{magAttivo ? " ✓" : ""}
           </button>); })()}
           {isAmminMain && (() => { const trAttivo = JSON.stringify([...selectedStatuses].sort()) === JSON.stringify([...STATI_TRANSITO].sort()); return (
           <button onClick={() => { setSoloDaPrezzare(false); setSelectedStatuses(trAttivo ? [...PRESET_STATI] : [...STATI_TRANSITO]); }}
