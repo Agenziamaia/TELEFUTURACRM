@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
-import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
+import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
 import { seesWholeStore, seesAllStores } from "@/lib/roles";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
@@ -31,6 +31,7 @@ interface Cliente {
     nomeRef?: string;
     cognomeRef?: string;
     cellulare: string;
+    telefonoFisso?: string | null;   // recapito fisso FACOLTATIVO delle business (mig. 124)
     email: string;
     cf_piva: string | null;
     data_nascita?: string | null;   // facoltativo dalla migrazione 065
@@ -69,6 +70,7 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
         nomeRef: (row.nome_ref as string) ?? undefined,
         cognomeRef: (row.cognome_ref as string) ?? undefined,
         cellulare: row.cellulare as string,
+        telefonoFisso: (row.telefono_fisso as string | null) ?? null,
         email: row.email as string,
         cf_piva: (row.cf_piva as string | null) ?? null,
         data_nascita: (row.data_nascita as string | null) ?? null,
@@ -249,9 +251,18 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
 
                             {/* dettagli contatto */}
                             <div className="pt-5 space-y-3">
+                                {/* REFERENTE (Luca 01/08): per le business va mostrato — legge nome_ref
+                                    con ripiego su nome (storico caller pre-mig. 124) */}
+                                {cliente.tipo === "business" && (
+                                    <InfoItem icon={<Users className="w-4 h-4" />} label="Referente"
+                                        value={`${cliente.nomeRef || cliente.nome || ""} ${cliente.cognomeRef || cliente.cognome || ""}`.trim() || "—"} />
+                                )}
                                 <InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono />
+                                {cliente.tipo === "business" && (
+                                    <InfoItem icon={<Phone className="w-4 h-4" />} label="Telefono fisso" value={cliente.telefonoFisso || "—"} mono />
+                                )}
                                 {/* NUMERI MULTIPLI (Luca 31/07, mig. 121): principale + aggiuntivi etichettati */}
-                                <NumeriCliente clientId={cliente.id} principale={cliente.cellulare || ""} />
+                                <NumeriCliente clientId={cliente.id} principale={cliente.cellulare || ""} tipo={cliente.tipo} />
                                 <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} />
                                 {(cliente as { data_nascita?: string | null }).data_nascita && (
                                     <InfoItem icon={<Calendar className="w-4 h-4" />} label="Data di nascita"
@@ -511,12 +522,17 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
     const [error, setError] = useState<string | null>(null);
 
     const [tipo, setTipo] = useState<"consumer" | "business">(cliente?.tipo ?? "consumer");
-    const [nome, setNome] = useState(cliente?.nome ?? "");
-    const [cognome, setCognome] = useState(cliente?.cognome ?? "");
+    // Il referente delle business qui e' il campo Nome/Cognome, ma il dato
+    // canonico sta in nome_ref/cognome_ref (Registra Vendita scrive quello e
+    // lascia nome vuoto): senza il ripiego il modale mostrava il referente
+    // VUOTO su anagrafiche che lo avevano (caso "collaboratori sicuri di
+    // averlo messo", Luca 01/08).
+    const [nome, setNome] = useState((cliente?.nome || "").trim() ? cliente!.nome : (cliente?.nomeRef ?? ""));
+    const [cognome, setCognome] = useState((cliente?.cognome || "").trim() ? (cliente?.cognome ?? "") : (cliente?.cognomeRef ?? ""));
     const [ragioneSociale, setRagioneSociale] = useState(cliente?.ragioneSociale ?? "");
-    const [nomeRef, setNomeRef] = useState(cliente?.nomeRef ?? "");
-    const [cognomeRef, setCognomeRef] = useState(cliente?.cognomeRef ?? "");
     const [cellulare, setCellulare] = useState(cliente?.cellulare ?? "");
+    // recapito FISSO facoltativo, solo business (mig. 124)
+    const [fisso, setFisso] = useState(cliente?.telefonoFisso ?? "");
     const [email, setEmail] = useState(cliente?.email ?? "");
     const [cfPiva, setCfPiva] = useState(cliente?.cf_piva ?? "");
     const [indirizzo, setIndirizzo] = useState(cliente?.indirizzo ?? "");
@@ -560,7 +576,9 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             return;
         }
 
-        const dup = await trovaDuplicati({ excludeId: cliente?.id || null, cellulare, cfPiva, email });
+        // tipoNuovo: il cellulare blocca solo tra anagrafiche dello STESSO tipo —
+        // la coppia consumer+business puo' condividerlo (Luca 01/08)
+        const dup = await trovaDuplicati({ excludeId: cliente?.id || null, cellulare, tipoNuovo: tipo, cfPiva, email });
         if (dup.cfPiva) {
             setError(`${tipo === "business" ? "La Partita IVA è già associata" : "Il Codice Fiscale è già associato"} al cliente "${dup.cfPiva.label}": è un dato univoco, controlla o correggi.`);
             return;
@@ -581,10 +599,13 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             // archivio SENZA +39 (Luca 31/07): il prefisso lo aggiungono le
             // integrazioni all'invio
             cellulare: numeroNazionale(cellulare) || cellulare,
+            telefono_fisso: tipo === "business" ? ((numeroNazionale(fisso) || fisso.trim()) || null) : null,
             email,
             cf_piva: cfPiva.trim() || null,
-            // data di nascita DERIVATA dal CF (mai chiesta nel form)
-            data_nascita: dataNascitaDaCF(cfPiva),
+            // data di nascita DERIVATA dal CF (mai chiesta nel form); se il CF
+            // non la fornisce (business/P.IVA) resta quella gia' salvata —
+            // prima ogni modifica la azzerava
+            data_nascita: dataNascitaDaCF(cfPiva) || (cliente?.data_nascita ?? null),
             indirizzo,
             cap,
             citta,
@@ -624,7 +645,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
                     {dupCell && (
                         <div className="mx-6 mb-2 p-4 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-2">
-                            <p className="text-sm text-amber-200 font-medium">📱 Questo cellulare è già associato al cliente <strong>“{dupCell.label}”</strong> — il numero è un dato univoco.</p>
+                            <p className="text-sm text-amber-200 font-medium">📱 Questo cellulare è già associato a <strong>“{dupCell.label}”</strong>, un&apos;anagrafica dello <strong>stesso tipo</strong> — lo stesso numero può stare solo su una consumer e una business insieme.</p>
                             <div className="flex gap-2 flex-wrap">
                                 <button type="button" onClick={() => { spostaRef.current = true; handleSave(); }}
                                     className="text-xs px-3 py-2 rounded-lg bg-amber-500/20 border border-amber-500/50 text-amber-200 hover:bg-amber-500/30 font-bold">
@@ -709,6 +730,19 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                                     placeholder="333 123 4567"
                                 />
                             </div>
+
+                            {tipo === "business" && (
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Telefono fisso</label>
+                                    <input
+                                        type="text"
+                                        value={fisso}
+                                        onChange={(e) => setFisso(e.target.value)}
+                                        className="w-full glass-input text-sm rounded-xl py-3 font-mono"
+                                        placeholder="06 1234567 (facoltativo)"
+                                    />
+                                </div>
+                            )}
 
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Email</label>
@@ -1084,15 +1118,17 @@ export default function ClientiPage() {
             // 1. Quick Search (Full-text)
             if (quickSearch) {
                 const q = quickSearch.toLowerCase();
-                const fullString = `${c.nome} ${c.cognome || ""} ${c.ragioneSociale || ""} ${c.email} ${c.cellulare} ${c.cf_piva || ""}`.toLowerCase();
+                const fullString = `${c.nome} ${c.cognome || ""} ${c.ragioneSociale || ""} ${c.nomeRef || ""} ${c.cognomeRef || ""} ${c.email} ${c.cellulare} ${c.telefonoFisso || ""} ${c.cf_piva || ""}`.toLowerCase();
                 if (!fullString.includes(q)) return false;
             }
 
             // 2. Advanced filters
             if (gestitiSet && !gestitiSet.has(c.id)) return false;
             if (filterTipo !== "tutti" && c.tipo !== filterTipo) return false;
-            if (filterNome && !c.nome.toLowerCase().includes(filterNome.toLowerCase())) return false;
-            if (filterCognome && (!c.cognome || !c.cognome.toLowerCase().includes(filterCognome.toLowerCase()))) return false;
+            // per le business il "Nome/Cognome Referente" puo' stare in nome_ref
+            // (Registra Vendita) o in nome (caller): il filtro guarda entrambi
+            if (filterNome && !`${c.nome} ${c.nomeRef || ""}`.toLowerCase().includes(filterNome.toLowerCase())) return false;
+            if (filterCognome && !`${c.cognome || ""} ${c.cognomeRef || ""}`.toLowerCase().includes(filterCognome.toLowerCase())) return false;
             if (filterRagione && c.tipo === "business" && (!c.ragioneSociale || !c.ragioneSociale.toLowerCase().includes(filterRagione.toLowerCase()))) return false;
             if (filterCellulare && !c.cellulare.includes(filterCellulare)) return false;
             if (filterEmail && !c.email.toLowerCase().includes(filterEmail.toLowerCase())) return false;

@@ -1052,8 +1052,10 @@ function CallerPageInner() {
             }
             let cel = numeroNazionale(c.numero) || numeroNazionale(c.cellulare);
             if (cel) {
-                const { data: dup } = await supabase.from("clients").select("id").ilike("cellulare", cel).limit(1);
-                if (dup && dup.length) cel = "";
+                // il numero resta se l'unico possessore e' dell'ALTRO tipo:
+                // la coppia consumer+business puo' condividerlo (Luca 01/08)
+                const { data: dup } = await supabase.from("clients").select("id, tipo").ilike("cellulare", cel).limit(5);
+                if ((dup ?? []).some((d: { tipo: string | null }) => (d.tipo || "consumer") === c.tipo_cliente)) cel = "";
             }
             const payload: Record<string, unknown> = {
                 // stesso set di campi del Registra Vendita: clients ha molte
@@ -1062,7 +1064,11 @@ function CallerPageInner() {
                 tipo: c.tipo_cliente, cf_piva: idf,
                 nome: c.nome || "", cognome: c.cognome || "", ragione_sociale: c.ragione_sociale || "",
                 cellulare: cel || "", email: "", indirizzo: "", cap: "", citta: "", iban: "",
-                nome_ref: "", cognome_ref: "",
+                // per le business la persona con cui parla il caller E' il
+                // referente: prima nome_ref restava vuoto fisso e l'anagrafica
+                // sembrava "senza referente" nelle schermate che leggono nome_ref
+                nome_ref: c.tipo_cliente === "business" ? (c.nome || "") : "",
+                cognome_ref: c.tipo_cliente === "business" ? (c.cognome || "") : "",
                 data_nascita: dataNascitaDaCF(idf),
                 // ATTRIBUZIONE (Luca 31/07, caso Barbieri): l'anagrafica nata qui
                 // e' GESTITA dal caller che ha chiamato, con sede l'ufficio

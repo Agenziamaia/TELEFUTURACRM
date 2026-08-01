@@ -84,6 +84,7 @@ const CLIENT_FIELDS: EditField[] = [
     { key: "ragione_sociale", label: "Ragione sociale" },
     { key: "cf_piva", label: "Codice fiscale / P.IVA" },
     { key: "cellulare", label: "Cellulare" },
+    { key: "telefono_fisso", label: "Telefono fisso" },
     { key: "email", label: "Email" },
     { key: "indirizzo", label: "Indirizzo" },
     { key: "cap", label: "CAP" },
@@ -523,7 +524,7 @@ export default function RicercaContratto() {
                 // Anagrafica COMPLETA anche dalla lista: il dettaglio aperto da qui
                 // mostrava "—" su tutti i campi non selezionati (il DB era pieno,
                 // la query portava solo i 4 campi delle colonne).
-                .select("*, clients!inner(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)", { count: "exact" });
+                .select("*, clients!inner(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)", { count: "exact" });
 
             // Apply Server-side filters
             if (filterVenditore && filterVenditore !== "Tutti") query = query.eq("venditore", filterVenditore);
@@ -709,7 +710,7 @@ export default function RicercaContratto() {
         const hit = contractList.find(c => c.id === id);
         if (hit) { openContract(hit, "view"); return; }
         const { data } = await supabase.from("contracts")
-            .select("*, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
+            .select("*, clients(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
             .eq("id", id).maybeSingle();
         if (!data) { alert("Contratto " + id + " non trovato."); return; }
         openContract(mapContractToRow(data as any, (data as any).clients), "view");
@@ -860,7 +861,7 @@ export default function RicercaContratto() {
         if (selectedContract && selectedContract.id === req.contract_id) {
             const { data: fresh } = await supabase
                 .from("contracts")
-                .select("*, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
+                .select("*, clients(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
                 .eq("id", req.contract_id).single();
             if (fresh) {
                 const cl = (fresh as any).clients || null;

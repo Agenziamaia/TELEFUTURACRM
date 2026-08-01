@@ -10,7 +10,8 @@ import { supabase } from "@/lib/supabaseClient";
 export type ClienteTrovato = {
     id: string; tipo: string;
     nome: string | null; cognome: string | null; ragione_sociale: string | null;
-    cf_piva: string | null; cellulare: string | null; email: string | null;
+    nome_ref: string | null; cognome_ref: string | null;
+    cf_piva: string | null; cellulare: string | null; telefono_fisso: string | null; email: string | null;
     indirizzo: string | null; cap: string | null; citta: string | null; iban: string | null;
 };
 
@@ -38,13 +39,14 @@ export function RicercaCliente({ tipo, onScelto, placeholder = "Cerca: CF, cellu
             const parole = v.split(" ").filter(Boolean);
             const cifre = v.replace(/\D/g, "");
             let q = supabase.from("clients")
-                .select("id,tipo,nome,cognome,ragione_sociale,cf_piva,cellulare,email,indirizzo,cap,citta,iban")
+                .select("id,tipo,nome,cognome,ragione_sociale,nome_ref,cognome_ref,cf_piva,cellulare,telefono_fisso,email,indirizzo,cap,citta,iban")
                 .limit(6);
             if (tipo) q = q.eq("tipo", tipo);
             if (parole.length >= 2) {
                 q = q.or(`and(nome.ilike.%${parole[0]}%,cognome.ilike.%${parole[1]}%),and(nome.ilike.%${parole[1]}%,cognome.ilike.%${parole[0]}%),ragione_sociale.ilike.%${v}%`);
             } else {
-                q = q.or(`cf_piva.ilike.%${v}%,nome.ilike.%${v}%,cognome.ilike.%${v}%,ragione_sociale.ilike.%${v}%${cifre.length >= 4 ? `,cellulare.ilike.%${cifre}%` : ""}`);
+                // con ≥4 cifre si cerca su cellulare E telefono fisso (Luca 01/08)
+                q = q.or(`cf_piva.ilike.%${v}%,nome.ilike.%${v}%,cognome.ilike.%${v}%,ragione_sociale.ilike.%${v}%${cifre.length >= 4 ? `,cellulare.ilike.%${cifre}%,telefono_fisso.ilike.%${cifre}%` : ""}`);
             }
             const { data } = await q;
             if (!vivo) return;
@@ -67,7 +69,7 @@ export function RicercaCliente({ tipo, onScelto, placeholder = "Cerca: CF, cellu
                                 onClick={() => { onScelto(c); setTesto(""); setHits([]); }}
                                 className="block w-full text-left px-3.5 py-2.5 border-b border-white/5 last:border-0 hover:bg-white/[0.06] transition-colors">
                                 <span className="text-sm font-semibold text-slate-100">{etichettaCliente(c)}</span>
-                                <span className="text-xs text-slate-500 ml-2">{[c.cf_piva, c.cellulare].filter(Boolean).join(" · ")}</span>
+                                <span className="text-xs text-slate-500 ml-2">{[c.cf_piva, c.cellulare, c.telefono_fisso ? `fisso ${c.telefono_fisso}` : null].filter(Boolean).join(" · ")}</span>
                             </button>
                         ))}
                     </div>
