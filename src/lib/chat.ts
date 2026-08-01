@@ -160,6 +160,19 @@ export async function listMessages(convId: string): Promise<ChatMessage[]> {
   }));
 }
 
+/** "Segna come da leggere" stile WhatsApp/Telegram (Luca 01/08): riporta il
+ *  segnalibro di lettura a PRIMA dell'ultimo messaggio, cosi' il badge dei
+ *  non letti ricompare e la notifica non si perde. */
+export async function markUnread(convId: string, meId: string): Promise<void> {
+  const { data } = await supabase.from("chat_messages")
+    .select("created_at").eq("conversation_id", convId).is("deleted_at", null)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const ultimo = data?.created_at ? new Date(new Date(data.created_at).getTime() - 1000) : new Date(0);
+  await supabase.from("chat_participants")
+    .update({ last_read_at: ultimo.toISOString() })
+    .eq("conversation_id", convId).eq("user_id", meId);
+}
+
 /** Reazione emoji stile Telegram: click = metti, ri-click = togli (riga per
  *  (messaggio, utente, emoji): niente conflitti tra reazioni simultanee). */
 export async function toggleReaction(messageId: string, meId: string, meName: string, emoji: string): Promise<void> {
