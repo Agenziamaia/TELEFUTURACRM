@@ -66,6 +66,22 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
         if (role === "store_manager") return "store";
         return "own";
     }, [user?.role]);
+    // palette per CASELLA: stabile (indice nell'elenco ordinato per created_at)
+    const PALETTE_CASELLE = [
+        { chip: "bg-sky-500/15 border-sky-500/40 text-sky-200", dot: "bg-sky-400", badge: "bg-sky-500" },
+        { chip: "bg-violet-500/15 border-violet-500/40 text-violet-200", dot: "bg-violet-400", badge: "bg-violet-500" },
+        { chip: "bg-emerald-500/15 border-emerald-500/40 text-emerald-200", dot: "bg-emerald-400", badge: "bg-emerald-500" },
+        { chip: "bg-amber-500/15 border-amber-500/40 text-amber-200", dot: "bg-amber-400", badge: "bg-amber-500" },
+        { chip: "bg-rose-500/15 border-rose-500/40 text-rose-200", dot: "bg-rose-400", badge: "bg-rose-500" },
+        { chip: "bg-cyan-500/15 border-cyan-500/40 text-cyan-200", dot: "bg-cyan-400", badge: "bg-cyan-500" },
+        { chip: "bg-orange-500/15 border-orange-500/40 text-orange-200", dot: "bg-orange-400", badge: "bg-orange-500" },
+        { chip: "bg-fuchsia-500/15 border-fuchsia-500/40 text-fuchsia-200", dot: "bg-fuchsia-400", badge: "bg-fuchsia-500" },
+    ];
+    const coloreCasella = useCallback((id: string) => {
+        const i = accounts.findIndex(a => a.id === id);
+        return PALETTE_CASELLE[(i >= 0 ? i : 0) % PALETTE_CASELLE.length];
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [accounts]);
     const visibleAccounts = useMemo(() => {
         if (scope === "own") return accounts.filter(a => a.owner_user_id === user?.id);
         // AMMINISTRAZIONE = tutte le caselle (Luca 02/08: le caselle erano
@@ -74,6 +90,26 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
         if (seesAllStores(user?.role)) return accounts;
         return accounts.filter(a => a.owner_user_id === user?.id || (a.negozio && myStores.some(s => sameStore(a.negozio, s))));
     }, [accounts, scope, user?.id, user?.role, myStores]);
+
+    // non letti PER CASELLA (per i badge colorati sulle chip)
+    const [unreadPerAcc, setUnreadPerAcc] = useState<Record<string, number>>({});
+    useEffect(() => {
+        let alive = true;
+        const load = async () => {
+            const ids = visibleAccounts.map(a => a.id);
+            if (!ids.length) { if (alive) setUnreadPerAcc({}); return; }
+            const { data } = await supabase.from("email_conversations")
+                .select("account_id, unread, trashed, spam, archived").in("account_id", ids);
+            if (!alive) return;
+            const m: Record<string, number> = {};
+            (data || []).forEach((c: any) => { if (!c.trashed && !c.spam && !c.archived) m[c.account_id] = (m[c.account_id] || 0) + (c.unread || 0); });
+            setUnreadPerAcc(m);
+        };
+        load(); const t = setInterval(load, 10000);
+        return () => { alive = false; clearInterval(t); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [visibleAccounts.map(a => a.id).join("|")]);
+
 
     const loadAccounts = async () => {
         const { data } = await supabase.from("email_accounts").select("id, email_address, display_name, negozio, owner_user_id, status, last_error").order("created_at");
@@ -94,12 +130,28 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     }, [prefillTo, selAcc]);
 
     // scarica la posta nuova per la casella selezionata + ricarica le conversazioni
+    const [pollErr, setPollErr] = useState<string | null>(null);
     const aggiorna = async (accId?: string) => {
         const id = accId || selAcc; if (!id) return;
         setRefreshing(true);
-        try { await api("/api/email/poll", { accountId: id }); } catch { }
+        try {
+            await api("/api/email/poll", { accountId: id });
+            setPollErr(null);
+        } catch (e) {
+            // prima l'errore veniva INGHIOTTITO e "la posta non si aggiornava
+            // a tratti" senza spiegazioni (Luca 02/08): un retry e poi si dice
+            try { await api("/api/email/poll", { accountId: id }); setPollErr(null); }
+            catch (e2) { setPollErr("Aggiornamento non riuscito: " + ((e2 as Error)?.message || "riprova")); }
+        }
         setRefreshing(false);
     };
+    // al RITORNO sulla scheda del browser la posta si aggiorna subito
+    useEffect(() => {
+        const su = () => { if (document.visibilityState === "visible" && selAcc) aggiorna(selAcc); };
+        document.addEventListener("visibilitychange", su);
+        return () => document.removeEventListener("visibilitychange", su);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selAcc]);
     useEffect(() => { if (selAcc) aggiorna(selAcc); }, [selAcc]);            // poll all'apertura
     useEffect(() => { if (!selAcc) return; const t = setInterval(() => aggiorna(selAcc), 45000); return () => clearInterval(t); }, [selAcc]);  // e ogni 45s
 
@@ -237,17 +289,20 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     return (
         <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
             <TopBar embedded={embedded} onConnect={() => setConnectModal(true)} onRefresh={() => aggiorna()} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />
+            {pollErr && <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5 shrink-0">{pollErr}</p>}
 
             {/* selettore casella (se piu' di una) */}
             {visibleAccounts.length > 1 && (
                 <div className="flex gap-2 flex-wrap shrink-0">
-                    {visibleAccounts.map(a => (
+                    {visibleAccounts.map(a => { const col = coloreCasella(a.id); const un = unreadPerAcc[a.id] || 0; return (
                         <button key={a.id} onClick={() => { setSelAcc(a.id); setSelConv(null); }}
-                            className={cn("px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-2", selAcc === a.id ? "bg-sky-500/15 border-sky-500/40 text-sky-200" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
-                            <Mail className="w-3.5 h-3.5" />{a.display_name || a.email_address}
-                            <span className={cn("w-2 h-2 rounded-full", a.status === "attiva" ? "bg-emerald-400" : "bg-rose-400")} title={a.status === "attiva" ? "attiva" : (a.last_error || "errore")} />
+                            className={cn("px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-2", selAcc === a.id ? col.chip : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
+                            <span className={cn("w-2 h-2 rounded-full shrink-0", col.dot)} />
+                            {a.display_name || a.email_address}
+                            {un > 0 && <span className={cn("min-w-[18px] h-[18px] px-1 rounded-full text-white text-[10px] font-bold flex items-center justify-center", col.badge)}>{un > 99 ? "99+" : un}</span>}
+                            {a.status !== "attiva" && <span className="w-2 h-2 rounded-full bg-rose-400" title={a.last_error || "errore"} />}
                         </button>
-                    ))}
+                    ); })}
                 </div>
             )}
 
@@ -535,15 +590,17 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
         try {
             const doc = f?.contentDocument;
             const h = doc ? Math.max(doc.documentElement?.scrollHeight || 0, doc.body?.scrollHeight || 0) : 0;
-            if (f && h) f.style.height = Math.min(h + 4, 6000) + "px";
-        } catch { /* non misurabile: resta l'altezza minima */ }
+            if (f && h > 20) f.style.height = Math.min(h + 4, 6000) + "px";
+            else if (f) f.style.height = "600px";   // "quadratone" da 80px mai piu': meglio larghi
+        } catch { if (ref.current) ref.current.style.height = "600px"; /* non misurabile */ }
     }, []);
 
     useEffect(() => {
         if (!showHtml) return;
         // ri-misura dopo il caricamento delle immagini remote (loghi, banner…)
-        const t = [setTimeout(autosize, 250), setTimeout(autosize, 1000), setTimeout(autosize, 2500)];
-        return () => t.forEach(clearTimeout);
+        const t = [setTimeout(autosize, 250), setTimeout(autosize, 1000), setTimeout(autosize, 2500), setTimeout(autosize, 5000)];
+        window.addEventListener("resize", autosize);
+        return () => { t.forEach(clearTimeout); window.removeEventListener("resize", autosize); };
     }, [showHtml, srcDoc, autosize]);
 
     if (!hasHtml) {
