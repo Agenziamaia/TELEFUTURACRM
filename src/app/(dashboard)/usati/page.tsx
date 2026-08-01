@@ -10,6 +10,7 @@ import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
 import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
+import { brandsDispositivi, modelliDispositivi, type CategoriaDispositivo } from "@/lib/dispositivi";
 import { caricaRegoleUsato, sincronizzaMalusUsato, scadenzaCorrente, REGOLE_USATO_DEFAULT, type RegoleUsato, type EpisodioUsato } from "@/lib/usatiMalus";
 import { UsatoRegoleView } from "@/components/UsatoRegole";
 import {
@@ -1021,6 +1022,25 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const imeiValido = imeiNumerico ? imei.length === 15 : imei.trim().length > 0;
   const [prezzoAcquisto, setPrezzoAcquisto] = useState("");
   const [gradoUsura, setGradoUsura] = useState("");
+  // CATALOGO DISPOSITIVI UNIVERSALE (mig. 133): brand e modelli per la
+  // CATEGORIA scelta (smartphone/tablet/watch; portatile→computer), con
+  // ripiego alle liste cablate a catalogo vuoto
+  const catDisp = (tipoProdotto === "portatile" ? "computer" : (tipoProdotto || "smartphone")) as CategoriaDispositivo;
+  const [dbBrands, setDbBrands] = useState<string[]>([]);
+  const [dbModelli, setDbModelli] = useState<string[]>([]);
+  useEffect(() => {
+    let vivo = true;
+    brandsDispositivi(catDisp, []).then(b => { if (vivo) setDbBrands(b); });
+    return () => { vivo = false; };
+  }, [catDisp]);
+  useEffect(() => {
+    let vivo = true;
+    if (!brand) { setDbModelli([]); return; }
+    modelliDispositivi(catDisp, brand, PHONE_BRANDS_MODELS[brand] || []).then(m => { if (vivo) setDbModelli(m); });
+    return () => { vivo = false; };
+  }, [catDisp, brand]);
+  const brandOptions = dbBrands.length ? dbBrands : Object.keys(PHONE_BRANDS_MODELS);
+  const modelOptions = dbModelli.length ? dbModelli : (brand ? (PHONE_BRANDS_MODELS[brand] || []) : []);
   const [hasExtraMargine, setHasExtraMargine] = useState(false);
   const [extraMargineImporto, setExtraMargineImporto] = useState("");
   const [metodoPagamento, setMetodoPagamento] = useState<"contanti" | "buono" | "bonifico" | "">("");
@@ -1288,13 +1308,13 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
             <div><label className={lbl}>Brand *</label>
               <select value={brand} onChange={e => { setBrand(e.target.value); setModel(""); }} className={inp}>
                 <option value="">Seleziona brand...</option>
-                {Object.keys(PHONE_BRANDS_MODELS).map(b => <option key={b} value={b}>{b}</option>)}
+                {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
             <div><label className={lbl}>Modello *</label>
               <select value={model} onChange={e => setModel(e.target.value)} disabled={!brand} className={inp}>
                 <option value="">Seleziona modello...</option>
-                {brand && PHONE_BRANDS_MODELS[brand]?.map(m => <option key={m} value={m}>{m}</option>)}
+                {brand && modelOptions.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
             <div><label className={lbl}>Capacit� *</label>
@@ -1595,6 +1615,9 @@ function GestioneUsatiInner() {
   // FILTRI PER TUTTI (Luca 31/07): brand, modello/IMEI e fascia di prezzo —
   // prima esistevano solo la ricerca generica riservata alla direzione
   const [brandFilter, setBrandFilter] = useState<string[]>([]);
+  // brand del filtro dal catalogo universale (ripiego alle liste cablate)
+  const [brandFiltroOptions, setBrandFiltroOptions] = useState<string[]>(Object.keys(PHONE_BRANDS_MODELS));
+  useEffect(() => { brandsDispositivi("smartphone", []).then(b => { if (b.length) setBrandFiltroOptions(b); }); }, []);
   const [prezzoDa, setPrezzoDa] = useState("");
   const [prezzoA, setPrezzoA] = useState("");
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -2022,7 +2045,7 @@ function GestioneUsatiInner() {
           <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
           <MultiSelect label="Stato" options={STATUS_KEYS} selected={selectedStatuses} onChange={setSelectedStatuses}
             renderOpt={o => <span className="flex items-center gap-1.5">{statusMap[o as UsatoStatus]?.icon} {statusMap[o as UsatoStatus]?.label}</span>} />
-          <MultiSelect label="Brand" options={Object.keys(PHONE_BRANDS_MODELS)} selected={brandFilter} onChange={setBrandFilter} />
+          <MultiSelect label="Brand" options={brandFiltroOptions} selected={brandFilter} onChange={setBrandFilter} />
           <input type="number" min="0" value={prezzoDa} onChange={e => setPrezzoDa(e.target.value)} placeholder="€ da"
             className="w-full sm:w-24 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all min-w-0" />
           <input type="number" min="0" value={prezzoA} onChange={e => setPrezzoA(e.target.value)} placeholder="€ a"

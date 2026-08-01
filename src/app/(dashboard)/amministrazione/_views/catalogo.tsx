@@ -40,6 +40,20 @@ const TIPI_CAMPO = ["testo", "numero", "data", "scelta"];
 const byOrd = <T extends { ordine: number; nome: string }>(a: T, b: T) => a.ordine - b.ordine || a.nome.localeCompare(b.nome);
 
 export function CatalogoView() {
+    // SYNC catalogo dispositivi universale (Luca 02/08): Apple (ipsw.me) +
+    // Android (CSV certificati Google Play) → tabella dispositivi_catalogo
+    const [syncDisp, setSyncDisp] = useState<string | null>(null);
+    const [syncBusy, setSyncBusy] = useState(false);
+    const aggiornaDispositivi = async () => {
+        if (syncBusy) return;
+        setSyncBusy(true); setSyncDisp(null);
+        try {
+            const r = await fetch("/api/dispositivi/sync", { method: "POST" });
+            const j = await r.json();
+            setSyncDisp(j.ok ? `✅ Catalogo aggiornato: ${j.totale_catalogo} dispositivi (Apple ${j.apple}, Android ${j.android})` : "⚠️ " + (j.error || "sync non riuscita"));
+        } catch (e) { setSyncDisp("⚠️ " + ((e as Error)?.message || "sync non riuscita")); }
+        finally { setSyncBusy(false); }
+    };
     const [loading, setLoading] = useState(true);
     const [cats, setCats] = useState<Cat[]>([]);
     const [brands, setBrands] = useState<Brand[]>([]);
@@ -261,7 +275,11 @@ export function CatalogoView() {
         </span>
     ) : null;
 
-    return (
+    return (<>
+        <div className="mb-3 flex items-center gap-3 flex-wrap">
+          <button onClick={aggiornaDispositivi} disabled={syncBusy} className="px-4 py-2.5 rounded-xl border border-indigo-400/50 bg-indigo-500/15 text-indigo-200 text-sm font-bold hover:bg-indigo-500/25 disabled:opacity-50">{syncBusy ? "Aggiornamento in corso…" : "📱 Aggiorna catalogo dispositivi (Apple + Google)"}</button>
+          {syncDisp && <span className="text-xs text-slate-300">{syncDisp}</span>}
+        </div>
         <div className="space-y-5">
             {/* intestazione */}
             <div className="glass-card p-5">
@@ -578,5 +596,5 @@ export function CatalogoView() {
             </div>
             )}
         </div>
-    );
+    </>);
 }
