@@ -1540,7 +1540,14 @@ export default function TrackingPdaPage() {
         // esito sta ancora nel campo condiviso); altrimenti parte da "nuovo". Cosi'
         // "In Liquidazione" (valido solo per il Finanziamento) non finisce sull'MNP,
         // ma il Finanziamento non perde il suo stato.
-        statoNegozio: perCat[c] ?? ((base.statoNegozio && getStatiNegozioPerCategoria(c).some((s) => s.id === base.statoNegozio)) ? base.statoNegozio : "nuovo"),
+        // Riga TV sintetizzata da un 3P: fino a oggi la pratica era UNA riga
+        // sola, quindi se la fibra risulta attivata la TV era stata lavorata
+        // insieme — nasce "attivo_sky", NON "nuovo", altrimenti il malus
+        // maturerebbe retroattivamente su pratiche gia' chiuse.
+        statoNegozio: perCat[c] ?? (
+          (c === "sky" && base.categoria === "fisso" && (perCat["fisso"] === "attivato" || (!perCat["fisso"] && base.statoNegozio === "attivato")))
+            ? "attivo_sky"
+            : ((base.statoNegozio && getStatiNegozioPerCategoria(c).some((s) => s.id === base.statoNegozio)) ? base.statoNegozio : "nuovo")),
       }));
     });
     return out;
