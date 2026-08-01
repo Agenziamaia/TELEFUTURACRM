@@ -10,7 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
 import {
   getInbox, listMessages, getParticipants, sendMessage, sendGif, markRead,
-  subscribeMessages, subscribeInbox, subscribeReceipts, subscribeReactions, toggleReaction, markUnread, refHref,
+  subscribeMessages, subscribeInbox, subscribeReceipts, subscribeReactions, toggleReaction, markUnread, forwardMessage, getOrCreateDM, togglePin, refHref,
   splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
   listDirectory, addParticipants, removeParticipant,
 } from "@/lib/chat";
@@ -20,7 +20,7 @@ import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { cn } from "@/utils";
@@ -81,10 +81,78 @@ function ChatPageInner() {
   const [showEmoji, setShowEmoji] = useState(false);               // picker nel compositore
   // "segna come da leggere": il badge torna e la chat si deseleziona (se
   // restasse aperta si ri-segnerebbe letta da sola)
+  // fissa/sgancia (max 5, stile Telegram)
+  const onTogglePin = async (e: React.MouseEvent, c: any) => {
+    e.stopPropagation(); e.preventDefault();
+    const fissa = !c.pinned_at;
+    if (fissa && inbox.filter((x: any) => x.pinned_at).length >= 5) { alert("Puoi fissare al massimo 5 chat: sganciane una prima."); return; }
+    try { await togglePin(c.conversation_id, meId!, fissa); await reloadInbox(); }
+    catch (err) { alert((err as Error)?.message || "Operazione non riuscita"); }
+  };
   const onMarkUnread = async (e: React.MouseEvent, convId: string) => {
     e.stopPropagation(); e.preventDefault();
     try { await markUnread(convId, meId!); if (selId === convId) setSelId(null); await reloadInbox(); }
     catch { /* riprova dal menu */ }
+  };
+  // ── INOLTRO (Luca 02/08): scegli conversazione o persona e il messaggio
+  //    parte con testo, tag e allegati (stessi URL, niente re-upload) ──
+  const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
+  const [forwardCerca, setForwardCerca] = useState("");
+  const [forwardBusy, setForwardBusy] = useState(false);
+  const inoltraA = async (targetConvId: string) => {
+    if (!forwardMsg || forwardBusy) return;
+    setForwardBusy(true);
+    try {
+      await forwardMessage(forwardMsg, meId!, targetConvId);
+      setForwardMsg(null); setForwardCerca("");
+      setSelId(targetConvId);                       // come Telegram: salta alla chat
+      await reloadInbox();
+    } catch (e) { alert("Inoltro non riuscito: " + ((e as Error)?.message || e)); }
+    finally { setForwardBusy(false); }
+  };
+  const inoltraAUtente = async (otherId: string) => {
+    try { const cid = await getOrCreateDM(meId!, otherId); await inoltraA(cid); }
+    catch (e) { alert("Inoltro non riuscito: " + ((e as Error)?.message || e)); }
+  };
+
+  // ── CATTURA SCHERMO (Luca 02/08): screenshot o registrazione con il picker
+  //    nativo del browser (si puo' scegliere lo schermo intero, non solo il
+  //    CRM); il file finisce tra gli allegati del messaggio in scrittura ──
+  const [recording, setRecording] = useState(false);
+  const recRef = useRef<{ rec: MediaRecorder; stream: MediaStream } | null>(null);
+  const fareScreenshot = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const video = document.createElement("video");
+      video.srcObject = stream; video.muted = true;
+      await video.play();
+      await new Promise(r => setTimeout(r, 350));   // lascia sparire il picker
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+      canvas.getContext("2d")!.drawImage(video, 0, 0);
+      stream.getTracks().forEach(t => t.stop());
+      const blob: Blob | null = await new Promise(r => canvas.toBlob(r, "image/png"));
+      if (blob) setFiles((p: File[]) => [...p, new File([blob], `screenshot-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`, { type: "image/png" })]);
+    } catch { /* annullato dal picker */ }
+  };
+  const toggleRegistrazione = async () => {
+    if (recording && recRef.current) { recRef.current.rec.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      const rec = new MediaRecorder(stream, MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? { mimeType: "video/webm;codecs=vp9" } : undefined);
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        setRecording(false); recRef.current = null;
+        const blob = new Blob(chunks, { type: "video/webm" });
+        if (blob.size) setFiles((p: File[]) => [...p, new File([blob], `registrazione-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.webm`, { type: "video/webm" })]);
+      };
+      stream.getVideoTracks()[0].onended = () => { if (rec.state !== "inactive") rec.stop(); };
+      rec.start(1000);
+      recRef.current = { rec, stream };
+      setRecording(true);
+    } catch { /* annullato dal picker */ }
   };
   const onReact = async (msgId: string, emoji: string) => {
     setReactFor(null);
@@ -436,6 +504,12 @@ function ChatPageInner() {
                   <span className="flex items-center justify-between gap-2">
                     <span className="text-xs text-slate-500 truncate">{c.last_body || "Nessun messaggio"}</span>
                     <span className="flex items-center gap-1 shrink-0">
+                      {c.pinned_at && <Pin className="w-3 h-3 text-indigo-300" />}
+                      <span role="button" tabIndex={0} title={c.pinned_at ? "Sgancia la chat" : "Fissa in alto (max 5)"}
+                        onClick={(e) => onTogglePin(e, c)}
+                        className="opacity-0 group-hover/riga:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
+                        {c.pinned_at ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+                      </span>
                       {c.unread === 0 && (
                         <span role="button" tabIndex={0} title="Segna come da leggere"
                           onClick={(e) => onMarkUnread(e, c.conversation_id)}
@@ -523,6 +597,12 @@ function ChatPageInner() {
                     <Reply className="w-4 h-4" />
                   </button>
                 );
+                const btnInoltra = (
+                  <button type="button" title="Inoltra" onClick={() => { setForwardMsg(m); setForwardCerca(""); }}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-opacity">
+                    <Forward className="w-4 h-4" />
+                  </button>
+                );
                 // REAZIONI stile Telegram (mig. 130): faccina al passaggio, menu rapido
                 const btnReagisci = (
                   <span className="relative shrink-0">
@@ -552,7 +632,7 @@ function ChatPageInner() {
                   <div key={m.id} id={`msg-${m.id}`}>
                     {showDay && <div className="text-center my-3"><span className="text-[11px] text-slate-500 bg-white/5 px-3 py-1 rounded-full">{showDay}</span></div>}
                     <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}>
-                      {mine && <>{btnInfo}{btnReagisci}{btnRispondi}</>}
+                      {mine && <>{btnInfo}{btnInoltra}{btnReagisci}{btnRispondi}</>}
                       <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
                         {!mine && selConv.type === "group" && (
                           <p className="text-[11px] font-semibold text-indigo-300 mb-0.5">{senderName[m.sender_id] || "—"}</p>
@@ -576,6 +656,8 @@ function ChatPageInner() {
                               ? <button type="button" onClick={() => setLightbox({ src: a.url, alt: a.name || "" })} title="Apri l'immagine">
                                   <img src={a.url} alt={a.name || ""} className="max-w-[220px] max-h-[220px] rounded-lg object-cover cursor-zoom-in" />
                                 </button>
+                              : (a.mime || "").startsWith("video/")
+                              ? <video src={a.url} controls preload="metadata" className="max-w-[260px] rounded-lg" />
                               : <a href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-black/20 hover:bg-black/30 text-xs"><FileText className="w-4 h-4 shrink-0" /><span className="truncate max-w-[180px]">{a.name || "file"}</span></a>}
                           </div>
                         ))}
@@ -639,7 +721,7 @@ function ChatPageInner() {
                           })()}
                         </p>
                       </div>
-                      {!mine && <>{btnRispondi}{btnReagisci}{btnInfo}</>}
+                      {!mine && <>{btnRispondi}{btnReagisci}{btnInoltra}{btnInfo}</>}
                     </div>
                   </div>
                 );
@@ -725,6 +807,15 @@ function ChatPageInner() {
                   <Tag className="w-5 h-5" />
                 </button>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+                <button type="button" title="Screenshot dello schermo (si allega al messaggio)" onClick={fareScreenshot}
+                  className="p-2 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-white/10 transition-colors shrink-0">
+                  <Camera className="w-5 h-5" />
+                </button>
+                <button type="button" onClick={toggleRegistrazione}
+                  title={recording ? "Ferma la registrazione (si allega al messaggio)" : "Registra lo schermo (clicca di nuovo per fermare)"}
+                  className={`p-2 rounded-lg transition-colors shrink-0 ${recording ? "text-red-400 bg-red-500/15 animate-pulse" : "text-slate-400 hover:text-red-400 hover:bg-white/10"}`}>
+                  <Disc className="w-5 h-5" />
+                </button>
                 <span className="relative shrink-0">
                   <button type="button" title="Emoji" onClick={() => { setShowEmoji(v => !v); setShowGif(false); }}
                     className={`p-2 rounded-lg transition-colors ${showEmoji ? "text-amber-300 bg-white/10" : "text-slate-400 hover:text-amber-300 hover:bg-white/10"}`}>
@@ -788,6 +879,36 @@ function ChatPageInner() {
         )}
       </section>
       </div>
+      )}
+
+      {forwardMsg && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setForwardMsg(null)}>
+          <div className="glass-card w-full max-w-md max-h-[75vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 p-4 border-b border-white/10 bg-white/5">
+              <h3 className="text-base font-bold text-white flex items-center gap-2"><Forward className="w-4 h-4 text-indigo-300" /> Inoltra a…</h3>
+              <button onClick={() => setForwardMsg(null)} className="text-slate-400 hover:text-white p-1"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-3 border-b border-white/5">
+              <input autoFocus value={forwardCerca} onChange={(e) => setForwardCerca(e.target.value)} placeholder="Cerca persona o gruppo…" className="glass-input w-full text-sm" />
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              {inbox.filter((c: any) => (c.type === "group" ? (c.title || "") : (c.other_name || "")).toLowerCase().includes(forwardCerca.trim().toLowerCase())).map((c: any) => (
+                <button key={"c" + c.conversation_id} disabled={forwardBusy} onClick={() => inoltraA(c.conversation_id)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left hover:bg-indigo-500/15 disabled:opacity-50">
+                  {c.type === "group" ? <Users className="w-4 h-4 text-purple-300 shrink-0" /> : <User className="w-4 h-4 text-indigo-300 shrink-0" />}
+                  <span className="text-sm text-slate-100 truncate">{c.type === "group" ? (c.title || "Gruppo") : (c.other_name || "—")}</span>
+                </button>
+              ))}
+              {dir.filter((u) => !inbox.some((c: any) => c.type === "dm" && c.other_id === u.id) && (u.full_name || "").toLowerCase().includes(forwardCerca.trim().toLowerCase())).map((u) => (
+                <button key={"u" + u.id} disabled={forwardBusy} onClick={() => inoltraAUtente(u.id)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left hover:bg-indigo-500/15 disabled:opacity-50">
+                  <UserPlus className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span className="text-sm text-slate-300 truncate">{u.full_name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {showTag && (

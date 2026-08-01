@@ -21,6 +21,7 @@ export interface InboxItem {
   other_name: string | null;
   other_role: string | null;
   member_count: number;
+  pinned_at: string | null;   // fissata (mig. 132) — in cima all'elenco
 }
 export interface ChatAttachment {
   id: string; url: string; name: string | null; mime: string | null; size_bytes: number | null;
@@ -64,7 +65,30 @@ export async function listDirectory(meId: string): Promise<DirUser[]> {
 export async function getInbox(meId: string): Promise<InboxItem[]> {
   const { data, error } = await supabase.rpc("chat_inbox", { p_user_id: meId });
   if (error) throw error;
-  return (data || []) as InboxItem[];
+  const items = ((data || []) as InboxItem[]).map((i) => ({ ...i, pinned_at: null as string | null }));
+  // FISSATE (mig. 132): la spunta sta in chat_participants; senza la
+  // migrazione la query fallisce e l'inbox resta quella di sempre
+  try {
+    const { data: pins } = await supabase.from("chat_participants")
+      .select("conversation_id, pinned_at").eq("user_id", meId).not("pinned_at", "is", null);
+    const mappa = new Map((pins || []).map((p: any) => [p.conversation_id, p.pinned_at as string]));
+    items.forEach((i) => { i.pinned_at = mappa.get(i.conversation_id) ?? null; });
+    items.sort((a, b) => {
+      if (!!a.pinned_at !== !!b.pinned_at) return a.pinned_at ? -1 : 1;
+      if (a.pinned_at && b.pinned_at) return new Date(a.pinned_at).getTime() - new Date(b.pinned_at).getTime();
+      return 0;   // tra le non fissate vale l'ordine del server (ultimo messaggio)
+    });
+  } catch { /* pre-mig. 132 */ }
+  return items;
+}
+
+/** Fissa/sgancia una conversazione (stile Telegram, max 5 — il limite lo
+ *  applica la UI). */
+export async function togglePin(convId: string, meId: string, fissa: boolean): Promise<void> {
+  const { error } = await supabase.from("chat_participants")
+    .update({ pinned_at: fissa ? new Date().toISOString() : null })
+    .eq("conversation_id", convId).eq("user_id", meId);
+  if (error) throw new Error(/column/i.test(error.message) ? "Manca la migrazione 132 (pinned_at)" : error.message);
 }
 
 export async function getOrCreateDM(meId: string, otherId: string): Promise<string> {
@@ -158,6 +182,24 @@ export async function listMessages(convId: string): Promise<ChatMessage[]> {
     reply_to: m.reply_to ?? null,
     reactions: Array.isArray(m.chat_reactions) ? m.chat_reactions : [],
   }));
+}
+
+/** INOLTRA un messaggio in un'altra conversazione (Luca 02/08): body con
+ *  riga "Inoltrato", refs copiati e allegati ri-agganciati agli stessi URL
+ *  dello storage (nessun re-upload). */
+export async function forwardMessage(msg: ChatMessage, meId: string, targetConvId: string): Promise<void> {
+  const body = ["↪️ Inoltrato", (msg.body || "").trim()].filter(Boolean).join("\n");
+  const { data: nuovo, error } = await supabase
+    .from("chat_messages")
+    .insert({ conversation_id: targetConvId, sender_id: meId, body: body || "↪️ Inoltrato", refs: msg.refs || [] })
+    .select("id").single();
+  if (error) throw error;
+  if ((msg.attachments || []).length) {
+    const { error: aErr } = await supabase.from("chat_attachments").insert(
+      (msg.attachments || []).map((a) => ({ message_id: nuovo.id, url: a.url, name: a.name, mime: a.mime, size_bytes: a.size_bytes ?? null }))
+    );
+    if (aErr) throw aErr;
+  }
 }
 
 /** "Segna come da leggere" stile WhatsApp/Telegram (Luca 01/08): riporta il
