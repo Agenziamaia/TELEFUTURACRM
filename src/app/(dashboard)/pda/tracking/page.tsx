@@ -1516,6 +1516,12 @@ export default function TrackingPdaPage() {
       const cats = (() => {
         // Sky TV usa le regole "sky"; i fissi Sky sono già macro fisso.
         if (base.categoria === "tv") return ["sky"];
+        // 3P SKY (Luca 02/08): un contratto solo che contiene TV + fibra.
+        // SOLO qui nel Tracking si divide in DUE righe esitabili
+        // separatamente: "fisso" (la fibra, regole fisso) e "sky" (la TV,
+        // regole Sky). L'eventuale mobile Sky viaggia gia' come pratica a
+        // parte. Copre anche il prodotto legacy "3P 35,80".
+        if (base.categoria === "fisso" && String(r.brand || "").toLowerCase().includes("sky") && /\b3\s*P\b/i.test(String(r.prodotto || ""))) return ["fisso", "sky"];
         // contratti P.IVA: il mobile business segue le regole "piva"
         if (base.categoria === "mobile" && String(r.tipo_cliente || "").toLowerCase() === "business") return ["piva"];
         return righeTracking(base.categoria as never, (base.controlli || []) as never);
