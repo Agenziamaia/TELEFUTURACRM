@@ -22,18 +22,34 @@ export default function LoginPage() {
   const [qr, setQr] = useState("");
   const [otpauth, setOtpauth] = useState("");
 
-  // ── RESET PASSWORD IN AUTONOMIA (Luca 01/08): niente piu' autorizzazione.
-  //    L'utente si verifica col codice dell'authenticator e imposta SUBITO la
-  //    nuova password (/api/auth/reset-password, verifica TOTP lato server).
-  //    Chi non ha la 2FA attiva ricade nella vecchia RICHIESTA
-  //    all'amministrazione (⚡ admin_tasks, password temporanea). Risposte
-  //    volutamente neutre: non si rivela se un'email esiste oppure no.
+  // ── RESET PASSWORD AUTOMATICO (Luca 01/08, seconda direttiva): l'utente
+  //    chiede il reset e riceve la PASSWORD PROVVISORIA sulla propria email
+  //    (/api/auth/reset-password, mode default) — nessuna richiesta
+  //    all'amministrazione. Al primo accesso la cambia (must_change_password).
+  //    Via alternativa ISTANTANEA per chi ha l'authenticator (mode "totp").
+  //    Risposte volutamente neutre: non si rivela se un'email esiste o no.
   const [resetInviata, setResetInviata] = useState(false);
   const [resetOk, setResetOk] = useState(false);
   const [authInviata, setAuthInviata] = useState(false);
+  const [usaTotp, setUsaTotp] = useState(false);
   const [resetCode, setResetCode] = useState("");
   const [resetPw1, setResetPw1] = useState("");
   const [resetPw2, setResetPw2] = useState("");
+  const handleResetMail = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setError("");
+    if (!email.trim()) { setError("Scrivi prima la tua email."); return; }
+    setIsLoading(true);
+    try {
+      const r = await fetch("/api/auth/reset-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const j = await r.json();
+      if (j.ok) setResetInviata(true);
+      else setError(j.error || "Invio non riuscito.");
+    } finally { setIsLoading(false); }
+  };
   const handleResetSelf = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -43,36 +59,12 @@ export default function LoginPage() {
     try {
       const r = await fetch("/api/auth/reset-password", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), code: resetCode.trim(), newPassword: resetPw1 }),
+        body: JSON.stringify({ email: email.trim(), code: resetCode.trim(), newPassword: resetPw1, mode: "totp" }),
       });
       const j = await r.json();
       if (j.ok) { setResetOk(true); setPassword(""); setResetCode(""); setResetPw1(""); setResetPw2(""); }
+      else if (j.fallback) { setUsaTotp(false); setError(j.error || ""); }
       else setError(j.error || "Reset non riuscito.");
-    } finally { setIsLoading(false); }
-  };
-  const handleReset = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    setError("");
-    setIsLoading(true);
-    try {
-      const em = email.trim().toLowerCase();
-      if (!em) { setError("Scrivi prima la tua email qui sopra."); return; }
-      const { data: u } = await supabase.from("app_users").select("id, full_name").ilike("email", em).limit(1).maybeSingle();
-      if (u) {
-        // niente doppioni: se c'e' gia' una richiesta aperta per questa email, non se ne aggiunge un'altra
-        const { data: gia } = await supabase.from("admin_tasks").select("id").eq("tipo", "reset_password").eq("done", false).ilike("titolo", `%${em}%`).limit(1);
-        if (!gia || !gia.length) {
-          await supabase.from("admin_tasks").insert({
-            tipo: "reset_password",
-            titolo: `🔑 Reset password: ${u.full_name} (${em})`,
-            dettaglio: "Richiesta dalla schermata di login (utente SENZA 2FA attiva: il reset autonomo non era possibile). Da Utenti apri la scheda dell'utente e usa 'Reset password': genera la temporanea e comunicagliela — al primo accesso dovrà cambiarla.",
-            link: "/amministrazione?sez=utenti",
-            target_role: "admin",
-            created_by: "login",
-          });
-        }
-      }
-      setResetInviata(true);
     } finally { setIsLoading(false); }
   };
   // AUTHENTICATOR PERSO (telefono nuovo/smarrito): qui SERVE l'amministrazione
@@ -213,7 +205,7 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                onClick={() => { setError(""); setResetInviata(false); setResetOk(false); setAuthInviata(false); setStep("reset"); }}
+                onClick={() => { setError(""); setResetInviata(false); setResetOk(false); setAuthInviata(false); setUsaTotp(false); setStep("reset"); }}
                 className="w-full text-center text-sm text-slate-400 hover:text-indigo-300 transition-colors"
               >
                 Password dimenticata?
@@ -289,23 +281,23 @@ export default function LoginPage() {
             ) : resetInviata ? (
               <div className="space-y-6">
                 <p className="text-sm text-emerald-300/90 bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-4 py-3">
-                  Richiesta inviata. Se l&apos;email è tra gli utenti del CRM, l&apos;amministrazione
-                  riceverà la segnalazione e ti comunicherà una <b>password temporanea</b>:
-                  al primo accesso ti verrà chiesto di cambiarla.
+                  📧 Fatto. Se l&apos;email è tra gli utenti del CRM, riceverai <b>subito</b> una
+                  <b> password provvisoria</b> nella tua casella (controlla anche lo spam):
+                  accedi con quella e al primo accesso imposti la tua password personale.
                 </p>
                 <button type="button" onClick={() => setStep("login")} className="primary-btn w-full flex items-center justify-center gap-2">
                   <LogIn className="w-5 h-5" /> Torna al login
                 </button>
               </div>
-            ) : (
+            ) : usaTotp ? (
               <form onSubmit={handleResetSelf} className="space-y-5">
                 <p className="text-xs text-slate-400 bg-white/[0.04] border border-white/10 rounded-lg px-4 py-3">
-                  Reset <b>in autonomia</b>: inserisci email, il codice a 6 cifre della tua app
-                  authenticator e la nuova password. Nessuna autorizzazione necessaria.
+                  Cambio <b>immediato</b>: email, codice a 6 cifre dell&apos;authenticator e nuova
+                  password — senza passare dalla posta.
                 </p>
                 <div>
-                  <label htmlFor="resetEmail" className="block text-sm font-medium text-slate-300 mb-2">Email</label>
-                  <input id="resetEmail" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                  <label htmlFor="resetEmail2" className="block text-sm font-medium text-slate-300 mb-2">Email</label>
+                  <input id="resetEmail2" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                     className="glass-input w-full" placeholder="nome@telefutura.it" autoComplete="username" required />
                 </div>
                 <div>
@@ -327,9 +319,31 @@ export default function LoginPage() {
                     <><KeyRound className="w-5 h-5" /> Cambia la password</>
                   )}
                 </button>
+                <button type="button" onClick={() => { setUsaTotp(false); setError(""); }} className="w-full text-center text-xs text-slate-500 hover:text-indigo-300 transition-colors">
+                  ← Preferisci la password provvisoria via email?
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleResetMail} className="space-y-5">
+                <p className="text-xs text-slate-400 bg-white/[0.04] border border-white/10 rounded-lg px-4 py-3">
+                  Inserisci la tua email: ricevi <b>subito</b> una <b>password provvisoria</b> nella
+                  tua casella, senza attese né autorizzazioni. Al primo accesso la cambi.
+                </p>
+                <div>
+                  <label htmlFor="resetEmail" className="block text-sm font-medium text-slate-300 mb-2">Email</label>
+                  <input id="resetEmail" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    className="glass-input w-full" placeholder="nome@telefutura.it" autoComplete="username" required />
+                </div>
+                <button type="submit" disabled={isLoading} className="primary-btn w-full flex items-center justify-center gap-2">
+                  {isLoading ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <><KeyRound className="w-5 h-5" /> 📧 Inviami la password provvisoria</>
+                  )}
+                </button>
                 <div className="pt-1 space-y-2 text-center">
-                  <button type="button" onClick={() => handleReset()} className="w-full text-xs text-slate-500 hover:text-indigo-300 transition-colors">
-                    Non hai ancora l&apos;authenticator attivo? Invia la richiesta all&apos;amministrazione
+                  <button type="button" onClick={() => { setUsaTotp(true); setError(""); }} className="w-full text-xs text-slate-500 hover:text-indigo-300 transition-colors">
+                    Hai l&apos;authenticator sotto mano? Cambia la password subito, senza email
                   </button>
                   <button type="button" onClick={handleRichiestaAuth} className="w-full text-xs text-slate-500 hover:text-indigo-300 transition-colors">
                     Hai perso l&apos;authenticator (telefono nuovo/smarrito)? Chiedi il reset della verifica
