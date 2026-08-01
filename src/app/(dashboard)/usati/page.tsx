@@ -30,7 +30,8 @@ import { useSearchParams } from "next/navigation";
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UsatoStatus =
   | "acquistato" | "in_transito" | "ricevuto" | "in_lavorazione"
-  | "pronto" | "invio_in_negozio" | "in_vendita" | "venduto" | "ko";
+  | "pronto" | "invio_in_negozio" | "in_vendita" | "venduto" | "ko"
+  | "smontato";   // dissolto per pezzi di ricambio (Luca 01/08, mig. 128)
 
 type RicambioState = "in_magazzino" | "da_ordinare" | "ordinato" | "arrivato";
 
@@ -83,6 +84,8 @@ interface Device {
   // mig. 117: prezzo EFFETTIVO di vendita (chiesto all'esito Venduto) —
   // sale_price resta il prezzo di listino in vetrina
   sold_price: number;
+  // flaggato in fase di ACQUISTO: comprato apposta per farne pezzi di ricambio
+  acquisto_per_ricambi: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -96,6 +99,7 @@ const STATUS_LIST = [
   { key: "in_vendita", label: "In Vendita", icon: "🏷️", colorClass: "text-green-400", bgClass: "bg-green-500/10", borderClass: "border-green-500/30" },
   { key: "venduto", label: "Venduto", icon: "💸", colorClass: "text-rose-400", bgClass: "bg-rose-500/10", borderClass: "border-rose-500/30" },
   { key: "ko", label: "KO", icon: "❌", colorClass: "text-red-500", bgClass: "bg-red-500/10", borderClass: "border-red-500/30" },
+  { key: "smontato", label: "Smontato (ricambi)", icon: "🧩", colorClass: "text-fuchsia-400", bgClass: "bg-fuchsia-500/10", borderClass: "border-fuchsia-500/30" },
 ] as const;
 
 const statusMap = Object.fromEntries(STATUS_LIST.map(s => [s.key, s]));
@@ -218,6 +222,7 @@ type UsatiRow = {
   status_history: unknown;
   provenienza_subito: boolean;
   extra_margine: unknown;
+  acquisto_per_ricambi?: boolean | null;
   pagamento: unknown;
   grado_usura: string;
   allegato_documento: string | null;
@@ -263,6 +268,7 @@ function rowToDevice(r: UsatiRow): Device {
     extra_margine: r.extra_margine && typeof r.extra_margine === "object" ? { ...(r.extra_margine as any), conferma_date: (r.extra_margine as any).conferma_date ? new Date((r.extra_margine as any).conferma_date) : null } as ExtraMargine : null,
     pagamento: r.pagamento && typeof r.pagamento === "object" ? { ...(r.pagamento as any), bonifico_date: (r.pagamento as any).bonifico_date ? new Date((r.pagamento as any).bonifico_date) : null } as Pagamento : { metodo: "contanti", iban: "", bonifico_effettuato: null, bonifico_operatore: null, bonifico_date: null },
     grado_usura: r.grado_usura || "",
+    acquisto_per_ricambi: !!r.acquisto_per_ricambi,
     allegato_documento: r.allegato_documento ?? null,
     allegato_dichiarazione: r.allegato_dichiarazione ?? null,
     client_id: r.client_id ?? null,
@@ -299,6 +305,7 @@ function deviceToRow(d: Device): Record<string, unknown> {
     extra_margine: em,
     pagamento: pag,
     grado_usura: d.grado_usura,
+    acquisto_per_ricambi: d.acquisto_per_ricambi ?? false,
     allegato_documento: d.allegato_documento,
     allegato_dichiarazione: d.allegato_dichiarazione,
     sold_price: d.sold_price || null,
@@ -518,7 +525,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   }, [dev.client_id]);
 
   const s = statusMap[dev.status];
-  const canAdvance = !["venduto", "ko"].includes(dev.status);
+  const canAdvance = !["venduto", "ko", "smontato"].includes(dev.status);
   const lcIdx = LIFECYCLE.indexOf(dev.status as any);
   const next = canAdvance && lcIdx >= 0 && lcIdx < LIFECYCLE.length - 1 ? LIFECYCLE[lcIdx + 1] : null;
   const needsStore = dev.status === "pronto";
@@ -544,6 +551,11 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   };
   const removeRicambio = (idx: number) => persist({ ...dev, ricambi: dev.ricambi.filter((_, i) => i !== idx) });
 
+  const smonta = () => {
+    if (!window.confirm(`Smontare ${dev.model} (${dev.imei}) e usarlo per pezzi di ricambio?\nIl telefono esce dal flusso di vendita ma resta tracciato tra gli Smontati.`)) return;
+    persist({ ...dev, status: "smontato", note_tecnico: noteTecnico,
+      status_history: { ...dev.status_history, smontato: { date: new Date(), operatore } } });
+  };
   const advanceStatus = () => {
     if (needsStore && !targetStore) return;
     // Registra data+ora e operatore del cambio stato (prima non veniva salvato,
@@ -681,15 +693,32 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                 )}
               </div>
             )}
+            {/* SMONTA PER RICAMBI (Luca 01/08): il telefono si dissolve nei
+                pezzi ma resta tracciato (stato terminale "smontato", chip
+                dedicata nei filtri). Solo amministrazione e tecnico senior.
+                GRANDE quando era stato comprato apposta ed e' arrivato. */}
+            {(isAmministrazione || lavoraLab) && !["venduto", "smontato"].includes(dev.status) && (
+              dev.acquisto_per_ricambi && ["in_transito", "ricevuto", "in_lavorazione"].includes(dev.status) ? (
+                <button onClick={smonta}
+                  className="mt-4 w-full flex items-center justify-center gap-2 px-3 py-3.5 rounded-xl bg-red-600 text-white text-sm font-black uppercase tracking-wide border-2 border-red-400 hover:bg-red-500 transition-all animate-pulse">
+                  🧩 SMONTA E USA PER PEZZI DI RICAMBIO
+                </button>
+              ) : (
+                <button onClick={smonta}
+                  className="mt-4 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/30 text-xs font-semibold hover:bg-red-500/20 transition-all">
+                  🧩 Smonta e usa per ricambi
+                </button>
+              )
+            )}
             {/* PASSO INDIETRO (Luca 31/07): correzione errori, solo
                 amministrativo in su, con conferma esplicita */}
-            {isAmministrazione && (LIFECYCLE.indexOf(dev.status as any) > 0 || dev.status === "ko" || dev.status === "venduto") && (
+            {isAmministrazione && (LIFECYCLE.indexOf(dev.status as any) > 0 || ["ko", "venduto", "smontato"].includes(dev.status)) && (
               <div className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-3">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80">↩ Correzione stato (amministrazione)</div>
                 <select value={indietroSel} onChange={e => setIndietroSel(e.target.value)}
                   className="w-full bg-black/40 border border-amber-500/20 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
                   <option value="">Riporta a…</option>
-                  {LIFECYCLE.filter((sk) => dev.status === "ko" ? sk !== "venduto" : LIFECYCLE.indexOf(sk) < LIFECYCLE.indexOf(dev.status as any)).map(sk => (
+                  {LIFECYCLE.filter((sk) => ["ko", "smontato"].includes(dev.status) ? sk !== "venduto" : LIFECYCLE.indexOf(sk) < LIFECYCLE.indexOf(dev.status as any)).map(sk => (
                     <option key={sk} value={sk}>{statusMap[sk]?.icon} {statusMap[sk]?.label}</option>
                   ))}
                 </select>
@@ -705,6 +734,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             {/* Badges */}
             <div className="flex flex-wrap gap-2">
               {dev.provenienza_subito && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-orange-500/10 text-orange-400 border border-orange-500/30"> Provenienza Subito.it</span>}
+              {dev.acquisto_per_ricambi && <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/30">🧩 Comprato per ricambi</span>}
               <span className={cn("inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border",
                 dev.pagamento.metodo === "bonifico" ? "bg-blue-500/10 text-blue-400 border-blue-500/30" : "bg-white/5 text-slate-400 border-white/10")}>
                 {dev.pagamento.metodo === "contanti" ? "" : dev.pagamento.metodo === "buono" ? "" : ""} {dev.pagamento.metodo === "contanti" ? "Contanti" : dev.pagamento.metodo === "buono" ? "Buono" : "Bonifico"}
@@ -971,6 +1001,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const imeiValido = imeiNumerico ? imei.length === 15 : imei.trim().length > 0;
   const [prezzoAcquisto, setPrezzoAcquisto] = useState("");
   const [gradoUsura, setGradoUsura] = useState("");
+  const [perRicambi, setPerRicambi] = useState(false);   // comprato per farne pezzi (Luca 01/08)
   const [hasExtraMargine, setHasExtraMargine] = useState(false);
   const [extraMargineImporto, setExtraMargineImporto] = useState("");
   const [metodoPagamento, setMetodoPagamento] = useState<"contanti" | "buono" | "bonifico" | "">("");
@@ -1062,7 +1093,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       onSave({
         venditore, negozio, provenienzaSubito, tipoCliente, anagrafica: ana, clientId: selClientId,
         tipoProdotto, brand, model, capacita, colore, imei,
-        prezzoAcquisto: parseFloat(prezzoAcquisto) || 0, gradoUsura,
+        prezzoAcquisto: parseFloat(prezzoAcquisto) || 0, gradoUsura, perRicambi,
         extraMargine: hasExtraMargine ? { importo: parseFloat(extraMargineImporto) || 0, venditore } : null,
         metodoPagamento, iban: metodoPagamento === "bonifico" ? ibanPag : null,
         tipoBonifico: metodoPagamento === "bonifico" ? tipoBonifico : null,
@@ -1245,6 +1276,14 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
             <label className={lbl + " mb-0 whitespace-nowrap"}>Importo Extra Margine () *</label>
             <input type="number" step="1" min="0" value={extraMargineImporto} onChange={e => setExtraMargineImporto(e.target.value)} placeholder="es. 30" className="w-32 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none" />
           </div>}
+          {/* COMPRATO PER RICAMBI (Luca 01/08, mig. 128): tracciato dall'acquisto —
+              all'arrivo in laboratorio l'amministrazione trova il bottone SMONTA */}
+          <label className={cn("mt-3 flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all",
+            perRicambi ? "bg-fuchsia-500/10 border-fuchsia-500/40" : "bg-white/[0.02] border-white/5 hover:border-white/10")}>
+            <input type="checkbox" checked={perRicambi} onChange={e => setPerRicambi(e.target.checked)} className="w-4 h-4 accent-fuchsia-500 cursor-pointer" />
+            <span className={cn("text-sm font-bold", perRicambi ? "text-fuchsia-300" : "text-slate-300")}>🧩 Acquistato per pezzi di ricambio</span>
+            <span className="text-[11px] text-slate-500">verrà smontato in laboratorio, non torna in vendita</span>
+          </label>
         </>}
       </div>
     );
@@ -1451,7 +1490,17 @@ function GestioneUsatiInner() {
   const firma = (a: string[]) => JSON.stringify([...a].sort());
   const mieiAttivo = !!user?.negozio && firma(selectedStores) === firma(mieiMatch());
   const tuttiAttivo = NEGOZI.length > 0 && selectedStores.length === NEGOZI.length;
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([...STATUS_KEYS]);
+  // stati di APERTURA = quelli che un punto vendita puo' avere davvero
+  // (Luca 01/08): venduto sporcherebbe la tabella col tempo, il laboratorio
+  // ha il suo bottone "Mostra magazzino"
+  const STATI_NEGOZIO_DEFAULT = ["acquistato", "invio_in_negozio", "in_vendita"];
+  const STATI_MAGAZZINO = ["in_transito", "ricevuto", "in_lavorazione", "pronto"];
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([...STATI_NEGOZIO_DEFAULT]);
+  // AMMINISTRAZIONE: vista "ricambi da prezzare" — righe con ricambi usati
+  // dal tecnico ma senza prezzo (il tecnico non puo' inserirlo); bypassa il
+  // filtro stato perche' quei telefoni vivono nella pipeline laboratorio
+  const [soloDaPrezzare, setSoloDaPrezzare] = useState(false);
+  const isAmminMain = RUOLI_SEMPRE.includes(user?.role || "");
   const [dateField, setDateField] = useState("created_at");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -1540,8 +1589,14 @@ function GestioneUsatiInner() {
 
   // predicato condiviso: conStato=false lo usano i riquadri Inventario/Vetrina,
   // che hanno gia' il LORO stato e devono seguire tutti gli altri filtri
+  const ricambiDaPrezzare = useCallback((d: Device) =>
+    d.ricambi.some(r => !r.cost || r.cost <= 0) && !["venduto", "ko"].includes(d.status), []);
   const passaFiltri = useCallback((d: Device, conStato = true) => {
     if (!selectedStores.includes(d.store)) return false;
+    // vista amministrazione "ricambi da prezzare": ignora il filtro stato
+    // (quei telefoni stanno in laboratorio) e mostra solo chi ha ricambi
+    // senza prezzo (Luca 01/08)
+    if (soloDaPrezzare) return ricambiDaPrezzare(d);
     // IN TRANSITO = dato al corriere: sparisce dalla disponibilita' del
     // negozio con "Mostra i miei" (si rivede su "Mostra tutti"); resta
     // visibile a chi lavora il laboratorio, che ne firma l'arrivo (Luca 01/08)
@@ -1555,7 +1610,7 @@ function GestioneUsatiInner() {
     if (prezzoA && (d.sale_price || 0) > (parseFloat(prezzoA) || Infinity)) return false;
     if (ricambiFilter.length > 0) { if (!d.ricambi.some(r => ricambiFilter.includes(r.stato))) return false; }
     return true;
-  }, [selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter, mieiAttivo, lavoraLabMain]);
+  }, [selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter, mieiAttivo, lavoraLabMain, soloDaPrezzare, ricambiDaPrezzare]);
   const filtered = useMemo(() => devices.filter(d => passaFiltri(d)), [devices, passaFiltri]);
 
   // ── INVENTARIO e VETRINA (Luca 31/07): due contatori VERI, sul filtrato.
@@ -1603,7 +1658,7 @@ function GestioneUsatiInner() {
     }
   };
 
-  const resetFilters = () => { setSelectedStores(mieiMatch()); setSelectedStatuses([...STATUS_KEYS]); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setActiveKpi(null); };
+  const resetFilters = () => { setSelectedStores(mieiMatch()); setSelectedStatuses([...STATI_NEGOZIO_DEFAULT]); setSoloDaPrezzare(false); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setActiveKpi(null); };
 
   const handleSaveDevice = useCallback(async (u: Device) => {
     const row = deviceToRow(u);
@@ -1641,7 +1696,7 @@ function GestioneUsatiInner() {
   const handleRegistra = useCallback(async (data: {
     venditore: string; negozio: string; tipoCliente?: string; anagrafica?: unknown; clientId?: string | null;
     tipoProdotto?: string; brand?: string; model?: string; capacita?: string; colore?: string;
-    imei: string; prezzoAcquisto: number; gradoUsura: string; extraMargine?: { importo: number; venditore: string };
+    imei: string; prezzoAcquisto: number; gradoUsura: string; perRicambi?: boolean; extraMargine?: { importo: number; venditore: string };
     metodoPagamento: "contanti" | "buono" | "bonifico"; iban?: string; tipoBonifico?: "ordinario" | "istantaneo" | null; provenienzaSubito?: boolean;
     allegato_documento?: string | null; allegato_dichiarazione?: string | null;
   }) => {
@@ -1703,6 +1758,7 @@ function GestioneUsatiInner() {
       extra_margine: data.extraMargine ? { importo: data.extraMargine.importo, venditore: data.extraMargine.venditore, confermato: false, conferma_operatore: null, conferma_date: null } : null,
       pagamento: { metodo: data.metodoPagamento, iban: data.iban || "", bonifico_effettuato: data.metodoPagamento === "bonifico" ? false : null, bonifico_operatore: null, bonifico_date: null, bonifico_tipo: data.metodoPagamento === "bonifico" ? (data.tipoBonifico || "ordinario") : null, bonifico_stato: data.metodoPagamento === "bonifico" ? "da_fare" : null },
       grado_usura: data.gradoUsura || "",
+      acquisto_per_ricambi: !!data.perRicambi,
       allegato_documento: data.allegato_documento || null,
       allegato_dichiarazione: data.allegato_dichiarazione || null,
     };
@@ -1833,6 +1889,21 @@ function GestioneUsatiInner() {
               tuttiAttivo ? "bg-white/15 border-white/30 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
             🌍 Mostra tutti{tuttiAttivo ? " ✓" : ""}
           </button>
+          {(() => { const magAttivo = JSON.stringify([...selectedStatuses].sort()) === JSON.stringify([...STATI_MAGAZZINO].sort()); return (
+          <button onClick={() => { setSoloDaPrezzare(false); setSelectedStatuses(magAttivo ? [...STATI_NEGOZIO_DEFAULT] : [...STATI_MAGAZZINO]); }}
+            title="I telefoni in lavorazione: in transito, ricevuti, in lavorazione e pronti"
+            className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
+              magAttivo ? "bg-blue-500/25 border-blue-400/60 text-blue-100" : "bg-blue-500/10 border-blue-500/30 text-blue-200 hover:bg-blue-500/20")}>
+            🔧 Mostra magazzino{magAttivo ? " ✓" : ""}
+          </button>); })()}
+          {isAmminMain && (
+            <button onClick={() => setSoloDaPrezzare(v => !v)}
+              title="Solo i telefoni con ricambi usati dal tecnico ma ancora SENZA prezzo (il tecnico non puo' inserirlo)"
+              className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
+                soloDaPrezzare ? "bg-amber-500/25 border-amber-400/60 text-amber-100" : "bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20")}>
+              💶 Ricambi da prezzare ({devices.filter(d => ricambiDaPrezzare(d)).length}){soloDaPrezzare ? " ✓" : ""}
+            </button>
+          )}
           <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
           <MultiSelect label="Stato" options={STATUS_KEYS} selected={selectedStatuses} onChange={setSelectedStatuses}
             renderOpt={o => <span className="flex items-center gap-1.5">{statusMap[o as UsatoStatus]?.icon} {statusMap[o as UsatoStatus]?.label}</span>} />
