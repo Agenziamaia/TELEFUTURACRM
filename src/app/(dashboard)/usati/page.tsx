@@ -1528,6 +1528,12 @@ function GestioneUsatiInner() {
   const puoRegole = ["admin", "dev"].includes(user?.role || "");
   const [showRegole, setShowRegole] = useState(false);
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
+  const isAmminMain = RUOLI_SEMPRE.includes(user?.role || "");
+  // stati di APERTURA per ruolo (Luca 01/08): amministrazione senza filtri,
+  // punti vendita col preset acquistato / arrivo in negozio / in vendita
+  const STATI_NEGOZIO_DEFAULT = ["acquistato", "invio_in_negozio", "in_vendita"];
+  const STATI_MAGAZZINO = ["in_transito", "ricevuto", "in_lavorazione", "pronto"];
+  const PRESET_STATI = isAmminMain ? [...STATUS_KEYS] : [...STATI_NEGOZIO_DEFAULT];
   const filtriCompleti = ["direttore_commerciale", "direttore_generale", "amministrativo", "admin", "dev"].includes(user?.role || "");
   // "i miei" = TUTTI i negozi visibili dell'utente (user_stores + visibilita' +
   // primary, es. Emanuele su entrambe le Magliana) ESPANSI alla sede fisica:
@@ -1558,20 +1564,11 @@ function GestioneUsatiInner() {
   const firma = (a: string[]) => JSON.stringify([...a].sort());
   const mieiAttivo = !!user?.negozio && firma(selectedStores) === firma(mieiMatch());
   const tuttiAttivo = NEGOZI.length > 0 && selectedStores.length === NEGOZI.length;
-  // stati di APERTURA = quelli che un punto vendita puo' avere davvero
-  // (Luca 01/08): venduto sporcherebbe la tabella col tempo, il laboratorio
-  // ha il suo bottone "Mostra magazzino"
-  const STATI_NEGOZIO_DEFAULT = ["acquistato", "invio_in_negozio", "in_vendita"];
-  const STATI_MAGAZZINO = ["in_transito", "ricevuto", "in_lavorazione", "pronto"];
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([...STATI_NEGOZIO_DEFAULT]);
   // AMMINISTRAZIONE: vista "ricambi da prezzare" — righe con ricambi usati
   // dal tecnico ma senza prezzo (il tecnico non puo' inserirlo); bypassa il
   // filtro stato perche' quei telefoni vivono nella pipeline laboratorio
   const [soloDaPrezzare, setSoloDaPrezzare] = useState(false);
-  const isAmminMain = RUOLI_SEMPRE.includes(user?.role || "");
-  // il preset d'apertura dipende dal ruolo: l'amministrazione parte SENZA
-  // filtri (tutti gli stati, tutti i negozi), i negozi col loro preset
-  const PRESET_STATI = isAmminMain ? [...STATUS_KEYS] : [...STATI_NEGOZIO_DEFAULT];
   const [dateField, setDateField] = useState("created_at");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -2059,7 +2056,7 @@ function GestioneUsatiInner() {
                   <div className="flex items-center gap-3 text-xs text-slate-500">
                     <span className="font-mono">{d.imei.slice(0, 8)}…</span>
                     <span className="text-slate-700">·</span>
-                    <span>{inLaboratorio(d) ? <>🔬 Laboratorio <span className="text-slate-600">(da {d.store})</span></> : d.store}</span>
+                    <span>{inLaboratorio(d) ? "🔬 Laboratorio" : d.store}</span>
                     <span className="text-slate-700">·</span>
                     <span>{fmtDate(d.created_at)}</span>
                   </div>
@@ -2099,7 +2096,7 @@ function GestioneUsatiInner() {
                         {/* chi ha ACQUISTATO il telefono (venditore della
                             registrazione; per i vecchi dalla cronologia) */}
                         <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{d.venditore || d.status_history.acquistato?.operatore || "—"}</td>
-                        <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{inLaboratorio(d) ? <>🔬 Laboratorio <span className="text-slate-600">(da {d.store})</span></> : d.store}</td>
+                        <td className="px-4 py-3 text-sm text-slate-400 whitespace-nowrap">{inLaboratorio(d) ? "🔬 Laboratorio" : d.store}</td>
                         <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{d.sold_date ? fmtDate(d.sold_date) : <span className="text-slate-700">—</span>}</td>
                         <td className="px-4 py-3 text-sm font-semibold whitespace-nowrap">{d.sold_price > 0 ? <span className="text-rose-300">{fmtEur(d.sold_price)}</span> : <span className="text-slate-700">—</span>}</td>
                       </tr>
