@@ -166,40 +166,42 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     };
 
     const [showStorico, setShowStorico] = useState(false);
+    // Nuovo layout (Luca 01/08): pannello destro a schede.
+    const [tab, setTab] = useState<"timeline" | "contratti" | "documenti">("contratti");
     // Click su una vendita -> apre il dettaglio in Ricerca Contratto (deep link ?id=).
     const openContract = (id: string) => { onClose(); router.push(`/ricerca-vendite?id=${encodeURIComponent(id)}`); };
+
+    const nomeCompleto = cliente.tipo === "business" ? (cliente.ragioneSociale || "—") : `${cliente.nome || ""} ${cliente.cognome || ""}`.trim();
+    const iniziale = (nomeCompleto || "?").charAt(0).toUpperCase();
+    // Timeline 360°: eventi REALI (contratti registrati + documenti caricati), in ordine.
+    const timeline = [
+        ...contratti.filter((c) => c.data).map((c) => ({ key: "c" + c.id, when: c.data as string, color: "#38bdf8", icon: "✍️", title: "Contratto registrato", desc: `${c.brand} · ${c.categoria}${c.venditore ? " — " + c.venditore : ""}`, stato: c.stato })),
+        ...docs.filter((d) => d.created_at).map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "#f59e0b", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
+    ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
 
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="glass-panel w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl border-white/10">
                 {/* MODAL HEADER */}
                 <div className="flex-none px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
-                    <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${cliente.tipo === 'business' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'}`}>
-                            {cliente.tipo === 'business' ? <Building className="w-6 h-6" /> : <Users className="w-6 h-6" />}
+                    <div className="flex items-center gap-4 min-w-0">
+                        {/* badge INCOLONNATI a sinistra del nome (tipo sopra, ID sotto) — richiesta Luca */}
+                        <div className="flex flex-col gap-1 items-start shrink-0">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${cliente.tipo === 'business' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'}`}>
+                                {cliente.tipo}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 tracking-widest font-mono">
+                                {cliente.id}
+                            </span>
                         </div>
-                        <div>
-                            <h2 className="text-xl font-bold text-white uppercase tracking-tight">
-                                {cliente.tipo === 'business' ? cliente.ragioneSociale : `${cliente.nome} ${cliente.cognome}`}
-                            </h2>
-                            <div className="flex items-center gap-2 mt-1">
-                                <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                    {cliente.id}
-                                </span>
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${cliente.tipo === 'business' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'}`}>
-                                    {cliente.tipo}
-                                </span>
-                                {/* Segnalazione 97: rimosso il badge "Acquisito nel negozio di"
-                                    dall'intestazione; il negozio ora e' in colonna nella tabella. */}
-                            </div>
-                        </div>
+                        <h2 className="text-xl font-bold text-white uppercase tracking-tight truncate">
+                            {nomeCompleto}
+                        </h2>
                     </div>
-                    <div className="flex items-center gap-2">
-                        {/* STORICO CONVERSAZIONI (Luca 29/07): tutte le chiamate col
-                            cliente, inbound e outbound, con le registrazioni Aircall
-                            ascoltabili e scaricabili direttamente dal CRM. */}
+                    <div className="flex items-center gap-2 shrink-0">
+                        {/* STORICO CONVERSAZIONI (Luca 29/07): chiamate inbound/outbound + registrazioni Aircall */}
                         <button onClick={() => setShowStorico(true)}
-                            className="px-3 py-2 rounded-xl border border-sky-500/40 bg-sky-500/10 text-sky-300 hover:bg-sky-500/25 text-xs font-bold flex items-center gap-1.5">
+                            className="px-3 py-2 rounded-full border border-white/20 bg-transparent text-slate-200 hover:bg-white/5 text-xs font-semibold flex items-center gap-1.5">
                             📞 Storico chiamate
                         </button>
                         <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all">
@@ -209,113 +211,126 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                 </div>
                 {showStorico && <StoricoChiamateCliente cliente={cliente} onClose={() => setShowStorico(false)} />}
 
-                {/* MODAL BODY */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-hide">
-                    {/* INFO SECTIONS GRID */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* ANAGRAFICA */}
-                        <div className="space-y-4">
-                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                                <FileText className="w-3 h-3" /> Anagrafica Cliente
-                            </h3>
-                            <div className="grid grid-cols-1 gap-3">
-                                <div className="flex items-center gap-2">
-                                    {/* campo più stretto: un cellulare non ha bisogno di tutta la riga
-                                        (Luca 29/07) — lo spazio va alle azioni rapide */}
-                                    <div className="max-w-[240px] flex-1 min-w-0"><InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono /></div>
-                                    {cliente.cellulare && (<>
-                                        <button
-                                            onClick={async () => { const r = await chiamaAircall(cliente.cellulare, uAll?.id); alert(r.msg); }}
-                                            title="Chiama con Aircall (es. richiamare un cliente che non è venuto in negozio)"
-                                            className="px-2.5 py-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-sm shrink-0"
-                                        >📞</button>
-                                        <Link
-                                            href={"/chat?wa=" + String(cliente.cellulare).replace(/\D/g, "")}
-                                            title="Scrivi su WhatsApp dal CRM: apre la chat col numero del cliente già caricato"
-                                            className="px-2.5 py-2 rounded-lg text-white text-sm shrink-0 hover:brightness-110"
-                                            style={{ background: "#25D366" }}
-                                        >💬</Link>
-                                    </>)}
+                {/* MODAL BODY — due colonne: profilo a sinistra, schede a destra */}
+                <div className="flex-1 overflow-y-auto p-6 scrollbar-hide">
+                  <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6 items-start">
+
+                    {/* ───────── COLONNA SINISTRA: profilo + portafoglio ───────── */}
+                    <div className="space-y-4">
+                        <div className="glass-card p-5">
+                            <div className="flex items-center gap-4 mb-5">
+                                <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl font-black text-white shrink-0"
+                                    style={{ background: cliente.tipo === "business" ? "linear-gradient(135deg,#f59e0b,#b45309)" : "linear-gradient(135deg,#6366f1,#a855f7)" }}>
+                                    {iniziale}
                                 </div>
-                                {/* NUMERI MULTIPLI (Luca 31/07, mig. 121): principale + aggiuntivi
-                                    etichettati (moglie, figlio, lavoro...), gestibili da qui */}
+                                <div className="min-w-0">
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{cliente.tipo === "business" ? "Partita IVA" : "Codice Fiscale"}</div>
+                                    <div className="text-sm font-bold text-slate-100 font-mono truncate">{cliente.cf_piva || "—"}</div>
+                                </div>
+                            </div>
+
+                            {/* azioni rapide */}
+                            <div className="grid grid-cols-3 gap-2 pb-5 border-b border-white/5">
+                                <button onClick={async () => { if (!cliente.cellulare) return; const r = await chiamaAircall(cliente.cellulare, uAll?.id); alert(r.msg); }}
+                                    disabled={!cliente.cellulare} title="Chiama con Aircall"
+                                    className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 hover:bg-indigo-500/20 text-[11px] font-bold disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <span className="text-lg">📞</span> Chiama
+                                </button>
+                                {cliente.cellulare
+                                    ? <Link href={"/chat?wa=" + String(cliente.cellulare).replace(/\D/g, "")} title="Scrivi su WhatsApp"
+                                        className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 text-[11px] font-bold"><span className="text-lg">💬</span> WhatsApp</Link>
+                                    : <div className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-slate-600 text-[11px] font-bold opacity-40"><span className="text-lg">💬</span> WhatsApp</div>}
+                                {cliente.email
+                                    ? <Link href={"/chat?mail=" + encodeURIComponent(cliente.email)} title="Scrivi una email"
+                                        className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 hover:bg-rose-500/20 text-[11px] font-bold"><span className="text-lg">✉️</span> Email</Link>
+                                    : <div className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-slate-600 text-[11px] font-bold opacity-40"><span className="text-lg">✉️</span> Email</div>}
+                            </div>
+
+                            {/* dettagli contatto */}
+                            <div className="pt-5 space-y-3">
+                                <InfoItem icon={<Smartphone className="w-4 h-4" />} label="Cellulare" value={cliente.cellulare} mono />
+                                {/* NUMERI MULTIPLI (Luca 31/07, mig. 121): principale + aggiuntivi etichettati */}
                                 <NumeriCliente clientId={cliente.id} principale={cliente.cellulare || ""} />
-                                <div className="flex items-center gap-2">
-                                    <div className="flex-1 min-w-0"><InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} /></div>
-                                    {cliente.email && (
-                                        <Link
-                                            href={"/chat?mail=" + encodeURIComponent(cliente.email)}
-                                            title="Scrivi una email dal CRM: apre la webmail già in composizione col destinatario caricato"
-                                            className="px-2.5 py-2 rounded-lg border border-sky-500/40 bg-sky-500/15 text-sky-300 hover:bg-sky-500/30 text-sm shrink-0"
-                                        >✉️</Link>
-                                    )}
-                                </div>
-                                <InfoItem icon={<FileText className="w-4 h-4" />} label={cliente.tipo === 'business' ? 'Partita IVA' : 'Codice Fiscale'} value={cliente.cf_piva || "—"} mono />
+                                <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={cliente.email} />
                                 {(cliente as { data_nascita?: string | null }).data_nascita && (
                                     <InfoItem icon={<Calendar className="w-4 h-4" />} label="Data di nascita"
                                         value={`${new Date(String((cliente as { data_nascita?: string | null }).data_nascita)).toLocaleDateString("it-IT")}${etaDa((cliente as { data_nascita?: string | null }).data_nascita) != null ? ` (${etaDa((cliente as { data_nascita?: string | null }).data_nascita)} anni)` : ""}`} />
                                 )}
                                 <InfoItem icon={<MapPin className="w-4 h-4" />} label="Indirizzo" value={`${cliente.indirizzo}, ${cliente.citta}`} />
+                                {/* Info aggiuntive: IBAN / intestatario / note (segnalazione 21) */}
+                                {((cliente.iban || "").trim() || cliente.intestatario_diverso || contratti.some(c => (c.note || "").trim())) && (
+                                    <div className="mt-1 pt-3 border-t border-dashed border-white/10 space-y-3">
+                                        {(cliente.iban || "").trim() && (
+                                            <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">IBAN</div><div className="text-xs text-amber-400 font-mono break-all">{cliente.iban}</div></div>
+                                        )}
+                                        {cliente.intestatario_diverso && (
+                                            <div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Intestatario diverso</div>
+                                                <div className="text-xs text-slate-200">{[cliente.intestatario_nome, cliente.intestatario_cognome].filter(Boolean).join(" ") || "—"}{cliente.intestatario_cf ? " · " + cliente.intestatario_cf : ""}</div></div>
+                                        )}
+                                        {contratti.filter(c => (c.note || "").trim()).map(c => (
+                                            <div key={c.id}><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Nota · {c.id}</div><div className="text-xs text-slate-200 whitespace-pre-wrap">{c.note}</div></div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
-                        {/* STATISTICHE O NOTE (Placeholder) */}
-                        <div className="space-y-4">
-                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                                <Clock className="w-3 h-3" /> Info Aggiuntive
-                            </h3>
-                            {(() => {
-                                // Prima qui c'era un segnaposto che diceva SEMPRE "nessuna nota",
-                                // anche quando la nota c'era (segnalazione 21). Ora mostra le note
-                                // dei contratti e i dati bancari dell'anagrafica.
-                                const note = contratti.filter(c => (c.note || "").trim());
-                                const hasIban = !!(cliente.iban || "").trim();
-                                const intest = cliente.intestatario_diverso;
-                                if (!note.length && !hasIban && !intest) {
-                                    return (
-                                        <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 flex items-center justify-center text-center py-12">
-                                            <div className="space-y-2">
-                                                <AlertTriangle className="w-6 h-6 text-slate-700 mx-auto" />
-                                                <p className="text-xs text-slate-500 max-w-[200px]">Nessuna nota aggiuntiva presente per questo cliente.</p>
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                                return (
-                                    <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-3">
-                                        {hasIban && (
-                                            <div>
-                                                <p className="text-[10px] uppercase tracking-wider text-slate-500">IBAN</p>
-                                                <p className="text-sm text-white font-mono break-all">{cliente.iban}</p>
-                                            </div>
-                                        )}
-                                        {intest && (
-                                            <div>
-                                                <p className="text-[10px] uppercase tracking-wider text-slate-500">Intestatario diverso</p>
-                                                <p className="text-sm text-white">
-                                                    {[cliente.intestatario_nome, cliente.intestatario_cognome].filter(Boolean).join(" ") || "—"}
-                                                    {cliente.intestatario_cf ? ` · ${cliente.intestatario_cf}` : ""}
-                                                </p>
-                                            </div>
-                                        )}
-                                        {note.map(c => (
-                                            <div key={c.id} className="border-t border-white/5 pt-3 first:border-0 first:pt-0">
-                                                <p className="text-[10px] uppercase tracking-wider text-slate-500">Nota · {c.id}</p>
-                                                <p className="text-sm text-slate-200 whitespace-pre-wrap">{c.note}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                );
-                            })()}
+                        {/* Portafoglio servizi (contratti come card) */}
+                        <div className="glass-card p-5">
+                            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3">Portafoglio Servizi</h3>
+                            {contratti.length === 0 ? <p className="text-xs text-slate-600">Nessun contratto.</p> : (
+                                <div className="space-y-2">
+                                    {contratti.slice(0, 6).map(c => (
+                                        <button key={c.id} onClick={() => openContract(c.id)} title="Apri in Ricerca Vendite"
+                                            className="w-full flex items-center justify-between gap-2 p-2.5 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 text-left transition-all">
+                                            <div className="min-w-0"><div className="text-xs font-semibold text-slate-100 truncate">{c.brand}</div><div className="text-[10px] text-slate-500 truncate">{c.categoria}</div></div>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 border ${c.stato === "Attivato" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : c.stato === "In Lavorazione" ? "bg-amber-500/10 border-amber-500/20 text-amber-400" : "bg-rose-500/10 border-rose-500/20 text-rose-400"}`}>{c.stato}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 
-                    {/* CONTRATTI TABLE */}
+                    {/* ───────── COLONNA DESTRA: schede ───────── */}
+                    <div className="glass-card flex flex-col min-h-[440px]">
+                        <div className="flex border-b border-white/5 px-3 shrink-0">
+                            {[{ id: "timeline", label: "Timeline 360°", icon: "⏳" }, { id: "contratti", label: `Contratti (${contratti.length})`, icon: "📄" }, ...(vedeAllegati ? [{ id: "documenti", label: `Documenti (${docs.length})`, icon: "📎" }] : [])].map(t => (
+                                <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
+                                    className={`px-4 py-3.5 text-[13px] font-semibold flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab === t.id ? "border-indigo-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
+                                    <span>{t.icon}</span> {t.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="p-5 flex-1 overflow-y-auto scrollbar-hide">
+
+                    {/* ===== TAB TIMELINE ===== */}
+                    {tab === "timeline" && (timeline.length === 0 ? (
+                        <div className="text-center py-16 text-slate-600 text-sm">Nessuna attività registrata per questo cliente.</div>
+                    ) : (
+                        <div className="relative">
+                            <div className="absolute left-[19px] top-2 bottom-2 w-px bg-white/5" />
+                            <div className="space-y-6">
+                                {timeline.map(ev => (
+                                    <div key={ev.key} className="flex gap-4 relative">
+                                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-base shrink-0 z-10" style={{ background: ev.color + "1f", border: "1px solid " + ev.color + "55" }}>{ev.icon}</div>
+                                        <div className="flex-1 min-w-0 pt-1.5">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <h4 className="text-sm font-semibold text-slate-100">{ev.title}</h4>
+                                                <span className="text-[11px] text-slate-500 shrink-0">{new Date(ev.when).toLocaleDateString("it-IT")}</span>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mt-0.5">{ev.desc}{ev.stato ? ` · ${ev.stato}` : ""}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+
+                    {/* ===== TAB CONTRATTI ===== */}
+                    {tab === "contratti" && (
                     <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
-                                <FileText className="w-3 h-3" /> Ultimi Contratti Registrati
-                            </h3>
+                        <div className="flex items-center justify-end">
                             <span className="text-[10px] text-slate-500 italic">Prelevati da tracking PDA</span>
                         </div>
                         <div className="bg-white/[0.01] border border-white/5 rounded-2xl overflow-hidden">
@@ -362,9 +377,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             </table>
                         </div>
                     </div>
+                    )}
 
-                    {/* DOCUMENTI / PDA CARICATI — solo con la capacita' attiva */}
-                    {vedeAllegati && <div className="space-y-4">
+                    {/* ===== TAB DOCUMENTI ===== */}
+                    {tab === "documenti" && vedeAllegati && (<div className="space-y-4">
                         <div className="flex items-center justify-between gap-3 flex-wrap">
                             <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-2">
                                 <Paperclip className="w-3 h-3" /> Documenti e PDA caricati
@@ -459,7 +475,11 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 })}
                             </div>
                         )}
-                    </div>}
+                    </div>)}
+
+                        </div>{/* /tab content */}
+                    </div>{/* /colonna destra */}
+                  </div>{/* /grid */}
                 </div>
 
                 {/* MODAL FOOTER */}
