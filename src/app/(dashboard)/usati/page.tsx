@@ -1545,7 +1545,9 @@ function GestioneUsatiInner() {
   // punti vendita col preset acquistato / arrivo in negozio / in vendita
   const STATI_NEGOZIO_DEFAULT = ["acquistato", "invio_in_negozio", "in_vendita"];
   const STATI_MAGAZZINO = ["in_transito", "ricevuto", "in_lavorazione", "pronto"];
-  const PRESET_STATI = isAmminMain ? [...STATUS_KEYS] : [...STATI_NEGOZIO_DEFAULT];
+  // amministrazione: tutto TRANNE i venduti (Luca 01/08: la tabella col
+  // tempo si sporcherebbe) — si accendono dalla tessera quando servono
+  const PRESET_STATI = isAmminMain ? STATUS_KEYS.filter(k => k !== 'venduto') : [...STATI_NEGOZIO_DEFAULT];
   const filtriCompleti = ["direttore_commerciale", "direttore_generale", "amministrativo", "admin", "dev"].includes(user?.role || "");
   // "i miei" = TUTTI i negozi visibili dell'utente (user_stores + visibilita' +
   // primary, es. Emanuele su entrambe le Magliana) ESPANSI alla sede fisica:
