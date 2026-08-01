@@ -160,6 +160,7 @@ const KPI_CARDS = [
   { key: "invio_in_negozio", label: "Arrivo in Negozio", icon: "📦", colorClass: "text-orange-400", bgClass: "bg-orange-500/10", borderClass: "border-orange-500/30" },
   { key: "in_vendita", label: "In Vendita", icon: "🏷️", colorClass: "text-green-400", bgClass: "bg-green-500/10", borderClass: "border-green-500/30" },
   { key: "venduto", label: "Venduto", icon: "💸", colorClass: "text-rose-400", bgClass: "bg-rose-500/10", borderClass: "border-rose-500/30" },
+  { key: "ko", label: "KO", icon: "❌", colorClass: "text-red-500", bgClass: "bg-red-500/10", borderClass: "border-red-500/30" },
 ];
 
 // NEGOZI dal DB (useStores)
@@ -1547,7 +1548,7 @@ function GestioneUsatiInner() {
   const STATI_MAGAZZINO = ["in_transito", "ricevuto", "in_lavorazione", "pronto"];
   // amministrazione: tutto TRANNE i venduti (Luca 01/08: la tabella col
   // tempo si sporcherebbe) — si accendono dalla tessera quando servono
-  const PRESET_STATI = isAmminMain ? STATUS_KEYS.filter(k => k !== 'venduto') : [...STATI_NEGOZIO_DEFAULT];
+  const PRESET_STATI = isAmminMain ? STATUS_KEYS.filter(k => k !== 'venduto' && k !== 'ko') : [...STATI_NEGOZIO_DEFAULT];
   const filtriCompleti = ["direttore_commerciale", "direttore_generale", "amministrativo", "admin", "dev"].includes(user?.role || "");
   // "i miei" = TUTTI i negozi visibili dell'utente (user_stores + visibilita' +
   // primary, es. Emanuele su entrambe le Magliana) ESPANSI alla sede fisica:
@@ -2015,7 +2016,7 @@ function GestioneUsatiInner() {
         </div>
         {/* KPI Cards — bigger */}
         <div className="px-4 sm:px-6 pb-4">
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
             {KPI_CARDS.map(k => {
               const on = k.key === "_all" ? selectedStatuses.length === STATUS_KEYS.length : selectedStatuses.includes(k.key);
               return (
