@@ -239,7 +239,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                                         {item.name}
                                         {item.href === "/chat" && (chatUnread > 0 || waUnread > 0 || mailUnread > 0) && (
                                             <span className="ml-auto flex items-center gap-1">
-                                                {chatUnread > 0 && <span title="Chat interna" className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{chatUnread > 99 ? "99+" : chatUnread}</span>}
+                                                {chatUnread > 0 && <span title="Chat interna" className="min-w-[18px] h-[18px] px-1 rounded-full bg-violet-500 text-white text-[10px] font-bold flex items-center justify-center">{chatUnread > 99 ? "99+" : chatUnread}</span>}
                                                 {waUnread > 0 && <span title="WhatsApp" className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-bold flex items-center justify-center">{waUnread > 99 ? "99+" : waUnread}</span>}
                                                 {mailUnread > 0 && <span title="Mail" className="min-w-[18px] h-[18px] px-1 rounded-full bg-sky-500 text-white text-[10px] font-bold flex items-center justify-center">{mailUnread > 99 ? "99+" : mailUnread}</span>}
                                             </span>

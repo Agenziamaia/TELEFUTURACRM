@@ -10,7 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
 import {
   getInbox, listMessages, getParticipants, sendMessage, sendGif, markRead,
-  subscribeMessages, subscribeInbox, subscribeReceipts, subscribeReactions, toggleReaction, refHref,
+  subscribeMessages, subscribeInbox, subscribeReceipts, subscribeReactions, toggleReaction, markUnread, refHref,
   splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
   listDirectory, addParticipants, removeParticipant,
 } from "@/lib/chat";
@@ -20,7 +20,7 @@ import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { cn } from "@/utils";
@@ -79,6 +79,13 @@ function ChatPageInner() {
   ];
   const [reactFor, setReactFor] = useState<string | null>(null);   // msg col menu reazioni aperto
   const [showEmoji, setShowEmoji] = useState(false);               // picker nel compositore
+  // "segna come da leggere": il badge torna e la chat si deseleziona (se
+  // restasse aperta si ri-segnerebbe letta da sola)
+  const onMarkUnread = async (e: React.MouseEvent, convId: string) => {
+    e.stopPropagation(); e.preventDefault();
+    try { await markUnread(convId, meId!); if (selId === convId) setSelId(null); await reloadInbox(); }
+    catch { /* riprova dal menu */ }
+  };
   const onReact = async (msgId: string, emoji: string) => {
     setReactFor(null);
     try { await toggleReaction(msgId, meId!, meName, emoji); await reloadMessages(selId!); }
@@ -412,7 +419,7 @@ function ChatPageInner() {
             const active = c.conversation_id === selId;
             return (
               <button key={c.conversation_id} onClick={() => setSelId(c.conversation_id)}
-                className={`w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left transition-colors ${active ? "bg-indigo-500/15" : "hover:bg-white/5"}`}>
+                className={`group/riga w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left transition-colors ${active ? "bg-indigo-500/15" : "hover:bg-white/5"}`}>
                 <span className="relative shrink-0">
                   <span className={`w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold border ${c.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
                     {c.type === "group" ? <Users className="w-5 h-5" /> : initials(name)}
@@ -428,7 +435,16 @@ function ChatPageInner() {
                   </span>
                   <span className="flex items-center justify-between gap-2">
                     <span className="text-xs text-slate-500 truncate">{c.last_body || "Nessun messaggio"}</span>
-                    {c.unread > 0 && <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{c.unread}</span>}
+                    <span className="flex items-center gap-1 shrink-0">
+                      {c.unread === 0 && (
+                        <span role="button" tabIndex={0} title="Segna come da leggere"
+                          onClick={(e) => onMarkUnread(e, c.conversation_id)}
+                          className="opacity-0 group-hover/riga:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
+                          <EyeOff className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                      {c.unread > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center">{c.unread}</span>}
+                    </span>
                   </span>
                 </span>
               </button>
