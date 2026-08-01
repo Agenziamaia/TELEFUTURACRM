@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { seesAllStores } from "@/lib/roles";
 import {
     Mail, Plus, Send, X, RefreshCw, Loader2, Paperclip, Check, PenSquare, Inbox,
     Star, Trash2, ShieldAlert, Archive, Search, CornerUpLeft, FileText, SendHorizontal,
@@ -67,8 +68,12 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     }, [user?.role]);
     const visibleAccounts = useMemo(() => {
         if (scope === "own") return accounts.filter(a => a.owner_user_id === user?.id);
+        // AMMINISTRAZIONE = tutte le caselle (Luca 02/08: le caselle erano
+        // "sparite" perche' ricollegate sotto un altro negozio/owner e la
+        // vista non aveva un bypass per chi vede tutto)
+        if (seesAllStores(user?.role)) return accounts;
         return accounts.filter(a => a.owner_user_id === user?.id || (a.negozio && myStores.some(s => sameStore(a.negozio, s))));
-    }, [accounts, scope, user?.id, myStores]);
+    }, [accounts, scope, user?.id, user?.role, myStores]);
 
     const loadAccounts = async () => {
         const { data } = await supabase.from("email_accounts").select("id, email_address, display_name, negozio, owner_user_id, status, last_error").order("created_at");
