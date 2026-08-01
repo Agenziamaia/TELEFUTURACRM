@@ -7,12 +7,13 @@
  * e quando: cosi' "il primo che approva vale per tutti" resta verificabile.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, ArrowLeft } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/utils";
+import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 
 interface Voce {
     id: string;
@@ -98,6 +99,18 @@ export default function StoricoApprovazioni() {
         })();
     }, [isDirezione]);
 
+    // FILTRI (Luca 02/08): per APPROVATORE (chi ha deciso) e per TIPOLOGIA
+    const [fDecisori, setFDecisori] = useState<string[]>([]);
+    const [fTipo, setFTipo] = useState("");
+    const TIPO_FILTRO: Record<string, Voce["tipo"]> = { "Modifiche contratto": "contratto", "Accessi cliente": "cliente", "Task": "task" };
+    const decisori = useMemo(() => [...new Set(voci.map(v => v.decisore).filter(d => d && d !== "—"))].sort(), [voci]);
+    const vociFiltrate = useMemo(() => voci.filter(v => {
+        if (fDecisori.length && !fDecisori.includes(v.decisore)) return false;
+        if (fTipo && v.tipo !== TIPO_FILTRO[fTipo]) return false;
+        return true;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }), [voci, fDecisori, fTipo]);
+
     if (!isDirezione) return null;
     return (
         <div className="max-w-4xl mx-auto space-y-5">
@@ -111,13 +124,22 @@ export default function StoricoApprovazioni() {
                 </div>
             </div>
 
+            <div className="glass-panel p-3.5 flex flex-wrap gap-2 items-center">
+                <div className="w-60"><SelectMulti values={fDecisori} onChange={setFDecisori} opzioni={decisori} placeholder="Approvatori — scrivi per filtrare" /></div>
+                <div className="w-48"><SelectOpzioni value={fTipo} onChange={setFTipo} opzioni={Object.keys(TIPO_FILTRO)} placeholder="Tutte le tipologie" /></div>
+                {(fDecisori.length > 0 || fTipo) && (
+                    <button onClick={() => { setFDecisori([]); setFTipo(""); }} className="text-xs text-slate-400 hover:text-white px-2">↺ azzera</button>
+                )}
+                <span className="ml-auto text-xs text-slate-500">{vociFiltrate.length} decision{vociFiltrate.length === 1 ? "e" : "i"}</span>
+            </div>
+
             {loading ? (
                 <div className="p-10 text-center text-slate-400">Caricamento…</div>
-            ) : voci.length === 0 ? (
-                <div className="p-10 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Nessuna decisione registrata finora.</div>
+            ) : vociFiltrate.length === 0 ? (
+                <div className="p-10 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Nessuna decisione con questi filtri.</div>
             ) : (
                 <div className="space-y-2">
-                    {voci.map((v) => (
+                    {vociFiltrate.map((v) => (
                         <div key={v.id} className="p-4 rounded-xl bg-white/[0.02] border border-white/8 flex items-start gap-3 flex-wrap">
                             <div className="flex-1 min-w-[240px]">
                                 <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{TIPO[v.tipo]}</div>
