@@ -15,8 +15,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
-import { Loader2, Plus, Trash2, Wallet, RotateCw, CheckCircle2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Wallet, RotateCw } from "lucide-react";
 import { notify, dbError } from "./toast";
+import { SelectPersona, SelectMulti } from "@/components/SelectPersona";
 
 type Movimento = {
     id: string; user_id: string; origine: string; tipo: "one_shot" | "rata" | "ricorrente";
@@ -52,20 +53,28 @@ export function DebitiView({ gestore }: { gestore: string }) {
     const [persone, setPersone] = useState<Persona[]>([]);
     const [busy, setBusy] = useState(false);
 
-    // filtri (deep-link ?du=<user_id> dalla scheda utente)
-    const [fUtente, setFUtente] = useState("");
-    const [fTipo, setFTipo] = useState("");
-    const [fStato, setFStato] = useState<"aperto" | "saldato" | "">("aperto");
+    // filtri (deep-link ?du=<user_id> dalla scheda utente); collaboratori
+    // MULTI-selezione con la tendina standard del CRM (Luca 01/08 sera)
+    const [fUtenti, setFUtenti] = useState<string[]>([]);          // nomi
     const [fMese, setFMese] = useState("");
+    const [duPending, setDuPending] = useState<string | null>(null);
     useEffect(() => {
         const du = new URLSearchParams(window.location.search).get("du");
-        if (du) setFUtente(du);
+        if (du) setDuPending(du);
     }, []);
+    // il deep-link porta l'ID: appena i nomi sono caricati diventa selezione
+    useEffect(() => {
+        if (!duPending || !persone.length) return;
+        const p = persone.find(x => x.id === duPending);
+        if (p) setFUtenti([p.full_name]);
+        setDuPending(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [duPending, persone]);
 
-    // form nuovo debito
+    // form nuovo debito — collaboratore dalla TENDINA STANDARD (SelectPersona):
+    // niente testo libero, si salva solo un utente reale (Luca 01/08 sera)
     const [showForm, setShowForm] = useState(false);
-    const [nUtente, setNUtente] = useState("");
-    const [nCerca, setNCerca] = useState("");
+    const [nUtenteNome, setNUtenteNome] = useState("");
     const [nTipo, setNTipo] = useState<"one_shot" | "ricorrente">("one_shot");
     const [nTitolo, setNTitolo] = useState("");
     const [nImporto, setNImporto] = useState("");
@@ -87,15 +96,17 @@ export function DebitiView({ gestore }: { gestore: string }) {
 
     const nomeDi = useCallback((id: string) => persone.find(p => p.id === id)?.full_name || id, [persone]);
 
+
     const salvaNuovo = async () => {
         if (busy) return;
         const imp = parseFloat(String(nImporto).replace(",", "."));
         const rate = Math.max(1, parseInt(nRate, 10) || 1);
-        const miss = [!nUtente && "Collaboratore", !nTitolo.trim() && "Titolo", (!imp || imp <= 0) && "Importo", !nMese && "Mese"].filter(Boolean);
+        const scelto = persone.find(p => p.full_name === nUtenteNome);
+        const miss = [!scelto && "Collaboratore (scegli dalla lista)", !nTitolo.trim() && "Titolo", (!imp || imp <= 0) && "Importo", !nMese && "Mese"].filter(Boolean);
         if (miss.length) { notify("Campi mancanti: " + miss.join(", "), "error"); return; }
         setBusy(true);
         try {
-            const base = { user_id: nUtente, origine: "debito", note: nNote.trim(), segno: -1, creato_da: gestore };
+            const base = { user_id: scelto!.id, origine: "debito", note: nNote.trim(), segno: -1, creato_da: gestore };
             const comp = nMese + "-01";
             let rows: Record<string, unknown>[];
             if (nTipo === "ricorrente") {
@@ -116,7 +127,7 @@ export function DebitiView({ gestore }: { gestore: string }) {
             const { error } = await supabase.from("user_movimenti").insert(rows);
             if (dbError("Salvataggio debito", error)) return;
             notify(rows.length > 1 ? `Debito registrato in ${rows.length} rate ✓` : "Debito registrato ✓", "ok");
-            setShowForm(false); setNUtente(""); setNCerca(""); setNTitolo(""); setNImporto(""); setNRate("1"); setNNote("");
+            setShowForm(false); setNUtenteNome(""); setNTitolo(""); setNImporto(""); setNRate("1"); setNNote("");
             await carica();
         } finally { setBusy(false); }
     };
@@ -136,18 +147,6 @@ export function DebitiView({ gestore }: { gestore: string }) {
         await carica();
     };
 
-    const cambiaStato = async (r: Movimento) => {
-        const nuovo = r.stato === "aperto" ? "saldato" : "aperto";
-        const { error } = await supabase.from("user_movimenti").update({
-            stato: nuovo,
-            saldato_il: nuovo === "saldato" ? new Date().toISOString() : null,
-            saldato_da: nuovo === "saldato" ? gestore : null,
-            updated_at: new Date().toISOString(),
-        }).eq("id", r.id);
-        if (dbError("Cambio stato", error)) return;
-        await carica();
-    };
-
     const elimina = async (r: Movimento) => {
         if (!window.confirm(`Eliminare "${r.titolo}" (${eur(r.importo)}) di ${nomeDi(r.user_id)}?${r.gruppo_id ? "\nSi elimina SOLO questa rata, non tutto il piano." : ""}`)) return;
         const { error } = await supabase.from("user_movimenti").delete().eq("id", r.id);
@@ -157,26 +156,20 @@ export function DebitiView({ gestore }: { gestore: string }) {
 
     const filtrate = useMemo(() => righe.filter(r => {
         if (r.origine !== "debito") return false;   // il mastro ospitera' anche gare/malus: qui solo debiti
-        if (fUtente && r.user_id !== fUtente && !nomeDi(r.user_id).toLowerCase().includes(fUtente.toLowerCase())) return false;
-        if (fTipo && r.tipo !== fTipo) return false;
-        if (fStato && r.stato !== fStato) return false;
+        if (fUtenti.length && !fUtenti.includes(nomeDi(r.user_id))) return false;
         if (fMese && r.competenza.slice(0, 7) !== fMese) return false;
         return true;
-    }), [righe, fUtente, fTipo, fStato, fMese, nomeDi]);
+    }), [righe, fUtenti, fMese, nomeDi]);
 
     // raggruppo per collaboratore, ordinato per debito aperto decrescente
     const gruppi = useMemo(() => {
         const m = new Map<string, Movimento[]>();
         filtrate.forEach(r => { const a = m.get(r.user_id) || []; a.push(r); m.set(r.user_id, a); });
         return [...m.entries()]
-            .map(([uid, rows]) => ({ uid, rows, aperto: rows.filter(r => r.stato === "aperto").reduce((s, r) => s + Number(r.importo), 0) }))
-            .sort((a, b) => b.aperto - a.aperto);
+            .map(([uid, rows]) => ({ uid, rows, totale: rows.reduce((s, r) => s + Number(r.importo), 0) }))
+            .sort((a, b) => b.totale - a.totale);
     }, [filtrate]);
-    const totaleAperto = useMemo(() => filtrate.filter(r => r.stato === "aperto").reduce((s, r) => s + Number(r.importo), 0), [filtrate]);
-
-    const personeFiltrate = nCerca.trim()
-        ? persone.filter(p => p.full_name.toLowerCase().includes(nCerca.trim().toLowerCase())).slice(0, 8)
-        : [];
+    const totaleDebiti = useMemo(() => filtrate.reduce((s, r) => s + Number(r.importo), 0), [filtrate]);
 
     if (loading) return <div className="flex items-center gap-3 text-slate-400 py-16 justify-center"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento debiti…</div>;
 
@@ -190,8 +183,8 @@ export function DebitiView({ gestore }: { gestore: string }) {
                 </p>
                 <div className="flex items-center gap-3">
                     <div className="text-right">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Totale aperto (filtrato)</p>
-                        <p className="text-xl font-black text-rose-400">{eur(totaleAperto)}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Totale debiti (filtrato)</p>
+                        <p className="text-xl font-black text-rose-400">{eur(totaleDebiti)}</p>
                     </div>
                     <button onClick={() => setShowForm(v => !v)}
                         className={cn("flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all",
@@ -204,28 +197,9 @@ export function DebitiView({ gestore }: { gestore: string }) {
             {showForm && (
                 <div className="glass-card p-5 space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="relative">
+                        <div>
                             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Collaboratore *</p>
-                            {nUtente ? (
-                                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 border-rose-400/50 bg-rose-500/10">
-                                    <span className="text-sm font-bold text-rose-200">{nomeDi(nUtente)}</span>
-                                    <button onClick={() => { setNUtente(""); setNCerca(""); }} className="text-xs text-slate-400 hover:text-white">✕</button>
-                                </div>
-                            ) : (
-                                <>
-                                    <input value={nCerca} onChange={e => setNCerca(e.target.value)} placeholder="Scrivi il nome…" className="glass-input w-full text-sm" />
-                                    {personeFiltrate.length > 0 && (
-                                        <div className="absolute z-40 mt-1 w-full rounded-lg border border-white/10 bg-[#0f111a] shadow-2xl overflow-hidden">
-                                            {personeFiltrate.map(p => (
-                                                <button key={p.id} onClick={() => { setNUtente(p.id); setNCerca(""); }}
-                                                    className="block w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-rose-500/15">
-                                                    {p.full_name} <span className="text-slate-500">· {p.role}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </>
-                            )}
+                            <SelectPersona value={nUtenteNome} onChange={setNUtenteNome} opzioni={persone.map(p => p.full_name)} placeholder="Scegli il collaboratore…" />
                         </div>
                         <div>
                             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Natura *</p>
@@ -272,18 +246,12 @@ export function DebitiView({ gestore }: { gestore: string }) {
                 </div>
             )}
 
-            {/* filtri */}
+            {/* filtri — tendine STANDARD del CRM (SelectMulti/SelectOpzioni) */}
             <div className="glass-panel p-3.5 flex flex-wrap gap-2 items-center">
-                <input value={fUtente} onChange={e => setFUtente(e.target.value)} placeholder="🔍 Collaboratore…" className="glass-input !h-9 text-xs w-48" />
-                <select value={fTipo} onChange={e => setFTipo(e.target.value)} className="glass-input !h-9 text-xs">
-                    <option value="">Tutte le nature</option><option value="one_shot">One shot</option><option value="rata">Rate</option><option value="ricorrente">Ricorrenti</option>
-                </select>
-                <select value={fStato} onChange={e => setFStato(e.target.value as typeof fStato)} className="glass-input !h-9 text-xs">
-                    <option value="aperto">Aperti</option><option value="saldato">Saldati</option><option value="">Tutti</option>
-                </select>
+                <div className="w-56"><SelectMulti values={fUtenti} onChange={setFUtenti} opzioni={persone.map(p => p.full_name)} placeholder="Collaboratori — scrivi per filtrare" /></div>
                 <input type="month" value={fMese} onChange={e => setFMese(e.target.value)} className="glass-input !h-9 text-xs" title="Mese di competenza" />
-                {(fUtente || fTipo || fStato !== "aperto" || fMese) && (
-                    <button onClick={() => { setFUtente(""); setFTipo(""); setFStato("aperto"); setFMese(""); }} className="text-xs text-slate-400 hover:text-white px-2">↺ azzera</button>
+                {(fUtenti.length > 0 || fMese) && (
+                    <button onClick={() => { setFUtenti([]); setFMese(""); }} className="text-xs text-slate-400 hover:text-white px-2">↺ azzera</button>
                 )}
             </div>
 
@@ -294,25 +262,20 @@ export function DebitiView({ gestore }: { gestore: string }) {
                 <div key={g.uid} className="glass-card overflow-hidden">
                     <div className="px-4 py-3 bg-white/[0.03] border-b border-white/5 flex items-center justify-between gap-3 flex-wrap">
                         <p className="text-sm font-bold text-white flex items-center gap-2"><Wallet className="w-4 h-4 text-rose-400" /> {nomeDi(g.uid)}</p>
-                        <p className="text-sm font-black text-rose-400">{g.aperto > 0 ? `deve ${eur(g.aperto)}` : "nessun debito aperto"}</p>
+                        <p className="text-sm font-black text-rose-400">{g.totale > 0 ? `cumulato ${eur(g.totale)}` : "nessun debito"}</p>
                     </div>
                     <div className="divide-y divide-white/5">
                         {g.rows.map(r => (
-                            <div key={r.id} className={cn("px-4 py-2.5 flex items-center gap-3 flex-wrap", r.stato === "saldato" && "opacity-50")}>
+                            <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
                                 <div className="flex-1 min-w-[220px]">
                                     <p className="text-sm text-slate-100 font-semibold">{r.titolo} <TipoBadge r={r} /></p>
                                     <p className="text-[11px] text-slate-500">{meseLabel(r.competenza)}{r.note ? ` · ${r.note}` : ""} · inserito da {r.creato_da || "—"}</p>
                                 </div>
                                 <p className="text-sm font-black text-slate-100 font-mono">{eur(r.importo)}</p>
-                                {r.tipo === "ricorrente" && r.stato === "aperto" && (
+                                {r.tipo === "ricorrente" && (
                                     <button onClick={() => ripetiMese(r)} title="Aggiungi la stessa voce sul mese corrente"
                                         className="p-1.5 rounded-lg text-slate-500 hover:text-violet-300 hover:bg-violet-500/10"><RotateCw className="w-4 h-4" /></button>
                                 )}
-                                <button onClick={() => cambiaStato(r)}
-                                    className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold",
-                                        r.stato === "aperto" ? "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10" : "border-white/15 text-slate-400 hover:bg-white/5")}>
-                                    <CheckCircle2 className="w-3.5 h-3.5" /> {r.stato === "aperto" ? "Salda" : "Riapri"}
-                                </button>
                                 <button onClick={() => elimina(r)} title="Elimina la voce"
                                     className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button>
                             </div>
@@ -335,13 +298,13 @@ export function DebitiUtenteBox({ userId }: { userId: string }) {
         })();
     }, [userId]);
     if (!righe) return null;
-    const aperte = righe.filter(r => r.stato === "aperto");
-    const tot = aperte.reduce((s, r) => s + Number(r.importo), 0);
+    const aperte = righe;
+    const tot = righe.reduce((s, r) => s + Number(r.importo), 0);
     return (
         <div className="glass-card p-4 rounded-xl border-l-4 border-l-rose-500/70">
             <div className="flex items-center justify-between gap-3 flex-wrap">
                 <p className="text-sm font-bold text-white flex items-center gap-2"><Wallet className="w-4 h-4 text-rose-400" /> Debiti verso l&apos;azienda</p>
-                <p className={cn("text-base font-black", tot > 0 ? "text-rose-400" : "text-emerald-400")}>{tot > 0 ? eur(tot) + " aperti" : "nessuno aperto"}</p>
+                <p className={cn("text-base font-black", tot > 0 ? "text-rose-400" : "text-emerald-400")}>{tot > 0 ? eur(tot) + " cumulati" : "nessun debito"}</p>
             </div>
             {aperte.slice(0, 3).map(r => (
                 <p key={r.id} className="text-[11px] text-slate-400 mt-1">• {r.titolo} <TipoBadge r={r} /> — {eur(r.importo)} ({meseLabel(r.competenza)})</p>
