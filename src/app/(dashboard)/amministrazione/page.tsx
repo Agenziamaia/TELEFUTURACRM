@@ -14,6 +14,7 @@ import { CatalogoView } from "./_views/catalogo";
 import { CallCenterView } from "./_views/callcenter";
 import { CalendarioEsitiView } from "./_views/calendario_esiti";
 import { IncarichiView } from "./_views/incarichi";
+import { DebitiView, DebitiUtenteBox } from "./_views/debiti";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -410,7 +411,7 @@ function AmministrazioneInner() {
                 <>
                     {/* Il gruppo Utenti: tre funzioni sotto lo stesso tetto */}
                     <div className="flex gap-2 flex-wrap">
-                        {([["lista", "👥 Lista utenti", tabOk("lista")], ["permessi", "🔐 Permessi", tabOk("permessi")], ["ruoli", "🏷️ Ruoli", tabOk("ruoli")], ["incarichi", "🎯 Incarichi", tabOk("incarichi")]] as [string, string, boolean][])
+                        {([["lista", "👥 Lista utenti", tabOk("lista")], ["permessi", "🔐 Permessi", tabOk("permessi")], ["ruoli", "🏷️ Ruoli", tabOk("ruoli")], ["incarichi", "🎯 Incarichi", tabOk("incarichi")], ["debiti", "💸 Debiti", tabOk("debiti")]] as [string, string, boolean][])
                             .filter(([, , vis]) => vis)
                             .map(([id, label]) => (
                                 <button key={id} onClick={() => router.push(`/amministrazione?sez=utenti&tab=${id}`)}
@@ -419,7 +420,7 @@ function AmministrazioneInner() {
                                 </button>
                             ))}
                     </div>
-                    {utTab === "permessi" && tabOk("permessi") ? <PermessiView /> : utTab === "ruoli" && tabOk("ruoli") ? <RuoliView /> : utTab === "incarichi" && tabOk("incarichi") ? <IncarichiView /> : !tabOk("lista") ? (
+                    {utTab === "permessi" && tabOk("permessi") ? <PermessiView /> : utTab === "ruoli" && tabOk("ruoli") ? <RuoliView /> : utTab === "incarichi" && tabOk("incarichi") ? <IncarichiView /> : utTab === "debiti" && tabOk("debiti") ? <DebitiView gestore={user?.name || "Amministrazione"} /> : !tabOk("lista") ? (
                         <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">Funzione non abilitata per il tuo ruolo.</div>
                     ) : (
                     <>
@@ -1386,6 +1387,8 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
                         </div>
                     ) : !act ? null : subtab === "panoramica" ? (
                         <div className="space-y-4">
+                            {/* stato debiti del collaboratore (Luca 01/08, mig. 127) */}
+                            <DebitiUtenteBox userId={u.id} />
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                 {kpis.map((k) => {
                                     const Icon = k.icon;

@@ -157,6 +157,8 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "ruoli", name: "Ruoli", roles: [...ADMINS, "amministrativo"], emoji: "🏷️" },
                     // permessi "di capacità": funzioni designate a persone (es. ferie)
                     { id: "incarichi", name: "Incarichi", roles: ["admin", "dev"], emoji: "🎯" },
+                    // DEBITI collaboratori (Luca 01/08): blackbook, amministrativo in su
+                    { id: "debiti", name: "Debiti", roles: [...ADMINS, "amministrativo"], emoji: "💸" },
                 ],
             },
             { name: "Marginalità", sez: "marginalita", icon: Package, roles: ["admin", "dev"] },

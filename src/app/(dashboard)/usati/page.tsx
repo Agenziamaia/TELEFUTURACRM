@@ -415,7 +415,10 @@ function StatusTimeline({ currentStatus, history }: { currentStatus: UsatoStatus
 // Il cestino rimuove il ricambio inserito per errore — solo per chi gestisce
 // il telefono (laboratorio/amministrazione); il costo lo vede solo chi ha la
 // capacita' costi (rotellina Gestione Usato).
-function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, vedeCosti }: { r: Ricambio; idx: number; onUpdate: (i: number, r: Ricambio) => void; onRemove: (i: number) => void; puoGestire: boolean; vedeCosti: boolean }) {
+// puoGestire = laboratorio (stati del flusso); puoAmministrare = SOLO
+// amministrazione: rimozione ricambi e prezzo (Luca 01/08 — il tecnico segue
+// il flusso magazzino/ordinato/arrivato ma non cancella ne' prezza)
+function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, puoAmministrare, vedeCosti }: { r: Ricambio; idx: number; onUpdate: (i: number, r: Ricambio) => void; onRemove: (i: number) => void; puoGestire: boolean; puoAmministrare: boolean; vedeCosti: boolean }) {
   const st = RICAMBIO_STATES.find(s => s.key === r.stato);
   return (
     <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-2">
@@ -430,8 +433,8 @@ function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, vedeCosti }: { r:
           <span className={cn("bg-black/40 border rounded-lg px-2 py-1 text-xs font-semibold border-white/10", st?.colorClass)}>{st?.label || r.stato}</span>
         )}
         {r.stato === "arrivato" && r.arrivato_il && <span className="text-[10px] text-slate-600">arrivato {fmtDate(new Date(r.arrivato_il))}</span>}
-        {puoGestire && (
-          <button onClick={() => onRemove(idx)} title="Rimuovi il ricambio (inserito per errore)"
+        {puoAmministrare && (
+          <button onClick={() => onRemove(idx)} title="Rimuovi il ricambio (solo amministrazione)"
             className="ml-auto p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors">
             <Trash2 size={14} />
           </button>
@@ -441,9 +444,13 @@ function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, vedeCosti }: { r:
         <div className="flex gap-3 items-center flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-slate-500">Costo:</span>
-            <input type="number" step="0.01" min="0" value={r.cost || ""} onChange={e => onUpdate(idx, { ...r, cost: parseFloat(e.target.value) || 0 })}
-              className="w-20 bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs text-slate-300 outline-none" placeholder="0.00" />
-            <span className="text-[11px] text-slate-500">€</span>
+            {puoAmministrare ? (
+              <><input type="number" step="0.01" min="0" value={r.cost || ""} onChange={e => onUpdate(idx, { ...r, cost: parseFloat(e.target.value) || 0 })}
+                className="w-20 bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs text-slate-300 outline-none" placeholder="0.00" />
+              <span className="text-[11px] text-slate-500">€</span></>
+            ) : (
+              <span className="text-xs text-slate-300 font-semibold">{r.cost ? fmtEur(r.cost) : "—"}</span>
+            )}
           </div>
         </div>
       )}
@@ -709,7 +716,34 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
               <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                 {/* il prezzo di ACQUISTO lo vede solo chi ha la capacita' costi
                     (Luca 31/07: dall'amministrativo in su, rotellina permessi) */}
-                {([["Modello", dev.model, false], ["IMEI", dev.imei, true], ...(vedeCosti ? [["Acquisto", fmtEur(dev.purchase_price), false] as [string, string, boolean]] : []), ["Negozio", dev.store, false], ["Destinazione", dev.target_store || "", false], ["Grado", dev.grado_usura || "", false], ["Data Acquisto", fmtDate(dev.purchase_date), false], ["Data Reg.", fmtDate(dev.created_at), false], ["Registrato da", dev.venditore || dev.status_history.acquistato?.operatore || "—", false]] as [string, string, boolean][]).map(([l, v, mono]) => (
+                {/* Modello/IMEI/Negozio: modificabili SOLO dall'amministrazione
+                    (Luca 01/08) — per tutti gli altri sola lettura, nessun controllo */}
+                {isAmministrazione ? (
+                  <>
+                    <div><div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Modello</div>
+                      <input defaultValue={dev.model} onBlur={e => { const v = e.target.value.trim(); if (v && v !== dev.model) persist({ ...dev, model: v }); }}
+                        className="w-full bg-black/40 border border-amber-500/30 rounded-lg px-2 py-1 text-sm text-white outline-none" /></div>
+                    <div><div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">IMEI</div>
+                      <input defaultValue={dev.imei} onBlur={e => { const v = e.target.value.replace(/[^0-9A-Za-z]/g, ""); if (v && v !== dev.imei) persist({ ...dev, imei: v }); }}
+                        className="w-full bg-black/40 border border-amber-500/30 rounded-lg px-2 py-1 text-sm text-white font-mono outline-none" /></div>
+                    <div><div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Negozio</div>
+                      <select value={dev.store} onChange={e => persist({ ...dev, store: e.target.value })}
+                        className="w-full bg-black/40 border border-amber-500/30 rounded-lg px-2 py-1 text-sm text-white outline-none">
+                        {NEGOZI.map(nn => <option key={nn} value={nn}>{nn}</option>)}
+                        {!NEGOZI.includes(dev.store) && <option value={dev.store}>{dev.store}</option>}
+                      </select></div>
+                  </>
+                ) : (
+                  <>
+                    {([["Modello", dev.model, false], ["IMEI", dev.imei, true], ["Negozio", dev.store, false]] as [string, string, boolean][]).map(([l, v, mono]) => (
+                      <div key={l}>
+                        <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">{l}</div>
+                        <div className={cn("text-sm text-white font-medium", mono && "font-mono")}>{v}</div>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {([...(vedeCosti ? [["Acquisto", fmtEur(dev.purchase_price), false] as [string, string, boolean]] : []), ["Destinazione", dev.target_store || "", false], ["Grado", dev.grado_usura || "", false], ["Data Acquisto", fmtDate(dev.purchase_date), false], ["Data Reg.", fmtDate(dev.created_at), false], ["Registrato da", dev.venditore || dev.status_history.acquistato?.operatore || "—", false]] as [string, string, boolean][]).map(([l, v, mono]) => (
                   <div key={l}>
                     <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">{l}</div>
                     <div className={cn("text-sm text-white font-medium", mono && "font-mono")}>{v}</div>
@@ -748,8 +782,8 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                 </div>
               </div>
             </div>
-            {/* Extra Margine alert */}
-            {dev.extra_margine && (
+            {/* Extra Margine: lo vede SOLO chi l'ha generato e l'amministrazione (Luca 01/08) */}
+            {dev.extra_margine && (isAmministrazione || (dev.extra_margine.venditore || "").trim().toLowerCase() === (user?.name || "").trim().toLowerCase()) && (
               <div className={cn("p-4 rounded-xl border-2", dev.extra_margine.confermato ? "bg-emerald-500/5 border-emerald-500/30" : "bg-yellow-500/5 border-yellow-500/40")}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div>
@@ -765,9 +799,9 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                 </div>
               </div>
             )}
-            {/* Bonifico section — riservata a chi vede i costi (IBAN e azioni
-                di pagamento sono roba dell'amministrazione) */}
-            {dev.pagamento.metodo === "bonifico" && vedeCosti && (
+            {/* Bonifico: SOLO amministrativo in su (Luca 01/08 — prima bastava
+                la capacita' costi della rotellina) */}
+            {dev.pagamento.metodo === "bonifico" && isAmministrazione && (
               <div className={cn("p-4 rounded-xl border-2", dev.pagamento.bonifico_effettuato ? "bg-emerald-500/5 border-emerald-500/30" : "bg-red-500/5 border-red-500/30")}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div>
@@ -831,7 +865,7 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
               )}
               {dev.ricambi.length === 0 ? (
                 <div className="text-center py-4 text-sm text-slate-600 rounded-xl bg-white/[0.02] border border-white/5">Nessun ricambio richiesto</div>
-              ) : dev.ricambi.map((r, i) => <RicambioRow key={i} r={r} idx={i} onUpdate={updateRicambio} onRemove={removeRicambio} puoGestire={lavoraLab || isAmministrazione} vedeCosti={vedeCosti} />)}
+              ) : dev.ricambi.map((r, i) => <RicambioRow key={i} r={r} idx={i} onUpdate={updateRicambio} onRemove={removeRicambio} puoGestire={lavoraLab || isAmministrazione} puoAmministrare={isAmministrazione} vedeCosti={vedeCosti} />)}
             </div>
             {/* Documents — visibilita' ristretta (vedi vedeDocumenti sopra) */}
             {!vedeDocumenti ? (
@@ -880,9 +914,13 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
             {/* Note */}
             <div>
               <div className="text-sm font-bold text-white mb-2"> Note</div>
-              <textarea value={noteTecnico} onChange={e => setNoteTecnico(e.target.value)} rows={3} placeholder="Note tecnico / amministrazione... (si salvano da sole uscendo dal campo)"
-                onBlur={() => { if (noteTecnico !== dev.note_tecnico) persist({ ...dev, note_tecnico: noteTecnico }); }}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none resize-none focus:border-white/20 font-inherit" />
+              {(lavoraLab || isAmministrazione) ? (
+                <textarea value={noteTecnico} onChange={e => setNoteTecnico(e.target.value)} rows={3} placeholder="Note tecnico / amministrazione... (si salvano da sole uscendo dal campo)"
+                  onBlur={() => { if (noteTecnico !== dev.note_tecnico) persist({ ...dev, note_tecnico: noteTecnico }); }}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none resize-none focus:border-white/20 font-inherit" />
+              ) : (
+                <div className="w-full bg-black/20 border border-white/5 rounded-xl px-3 py-2 text-sm text-slate-500 min-h-[68px] whitespace-pre-wrap">{dev.note_tecnico || "—"}</div>
+              )}
             </div>
           </div>
         </div>
