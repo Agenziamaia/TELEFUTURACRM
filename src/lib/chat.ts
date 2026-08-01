@@ -184,6 +184,18 @@ export async function listMessages(convId: string): Promise<ChatMessage[]> {
   }));
 }
 
+/** MODIFICA un proprio messaggio entro 3 minuti (Luca 02/08): oltre la
+ *  finestra la modifica non parte; edited_at marca il messaggio. */
+export const FINESTRA_MODIFICA_MS = 3 * 60 * 1000;
+export async function editMessage(messageId: string, meId: string, body: string, createdAt: string): Promise<void> {
+  if (Date.now() - new Date(createdAt).getTime() > FINESTRA_MODIFICA_MS)
+    throw new Error("Sono passati piu' di 3 minuti: il messaggio non si puo' piu' modificare");
+  const { error } = await supabase.from("chat_messages")
+    .update({ body: body || null, edited_at: new Date().toISOString() })
+    .eq("id", messageId).eq("sender_id", meId);
+  if (error) throw error;
+}
+
 /** INOLTRA un messaggio in un'altra conversazione (Luca 02/08): body con
  *  riga "Inoltrato", refs copiati e allegati ri-agganciati agli stessi URL
  *  dello storage (nessun re-upload). */

@@ -10,7 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
 import {
   getInbox, listMessages, getParticipants, sendMessage, sendGif, markRead,
-  subscribeMessages, subscribeInbox, subscribeReceipts, subscribeReactions, toggleReaction, markUnread, forwardMessage, getOrCreateDM, togglePin, refHref,
+  subscribeMessages, subscribeInbox, subscribeReceipts, subscribeReactions, toggleReaction, markUnread, forwardMessage, getOrCreateDM, togglePin, editMessage, FINESTRA_MODIFICA_MS, refHref,
   splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
   listDirectory, addParticipants, removeParticipant,
 } from "@/lib/chat";
@@ -20,7 +20,7 @@ import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { cn } from "@/utils";
@@ -97,6 +97,18 @@ function ChatPageInner() {
   };
   // ── INOLTRO (Luca 02/08): scegli conversazione o persona e il messaggio
   //    parte con testo, tag e allegati (stessi URL, niente re-upload) ──
+  // MODIFICA entro 3' (Luca 02/08): il composer passa in modalita' modifica
+  const [editMsg, setEditMsg] = useState<ChatMessage | null>(null);
+  const avviaModifica = (m: ChatMessage) => { setEditMsg(m); setReplyTo(null); setText(m.body || ""); };
+  const annullaModifica = () => { setEditMsg(null); setText(""); };
+  const salvaModifica = async () => {
+    if (!editMsg || !text.trim()) return;
+    try {
+      await editMessage(editMsg.id, meId!, text.trim(), editMsg.created_at);
+      setEditMsg(null); setText("");
+      await reloadMessages(selId!);
+    } catch (e) { alert((e as Error)?.message || "Modifica non riuscita"); }
+  };
   const [forwardMsg, setForwardMsg] = useState<ChatMessage | null>(null);
   const [forwardCerca, setForwardCerca] = useState("");
   const [forwardBusy, setForwardBusy] = useState(false);
@@ -410,6 +422,7 @@ function ChatPageInner() {
   };
   const onSend = async () => {
     setShowEmoji(false);
+    if (editMsg) { await salvaModifica(); return; }
     if (!selId || !meId || sending) return;
     if (!text.trim() && files.length === 0 && refs.length === 0) return;
     setSending(true);
@@ -598,6 +611,12 @@ function ChatPageInner() {
                     <Reply className="w-4 h-4" />
                   </button>
                 );
+                const btnModifica = (mine && (Date.now() - new Date(m.created_at).getTime() <= FINESTRA_MODIFICA_MS) && m.body) ? (
+                  <button type="button" title="Modifica (entro 3 minuti)" onClick={() => avviaModifica(m)}
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-white/10 transition-opacity">
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                ) : null;
                 const btnInoltra = (
                   <button type="button" title="Inoltra" onClick={() => { setForwardMsg(m); setForwardCerca(""); }}
                     className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-opacity">
@@ -646,7 +665,7 @@ function ChatPageInner() {
                   <div key={m.id} id={`msg-${m.id}`}>
                     {showDay && <div className="text-center my-3"><span className="text-[11px] text-slate-500 bg-white/5 px-3 py-1 rounded-full">{showDay}</span></div>}
                     <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}>
-                      {mine && <>{btnInfo}{btnInoltra}{btnReagisci}{btnRispondi}</>}
+                      {mine && <>{btnInfo}{btnModifica}{btnInoltra}{btnReagisci}{btnRispondi}</>}
                       <div onDoubleClick={() => setReplyTo(m)} title="Doppio click per rispondere"
                         className={`max-w-[75%] rounded-2xl px-3.5 py-2 select-text ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
                         {!mine && selConv.type === "group" && (
@@ -727,7 +746,7 @@ function ChatPageInner() {
                           </div>
                         )}
                         <p className={`text-[10px] mt-0.5 flex items-center gap-1 justify-end ${mine ? "text-indigo-200/70" : "text-slate-500"}`}>
-                          {fmtTime(m.created_at)}
+                          {m.edited_at && <span className="italic opacity-70">modificato ·</span>} {fmtTime(m.created_at)}
                           {mine && selConv.type === "dm" && (() => {
                             const r = receiptFor(m);
                             if (r === "seen") return <CheckCheck className="w-3.5 h-3.5 text-sky-300" />;
@@ -746,6 +765,13 @@ function ChatPageInner() {
             {/* composer */}
             <div className="relative border-t border-white/5 px-4 py-3 shrink-0">
               {/* Segnalazione 74: anteprima del messaggio a cui si risponde */}
+              {editMsg && (
+                <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-xl bg-amber-500/10 border-l-2 border-amber-400">
+                  <Pencil className="w-4 h-4 text-amber-300 shrink-0" />
+                  <span className="text-xs text-amber-200 flex-1 truncate">Stai modificando il messaggio — Invio per salvare</span>
+                  <button onClick={annullaModifica} className="p-1 text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
+                </div>
+              )}
               {replyTo && (
                 <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-xl bg-white/5 border-l-2 border-indigo-400">
                   <Reply className="w-4 h-4 text-indigo-300 shrink-0" />
