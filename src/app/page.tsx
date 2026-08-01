@@ -22,19 +22,41 @@ export default function LoginPage() {
   const [qr, setQr] = useState("");
   const [otpauth, setOtpauth] = useState("");
 
-  // ── RESET PASSWORD (richiesta Luca 28/07): dal login si manda la richiesta
-  //    all'amministrazione (⚡ admin_tasks). L'admin genera la password
-  //    temporanea dal pannello Utenti (admin_set_password, hash a DB) e la
-  //    comunica all'utente, che al primo accesso DEVE cambiarla (flusso
-  //    must_change_password gia' esistente). Risposta volutamente neutra:
-  //    non si rivela se un'email esiste oppure no.
+  // ── RESET PASSWORD IN AUTONOMIA (Luca 01/08): niente piu' autorizzazione.
+  //    L'utente si verifica col codice dell'authenticator e imposta SUBITO la
+  //    nuova password (/api/auth/reset-password, verifica TOTP lato server).
+  //    Chi non ha la 2FA attiva ricade nella vecchia RICHIESTA
+  //    all'amministrazione (⚡ admin_tasks, password temporanea). Risposte
+  //    volutamente neutre: non si rivela se un'email esiste oppure no.
   const [resetInviata, setResetInviata] = useState(false);
-  const handleReset = async (e: React.FormEvent) => {
+  const [resetOk, setResetOk] = useState(false);
+  const [authInviata, setAuthInviata] = useState(false);
+  const [resetCode, setResetCode] = useState("");
+  const [resetPw1, setResetPw1] = useState("");
+  const [resetPw2, setResetPw2] = useState("");
+  const handleResetSelf = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError("");
+    if (resetPw1.length < 8) { setError("La nuova password deve avere almeno 8 caratteri."); return; }
+    if (resetPw1 !== resetPw2) { setError("Le due password non coincidono."); return; }
+    setIsLoading(true);
+    try {
+      const r = await fetch("/api/auth/reset-password", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), code: resetCode.trim(), newPassword: resetPw1 }),
+      });
+      const j = await r.json();
+      if (j.ok) { setResetOk(true); setPassword(""); setResetCode(""); setResetPw1(""); setResetPw2(""); }
+      else setError(j.error || "Reset non riuscito.");
+    } finally { setIsLoading(false); }
+  };
+  const handleReset = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setError("");
     setIsLoading(true);
     try {
       const em = email.trim().toLowerCase();
+      if (!em) { setError("Scrivi prima la tua email qui sopra."); return; }
       const { data: u } = await supabase.from("app_users").select("id, full_name").ilike("email", em).limit(1).maybeSingle();
       if (u) {
         // niente doppioni: se c'e' gia' una richiesta aperta per questa email, non se ne aggiunge un'altra
@@ -43,7 +65,7 @@ export default function LoginPage() {
           await supabase.from("admin_tasks").insert({
             tipo: "reset_password",
             titolo: `🔑 Reset password: ${u.full_name} (${em})`,
-            dettaglio: "Richiesta dalla schermata di login. Da Utenti apri la scheda dell'utente e usa 'Reset password': genera la temporanea e comunicagliela — al primo accesso dovrà cambiarla.",
+            dettaglio: "Richiesta dalla schermata di login (utente SENZA 2FA attiva: il reset autonomo non era possibile). Da Utenti apri la scheda dell'utente e usa 'Reset password': genera la temporanea e comunicagliela — al primo accesso dovrà cambiarla.",
             link: "/amministrazione?sez=utenti",
             target_role: "admin",
             created_by: "login",
@@ -51,6 +73,33 @@ export default function LoginPage() {
         }
       }
       setResetInviata(true);
+    } finally { setIsLoading(false); }
+  };
+  // AUTHENTICATOR PERSO (telefono nuovo/smarrito): qui SERVE l'amministrazione
+  // — arriva la notifica ⚡ e dalla scheda utente si usa "Reset 2FA"; al
+  // prossimo accesso l'utente scansiona un nuovo QR.
+  const handleRichiestaAuth = async () => {
+    setError("");
+    setIsLoading(true);
+    try {
+      const em = email.trim().toLowerCase();
+      if (!em) { setError("Scrivi prima la tua email."); return; }
+      const { data: u } = await supabase.from("app_users").select("id, full_name").ilike("email", em).limit(1).maybeSingle();
+      if (u) {
+        const { data: gia } = await supabase.from("admin_tasks").select("id").eq("tipo", "reset_authenticator").eq("done", false).ilike("titolo", `%${em}%`).limit(1);
+        if (!gia || !gia.length) {
+          await supabase.from("admin_tasks").insert({
+            tipo: "reset_authenticator",
+            titolo: `📱 Reset authenticator: ${u.full_name} (${em})`,
+            dettaglio: "L'utente ha perso l'accesso all'app di verifica in due passaggi (telefono nuovo o smarrito). Da Utenti apri la sua scheda e usa 'Reset 2FA': al prossimo accesso scansionerà un nuovo QR.",
+            link: "/amministrazione?sez=utenti",
+            target_role: "admin",
+            created_by: "login",
+          });
+        }
+      }
+      setStep("reset");
+      setAuthInviata(true);
     } finally { setIsLoading(false); }
   };
 
@@ -164,7 +213,7 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                onClick={() => { setError(""); setResetInviata(false); setStep("reset"); }}
+                onClick={() => { setError(""); setResetInviata(false); setResetOk(false); setAuthInviata(false); setStep("reset"); }}
                 className="w-full text-center text-sm text-slate-400 hover:text-indigo-300 transition-colors"
               >
                 Password dimenticata?
@@ -216,7 +265,28 @@ export default function LoginPage() {
           ) : null}
 
           {step === "reset" && (
-            resetInviata ? (
+            resetOk ? (
+              <div className="space-y-6">
+                <p className="text-sm text-emerald-300/90 bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-4 py-3">
+                  ✅ <b>Password cambiata.</b> Accedi subito con la nuova password: nessuna
+                  autorizzazione necessaria.
+                </p>
+                <button type="button" onClick={() => setStep("login")} className="primary-btn w-full flex items-center justify-center gap-2">
+                  <LogIn className="w-5 h-5" /> Vai al login
+                </button>
+              </div>
+            ) : authInviata ? (
+              <div className="space-y-6">
+                <p className="text-sm text-emerald-300/90 bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-4 py-3">
+                  Richiesta inviata. Se l&apos;email è tra gli utenti del CRM, l&apos;amministrazione
+                  riceverà la notifica, azzererà la <b>verifica in due passaggi</b> e ti avviserà:
+                  al prossimo accesso scansionerai un nuovo QR con l&apos;authenticator.
+                </p>
+                <button type="button" onClick={() => setStep("login")} className="primary-btn w-full flex items-center justify-center gap-2">
+                  <LogIn className="w-5 h-5" /> Torna al login
+                </button>
+              </div>
+            ) : resetInviata ? (
               <div className="space-y-6">
                 <p className="text-sm text-emerald-300/90 bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-4 py-3">
                   Richiesta inviata. Se l&apos;email è tra gli utenti del CRM, l&apos;amministrazione
@@ -228,34 +298,46 @@ export default function LoginPage() {
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleReset} className="space-y-6">
+              <form onSubmit={handleResetSelf} className="space-y-5">
                 <p className="text-xs text-slate-400 bg-white/[0.04] border border-white/10 rounded-lg px-4 py-3">
-                  Inserisci la tua email: la richiesta arriva all&apos;amministrazione, che ti
-                  comunicherà una password temporanea da cambiare al primo accesso.
+                  Reset <b>in autonomia</b>: inserisci email, il codice a 6 cifre della tua app
+                  authenticator e la nuova password. Nessuna autorizzazione necessaria.
                 </p>
                 <div>
                   <label htmlFor="resetEmail" className="block text-sm font-medium text-slate-300 mb-2">Email</label>
-                  <input
-                    id="resetEmail"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="glass-input w-full"
-                    placeholder="nome@telefutura.it"
-                    autoComplete="username"
-                    required
-                  />
+                  <input id="resetEmail" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    className="glass-input w-full" placeholder="nome@telefutura.it" autoComplete="username" required />
+                </div>
+                <div>
+                  <label htmlFor="resetCode" className="block text-sm font-medium text-slate-300 mb-2">Codice authenticator</label>
+                  <input id="resetCode" inputMode="numeric" value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="glass-input w-full font-mono tracking-[0.4em]" placeholder="123456" required />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input type="password" value={resetPw1} onChange={(e) => setResetPw1(e.target.value)}
+                    className="glass-input w-full" placeholder="Nuova password (min. 8)" autoComplete="new-password" required />
+                  <input type="password" value={resetPw2} onChange={(e) => setResetPw2(e.target.value)}
+                    className="glass-input w-full" placeholder="Ripeti la nuova password" autoComplete="new-password" required />
                 </div>
                 <button type="submit" disabled={isLoading} className="primary-btn w-full flex items-center justify-center gap-2">
                   {isLoading ? (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (
-                    <><KeyRound className="w-5 h-5" /> Richiedi il reset</>
+                    <><KeyRound className="w-5 h-5" /> Cambia la password</>
                   )}
                 </button>
-                <button type="button" onClick={() => setStep("login")} className="w-full text-center text-sm text-slate-400 hover:text-indigo-300 transition-colors">
-                  Torna al login
-                </button>
+                <div className="pt-1 space-y-2 text-center">
+                  <button type="button" onClick={() => handleReset()} className="w-full text-xs text-slate-500 hover:text-indigo-300 transition-colors">
+                    Non hai ancora l&apos;authenticator attivo? Invia la richiesta all&apos;amministrazione
+                  </button>
+                  <button type="button" onClick={handleRichiestaAuth} className="w-full text-xs text-slate-500 hover:text-indigo-300 transition-colors">
+                    Hai perso l&apos;authenticator (telefono nuovo/smarrito)? Chiedi il reset della verifica
+                  </button>
+                  <button type="button" onClick={() => setStep("login")} className="w-full text-sm text-slate-400 hover:text-indigo-300 transition-colors">
+                    Torna al login
+                  </button>
+                </div>
               </form>
             )
           )}
@@ -298,6 +380,9 @@ export default function LoginPage() {
               </div>
               <button type="submit" disabled={isLoading} className="primary-btn w-full flex items-center justify-center gap-2">
                 {isLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <><LogIn className="w-5 h-5" /> Verifica e accedi</>}
+              </button>
+              <button type="button" onClick={handleRichiestaAuth} className="w-full text-center text-xs text-slate-500 hover:text-indigo-300 transition-colors">
+                Hai perso l&apos;authenticator (telefono nuovo/smarrito)? Chiedi il reset all&apos;amministrazione
               </button>
               <button type="button" onClick={() => { setStep("login"); setOtpCode(""); setError(""); }} className="w-full text-center text-sm text-slate-400 hover:text-indigo-300 transition-colors">
                 Annulla

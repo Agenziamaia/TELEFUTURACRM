@@ -142,6 +142,56 @@ export default function ProfiloPage() {
                         </div>
                     );
                 })}
+
+                {/* DOMICILIO (Luca 01/08, mig. 126): richiesto SOLO se diverso
+                    dalla residenza — il flag lo dichiara l'utente e si salva
+                    subito; il valore segue il flusso Completa/Modifica. */}
+                <div className="p-4 space-y-3">
+                    <label className="flex items-center gap-2.5 text-sm text-slate-200 cursor-pointer font-medium">
+                        <input type="checkbox" checked={!!riga?.domicilio_diverso}
+                            onChange={async (e) => {
+                                if (!user?.id) return;
+                                const { error } = await supabase.from("app_users").update({ domicilio_diverso: e.target.checked }).eq("id", user.id);
+                                if (error) { setMsg(/column/i.test(error.message) ? "⚠ Manca la migrazione 126 (domicilio): chiedi all'amministrazione." : "⚠ Salvataggio non riuscito: " + error.message); return; }
+                                carica();
+                            }}
+                            className="w-4 h-4 cursor-pointer" />
+                        Il mio domicilio è diverso dalla residenza
+                    </label>
+                    {!!riga?.domicilio_diverso && (() => {
+                        const valore = String(riga?.domicilio ?? "").trim();
+                        const rich = inAttesa("domicilio");
+                        const inEdit = editCampo === "domicilio";
+                        return (
+                            <div className="flex items-center gap-4 flex-wrap pl-6">
+                                <div className="flex-1 min-w-[220px]">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Indirizzo di domicilio</p>
+                                    {inEdit ? (
+                                        <input autoFocus value={editVal} onChange={(e) => setEditVal(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === "Enter") salva("domicilio", "Domicilio"); if (e.key === "Escape") setEditCampo(null); }}
+                                            className="mt-1 w-full bg-black/40 border border-indigo-500/50 rounded-xl px-3 py-2 text-sm text-white outline-none" />
+                                    ) : (
+                                        <p className={valore ? "text-sm text-white mt-0.5" : "text-sm text-amber-400/90 mt-0.5"}>{valore || "— da completare"}</p>
+                                    )}
+                                    {rich && !inEdit && (
+                                        <p className="text-[11px] text-sky-300 mt-1">📨 Modifica richiesta: “{rich.valore_nuovo}” — in attesa di approvazione</p>
+                                    )}
+                                </div>
+                                {inEdit ? (
+                                    <div className="flex gap-2">
+                                        <button onClick={() => salva("domicilio", "Domicilio")} className="px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-bold hover:bg-emerald-500/30">Salva</button>
+                                        <button onClick={() => setEditCampo(null)} className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 text-xs font-bold hover:bg-white/10">Annulla</button>
+                                    </div>
+                                ) : (
+                                    <button disabled={!!rich} onClick={() => { setEditCampo("domicilio"); setEditVal(valore); }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 disabled:opacity-40">
+                                        <Pencil className="w-3.5 h-3.5" /> {valore ? "Modifica" : "Completa"}
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })()}
+                </div>
             </div>
 
             <div className="glass-card p-4">
