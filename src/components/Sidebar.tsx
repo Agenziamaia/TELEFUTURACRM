@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
+import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import {
     Home,
     Send,
@@ -104,18 +105,38 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
     const vede = (href: string, roles: string[], group?: string) => effectiveAllowed(user?.role, href, roles, perms, group);
     const feriePendenti = useFeriePendenti(user?.id, user?.role);
 
-    // Totale messaggi chat non letti -> badge sulla voce "Chat"
+    // Totale NON LETTI di TUTTI i canali (chat interna + WhatsApp + mail) -> badge
+    // sulla voce "Chat". Prima contava solo la chat interna, quindi con non letti
+    // solo su WhatsApp/mail il badge non compariva.
+    const { stores: myStores } = useVisibleStores();
     const [chatUnread, setChatUnread] = useState(0);
     useEffect(() => {
         if (!user?.id) { setChatUnread(0); return; }
         let alive = true;
-        const load = () => getInbox(user.id)
-            .then((rows) => { if (alive) setChatUnread(rows.reduce((s, r) => s + (r.unread || 0), 0)); })
-            .catch(() => {});
+        const load = async () => {
+            let tot = 0;
+            try { const rows = await getInbox(user.id); tot += rows.reduce((s, r) => s + (r.unread || 0), 0); } catch { }
+            try {
+                const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio");
+                const mine = (insts || []).filter((i: any) => i.owner_user_id === user.id || (i.negozio && myStores.some((s) => sameStore(i.negozio, s)))).map((i: any) => i.id);
+                if (mine.length) { const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine); tot += (data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
+            } catch { }
+            try {
+                const { data: accs } = await supabase.from("email_accounts").select("id, owner_user_id, negozio");
+                const mine = (accs || []).filter((a: any) => a.owner_user_id === user.id || (a.negozio && myStores.some((s) => sameStore(a.negozio, s)))).map((a: any) => a.id);
+                if (mine.length) { const { data } = await supabase.from("email_conversations").select("unread, trashed, spam, archived").in("account_id", mine); tot += (data || []).filter((c: any) => !c.trashed && !c.spam && !c.archived).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
+            } catch { }
+            if (alive) setChatUnread(tot);
+        };
         load();
         const off = subscribeInbox(load);
-        return () => { alive = false; off(); };
-    }, [user?.id]);
+        const ch = supabase.channel("sidebar_unread")
+            .on("postgres_changes", { event: "INSERT", schema: "public", table: "wa_messages" }, () => load())
+            .on("postgres_changes", { event: "INSERT", schema: "public", table: "email_messages" }, () => load())
+            .subscribe();
+        const t = setInterval(load, 20000);
+        return () => { alive = false; off(); supabase.removeChannel(ch); clearInterval(t); };
+    }, [user?.id, myStores]);
 
     const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>(() => {
         const initial: Record<string, boolean> = {};
