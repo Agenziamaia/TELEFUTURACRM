@@ -1942,10 +1942,10 @@ function GestioneUsatiInner() {
             </button>
           </div>
         </div>
-        {/* Filters row — ORDINE (Luca 31/07): Mostra i miei · Negozio ·
-            Mostra tutti, poi Stato, Brand, ricerca e fascia di prezzo PER
-            TUTTI; date e ricambi restano alla direzione */}
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 px-4 sm:px-6 pb-4">
+        {/* RIGA 1 (Luca 01/08): solo i pulsanti-vista — Mostra i miei ·
+            Mostra tutti · Mostra magazzino (+ Ricambi da prezzare per
+            l'amministrazione); RIGA 2: tutti gli altri filtri */}
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 px-4 sm:px-6 pb-3">
           {!!user?.negozio && (
             <button onClick={mostraImiei} title="Mostra solo i terminali del mio negozio"
               className={cn("col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-semibold transition-all",
@@ -1973,6 +1973,8 @@ function GestioneUsatiInner() {
               💶 Ricambi da prezzare ({devices.filter(d => ricambiDaPrezzare(d)).length}){soloDaPrezzare ? " ✓" : ""}
             </button>
           )}
+        </div>
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 px-4 sm:px-6 pb-4">
           <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
           <MultiSelect label="Stato" options={STATUS_KEYS} selected={selectedStatuses} onChange={setSelectedStatuses}
             renderOpt={o => <span className="flex items-center gap-1.5">{statusMap[o as UsatoStatus]?.icon} {statusMap[o as UsatoStatus]?.label}</span>} />
