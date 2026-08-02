@@ -935,6 +935,22 @@ const SMARTPHONES = WT_SMARTPHONES_GROUPED;
 // i campi "Modello Terminale" cercano nel catalogo dispositivi universale
 // (mig. 133, ~39k smartphone) — i risultati compaiono nel gruppo
 // "Catalogo dispositivi" della stessa tendina.
+// LISTINI TERMINALI (mig. 135): prezzo di listino e piani rate importati
+// dai listini ufficiali in Documentazione — mostrati sotto la tendina.
+const _listinoCache = new Map();
+const listinoPerModello = async (modello) => {
+  const k = String(modello || "").toLowerCase();
+  if (!k || k.startsWith("altro")) return [];
+  if (_listinoCache.has(k)) return _listinoCache.get(k);
+  try {
+    let { data } = await supabase.from("listini_terminali").select("brand,prezzo,rate").eq("modello", modello).limit(3);
+    if (!data || !data.length) ({ data } = await supabase.from("listini_terminali").select("brand,prezzo,rate").ilike("modello", modello).limit(3));
+    const v = data || [];
+    _listinoCache.set(k, v);
+    return v;
+  } catch { return []; }
+};
+
 const cercaModelliCatalogo = async (term) => {
   try {
     const t = (term || "").trim().replace(/[,()%]/g, " ").replace(/\s+/g, " ");
@@ -1116,6 +1132,14 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
   const [open,setOpen]=useState(false);
   // fonte aggiuntiva async (mega listino): debounce sui tasti, dedup in resa
   const [extra,setExtra]=useState([]);
+  // prezzo di listino del modello selezionato (solo tendine terminale)
+  const [listini,setListini]=useState([]);
+  useEffect(()=>{
+    if(!cerca||!v){setListini([]);return;}
+    let vivo=true;
+    listinoPerModello(v).then(r=>{if(vivo)setListini(r||[]);});
+    return()=>{vivo=false;};
+  },[v,cerca]);
   const _cercaTO=useRef(null);
   useEffect(()=>{
     if(!cerca||!open){setExtra([]);return;}
@@ -1157,6 +1181,11 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
               <div style={{padding:"5px 10px",fontSize:10,fontWeight:700,color:"#a5b4fc",background:"#1f2533",textTransform:"uppercase",position:"sticky",top:0}}>📡 Catalogo dispositivi</div>
               {ex.map(it=><div key={"db_"+it} onMouseDown={()=>{o&&o(it);setOpen(false);setQ("");}} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",background:v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:"#f8fafc"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"} onMouseLeave={e=>e.currentTarget.style.background=v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}>{it}</div>)}
             </div>);})()}
+        </div>
+      )}
+      {listini.length>0&&(
+        <div style={{marginTop:3,fontSize:11,color:"#34d399",fontWeight:600,lineHeight:1.5}}>
+          {listini.map(li=>`💰 Listino ${li.brand}: € ${Number(li.prezzo||0).toLocaleString("it-IT",{minimumFractionDigits:2})}${Array.isArray(li.rate)&&li.rate.length?` · ${li.rate.map(r=>`${r.mesi}×€${Number(r.rata||0).toLocaleString("it-IT",{minimumFractionDigits:2})}${r.anticipo?` (+ant. €${r.anticipo})`:""}`).join(" / ")}`:""}`).join("  ·  ")}
         </div>
       )}
       {nt&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{nt}</div>}

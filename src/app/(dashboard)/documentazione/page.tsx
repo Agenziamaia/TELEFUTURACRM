@@ -173,6 +173,8 @@ function formatDateForDoc(d: Date): string {
     return `${day}/${month}/${year}`;
 }
 
+import { ImportListino } from "./_importListino";
+
 export default function DocumentazionePage() {
     const [view, setView] = useState<{ brandId: string | null; catId: string | null }>({ brandId: null, catId: null });
     const didRestore = useRef(false);
@@ -243,6 +245,9 @@ export default function DocumentazionePage() {
     // Solo Direttore Commerciale (e superuser) puo' modificare i file (richiesta Luca #14).
     const { user } = useAuth();
     const canEdit = ["direttore_commerciale", "amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    // IMPORT LISTINO TERMINALI (Luca 02/08): dal brand si carica il listino
+    // ufficiale (xlsx/csv) → prezzi e rate in listini_terminali (mig. 135)
+    const [showImportListino, setShowImportListino] = useState(false);
     // Niente piu' toggle "Modalita' Admin" (Luca 31/07): per chi puo' modificare,
     // matite/cestini/cartelle sono SEMPRE visibili — un'esperienza unica.
     const isAdmin = canEdit;
@@ -563,6 +568,23 @@ export default function DocumentazionePage() {
                                 </div>
                             );
                         })}
+
+                        {/* IMPORTA LISTINO TERMINALI (Luca 02/08): prezzi e piani
+                            rate del brand da xlsx/csv → alimentano Registra Vendita
+                            (suggerimento 💰 sotto "Modello Terminale") e domani gli
+                            scontrini. */}
+                        {isAdmin && (
+                            <div onClick={() => setShowImportListino(true)}
+                                className="glass-card p-6 border border-emerald-500/25 hover:border-emerald-400/50 cursor-pointer transition-all group flex items-start gap-4">
+                                <div className="p-3 rounded-xl h-fit bg-emerald-500/10">
+                                    <FileText className="w-6 h-6 text-emerald-400" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <h3 className="text-lg font-bold text-white mb-1 group-hover:text-emerald-300 transition-colors">📥 Importa listino terminali</h3>
+                                    <p className="text-sm text-slate-400">Carica il listino ufficiale {brand.name} (Excel/CSV): prezzi e piani rate finiscono in Registra Vendita.</p>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Aggiungi nuova sezione per questo brand (segn.73) */}
                         {isAdmin && (
@@ -1163,6 +1185,9 @@ export default function DocumentazionePage() {
                 </div>
             )}
 
+            {showImportListino && brand && (
+                <ImportListino brandId={brand.id} brandName={brand.name} gestore={user?.name || ""} onClose={() => setShowImportListino(false)} />
+            )}
         </div>
     );
 }
