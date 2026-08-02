@@ -1,13 +1,17 @@
 "use client";
 
-/* DEBITI COLLABORATORI (Luca 01/08) — il "blackbook" dei debiti dei
-   collaboratori verso l'azienda, dentro Amministrazione → Utenti → Debiti
-   (amministrativo in su). Due nature:
-   - ONE SHOT, rateizzabile in N mesi: N righe 'rata' legate da gruppo_id,
-     centesimi di resto sull'ultima rata;
-   - RICORRENTE (es. auto): una riga per mese di competenza — la popolazione
-     mensile e' VOLUTAMENTE manuale ("ogni mese vado li' ad aggiungerlo"),
-     col bottone rapido "ripeti questo mese" sull'ultima ricorrenza.
+/* DEBITI COLLABORATORI (Luca 01/08, rifatto 02/08) — il "blackbook" dei
+   debiti dei collaboratori, dentro Amministrazione → Utenti → Debiti
+   (amministrativo in su). QUATTRO nature (Luca 02/08):
+   - UNA TANTUM: importo secco su un mese di competenza;
+   - RATEIZZATO: importo TOTALE diviso in N rate mensili dalla prima rata
+     (N righe 'rata' legate da gruppo_id, centesimi di resto sull'ultima);
+   - RICORRENZA (es. auto 350/mese): si definisce UNA VOLTA con mese di
+     inizio e mese di fine FACOLTATIVO (vuoto = per sempre, mig. 134); il
+     maturato si calcola a video mese dopo mese, niente righe manuali.
+     Le vecchie righe mensili tipo 'ricorrente' restano valide come sono.
+   - CREDITO: segno +1 — soldi resi o importi da scalare, con motivazione;
+     abbatte il cumulato del collaboratore.
    Tabella user_movimenti = LIBRO MASTRO per utente (origine debito|gara|
    malus, segno ±): il futuro calderone commissioni/malus scrivera' qui.
    Lo stato debito compare anche nella scheda utente (DebitiUtenteBox). */
@@ -20,9 +24,9 @@ import { notify, dbError } from "./toast";
 import { SelectPersona, SelectMulti } from "@/components/SelectPersona";
 
 type Movimento = {
-    id: string; user_id: string; origine: string; tipo: "one_shot" | "rata" | "ricorrente";
+    id: string; user_id: string; origine: string; tipo: "one_shot" | "rata" | "ricorrente" | "ricorrenza";
     gruppo_id: string | null; titolo: string; note: string; importo: number; segno: number;
-    competenza: string; rata_n: number | null; rate_totali: number | null;
+    competenza: string; ricorrenza_fine: string | null; rata_n: number | null; rate_totali: number | null;
     stato: "aperto" | "saldato"; saldato_il: string | null; saldato_da: string | null;
     creato_da: string; created_at: string;
 };
@@ -40,11 +44,33 @@ const piuMesi = (ymd: string, n: number) => {
     const d = new Date(y, (m - 1) + n, 1);
     return meseYmd(d);
 };
+const mesiTra = (a: string, b: string) => {
+    const [y1, m1] = a.split("-").map(Number); const [y2, m2] = b.split("-").map(Number);
+    return (y2 - y1) * 12 + (m2 - m1);
+};
+/** Mensilita' MATURATE a oggi di una regola di ricorrenza (0 se parte nel futuro). */
+const mesiMaturati = (r: Movimento) => {
+    if (r.tipo !== "ricorrenza") return 1;
+    const oggi = meseYmd(new Date());
+    const fine = r.ricorrenza_fine && r.ricorrenza_fine < oggi ? r.ricorrenza_fine : oggi;
+    if (r.competenza > fine) return 0;
+    return mesiTra(r.competenza.slice(0, 7) + "-01", fine.slice(0, 7) + "-01") + 1;
+};
+/** Contributo della riga al calderone: debiti positivi, CREDITI negativi.
+ *  Col filtro mese attivo la ricorrenza vale UNA mensilita'. */
+const valoreRiga = (r: Movimento, meseFiltro?: string) => {
+    const base = r.tipo === "ricorrenza" ? (meseFiltro ? Number(r.importo) : Number(r.importo) * mesiMaturati(r)) : Number(r.importo);
+    return Number(r.segno) === 1 ? -base : base;
+};
+const periodoRicorrenza = (r: Movimento) =>
+    r.ricorrenza_fine ? `${meseLabel(r.competenza)} → ${meseLabel(r.ricorrenza_fine)}` : `dal ${meseLabel(r.competenza)} · per sempre`;
 
 function TipoBadge({ r }: { r: Movimento }) {
+    if (Number(r.segno) === 1) return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">CREDITO</span>;
     if (r.tipo === "rata") return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/30">RATA {r.rata_n}/{r.rate_totali}</span>;
-    if (r.tipo === "ricorrente") return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/30">RICORRENTE</span>;
-    return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">ONE SHOT</span>;
+    if (r.tipo === "ricorrenza") return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/30">RICORRENTE</span>;
+    if (r.tipo === "ricorrente") return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/30">RICORRENTE (mese)</span>;
+    return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/30">UNA TANTUM</span>;
 }
 
 export function DebitiView({ gestore }: { gestore: string }) {
@@ -75,7 +101,8 @@ export function DebitiView({ gestore }: { gestore: string }) {
     // niente testo libero, si salva solo un utente reale (Luca 01/08 sera)
     const [showForm, setShowForm] = useState(false);
     const [nUtenteNome, setNUtenteNome] = useState("");
-    const [nTipo, setNTipo] = useState<"one_shot" | "ricorrente">("one_shot");
+    const [nTipo, setNTipo] = useState<"one_shot" | "rata" | "ricorrenza" | "credito">("one_shot");
+    const [nFine, setNFine] = useState("");   // mese fine ricorrenza ("" = per sempre)
     const [nTitolo, setNTitolo] = useState("");
     const [nImporto, setNImporto] = useState("");
     const [nRate, setNRate] = useState("1");
@@ -102,16 +129,20 @@ export function DebitiView({ gestore }: { gestore: string }) {
         const imp = parseFloat(String(nImporto).replace(",", "."));
         const rate = Math.max(1, parseInt(nRate, 10) || 1);
         const scelto = persone.find(p => p.full_name === nUtenteNome);
-        const miss = [!scelto && "Collaboratore (scegli dalla lista)", !nTitolo.trim() && "Titolo", (!imp || imp <= 0) && "Importo", !nMese && "Mese"].filter(Boolean);
+        const miss = [!scelto && "Collaboratore (scegli dalla lista)", !nTitolo.trim() && (nTipo === "credito" ? "Motivazione" : "Titolo"), (!imp || imp <= 0) && "Importo", !nMese && "Mese",
+            nTipo === "rata" && rate < 2 && "Numero rate (almeno 2)",
+            nTipo === "ricorrenza" && nFine && (nFine < nMese) && "Mese di fine (non puo' precedere l'inizio)"].filter(Boolean);
         if (miss.length) { notify("Campi mancanti: " + miss.join(", "), "error"); return; }
         setBusy(true);
         try {
-            const base = { user_id: scelto!.id, origine: "debito", note: nNote.trim(), segno: -1, creato_da: gestore };
+            const base = { user_id: scelto!.id, origine: "debito", note: nNote.trim(), segno: nTipo === "credito" ? 1 : -1, creato_da: gestore };
             const comp = nMese + "-01";
             let rows: Record<string, unknown>[];
-            if (nTipo === "ricorrente") {
-                rows = [{ ...base, tipo: "ricorrente", titolo: nTitolo.trim(), importo: imp, competenza: comp }];
-            } else if (rate <= 1) {
+            if (nTipo === "credito") {
+                rows = [{ ...base, tipo: "one_shot", titolo: nTitolo.trim(), importo: imp, competenza: comp }];
+            } else if (nTipo === "ricorrenza") {
+                rows = [{ ...base, tipo: "ricorrenza", titolo: nTitolo.trim(), importo: imp, competenza: comp, ricorrenza_fine: nFine ? nFine + "-01" : null }];
+            } else if (nTipo === "one_shot") {
                 rows = [{ ...base, tipo: "one_shot", titolo: nTitolo.trim(), importo: imp, competenza: comp }];
             } else {
                 // rateizzato: quote uguali al centesimo, il resto sull'ultima rata
@@ -126,8 +157,8 @@ export function DebitiView({ gestore }: { gestore: string }) {
             }
             const { error } = await supabase.from("user_movimenti").insert(rows);
             if (dbError("Salvataggio debito", error)) return;
-            notify(rows.length > 1 ? `Debito registrato in ${rows.length} rate ✓` : "Debito registrato ✓", "ok");
-            setShowForm(false); setNUtenteNome(""); setNTitolo(""); setNImporto(""); setNRate("1"); setNNote("");
+            notify(rows.length > 1 ? `Debito registrato in ${rows.length} rate ✓` : nTipo === "credito" ? "Credito registrato ✓" : "Debito registrato ✓", "ok");
+            setShowForm(false); setNUtenteNome(""); setNTitolo(""); setNImporto(""); setNRate("1"); setNNote(""); setNFine("");
             await carica();
         } finally { setBusy(false); }
     };
@@ -157,7 +188,13 @@ export function DebitiView({ gestore }: { gestore: string }) {
     const filtrate = useMemo(() => righe.filter(r => {
         if (r.origine !== "debito") return false;   // il mastro ospitera' anche gare/malus: qui solo debiti
         if (fUtenti.length && !fUtenti.includes(nomeDi(r.user_id))) return false;
-        if (fMese && r.competenza.slice(0, 7) !== fMese) return false;
+        if (fMese) {
+            if (r.tipo === "ricorrenza") {
+                const m = fMese + "-01";
+                if (m < r.competenza.slice(0, 7) + "-01") return false;
+                if (r.ricorrenza_fine && m > r.ricorrenza_fine.slice(0, 7) + "-01") return false;
+            } else if (r.competenza.slice(0, 7) !== fMese) return false;
+        }
         return true;
     }), [righe, fUtenti, fMese, nomeDi]);
 
@@ -166,10 +203,10 @@ export function DebitiView({ gestore }: { gestore: string }) {
         const m = new Map<string, Movimento[]>();
         filtrate.forEach(r => { const a = m.get(r.user_id) || []; a.push(r); m.set(r.user_id, a); });
         return [...m.entries()]
-            .map(([uid, rows]) => ({ uid, rows, totale: rows.reduce((s, r) => s + Number(r.importo), 0) }))
+            .map(([uid, rows]) => ({ uid, rows, totale: rows.reduce((s, r) => s + valoreRiga(r, fMese || undefined), 0) }))
             .sort((a, b) => b.totale - a.totale);
     }, [filtrate]);
-    const totaleDebiti = useMemo(() => filtrate.reduce((s, r) => s + Number(r.importo), 0), [filtrate]);
+    const totaleDebiti = useMemo(() => filtrate.reduce((s, r) => s + valoreRiga(r, fMese || undefined), 0), [filtrate, fMese]);
 
     if (loading) return <div className="flex items-center gap-3 text-slate-400 py-16 justify-center"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento debiti…</div>;
 
@@ -177,9 +214,10 @@ export function DebitiView({ gestore }: { gestore: string }) {
         <div className="space-y-4">
             <div className="flex items-start justify-between gap-4 flex-wrap">
                 <p className="text-sm text-slate-400 max-w-2xl">
-                    Il <b className="text-slate-200">blackbook</b> dei debiti dei collaboratori: acquisti da
-                    trattenere, rate e costi ricorrenti. I ricorrenti si aggiungono <b className="text-slate-200">mese
-                    per mese</b> (bottone <RotateCw className="w-3 h-3 inline" /> sull&apos;ultima riga).
+                    Il <b className="text-slate-200">blackbook</b> dei collaboratori: una tantum, rateizzati,
+                    <b className="text-slate-200"> ricorrenze</b> (si definiscono una volta: inizio → fine, o per
+                    sempre; il maturato cresce da solo mese dopo mese) e <b className="text-emerald-300">crediti</b> che
+                    scalano il cumulato.
                 </p>
                 <div className="flex items-center gap-3">
                     <div className="text-right">
@@ -203,32 +241,32 @@ export function DebitiView({ gestore }: { gestore: string }) {
                         </div>
                         <div>
                             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Natura *</p>
-                            <div className="flex gap-2">
-                                {([["one_shot", "💶 One shot (rateizzabile)"], ["ricorrente", "🔁 Ricorrente (mensile)"]] as const).map(([k, l]) => (
+                            <div className="flex gap-2 flex-wrap">
+                                {([["one_shot", "💶 Una tantum"], ["rata", "📅 Rateizzato"], ["ricorrenza", "🔁 Ricorrente"], ["credito", "💚 Credito"]] as const).map(([k, l]) => (
                                     <button key={k} onClick={() => setNTipo(k)}
-                                        className={cn("flex-1 py-2 rounded-xl text-xs font-bold border", nTipo === k ? "border-rose-400/70 bg-rose-500/15 text-rose-200" : "border-white/10 text-slate-400")}>{l}</button>
+                                        className={cn("flex-1 min-w-[110px] py-2 rounded-xl text-xs font-bold border", nTipo === k ? (k === "credito" ? "border-emerald-400/70 bg-emerald-500/15 text-emerald-200" : "border-rose-400/70 bg-rose-500/15 text-rose-200") : "border-white/10 text-slate-400")}>{l}</button>
                                 ))}
                             </div>
                         </div>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div className="col-span-2">
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Titolo *</p>
-                            <input value={nTitolo} onChange={e => setNTitolo(e.target.value)} placeholder={nTipo === "ricorrente" ? "Es. Auto aziendale" : "Es. iPhone 15 a rate"} className="glass-input w-full text-sm" />
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{nTipo === "credito" ? "Motivazione *" : "Titolo *"}</p>
+                            <input value={nTitolo} onChange={e => setNTitolo(e.target.value)} placeholder={nTipo === "ricorrenza" ? "Es. Auto aziendale" : nTipo === "credito" ? "Es. Restituzione contanti" : "Es. iPhone 15"} className="glass-input w-full text-sm" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{nTipo === "ricorrente" ? "Importo mensile *" : "Importo totale *"}</p>
-                            <input value={nImporto} onChange={e => setNImporto(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="es. 450" inputMode="decimal" className="glass-input w-full text-sm font-mono" />
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{nTipo === "ricorrenza" ? "Importo mensile *" : "Importo totale *"}</p>
+                            <input value={nImporto} onChange={e => setNImporto(e.target.value.replace(/[^0-9.,]/g, ""))} placeholder="es. 350" inputMode="decimal" className="glass-input w-full text-sm font-mono" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{nTipo === "ricorrente" ? "Mese di competenza *" : "Mese prima rata *"}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">{nTipo === "ricorrenza" ? "Mese di inizio *" : nTipo === "rata" ? "Mese prima rata *" : "Mese di competenza *"}</p>
                             <input type="month" value={nMese} onChange={e => setNMese(e.target.value)} className="glass-input w-full text-sm" />
                         </div>
                     </div>
-                    {nTipo === "one_shot" && (
+                    {nTipo === "rata" && (
                         <div className="flex items-end gap-3 flex-wrap">
                             <div>
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Numero di rate (mesi)</p>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Numero di rate (mesi) *</p>
                                 <input value={nRate} onChange={e => setNRate(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" className="glass-input w-28 text-sm font-mono" />
                             </div>
                             {parseInt(nRate, 10) > 1 && parseFloat(String(nImporto).replace(",", ".")) > 0 && (
@@ -238,10 +276,21 @@ export function DebitiView({ gestore }: { gestore: string }) {
                             )}
                         </div>
                     )}
+                    {nTipo === "ricorrenza" && (
+                        <div className="flex items-end gap-3 flex-wrap">
+                            <div>
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Mese di fine (facoltativo)</p>
+                                <input type="month" value={nFine} min={nMese} onChange={e => setNFine(e.target.value)} className="glass-input w-44 text-sm" />
+                            </div>
+                            <p className="text-xs text-slate-400 pb-2.5">
+                                {nFine ? `→ ${eur(parseFloat(String(nImporto).replace(",", ".")) || 0)}/mese da ${meseLabel(nMese + "-01")} a ${meseLabel(nFine + "-01")} (${mesiTra(nMese + "-01", nFine + "-01") + 1} mensilita')` : "Vuoto = PER SEMPRE: matura ogni mese finche' non la elimini"}
+                            </p>
+                        </div>
+                    )}
                     <textarea value={nNote} onChange={e => setNNote(e.target.value)} rows={2} placeholder="Note (facoltative)…" className="glass-input w-full text-sm resize-none" />
                     <button onClick={salvaNuovo} disabled={busy}
-                        className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-rose-600 to-red-600 hover:brightness-110 disabled:opacity-50">
-                        {busy ? "Salvataggio…" : "Registra il debito"}
+                        className={cn("w-full py-3 rounded-xl font-bold text-sm text-white hover:brightness-110 disabled:opacity-50 bg-gradient-to-r", nTipo === "credito" ? "from-emerald-600 to-green-600" : "from-rose-600 to-red-600")}>
+                        {busy ? "Salvataggio…" : nTipo === "credito" ? "Registra il credito" : "Registra il debito"}
                     </button>
                 </div>
             )}
@@ -262,16 +311,21 @@ export function DebitiView({ gestore }: { gestore: string }) {
                 <div key={g.uid} className="glass-card overflow-hidden">
                     <div className="px-4 py-3 bg-white/[0.03] border-b border-white/5 flex items-center justify-between gap-3 flex-wrap">
                         <p className="text-sm font-bold text-white flex items-center gap-2"><Wallet className="w-4 h-4 text-rose-400" /> {nomeDi(g.uid)}</p>
-                        <p className="text-sm font-black text-rose-400">{g.totale > 0 ? `cumulato ${eur(g.totale)}` : "nessun debito"}</p>
+                        <p className={cn("text-sm font-black", g.totale > 0 ? "text-rose-400" : "text-emerald-400")}>{g.totale > 0 ? `cumulato ${eur(g.totale)}` : g.totale < 0 ? `in credito ${eur(-g.totale)}` : "in pari"}</p>
                     </div>
                     <div className="divide-y divide-white/5">
                         {g.rows.map(r => (
                             <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
                                 <div className="flex-1 min-w-[220px]">
                                     <p className="text-sm text-slate-100 font-semibold">{r.titolo} <TipoBadge r={r} /></p>
-                                    <p className="text-[11px] text-slate-500">{meseLabel(r.competenza)}{r.note ? ` · ${r.note}` : ""} · inserito da {r.creato_da || "—"}</p>
+                                    <p className="text-[11px] text-slate-500">
+                                        {r.tipo === "ricorrenza" ? `${periodoRicorrenza(r)} · ${mesiMaturati(r)} mensilita' maturate` : meseLabel(r.competenza)}
+                                        {r.note ? ` · ${r.note}` : ""} · inserito da {r.creato_da || "—"}
+                                    </p>
                                 </div>
-                                <p className="text-sm font-black text-slate-100 font-mono">{eur(r.importo)}</p>
+                                <p className={cn("text-sm font-black font-mono", Number(r.segno) === 1 ? "text-emerald-400" : "text-slate-100")}>
+                                    {Number(r.segno) === 1 ? "− " : ""}{r.tipo === "ricorrenza" ? `${eur(r.importo)}/mese${fMese ? "" : ` = ${eur(Number(r.importo) * mesiMaturati(r))}`}` : eur(r.importo)}
+                                </p>
                                 {r.tipo === "ricorrente" && (
                                     <button onClick={() => ripetiMese(r)} title="Aggiungi la stessa voce sul mese corrente"
                                         className="p-1.5 rounded-lg text-slate-500 hover:text-violet-300 hover:bg-violet-500/10"><RotateCw className="w-4 h-4" /></button>
@@ -299,7 +353,7 @@ export function DebitiUtenteBox({ userId }: { userId: string }) {
     }, [userId]);
     if (!righe) return null;
     const aperte = righe;
-    const tot = righe.reduce((s, r) => s + Number(r.importo), 0);
+    const tot = righe.reduce((s, r) => s + valoreRiga(r), 0);
     return (
         <div className="glass-card p-4 rounded-xl border-l-4 border-l-rose-500/70">
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -307,7 +361,7 @@ export function DebitiUtenteBox({ userId }: { userId: string }) {
                 <p className={cn("text-base font-black", tot > 0 ? "text-rose-400" : "text-emerald-400")}>{tot > 0 ? eur(tot) + " cumulati" : "nessun debito"}</p>
             </div>
             {aperte.slice(0, 3).map(r => (
-                <p key={r.id} className="text-[11px] text-slate-400 mt-1">• {r.titolo} <TipoBadge r={r} /> — {eur(r.importo)} ({meseLabel(r.competenza)})</p>
+                <p key={r.id} className="text-[11px] text-slate-400 mt-1">• {r.titolo} <TipoBadge r={r} /> — {r.tipo === "ricorrenza" ? `${eur(r.importo)}/mese (${periodoRicorrenza(r)})` : `${eur(r.importo)} (${meseLabel(r.competenza)})`}</p>
             ))}
             {aperte.length > 3 && <p className="text-[11px] text-slate-500 mt-1">…e altre {aperte.length - 3} voci</p>}
             <a href={`/amministrazione?sez=utenti&tab=debiti&du=${userId}`} className="inline-block mt-2 text-[11px] font-bold text-rose-300 hover:text-rose-200">Apri il registro completo →</a>
