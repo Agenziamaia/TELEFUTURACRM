@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
-import { Loader2, Plus, Timer, Trash2, Wallet, RotateCw } from "lucide-react";
+import { Archive, Check, Loader2, Plus, Timer, Trash2, Undo2, Wallet, RotateCw } from "lucide-react";
 import { notify, dbError } from "./toast";
 import { SelectPersona, SelectMulti } from "@/components/SelectPersona";
 
@@ -108,6 +108,10 @@ export function DebitiView({ gestore }: { gestore: string }) {
     const [nRate, setNRate] = useState("1");
     const [nMese, setNMese] = useState(meseYmd(new Date()).slice(0, 7));
     const [nNote, setNNote] = useState("");
+    // un credito, di norma, SALDA i debiti piu' vecchi (FIFO) e li manda in storico
+    const [nCompensa, setNCompensa] = useState(true);
+    // vista: lista viva (aperti) oppure ARCHIVIO delle voci gia' compensate
+    const [vistaStorico, setVistaStorico] = useState(false);
 
     const carica = useCallback(async () => {
         const [mov, pers] = await Promise.all([
@@ -157,10 +161,50 @@ export function DebitiView({ gestore }: { gestore: string }) {
             }
             const { error } = await supabase.from("user_movimenti").insert(rows);
             if (dbError("Salvataggio debito", error)) return;
-            notify(rows.length > 1 ? `Debito registrato in ${rows.length} rate ✓` : nTipo === "credito" ? "Credito registrato ✓" : "Debito registrato ✓", "ok");
+            let extra = "";
+            if (nTipo === "credito" && nCompensa) {
+                const esito = await compensaFIFO(scelto!.id, imp, `Credito: ${nTitolo.trim()}`);
+                extra = esito.saldate
+                    ? ` — compensate ${esito.saldate} voci${esito.avanzo > 0 ? `, avanzo ${eur(esito.avanzo)}` : ""}`
+                    : " — nessuna voce interamente coperta: resta a scalare";
+            }
+            notify((rows.length > 1 ? `Debito registrato in ${rows.length} rate ✓` : nTipo === "credito" ? "Credito registrato ✓" : "Debito registrato ✓") + extra, "ok");
             setShowForm(false); setNUtenteNome(""); setNTitolo(""); setNImporto(""); setNRate("1"); setNNote(""); setNFine("");
             await carica();
         } finally { setBusy(false); }
+    };
+
+    /** Compensazione FIFO: un credito salda i debiti APERTI piu' vecchi finche'
+     *  ha capienza; le voci coperte per intero vanno in storico. Le voci coperte
+     *  solo in parte restano aperte (non si spezzano a mano: il residuo si vede
+     *  dal cumulato) e il credito avanzato resta a disposizione. */
+    const compensaFIFO = async (userId: string, credito: number, etichetta: string) => {
+        const aperti = righe
+            .filter(r => r.user_id === userId && r.origine === "debito" && r.stato !== "saldato"
+                && Number(r.segno) !== 1 && r.tipo !== "ricorrenza")
+            .sort((a, b) => a.competenza.localeCompare(b.competenza) || a.created_at.localeCompare(b.created_at));
+        let resta = credito; const ids: string[] = [];
+        for (const d of aperti) {
+            const v = Number(d.importo);
+            if (resta >= v - 0.001) { resta = Math.round((resta - v) * 100) / 100; ids.push(d.id); }
+            else break;
+        }
+        if (!ids.length) return { saldate: 0, avanzo: credito };
+        const { error } = await supabase.from("user_movimenti")
+            .update({ stato: "saldato", saldato_il: new Date().toISOString(), saldato_da: etichetta })
+            .in("id", ids);
+        if (error) { dbError("Compensazione", error); return { saldate: 0, avanzo: credito }; }
+        return { saldate: ids.length, avanzo: Math.round(resta * 100) / 100 };
+    };
+
+    /** Segna una singola voce come compensata (finisce in storico) o la riapre. */
+    const cambiaStato = async (r: Movimento, saldato: boolean) => {
+        const { error } = await supabase.from("user_movimenti").update(saldato
+            ? { stato: "saldato", saldato_il: new Date().toISOString(), saldato_da: gestore }
+            : { stato: "aperto", saldato_il: null, saldato_da: null }).eq("id", r.id);
+        if (dbError(saldato ? "Compensazione" : "Riapertura", error)) return;
+        notify(saldato ? `"${r.titolo}" compensata → storico ✓` : `"${r.titolo}" riaperta ✓`, "ok");
+        await carica();
     };
 
     // ricorrente: duplica al mese corrente (se non c'e' gia')
@@ -187,6 +231,9 @@ export function DebitiView({ gestore }: { gestore: string }) {
 
     const filtrate = useMemo(() => righe.filter(r => {
         if (r.origine !== "debito") return false;   // il mastro ospitera' anche gare/malus: qui solo debiti
+        // STORICO (Luca 02/08): le voci compensate escono dalla lista viva e si
+        // consultano nell'archivio — niente liste chilometriche.
+        if ((r.stato === "saldato") !== vistaStorico) return false;
         if (fUtenti.length && !fUtenti.includes(nomeDi(r.user_id))) return false;
         if (fMese) {
             if (r.tipo === "ricorrenza") {
@@ -196,7 +243,7 @@ export function DebitiView({ gestore }: { gestore: string }) {
             } else if (r.competenza.slice(0, 7) !== fMese) return false;
         }
         return true;
-    }), [righe, fUtenti, fMese, nomeDi]);
+    }), [righe, fUtenti, fMese, nomeDi, vistaStorico]);
 
     // raggruppo per collaboratore, ordinato per debito aperto decrescente
     const gruppi = useMemo(() => {
@@ -207,6 +254,8 @@ export function DebitiView({ gestore }: { gestore: string }) {
             .sort((a, b) => b.totale - a.totale);
     }, [filtrate]);
     const totaleDebiti = useMemo(() => filtrate.reduce((s, r) => s + valoreRiga(r, fMese || undefined), 0), [filtrate, fMese]);
+    const nStorico = useMemo(() => righe.filter(r => r.origine === "debito" && r.stato === "saldato"
+        && (!fUtenti.length || fUtenti.includes(nomeDi(r.user_id)))).length, [righe, fUtenti, nomeDi]);
 
     if (loading) return <div className="flex items-center gap-3 text-slate-400 py-16 justify-center"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento debiti…</div>;
 
@@ -221,9 +270,14 @@ export function DebitiView({ gestore }: { gestore: string }) {
                 </p>
                 <div className="flex items-center gap-3">
                     <div className="text-right">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Totale debiti (filtrato)</p>
-                        <p className="text-xl font-black text-rose-400">{eur(totaleDebiti)}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{vistaStorico ? "Totale archiviato (filtrato)" : "Totale aperto (filtrato)"}</p>
+                        <p className={cn("text-xl font-black", vistaStorico ? "text-slate-400" : "text-rose-400")}>{eur(totaleDebiti)}</p>
                     </div>
+                    <button onClick={() => setVistaStorico(v => !v)} title="Le voci compensate finiscono qui"
+                        className={cn("flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all",
+                            vistaStorico ? "border-sky-400/60 bg-sky-500/15 text-sky-200" : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10")}>
+                        <Archive className="w-4 h-4" /> {vistaStorico ? "Torna agli aperti" : `Storico${nStorico ? ` (${nStorico})` : ""}`}
+                    </button>
                     <button onClick={() => setShowForm(v => !v)}
                         className={cn("flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all",
                             showForm ? "border-white/20 bg-white/5 text-slate-300" : "border-rose-400/60 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25")}>
@@ -287,6 +341,14 @@ export function DebitiView({ gestore }: { gestore: string }) {
                             </p>
                         </div>
                     )}
+                    {nTipo === "credito" && (
+                        <label className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 cursor-pointer">
+                            <input type="checkbox" checked={nCompensa} onChange={e => setNCompensa(e.target.checked)} className="w-4 h-4 accent-emerald-500" />
+                            <span className="text-xs text-slate-300">
+                                <b className="text-emerald-300">Compensa i debiti più vecchi</b> — le voci coperte per intero finiscono in storico; quello che avanza resta a scalare.
+                            </span>
+                        </label>
+                    )}
                     <textarea value={nNote} onChange={e => setNNote(e.target.value)} rows={2} placeholder="Note (facoltative)…" className="glass-input w-full text-sm resize-none" />
                     <button onClick={salvaNuovo} disabled={busy}
                         className={cn("w-full py-3 rounded-xl font-bold text-sm text-white hover:brightness-110 disabled:opacity-50 bg-gradient-to-r", nTipo === "credito" ? "from-emerald-600 to-green-600" : "from-rose-600 to-red-600")}>
@@ -306,7 +368,7 @@ export function DebitiView({ gestore }: { gestore: string }) {
 
             {/* elenco per collaboratore */}
             {gruppi.length === 0 ? (
-                <p className="text-sm text-slate-500 py-10 text-center">Nessun debito con questi filtri.</p>
+                <p className="text-sm text-slate-500 py-10 text-center">{vistaStorico ? "Nessuna voce archiviata con questi filtri." : "Nessun debito aperto con questi filtri."}</p>
             ) : gruppi.map(g => (
                 <div key={g.uid} className="glass-card overflow-hidden">
                     <div className="px-4 py-3 bg-white/[0.03] border-b border-white/5 flex items-center justify-between gap-3 flex-wrap">
@@ -321,14 +383,22 @@ export function DebitiView({ gestore }: { gestore: string }) {
                                     <p className="text-[11px] text-slate-500">
                                         {r.tipo === "ricorrenza" ? `${periodoRicorrenza(r)} · ${mesiMaturati(r)} mensilita' maturate` : meseLabel(r.competenza)}
                                         {r.note ? ` · ${r.note}` : ""} · inserito da {r.creato_da || "—"}
+                                        {r.stato === "saldato" && r.saldato_il ? ` · compensata il ${new Date(r.saldato_il).toLocaleDateString("it-IT")}${r.saldato_da ? ` (${r.saldato_da})` : ""}` : ""}
                                     </p>
                                 </div>
                                 <p className={cn("text-sm font-black font-mono", Number(r.segno) === 1 ? "text-emerald-400" : "text-slate-100")}>
                                     {Number(r.segno) === 1 ? "− " : ""}{r.tipo === "ricorrenza" ? `${eur(r.importo)}/mese${fMese ? "" : ` = ${eur(Number(r.importo) * mesiMaturati(r))}`}` : eur(r.importo)}
                                 </p>
-                                {r.tipo === "ricorrente" && (
+                                {r.tipo === "ricorrente" && r.stato !== "saldato" && (
                                     <button onClick={() => ripetiMese(r)} title="Aggiungi la stessa voce sul mese corrente"
                                         className="p-1.5 rounded-lg text-slate-500 hover:text-violet-300 hover:bg-violet-500/10"><RotateCw className="w-4 h-4" /></button>
+                                )}
+                                {r.stato === "saldato" ? (
+                                    <button onClick={() => cambiaStato(r, false)} title="Riporta la voce tra gli aperti"
+                                        className="p-1.5 rounded-lg text-slate-600 hover:text-sky-300 hover:bg-sky-500/10"><Undo2 className="w-4 h-4" /></button>
+                                ) : r.tipo !== "ricorrenza" && (
+                                    <button onClick={() => cambiaStato(r, true)} title="Segna compensata: finisce in storico"
+                                        className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-300 hover:bg-emerald-500/10"><Check className="w-4 h-4" /></button>
                                 )}
                                 <button onClick={() => elimina(r)} title="Elimina la voce"
                                     className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button>
@@ -391,13 +461,14 @@ export function DebitiUtenteBox({ userId }: { userId: string }) {
     useEffect(() => {
         (async () => {
             const { data, error } = await supabase.from("user_movimenti").select("*")
-                .eq("user_id", userId).eq("origine", "debito").order("competenza", { ascending: false }).limit(200);
+                .eq("user_id", userId).eq("origine", "debito").order("competenza", { ascending: false }).limit(500);
             setRighe(error ? [] : (data ?? []) as Movimento[]);   // tabella assente pre-mig. 127: box vuoto
         })();
     }, [userId]);
     if (!righe) return null;
-    const aperte = righe;
-    const tot = righe.reduce((s, r) => s + valoreRiga(r), 0);
+    const aperte = righe.filter(r => r.stato !== "saldato");        // lo storico non pesa sul saldo
+    const nArch = righe.length - aperte.length;
+    const tot = aperte.reduce((s, r) => s + valoreRiga(r), 0);
     return (
         <div className="glass-card p-4 rounded-xl border-l-4 border-l-rose-500/70">
             <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -408,6 +479,7 @@ export function DebitiUtenteBox({ userId }: { userId: string }) {
                 <p key={r.id} className="text-[11px] text-slate-400 mt-1">• {r.titolo} <TipoBadge r={r} /> — {r.tipo === "ricorrenza" ? `${eur(r.importo)}/mese (${periodoRicorrenza(r)})` : `${eur(r.importo)} (${meseLabel(r.competenza)})`}</p>
             ))}
             {aperte.length > 3 && <p className="text-[11px] text-slate-500 mt-1">…e altre {aperte.length - 3} voci</p>}
+            {nArch > 0 && <p className="text-[11px] text-slate-600 mt-1">{nArch} voci già compensate in storico</p>}
             <a href={`/amministrazione?sez=utenti&tab=debiti&du=${userId}`} className="inline-block mt-2 text-[11px] font-bold text-rose-300 hover:text-rose-200">Apri il registro completo →</a>
         </div>
     );
