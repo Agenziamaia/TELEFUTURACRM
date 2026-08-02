@@ -142,9 +142,13 @@ function ChatPageInner() {
   const fareScreenshot = async (area: boolean) => {
     setShotMenu(false);
     try {
-      // preferCurrentTab: il picker del browser (obbligatorio, non si puo'
-      // saltare) parte gia' sulla scheda del CRM — un click e via
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, preferCurrentTab: true, selfBrowserSurface: "include" } as DisplayMediaStreamOptions);
+      // Due funzioni DIVERSE (Luca 02/08): l'area parte gia' sulla scheda del
+      // CRM (preferCurrentTab: un click e trascini); la 🖥️ apre il picker
+      // sulla scelta della FINESTRA da fotografare, come prima.
+      const opzioni = (area
+        ? { video: true, preferCurrentTab: true, selfBrowserSurface: "include" }
+        : { video: { displaySurface: "window" } }) as DisplayMediaStreamOptions;
+      const stream = await navigator.mediaDevices.getDisplayMedia(opzioni);
       const video = document.createElement("video");
       video.srcObject = stream; video.muted = true;
       await video.play();
