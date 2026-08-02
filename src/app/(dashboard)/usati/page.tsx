@@ -1572,7 +1572,7 @@ function GestioneUsatiInner() {
   const STATI_TRANSITO = ["in_transito", "invio_in_negozio"];
   // amministrazione: tutto TRANNE i venduti (Luca 01/08: la tabella col
   // tempo si sporcherebbe) — si accendono dalla tessera quando servono
-  const PRESET_STATI = isAmminMain ? STATUS_KEYS.filter(k => !['venduto', 'ko', 'smontato'].includes(k)) : [...STATI_NEGOZIO_DEFAULT];
+  const PRESET_STATI = isAmminMain ? STATUS_KEYS.filter(k => !['ko', 'smontato'].includes(k)) : [...STATI_NEGOZIO_DEFAULT];
   const filtriCompleti = ["direttore_commerciale", "direttore_generale", "amministrativo", "admin", "dev"].includes(user?.role || "");
   // "i miei" = TUTTI i negozi visibili dell'utente (user_stores + visibilita' +
   // primary, es. Emanuele su entrambe le Magliana) ESPANSI alla sede fisica:
@@ -1595,7 +1595,7 @@ function GestioneUsatiInner() {
     // visibili ancora VUOTA e l'apertura ricadeva su "Mostra tutti" (Luca 01/08)
     if (storesInit.current || !NEGOZI.length || !user || !visLoaded) return;
     storesInit.current = true;
-    if (isAmminMain) { setSelectedStores([...NEGOZI]); setSelectedStatuses([...STATUS_KEYS]); }
+    if (isAmminMain) { setSelectedStores([...NEGOZI]); setSelectedStatuses([...PRESET_STATI]); }
     else setSelectedStores(mieiMatch());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [NEGOZI, user, visLoaded, mieiMatch, isAmminMain]);
@@ -1767,14 +1767,25 @@ function GestioneUsatiInner() {
   const arrow = (key: string) => sortKey === key ? (sortDir === "asc" ? " " : " ") : "";
 
   const handleKpiClick = (sk: string) => {
-    // tessera = interruttore del suo stato (come le tessere brand di Ricerca
-    // Vendite); Totale = tutti gli stati, secondo click = torna al preset
+    // tessere IDENTICHE a Ricerca Vendite (Luca 02/08): dallo stato di
+    // default il primo click isola SOLO quello stato (gli altri si
+    // spengono); dai click successivi si aggiunge/toglie; selezione vuota o
+    // di nuovo uguale al preset -> si torna al default. Totale = tutti gli
+    // stati, secondo click = preset.
     if (sk === "_all") {
       const tutti = selectedStatuses.length === STATUS_KEYS.length;
       setSelectedStatuses(tutti ? [...PRESET_STATI] : [...STATUS_KEYS]);
-    } else {
-      setSelectedStatuses(p => p.includes(sk) ? p.filter(x => x !== sk) : [...p, sk]);
+      return;
     }
+    setSelectedStatuses(p => {
+      const preset = new Set(PRESET_STATI);
+      const eDefault = p.length === preset.size && p.every(x => preset.has(x));
+      if (eDefault) return [sk];
+      const nx = p.includes(sk) ? p.filter(x => x !== sk) : [...p, sk];
+      if (nx.length === 0) return [...PRESET_STATI];
+      const comePreset = nx.length === preset.size && nx.every(x => preset.has(x));
+      return comePreset ? [...PRESET_STATI] : nx;
+    });
   };
 
   const resetFilters = () => { setSelectedStores(isAmminMain ? [...NEGOZI] : mieiMatch()); setSelectedStatuses([...PRESET_STATI]); setSoloDaPrezzare(false); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setActiveKpi(null); };
@@ -1966,7 +1977,7 @@ function GestioneUsatiInner() {
                       <div className="text-xs text-slate-600">{transitoList.length} in viaggio</div>
                     </button>
                     <button type="button"
-                      onClick={() => { if (vetAttivo) { setSelectedStatuses([...STATUS_KEYS]); setActiveKpi(null); } else { setSelectedStatuses(["in_vendita"]); setActiveKpi("in_vendita"); } }}
+                      onClick={() => { if (vetAttivo) { setSelectedStatuses([...PRESET_STATI]); setActiveKpi(null); } else { setSelectedStatuses(["in_vendita"]); setActiveKpi("in_vendita"); } }}
                       title="Valore dei telefoni IN VENDITA secondo i filtri attivi — clicca per vederli in lista"
                       className={cn("px-4 py-3 rounded-xl border text-right min-w-[120px] transition-all",
                         vetAttivo ? "bg-emerald-500/25 border-emerald-400/60" : "bg-emerald-500/10 border-emerald-500/20 hover:bg-emerald-500/20")}>
@@ -1978,28 +1989,38 @@ function GestioneUsatiInner() {
                 );
               })()}
             </div>
-            {puoRegole && (
-              <button onClick={() => setShowRegole(true)} title="Regole del laboratorio: giorni per fase e malus €/giorno"
-                className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-white/5 text-slate-300 border border-white/10 text-sm font-semibold hover:bg-white/10 transition-all">
-                ⚙️ Regole
+            {/* 4 azioni admin raggruppate 2x2 compatte (Luca 02/08):
+                Bonifici+Registra sopra, Regole+Malus sotto. Chi non ha i
+                pannelli admin conserva il bottone Registra grande. */}
+            {(puoRegole || vedeMalus || vedeCosti) ? (
+              <div className="grid grid-cols-2 gap-1.5">
+                {vedeCosti ? <button onClick={() => { setBonVista("da_fare"); setShowBonifici(true); }}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 text-blue-300 border border-blue-500/40 text-xs font-semibold hover:bg-blue-500/25 transition-all">
+                  🏦 Bonifici
+                  {(() => { const n = devices.filter(d => d.pagamento?.metodo === "bonifico" && (d.pagamento.bonifico_stato || (d.pagamento.bonifico_effettuato ? "fatto" : "da_fare")) !== "fatto").length; return n > 0 ? <span className="min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-black text-[10px] font-black flex items-center justify-center">{n}</span> : null; })()}
+                </button> : <span />}
+                <button onClick={() => setShowRegistra(true)}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/40 text-xs font-semibold hover:bg-purple-500/30 transition-all">
+                  <Plus size={14} /> Usato
+                </button>
+                {puoRegole && <button onClick={() => setShowRegole(true)} title="Regole del laboratorio: giorni per fase e malus €/giorno"
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 text-xs font-semibold hover:bg-white/10 transition-all">
+                  ⚙️ Regole
+                </button>}
+                {vedeMalus && (() => { const attivi = episodiMalus.filter(e => e.stato !== "compensato"); return (
+                  <button onClick={() => setShowMalus(true)}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-300 border border-red-500/30 text-xs font-semibold hover:bg-red-500/20 transition-all">
+                    ⏱ Malus
+                    {attivi.length > 0 && <span className="min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">{attivi.length}</span>}
+                  </button>
+                ); })()}
+              </div>
+            ) : (
+              <button onClick={() => setShowRegistra(true)}
+                className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 text-sm font-semibold hover:bg-purple-500/30 transition-all">
+                <Plus size={18} /> <span className="hidden xs:inline">Registra</span> Usato
               </button>
             )}
-            {vedeMalus && (() => { const attivi = episodiMalus.filter(e => e.stato !== "compensato"); return (
-              <button onClick={() => setShowMalus(true)}
-                className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-red-500/10 text-red-300 border border-red-500/30 text-sm font-semibold hover:bg-red-500/20 transition-all">
-                ⏱ Malus
-                {attivi.length > 0 && <span className="min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-black flex items-center justify-center">{attivi.length}</span>}
-              </button>
-            ); })()}
-            {vedeCosti && <button onClick={() => { setBonVista("da_fare"); setShowBonifici(true); }}
-              className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-blue-500/15 text-blue-300 border border-blue-500/40 text-sm font-semibold hover:bg-blue-500/25 transition-all">
-              🏦 Bonifici
-              {(() => { const n = devices.filter(d => d.pagamento?.metodo === "bonifico" && (d.pagamento.bonifico_stato || (d.pagamento.bonifico_effettuato ? "fatto" : "da_fare")) !== "fatto").length; return n > 0 ? <span className="min-w-[20px] h-5 px-1 rounded-full bg-amber-500 text-black text-[11px] font-black flex items-center justify-center">{n}</span> : null; })()}
-            </button>}
-            <button onClick={() => setShowRegistra(true)}
-              className="flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-3 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 text-sm font-semibold hover:bg-purple-500/30 transition-all">
-              <Plus size={18} /> <span className="hidden xs:inline">Registra</span> Usato
-            </button>
           </div>
         </div>
         {/* RIGA 1 (Luca 01/08): solo i pulsanti-vista — Mostra i miei ·
