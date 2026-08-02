@@ -366,7 +366,8 @@ export function MalusUtenteBox({ nome }: { nome: string }) {
     if (!dati) return null;
     const tot = dati.pratiche + dati.lab;
     return (
-        <div className="glass-card p-4 rounded-xl border-l-4 border-l-amber-500/70">
+        <a href={`/pda/tracking?malus=${encodeURIComponent(nome)}`} title="Apri il dettaglio dei suoi malus nel Tracking PDA"
+            className="block glass-card p-4 rounded-xl border-l-4 border-l-amber-500/70 hover:bg-white/[0.04] transition-colors cursor-pointer">
             <div className="flex items-center justify-between gap-3 flex-wrap">
                 <p className="text-sm font-bold text-white flex items-center gap-2"><Timer className="w-4 h-4 text-amber-400" /> Malus</p>
                 <p className={cn("text-base font-black", tot > 0 ? "text-amber-400" : "text-emerald-400")}>{tot > 0 ? eur(tot) + " da scalare" : "nessun malus"}</p>
@@ -379,7 +380,8 @@ export function MalusUtenteBox({ nome }: { nome: string }) {
                     {dati.compensati > 0 ? ` · ${dati.compensati} gia' compensati` : ""}
                 </p>
             )}
-        </div>
+            <span className="inline-block mt-2 text-[11px] font-bold text-amber-300">Apri il dettaglio nel Tracking →</span>
+        </a>
     );
 }
 

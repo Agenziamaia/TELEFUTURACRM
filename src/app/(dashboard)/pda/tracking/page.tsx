@@ -1502,11 +1502,16 @@ export default function TrackingPdaPage() {
   // la ricerca testuale si imposta sul nominativo del cliente e si apre subito
   // il pannello della pratica.
   const deepLinked = useRef(false);
+  const [malusDeepLink, setMalusDeepLink] = useState<string | null>(null);
   useEffect(() => {
     if (deepLinked.current) return;
     const sp = new URLSearchParams(window.location.search);
     const q = sp.get("q");
     if (q) { setSearch(q); deepLinked.current = true; }
+    // ?malus=<venditore> (Luca 02/08): dal box Malus della scheda utente si
+    // atterra qui con l'ARCHIVIO gia' aperto e filtrato su quella persona
+    const mv = sp.get("malus");
+    if (mv) { setMalusDeepLink(mv); setShowArchivio(true); deepLinked.current = true; }
   }, []);
 
   const data: TrackingRow[] = useMemo(() => {
@@ -1903,6 +1908,7 @@ export default function TrackingPdaPage() {
             onApriPratica={apriPraticaDaArchivio}
             canCompensare={canEditAdmin}
             utente={user?.name || "—"}
+            venditoreIniziale={malusDeepLink || undefined}
             onAggiornato={(ep) => setEpisodi((prev) => prev.map((e) => (e.id === ep.id ? ep : e)))}
           />
         )}

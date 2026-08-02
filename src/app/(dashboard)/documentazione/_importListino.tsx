@@ -36,6 +36,54 @@ function parseEuro(v: unknown): number | null {
     return isFinite(n) ? Math.round(n * 100) / 100 : null;
 }
 
+/** PDF DIGITALE → griglia righe/colonne (Luca 02/08: "i listini sono in
+ *  PDF"). Si estrae il testo con le coordinate (pdfjs, worker statico in
+ *  /public), si raggruppano gli item per riga (stessa y, tolleranza) e le
+ *  COLONNE si ancorano alle x della riga d'intestazione (quella che matcha
+ *  le parole chiave). Le pagine successive riusano le stesse colonne.
+ *  Le scansioni (immagini) non hanno testo: errore chiaro all'utente. */
+async function parsePdfRighe(file: File): Promise<RigaGrezza[]> {
+    const pdfjs = await import("pdfjs-dist");
+    pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    const out: RigaGrezza[] = [];
+    let colonne: number[] | null = null;
+    for (let pag = 1; pag <= doc.numPages; pag++) {
+        const page = await doc.getPage(pag);
+        const tc = await page.getTextContent();
+        type It = { x: number; y: number; s: string };
+        const items: It[] = (tc.items as { str?: string; transform?: number[] }[])
+            .filter(i => i.str && i.str.trim() && i.transform)
+            .map(i => ({ x: i.transform![4], y: i.transform![5], s: String(i.str).trim() }));
+        items.sort((a, b) => b.y - a.y || a.x - b.x);
+        const rows: It[][] = [];
+        for (const it of items) {
+            const r = rows.find(rr => Math.abs(rr[0].y - it.y) < 3.5);
+            if (r) r.push(it); else rows.push([it]);
+        }
+        rows.forEach(r => r.sort((a, b) => a.x - b.x));
+        if (!colonne) {
+            for (const r of rows) {
+                const testi = r.map(i => i.s.toLowerCase());
+                const match = Object.values(KEYWORDS).filter(ks => testi.some(t => ks.some(k2 => t.includes(k2)))).length;
+                if (match >= 2 && r.length >= 2) { colonne = r.map(i => i.x); break; }
+            }
+        }
+        for (const r of rows) {
+            if (!colonne) { out.push(r.map(i => i.s)); continue; }
+            const celle: string[] = new Array(colonne.length).fill("");
+            for (const it of r) {
+                let ci = 0;
+                for (let c = 0; c < colonne.length; c++) if (it.x >= colonne[c] - 4) ci = c;
+                celle[ci] = celle[ci] ? celle[ci] + " " + it.s : it.s;
+            }
+            out.push(celle);
+        }
+    }
+    if (!out.length) throw new Error("nessun testo nel PDF: se è una scansione (immagine) non è leggibile, serve il PDF originale");
+    return out;
+}
+
 function indovinaColonna(headers: string[], chiavi: string[]): number {
     const low = headers.map(h => String(h || "").toLowerCase().trim());
     for (const k of chiavi) { const i = low.findIndex(h => h === k); if (i >= 0) return i; }
@@ -58,10 +106,15 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
     const leggiFile = async (f: File) => {
         setErrore(""); setFatto(null); setFile(f);
         try {
-            const XLSX = await import("xlsx");
-            const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
-            const sheet = wb.Sheets[wb.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as RigaGrezza[];
+            let rows: RigaGrezza[];
+            if (f.name.toLowerCase().endsWith(".pdf")) {
+                rows = await parsePdfRighe(f);
+            } else {
+                const XLSX = await import("xlsx");
+                const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
+                const sheet = wb.Sheets[wb.SheetNames[0]];
+                rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as RigaGrezza[];
+            }
             if (!rows.length) { setErrore("File vuoto o non leggibile."); return; }
             // intestazione = prima riga che matcha almeno 2 parole chiave
             let hIdx = 0;
@@ -162,14 +215,14 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                     ) : (
                         <>
                             <div className="flex items-center gap-3 flex-wrap">
-                                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                                <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden"
                                     onChange={e => { const f = e.target.files?.[0]; if (f) leggiFile(f); }} />
                                 <button onClick={() => fileRef.current?.click()}
                                     className="px-4 py-2.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-sm font-bold hover:bg-emerald-500/20">
                                     {file ? "Cambia file…" : "Scegli il file del listino…"}
                                 </button>
                                 {file && <span className="text-xs text-slate-400">{file.name}</span>}
-                                <span className="text-[11px] text-slate-500">Excel (.xlsx/.xls) o CSV — es. il listino rate ufficiale dell&apos;operatore</span>
+                                <span className="text-[11px] text-slate-500">PDF del listino ufficiale (digitale, non scansione) — oppure Excel/CSV</span>
                             </div>
                             {errore && <p className="text-sm text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">{errore}</p>}
                             {righe.length > 0 && (

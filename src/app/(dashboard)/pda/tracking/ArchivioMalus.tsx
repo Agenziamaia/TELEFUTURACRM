@@ -40,6 +40,7 @@ export function ArchivioMalus({
   canCompensare,
   utente,
   onAggiornato,
+  venditoreIniziale,
 }: {
   episodi: EpisodioMalus[];
   errore?: string | null;
@@ -48,9 +49,11 @@ export function ArchivioMalus({
   canCompensare: boolean;
   utente: string;
   onAggiornato: (ep: EpisodioMalus) => void;
+  venditoreIniziale?: string;
 }) {
   const [statoSel, setStatoSel] = useState<"tutti" | "in_corso" | "attivo" | "compensato">("tutti");
-  const [venditoreSel, setVenditoreSel] = useState("");
+  // deep-link dalla scheda utente (Luca 02/08): archivio gia' filtrato su di lui
+  const [venditoreSel, setVenditoreSel] = useState(venditoreIniziale || "");
   const [search, setSearch] = useState("");
   const [confermaId, setConfermaId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
