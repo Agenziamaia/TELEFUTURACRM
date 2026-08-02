@@ -14,14 +14,18 @@ import { X, FileSpreadsheet, Loader2, Check } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
 type RigaGrezza = (string | number | null | undefined)[];
-type VoceListino = { modello: string; prezzo: number | null; rate: { mesi: number; rata: number; anticipo?: number }[] };
+type VoceListino = { modello: string; prezzo: number | null; rate: { mesi: number; rata: number; anticipo?: number }[]; margine?: number | null };
 
 const KEYWORDS: Record<string, string[]> = {
-    modello: ["modello", "terminale", "device", "descrizione", "prodotto", "smartphone", "modello terminale"],
-    prezzo: ["prezzo listino", "prezzo di listino", "listino", "prezzo", "costo"],
+    // "sp cash" = prezzo di vendita cash nei listini WindTre (verificato sul
+    // "Listino Terminali WINDTRE Prodotti ordinabili" del 22/07/2026)
+    modello: ["prodotto", "modello terminale", "modello", "terminale", "descrizione", "device", "smartphone"],
+    prezzo: ["sp cash", "prezzo listino", "prezzo di listino", "prezzo al pubblico", "listino", "prezzo", "cash", "costo"],
     rata: ["importo rata", "rata mensile", "rata", "canone"],
     mesi: ["n rate", "num rate", "numero rate", "mesi", "durata", "rate"],
     anticipo: ["anticipo", "contributo iniziale", "upfront"],
+    // margine/sconto dealer gia' scritto nel file (W3: colonna "Sconto" = 0,05)
+    margine: ["sconto", "margine", "provvigione"],
 };
 
 /** "1.299,00 €" / "1299.00" / "€ 33,99" → numero (null se non e' un numero). */
@@ -152,7 +156,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
     const [file, setFile] = useState<File | null>(null);
     const [righe, setRighe] = useState<RigaGrezza[]>([]);
     const [headerIdx, setHeaderIdx] = useState(0);
-    const [col, setCol] = useState<{ modello: number; prezzo: number; rata: number; mesi: number; anticipo: number }>({ modello: -1, prezzo: -1, rata: -1, mesi: -1, anticipo: -1 });
+    const [col, setCol] = useState<{ modello: number; prezzo: number; rata: number; mesi: number; anticipo: number; margine: number }>({ modello: -1, prezzo: -1, rata: -1, mesi: -1, anticipo: -1, margine: -1 });
     const [busy, setBusy] = useState(false);
     const [errore, setErrore] = useState("");
     // listino a BLOCCHI riconosciuto: niente mappatura colonne, voci pronte
@@ -194,6 +198,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                 rata: indovinaColonna(headers, KEYWORDS.rata),
                 mesi: indovinaColonna(headers, KEYWORDS.mesi),
                 anticipo: indovinaColonna(headers, KEYWORDS.anticipo),
+                margine: indovinaColonna(headers, KEYWORDS.margine),
             });
         } catch (e) {
             setErrore("Non riesco a leggere il file: " + (e instanceof Error ? e.message : "formato non riconosciuto"));
@@ -215,9 +220,13 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
             const rata = col.rata >= 0 ? parseEuro(r[col.rata]) : null;
             const mesi = col.mesi >= 0 ? Math.round(parseEuro(r[col.mesi]) || 0) : 0;
             const anticipo = col.anticipo >= 0 ? parseEuro(r[col.anticipo]) : null;
+            // margine dal file: 0,05 e' una frazione → 5%; 5 e' gia' percentuale
+            let margine = col.margine >= 0 ? parseEuro(r[col.margine]) : null;
+            if (margine != null && margine > 0 && margine <= 1) margine = Math.round(margine * 10000) / 100;
             const k = modello.toLowerCase();
-            const v = per.get(k) || { modello, prezzo: null, rate: [] };
+            const v: VoceListino = per.get(k) || { modello, prezzo: null, rate: [], margine: null };
             if (prezzo != null && v.prezzo == null) v.prezzo = prezzo;
+            if (margine != null && v.margine == null) v.margine = margine;
             if (rata != null && mesi > 0) v.rate.push({ mesi, rata, ...(anticipo != null && anticipo > 0 ? { anticipo } : {}) });
             per.set(k, v);
         }
@@ -231,7 +240,8 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
             const mrg = Math.max(0, parseFloat(String(margine).replace(",", ".")) || 0);
             const rows = voci.map(v => ({
                 brand: brandName, modello: v.modello, prezzo: v.prezzo,
-                rate: v.rate, margine_pct: mrg, fonte: file?.name || "", aggiornato_da: gestore,
+                rate: v.rate, margine_pct: v.margine != null && v.margine > 0 ? v.margine : mrg,
+                fonte: file?.name || "", aggiornato_da: gestore,
                 aggiornato_il: new Date().toISOString(),
             }));
             for (let i = 0; i < rows.length; i += 500) {
@@ -306,7 +316,10 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                                         <input value={margine} onChange={e => setMargine(e.target.value.replace(/[^0-9.,]/g, ""))}
                                             className="glass-input text-sm rounded-lg py-1.5 px-2 w-24 font-mono" inputMode="decimal" />
                                     </label>
-                                    <p className="text-[11px] text-slate-500 pb-2">Quanto guadagniamo sul prezzo al pubblico: compare in Registra Vendita accanto al listino.</p>
+                                    <p className="text-[11px] text-slate-500 pb-2">
+                                        Quanto guadagniamo sul prezzo: compare in Registra Vendita accanto al listino.
+                                        {voci.some(v => v.margine) ? " Il file porta gia' la sua percentuale: questa vale solo per i modelli che ne sono privi." : ""}
+                                    </p>
                                 </div>
                             )}
                             {(righe.length > 0 && (!vociBlocchi || forzaColonne)) && (
@@ -317,6 +330,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                                         <SelCol campo="rata" label="Importo rata" />
                                         <SelCol campo="mesi" label="N. mesi/rate" />
                                         <SelCol campo="anticipo" label="Anticipo" />
+                                        <SelCol campo="margine" label="Sconto/margine %" />
                                     </div>
                                     {col.modello < 0 && <p className="text-sm text-amber-300">Scegli almeno la colonna del <b>modello</b>.</p>}
                                 </>
@@ -331,7 +345,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                                                     <div key={v.modello} className="px-3 py-2 flex items-center gap-3 text-sm">
                                                         <span className="flex-1 text-slate-100 truncate">{v.modello}</span>
                                                         <span className="text-emerald-300 font-mono font-bold">{v.prezzo != null ? "€ " + v.prezzo.toLocaleString("it-IT", { minimumFractionDigits: 2 }) : "—"}</span>
-                                                        <span className="text-[11px] text-slate-500">{v.rate.length ? v.rate.map(r => `${r.mesi}×€${r.rata.toLocaleString("it-IT", { minimumFractionDigits: 2 })}${r.anticipo ? ` +ant.€${r.anticipo}` : ""}`).join(" / ") : "senza rate"}</span>
+                                                        <span className="text-[11px] text-slate-500">{v.margine ? `margine ${v.margine}% · ` : ""}{v.rate.length ? v.rate.map(r => `${r.mesi}×€${r.rata.toLocaleString("it-IT", { minimumFractionDigits: 2 })}${r.anticipo ? ` +ant.€${r.anticipo}` : ""}`).join(" / ") : "senza rate"}</span>
                                                     </div>
                                                 ))}
                                                 {voci.length > 15 && <div className="px-3 py-2 text-[11px] text-slate-500">…e altri {voci.length - 15} modelli</div>}
