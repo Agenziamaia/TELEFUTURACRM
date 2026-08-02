@@ -299,6 +299,16 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                                 {file && <span className="text-xs text-slate-400">{file.name}</span>}
                                 <span className="text-[11px] text-slate-500">PDF del listino ufficiale (digitale, non scansione) — oppure Excel/CSV</span>
                             </div>
+                            {/* Il CRM sa gia' leggere i due formati che usiamo: nessun
+                                intervento tecnico per gli aggiornamenti periodici. */}
+                            <div className="text-[11px] text-slate-500 leading-relaxed rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                                <b className="text-slate-400">Formati già riconosciuti</b><br />
+                                • <b>Vodafone</b> — PDF a blocchi: prende il <i>prezzo al pubblico</i> di ogni riquadro (non il “risparmio”) e ricava i piani rata.<br />
+                                • <b>WindTre</b> — Excel “Prodotti ordinabili”: colonna <i>Prodotto</i>, prezzo da <i>SP Cash</i>, margine dalla colonna <i>Sconto</i>.<br />
+                                Basta ricaricare il file aggiornato: i modelli già presenti vengono sovrascritti, i nuovi aggiunti. Per formati diversi si mappano le colonne a mano.
+                            </div>
+                            <div className="hidden">
+                            </div>
                             {errore && <p className="text-sm text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">{errore}</p>}
                             {vociBlocchi && !forzaColonne && (
                                 <div className="flex items-center justify-between gap-3 flex-wrap rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">

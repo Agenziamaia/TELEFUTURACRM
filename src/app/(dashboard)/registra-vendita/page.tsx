@@ -306,7 +306,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
           {selProd.isTelCash&&<div style={{marginBottom:12}}>
             <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:6,textTransform:"uppercase"}}>IMEI Dispositivo</div>
             <div style={{padding:10,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)"}}>
-              <div style={{marginBottom:8}}><DD l="Modello" r v={model} o={v=>setModel(v)} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/></div>
+              <div style={{marginBottom:8}}><DD l="Modello" r v={model} o={v=>setModel(v)} vals={SMARTPHONES} cerca={cercaTerminali}/></div>
               <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>IMEI</div>
               <input value={imei} onChange={e=>setImei(e.target.value.replace(/\D/g,"").slice(0,15))} placeholder="IMEI (15 cifre)"
                 style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(imei).length===15?"2px solid #28a745":"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/>
@@ -935,20 +935,55 @@ const SMARTPHONES = WT_SMARTPHONES_GROUPED;
 // i campi "Modello Terminale" cercano nel catalogo dispositivi universale
 // (mig. 133, ~39k smartphone) — i risultati compaiono nel gruppo
 // "Catalogo dispositivi" della stessa tendina.
-// LISTINI TERMINALI (mig. 135): prezzo di listino e piani rate importati
-// dai listini ufficiali in Documentazione — mostrati sotto la tendina.
-const _listinoCache = new Map();
+// LISTINI TERMINALI (mig. 135/136): prezzi, margini e piani rate importati
+// dai listini ufficiali degli operatori in Documentazione. Si caricano UNA
+// volta (poche centinaia di righe) e si indicizzano con una CHIAVE RIGOROSA:
+// due nomi coincidono solo se, ripuliti, hanno gli STESSI token — numero di
+// modello e taglio compresi. Un abbinamento "somigliante" aggancerebbe
+// l'iPhone 16 Pro Max al prezzo del 17 Pro Max: meglio NESSUN prezzo che uno
+// sbagliato, perche' da qui esce il margine.
+let _listiniTutti = null, _listiniAttesa = null;
+const chiaveListino = (s) => String(s || "").toUpperCase()
+  .replace(/\(.*?\)/g, " ")
+  .replace(/PRO\s*MAX/g, "PROMAX")
+  .replace(/[^A-Z0-9]+/g, " ")
+  .replace(/\b(\d+)\s+(GB|TB|G)\b/g, "$1$2")
+  .replace(/\b(\d+)(GB|G)\b/g, "$1")
+  .replace(/\b(\d+)TB\b/g, (_m, x) => String(Number(x) * 1024))
+  .split(" ")
+  .filter(x => x && !["5G", "4G", "GB", "TB", "DUAL", "SIM", "IT", "EU", "NEW"].includes(x))
+  .sort().join(" ");
+const caricaListini = () => {
+  if (_listiniTutti) return Promise.resolve(_listiniTutti);
+  if (!_listiniAttesa) _listiniAttesa = supabase.from("listini_terminali")
+    .select("brand,modello,prezzo,rate,margine_pct").limit(3000)
+    .then(({ data }) => { _listiniTutti = data || []; return _listiniTutti; })
+    .catch(() => { _listiniTutti = []; return _listiniTutti; });
+  return _listiniAttesa;
+};
 const listinoPerModello = async (modello) => {
-  const k = String(modello || "").toLowerCase();
-  if (!k || k.startsWith("altro")) return [];
-  if (_listinoCache.has(k)) return _listinoCache.get(k);
-  try {
-    let { data } = await supabase.from("listini_terminali").select("brand,prezzo,rate,margine_pct").eq("modello", modello).limit(3);
-    if (!data || !data.length) ({ data } = await supabase.from("listini_terminali").select("brand,prezzo,rate,margine_pct").ilike("modello", modello).limit(3));
-    const v = data || [];
-    _listinoCache.set(k, v);
-    return v;
-  } catch { return []; }
+  const k = chiaveListino(modello);
+  if (!k || String(modello || "").toUpperCase().startsWith("ALTRO")) return [];
+  const tutti = await caricaListini();
+  return tutti.filter(r => chiaveListino(r.modello) === k).slice(0, 3);
+};
+const cercaListino = async (term) => {
+  const t = String(term || "").trim().toLowerCase();
+  if (t.length < 2) return [];
+  const tutti = await caricaListini();
+  const paro = t.split(/\s+/).filter(Boolean);
+  return tutti.filter(r => { const m = String(r.modello).toLowerCase(); return paro.every(w => m.includes(w)); })
+    .slice(0, 25).map(r => r.modello);
+};
+
+/** Fonti delle tendine terminale: prima il LISTINO ufficiale (scegliendo un
+ *  nome di listino il prezzo si aggancia sempre), poi il catalogo universale. */
+const cercaTerminali = async (term) => {
+  const [listino, catalogo] = await Promise.all([cercaListino(term), cercaModelliCatalogo(term)]);
+  const gruppi = [];
+  if (listino.length) gruppi.push({ gruppo: "💰 Listino operatore", voci: listino });
+  if (catalogo.length) gruppi.push({ gruppo: "📡 Catalogo dispositivi", voci: catalogo });
+  return gruppi;
 };
 
 const cercaModelliCatalogo = async (term) => {
@@ -1131,7 +1166,7 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
   const [q,setQ]=useState("");
   const [open,setOpen]=useState(false);
   // fonte aggiuntiva async (mega listino): debounce sui tasti, dedup in resa
-  const [extra,setExtra]=useState([]);
+  const [extra,setExtra]=useState([]);   // [{gruppo, voci[]}]
   // prezzo di listino del modello selezionato (solo tendine terminale)
   const [listini,setListini]=useState([]);
   useEffect(()=>{
@@ -1146,7 +1181,7 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
     const t=q.trim();
     if(_cercaTO.current)clearTimeout(_cercaTO.current);
     if(t.length<2){setExtra([]);return;}
-    _cercaTO.current=setTimeout(async()=>{const r=await cerca(t);setExtra(r||[]);},250);
+    _cercaTO.current=setTimeout(async()=>{const r=await cerca(t);setExtra(Array.isArray(r)?r:[]);},250);
     return()=>{if(_cercaTO.current)clearTimeout(_cercaTO.current);};
   },[q,open,cerca]);
   // flatten for searching
@@ -1169,18 +1204,23 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
       {open&&(
         <div style={{position:"absolute",zIndex:200,left:0,right:0,top:"100%",marginTop:2,background:"#161a26",border:"1px solid rgba(255,255,255,0.14)",borderRadius:8,boxShadow:"0 12px 32px rgba(0,0,0,.6)",maxHeight:260,overflowY:"auto"}}>
           {v&&<div onMouseDown={()=>{o&&o("");setOpen(false);}} style={{padding:"7px 10px",fontSize:11,color:"#dc3545",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>✕ Deseleziona</div>}
-          {filtered.length===0&&extra.length===0&&<div style={{padding:"10px",fontSize:12,color:"#64748b"}}>Nessun risultato</div>}
+          {filtered.length===0&&!extra.some(g=>g.voci&&g.voci.length)&&<div style={{padding:"10px",fontSize:12,color:"#64748b"}}>Nessun risultato</div>}
           {Object.keys(byGroup).map(gk=>(
             <div key={gk||"_"}>
               {gk&&<div style={{padding:"5px 10px",fontSize:10,fontWeight:700,color:"#94a3b8",background:"#1f2533",textTransform:"uppercase",position:"sticky",top:0}}>{gk}</div>}
               {byGroup[gk].map(it=><div key={it} onMouseDown={()=>{o&&o(it);setOpen(false);setQ("");}} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",background:v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:"#f8fafc"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"} onMouseLeave={e=>e.currentTarget.style.background=v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}>{it}</div>)}
             </div>
           ))}
-          {(()=>{const visti=new Set(flat.map(x=>x.it.toLowerCase()));const ex=extra.filter(it=>!visti.has(it.toLowerCase()));if(!ex.length)return null;return (
-            <div>
-              <div style={{padding:"5px 10px",fontSize:10,fontWeight:700,color:"#a5b4fc",background:"#1f2533",textTransform:"uppercase",position:"sticky",top:0}}>📡 Catalogo dispositivi</div>
-              {ex.map(it=><div key={"db_"+it} onMouseDown={()=>{o&&o(it);setOpen(false);setQ("");}} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",background:v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:"#f8fafc"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"} onMouseLeave={e=>e.currentTarget.style.background=v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}>{it}</div>)}
-            </div>);})()}
+          {(()=>{const visti=new Set(flat.map(x=>x.it.toLowerCase()));return extra.map(g=>{
+            const ex=(g.voci||[]).filter(it=>!visti.has(it.toLowerCase()));
+            ex.forEach(it=>visti.add(it.toLowerCase()));
+            if(!ex.length)return null;
+            const oro=String(g.gruppo||"").includes("Listino");
+            return (
+            <div key={g.gruppo}>
+              <div style={{padding:"5px 10px",fontSize:10,fontWeight:700,color:oro?"#6ee7b7":"#a5b4fc",background:"#1f2533",textTransform:"uppercase",position:"sticky",top:0}}>{g.gruppo}</div>
+              {ex.map(it=><div key={g.gruppo+"_"+it} onMouseDown={()=>{o&&o(it);setOpen(false);setQ("");}} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",background:v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:"#f8fafc"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"} onMouseLeave={e=>e.currentTarget.style.background=v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}>{it}</div>)}
+            </div>);});})()}
         </div>
       )}
       {listini.length>0&&(
@@ -1580,7 +1620,7 @@ const CompassDatiTNP = ({sd, upv}) => {
           <div key={i} style={{marginBottom:i<items.length-1?16:0}}>
             {items.length>1&&<div style={{fontSize:10,fontWeight:700,color:"#64748b",marginBottom:6}}>Compass #{i+1}</div>}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8}}>
-              <DD l="Modello terminale" v={item.modello||""} o={v=>updItem(i,"modello",v)} vals={VF_SMARTPHONES} cerca={cercaModelliCatalogo}/>
+              <DD l="Modello terminale" v={item.modello||""} o={v=>updItem(i,"modello",v)} vals={VF_SMARTPHONES} cerca={cercaTerminali}/>
               <TF l="IMEI" v={item.imei||""} o={v=>updItem(i,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
             </div>
             <div style={{marginBottom:10}}>
@@ -1684,7 +1724,7 @@ const TnpSlot = ({slot, idx, total, isWallet, upSlot, onAddSlot, onRemoveSlot}) 
         <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid "+VF_BORDER,borderRadius:8,padding:12,marginBottom:8}}>
           <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase"}}>Dati TNP</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
-            <DD l="Modello terminale" r v={slot.modello||""} o={v=>set("modello",v)} vals={VF_SMARTPHONES} cerca={cercaModelliCatalogo}/>
+            <DD l="Modello terminale" r v={slot.modello||""} o={v=>set("modello",v)} vals={VF_SMARTPHONES} cerca={cercaTerminali}/>
             <TF l="IMEI" r v={slot.imei||""} o={v=>set("imei",v)} p="15 cifre" nt="Barcode 📷"/>
           </div>
         </div>
@@ -3078,7 +3118,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
             if(cmp.nome==="Codice Inserimento")return <SCd key={cmp.nome} session={sc} codici={codici} val={f[cmp.nome]||""} onCh={v=>setF(cmp.nome,v)}/>;
             if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
             if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"#dc3545"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>{cmp.nota&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{cmp.nota}</div>}</div>);
-            if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={SMARTPHONES} cerca={cercaModelliCatalogo} nt={cmp.nota||undefined}/>;
+            if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={SMARTPHONES} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
             return <TF key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p={cmp.nota||""}/>;
           })}
         </div>
@@ -3336,7 +3376,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                   </div>
                   {sd.tnpTipo&&(
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
-                      {!sd.tnpTipo.startsWith("Finanziamento")&&<DD l="Modello Terminale" r v={sd.tnpModello||""} o={v=>uP(group.id,si,sub.id,"tnpModello",v)} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/>}
+                      {!sd.tnpTipo.startsWith("Finanziamento")&&<DD l="Modello Terminale" r v={sd.tnpModello||""} o={v=>uP(group.id,si,sub.id,"tnpModello",v)} vals={SMARTPHONES} cerca={cercaTerminali}/>}
                       {!sd.tnpTipo.startsWith("Finanziamento")&&<TF l="IMEI" r v={sd.tnpImei||""} o={v=>uP(group.id,si,sub.id,"tnpImei",v)} p="15 cifre" nt="Barcode 📷"/>}
                     </div>
                   )}
@@ -3357,7 +3397,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                       {sd.tnpCount&&[...Array(sd.tnpCount)].map((_,idx)=>(
                         <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8,padding:8,background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
                           <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:2}}>Terminale {sd.tnpCount>1?idx+1:""}</div>
-                          <DD l="Modello Terminale" r v={(sd.tnpModelli&&sd.tnpModelli[idx])||""} o={v=>{const m=[...(sd.tnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"tnpModelli",m)}} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/>
+                          <DD l="Modello Terminale" r v={(sd.tnpModelli&&sd.tnpModelli[idx])||""} o={v=>{const m=[...(sd.tnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"tnpModelli",m)}} vals={SMARTPHONES} cerca={cercaTerminali}/>
                           <TF l="IMEI" r v={(sd.tnpImeis&&sd.tnpImeis[idx])||""} o={v=>{const im=[...(sd.tnpImeis||[])];im[idx]=v;uP(group.id,si,sub.id,"tnpImeis",im)}} p="15 cifre" nt="Barcode 📷"/>
                         </div>
                       ))}
@@ -3630,7 +3670,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
               </div>
               {sub.isCBBiz&&(
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8}}>
-                  <DD l="Modello Terminale" r v={sd.cbTnpModello||""} o={v=>uP(group.id,si,sub.id,"cbTnpModello",v)} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/>
+                  <DD l="Modello Terminale" r v={sd.cbTnpModello||""} o={v=>uP(group.id,si,sub.id,"cbTnpModello",v)} vals={SMARTPHONES} cerca={cercaTerminali}/>
                   <TF l="IMEI" r v={sd.cbTnpImei||""} o={v=>uP(group.id,si,sub.id,"cbTnpImei",v)} p="15 cifre" nt="Barcode 📷"/>
                 </div>
               )}
@@ -3642,7 +3682,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
               {!sub.isCBBiz&&sd.cbTnpTipo&&(
                 <div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
-                    {!sd.cbTnpTipo.startsWith("Finanziamento")&&<DD l="Modello Terminale" r v={sd.cbTnpModello||""} o={v=>uP(group.id,si,sub.id,"cbTnpModello",v)} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/>}
+                    {!sd.cbTnpTipo.startsWith("Finanziamento")&&<DD l="Modello Terminale" r v={sd.cbTnpModello||""} o={v=>uP(group.id,si,sub.id,"cbTnpModello",v)} vals={SMARTPHONES} cerca={cercaTerminali}/>}
                     {!sd.cbTnpTipo.startsWith("Finanziamento")&&<TF l="IMEI" r v={sd.cbTnpImei||""} o={v=>uP(group.id,si,sub.id,"cbTnpImei",v)} p="15 cifre" nt="Barcode 📷"/>}
                   </div>
                   {sd.cbTnpTipo.startsWith("Finanziamento")&&(
@@ -3659,7 +3699,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                       {sd.cbTnpCount&&[...Array(sd.cbTnpCount)].map((_,idx)=>(
                         <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8,padding:8,background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
                           <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:2}}>Terminale {sd.cbTnpCount>1?idx+1:""}</div>
-                          <DD l="Modello Terminale" r v={(sd.cbTnpModelli&&sd.cbTnpModelli[idx])||""} o={v=>{const m=[...(sd.cbTnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"cbTnpModelli",m)}} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/>
+                          <DD l="Modello Terminale" r v={(sd.cbTnpModelli&&sd.cbTnpModelli[idx])||""} o={v=>{const m=[...(sd.cbTnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"cbTnpModelli",m)}} vals={SMARTPHONES} cerca={cercaTerminali}/>
                           <TF l="IMEI" r v={(sd.cbTnpImeis&&sd.cbTnpImeis[idx])||""} o={v=>{const im=[...(sd.cbTnpImeis||[])];im[idx]=v;uP(group.id,si,sub.id,"cbTnpImeis",im)}} p="15 cifre" nt="Barcode 📷"/>
                         </div>
                       ))}
@@ -3766,7 +3806,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbRfCodIns||(sd.cbTnpCodIns||sd.cbCambioCodIns||"")} onCh={v=>uP(group.id,si,sub.id,"cbRfCodIns",v)}/>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
-                <DD l="Modello Terminale" r v={sd.rfModello||""} o={v=>uP(group.id,si,sub.id,"rfModello",v)} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/>
+                <DD l="Modello Terminale" r v={sd.rfModello||""} o={v=>uP(group.id,si,sub.id,"rfModello",v)} vals={SMARTPHONES} cerca={cercaTerminali}/>
                 <TF l="IMEI" r v={sd.rfImei||""} o={v=>uP(group.id,si,sub.id,"rfImei",v)} p="15 cifre" nt="Barcode 📷"/>
               </div>
             </div>
@@ -3865,17 +3905,17 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             {showMnpF&&!sub.isMobileBiz&&<DD l="Brand MNP" r v={c.brand_mnp||""} o={v=>uC(group.id,si,sub.id,"brand_mnp",v)} vals={brandMNP}/>}
             {showMnpF&&sub.isMobileBiz&&<TF l="N. Definitivo MNP" r v={c.num_definitivo||""} o={v=>uC(group.id,si,sub.id,"num_definitivo",v)} p="Portare"/>}
             <TF l="ICCID" r v={c.iccid||""} o={v=>uC(group.id,si,sub.id,"iccid",v)} p="893..." nt="Barcode 📷"/>
-            {sub.isMobileBiz&&(sd.tnpGa==="Sì"||sd.tnpGa===true)&&sd.tnpTipo&&<DD l="Modello Terminale" r v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/>}
+            {sub.isMobileBiz&&(sd.tnpGa==="Sì"||sd.tnpGa===true)&&sd.tnpTipo&&<DD l="Modello Terminale" r v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SMARTPHONES} cerca={cercaTerminali}/>}
             {sub.isMobileBiz&&(sd.tnpGa==="Sì"||sd.tnpGa===true)&&sd.tnpTipo&&<TF l="IMEI" r v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>}
           </div>}
           {sub.ct==="tnp_ga"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
             <TF l="Codice Contratto" r v={gaOn?(gaC.codice_contratto||""):(c.codice_contratto||"")} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p={gaOn?"← da Mobile GA":"es. 167942"} dis={gaOn} nt={gaOn?"Auto da Mobile GA":""} err={dupCheck&&dupCheck("CODCONTR",gaOn?gaC.codice_contratto:c.codice_contratto)?"Codice contratto già usato in un altro prodotto":""}/>
-            <DD l="Modello Terminale" v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/>
+            <DD l="Modello Terminale" v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SMARTPHONES} cerca={cercaTerminali}/>
             <TF l="IMEI" v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
           </div>}
           {sub.ct==="tnp_cb"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px"}}>
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942" err={dupCheck&&dupCheck("CODCONTR",c.codice_contratto)?"Codice contratto già usato in un altro prodotto":""}/>
-            <DD l="Modello Terminale" v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SMARTPHONES} cerca={cercaModelliCatalogo}/>
+            <DD l="Modello Terminale" v={c.modello||""} o={v=>uC(group.id,si,sub.id,"modello",v)} vals={SMARTPHONES} cerca={cercaTerminali}/>
             <TF l="IMEI" v={c.imei||""} o={v=>uC(group.id,si,sub.id,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
           </div>}
           {sub.ct==="fisso"&&!isVCMode&&<div style={{display:"grid",gridTemplateColumns:sub.hasFwaImei?"1fr 1fr 1fr":"1fr 1fr",gap:"8px 14px"}}>
