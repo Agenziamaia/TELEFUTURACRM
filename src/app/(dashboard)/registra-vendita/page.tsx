@@ -943,8 +943,8 @@ const listinoPerModello = async (modello) => {
   if (!k || k.startsWith("altro")) return [];
   if (_listinoCache.has(k)) return _listinoCache.get(k);
   try {
-    let { data } = await supabase.from("listini_terminali").select("brand,prezzo,rate").eq("modello", modello).limit(3);
-    if (!data || !data.length) ({ data } = await supabase.from("listini_terminali").select("brand,prezzo,rate").ilike("modello", modello).limit(3));
+    let { data } = await supabase.from("listini_terminali").select("brand,prezzo,rate,margine_pct").eq("modello", modello).limit(3);
+    if (!data || !data.length) ({ data } = await supabase.from("listini_terminali").select("brand,prezzo,rate,margine_pct").ilike("modello", modello).limit(3));
     const v = data || [];
     _listinoCache.set(k, v);
     return v;
@@ -1185,7 +1185,12 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
       )}
       {listini.length>0&&(
         <div style={{marginTop:3,fontSize:11,color:"#34d399",fontWeight:600,lineHeight:1.5}}>
-          {listini.map(li=>`💰 Listino ${li.brand}: € ${Number(li.prezzo||0).toLocaleString("it-IT",{minimumFractionDigits:2})}${Array.isArray(li.rate)&&li.rate.length?` · ${li.rate.map(r=>`${r.mesi}×€${Number(r.rata||0).toLocaleString("it-IT",{minimumFractionDigits:2})}${r.anticipo?` (+ant. €${r.anticipo})`:""}`).join(" / ")}`:""}`).join("  ·  ")}
+          {listini.map(li=>{
+            const pz=Number(li.prezzo||0), mp=Number(li.margine_pct??0);
+            const marg=mp>0?` · margine ${mp}% = € ${(pz*mp/100).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"";
+            const rate=Array.isArray(li.rate)&&li.rate.length?` · ${li.rate.slice(0,3).map(r=>`${r.mesi}×€${Number(r.rata||0).toLocaleString("it-IT",{minimumFractionDigits:2})}${r.anticipo?` (+ant. €${r.anticipo})`:""}`).join(" / ")}`:"";
+            return `💰 Listino ${li.brand}: € ${pz.toLocaleString("it-IT",{minimumFractionDigits:2})}${marg}${rate}`;
+          }).join("  ·  ")}
         </div>
       )}
       {nt&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{nt}</div>}

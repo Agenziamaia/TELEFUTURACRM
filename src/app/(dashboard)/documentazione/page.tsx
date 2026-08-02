@@ -248,6 +248,9 @@ export default function DocumentazionePage() {
     // IMPORT LISTINO TERMINALI (Luca 02/08): dal brand si carica il listino
     // ufficiale (xlsx/csv) → prezzi e rate in listini_terminali (mig. 135)
     const [showImportListino, setShowImportListino] = useState(false);
+    // L'import listini e' riservato al direttore commerciale IN SU (Luca 02/08):
+    // l'amministrativo puo' gestire i documenti ma non tocca i prezzi.
+    const puoListini = ["direttore_commerciale", "direttore_generale", "admin", "dev"].includes(user?.role || "");
     // Niente piu' toggle "Modalita' Admin" (Luca 31/07): per chi puo' modificare,
     // matite/cestini/cartelle sono SEMPRE visibili — un'esperienza unica.
     const isAdmin = canEdit;
@@ -573,7 +576,7 @@ export default function DocumentazionePage() {
                             rate del brand da xlsx/csv → alimentano Registra Vendita
                             (suggerimento 💰 sotto "Modello Terminale") e domani gli
                             scontrini. */}
-                        {isAdmin && (
+                        {puoListini && (
                             <div onClick={() => setShowImportListino(true)}
                                 className="glass-card p-6 border border-emerald-500/25 hover:border-emerald-400/50 cursor-pointer transition-all group flex items-start gap-4">
                                 <div className="p-3 rounded-xl h-fit bg-emerald-500/10">
@@ -1185,7 +1188,7 @@ export default function DocumentazionePage() {
                 </div>
             )}
 
-            {showImportListino && brand && (
+            {showImportListino && brand && puoListini && (
                 <ImportListino brandId={brand.id} brandName={brand.name} gestore={user?.name || ""} onClose={() => setShowImportListino(false)} />
             )}
         </div>

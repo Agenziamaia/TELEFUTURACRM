@@ -5,6 +5,7 @@
 //  - importi POSITIVI = debiti, NEGATIVI = crediti (il file e' al contrario);
 //  - si importano SOLO le persone che matchano un utente ATTIVO (gli ex
 //    dipendenti restano fuori); "Daniel" = nome esatto → Daniel Sonnino;
+//    ALIAS confermati da Luca: "Gian" = Antonino Gianluca Cutrupi;
 //  - anni inferiti camminando sul calendario da Ottobre 2024 (anno esplicito
 //    nel file vince, es. "Gennao 2026"); righe senza mese → mese corrente
 //    del puntatore;
@@ -12,7 +13,8 @@
 //    risulta compensato finisce in STORICO (stato 'saldato'), il residuo
 //    resta APERTO — le liste mostrano solo il vivo, lo storico si consulta;
 //  - ogni riga porta nel campo note il riferimento alla riga del file.
-// Guardia anti doppio import su creato_da='Import Book1'.
+// Guardia anti doppio import PER PERSONA (creato_da='Import Book1'): lo
+// script si puo' rilanciare, chi e' gia' dentro viene saltato.
 const fs = require("fs");
 const path = require("path");
 const XLSX = require("xlsx");
@@ -28,6 +30,7 @@ const client = new Client({
 });
 
 const FILE = "/Users/macbookl/My Drive/Downloads D/Book1.xlsx";
+const ALIAS = { gian: "Antonino Gianluca Cutrupi" };   // confermati da Luca
 const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 const trovaMese = t => {
@@ -39,12 +42,14 @@ const trovaMese = t => {
 
 (async () => {
   await client.connect();
-  const { rows: gia } = await client.query("select count(*) n from user_movimenti where creato_da='Import Book1'");
-  if (Number(gia[0].n) > 0) { console.log("GIA' IMPORTATO (" + gia[0].n + " righe) — esco senza scrivere"); await client.end(); return; }
+  const { rows: gia } = await client.query("select distinct user_id from user_movimenti where creato_da='Import Book1'");
+  const giaDentro = new Set(gia.map(r => r.user_id));
 
   const { rows: utenti } = await client.query("select id, full_name from app_users where active is true");
   const match = (nomeFile) => {
     const nf = norm(nomeFile).replace(/[0-9.]/g, " ").trim();
+    const ali = ALIAS[nf];
+    if (ali) { const u = utenti.find(x => norm(x.full_name) === norm(ali)); if (u) return u; }
     const toks = nf.split(/\s+/); const pn = toks[0]; const resto = toks.slice(1).join(" ");
     let cand = utenti.filter(u => norm(u.full_name).split(/\s+/)[0] === pn);
     if (cand.length !== 1) cand = utenti.filter(u => { const t = norm(u.full_name).split(/\s+/); return t[0].startsWith(pn) || pn.startsWith(t[0]); });
@@ -82,6 +87,7 @@ const trovaMese = t => {
     const u = match(nome);
     const totFile = Math.round(ms.reduce((s, m) => s + m.imp, 0) * 100) / 100;
     if (!u) { recap.push("SKIP " + nome + " (nessun utente attivo) — saldo file € " + totFile + ", " + ms.length + " movimenti NON importati"); continue; }
+    if (giaDentro.has(u.id)) { recap.push("GIA' DENTRO " + nome + " → " + u.full_name + " — saltato"); continue; }
     const ord = [...ms].sort((a, b) => a.comp.localeCompare(b.comp) || a.riga - b.riga);
     const base = { user_id: u.id, origine: "debito", tipo: "one_shot", creato_da: "Import Book1" };
     const notaDi = m => ("Import Book1 · riga " + m.riga + " · mese file \"" + (m.raw || "—") + "\"");
@@ -118,6 +124,7 @@ const trovaMese = t => {
     await client.query("commit");
   } catch (e) { await client.query("rollback"); throw e; }
 
+  if (!ins.length) { console.log("Nulla da importare (tutti gia' dentro)"); recap.forEach(r => console.log(r)); await client.end(); return; }
   console.log("INSERITE " + ins.length + " righe (in transazione)");
   recap.forEach(r => console.log(r));
   const { rows: ver } = await client.query(

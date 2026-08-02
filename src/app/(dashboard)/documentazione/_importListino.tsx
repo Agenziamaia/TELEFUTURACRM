@@ -42,46 +42,100 @@ function parseEuro(v: unknown): number | null {
  *  COLONNE si ancorano alle x della riga d'intestazione (quella che matcha
  *  le parole chiave). Le pagine successive riusano le stesse colonne.
  *  Le scansioni (immagini) non hanno testo: errore chiaro all'utente. */
-async function parsePdfRighe(file: File): Promise<RigaGrezza[]> {
+function grigliaDaPdf(righe: CellaPdf[][]): RigaGrezza[] {
+    const out: RigaGrezza[] = [];
+    let colonne: number[] | null = null;
+    for (const r of righe) {
+        if (!colonne) {
+            const testi = r.map(i => i.s.toLowerCase());
+            const match = Object.values(KEYWORDS).filter(ks => testi.some(t => ks.some(k2 => t.includes(k2)))).length;
+            if (match >= 2 && r.length >= 2) colonne = r.map(i => i.x);
+        }
+        if (!colonne) { out.push(r.map(i => i.s)); continue; }
+        const celle: string[] = new Array(colonne.length).fill("");
+        for (const it of r) {
+            let ci = 0;
+            for (let c = 0; c < colonne.length; c++) if (it.x >= colonne[c] - 4) ci = c;
+            celle[ci] = celle[ci] ? celle[ci] + " " + it.s : it.s;
+        }
+        out.push(celle);
+    }
+    return out;
+}
+
+/** Righe con coordinate di un PDF (usato sia dalla griglia sia dai blocchi). */
+type CellaPdf = { x: number; y: number; s: string };
+async function righePdf(file: File): Promise<CellaPdf[][]> {
     const pdfjs = await import("pdfjs-dist");
     pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
     const doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
-    const out: RigaGrezza[] = [];
-    let colonne: number[] | null = null;
-    for (let pag = 1; pag <= doc.numPages; pag++) {
-        const page = await doc.getPage(pag);
-        const tc = await page.getTextContent();
-        type It = { x: number; y: number; s: string };
-        const items: It[] = (tc.items as { str?: string; transform?: number[] }[])
+    const out: CellaPdf[][] = [];
+    for (let p = 1; p <= doc.numPages; p++) {
+        const tc = await (await doc.getPage(p)).getTextContent();
+        const items: CellaPdf[] = (tc.items as { str?: string; transform?: number[] }[])
             .filter(i => i.str && i.str.trim() && i.transform)
             .map(i => ({ x: i.transform![4], y: i.transform![5], s: String(i.str).trim() }));
         items.sort((a, b) => b.y - a.y || a.x - b.x);
-        const rows: It[][] = [];
-        for (const it of items) {
-            const r = rows.find(rr => Math.abs(rr[0].y - it.y) < 3.5);
-            if (r) r.push(it); else rows.push([it]);
-        }
+        const rows: CellaPdf[][] = [];
+        for (const it of items) { const r = rows.find(rr => Math.abs(rr[0].y - it.y) < 3.5); if (r) r.push(it); else rows.push([it]); }
         rows.forEach(r => r.sort((a, b) => a.x - b.x));
-        if (!colonne) {
-            for (const r of rows) {
-                const testi = r.map(i => i.s.toLowerCase());
-                const match = Object.values(KEYWORDS).filter(ks => testi.some(t => ks.some(k2 => t.includes(k2)))).length;
-                if (match >= 2 && r.length >= 2) { colonne = r.map(i => i.x); break; }
-            }
-        }
-        for (const r of rows) {
-            if (!colonne) { out.push(r.map(i => i.s)); continue; }
-            const celle: string[] = new Array(colonne.length).fill("");
-            for (const it of r) {
-                let ci = 0;
-                for (let c = 0; c < colonne.length; c++) if (it.x >= colonne[c] - 4) ci = c;
-                celle[ci] = celle[ci] ? celle[ci] + " " + it.s : it.s;
-            }
-            out.push(celle);
-        }
+        rows.forEach(r => out.push(r));
     }
-    if (!out.length) throw new Error("nessun testo nel PDF: se è una scansione (immagine) non è leggibile, serve il PDF originale");
     return out;
+}
+
+/** LISTINO "A BLOCCHI" (formato Vodafone & co., verificato sul listino
+ *  principale del 23/07/2026 — 105 modelli, tutti con prezzo). Ogni terminale
+ *  e' un riquadro che si apre con l'intestazione "PREZZO AL PUBBLICO":
+ *   - il MODELLO sta nella colonna di sinistra, spezzato su piu' frammenti
+ *     ("SAMSUNG GALAXY" + "A16 4G");
+ *   - il PREZZO AL PUBBLICO e' il primo importo in € sotto l'intestazione,
+ *     PRIMA della dicitura "RISPARMIO SUL PREZZO AL PUBBLICO" (quello e' lo
+ *     sconto massimo: confonderlo col prezzo falserebbe tutti i margini);
+ *   - i PIANI RATA stanno a destra (contributo iniziale, importo rata,
+ *     totale con rate): i mesi si ricavano da totale/rata, deduplicati. */
+function parseBlocchi(righe: CellaPdf[][]): VoceListino[] {
+    const num = (t: string) => {
+        const m = String(t).replace(/[\s€]/g, "").match(/^(\d{1,3}(?:\.\d{3})*|\d+)(?:,(\d{1,2}))?$/);
+        return m ? parseFloat(m[1].replace(/\./g, "") + "." + (m[2] || "0")) : null;
+    };
+    const aperture: number[] = [];
+    righe.forEach((r, i) => { if (r.some(c => /^PREZZO AL PUBBLICO$/i.test(c.s))) aperture.push(i); });
+    if (aperture.length < 3) return [];
+    const voci: VoceListino[] = [];
+    for (let b = 0; b < aperture.length; b++) {
+        const start = aperture[b], end = b + 1 < aperture.length ? aperture[b + 1] : righe.length;
+        let stopModello = end, prezzo: number | null = null, rigaPrezzo = -1;
+        for (let i = start; i < end; i++) {
+            if (/RISPARMIO SUL PREZZO/i.test(righe[i].map(c => c.s).join(" "))) { stopModello = i; break; }
+        }
+        for (let i = start; i < Math.min(end, stopModello + 1) && prezzo === null; i++) {
+            for (const c of righe[i]) {
+                if (c.x >= 125 && c.x <= 215 && c.s.includes("€")) {
+                    const v = num(c.s);
+                    if (v) { prezzo = v; rigaPrezzo = i; break; }
+                }
+            }
+        }
+        const frammenti: string[] = [];
+        const fine = Math.min(end, Math.max(stopModello, rigaPrezzo >= 0 ? rigaPrezzo : start + 3));
+        for (let i = start; i < fine; i++) righe[i].filter(c => c.x < 110).forEach(c => frammenti.push(c.s));
+        const modello = frammenti.join(" ").replace(/\s+/g, " ").trim();
+        if (!modello || modello.length < 3) continue;
+        const piani = new Map<string, { mesi: number; rata: number; anticipo?: number }>();
+        for (let i = start; i < end; i++) {
+            const rata = righe[i].find(x => x.x >= 340 && x.x <= 360);
+            const tot = righe[i].find(x => x.x >= 370 && x.x <= 395);
+            const ant = righe[i].find(x => x.x >= 308 && x.x <= 335);
+            const vr = rata ? num(rata.s) : null, vt = tot ? num(tot.s) : null, va = ant ? num(ant.s) : null;
+            if (!vr || !vt || vr <= 0) continue;
+            const mesi = Math.round(vt / vr);
+            if (mesi < 2 || mesi > 60) continue;
+            piani.set(`${mesi}|${vr}|${va || 0}`, { mesi, rata: vr, ...(va ? { anticipo: va } : {}) });
+        }
+        voci.push({ modello, prezzo, rate: [...piani.values()] });
+    }
+    return voci.filter(v => v.prezzo != null);
 }
 
 function indovinaColonna(headers: string[], chiavi: string[]): number {
@@ -101,14 +155,23 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
     const [col, setCol] = useState<{ modello: number; prezzo: number; rata: number; mesi: number; anticipo: number }>({ modello: -1, prezzo: -1, rata: -1, mesi: -1, anticipo: -1 });
     const [busy, setBusy] = useState(false);
     const [errore, setErrore] = useState("");
+    // listino a BLOCCHI riconosciuto: niente mappatura colonne, voci pronte
+    const [vociBlocchi, setVociBlocchi] = useState<VoceListino[] | null>(null);
+    const [forzaColonne, setForzaColonne] = useState(false);
+    // margine sul prezzo al pubblico (Luca: "sul prezzo calcoliamo il 4%")
+    const [margine, setMargine] = useState("4");
     const [fatto, setFatto] = useState<null | { voci: number; conRate: number }>(null);
 
     const leggiFile = async (f: File) => {
-        setErrore(""); setFatto(null); setFile(f);
+        setErrore(""); setFatto(null); setFile(f); setVociBlocchi(null); setForzaColonne(false);
         try {
             let rows: RigaGrezza[];
             if (f.name.toLowerCase().endsWith(".pdf")) {
-                rows = await parsePdfRighe(f);
+                const rp = await righePdf(f);
+                if (!rp.length) { setErrore("Nessun testo nel PDF: se è una scansione (immagine) non è leggibile, serve il PDF originale del portale."); return; }
+                const blocchi = parseBlocchi(rp);
+                if (blocchi.length >= 3) { setVociBlocchi(blocchi); setRighe([]); return; }
+                rows = grigliaDaPdf(rp);
             } else {
                 const XLSX = await import("xlsx");
                 const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
@@ -141,6 +204,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
 
     // righe dati → voci normalizzate (stesso modello = piani rata accumulati)
     const voci = useMemo<VoceListino[]>(() => {
+        if (vociBlocchi && !forzaColonne) return vociBlocchi;
         if (!righe.length || col.modello < 0) return [];
         const per = new Map<string, VoceListino>();
         for (let i = headerIdx + 1; i < righe.length; i++) {
@@ -158,15 +222,16 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
             per.set(k, v);
         }
         return [...per.values()];
-    }, [righe, headerIdx, col]);
+    }, [righe, headerIdx, col, vociBlocchi, forzaColonne]);
 
     const importa = async () => {
         if (busy || !voci.length) return;
         setBusy(true); setErrore("");
         try {
+            const mrg = Math.max(0, parseFloat(String(margine).replace(",", ".")) || 0);
             const rows = voci.map(v => ({
                 brand: brandName, modello: v.modello, prezzo: v.prezzo,
-                rate: v.rate, fonte: file?.name || "", aggiornato_da: gestore,
+                rate: v.rate, margine_pct: mrg, fonte: file?.name || "", aggiornato_da: gestore,
                 aggiornato_il: new Date().toISOString(),
             }));
             for (let i = 0; i < rows.length; i += 500) {
@@ -208,7 +273,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                         <div className="text-center py-10 space-y-3">
                             <div className="w-14 h-14 mx-auto rounded-full bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center"><Check className="w-7 h-7 text-emerald-400" /></div>
                             <p className="text-white font-bold">Listino {brandName} importato</p>
-                            <p className="text-sm text-slate-400">{fatto.voci} modelli aggiornati · {fatto.conRate} con piani rata · fonte: {file?.name}</p>
+                            <p className="text-sm text-slate-400">{fatto.voci} modelli aggiornati · {fatto.conRate} con piani rata · margine {margine}% · fonte: {file?.name}</p>
                             <p className="text-xs text-slate-500">I prezzi compaiono sotto le tendine “Modello Terminale” di Registra Vendita.</p>
                             <button onClick={onClose} className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">Chiudi</button>
                         </div>
@@ -225,7 +290,26 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                                 <span className="text-[11px] text-slate-500">PDF del listino ufficiale (digitale, non scansione) — oppure Excel/CSV</span>
                             </div>
                             {errore && <p className="text-sm text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2">{errore}</p>}
-                            {righe.length > 0 && (
+                            {vociBlocchi && !forzaColonne && (
+                                <div className="flex items-center justify-between gap-3 flex-wrap rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                                    <p className="text-sm text-emerald-200">
+                                        ✅ Listino a blocchi riconosciuto: <b>{vociBlocchi.length} modelli</b> col prezzo al pubblico
+                                        {vociBlocchi.filter(v => v.rate.length).length ? ` · ${vociBlocchi.filter(v => v.rate.length).length} con piani rata` : ""}
+                                    </p>
+                                    <button onClick={() => setForzaColonne(true)} className="text-[11px] text-slate-400 hover:text-white underline">mappa le colonne a mano</button>
+                                </div>
+                            )}
+                            {(vociBlocchi || righe.length > 0) && (
+                                <div className="flex items-end gap-3 flex-wrap">
+                                    <label className="text-xs text-slate-400 flex flex-col gap-1">
+                                        <span className="font-bold uppercase tracking-wider text-[10px] text-slate-500">Margine % sul prezzo</span>
+                                        <input value={margine} onChange={e => setMargine(e.target.value.replace(/[^0-9.,]/g, ""))}
+                                            className="glass-input text-sm rounded-lg py-1.5 px-2 w-24 font-mono" inputMode="decimal" />
+                                    </label>
+                                    <p className="text-[11px] text-slate-500 pb-2">Quanto guadagniamo sul prezzo al pubblico: compare in Registra Vendita accanto al listino.</p>
+                                </div>
+                            )}
+                            {(righe.length > 0 && (!vociBlocchi || forzaColonne)) && (
                                 <>
                                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                                         <SelCol campo="modello" label="Modello *" />
@@ -234,9 +318,12 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                                         <SelCol campo="mesi" label="N. mesi/rate" />
                                         <SelCol campo="anticipo" label="Anticipo" />
                                     </div>
-                                    {col.modello < 0 ? (
-                                        <p className="text-sm text-amber-300">Scegli almeno la colonna del <b>modello</b>.</p>
-                                    ) : (
+                                    {col.modello < 0 && <p className="text-sm text-amber-300">Scegli almeno la colonna del <b>modello</b>.</p>}
+                                </>
+                            )}
+                            {voci.length > 0 && (
+                                <>
+                                    {(
                                         <div className="rounded-xl border border-white/10 overflow-hidden">
                                             <div className="px-3 py-2 bg-white/[0.04] text-[11px] font-bold uppercase tracking-wider text-slate-400">Anteprima — {voci.length} modelli riconosciuti</div>
                                             <div className="max-h-64 overflow-y-auto divide-y divide-white/5">
@@ -251,7 +338,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                                             </div>
                                         </div>
                                     )}
-                                    <button onClick={importa} disabled={busy || !voci.length || col.modello < 0}
+                                    <button onClick={importa} disabled={busy || !voci.length}
                                         className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-emerald-600 to-green-600 hover:brightness-110 disabled:opacity-40 flex items-center justify-center gap-2">
                                         {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Import in corso…</> : `Importa ${voci.length} modelli nel listino ${brandName}`}
                                     </button>
