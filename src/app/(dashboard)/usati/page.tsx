@@ -181,6 +181,9 @@ const RICAMBIO_STATES: { key: RicambioState; label: string; colorClass: string }
 ];
 // VENDITORI dal DB (useSellers)
 const OPERATORI = ["Alberto", "Francesca", "Daniele", "Giulia", "Michele", "Marta", "Federico", "Eloise", "Riccardo", "Lorenzo"];
+/* Liste storiche dei modelli: NON alimentano piu' le tendine (Luca 02/08 —
+   "tutte le altre tendine solo col catalogo open"). Restano come riferimento
+   dei brand storici finche' non si ripulisce anche lo storico dei dati. */
 const PHONE_BRANDS_MODELS: Record<string, string[]> = {
   Apple: ["iPhone 17 Pro Max", "iPhone 17 Pro", "iPhone 17", "iPhone Air", "iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 16 Plus", "iPhone 16", "iPhone 16e", "iPhone 15 Pro Max", "iPhone 15 Pro", "iPhone 15 Plus", "iPhone 15", "iPhone 14 Pro Max", "iPhone 14 Pro", "iPhone 14", "iPhone 13", "iPhone SE (2022)"],
   Samsung: ["Galaxy S25 Ultra", "Galaxy S25+", "Galaxy S25", "Galaxy S25 Edge", "Galaxy Z Fold7", "Galaxy Z Flip7", "Galaxy S24 Ultra", "Galaxy S24+", "Galaxy S24", "Galaxy Z Fold6", "Galaxy Z Flip6", "Galaxy A56", "Galaxy A36", "Galaxy A26", "Galaxy A16"],
@@ -1036,11 +1039,12 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   useEffect(() => {
     let vivo = true;
     if (!brand) { setDbModelli([]); return; }
-    modelliDispositivi(catDisp, brand, PHONE_BRANDS_MODELS[brand] || []).then(m => { if (vivo) setDbModelli(m); });
+    modelliDispositivi(catDisp, brand, []).then(m => { if (vivo) setDbModelli(m); });
     return () => { vivo = false; };
   }, [catDisp, brand]);
-  const brandOptions = dbBrands.length ? dbBrands : Object.keys(PHONE_BRANDS_MODELS);
-  const modelOptions = dbModelli.length ? dbModelli : (brand ? (PHONE_BRANDS_MODELS[brand] || []) : []);
+  // SOLO catalogo universale: niente ripieghi cablati, cosi' la fonte e' una
+  const brandOptions = dbBrands;
+  const modelOptions = dbModelli;
   const [hasExtraMargine, setHasExtraMargine] = useState(false);
   const [extraMargineImporto, setExtraMargineImporto] = useState("");
   const [metodoPagamento, setMetodoPagamento] = useState<"contanti" | "buono" | "bonifico" | "">("");
@@ -1616,7 +1620,7 @@ function GestioneUsatiInner() {
   // prima esistevano solo la ricerca generica riservata alla direzione
   const [brandFilter, setBrandFilter] = useState<string[]>([]);
   // brand del filtro dal catalogo universale (ripiego alle liste cablate)
-  const [brandFiltroOptions, setBrandFiltroOptions] = useState<string[]>(Object.keys(PHONE_BRANDS_MODELS));
+  const [brandFiltroOptions, setBrandFiltroOptions] = useState<string[]>([]);
   useEffect(() => { brandsDispositivi("smartphone", []).then(b => { if (b.length) setBrandFiltroOptions(b); }); }, []);
   const [prezzoDa, setPrezzoDa] = useState("");
   const [prezzoA, setPrezzoA] = useState("");
