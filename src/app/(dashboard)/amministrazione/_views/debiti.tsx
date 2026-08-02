@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
-import { Loader2, Plus, Trash2, Wallet, RotateCw } from "lucide-react";
+import { Loader2, Plus, Timer, Trash2, Wallet, RotateCw } from "lucide-react";
 import { notify, dbError } from "./toast";
 import { SelectPersona, SelectMulti } from "@/components/SelectPersona";
 
@@ -337,6 +337,48 @@ export function DebitiView({ gestore }: { gestore: string }) {
                     </div>
                 </div>
             ))}
+        </div>
+    );
+}
+
+/** Riquadro nella SCHEDA UTENTE: malus del collaboratore — pratiche PDA
+ *  (malus_storico, campo venditore) + laboratorio usati (usati_malus,
+ *  campo tecnico). Da scalare = tutto cio' che non e' compensato. */
+export function MalusUtenteBox({ nome }: { nome: string }) {
+    const [dati, setDati] = useState<null | { pratiche: number; lab: number; attivi: number; compensati: number }>(null);
+    useEffect(() => {
+        (async () => {
+            const [p, l] = await Promise.all([
+                supabase.from("malus_storico").select("importo,stato").eq("venditore", nome).limit(500),
+                supabase.from("usati_malus").select("importo,stato").eq("tecnico", nome).limit(500),
+            ]);
+            const pr = (p.data ?? []) as { importo: number; stato: string }[];
+            const lb = (l.data ?? []) as { importo: number; stato: string }[];
+            const aperti = [...pr, ...lb].filter(r => r.stato !== "compensato");
+            setDati({
+                pratiche: pr.filter(r => r.stato !== "compensato").reduce((s2, r) => s2 + Number(r.importo || 0), 0),
+                lab: lb.filter(r => r.stato !== "compensato").reduce((s2, r) => s2 + Number(r.importo || 0), 0),
+                attivi: aperti.length,
+                compensati: pr.length + lb.length - aperti.length,
+            });
+        })();
+    }, [nome]);
+    if (!dati) return null;
+    const tot = dati.pratiche + dati.lab;
+    return (
+        <div className="glass-card p-4 rounded-xl border-l-4 border-l-amber-500/70">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-sm font-bold text-white flex items-center gap-2"><Timer className="w-4 h-4 text-amber-400" /> Malus</p>
+                <p className={cn("text-base font-black", tot > 0 ? "text-amber-400" : "text-emerald-400")}>{tot > 0 ? eur(tot) + " da scalare" : "nessun malus"}</p>
+            </div>
+            {(tot > 0 || dati.compensati > 0) && (
+                <p className="text-[11px] text-slate-400 mt-1">
+                    {dati.pratiche > 0 ? `• pratiche ${eur(dati.pratiche)} ` : ""}
+                    {dati.lab > 0 ? `• laboratorio ${eur(dati.lab)} ` : ""}
+                    {dati.attivi > 0 ? `· ${dati.attivi} episodi attivi` : ""}
+                    {dati.compensati > 0 ? ` · ${dati.compensati} gia' compensati` : ""}
+                </p>
+            )}
         </div>
     );
 }

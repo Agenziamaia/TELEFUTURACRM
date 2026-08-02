@@ -14,7 +14,7 @@ import { CatalogoView } from "./_views/catalogo";
 import { CallCenterView } from "./_views/callcenter";
 import { CalendarioEsitiView } from "./_views/calendario_esiti";
 import { IncarichiView } from "./_views/incarichi";
-import { DebitiView, DebitiUtenteBox } from "./_views/debiti";
+import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { effectiveAllowed, hubByHref, hubChildKey, hubSubKey } from "@/lib/nav";
@@ -1294,10 +1294,10 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
     const visibilita = (u.user_store_visibility || []).map((s) => s.store_name);
     const brands = (u.user_brands || []).map((b) => b.brand);
 
+    // Le tessere "Contratti" e "Turni" sono state ELIMINATE (Luca 02/08):
+    // restano solo i contatori call center dove hanno senso.
     const kpis = act
         ? [
-              { label: "Contratti", value: act.contracts.length, icon: FileText },
-              { label: "Turni", value: act.shifts.length, icon: CalendarClock },
               ...(area === "cc" ? [{ label: "Chiamate", value: act.calls.length, icon: Phone }] : []),
               ...(area === "cc" || area === "ob" ? [{ label: "Appuntamenti", value: act.appointments.length, icon: ClipboardList }] : []),
           ]
@@ -1392,7 +1392,10 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
                     ) : !act ? null : subtab === "panoramica" ? (
                         <div className="space-y-4">
                             {/* stato debiti del collaboratore (Luca 01/08, mig. 127) */}
-                            <DebitiUtenteBox userId={u.id} />
+                            <div className="grid md:grid-cols-2 gap-3">
+                                <DebitiUtenteBox userId={u.id} />
+                                <MalusUtenteBox nome={u.full_name} />
+                            </div>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                 {kpis.map((k) => {
                                     const Icon = k.icon;
