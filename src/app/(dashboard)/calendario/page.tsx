@@ -38,6 +38,11 @@ interface Appointment {
     customerPhone: string;
     cfPiva?: string;
     tipoCliente?: string;   // consumer | business (etichetta CF vs P.IVA)
+    // REFERENTE business (Luca 03/08): stessi obbligatori dell'anagrafica
+    // clienti — nome e cognome referente obbligatori, CF referente facoltativo
+    referenteNome?: string;
+    referenteCognome?: string;
+    referenteCf?: string;
     notes: string;
     esitoNote?: string;
     status: AppointmentStatus;
@@ -125,6 +130,9 @@ function mapAppointmentRow(r: Record<string, unknown>): Appointment {
         customerPhone: r.customer_phone as string,
         cfPiva: r.cf_piva as string | undefined,
         tipoCliente: (r.tipo_cliente as string | undefined) || undefined,
+        referenteNome: (r.referente_nome as string | undefined) || undefined,
+        referenteCognome: (r.referente_cognome as string | undefined) || undefined,
+        referenteCf: (r.referente_cf as string | undefined) || undefined,
         notes: (r.notes as string) ?? "",
         esitoNote: r.esito_note as string | undefined,
         status: r.status as AppointmentStatus,
@@ -263,6 +271,9 @@ export default function Calendario() {
         customerPhone: "",
         cfPiva: "",
         tipoCliente: "consumer" as "consumer" | "business",
+        referenteNome: "",
+        referenteCognome: "",
+        referenteCf: "",
         notes: "",
     });
 
@@ -393,7 +404,8 @@ export default function Calendario() {
     const [searchDateTo, setSearchDateTo] = useState("");
 
     // Admin Grid Filters State
-    const [filterStore, setFilterStore] = useState("");
+    // MULTISELEZIONE (Luca 03/08): piu' punti vendita insieme; vuoto = tutti
+    const [filterStores, setFilterStores] = useState<string[]>([]);
     const [filterAgent, setFilterAgent] = useState("");
     // chi ha FISSATO l'appuntamento (non l'incaricato)
     const [filterCreatedBy, setFilterCreatedBy] = useState("");
@@ -568,7 +580,7 @@ export default function Calendario() {
         // filtro categorie (pallini): vale per tutti i ruoli
         if (!catOn(a.type)) return false;
         if (isCallCenter) {
-            if (filterStore && filterStore !== "Tutti" && a.store !== filterStore) return false;
+            if (filterStores.length > 0 && !filterStores.includes(a.store || "")) return false;
             if (filterAgent && filterAgent !== "Tutti" && a.agente !== filterAgent) return false;
             if (filterCreatedBy && filterCreatedBy !== "Tutti" && (a.createdBy || "") !== filterCreatedBy) return false;
             if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
@@ -603,7 +615,7 @@ export default function Calendario() {
             if (t.date !== dateStr) return false;
             if (isCallCenter) {
                 if (filterAgent && filterAgent !== "Tutti" && !t.assignedToStore && t.assignedTo !== filterAgent) return false;
-                if (filterStore && filterStore !== "Tutti" && t.assignedToStore && t.assignedToStore !== filterStore) return false;
+                if (filterStores.length > 0 && t.assignedToStore && !filterStores.includes(t.assignedToStore)) return false;
                 if (taskOutcomeFilter && t.status !== taskOutcomeFilter) return false;
                 return true;
             }
@@ -626,6 +638,36 @@ export default function Calendario() {
         selectDate(`${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
     };
 
+    // ── TRASCINA E SPOSTA (Luca 03/08): il drop cambia la data VERA — a DB
+    //    sugli appointments e, per gli appuntamenti nati dal call center, anche
+    //    sulla copia della pratica (calls.data_appuntamento / data_richiamo):
+    //    liste, warning e malus dei caller si calcolano da li'. ──
+    const [dragApptId, setDragApptId] = useState<number | null>(null);
+    const spostaAppuntamento = async (apptId: number, nuovaData: string) => {
+        const a = appointments.find(x => x.id === apptId);
+        setDragApptId(null);
+        if (!a || a.date === nuovaData) return;
+        if (isDateBlocked(nuovaData)) {
+            const block = agendaBlocks.find(b => nuovaData >= b.startDate && nuovaData <= b.endDate);
+            alert(`Questa data è bloccata in agenda. Motivo: ${block?.note ?? "—"}`);
+            return;
+        }
+        const { error } = await supabase.from("appointments").update({ date: nuovaData }).eq("id", apptId);
+        if (error) { alert("Spostamento NON salvato: " + error.message); return; }
+        try {
+            const campoLink = a.type === "richiamo" ? "richiamo_event_id" : "appointment_id";
+            const campoData = a.type === "richiamo" ? "data_richiamo" : "data_appuntamento";
+            const { data: pratiche } = await supabase.from("calls").select(`id, ${campoData}`).eq(campoLink, apptId);
+            for (const pr of ((pratiche ?? []) as Record<string, unknown>[])) {
+                const vecchia = String(pr[campoData] || "");
+                const ora = vecchia.includes("T") ? "T" + vecchia.split("T")[1] : "";
+                await supabase.from("calls").update({ [campoData]: nuovaData + ora }).eq("id", pr.id as string);
+            }
+        } catch { /* nessuna pratica caller collegata */ }
+        setAppointments(prev => prev.map(x => x.id === apptId ? { ...x, date: nuovaData } : x));
+        selectDate(nuovaData);
+    };
+
     const handleCreateSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedDate) return;
@@ -646,14 +688,22 @@ export default function Calendario() {
             customer_phone: numeroNazionale(newAppt.customerPhone) || newAppt.customerPhone,
             cf_piva: newAppt.cfPiva || null,
             tipo_cliente: newAppt.tipoCliente,
+            referente_nome: newAppt.tipoCliente === "business" ? (newAppt.referenteNome || null) : null,
+            referente_cognome: newAppt.tipoCliente === "business" ? (newAppt.referenteCognome || null) : null,
+            referente_cf: newAppt.tipoCliente === "business" ? (newAppt.referenteCf || null) : null,
             notes: newAppt.notes || "",
             status: "scheduled",
             created_by: user?.name || "Sconosciuto",
         };
         let { data, error } = await supabase.from("appointments").insert(payload).select().single();
+        if (error && /referente/.test(error.message)) {
+            // migrazione 153 non ancora applicata: si salva senza referente
+            const { referente_nome: _rn, referente_cognome: _rc, referente_cf: _rf, ...senzaRef } = payload;
+            ({ data, error } = await supabase.from("appointments").insert(senzaRef).select().single());
+        }
         if (error && /created_by/.test(error.message)) {
             // migrazione 083 non ancora applicata: si salva senza "fissato da"
-            const { created_by: _cb, ...senza } = payload;
+            const { created_by: _cb, referente_nome: _rn2, referente_cognome: _rc2, referente_cf: _rf2, ...senza } = payload;
             ({ data, error } = await supabase.from("appointments").insert(senza).select().single());
         }
         if (error) {
@@ -662,7 +712,7 @@ export default function Calendario() {
         }
         setAppointments(prev => [...prev, mapAppointmentRow(data)]);
         setShowCreateModal(false);
-        setNewAppt({ time: "10:00", type: "incoming", agente: "", store: "", customerAddress: "", customerName: "", customerPhone: "", cfPiva: "", tipoCliente: "consumer", notes: "" });
+        setNewAppt({ time: "10:00", type: "incoming", agente: "", store: "", customerAddress: "", customerName: "", customerPhone: "", cfPiva: "", tipoCliente: "consumer", referenteNome: "", referenteCognome: "", referenteCf: "", notes: "" });
     };
 
     const handleCreateTaskSubmit = async (e: React.FormEvent) => {
@@ -937,8 +987,8 @@ export default function Calendario() {
                     <h2 className="text-3xl font-bold text-white mb-2">Calendario Appuntamenti</h2>
                     <p className="text-slate-400">
                         {isCallCenter ? (
-                            (filterStore && filterStore !== "Tutti") || (filterAgent && filterAgent !== "Tutti") || (filterCreatedBy && filterCreatedBy !== "Tutti")
-                                ? <span className="text-indigo-300 font-medium">Filtro attivo: {[filterStore && filterStore !== "Tutti" ? filterStore : null, filterAgent && filterAgent !== "Tutti" ? filterAgent : null, filterCreatedBy && filterCreatedBy !== "Tutti" ? `fissato da ${filterCreatedBy}` : null].filter(Boolean).join(" · ")}</span>
+                            filterStores.length > 0 || (filterAgent && filterAgent !== "Tutti") || (filterCreatedBy && filterCreatedBy !== "Tutti")
+                                ? <span className="text-indigo-300 font-medium">Filtro attivo: {[filterStores.length ? filterStores.join(" + ") : null, filterAgent && filterAgent !== "Tutti" ? filterAgent : null, filterCreatedBy && filterCreatedBy !== "Tutti" ? `fissato da ${filterCreatedBy}` : null].filter(Boolean).join(" · ")}</span>
                                 : "Visualizzazione completa — tutti i consulenti"
                         ) : `I tuoi appuntamenti — ${user?.name}`}
                     </p>
@@ -999,11 +1049,12 @@ export default function Calendario() {
                 <div className="mb-6 flex flex-col md:flex-row gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5">
                     <div className="flex-1">
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Punto Vendita</label>
-                        <SelectOpzioni
+                        <SelectMulti
                             className="glass-input w-full text-sm"
-                            value={filterStore === "Tutti" ? "" : filterStore}
-                            onChange={(v) => setFilterStore(v || "Tutti")}
+                            values={filterStores}
+                            onChange={setFilterStores}
                             opzioni={storeNames}
+                            maxVoci={100}
                             placeholder="Tutti i punti vendita — scrivi per filtrare"
                         />
                     </div>
@@ -1318,12 +1369,15 @@ export default function Calendario() {
                                 <button
                                     key={day}
                                     onClick={() => handleDayClick(day)}
+                                    onDragOver={(e) => { if (dragApptId != null) e.preventDefault(); }}
+                                    onDrop={(e) => { e.preventDefault(); if (dragApptId != null) spostaAppuntamento(dragApptId, dateStr); }}
                                     className={cn(
                                         "relative aspect-square rounded-xl flex flex-col items-center justify-start pt-2 pb-1 px-1 transition-all group",
                                         isBlocked ? "bg-amber-500/15 border border-amber-500/30" :
                                             isSelected ? "bg-indigo-500/25 border border-indigo-500/50" :
                                                 isToday ? "bg-white/[0.05] border border-white/15" :
-                                                    "hover:bg-white/[0.04] border border-transparent"
+                                                    "hover:bg-white/[0.04] border border-transparent",
+                                        dragApptId != null && !isBlocked && "border-dashed border-indigo-400/50"
                                     )}
                                 >
                                     <span className={cn(
@@ -1391,12 +1445,15 @@ export default function Calendario() {
                                 return (
                                     <div
                                         key={dateStr}
+                                        onDragOver={(e) => { if (dragApptId != null) e.preventDefault(); }}
+                                        onDrop={(e) => { e.preventDefault(); if (dragApptId != null) spostaAppuntamento(dragApptId, dateStr); }}
                                         className={cn(
                                             // piu' respiro in verticale (Luca 31/07): lo spazio sotto c'era
                                             "rounded-xl border flex flex-col min-h-[440px] max-h-[72vh]",
                                             isBlocked ? "bg-amber-500/10 border-amber-500/30" :
                                                 isSelected ? "border-indigo-500/50 bg-indigo-500/[0.07]" :
                                                     isToday ? "border-white/15 bg-white/[0.04]" : "border-white/8 bg-white/[0.02]",
+                                            dragApptId != null && !isBlocked && "border-dashed border-indigo-400/50",
                                         )}
                                     >
                                         <button
@@ -1415,6 +1472,10 @@ export default function Calendario() {
                                                 ...dayAppts.map((a) => ({ min: minutiDi(a.time), jsx: (
                                                     <button
                                                         key={`a-${a.id}`}
+                                                        draggable
+                                                        onDragStart={(e) => { setDragApptId(a.id); e.dataTransfer.effectAllowed = "move"; }}
+                                                        onDragEnd={() => setDragApptId(null)}
+                                                        title="Trascinalo su un altro giorno per spostarlo"
                                                         onClick={() => { selectDate(dateStr); setSelectedAppointment(a); setShowModal(true); }}
                                                         className={cn(
                                                             "w-full text-left px-1.5 py-1 rounded-lg border text-[10px] leading-tight transition-colors hover:bg-white/[0.08]",
@@ -1601,8 +1662,12 @@ export default function Calendario() {
                                     {dateAppts.map(a => (
                                         <button
                                             key={a.id}
+                                            draggable
+                                            onDragStart={(e) => { setDragApptId(a.id); e.dataTransfer.effectAllowed = "move"; }}
+                                            onDragEnd={() => setDragApptId(null)}
+                                            title="Trascinalo su un giorno del calendario per spostarlo"
                                             onClick={() => { setSelectedAppointment(a); setShowModal(true); }}
-                                            className="w-full text-left p-3 rounded-xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] transition-all"
+                                            className="w-full text-left p-3 rounded-xl bg-white/[0.03] border border-white/8 hover:bg-white/[0.06] transition-all cursor-grab active:cursor-grabbing"
                                         >
                                             <div className="flex items-center justify-between mb-1">
                                                 <span className="text-sm font-semibold text-white truncate max-w-[200px]">{a.fascia ? <span className="text-amber-300">{fasciaLabel(a.fascia)}</span> : a.time} — {a.customerName}</span>
@@ -1878,6 +1943,9 @@ export default function Calendario() {
                                 <div className="flex items-center gap-2 text-slate-300"><User className="w-4 h-4 text-slate-500" />{selectedAppointment.customerName}</div>
                                 <div className="flex items-center gap-2 text-slate-300"><Phone className="w-4 h-4 text-slate-500" />{selectedAppointment.customerPhone}</div>
                                 {selectedAppointment.cfPiva && <div className="flex items-center gap-2 text-slate-300 font-mono"><Search className="w-4 h-4 text-slate-500" /><span className="text-[10px] uppercase text-slate-500 font-sans">{selectedAppointment.tipoCliente === "business" ? "P.IVA" : "C.F."}</span>{selectedAppointment.cfPiva}</div>}
+                                {(selectedAppointment.referenteNome || selectedAppointment.referenteCognome) && (
+                                    <div className="flex items-center gap-2 text-slate-300"><User className="w-4 h-4 text-slate-500" /><span className="text-[10px] uppercase text-slate-500">Referente</span>{`${selectedAppointment.referenteNome || ""} ${selectedAppointment.referenteCognome || ""}`.trim()}{selectedAppointment.referenteCf ? <span className="font-mono text-slate-400 text-xs">· {selectedAppointment.referenteCf}</span> : null}</div>
+                                )}
                                 <div className="flex items-center gap-2 text-slate-300">
                                     <MapPin className="w-4 h-4 text-slate-500" />{selectedAppointment.store || selectedAppointment.customerAddress}
                                     {selectedAppointment.customerAddress && (
@@ -2055,6 +2123,9 @@ export default function Calendario() {
                                         cfPiva: c.cf_piva || "",
                                         customerName: c.ragione_sociale || `${c.nome || ""} ${c.cognome || ""}`.trim(),
                                         customerPhone: numeroNazionale(c.cellulare || "") || c.cellulare || "",
+                                        referenteNome: c.nome_ref || "",
+                                        referenteCognome: c.cognome_ref || "",
+                                        referenteCf: c.cf_ref || "",
                                     }))}
                                 />
                                 <label className="block text-xs font-medium text-slate-400 mb-1.5">{newAppt.tipoCliente === "business" ? "Partita IVA *" : "Codice Fiscale *"}</label>
@@ -2063,12 +2134,34 @@ export default function Calendario() {
                                     maxLength={newAppt.tipoCliente === "business" ? 11 : 16}
                                     value={newAppt.cfPiva}
                                     onChange={e => setNewAppt(p => ({ ...p, cfPiva: p.tipoCliente === "business" ? e.target.value.replace(/\D/g, "") : e.target.value.toUpperCase() }))} required />
+                                {/* REFERENTE (Luca 03/08): per il business valgono gli stessi
+                                    obbligatori dell'anagrafica clienti — nome e cognome referente
+                                    obbligatori, CF referente facoltativo */}
+                                {newAppt.tipoCliente === "business" && (
+                                    <div className="grid grid-cols-2 gap-3 mt-3">
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Nome Referente *</label>
+                                            <input type="text" className="glass-input w-full" placeholder="Mario" value={newAppt.referenteNome}
+                                                onChange={e => setNewAppt(p => ({ ...p, referenteNome: e.target.value }))} required />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-400 mb-1.5">Cognome Referente *</label>
+                                            <input type="text" className="glass-input w-full" placeholder="Rossi" value={newAppt.referenteCognome}
+                                                onChange={e => setNewAppt(p => ({ ...p, referenteCognome: e.target.value }))} required />
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="block text-xs font-medium text-slate-400 mb-1.5">CF Referente <span className="text-slate-600">(facoltativo)</span></label>
+                                            <input type="text" className="glass-input w-full font-mono uppercase" placeholder="RSSMRA80A01H501U" maxLength={16}
+                                                value={newAppt.referenteCf} onChange={e => setNewAppt(p => ({ ...p, referenteCf: e.target.value.toUpperCase().replace(/\s+/g, "") }))} />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">Nome cliente *</label>
-                                    <input type="text" className="glass-input w-full" placeholder="Nome e cognome" value={newAppt.customerName} onChange={e => setNewAppt(p => ({ ...p, customerName: e.target.value }))} required />
+                                    <label className="block text-xs font-medium text-slate-400 mb-1.5">{newAppt.tipoCliente === "business" ? "Ragione Sociale *" : "Nome cliente *"}</label>
+                                    <input type="text" className="glass-input w-full" placeholder={newAppt.tipoCliente === "business" ? "Ragione sociale" : "Nome e cognome"} value={newAppt.customerName} onChange={e => setNewAppt(p => ({ ...p, customerName: e.target.value }))} required />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-slate-400 mb-1.5">Telefono cliente *</label>
