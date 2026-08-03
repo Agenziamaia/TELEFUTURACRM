@@ -136,7 +136,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, pathname]);
     // override per ruolo dal DB (Amministrazione → Permessi); default = codice
-    const { perms } = useRolePermissions(user?.role);
+    const { perms } = useRolePermissions(user?.role, user?.grade);
     const vede = (href: string, roles: string[], group?: string) => effectiveAllowed(user?.role, href, roles, perms, group);
     const feriePendenti = useFeriePendenti(user?.id, user?.role);
 
@@ -392,7 +392,7 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const { user } = useAuth();
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    const { perms } = useRolePermissions(user?.role);
+    const { perms } = useRolePermissions(user?.role, user?.grade);
     // Le sezioni interne dell'hub seguono i permessi (default: roles del child,
     // o quelli dell'hub se il child non li dichiara) — amministrabili una a una.
     // Una voce "esplodi" (mini-hub Costi) resta visibile se ALMENO UNA delle
@@ -470,7 +470,9 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                                         >
                                             {s.emoji
                                                 ? <span className={cn("text-[11px] leading-none shrink-0", !subAttiva(s.id) && "opacity-70")}>{s.emoji}</span>
-                                                : <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", subAttiva(s.id) ? "bg-indigo-400" : "bg-slate-600")} />}
+                                                : s.color
+                                                    ? <span className={cn("w-2 h-2 rounded-full shrink-0", !subAttiva(s.id) && "opacity-60")} style={{ backgroundColor: s.color }} />
+                                                    : <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", subAttiva(s.id) ? "bg-indigo-400" : "bg-slate-600")} />}
                                             {s.name}
                                         </Link>
                                     ))}

@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { ToastHost, dbError, notify } from "./_views/toast";
 import { FixedStoreCosts, StoreAttachments, OrariChiusureView } from "./_views/store-extra";
-import { TargetSection } from "./_views/target";
 import { MarginalitaView } from "./_views/marginalita";
 import { PermessiView } from "./_views/permessi";
 import { RuoliView } from "./_views/ruoli";
@@ -24,8 +23,6 @@ import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
-import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
-import { DashboardTargetAdmin } from "@/components/DashboardTargetAdmin";
 import { RichiesteProfiloBox } from "@/components/RichiesteProfilo";
 import {
     ROLES,
@@ -77,8 +74,6 @@ import {
     Package,
     Layers,
     ShieldCheck,
-    Compass,
-    Target,
     Clock3,
 } from "lucide-react";
 
@@ -194,9 +189,8 @@ const SEZIONI: Sezione[] = [
     { id: "callcenter", label: "Call Center", icon: Phone, desc: "Opzioni della sezione Caller: esiti/stati, provenienze, tipologie e obiettivi — aggiungi, rinomina, riordina, spegni." },
     { id: "ordinemerce", label: "Ordine Merce", icon: Package, desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
     { id: "calendario", label: "Calendario", icon: CalendarClock, desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
-    { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
-    { id: "direzione", label: "Direzione Inserimento", icon: Compass, desc: "Mappa, per ogni negozio, su quale codice inserire ogni brand/categoria — alimenta la bussola in Home (sola lettura)." },
-    { id: "obiettivi", label: "Obiettivi Home", icon: Target, desc: "Target contratti del mese per rete, negozio e venditore — la barra 'Obiettivo' nella Home." },
+    // Target, Direzione Inserimento e Obiettivi Home: TRASLOCATI nell'hub
+    // Gare (Luca 03/08) — i vecchi URL ?sez=... vengono reindirizzati la'.
 ];
 // ordine FISSO del mini-hub Costi (Luca 31/07): Negozi → Condivisi → Altri
 const COSTI_IDS = ["negozi", "condivisi", "altri"];
@@ -209,9 +203,14 @@ function AmministrazioneInner() {
     // Utenti e' un GRUPPO (Luca 25/07): Lista utenti / Permessi (solo admin) / Ruoli
     const utTab = searchParams.get("tab") || "lista";
     const go = (s?: string) => router.push(s ? `/amministrazione?sez=${s}` : "/amministrazione");
+    // TRASLOCO in Gare (Luca 03/08): i vecchi link a Target / Obiettivi Home /
+    // Direzione Inserimento portano alla casa nuova senza rompersi
+    useEffect(() => {
+        if (["target", "obiettivi", "direzione"].includes(sez || "")) router.replace(`/gare?brand=${sez}`);
+    }, [sez, router]);
     // GATING DAI PERMESSI (nav.ts + role_permissions): ogni sezione dell'hub e
     // ogni funzione di Utenti si concede una a una dalla pagina Permessi.
-    const { perms } = useRolePermissions(user?.role);
+    const { perms } = useRolePermissions(user?.role, user?.grade);
     // ruoli FUSI codice+DB: i ruoli creati da UI compaiono in filtri e form
     const { roles: allRoles } = useRoles();
     const hubAmm = hubByHref("/amministrazione")!;
@@ -545,19 +544,13 @@ function AmministrazioneInner() {
                 <MarginalitaView />
             ) : sez === "catalogo" ? (
                 <CatalogoView />
-            ) : sez === "direzione" ? (
-                <DirezioneInserimentoAdmin />
-            ) : sez === "obiettivi" ? (
-                <DashboardTargetAdmin />
             ) : sez === "ordinemerce" ? (
                 <OrdineMerceArticoliView />
             ) : sez === "callcenter" ? (
                 <CallCenterView />
             ) : sez === "calendario" ? (
                 <CalendarioEsitiView />
-            ) : (
-                <TargetSection />
-            )}
+            ) : null}
 
             {showForm && (
                 <UserForm

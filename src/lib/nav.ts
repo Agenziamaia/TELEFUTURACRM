@@ -28,7 +28,8 @@ export type NavGroup = { type: "group"; label: string; icon: NavIcon; roles?: st
 export type NavItem = { type: "link"; name: string; href: string; icon: NavIcon; roles: string[] };
 // emoji: la "modicon" della sotto-voce — la stessa del pulsante-tab in pagina,
 // riportata piu' piccola nel menu di sinistra (Luca 31/07)
-export type NavHubSub = { id: string; name: string; roles: string[]; emoji?: string };
+// color: pallino colorato in alternativa all'emoji (i brand dentro Operatori)
+export type NavHubSub = { id: string; name: string; roles: string[]; emoji?: string; color?: string };
 // esplodi: la voce si apre nella sidebar mostrando le subs come sotto-link
 // (Luca 31/07). subsSez=true → le subs sono SEZIONI vere e i link vanno a
 // ?sez=<sub.id> (mini-hub Costi); senza, le subs sono FUNZIONI della voce e
@@ -117,14 +118,25 @@ export const NAVIGATION: NavEntry[] = [
         icon: Trophy,
         roles: ["admin", "dev"],
         children: [
-            { name: "WindTre", sez: "w3", color: "#FF6B00" },
-            { name: "Vodafone Store", sez: "vs", color: "#E60000" },
-            { name: "Vodafone VND", sez: "vnd", color: "#ff6666" },
-            { name: "Fastweb", sez: "fastweb", color: "#FFD800" },
-            { name: "Sky", sez: "sky", color: "#0072C6" },
-            { name: "S4", sez: "s4", color: "#28a745" },
-            { name: "TIM", sez: "tim", color: "#0050FF" },
-            { name: "Dojo", sez: "dojo", color: "#14b8a6" },
+            // RIORDINO (Luca 03/08): i brand riuniti nel SUB-HUB "Operatori";
+            // Target, Obiettivi Home e Direzione Inserimento arrivano QUI
+            // dall'hub Amministrazione (mig. 148 trasloca le chiavi permesso).
+            {
+                name: "Operatori", sez: "operatori", icon: Layers, roles: ["admin", "dev"], esplodi: true, subsSez: true,
+                subs: [
+                    { id: "w3", name: "WindTre", roles: ["admin", "dev"], color: "#FF6B00" },
+                    { id: "vs", name: "Vodafone Store", roles: ["admin", "dev"], color: "#E60000" },
+                    { id: "vnd", name: "Vodafone VND", roles: ["admin", "dev"], color: "#ff6666" },
+                    { id: "fastweb", name: "Fastweb", roles: ["admin", "dev"], color: "#FFD800" },
+                    { id: "sky", name: "Sky", roles: ["admin", "dev"], color: "#0072C6" },
+                    { id: "s4", name: "S4", roles: ["admin", "dev"], color: "#28a745" },
+                    { id: "tim", name: "TIM", roles: ["admin", "dev"], color: "#0050FF" },
+                    { id: "dojo", name: "Dojo", roles: ["admin", "dev"], color: "#14b8a6" },
+                ],
+            },
+            { name: "Target", sez: "target", icon: ClipboardList, roles: ["admin", "dev"] },
+            { name: "Obiettivi Home", sez: "obiettivi", icon: Target, roles: ["admin", "dev"] },
+            { name: "Direzione Inserimento", sez: "direzione", icon: Compass, roles: ["admin", "dev"] },
         ],
     },
     {
@@ -162,15 +174,17 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "debiti", name: "Debiti", roles: [...ADMINS, "amministrativo"], emoji: "💸" },
                 ],
             },
+            // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il
+            // menu a tendina nasce da QUESTO file (errore già fatto, Luca 03/08)
+            { name: "Orari & Chiusure", sez: "orari", icon: Clock3, roles: ["admin", "dev"] },
             { name: "Marginalità", sez: "marginalita", icon: Package, roles: ["admin", "dev"] },
             { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
             { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },
             // articoli ordinabili di Ordine Merce (Luca 01/08): amministrativo in su
             { name: "Ordine Merce", sez: "ordinemerce", icon: Package, roles: [...ADMINS, "amministrativo"] },
             { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
-            { name: "Target", sez: "target", icon: ClipboardList, roles: ["admin", "dev"] },
-            { name: "Direzione Inserimento", sez: "direzione", icon: Compass, roles: ["admin", "dev"] },
-            { name: "Obiettivi Home", sez: "obiettivi", icon: Target, roles: ["admin", "dev"] },
+            // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
+            // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],
     },
 ];
