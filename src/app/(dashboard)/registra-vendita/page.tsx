@@ -1384,7 +1384,7 @@ const CartItem = ({it,ii,gi,total,expI,setExpI}) => {
 
 const VF_C="#E60000";
 const VF_LIGHT="rgba(220,53,69,0.12)";
-const VF_BORDER="#F5C6C6";
+const VF_BORDER="rgba(230,0,0,0.30)";
 const VF_BRANDS=["TIM","Vodafone","WindTre","Iliad","Fastweb","Sky","Sky Mobile","Very Mobile","Ho Mobile","Postemobile","Coop Voce","Tiscali","Lyca Mobile","Altro"];
 const VF_SMARTPHONES = VF_SMARTPHONES_GROUPED;
 const GNP_FISSO_BRANDS=["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi","Enel Fibra","EniPlenitude Fibra","Iliad","Poste","Altro"];
@@ -1460,7 +1460,7 @@ const FWMobile = ({sd, uP, sc, biz}) => {
             </div>
           )}
 
-          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
             <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
               <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwCodIns||""} onCh={v=>upv("fwCodIns",v)}/>
@@ -1516,7 +1516,7 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
         </div>
       )}
       {sd.fwFGnp&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwFCodIns||""} onCh={v=>upv("fwFCodIns",v)}/>
@@ -1547,7 +1547,7 @@ const FWEnergia = ({sd, uP, sc, subTitle, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
   const isGas = subTitle === "GAS";
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwEnCodIns||""} onCh={v=>upv("fwEnCodIns",v)}/>
@@ -1957,7 +1957,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
                       )}
                       {/* Dati Contratto */}
                       {(sd.vfTnp||isDV||isDati)&&(
-                        <div style={{marginTop:12,background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+                        <div style={{marginTop:12,background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
                           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                             {sd.vfMnp==="Sì"?(
@@ -2036,7 +2036,7 @@ const VFMobileGAFisso = ({sd,uP,sc}) => {
                   </div>
 
                   {/* Dati Contratto */}
-                  <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+                  <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
                     <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                       <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfFCodIns||""} onCh={v=>upv("vfFCodIns",v)}/>
@@ -2221,7 +2221,7 @@ const VFBizMobile = ({sd,uP,sc}) => {
                   )}
                 </div>
               )}
-              <div style={{marginTop:8,background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+              <div style={{marginTop:8,background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
                 <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                   <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfbCodIns||""} onCh={v=>upv("vfbCodIns",v)}/>
@@ -2249,7 +2249,7 @@ const VFBizMobileCB = ({sd,uP,sc}) => {
         </button>
       </div>
       {sd.vfbCbOn&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{marginBottom:10}}>
             <TF l="Numero di cellulare" r v={sd.vfbCbCell||""} o={v=>upv("vfbCbCell",v)} p="3XXXXXXXXX"/>
@@ -2292,7 +2292,7 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
       )}
       {sd.vfbFGnp&&(
         <div>
-          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
             <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
               <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfbFCodIns||""} onCh={v=>upv("vfbFCodIns",v)}/>
@@ -2372,7 +2372,7 @@ const ILMobile = ({sd, uP, sc}) => {
           )}
           {sd.ilMnp&&<RB label="Domiciliata?" val={sd.ilDom} opts={["Sì","No"]} onCh={v=>upv("ilDom",v)}/>}
           {sd.ilDom&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
               <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilCodIns||""} onCh={v=>upv("ilCodIns",v)}/>
@@ -2398,7 +2398,7 @@ const ILFisso = ({sd, uP, sc}) => {
     <div>
       <RB label="GNP?" val={sd.ilFGnp} opts={["Sì","No"]} onCh={v=>{upv("ilFGnp",v);if(v==="No"){upv("ilFGnpBrand","");upv("ilFGnpNum","");}}}/>
       {sd.ilFGnp&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilFCodIns||""} onCh={v=>upv("ilFCodIns",v)}/>
@@ -2421,7 +2421,7 @@ const ILFisso = ({sd, uP, sc}) => {
 const ILFwa = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilFwaCodIns||""} onCh={v=>upv("ilFwaCodIns",v)}/>
@@ -2805,7 +2805,7 @@ const TIMMobile = ({sd, uP, sc}) => {
             </div>
           )}
           {sd.timTnp&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
               <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <SCd session={sc} codici={TIM_CODICI_NEGOZIO} val={sd.timCodIns||""} onCh={v=>upv("timCodIns",v)}/>
@@ -2849,7 +2849,7 @@ const TIMFisso = ({sd, uP, sc}) => {
             </div>
           )}
           {sd.timFGnp&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14,marginBottom:12}}>
+            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14,marginBottom:12}}>
               <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <TF l="Numero Fisso Provvisorio" r v={sd.timFNumProv||""} o={v=>upv("timFNumProv",v)} p="06XXXXXXXX"/>
@@ -2882,7 +2882,7 @@ const TIMTelepass = ({sd, uP, sc}) => {
     <div>
       <RB label="Twin?" val={sd.timTpTwin} opts={["Sì","No"]} onCh={v=>upv("timTpTwin",v)}/>
       {sd.timTpTwin&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="Seriale Telepass" r v={sd.timTpSeriale||""} o={v=>upv("timTpSeriale",v)} p="Seriale"/>
@@ -2950,7 +2950,7 @@ const SimpleMobile = ({sd, uP, pfx, accent, codici, sc}) => {
             </div>
           )}
           {sd[K("RicaricaAuto")]&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
               <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <SCd session={sc} codici={codici} val={sd[K("CodIns")]||""} onCh={v=>upv(K("CodIns"),v)}/>
@@ -3002,7 +3002,7 @@ const ILBizMobile = ({sd, uP, sc}) => {
             <div>
               <RB label="Domiciliata?" val={sd.ilBizDom} opts={["Sì","No"]} onCh={v=>upv("ilBizDom",v)}/>
               {sd.ilBizDom&&(
-                <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14,marginTop:8}}>
+                <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14,marginTop:8}}>
                   <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                     <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilBizCodIns||""} onCh={v=>upv("ilBizCodIns",v)}/>
@@ -3023,7 +3023,7 @@ const ILBizMobile = ({sd, uP, sc}) => {
 const W3SostSim = ({sd, uP, sc, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <TF l="Numero" r v={sd.w3SostCell||""} o={v=>upv("w3SostCell",v)} p="3XXXXXXXXX"/>
@@ -3054,7 +3054,7 @@ const FWSostSim = ({sd, uP, sc, dupCheck}) => {
 const VFSostSim = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <TF l="Numero" r v={sd.vfSostCell||""} o={v=>upv("vfSostCell",v)} p="3XXXXXXXXX"/>
@@ -3069,7 +3069,7 @@ const ENLuceGas = ({sd, uP, sub, dupCheck, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const isLuce = sub.enProd==="Luce"||sub.enProd==="LuceRID";
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — {sub.enBrand} {sub.title}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <SCd session={sc} codici={EN_CODICI_NEGOZIO} val={sd.enCodIns||""} onCh={v=>upv("enCodIns",v)}/>
@@ -3479,7 +3479,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             <div style={{marginTop:8}}>
               <MiniC label="TNP GA" val={sd.tnpGa} onCh={v=>{uP(group.id,si,sub.id,"tnpGa",v);if(v==="No"||v===false){uP(group.id,si,sub.id,"tnpTipo","");uP(group.id,si,sub.id,"tnpModello","");uP(group.id,si,sub.id,"tnpImei","");uP(group.id,si,sub.id,"tnpGaReload",null);uP(group.id,si,sub.id,"tnpGaReloadSel",{})}}} opts={["Sì","No"]}/>
               {(sd.tnpGa==="Sì"||sd.tnpGa===true)&&(
-                <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(0,114,198,0.18)",marginTop:4}}>
+                <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginTop:4}}>
                   <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>Dati TNP GA</div>
                   <div style={{display:"flex",gap:6,marginBottom:sd.tnpTipo?8:0}}>
                     {["Rata 5G","Finanziamento > 600€","Finanziamento < 600€"].map(opt=>
@@ -3526,7 +3526,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                               <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:6}}>Importo Pack Accessori <span style={{color:"#2E75B6",fontWeight:700}}>€{sd.packAccessoriVal||29}</span></div>
                               <div style={{display:"flex",alignItems:"center",gap:10}}>
                                 <input type="range" min={29} max={240} value={sd.packAccessoriVal||29} onChange={e=>uP(group.id,si,sub.id,"packAccessoriVal",parseInt(e.target.value))} style={{flex:1,accentColor:"#2E75B6"}}/>
-                                <input type="number" min={29} max={240} value={sd.packAccessoriVal||""} onChange={e=>uP(group.id,si,sub.id,"packAccessoriVal",e.target.value===""?"":parseInt(e.target.value))} onBlur={e=>{const raw=parseInt(e.target.value);if(!isNaN(raw))uP(group.id,si,sub.id,"packAccessoriVal",Math.min(240,Math.max(29,raw)));else uP(group.id,si,sub.id,"packAccessoriVal",29)}} style={{width:72,padding:"5px 8px",borderRadius:6,border:"1px solid rgba(0,114,198,0.18)",fontSize:12,fontWeight:600,textAlign:"center"}} placeholder="29-240"/>
+                                <input type="number" min={29} max={240} value={sd.packAccessoriVal||""} onChange={e=>uP(group.id,si,sub.id,"packAccessoriVal",e.target.value===""?"":parseInt(e.target.value))} onBlur={e=>{const raw=parseInt(e.target.value);if(!isNaN(raw))uP(group.id,si,sub.id,"packAccessoriVal",Math.min(240,Math.max(29,raw)));else uP(group.id,si,sub.id,"packAccessoriVal",29)}} style={{width:72,padding:"5px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",fontSize:12,fontWeight:600,textAlign:"center"}} placeholder="29-240"/>
                                 <span style={{fontSize:11,color:"#64748b"}}>€</span>
                               </div>
                               <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#64748b",marginTop:2}}><span>€29</span><span>€240</span></div>
@@ -3638,7 +3638,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
               <MiniC label="TNP GA" val={sd.tnpGa} onCh={v=>{uP(group.id,si,sub.id,"tnpGa",v);if(v==="No"||v===false){uP(group.id,si,sub.id,"tnpTipo","");uP(group.id,si,sub.id,"tnpModello","");uP(group.id,si,sub.id,"tnpImei","");uP(group.id,si,sub.id,"tnpGaReload",null);uP(group.id,si,sub.id,"tnpGaReloadSel",{})}}} opts={["Sì","No"]}/>
               {(sd.tnpGa==="Sì"||sd.tnpGa===true)&&(
                 <div style={{marginTop:8}}>
-                  <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(0,114,198,0.18)",marginBottom:8}}>
+                  <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginBottom:8}}>
                     <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>Tipologia TNP GA</div>
                     <div style={{display:"flex",gap:6}}>
                       {["Rata P.IVA","Rata P.IVA 5G"].map(opt=>
@@ -3712,7 +3712,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {sub.isVFFisso&&<VFMobileGAFisso sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode}/>}
       {sub.isVFFissoBiz&&<VFBizFisso sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} isCombo={!!sub.isCombinatoFissoBiz} sc={sessionCode}/>}
       {sub.isVFSolDig&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:12}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <SCd session={sessionCode} codici={VF_CODICI_NEGOZIO} val={sd.vfSolDigCodIns||""} onCh={v=>uP(group.id,si,sub.id,"vfSolDigCodIns",v)}/>
         </div>
@@ -3720,7 +3720,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Kasko Facile */}
       {sub.isKaskoFacile&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:12}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Kasko Facile</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="IMEI" r v={f.kfImei||""} o={v=>uF(group.id,si,sub.id,"kfImei",v)} p="15 cifre" nt="Barcode 📷"/>
@@ -3740,7 +3740,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Vodafone Care */}
       {sub.isVFCare&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(0,114,198,0.18)",borderRadius:8,padding:12}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Vodafone Care</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="Numero di telefono" r v={f.vcTelefono||""} o={v=>uF(group.id,si,sub.id,"vcTelefono",v)} p="3XXXXXXXXX"/>
@@ -3773,7 +3773,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
           {/* TNP CB section */}
           {sd.cbTnp&&(
-            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(0,114,198,0.18)",marginBottom:8}}>
+            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>Dati TNP CB</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px",marginBottom:8}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbTnpCodIns||""} onCh={v=>uP(group.id,si,sub.id,"cbTnpCodIns",v)}/>
@@ -3828,7 +3828,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                               <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:6}}>Importo Pack Accessori <span style={{color:"#2E75B6",fontWeight:700}}>€{sd.cbPackAccessoriVal||29}</span></div>
                               <div style={{display:"flex",alignItems:"center",gap:10}}>
                                 <input type="range" min={29} max={240} value={sd.cbPackAccessoriVal||29} onChange={e=>uP(group.id,si,sub.id,"cbPackAccessoriVal",parseInt(e.target.value))} style={{flex:1,accentColor:"#2E75B6"}}/>
-                                <input type="number" min={29} max={240} value={sd.cbPackAccessoriVal||""} onChange={e=>uP(group.id,si,sub.id,"cbPackAccessoriVal",e.target.value===""?"":parseInt(e.target.value))} onBlur={e=>{const raw=parseInt(e.target.value);if(!isNaN(raw))uP(group.id,si,sub.id,"cbPackAccessoriVal",Math.min(240,Math.max(29,raw)));else uP(group.id,si,sub.id,"cbPackAccessoriVal",29)}} style={{width:72,padding:"5px 8px",borderRadius:6,border:"1px solid rgba(0,114,198,0.18)",fontSize:12,fontWeight:600,textAlign:"center"}} placeholder="29-240"/>
+                                <input type="number" min={29} max={240} value={sd.cbPackAccessoriVal||""} onChange={e=>uP(group.id,si,sub.id,"cbPackAccessoriVal",e.target.value===""?"":parseInt(e.target.value))} onBlur={e=>{const raw=parseInt(e.target.value);if(!isNaN(raw))uP(group.id,si,sub.id,"cbPackAccessoriVal",Math.min(240,Math.max(29,raw)));else uP(group.id,si,sub.id,"cbPackAccessoriVal",29)}} style={{width:72,padding:"5px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",fontSize:12,fontWeight:600,textAlign:"center"}} placeholder="29-240"/>
                                 <span style={{fontSize:11,color:"#64748b"}}>€</span>
                               </div>
                               <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#64748b",marginTop:2}}><span>€29</span><span>€240</span></div>
@@ -3912,7 +3912,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             </div>
           )}
           {!sub.isCBBiz&&sd.cbRf&&(
-            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(0,114,198,0.18)",marginBottom:8}}>
+            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginBottom:8}}>
               <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>Dati Reload Forever</div>
               <div style={{marginBottom:8,maxWidth:250}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbRfCodIns||(sd.cbTnpCodIns||sd.cbCambioCodIns||"")} onCh={v=>uP(group.id,si,sub.id,"cbRfCodIns",v)}/>
@@ -3965,7 +3965,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {sub.has2LQ&&<YN val={sd.secondaLinea} onCh={v=>uP(group.id,si,sub.id,"secondaLinea",v)} label="C'è una seconda linea?"/>}
       {sub.has2LQ&&(sd.secondaLinea===true||sd.secondaLinea==="Sì")&&(
-        <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(0,114,198,0.18)",marginTop:4}}>
+        <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginTop:4}}>
           <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>2° Linea</div>
           <MiniC label="GNP 2° Linea" val={sd.gnp2L} onCh={v=>{uP(group.id,si,sub.id,"gnp2L",v);if(v==="No"||v===false){uP(group.id,si,sub.id,"gnp2LBrand","");uP(group.id,si,sub.id,"gnp2LNum","")}}} opts={["Sì","No"]}/>
           {(sd.gnp2L==="Sì"||sd.gnp2L===true)&&(
@@ -4067,7 +4067,7 @@ const NoteStep = ({store,show,setShow,nota,setNota,pData,setPData,pOra,setPOra,p
   const negozioPro=pNeg, setNegozioPro=setPNeg;
   useEffect(()=>{if(store)setNegozioPro(p=>p||store);},[store]);
   const content = (
-    <div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #e83e8c"}}>
+    <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #e83e8c"}}>
       <div style={{fontSize:11,fontWeight:700,color:"#e83e8c",marginBottom:14,textTransform:"uppercase"}}>📝 Step 7 — Note / Promemoria</div>
       <div style={{textAlign:"center",marginBottom:show?16:0}}>
         <div style={{fontSize:13,fontWeight:600,color:"#f8fafc",marginBottom:10}}>Nota o promemoria?</div>
@@ -5201,7 +5201,7 @@ function CRM() {
           <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>📝 {notaOn&&nota.trim()?"nota inserita":"nessuna nota"}</span>
           <button onClick={()=>setShowCart(false)} style={{marginLeft:"auto",padding:"7px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.04)",color:"#cbd5e1",fontSize:11,fontWeight:800,cursor:"pointer"}}>✏️ Modifica in pagina</button>
         </div>}
-        {onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745",marginTop:12}}>
+        {onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745",marginTop:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/>
@@ -5454,7 +5454,7 @@ select.rvIn{cursor:pointer}
         </div>
       </div>}
 
-      {brand&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #6f42c1"}}>
+      {brand&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
         <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:12,textTransform:"uppercase"}}>Step 2 — Tipo Cliente</div>
         <div style={{display:"flex",gap:12,marginBottom:tipoCliente?16:0}}>
           {(brand==="very"||brand==="ho"||brand==="kena"?["privato"]:["privato","business"]).map(t=><button key={t} onClick={()=>{setTipoCliente(t);setShowAna(false);setClienteFound(false);setLookupValue("");setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setShowStep4(false)}} style={{flex:1,padding:12,borderRadius:10,border:tipoCliente===t?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.06)",background:tipoCliente===t?"rgba(111,66,193,0.12)":"rgba(255,255,255,0.04)",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22,marginBottom:2}}>{t==="privato"?"👤":"🏢"}</div><div style={{fontWeight:700,fontSize:14,color:tipoCliente===t?"#6f42c1":"#f8fafc"}}>{t==="privato"?"Privato":"Business"}</div></button>)}
@@ -5515,7 +5515,7 @@ select.rvIn{cursor:pointer}
         {ana.iban&&<span style={{fontSize:11,color:"#8892b0",fontFamily:"monospace"}}>🏦 {ana.iban}</span>}
         <span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:"#8892b0"}}>✏️ modifica</span>
       </div>}
-      {showAna&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #1B3A5C"}}>
+      {showAna&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #1B3A5C"}}>
         <div style={{fontSize:11,fontWeight:700,color:"#1B3A5C",marginBottom:14,textTransform:"uppercase"}}>📝 Step 3 — Anagrafica</div>
         {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/>{!turista&&<TF l="Codice Fiscale" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501Z" pf={clienteFound&&!!ana.cf}/>}<TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div>{turista&&<p style={{marginTop:10,fontSize:12,fontWeight:700,color:"#f59e0b"}}>🌍 Cliente TURISTA — CF non richiesto (consentiti solo WindTre privato: Mobile Wallet e CB, oppure Marginalità)</p>}<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
         <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"#8892b0"}}>
@@ -5550,11 +5550,11 @@ select.rvIn{cursor:pointer}
         </div>
       </div>}
 
-      {showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6")}}>
+      {showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6")}}>
         <div style={{fontSize:11,fontWeight:700,color:brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6",marginBottom:14,textTransform:"uppercase"}}>📂 Step 4 — Prodotti e Contratto</div>
-        <div style={{background:"rgba(0,114,198,0.10)",borderRadius:8,padding:10,marginBottom:14,display:"flex",alignItems:"center",gap:12,border:"1px solid rgba(0,114,198,0.18)",flexWrap:"wrap"}}>
+        <div style={{background:"rgba(0,114,198,0.10)",borderRadius:8,padding:10,marginBottom:14,display:"flex",alignItems:"center",gap:12,border:"1px solid rgba(255,255,255,0.12)",flexWrap:"wrap"}}>
           <span style={{fontSize:11,fontWeight:700,color:"#1B3A5C"}}>Codice inserimento:</span>
-          <select value={sesCode} onChange={e=>setSesCode(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid rgba(0,114,198,0.18)",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.02)",minWidth:140}}><option value="">— Seleziona —</option>{(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="dojo"?DOJO_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <select value={sesCode} onChange={e=>setSesCode(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.02)",minWidth:140}}><option value="">— Seleziona —</option>{(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="dojo"?DOJO_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=><option key={c} value={c}>{c}</option>)}</select>
         </div>
         {cats.map(group=>{const cc=catCounts(group.id,group.subs);const aperta=catAperta(group);return <div key={group.id} style={{marginBottom:aperta?16:6}}>
           <div onClick={()=>togCat(group)} title={aperta?"Chiudi la categoria":"Esplodi la categoria"} style={{display:"flex",alignItems:"center",gap:8,marginBottom:aperta?8:0,cursor:"pointer",userSelect:"none",padding:aperta?0:"8px 12px",borderRadius:8,background:aperta?"transparent":"rgba(255,255,255,0.03)",border:aperta?"none":"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:11,color:"#64748b"}}>{aperta?"▾":"▸"}</span><span style={{fontSize:16}}>{group.icon}</span><span style={{fontSize:13,fontWeight:700,color:group.color,textTransform:"uppercase"}}>{group.title}</span>{cc.tot>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:"#8892b0",background:"transparent",borderRadius:999,padding:"2px 10px"}}>{cc.tot} {cc.tot===1?"vendita":"vendite"}{cc.ok>0&&<span style={{color:"#28a745"}}>· {cc.ok} ✓</span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>· {cc.warn} ⚠</span>}{cc.empty>0&&<span style={{color:"#64748b"}}>· {cc.empty} ●</span>}</span>}</div>
@@ -5611,7 +5611,7 @@ select.rvIn{cursor:pointer}
         const SKY_COLOR="#0072C6";
         const btnSky=(label,active,onClick)=><button onClick={onClick} style={{padding:"10px 18px",borderRadius:8,cursor:"pointer",border:active?"2px solid "+SKY_COLOR:"2px solid rgba(255,255,255,0.1)",background:active?SKY_COLOR:"rgba(255,255,255,0.04)",color:active?"#fff":"#8892b0",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{label}</button>;
         const ynSky=(val,onYes,onNo)=><div style={{display:"flex",gap:6}}>{[{v:"Sì",fn:onYes},{v:"No",fn:onNo}].map(({v,fn})=><button key={v} onClick={fn} style={{padding:"7px 22px",borderRadius:8,border:val===v?"2px solid "+SKY_COLOR:"2px solid rgba(255,255,255,0.1)",background:val===v?SKY_COLOR:"rgba(255,255,255,0.04)",color:val===v?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{v}</button>)}</div>;
-        const dBox=(children)=><div style={{marginTop:10,background:"rgba(0,114,198,0.10)",borderRadius:8,padding:12,border:"1px solid rgba(0,114,198,0.18)"}}><div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>{children}</div>;
+        const dBox=(children)=><div style={{marginTop:10,background:"rgba(0,114,198,0.10)",borderRadius:8,padding:12,border:"1px solid rgba(255,255,255,0.12)"}}><div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>{children}</div>;
         const venditeBar=(si,bd)=>{return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,fontWeight:700,color:SKY_COLOR}}>Vendita #{si+1}</span>{bd&&<span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999,background:bd.bg,color:bd.fg,whiteSpace:"nowrap"}}>{bd.l}</span>}</div>
           <div style={{display:"flex",gap:6}}>
@@ -5622,7 +5622,7 @@ select.rvIn{cursor:pointer}
         </div>;};
         return (<div>
           {/* ── BOX TV ── */}
-          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid "+SKY_COLOR}}>
+          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
             <div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:12,textTransform:"uppercase"}}>📺 TV</div>
             {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyTv(sale)))}
@@ -5640,7 +5640,7 @@ select.rvIn{cursor:pointer}
           </div>
 
           {/* ── BOX FIBRA ── */}
-          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid "+SKY_COLOR}}>
+          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
             <div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:12,textTransform:"uppercase"}}>🌐 Fibra</div>
             {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyFib(sale)))}
@@ -5667,7 +5667,7 @@ select.rvIn{cursor:pointer}
           </div>
 
           {/* ── BOX MOBILE — solo privato ── */}
-          {tipoCliente!=="business"&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid "+SKY_COLOR}}>
+          {tipoCliente!=="business"&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
             <div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:12,textTransform:"uppercase"}}>📱 Mobile</div>
             {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyMob(sale)))}
@@ -5703,7 +5703,7 @@ select.rvIn{cursor:pointer}
 
       
       {/* ── PRODOTTI & MARGINALITÀ ── */}
-      {(margItems.length>0||(showAna&&showStep4&&brand))&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #6f42c1"}}>
+      {(margItems.length>0||(showAna&&showStep4&&brand))&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",textTransform:"uppercase"}}>📦 Prodotti & Marginalità</div>
           <button onClick={()=>setShowMargPOS(true)} style={{padding:"6px 16px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Aggiungi</button>
@@ -5746,7 +5746,7 @@ select.rvIn{cursor:pointer}
         </div>
       </div>}
 
-        {showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #17a2b8",marginTop:12}}>
+        {showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #17a2b8",marginTop:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#17a2b8",marginBottom:14,textTransform:"uppercase"}}>📎 Step 5 — Allegati</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
             {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
@@ -5789,7 +5789,7 @@ select.rvIn{cursor:pointer}
             </>)}
           </div>
         </div>, document.body)}
-        {showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745"}}>
+        {showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745"}}>
           <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Step 6 — Attribuzione</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
