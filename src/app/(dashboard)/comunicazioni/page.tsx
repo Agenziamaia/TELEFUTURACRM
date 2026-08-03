@@ -16,7 +16,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
-import { Confetti, SfondoComunicazione } from "@/components/ComunicazioniPopup";
+import { Confetti, SfondoComunicazione, fondoComunicazione } from "@/components/ComunicazioniPopup";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
 import { sameStore, useVisibleStores } from "@/lib/visibleStores";
@@ -918,19 +918,28 @@ export default function Comunicazioni() {
                                         const testo = fContent.trim() || "Il testo che scrivi sopra comparirà qui.";
                                         const firma = `${dataDisplayOggi()} — ${user?.name || ""}`;
                                         if (fKind === "popup") return (
-                                            <div className="rounded-2xl border shadow-2xl overflow-hidden mx-auto max-w-[520px]" style={{ background: "#12141f", borderColor: st.border }}>
-                                                <div className="flex items-start gap-3.5 p-5 pb-3.5">
-                                                    <div className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border" style={{ background: st.bg, borderColor: st.border, color: st.color }}>
+                                            <div className={`relative rounded-2xl border shadow-2xl overflow-hidden mx-auto max-w-[520px]${fType === "warning" ? " anim-bordo-rosso" : ""}`} style={{ background: fondoComunicazione(fType), borderColor: st.border }}>
+                                                {/* stessa VIVACITA' del popup vero (Luca 03/08) */}
+                                                <SfondoComunicazione genere={fType} />
+                                                <div className="relative flex items-start gap-3.5 p-5 pb-3.5">
+                                                    <div className={`shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border${fType === "warning" ? " anim-scossa" : ""}`} style={{ background: st.bg, borderColor: st.border, color: st.color }}>
                                                         <st.Icona className="w-6 h-6" />
                                                     </div>
                                                     <div className="min-w-0">
                                                         <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: st.color }}>Comunicazione da confermare</div>
-                                                        <h3 className="text-lg font-bold text-white leading-tight">{titolo}</h3>
+                                                        <h3 className={fSize === "grande" ? "text-2xl font-black text-white leading-tight" : "text-lg font-bold text-white leading-tight"}>{fSize === "grande" ? "📢 " : ""}{titolo}</h3>
                                                         <p className="text-xs text-slate-500 mt-1">{firma}</p>
                                                     </div>
                                                 </div>
-                                                <div className="px-5 pb-4 text-sm text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[30vh] overflow-hidden">{testo}</div>
-                                                <div className="flex items-center justify-between gap-2 flex-wrap px-5 py-3.5 border-t border-white/10 bg-black/20">
+                                                <div className={fSize === "grande" ? "relative px-5 pb-4 text-lg font-medium text-slate-100 leading-relaxed whitespace-pre-wrap max-h-[30vh] overflow-hidden" : "relative px-5 pb-4 text-sm text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[30vh] overflow-hidden"}>{testo}</div>
+                                                {fAllegati.length > 0 && (
+                                                    <div className="relative px-5 pb-3.5 flex flex-wrap gap-2">
+                                                        {fAllegati.map((a) => (
+                                                            <span key={a.url} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 text-xs font-semibold text-slate-200">📎 {a.name}</span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <div className="relative flex items-center justify-between gap-2 flex-wrap px-5 py-3.5 border-t border-white/10 bg-black/20">
                                                     <span className="px-2 py-1 rounded-lg text-[11px] text-slate-500">Più tardi</span>
                                                     <div className="flex items-center justify-end gap-2 flex-wrap">
                                                         {fEsiti.length ? fEsiti.map((e) => (
@@ -941,13 +950,20 @@ export default function Comunicazioni() {
                                             </div>
                                         );
                                         return (
-                                            <div className="glass-card p-5 relative overflow-hidden border-l-4 border-l-primary">
+                                            <div className={cn("glass-card p-5 relative overflow-hidden border-l-4 border-l-primary",
+                                                fType === "warning" && "border border-rose-500/30 bg-gradient-to-br from-rose-500/[0.08] to-transparent anim-bordo-rosso",
+                                                fType === "success" && "bg-gradient-to-br from-emerald-500/[0.08] via-transparent to-fuchsia-500/[0.07]",
+                                                fType === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent")}>
+                                                {fType === "success" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.08] rotate-12 select-none">🎉</span>}
+                                                {fType === "update" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.07] rotate-12 select-none">🚀</span>}
+                                                {fType === "warning" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.07] rotate-12 select-none">🚨</span>}
+                                                <SfondoComunicazione genere={fType} />
                                                 <div className="absolute top-5 right-5 flex items-center gap-2">
                                                     <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
                                                     <span className="text-xs font-semibold text-primary uppercase tracking-wider">Nuovo</span>
                                                 </div>
-                                                <div className="flex gap-3.5">
-                                                    <div className="shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border" style={{ background: st.bg, borderColor: st.border, color: st.color }}>
+                                                <div className="relative flex gap-3.5">
+                                                    <div className={cn("shrink-0 w-11 h-11 rounded-xl flex items-center justify-center border", fType === "warning" && "anim-scossa")} style={{ background: st.bg, borderColor: st.border, color: st.color }}>
                                                         <st.Icona className="w-6 h-6" />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
