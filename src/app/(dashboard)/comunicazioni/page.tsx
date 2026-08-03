@@ -358,24 +358,6 @@ export default function Comunicazioni() {
         fetchAll();
     };
 
-    // l'AUTORE non conta tra letture/conferme della propria comunicazione.
-    // E nemmeno i NON-destinatari (caso Claudia 03/08): l'amministrazione vede
-    // tutte le comunicazioni e aprendole scrive comunque la lettura, ma nella
-    // tabella e nei numeri contano SOLO i destinatari veri della platea.
-    const contatori = useCallback((com: Comunicazione) => {
-        const dset = destinatariSet(com);
-        const r = ricevute.filter((x) => x.comunicazione_id === com.id
-            && (!com.created_by || x.user_id !== com.created_by)
-            && (!dset || dset.has(x.user_id)));
-        return {
-            letture: r.filter((x) => x.letto_il).length,
-            conferme: r.filter((x) => x.confermato_il).length,
-            // "rinviata" = ha premuto Più tardi e non ha ancora confermato
-            rinviate: r.filter((x) => x.rinviato_il && !x.confermato_il).length,
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [ricevute, platea]);
-
     // ── DESTINATARI = "quante inviate" (03/08): platea degli utenti attivi col
     //    loro contesto (negozi assegnati, brand del punto vendita) — la stessa
     //    regola comunicazionePerMe del popup, applicata a tutti in blocco.
@@ -410,6 +392,25 @@ export default function Comunicazioni() {
         const s = destinatariSet(c);
         return s ? s.size : null;
     }, [destinatariSet]);
+
+    // l'AUTORE non conta tra letture/conferme della propria comunicazione.
+    // E nemmeno i NON-destinatari (caso Claudia 03/08): l'amministrazione vede
+    // tutte le comunicazioni e aprendole scrive comunque la lettura, ma nella
+    // tabella e nei numeri contano SOLO i destinatari veri della platea.
+    const contatori = useCallback((com: Comunicazione) => {
+        const dset = destinatariSet(com);
+        const r = ricevute.filter((x) => x.comunicazione_id === com.id
+            && (!com.created_by || x.user_id !== com.created_by)
+            && (!dset || dset.has(x.user_id)));
+        return {
+            letture: r.filter((x) => x.letto_il).length,
+            conferme: r.filter((x) => x.confermato_il).length,
+            // "rinviata" = ha premuto Più tardi e non ha ancora confermato
+            rinviate: r.filter((x) => x.rinviato_il && !x.confermato_il).length,
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ricevute, platea]);
+
 
     const inputStyle = "w-full bg-black/40 border border-white/10 rounded-xl text-slate-100 text-sm py-2.5 px-3.5 outline-none focus:border-violet-500/50";
 
