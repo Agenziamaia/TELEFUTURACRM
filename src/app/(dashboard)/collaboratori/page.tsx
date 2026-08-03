@@ -25,7 +25,7 @@ function CollaboratoriPageContent() {
     // rotellina in Amministrazione → Utenti → Permessi). Luca 27/07: store manager
     // e direttore commerciale NON gestiscono il team — vedono la maschera del
     // consulente (solo le proprie richieste), salvo riaccenderla per ruolo.
-    const { perms: capPerms } = useRolePermissions(user?.role);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
     const gestioneFerie = !!user && capAllowed(user.role, FERIE_SECTION, CAP_FERIE_GESTIONE, capPerms);
 
     const sectionInfo = {
@@ -260,6 +260,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
         await fetchRequests();
     };
 
+    const [kpiFerie, setKpiFerie] = useState("");   // card-filtro attiva ("" = nessuna)
     const filteredRequests = requests.filter(r =>
         (!fPersone.length || fPersone.includes(r.employee_name)) &&
         (!fNegozi.length || fNegozi.includes(r.store)) &&
@@ -267,16 +268,29 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     );
     const persone = [...new Set(requests.map(r => r.employee_name))].sort();
     const negozi = [...new Set(requests.map(r => r.store).filter(Boolean))].sort();
-    // contatori sul FILTRO attivo (03/08): scegliendo persone/negozi/periodo i
-    // numeri seguono; i due nuovi parlano di GIORNI EFFETTIVI (no domeniche/festivi)
+    // contatori sul FILTRO attivo (03/08): scegliendo persone/negozi/periodo i numeri seguono
     const oggiYmd = new Date().toISOString().slice(0, 10);
     const soloFerie = filteredRequests.filter(r => (r.tipo || "ferie") !== "corso");   // i CORSI non contano nei numeri ferie
+    // settimana corrente (lun-dom) e prossima: per le due card nuove (Luca 03/08)
+    const _ymdF = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const _lun = (() => { const x = new Date(); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; })();
+    const _addG = (base: Date, n: number) => { const x = new Date(base); x.setDate(x.getDate() + n); return x; };
+    const lunYmd = _ymdF(_lun), domYmd = _ymdF(_addG(_lun, 6)), lunProxYmd = _ymdF(_addG(_lun, 7)), domProxYmd = _ymdF(_addG(_lun, 13));
     const inFerieOggi = soloFerie.filter(r => r.status === "approved" && r.date_from <= oggiYmd && r.date_to >= oggiYmd).length;
-    const programmate = soloFerie.filter(r => r.status === "approved" && r.date_from > oggiYmd).length;
+    const inFerieSettimana = soloFerie.filter(r => r.status === "approved" && r.date_from <= domYmd && r.date_to >= lunYmd).length;
+    const inFerieProssima = soloFerie.filter(r => r.status === "approved" && r.date_from <= domProxYmd && r.date_to >= lunProxYmd).length;
     const inAttesa = soloFerie.filter(r => r.status === "pending").length;
-    const giorniApprovati = soloFerie.filter(r => r.status === "approved").reduce((s, r) => s + giorniEffettivi(r), 0);
-    const giorniInAttesa = soloFerie.filter(r => r.status === "pending").reduce((s, r) => s + giorniEffettivi(r), 0);
-    const fmtGiorni = (n: number) => (Math.round(n * 10) / 10).toLocaleString("it-IT");
+    // CARD-FILTRO (Luca 03/08): il click accende/spegne il filtro sul registro
+    const kpiMatch = (r: { tipo?: string | null; status: string; date_from: string; date_to: string }) => {
+        if (!kpiFerie) return true;
+        if ((r.tipo || "ferie") === "corso") return false;
+        if (kpiFerie === "attesa") return r.status === "pending";
+        if (kpiFerie === "oggi") return r.status === "approved" && r.date_from <= oggiYmd && r.date_to >= oggiYmd;
+        if (kpiFerie === "settimana") return r.status === "approved" && r.date_from <= domYmd && r.date_to >= lunYmd;
+        if (kpiFerie === "prossima") return r.status === "approved" && r.date_from <= domProxYmd && r.date_to >= lunProxYmd;
+        return true;
+    };
+    const richiesteVisibili = filteredRequests.filter(kpiMatch);
 
     const formatDate = (iso: string) => {
         return new Date(iso).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -294,28 +308,28 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             </button>
                         </div>
                     )}
-                    {/* tessere COMPATTE (03/08) + 2 contatori sui GIORNI effettivi */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                        <div className="glass-panel p-3.5 border-l-4 border-l-sky-500">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">In Ferie Oggi</p>
-                            <p className="text-xl font-black text-white">{inFerieOggi}</p>
-                        </div>
-                        <div className="glass-panel p-3.5 border-l-4 border-l-emerald-500">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Programmate</p>
-                            <p className="text-xl font-black text-white">{programmate}</p>
-                        </div>
-                        <div className="glass-panel p-3.5 border-l-4 border-l-amber-500">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">In Attesa</p>
-                            <p className="text-xl font-black text-white">{inAttesa}</p>
-                        </div>
-                        <div className="glass-panel p-3.5 border-l-4 border-l-indigo-500" title="Somma dei giorni EFFETTIVI delle ferie approvate nel filtro attivo (domeniche e festivi esclusi)">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Giorni approvati</p>
-                            <p className="text-xl font-black text-white">{fmtGiorni(giorniApprovati)}</p>
-                        </div>
-                        <div className="glass-panel p-3.5 border-l-4 border-l-orange-500" title="Somma dei giorni EFFETTIVI delle richieste in attesa nel filtro attivo (domeniche e festivi esclusi)">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Giorni in attesa</p>
-                            <p className="text-xl font-black text-white">{fmtGiorni(giorniInAttesa)}</p>
-                        </div>
+                    {/* CARD-FILTRO cliccabili (Luca 03/08): In attesa per prima, poi
+                        oggi / questa settimana / prossima settimana — click = filtro
+                        sul registro, altro click = si toglie */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {([
+                            ["attesa", "In Attesa", inAttesa, "amber"],
+                            ["oggi", "In Ferie Oggi", inFerieOggi, "sky"],
+                            ["settimana", "In Ferie questa settimana", inFerieSettimana, "emerald"],
+                            ["prossima", "In Ferie la prossima settimana", inFerieProssima, "indigo"],
+                        ] as [string, string, number, string][]).map(([id, label, val, col]) => {
+                            const attiva = kpiFerie === id;
+                            const bordo = col === "amber" ? "border-l-amber-500" : col === "sky" ? "border-l-sky-500" : col === "emerald" ? "border-l-emerald-500" : "border-l-indigo-500";
+                            const ring = col === "amber" ? "ring-amber-400/60 bg-amber-500/10" : col === "sky" ? "ring-sky-400/60 bg-sky-500/10" : col === "emerald" ? "ring-emerald-400/60 bg-emerald-500/10" : "ring-indigo-400/60 bg-indigo-500/10";
+                            return (
+                                <button key={id} type="button" onClick={() => setKpiFerie(attiva ? "" : id)}
+                                    title={attiva ? "Filtro attivo — clicca per toglierlo" : "Clicca per filtrare il registro"}
+                                    className={cn("glass-panel p-3.5 border-l-4 text-left transition-all cursor-pointer", bordo, attiva && `ring-2 ${ring}`)}>
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">{attiva ? "✓ " : ""}{label}</p>
+                                    <p className="text-xl font-black text-white">{val}</p>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             )}
@@ -425,7 +439,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                 // giorni EFFETTIVI (03/08): domeniche e festivi non contano
                                 const giorni = giorniEffettivi;
                                 const righe = [["Collaboratore", "Negozio", "Dal", "Al", "Giorni", "Mezza giornata", "Stato", "Motivazione", "Nota amministrazione"].join(";")];
-                                filteredRequests.forEach(r => righe.push([
+                                richiesteVisibili.forEach(r => righe.push([
                                     r.employee_name, r.store, formatDate(r.date_from), formatDate(r.date_to),
                                     String(giorni(r)).replace(".", ","),
                                     r.half_day ? (r.half_day === "mattina" ? "Mattina" : "Pomeriggio") : "",
@@ -437,7 +451,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                 const el = document.createElement("a");
                                 el.href = url; el.download = `ferie_${fDa || "inizio"}_${fA || "oggi"}.csv`; el.click();
                                 URL.revokeObjectURL(url);
-                            }} disabled={filteredRequests.length === 0}
+                            }} disabled={richiesteVisibili.length === 0}
                                 className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
                                 ⬇️ Excel
                             </button>
@@ -498,7 +512,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                     )}
                     {isAdminLike && vista === "calendario" && (
                         <CalendarioFerie
-                            richieste={filteredRequests.filter(r => r.status !== "rejected")}
+                            richieste={richiesteVisibili.filter(r => r.status !== "rejected")}
                             mese={meseCal}
                             setMese={setMeseCal}
                             festivi={festiviMap}
@@ -520,7 +534,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/5">
-                                    {(isAdminLike ? filteredRequests : requests.filter(r => r.employee_name === user?.name)).map(r => (
+                                    {(isAdminLike ? richiesteVisibili : requests.filter(r => r.employee_name === user?.name)).map(r => (
                                         <tr key={r.id} className="hover:bg-white/[0.01] transition-colors group">
                                             <td className="px-5 py-4">
                                                 {/* PERIODO su UNA riga (03/08): dal → al; giorno singolo = solo la data */}
@@ -1071,9 +1085,14 @@ function MalattiaSection() {
     };
     const [absences, setAbsences] = useState<SicknessRow[]>([]);
     const [showNewModal, setShowNewModal] = useState(false);
-    const [filterPerson, setFilterPerson] = useState("");
+    // FILTRI STANDARD (Luca 03/08): collaboratori con la SelectMulti di
+    // piattaforma (prima era un input libero) + periodo Da/A che prima
+    // non esisteva proprio (il registro tagliava a 30 giorni, in silenzio)
+    const [filterPersone, setFilterPersone] = useState<string[]>([]);
     const [filterStore, setFilterStore] = useState("");
-    const [periodDays, setPeriodDays] = useState(30);
+    const [filtroDa, setFiltroDa] = useState("");
+    const [filtroA, setFiltroA] = useState("");
+    const periodDays = 30;   // finestra di default quando NON si filtra per date
 
     const [newEmployee, setNewEmployee] = useState("");
     const [newStore, setNewStore] = useState("");
@@ -1108,10 +1127,14 @@ function MalattiaSection() {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - periodDays);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
-    let filtered = absences.filter(a => a.date_to >= cutoffStr);
+    // con un filtro data esplicito la finestra dei 30 giorni si spegne;
+    // il match e' per SOVRAPPOSIZIONE di periodo (basta un giorno in comune)
+    let filtered = absences.filter(a => (filtroDa || filtroA) ? true : a.date_to >= cutoffStr);
+    if (filtroDa) filtered = filtered.filter(a => a.date_to >= filtroDa);
+    if (filtroA) filtered = filtered.filter(a => a.date_from <= filtroA);
 
     const filteredAbsences = filtered.filter(a =>
-        a.employee_name.toLowerCase().includes(filterPerson.toLowerCase()) &&
+        (filterPersone.length === 0 || filterPersone.includes(a.employee_name)) &&
         a.store.toLowerCase().includes(filterStore.toLowerCase())
     );
 
@@ -1151,7 +1174,7 @@ function MalattiaSection() {
             {/* KPI Section */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="glass-panel p-5 border-l-4 border-l-rose-500">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Assenze Recenti</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{(filtroDa || filtroA) ? "Assenze nel periodo" : `Assenze ultimi ${periodDays} gg`}</p>
                     <p className="text-2xl font-black text-white">{filteredAbsences.length}</p>
                 </div>
                 <div className="glass-panel p-5 border-l-4 border-l-slate-400">
@@ -1172,14 +1195,23 @@ function MalattiaSection() {
                         <p className="text-xs text-slate-500">Monitoraggio certificati e periodi di assenza</p>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                        <input
-                            type="text"
-                            placeholder="Collaboratore..."
-                            value={filterPerson}
-                            onChange={e => setFilterPerson(e.target.value)}
-                            className="glass-input !h-9 px-3 text-xs w-full sm:w-32"
-                        />
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <div className="w-full sm:w-64"><SelectMulti values={filterPersone} onChange={setFilterPersone}
+                            opzioni={staff.map(x => x.name)} maxVoci={100}
+                            placeholder="Tutti i collaboratori — scrivi per filtrare"
+                            className="glass-input text-xs rounded-lg py-1.5 w-full" /></div>
+                        <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Da
+                            <input type="date" value={filtroDa} onChange={e => setFiltroDa(e.target.value)}
+                                className="glass-input !h-9 px-2 text-xs w-[132px] normal-case font-normal tracking-normal" />
+                        </label>
+                        <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">A
+                            <input type="date" value={filtroA} onChange={e => setFiltroA(e.target.value)}
+                                className="glass-input !h-9 px-2 text-xs w-[132px] normal-case font-normal tracking-normal" />
+                        </label>
+                        {(filtroDa || filtroA || filterPersone.length > 0) && (
+                            <button onClick={() => { setFiltroDa(""); setFiltroA(""); setFilterPersone([]); }}
+                                className="h-9 px-2.5 rounded-lg text-[11px] text-slate-500 hover:text-slate-300 underline">Pulisci</button>
+                        )}
                         <button
                             onClick={() => setShowNewModal(true)}
                             className="h-9 px-4 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-colors flex items-center gap-2"
