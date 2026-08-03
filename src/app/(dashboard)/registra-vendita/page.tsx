@@ -4340,7 +4340,7 @@ function CRM() {
   // compilano in un MODALE centrale invece che inline. {gid,si,subId}
   const [prodModal,setProdModal]=useState(null);
   // icone su richiesta: Wallet=portafogli, Ric.Auto=banca, il resto invariato
-  const iconW3Cat=(g)=>{const n=String(g.title||"").toLowerCase();if(n.includes("wallet"))return "👛";if(n.includes("ric"))return "🏦";return g.icon;};
+  const iconW3Cat=(g)=>{const n=String(g.title||"").toLowerCase();if(n.includes("wallet"))return "💲";if(n.includes("ric."))return "💳";if(n.includes("ric auto"))return "💳";if(n.includes("sostituz"))return "🪪";return g.icon;};
 
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
   // le tendine del terminale leggono il listino di QUESTO brand
@@ -4491,7 +4491,7 @@ function CRM() {
   // stessa logica storica — conferma se c'e' lavoro fuori carrello, ripresa
   // del gruppo dal carrello se il brand c'era gia'.
   const _pickBrand=(b)=>{if(!b.ready)return;if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
-  const fullReset=()=>{setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  const fullReset=()=>{setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
@@ -5386,7 +5386,7 @@ select.rvIn{cursor:pointer}
       {drawerCarrello&&<div onClick={()=>setDrawerCarrello(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",backdropFilter:"blur(2px)",zIndex:4400}}/>}
       {/* stessa pelle delle card del CRM (glass-panel): niente piu' grigio
           fuori tema, e sul tema chiaro diventa bianca come tutto il resto */}
-      <div className="crmSidebar glass-panel" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:80,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":undefined,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 96px)",overflowY:"auto",flexDirection:"column",background:drawerCarrello?"#12141f":undefined,borderRadius:drawerCarrello?0:undefined,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30}}>
+      <div className="crmSidebar glass-panel" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:96,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":undefined,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 112px)",overflowY:"auto",overscrollBehavior:"contain",flexDirection:"column",background:drawerCarrello?"#12141f":undefined,borderRadius:drawerCarrello?0:undefined,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30}}>
         <div style={{background:bG,borderRadius:drawerCarrello?0:"15px 15px 0 0",padding:"16px 18px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
@@ -5630,17 +5630,17 @@ select.rvIn{cursor:pointer}
               </button>;})}
           </div>
         </div>
-        {(brand==="windtre"&&tipoCliente==="privato")?(
-          /* GRIGLIA A CARD (test W3 privato): 3 colonne responsive, prodotti a
-             pillola dentro la card, compilazione nel modale — la griglia resta
-             ferma, niente piu' pagina-fisarmonica. Stato e validazioni sono gli
-             stessi del flusso classico (togSub/SubCard/subBadge). */
+        {(
+          /* GRIGLIA A CARD (per TUTTI i brand e tipi cliente, Luca 03/08):
+             3 colonne responsive, prodotti a quadratoni dentro la card,
+             compilazione nel MODALE — la griglia resta ferma, niente piu'
+             fisarmonica. Stato e validazioni del flusso classico INTATTI. */
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
             {cats.map(group=>{const cc=catCounts(group.id,group.subs);const righe=gS(group.id);return <div key={group.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:16,display:"flex",flexDirection:"column"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:12,textAlign:"center"}}>
                 <span style={{fontSize:19}}>{iconW3Cat(group)}</span>
                 <span style={{fontSize:12.5,fontWeight:800,color:group.color,textTransform:"uppercase",letterSpacing:.4}}>{group.title}</span>
-                {cc.tot>0&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:800,color:"#8892b0",whiteSpace:"nowrap"}}>{cc.ok>0&&<span style={{color:"#28a745"}}>✓{cc.ok} </span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>⚠{cc.warn} </span>}{cc.empty>0&&<span>●{cc.empty}</span>}</span>}
+                {cc.tot>0&&<span style={{fontSize:10,fontWeight:800,color:"#8892b0",whiteSpace:"nowrap"}}>{cc.ok>0&&<span style={{color:"#28a745"}}>✓{cc.ok} </span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>⚠{cc.warn} </span>}{cc.empty>0&&<span>●{cc.empty}</span>}</span>}
               </div>
               {righe.map((sale,si)=><div key={si} style={{marginBottom:8,paddingBottom:si<righe.length-1?10:0,borderBottom:si<righe.length-1?"1px dashed rgba(255,255,255,0.09)":"none"}}>
                 {righe.length>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
@@ -5650,19 +5650,20 @@ select.rvIn{cursor:pointer}
                     {si>0&&<button onClick={()=>rmSl(group.id,si)} style={{padding:"2px 8px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"transparent",color:"#dc3545",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕</button>}
                   </div>
                 </div>}
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {/* QUADRATONI stondati (Luca 03/08): stesse forme dei brand */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
                   {group.subs.map(sub=>{const d=sale[sub.id];const att=!!(d&&d.active);const b=att?subBadge(d,dupCheck,sub,_reqMissing(group.id+"-"+si+"-"+sub.id)):null;
                     const spia=att?(b&&b.st==="ok"?"✓":b&&b.st==="warn"?"⚠":"●"):"+";
                     const cSpia=att?(b&&b.st==="ok"?"#28a745":b&&b.st==="warn"?"#f59e0b":"#94a3b8"):bC;
                     return <button key={sub.id}
                       onClick={()=>{if(!att)togSub(group.id,si,sub.id,group.radio?group.subs.map(x=>x.id):null);setProdModal({gid:group.id,si,subId:sub.id});}}
                       title={att?"Apri e modifica i campi":"Aggiungi e compila nel riquadro"}
-                      style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"11px 14px",borderRadius:10,cursor:"pointer",fontSize:13,fontWeight:700,textAlign:"left",transition:"all .15s",
+                      style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,minHeight:76,padding:"12px 8px",borderRadius:12,cursor:"pointer",fontSize:12.5,fontWeight:700,textAlign:"center",transition:"all .15s",
                         border:att?"2px solid "+group.color:"1px solid rgba(255,255,255,0.10)",
                         background:att?group.color+"22":"rgba(255,255,255,0.04)",
                         color:att?"#f8fafc":"#8892b0"}}>
-                      <span>{sub.title}</span>
-                      <span style={{fontSize:13,fontWeight:900,color:cSpia,flexShrink:0}}>{spia}</span>
+                      <span style={{lineHeight:1.25}}>{sub.title}</span>
+                      <span style={{fontSize:14,fontWeight:900,color:cSpia}}>{spia}</span>
                     </button>;})}
                 </div>
               </div>)}
@@ -5671,30 +5672,12 @@ select.rvIn{cursor:pointer}
               </div>
             </div>;})}
           </div>
-        ):(<>{cats.map(group=>{const cc=catCounts(group.id,group.subs);const aperta=catAperta(group);return <div key={group.id} style={{marginBottom:aperta?16:6}}>
-          <div onClick={()=>togCat(group)} title={aperta?"Chiudi la categoria":"Esplodi la categoria"} style={{display:"flex",alignItems:"center",gap:8,marginBottom:aperta?8:0,cursor:"pointer",userSelect:"none",padding:aperta?0:"8px 12px",borderRadius:8,background:aperta?"transparent":"rgba(255,255,255,0.03)",border:aperta?"none":"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:11,color:"#64748b"}}>{aperta?"▾":"▸"}</span><span style={{fontSize:16}}>{group.icon}</span><span style={{fontSize:13,fontWeight:700,color:group.color,textTransform:"uppercase"}}>{group.title}</span>{cc.tot>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:"#8892b0",background:"transparent",borderRadius:999,padding:"2px 10px"}}>{cc.tot} {cc.tot===1?"vendita":"vendite"}{cc.ok>0&&<span style={{color:"#28a745"}}>· {cc.ok} ✓</span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>· {cc.warn} ⚠</span>}{cc.empty>0&&<span style={{color:"#64748b"}}>· {cc.empty} ●</span>}</span>}</div>
-          {aperta&&gS(group.id).map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+group.color}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-              <span style={{fontSize:11,fontWeight:700,color:group.color}}>Vendita #{si+1}</span>
-              <div style={{display:"flex",gap:6}}>
-                <button onClick={()=>resetSale(group.id,si)} title="Reset questa vendita" style={{padding:"4px 10px",borderRadius:6,border:"1px solid #b0b0b0",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>↺</button>
-                {si===gS(group.id).length-1&&<button onClick={()=>addSl(group.id)} style={{padding:"4px 12px",borderRadius:6,border:"1px solid "+group.color,background:"rgba(255,255,255,0.02)",color:group.color,fontSize:11,fontWeight:700,cursor:"pointer"}}>+</button>}
-                {si>0&&<button onClick={()=>rmSl(group.id,si)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕</button>}
-              </div>
-            </div>
-            <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:10,marginBottom:group.subs.some(s=>sale[s.id]&&sale[s.id].active)?12:0}}>
-              {group.subs.map(sub=><button key={sub.id} onClick={()=>togSub(group.id,si,sub.id,group.radio?group.subs.map(s=>s.id):null)} style={{padding:"13px 28px",borderRadius:10,border:(sale[sub.id]&&sale[sub.id].active)?"2px solid "+group.color:"2px solid rgba(255,255,255,0.1)",background:(sale[sub.id]&&sale[sub.id].active)?group.color:"rgba(255,255,255,0.04)",color:(sale[sub.id]&&sale[sub.id].active)?"#fff":"#8892b0",cursor:"pointer",fontSize:13,fontWeight:700}}>{sub.title}</button>)}
-            </div>
-            {group.subs.filter(sub=>sale[sub.id]&&sale[sub.id].active).map(sub=>
-              <SubCard key={sub.id} sub={sub} rawSd={sale[sub.id]||{}} group={group} si={si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} mobiliRate={mobiliAggancioRate}/>
-            )}
-          </div>)}
-        </div>;})}</>)}
+        )}
       </div>}
 
       {/* MODALE PRODOTTO (griglia W3 privato): dentro c'e' lo STESSO SubCard
           del flusso classico — cambiare qui non tocca le validazioni. */}
-      {brand==="windtre"&&tipoCliente==="privato"&&showStep4&&prodModal&&(()=>{
+      {showStep4&&prodModal&&(()=>{
         const group=cats.find(g=>g.id===prodModal.gid);if(!group)return null;
         const sale=(sales[prodModal.gid]||[{}])[prodModal.si]||{};
         const sub=group.subs.find(x=>x.id===prodModal.subId);if(!sub)return null;
