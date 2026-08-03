@@ -5455,7 +5455,6 @@ select.rvIn{cursor:pointer}
       {/* titolo in alto a sinistra + contenuto a tutta pagina, come Ricerca Vendite (Luca 03/08) */}
       <div style={{marginBottom:18}}>
         <h1 style={{fontSize:28,fontWeight:800,color:"#f8fafc",margin:0,letterSpacing:-0.3}}>Registra Vendita</h1>
-        <div style={{color:"#94a3b8",fontSize:13,marginTop:3}}>{bObj?`${bObj.icon} ${bObj.label}`:"Seleziona un brand per iniziare"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div>
       </div>
 
       {/* BARRA STEP RICCA (Luca 03/08 sera): piu' alta, logo del brand scelto,
