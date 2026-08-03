@@ -651,7 +651,9 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
     const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
     // INTERATTIVO (03/08): due viste (Mese / Persone), giorno cliccabile con
     // pannello di dettaglio, toggle per includere o no le richieste in attesa.
-    const [modo, setModo] = useState<"mese" | "persone">("mese");
+    const [modo, setModo] = useState<"giorno" | "settimana" | "mese" | "persone">("mese");
+    // giorno di riferimento per le viste Giorno/Settimana (03/08)
+    const [dataRif, setDataRif] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
     const [conAttesa, setConAttesa] = useState(true);
     const [giornoSel, setGiornoSel] = useState<string | null>(null);
     const visibili = conAttesa ? richieste : richieste.filter(r => r.status === "approved");
@@ -664,6 +666,14 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
     const nomeCorto = (n: string) => { const p = n.trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[1][0]}.` : p[0]; };
     const fmt = (s: string) => new Date(s).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
     const cambiaMese = (delta: number) => { setGiornoSel(null); setMese(new Date(mese.getFullYear(), mese.getMonth() + delta, 1)); };
+    const spostaGiorni = (n: number) => {
+        const d = new Date(dataRif); d.setDate(d.getDate() + n); d.setHours(0, 0, 0, 0);
+        setDataRif(d);
+        // il mese "segue": tornando alla vista Mese si resta dov'eravamo
+        if (d.getMonth() !== mese.getMonth() || d.getFullYear() !== mese.getFullYear()) setMese(new Date(d.getFullYear(), d.getMonth(), 1));
+    };
+    const lunediDi = (d: Date) => { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); x.setHours(0, 0, 0, 0); return x; };
+    const settimana: Date[] = Array.from({ length: 7 }, (_, i) => { const d = new Date(lunediDi(dataRif)); d.setDate(d.getDate() + i); return d; });
     // vista PERSONE: timeline del mese, una riga per collaboratore
     const nGiorniMese = new Date(mese.getFullYear(), mese.getMonth() + 1, 0).getDate();
     const kIni = iso(primo), kFine = iso(new Date(mese.getFullYear(), mese.getMonth(), nGiorniMese));
@@ -674,15 +684,19 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
         <div className="glass-card p-4">
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
                 <div className="flex items-center gap-2">
-                    <button onClick={() => cambiaMese(-1)} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">‹</button>
-                    <h4 className="text-base font-black text-white capitalize min-w-[150px] text-center">{mese.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</h4>
-                    <button onClick={() => cambiaMese(1)} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">›</button>
-                    <button onClick={() => { const d = new Date(); setGiornoSel(null); setMese(new Date(d.getFullYear(), d.getMonth(), 1)); }} className="text-[10px] font-bold uppercase tracking-widest text-indigo-300 hover:text-white ml-1">Oggi</button>
+                    <button onClick={() => modo === "giorno" ? spostaGiorni(-1) : modo === "settimana" ? spostaGiorni(-7) : cambiaMese(-1)} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">‹</button>
+                    <h4 className="text-base font-black text-white capitalize min-w-[150px] text-center">
+                        {modo === "giorno" ? dataRif.toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "long", year: "numeric" })
+                            : modo === "settimana" ? `${settimana[0].toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })} → ${settimana[6].toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" })}`
+                                : mese.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}
+                    </h4>
+                    <button onClick={() => modo === "giorno" ? spostaGiorni(1) : modo === "settimana" ? spostaGiorni(7) : cambiaMese(1)} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">›</button>
+                    <button onClick={() => { const d = new Date(); d.setHours(0, 0, 0, 0); setGiornoSel(null); setDataRif(d); setMese(new Date(d.getFullYear(), d.getMonth(), 1)); }} className="text-[10px] font-bold uppercase tracking-widest text-indigo-300 hover:text-white ml-1">Oggi</button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                     <div className="flex items-center gap-1 rounded-xl border border-white/10 p-1 bg-white/[0.03]">
-                        {([["mese", "🗓 Mese"], ["persone", "👥 Persone"]] as const).map(([m, l]) => (
-                            <button key={m} onClick={() => setModo(m)}
+                        {([["giorno", "📅 Giorno"], ["settimana", "📆 Settimana"], ["mese", "🗓 Mese"], ["persone", "👥 Persone"]] as const).map(([m, l]) => (
+                            <button key={m} onClick={() => { setGiornoSel(null); if ((m === "giorno" || m === "settimana") && (dataRif.getMonth() !== mese.getMonth() || dataRif.getFullYear() !== mese.getFullYear())) setDataRif(new Date(mese.getFullYear(), mese.getMonth(), 1)); setModo(m); }}
                                 className={cn("px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-colors",
                                     modo === m ? "bg-indigo-500/25 text-indigo-200" : "text-slate-500 hover:text-slate-300")}>
                                 {l}
@@ -696,6 +710,67 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
                     </button>
                 </div>
             </div>
+
+            {modo === "giorno" && (() => {
+                const rr = delGiorno(dataRif).sort((a, b) => (a.status === b.status ? a.employee_name.localeCompare(b.employee_name) : a.status === "approved" ? -1 : 1));
+                return (
+                    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                        {rr.length === 0 ? (
+                            <p className="text-sm text-slate-500 italic py-4 text-center">Nessuno in ferie in questo giorno (con questi filtri).</p>
+                        ) : (
+                            <div className="space-y-2">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{rr.length} in ferie</p>
+                                {rr.map(r => (
+                                    <div key={r.id} className="flex items-center gap-3 flex-wrap text-sm py-1.5 border-b border-white/5 last:border-b-0">
+                                        <span className={cn("w-2 h-2 rounded-full shrink-0", r.status === "approved" ? "bg-emerald-400" : "bg-amber-400")} />
+                                        <span className="font-semibold text-white">{r.employee_name}</span>
+                                        {r.store && <span className="text-[10px] text-slate-500 uppercase tracking-wider">{r.store}</span>}
+                                        <span className="text-xs text-slate-300 whitespace-nowrap">{fmt(r.date_from)}{r.date_to !== r.date_from && <> → {fmt(r.date_to)}</>}</span>
+                                        {r.half_day && <span className="text-[10px] font-black text-amber-300 uppercase">½ {r.half_day}</span>}
+                                        <span className={cn("text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border", r.status === "approved" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30")}>
+                                            {r.status === "approved" ? "Approvata" : "In attesa"}
+                                        </span>
+                                        {r.reason && <span className="text-xs text-slate-500 italic">“{r.reason}”</span>}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
+
+            {modo === "settimana" && (<>
+                <div className="grid grid-cols-7 gap-px text-center mb-1">
+                    {settimana.map((d, i) => (
+                        <div key={i} className={cn("text-[10px] font-bold uppercase tracking-widest py-1", d.getTime() === oggi.getTime() ? "text-indigo-300" : "text-slate-500")}>
+                            {d.toLocaleDateString("it-IT", { weekday: "short" })} {d.getDate()}
+                        </div>
+                    ))}
+                </div>
+                <div className="grid grid-cols-7 gap-px bg-white/5 rounded-xl overflow-hidden">
+                    {settimana.map((d, i) => {
+                        const k = iso(d);
+                        const rr = delGiorno(d);
+                        return (
+                            <div key={i} onClick={() => setGiornoSel(giornoSel === k ? null : k)}
+                                title={rr.length ? "Clicca per il dettaglio del giorno" : undefined}
+                                className={cn("min-h-[150px] p-1.5 bg-[#0f111a] cursor-pointer transition-colors hover:bg-[#161a2c]",
+                                    d.getTime() === oggi.getTime() && "bg-indigo-500/[0.06]", giornoSel === k && "ring-2 ring-inset ring-indigo-400/80")}>
+                                <div className="space-y-0.5">
+                                    {rr.slice(0, 7).map(r => (
+                                        <div key={r.id} title={`${r.employee_name} (${r.store}) — ${r.status === "approved" ? "approvata" : "in attesa"}${r.reason ? `: ${r.reason}` : ""}`}
+                                            className={cn("truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight",
+                                                r.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200")}>
+                                            {r.half_day ? (r.half_day === "mattina" ? "½☀️ " : "½🌇 ") : ""}{nomeCorto(r.employee_name)}
+                                        </div>
+                                    ))}
+                                    {rr.length > 7 && <div className="text-[9px] text-slate-500 px-1">+{rr.length - 7} altre</div>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </>)}
 
             {modo === "mese" && (<>
                 <div className="grid grid-cols-7 gap-px text-center mb-1">
@@ -805,7 +880,7 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
             <div className="flex items-center gap-4 mt-3 text-[11px] text-slate-400 flex-wrap">
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500/40" /> Approvate</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-500/40" /> In attesa</span>
-                <span className="text-slate-600">Clicca un giorno per il dettaglio · vista Persone = una riga per collaboratore</span>
+                <span className="text-slate-600">Giorno · Settimana · Mese · Persone — nelle griglie clicca un giorno per il dettaglio</span>
             </div>
         </div>
     );
