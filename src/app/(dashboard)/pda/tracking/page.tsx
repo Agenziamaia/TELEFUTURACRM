@@ -331,7 +331,7 @@ function KpiBar({
                 onClick={() => setBrandSel(esclusivo ? [] : [b])}
                 title={esclusivo ? b + " — filtro attivo, clicca per tornare a tutti" : "Mostra solo " + b + (activeFilter ? " (conteggio sul filtro attivo)" : "")}
                 aria-label={b}
-                className="rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer"
+                className="relative rounded-xl border flex items-center justify-center transition-all cursor-pointer"
                 style={{
                   height: 72,
                   borderColor: esclusivo ? color : "rgba(255,255,255,0.10)",
@@ -341,13 +341,15 @@ function KpiBar({
                   filter: on ? "none" : "grayscale(1)",
                 }}>
                 {logo ? (
-                  <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "80%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(b)] || 1})` }} />
+                  <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(b)] || 1})` }} />
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "#586174" }}>{b}</span>
                 )}
-                {/* numeretto a fianco: pratiche del brand col filtro KPI attivo */}
-                <span className="text-[11px] font-black leading-none px-1.5 py-1 rounded-md flex-shrink-0"
-                  style={{ color: colBadge, background: colBadge + "1f", opacity: nBrand === 0 ? .45 : 1 }}>
+                {/* numeretto in angolo: pratiche del brand col filtro KPI attivo.
+                    ASSOLUTO e con fondo solido: i loghi scalati (transform)
+                    sbordano dal box di layout e si sovrapponevano al badge. */}
+                <span className="absolute text-[10px] font-black leading-none px-1.5 py-[3px] rounded-full"
+                  style={{ top: 4, right: 5, zIndex: 1, color: colBadge, background: "#0d1424", border: `1px solid ${colBadge}66`, opacity: nBrand === 0 ? .5 : 1 }}>
                   {nBrand}
                 </span>
               </button>
