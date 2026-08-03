@@ -46,6 +46,10 @@ export function IndirizzoAutocomplete({
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const ctrl = useRef<AbortController | null>(null);
     const scelto = useRef<string>("");   // l'ultimo valore APPLICATO da un pick: non riaprire su di lui
+    // il menu si apre SOLO su ciò che l'utente ha DIGITATO (03/08): i valori
+    // precompilati dal codice (cliente già censito in Registra Vendita/Usato…)
+    // arrivano via prop e non devono far comparire la tendina di conferma
+    const digitato = useRef<string | null>(null);
 
     useEffect(() => {
         const h = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setAperta(false); };
@@ -57,7 +61,7 @@ export function IndirizzoAutocomplete({
     useEffect(() => {
         if (timer.current) clearTimeout(timer.current);
         const q = value.trim();
-        if (q.length < 4 || q === scelto.current) { setRighe([]); setCerco(false); return; }
+        if (value !== digitato.current || q.length < 4 || q === scelto.current) { setRighe([]); setCerco(false); return; }
         setCerco(true);
         timer.current = setTimeout(async () => {
             ctrl.current?.abort();
@@ -78,6 +82,7 @@ export function IndirizzoAutocomplete({
         const indirizzo = `${r.via}${civico ? " " + civico : ""}`.trim();
         const completo = `${indirizzo}${r.cap || r.citta ? ", " + [r.cap, r.citta].filter(Boolean).join(" ") : ""}`;
         scelto.current = indirizzo;
+        digitato.current = null;
         setAperta(false); setRighe([]);
         onPick({ indirizzo, via: r.via, civico, cap: r.cap, citta: r.citta, completo });
     };
@@ -86,7 +91,7 @@ export function IndirizzoAutocomplete({
         <div ref={box} className="relative">
             <input
                 value={value} disabled={disabled}
-                onChange={(e) => onChange(e.target.value)}
+                onChange={(e) => { digitato.current = e.target.value; onChange(e.target.value); }}
                 onFocus={() => { if (righe.length) setAperta(true); }}
                 onKeyDown={(e) => {
                     if (e.key === "Enter" && aperta && righe[0]) { e.preventDefault(); scegli(righe[0]); }
