@@ -8,7 +8,7 @@
 // (cap:/comunicazioni:*). Le letture ora stanno a DB (comunicazioni_ricevute):
 // il localStorage resta solo come eredita' del vecchio "letto" locale.
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Bell, Info, AlertTriangle, CheckCircle2, Plus, Eye, X, Trash2 } from "lucide-react";
+import { Bell, Info, AlertTriangle, CheckCircle2, Plus, Eye, X, Trash2 , Rocket } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
@@ -16,6 +16,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
+import { Confetti } from "@/components/ComunicazioniPopup";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
 import { sameStore, useVisibleStores } from "@/lib/visibleStores";
@@ -62,8 +63,11 @@ function getLocalReadSet(): Set<number> {
 
 const getTypeStyles = (type: string) => {
     switch (type) {
-        case "warning": return { icon: AlertTriangle, color: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/20" };
+        // URGENTE (03/08): rosso che non passa inosservato
+        case "warning": return { icon: AlertTriangle, color: "text-rose-400", bg: "bg-rose-500/10", border: "border-rose-500/30" };
         case "success": return { icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/20" };
+        // UPDATE (03/08): novita' del CRM/azienda, razzo violetto
+        case "update": return { icon: Rocket, color: "text-violet-400", bg: "bg-violet-500/10", border: "border-violet-500/30" };
         default: return { icon: Info, color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/20" };
     }
 };
@@ -100,6 +104,7 @@ export default function Comunicazioni() {
     // click APRE il contenuto ed e' quello che conta come lettura — prima
     // bastava un click a vuoto sulla card e "letta" scattava senza leggere.
     const [aperte, setAperte] = useState<Set<number>>(new Set());
+    const [festa, setFesta] = useState<number | null>(null);   // coriandoli sulle buone notizie
 
     const fetchAll = useCallback(async () => {
         // select a scalare: completa (mig. 116, con esiti) → estesa (112) → legacy
@@ -220,7 +225,7 @@ export default function Comunicazioni() {
     const [formOpen, setFormOpen] = useState(false);
     const [fTitle, setFTitle] = useState("");
     const [fContent, setFContent] = useState("");
-    const [fType, setFType] = useState<"info" | "warning" | "success">("info");
+    const [fType, setFType] = useState<"info" | "warning" | "success" | "update">("info");
     const [fKind, setFKind] = useState<"bacheca" | "popup">("bacheca");
     const [fTutti, setFTutti] = useState(true);
     const [fRuoli, setFRuoli] = useState<string[]>([]);
@@ -524,14 +529,18 @@ export default function Comunicazioni() {
                                     if (isPopup) { if (!read) scriviRicevuta(com.id, false); return; }
                                     const apre = !aperte.has(com.id);
                                     setAperte((p) => { const n = new Set(p); if (apre) n.add(com.id); else n.delete(com.id); return n; });
+                                    // BUONA NOTIZIA (03/08): coriandoli anche aprendo dalla bacheca
+                                    if (apre && com.type === "success") { setFesta(com.id); setTimeout(() => setFesta(null), 3600); }
                                     if (apre && !read) scriviRicevuta(com.id, false);   // APRIRE = leggere
                                 }}
                                 onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !isPopup && !aperte.has(com.id)) { setAperte((p) => new Set(p).add(com.id)); if (!read) scriviRicevuta(com.id, false); } }}
                                 className={cn(
                                     "glass-card p-6 relative overflow-hidden transition-all cursor-pointer",
-                                    !read && "border-l-4 border-l-primary"
+                                    !read && "border-l-4 border-l-primary",
+                                    com.type === "warning" && "border border-rose-500/30"
                                 )}
                             >
+                                {festa === com.id && <Confetti />}
                                 <div className="absolute top-6 right-6 flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
                                     {!read && (
                                         <span className="flex items-center gap-2">
@@ -562,6 +571,15 @@ export default function Comunicazioni() {
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                                            {com.type === "warning" && (
+                                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">🚨 Urgente</span>
+                                            )}
+                                            {com.type === "update" && (
+                                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40">🚀 Update</span>
+                                            )}
+                                            {com.type === "success" && (
+                                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">🎉 Buona notizia</span>
+                                            )}
                                             {isPopup && (
                                                 <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
                                                     Pop-up con conferma
@@ -714,7 +732,7 @@ export default function Comunicazioni() {
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aspetto</label>
                                 <div className="flex gap-2 mt-2">
-                                    {([["info", "ℹ️ Info"], ["warning", "⚠️ Avviso"], ["success", "✅ Buone notizie"]] as const).map(([t, l]) => (
+                                    {([["info", "ℹ️ Info"], ["update", "🚀 Update"], ["warning", "🚨 Urgente"], ["success", "🎉 Buone notizie"]] as const).map(([t, l]) => (
                                         <button key={t} type="button" onClick={() => setFType(t)}
                                             className={cn("px-3.5 py-1.5 rounded-full border text-sm transition-all",
                                                 fType === t ? "border-violet-500 bg-violet-500/10 text-white" : "border-white/10 text-slate-400 hover:border-white/25")}>
@@ -754,10 +772,12 @@ export default function Comunicazioni() {
                                 <div className="mt-2 rounded-2xl border border-dashed border-white/15 bg-black/30 p-3 sm:p-4 pointer-events-none select-none">
                                     {(() => {
                                         const st = fType === "warning"
-                                            ? { color: "#fbbf24", bg: "rgba(251,191,36,.12)", border: "rgba(251,191,36,.35)", Icona: AlertTriangle }
+                                            ? { color: "#fb7185", bg: "rgba(244,63,94,.12)", border: "rgba(244,63,94,.40)", Icona: AlertTriangle }
                                             : fType === "success"
                                                 ? { color: "#34d399", bg: "rgba(52,211,153,.12)", border: "rgba(52,211,153,.35)", Icona: CheckCircle2 }
-                                                : { color: "#60a5fa", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
+                                                : fType === "update"
+                                                    ? { color: "#a78bfa", bg: "rgba(139,92,246,.12)", border: "rgba(139,92,246,.40)", Icona: Rocket }
+                                                    : { color: "#60a5fa", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
                                         const titolo = fTitle.trim() || "Titolo della comunicazione";
                                         const testo = fContent.trim() || "Il testo che scrivi sopra comparirà qui.";
                                         const firma = `${dataDisplayOggi()} — ${user?.name || ""}`;

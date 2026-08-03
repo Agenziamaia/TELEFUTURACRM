@@ -8,7 +8,7 @@
 // la sessione ma ricompaiono al prossimo accesso. La visualizzazione scrive la
 // LETTURA in comunicazioni_ricevute, la conferma scrive confermato_il.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Info, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Info, AlertTriangle, CheckCircle2, Rocket } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
@@ -165,10 +165,12 @@ export function ComunicazioniPopup() {
     if (!user || !attuale) return null;
 
     const stile = attuale.type === "warning"
-        ? { Icon: AlertTriangle, color: "#fbbf24", bg: "rgba(251,191,36,.12)", border: "rgba(251,191,36,.35)" }
+        ? { Icon: AlertTriangle, color: "#fb7185", bg: "rgba(244,63,94,.12)", border: "rgba(244,63,94,.45)" }
         : attuale.type === "success"
             ? { Icon: CheckCircle2, color: "#34d399", bg: "rgba(52,211,153,.12)", border: "rgba(52,211,153,.35)" }
-            : { Icon: Info, color: "#60a5fa", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)" };
+            : attuale.type === "update"
+                ? { Icon: Rocket, color: "#a78bfa", bg: "rgba(139,92,246,.12)", border: "rgba(139,92,246,.40)" }
+                : { Icon: Info, color: "#60a5fa", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)" };
     const { Icon } = stile;
 
     return (
@@ -241,7 +243,7 @@ export function ComunicazioniPopup() {
 // Esplosione di coriandoli / fuochi d'artificio all'apertura di una "buona
 // notizia". Canvas autonomo (nessuna dipendenza), pointer-events none così non
 // blocca i pulsanti, one-shot (~3s poi si ferma). Rispetta prefers-reduced-motion.
-function Confetti() {
+export function Confetti() {   // esportato (03/08): festa anche aprendo le buone notizie in bacheca
     const ref = useRef<HTMLCanvasElement | null>(null);
     useEffect(() => {
         if (typeof window === "undefined") return;
