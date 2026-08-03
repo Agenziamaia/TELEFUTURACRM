@@ -16,7 +16,7 @@ import { supabase } from "@/lib/supabaseClient";
 import type { TrackingRow, StoriaEvent } from "./trackingConstants";
 import {
   regolaDi,
-  STATI_COMPLETATI,
+  fermaMalus,
   getStatiNegozioPerCategoria,
   isMalusRow,
   calcolaMalus,
@@ -117,7 +117,6 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const r = regolaDi(row.categoria);
   const euro = Number(r?.malus_euro) || 0;
   if (!r || euro <= 0) return [];
-  const completati = STATI_COMPLETATI[row.categoria] || ["attivato"];
   const labelToId = new Map(
     getStatiNegozioPerCategoria(row.categoria).map((s) => [s.label.toLowerCase(), s.id])
   );
@@ -148,7 +147,9 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
     if (ev.tipo === "stato_negozio") {
       const m = ev.testo.match(/aggiornato:\s*(.+)$/i);
       const id = m ? labelToId.get(m[1].trim().toLowerCase()) : undefined;
-      if (id) flagCompletato = completati.includes(id);
+      // Esito definitivo (completata o annullata/KO/recesso) -> ferma la
+      // maturazione: i segmenti successivi non generano piu' malus.
+      if (id) flagCompletato = fermaMalus(id, row.categoria);
     }
     segs.push({ start: d, soglia: r.succ_malus, completato: flagCompletato });
   }

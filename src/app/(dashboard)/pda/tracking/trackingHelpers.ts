@@ -126,6 +126,24 @@ export const STATI_COMPLETATI: Record<string, string[]> = {
   sky: ["completo_sky", "attivo_sky"],
 };
 
+/**
+ * Una pratica FERMA la maturazione del malus quando ha un esito DEFINITIVO:
+ *   - positivo → completata / attivata (STATI_COMPLETATI, per categoria);
+ *   - negativo → annullata / KO / recesso.
+ * In tutti questi casi non c'e' nessun altro esito da dare, quindi la pratica
+ * NON e' in malus (e nemmeno Warning / Da Lavorare). Per il lato negativo si usa
+ * la stessa classificazione di Ricerca Contratto (statoContrattoDa === "Annullato"
+ * = tutti gli stati "ko*" piu' "annullato"), cosi' i due mondi concordano; a
+ * quella si aggiunge il recesso Sky, anch'esso definitivo.
+ * (Segnalazione Lorenzo 03/08/2026: le pratiche esitate "annullato"/KO restavano
+ * in 🔴 Malus all'infinito, "come se dovessimo dare un altro esito".)
+ */
+export function fermaMalus(statoNegozio: string, categoria: string): boolean {
+  const completati = STATI_COMPLETATI[categoria] || ["attivato"];
+  if (completati.includes(statoNegozio)) return true;
+  return statoContrattoDa(statoNegozio) === "Annullato" || statoNegozio === "recesso_info_errate";
+}
+
 /* ── REGOLE AMMINISTRABILI (tabella tracking_regole, mig. 098 — Luca 29/07) ──
    Tre variabili per categoria, soglie in giorni LAVORATIVI per fascia:
      senza_* : pratica MAI aggiornata   (giorni dall'inserimento)
@@ -174,8 +192,9 @@ const _hit = (soglia: number | null | undefined, valore: number | null) =>
   soglia != null && valore != null && valore >= soglia;
 /** 0 = in regola · 1 = da lavorare · 2 = warning · 3 = malus */
 function livelloRegole(row: TrackingRow): 0 | 1 | 2 | 3 {
-  const completatiCat = STATI_COMPLETATI[row.categoria] || ["attivato"];
-  if (completatiCat.includes(row.statoNegozio)) return 0;
+  // Pratica con esito definitivo (completata OPPURE annullata/KO/recesso): non
+  // c'e' altro esito da dare, la maturazione si ferma e la pratica esce da malus.
+  if (fermaMalus(row.statoNegozio, row.categoria)) return 0;
   const m = misure(row);
   const r = regolaDi(row.categoria);
   let speciale: 0 | 1 | 2 | 3 = 0;

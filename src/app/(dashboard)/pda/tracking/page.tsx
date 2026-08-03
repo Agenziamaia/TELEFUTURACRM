@@ -1891,7 +1891,12 @@ export default function TrackingPdaPage() {
               setBrandSel={setBrandSel}
               venditoreSel={venditoreSel}
               setVenditoreSel={setVenditoreSel}
-              venditori={seesWhole && !seesAll ? members.map((m) => m.full_name) : []}
+              // I nomi venditore vengono dai contratti REALI (come il filtro
+              // Negozio qui sotto), non da full_name: sui contratti il venditore
+              // e' spesso il match_name ("Eloisa Nucci") mentre full_name e'
+              // "Eloisa Nucci Gonzalez", quindi il chip preso da full_name non
+              // corrispondeva a nulla e le pratiche sparivano (segn. Lorenzo 03/08).
+              venditori={seesWhole && !seesAll ? Array.from(new Set(data.map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []}
               negozioSel={negozioSel}
               setNegozioSel={setNegozioSel}
               negozi={seesAll ? Array.from(new Set(data.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort() : []}
