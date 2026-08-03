@@ -338,6 +338,9 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             <p className="text-xs text-slate-500">Monitoraggio e gestione dello stato approvazioni</p>
                         </div>
 
+                        {/* controlli in UN gruppo compatto a destra (03/08): prima il
+                            justify-between del contenitore li sparpagliava sulla riga */}
+                        <div className="flex items-center gap-2 flex-wrap">
                         {puoRichiedere && !showForm && (
                             <button
                                 onClick={() => setShowForm(true)}
@@ -388,6 +391,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                 ))}
                             </div>
                         )}
+                        </div>
                     </div>
 
                     {isAdminLike && (
