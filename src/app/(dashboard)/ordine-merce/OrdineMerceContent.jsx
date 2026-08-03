@@ -452,6 +452,24 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [activePhoneBrand, setActivePhoneBrand] = useState(null);
   const [phoneSelecting, setPhoneSelecting] = useState(null); // {modelId, capacity, color}
   const [phoneSearch, setPhoneSearch] = useState("");
+  // ── TELEFONI DAL LISTINO OPERATORE (03/08): stessi listini di Registra
+  //    Vendita (listini_terminali). Fastweb usa il listino Vodafone (senza
+  //    margine, ma qui serve solo il modello). Le vecchie liste cablate
+  //    restano il ripiego se il listino manca.
+  const [listiniTelefoni, setListiniTelefoni] = useState([]);
+  useEffect(() => {
+    supabase.from("listini_terminali").select("brand, modello, prezzo").limit(3000)
+      .then(({ data }) => setListiniTelefoni(data || []));
+  }, []);
+  const [listinoColore, setListinoColore] = useState(null);   // { modello, colore }
+  const _normBrand = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const listinoDi = (opKey) => {
+    const mappa = { vodafone: "VODAFONE", fastweb: "VODAFONE", wind3: "WINDTRE" };
+    const b = mappa[opKey];
+    if (!b) return [];
+    return listiniTelefoni.filter(r => _normBrand(r.brand) === b);
+  };
+  const COLORI_GENERICI = ["Generico", "Nero", "Bianco", "Blu", "Verde", "Viola", "Oro", "Argento", "Grigio", "Rosa", "Rosso", "Titanio"];
   const [activeAccSub, setActiveAccSub] = useState(null);
   const [usatiCat, setUsatiCat] = useState(null); // smartphone|tablet|watch
   const [usatiOs, setUsatiOs] = useState(null); // android|apple
@@ -909,7 +927,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                             let hasItems = false;
                             if (rawItems && rawItems._isPhone) {
                               const opPhones = OPERATOR_PHONES[activeBrand] || {};
-                              hasItems = Object.values(opPhones).some(arr => arr.length > 0);
+                              hasItems = listinoDi(activeBrand).length > 0 || Object.values(opPhones).some(arr => arr.length > 0);
                             } else if (rawItems && rawItems._hasChannels) {
                               hasItems = true;
                             } else if (rawItems && rawItems._hasAccessoriSub) {
@@ -937,6 +955,60 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                           if (rawItems._isPhone) {
                             const opPhones = OPERATOR_PHONES[activeBrand] || {};
                             const availBrands = PHONE_BRANDS.filter(pb => (opPhones[pb.id] || []).length > 0);
+                            /* LISTINO OPERATORE (03/08): stessa fonte di Registra Vendita.
+                               Per Fastweb vale il listino Vodafone in vigore. */
+                            const listino = listinoDi(activeBrand);
+                            if (listino.length > 0) {
+                              const filtro = phoneSearch.trim().toLowerCase();
+                              const voci = (filtro ? listino.filter(r => String(r.modello).toLowerCase().includes(filtro)) : listino)
+                                .slice().sort((a, b) => String(a.modello).localeCompare(String(b.modello)));
+                              return (
+                                <div style={{ marginTop: 12 }}>
+                                  <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                                    Modelli dal listino {activeBrand === "wind3" ? "WindTre" : "Vodafone"}{activeBrand === "fastweb" ? " (per Fastweb)" : ""} — {listino.length} disponibili
+                                  </p>
+                                  <input style={{ ...s.input, width: "100%", marginBottom: 8, boxSizing: "border-box" }}
+                                    placeholder={"🔍 Cerca modello nel listino..."}
+                                    value={phoneSearch} onChange={e => setPhoneSearch(e.target.value)} />
+                                  <div style={{ borderRadius: 8, border: `1px solid ${C.border}`, overflow: "hidden", maxHeight: 380, overflowY: "auto" }}>
+                                    {voci.map(r => {
+                                      const isOpen = listinoColore && listinoColore.modello === r.modello;
+                                      return (
+                                        <div key={r.modello} style={{ borderBottom: `1px solid ${C.border}` }}>
+                                          <div style={{ ...s.itemRow, cursor: "pointer", background: isOpen ? C.primaryLight : "transparent" }}
+                                            onClick={() => setListinoColore(isOpen ? null : { modello: r.modello, colore: "Generico" })}>
+                                            <span style={{ fontWeight: 600, fontSize: 13 }}>{r.modello}</span>
+                                            <span style={{ fontSize: 12, color: C.grayLight }}>{Number(r.prezzo) > 0 ? `€ ${Number(r.prezzo).toLocaleString("it-IT", { minimumFractionDigits: 2 })}` : ""} {isOpen ? "▲" : "▼"}</span>
+                                          </div>
+                                          {isOpen && (
+                                            <div style={{ padding: "10px 14px", background: C.grayBg, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                                              <div style={{ flex: 1, minWidth: 150 }}>
+                                                <label style={{ fontSize: 11, fontWeight: 600, color: C.gray, display: "block", marginBottom: 4 }}>Colore</label>
+                                                <select value={listinoColore.colore} onChange={e => setListinoColore(prev => ({ ...prev, colore: e.target.value }))} style={{ ...s.select, width: "100%" }}>
+                                                  {COLORI_GENERICI.map(c => <option key={c} value={c}>{c}</option>)}
+                                                </select>
+                                              </div>
+                                              <button style={{ ...s.btn, background: C.primary, color: "#fff", padding: "8px 16px" }}
+                                                onClick={() => {
+                                                  const colLabel = listinoColore.colore === "Generico" ? "" : " " + listinoColore.colore;
+                                                  addToCart({
+                                                    name: r.modello + colLabel, cat: "brand", brand: activeBrand, sub: "telefoni",
+                                                    phoneBrand: "listino", phoneModel: r.modello, phoneColor: listinoColore.colore,
+                                                  });
+                                                  setListinoColore(null);
+                                                }}>
+                                                + Aggiungi al Carrello
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                    {voci.length === 0 && <p style={{ padding: 12, fontSize: 12, color: C.grayLight }}>Nessun modello corrispondente nel listino.</p>}
+                                  </div>
+                                </div>
+                              );
+                            }
                             return (
                               <div style={{ marginTop: 12 }}>
                                 <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Seleziona Marca:</p>

@@ -969,16 +969,22 @@ const listinoPerModello = async (modello) => {
   const k = chiaveListino(modello);
   if (!k || String(modello || "").toUpperCase().startsWith("ALTRO")) return [];
   const tutti = await caricaListini();
-  return tutti.filter(r => chiaveListino(r.modello) === k).slice(0, 3);
+  // dentro una vendita di brand si mostra SOLO il suo listino (per Fastweb: Vodafone)
+  const b = _brandListino(_brandVendita);
+  return tutti.filter(r => chiaveListino(r.modello) === k && (!b || _compBrand(r.brand) === b)).slice(0, 3);
 };
 // Brand della vendita in corso: le tendine del terminale devono proporre SOLO
 // il listino ufficiale di QUEL brand (Luca 02/08). Il form di vendita e' uno
 // solo per volta, quindi basta un riferimento di modulo aggiornato dal render.
 let _brandVendita = null;
 const _compBrand = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+// FASTWEB usa il listino VODAFONE in vigore (Luca 03/08): stesso street
+// price, ma SENZA marginalita' sul prodotto — il margine non si mostra.
+const _brandListino = (b) => { const x = _compBrand(b); return x === "FASTWEB" ? "VODAFONE" : x; };
+const _senzaMargine = () => _compBrand(_brandVendita) === "FASTWEB";
 const cercaListino = async (term) => {
   const tutti = await caricaListini();
-  const b = _compBrand(_brandVendita);
+  const b = _brandListino(_brandVendita);
   const delBrand = b ? tutti.filter(r => _compBrand(r.brand) === b) : [];
   const t = String(term || "").trim().toLowerCase();
   if (!t) return delBrand.slice(0, 300).map(r => r.modello);
@@ -995,8 +1001,8 @@ const cercaListino = async (term) => {
 const cercaTerminali = async (term) => {
   const listino = await cercaListino(term);
   if (!listino.length) return [];
-  const b = (await caricaListini()).find(r => _compBrand(r.brand) === _compBrand(_brandVendita));
-  return [{ gruppo: "💰 Listino " + (b ? b.brand : "ufficiale"), voci: listino }];
+  const b = (await caricaListini()).find(r => _compBrand(r.brand) === _brandListino(_brandVendita));
+  return [{ gruppo: "💰 Listino " + (b ? b.brand : "ufficiale") + (_senzaMargine() ? " (per Fastweb, senza margine)" : ""), voci: listino }];
 };
 
 const cercaModelliCatalogo = async (term) => {
@@ -1240,7 +1246,7 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
         <div style={{marginTop:3,fontSize:11,color:"#34d399",fontWeight:600,lineHeight:1.5}}>
           {listini.map(li=>{
             const pz=Number(li.prezzo||0), mp=Number(li.margine_pct??0);
-            const marg=mp>0?` · margine ${mp}% = € ${(pz*mp/100).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"";
+            const marg=_senzaMargine()?" · senza marginalità (Fastweb)":(mp>0?` · margine ${mp}% = € ${(pz*mp/100).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"");
             const rate=Array.isArray(li.rate)&&li.rate.length?` · ${li.rate.slice(0,3).map(r=>`${r.mesi}×€${Number(r.rata||0).toLocaleString("it-IT",{minimumFractionDigits:2})}${r.anticipo?` (+ant. €${r.anticipo})`:""}`).join(" / ")}`:"";
             return `💰 Listino ${li.brand}: € ${pz.toLocaleString("it-IT",{minimumFractionDigits:2})}${marg}${rate}`;
           }).join("  ·  ")}
