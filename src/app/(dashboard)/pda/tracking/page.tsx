@@ -98,6 +98,10 @@ function mapContractToTrackingRow(
 
   return {
     id: (c.id as string) ?? "",
+    // Deleghe: senza questi due campi i filtri "Delegate a me / da me" e la
+    // tendina di delega confrontavano con undefined (bug silenzioso).
+    delegated_to: (c.delegated_to as string | null) ?? null,
+    delegated_by: (c.delegated_by as string | null) ?? null,
     categoria,
     brand: (c.brand as string) ?? "—",
     negozio: (c.negozio as string) ?? "—",
@@ -191,6 +195,12 @@ const TRK_BRAND_COLORS: Record<string, string> = {
   Vodafone: "#ef4444", Fastweb: "#eab308", WindTre: "#f97316", Iliad: "#a855f7",
   Tim: "#14b8a6", "S4": "#22c55e", Sky: "#0072C6", Dojo: "#14b8a6",
 };
+// stessi loghi di Registra Vendita (public/) — chiave minuscola
+const TRK_BRAND_LOGOS: Record<string, string> = {
+  vodafone: "/vodaphone - Copy.png", fastweb: "/fastweb.png", windtre: "/windtre.png",
+  iliad: "/iliad.png", tim: "/tim-logo-v2.png", s4: "/energy - Copy.png",
+  sky: "/sky.png", dojo: "/dojo-round.png",
+};
 
 function KpiBar({
   data,
@@ -271,27 +281,35 @@ function KpiBar({
           );
         })}
       </div>
-      {/* BRAND in prima linea (Luca 03/08): tutti preselezionati; un click ne
-          fa IL filtro (stile Ricerca Vendite), riclick = di nuovo tutti */}
+      {/* BRAND in prima linea (Luca 03/08): SOLO LOGHI, griglia a N colonne
+          uguali larga quanto la fila di card sopra. Tutti attivi all'ingresso;
+          click = filtro esclusivo, riclick = di nuovo tutti (Ricerca Vendite). */}
       {brands.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap mb-2.5">
+        <div className="grid gap-2.5 mb-2.5" style={{ gridTemplateColumns: `repeat(${brands.length}, minmax(0, 1fr))` }}>
           {brands.map((b) => {
             const color = TRK_BRAND_COLORS[b] || "#94a3b8";
+            const logo = TRK_BRAND_LOGOS[String(b).toLowerCase()];
             const esclusivo = brandSel.length === 1 && brandSel[0] === b;
             const on = brandSel.length === 0 || brandSel.includes(b);
             return (
               <button key={b} type="button"
                 onClick={() => setBrandSel(esclusivo ? [] : [b])}
-                title={esclusivo ? "Filtro attivo — clicca per tornare a tutti" : "Mostra solo " + b}
-                className="rounded-full px-4 py-1.5 text-xs font-bold border transition-all"
+                title={esclusivo ? b + " — filtro attivo, clicca per tornare a tutti" : "Mostra solo " + b}
+                aria-label={b}
+                className="rounded-xl border flex items-center justify-center transition-all cursor-pointer"
                 style={{
-                  borderColor: on ? color : "rgba(255,255,255,0.08)",
-                  background: on ? color + "24" : "rgba(255,255,255,0.02)",
-                  color: on ? color : "#586174",
-                  opacity: on ? 1 : .5,
+                  height: 58,
+                  borderColor: esclusivo ? color : "rgba(255,255,255,0.10)",
+                  background: esclusivo ? color + "18" : "rgba(255,255,255,0.03)",
                   boxShadow: esclusivo ? `0 0 0 3px ${color}22` : "none",
+                  opacity: on ? 1 : .35,
+                  filter: on ? "none" : "grayscale(1)",
                 }}>
-                {esclusivo ? "✓ " : ""}{b}
+                {logo ? (
+                  <img src={logo} alt={b} style={{ maxHeight: 30, maxWidth: "78%", objectFit: "contain", display: "block" }} />
+                ) : (
+                  <span className="text-xs font-bold" style={{ color: on ? color : "#586174" }}>{b}</span>
+                )}
               </button>
             );
           })}
@@ -327,6 +345,9 @@ function FilterBar({
   venditoreSel,
   setVenditoreSel,
   venditori,
+  utenti,
+  utentiSel,
+  setUtentiSel,
   negozioSel,
   setNegozioSel,
   negozi,
@@ -346,11 +367,15 @@ function FilterBar({
   venditoreSel: string;
   setVenditoreSel: (v: string) => void;
   venditori: string[];
+  utenti: string[];
+  utentiSel: string[];
+  setUtentiSel: (v: string[]) => void;
   negozioSel: string;
   setNegozioSel: (v: string) => void;
   negozi: string[];
 }) {
   const [statoOpen, setStatoOpen] = useState(false);
+  const [utentiOpen, setUtentiOpen] = useState(false);
 
   const toggleCat = (id: string) => {
     if (catSel.includes(id)) {
@@ -493,7 +518,7 @@ function FilterBar({
         </div>
       )}
       <div className="flex gap-2.5 items-center flex-wrap">
-        <div className="relative flex-[2] min-w-[200px]">
+        <div className="relative flex-[1.5] min-w-[180px]">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
           <input
             type="text"
@@ -575,6 +600,80 @@ function FilterBar({
           )}
         </div>
         {/* Segnalazione 93: rimosso il filtro "Tutti gli stati" (era un doppione); resta "Tutti gli esiti". */}
+        {/* Filtro UTENTE multi-selezione (Luca 03/08): amministrazione in su.
+            Le opzioni vengono dalle pratiche VISIBILI col negozio selezionato:
+            filtro un punto vendita e vedo solo chi ci ha pratiche dentro. */}
+        {utenti.length > 0 && (
+          <div className="relative flex-1 min-w-[180px]">
+            <button
+              type="button"
+              onClick={() => setUtentiOpen(!utentiOpen)}
+              className={inputStyle + " text-left flex items-center justify-between cursor-pointer"}
+            >
+              <span className={utentiSel.length === 0 ? "text-slate-500" : "text-slate-100"}>
+                {utentiSel.length === 0
+                  ? "👥 Tutti gli utenti"
+                  : utentiSel.length === 1
+                    ? "👤 " + utentiSel[0]
+                    : `👥 ${utentiSel.length} utenti selezionati`}
+              </span>
+              <span className="text-slate-500 text-[10px] ml-2">{utentiOpen ? "▲" : "▼"}</span>
+            </button>
+            {utentiOpen && (
+              <div
+                className="absolute top-full left-0 right-0 mt-1 bg-white/[0.03] border border-white/10 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
+                style={{ boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}
+              >
+                <div className="flex items-center justify-between py-2 px-3 border-b border-white/10">
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    {utentiSel.length > 0 ? `${utentiSel.length} selezionati` : "Seleziona utenti"}
+                  </span>
+                  {utentiSel.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setUtentiSel([]); }}
+                      className="bg-transparent border-none text-slate-500 text-[11px] cursor-pointer p-0"
+                    >
+                      ✕ Tutti
+                    </button>
+                  )}
+                </div>
+                {utenti.map((n) => {
+                  const sel = utentiSel.includes(n);
+                  return (
+                    <div
+                      key={n}
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (sel) setUtentiSel(utentiSel.filter((x) => x !== n));
+                        else setUtentiSel([...utentiSel, n]);
+                      }}
+                      className={`flex items-center gap-2.5 py-1.5 px-3 cursor-pointer ${sel ? "bg-indigo-900/40" : ""}`}
+                    >
+                      <div
+                        className="w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0"
+                        style={{ borderColor: sel ? "#818cf8" : "#475569", background: sel ? "#818cf8" : "transparent" }}
+                      >
+                        {sel && <span className="text-black text-[9px] font-black">✓</span>}
+                      </div>
+                      <span className="text-[13px]" style={{ color: sel ? "#c7d2fe" : "#cbd5e1" }}>{n}</span>
+                    </div>
+                  );
+                })}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setUtentiOpen(false)}
+                  className="py-2 px-3 border-t border-white/10 text-center text-[11px] text-slate-500 cursor-pointer"
+                >
+                  Chiudi ▲
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-[11px] text-slate-500 font-semibold whitespace-nowrap">PERIODO</span>
           <input type="date" value={periodoDA} onChange={(e) => setPeriodoDA(e.target.value)} className={inputStyle + " w-[138px]"} />
@@ -596,13 +695,15 @@ function FilterBar({
 }
 
 // ─── Tabella ──────────────────────────────────────────────────────────────────
-function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDelegate, archivio }: {
+function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDelegate, archivio, canDelete = false, onAskDelete }: {
   rows: TrackingRow[];
   onSelect: (row: TrackingRow) => void;
   canDelegate?: boolean;
   members?: { id: string; full_name: string }[];
   onBulkDelegate?: (ids: string[], toId: string) => void;
   archivio?: Map<string, EpisodioMalus[]>;
+  canDelete?: boolean;
+  onAskDelete?: (row: TrackingRow) => void;
 }) {
   const thStyle =
     "py-2.5 px-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/10 whitespace-nowrap";
@@ -659,8 +760,9 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
               <th className={thStyle}>DATA</th>
               <th className={thStyle}>ESITO NEGOZIO</th>
               <th className={thStyle}>ESITO ADMIN</th>
-              <th className={thStyle + " text-center"}>MALUS</th>
               <th className={thStyle + " text-center"}>STATO PRATICA</th>
+              <th className={thStyle + " text-center"}>MALUS</th>
+              {canDelete && <th className={thStyle + " w-10 text-center"}>🗑</th>}
             </tr>
           </thead>
           <tbody>
@@ -700,6 +802,23 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                     <StatoBadge id={row.statoAdmin} set="admin" />
                   </td>
                   <td className="py-2.5 px-3.5 border-b border-white/5 text-center">
+                    {isMalusRow(row) ? (
+                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-red-950 border border-red-600 text-red-200">
+                        🔴 Malus
+                      </span>
+                    ) : isAttenzioneRow(row) ? (
+                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-orange-950 border border-orange-500 text-orange-200">
+                        ⚠️ Warning
+                      </span>
+                    ) : isDaLavorareRow(row) ? (
+                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-amber-950 border border-amber-500 text-amber-200">
+                        ⚡ Da Lavorare
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-3.5 border-b border-white/5 text-center">
                     {(() => {
                       // Oltre al malus che sta maturando ADESSO, la colonna dice
                       // quanto la pratica ha gia' generato in passato (episodi
@@ -731,23 +850,18 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                       return <span className="text-slate-800 text-xs">—</span>;
                     })()}
                   </td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5 text-center">
-                    {isMalusRow(row) ? (
-                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-red-950 border border-red-600 text-red-200">
-                        🔴 Malus
-                      </span>
-                    ) : isAttenzioneRow(row) ? (
-                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-orange-950 border border-orange-500 text-orange-200">
-                        ⚠️ Warning
-                      </span>
-                    ) : isDaLavorareRow(row) ? (
-                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-amber-950 border border-amber-500 text-amber-200">
-                        ⚡ Da Lavorare
-                      </span>
-                    ) : (
-                      <span className="text-slate-600 text-xs">—</span>
-                    )}
-                  </td>
+                  {canDelete && (
+                    <td className="py-2.5 px-3.5 border-b border-white/5 text-center" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => onAskDelete?.(row)}
+                        title="Elimina pratica…"
+                        className="bg-transparent border border-white/10 rounded-lg px-2 py-1 text-sm cursor-pointer hover:border-red-500 hover:bg-red-500/10 transition-colors"
+                      >
+                        🗑️
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -1318,6 +1432,8 @@ export default function TrackingPdaPage() {
   // Segnalazione 54: filtro Venditore (dallo store manager in su) per vedere
   // solo le pratiche da verificare di un singolo collaboratore del team.
   const [venditoreSel, setVenditoreSel] = useState<string>("");
+  // Filtro UTENTE multi-selezione per l'amministrazione (Luca 03/08).
+  const [utentiSel, setUtentiSel] = useState<string[]>([]);
   // filtro NEGOZIO per chi vede tutto (amministrativa in su): opzioni dai dati
   const [negozioSel, setNegozioSel] = useState<string>("");
 
@@ -1331,6 +1447,12 @@ export default function TrackingPdaPage() {
   // "Mostra pratiche completate" in alto a destra, spento di default.
   const [mostraCompletate, setMostraCompletate] = useState(false);
   const [showRegole, setShowRegole] = useState(false);
+  // 📤 solo le pratiche che HO delegato; ⚡ coda di verifica amministrazione.
+  const [onlyDelegate, setOnlyDelegate] = useState(false);
+  const [soloDaLavorare, setSoloDaLavorare] = useState(false);
+  // Cestino (Luca 03/08): pratica in attesa di conferma eliminazione.
+  const [daEliminare, setDaEliminare] = useState<TrackingRow | null>(null);
+  const [eliminando, setEliminando] = useState(false);
   // regole del tracking dal DB (mig. 098): senza righe valgono i default in
   // codice; regoleV forza il ricalcolo di fasce e KPI dopo un salvataggio
   const [regoleV, setRegoleV] = useState(0);
@@ -1347,7 +1469,7 @@ export default function TrackingPdaPage() {
     try {
       // Left join clients so contracts without a matching client still appear (avoids 0 rows).
       const selectCols =
-        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, categoria_macro, controlli, tipo_cliente, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
+        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, categoria_macro, controlli, tipo_cliente, tracking_nascosto, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
       const { data: baseData, error: baseErr } = await supabase
         .from("contracts")
         .select(selectCols)
@@ -1393,6 +1515,7 @@ export default function TrackingPdaPage() {
       // pratiche da lavorare (nessuna attivazione da seguire) e sporcavano
       // l'elenco. Richiesta di Francesco insieme alla visibilita' del Tecnico.
       const lavorabili = (list as RawRow[]).filter((r: Record<string, unknown>) => {
+        if (r.tracking_nascosto) return false; // cestino: nascosta SOLO dal Tracking
         const b = String(r.brand || "").trim().toLowerCase();
         const p = String(r.prodotto || "").trim().toLowerCase();
         if (b === "extra" || b.startsWith("marginal") || /sost/.test(p)) return false;
@@ -1573,14 +1696,28 @@ export default function TrackingPdaPage() {
     if (hit) { setSelected(hit); deepOpened.current = true; }
   }, [data]);
 
+  // Cambio negozio ⇒ via dalla selezione gli utenti che li' non hanno pratiche
+  // (altrimenti resta un filtro-fantasma che svuota la tabella).
+  useEffect(() => {
+    setUtentiSel((prev) => {
+      const next = prev.filter((n) => data.some((r) => r.venditore === n && (!negozioSel || r.negozio === negozioSel)));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [negozioSel, data]);
+
   const statiCompletatiNegozio = ["attivato", "liquidato", "completo_sky", "attivo_sky"];
 
   const filtered = useMemo(() => {
     return data.filter((row) => {
-      // Esito definitivo del negozio = pratica completata = sparisce da sola.
-      // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
-      if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
+      // ⚡ Da lavorare (amministrazione): SOLO pratiche chiuse dal negozio che
+      // aspettano ancora l'esito definitivo dell'admin — bypassa la regola
+      // che nasconde le completate, altrimenti la coda sarebbe invisibile.
+      if (soloDaLavorare) {
+        if (!statiCompletatiNegozio.includes(row.statoNegozio)) return false;
+        if (["confermato", "pagato", "stornato", "non_conforme"].includes(row.statoAdmin)) return false;
+      } else if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
       if (onlyMine && row.delegated_to !== user?.id) return false; // "delegate a me"
+      if (onlyDelegate && row.delegated_by !== user?.id) return false; // "delegate DA me"
       if (kpiFilter !== null) {
         if (kpiFilter === "__attenzione__") {
           if (!isAttenzioneRow(row) || isMalusRow(row)) return false;
@@ -1596,6 +1733,7 @@ export default function TrackingPdaPage() {
       }
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
+      if (utentiSel.length > 0 && !utentiSel.includes(row.venditore)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
       if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
@@ -1627,7 +1765,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, mostraCompletate, onlyMine, user?.id, venditoreSel, negozioSel, regoleV]);
+  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, mostraCompletate, soloDaLavorare, onlyMine, onlyDelegate, user?.id, venditoreSel, negozioSel, utentiSel, regoleV]);
 
   const filteredPerKpi = useMemo(() => {
     return data.filter((row) => {
@@ -1636,6 +1774,7 @@ export default function TrackingPdaPage() {
       if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
+      if (utentiSel.length > 0 && !utentiSel.includes(row.venditore)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
       if (negozioSel && row.negozio !== negozioSel) return false;
       if (statoSel.length > 0 && !statoSel.includes(row.statoNegozio)) return false;
@@ -1668,7 +1807,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, mostraCompletate, negozioSel, regoleV]);
+  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, mostraCompletate, negozioSel, utentiSel, regoleV]);
 
   // Delega la verifica di una pratica a un collaboratore (o rimuove la delega).
   const handleDelegate = useCallback(async (rowId: string, toId: string | null) => {
@@ -1684,6 +1823,29 @@ export default function TrackingPdaPage() {
     setRawList((prev) => prev.map((r) => (r.id as string) === rowId ? { ...r, delegated_to: toId, delegated_by: toId ? user?.id : null, storia } : r));
     setSelected((s) => s && s.id === rowId ? { ...s, delegated_to: toId, delegated_by: toId ? (user?.id ?? null) : null, storia } : s);
   }, [rawList, memberName, user]);
+
+  // Cestino: "riga" = nascondi SOLO dal Tracking (flag tracking_nascosto, la
+  // vendita resta in Ricerca Vendite); "contratto" = DELETE vero, sparisce
+  // ovunque. Scelta nel popup, solo admin/dev.
+  const handleElimina = useCallback(async (row: TrackingRow, modo: "riga" | "contratto") => {
+    setEliminando(true);
+    try {
+      if (modo === "riga") {
+        const { error } = await supabase.from("contracts").update({ tracking_nascosto: true }).eq("id", row.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("contracts").delete().eq("id", row.id);
+        if (error) throw error;
+      }
+      setRawList((prev) => prev.filter((r) => (r.id as string) !== row.id));
+      setSelected((sel) => (sel && sel.id === row.id ? null : sel));
+      setDaEliminare(null);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEliminando(false);
+    }
+  }, []);
 
   // Delega rapida di piu' pratiche insieme dalla dashboard.
   const handleBulkDelegate = useCallback(async (ids: string[], toId: string) => {
@@ -1752,28 +1914,55 @@ export default function TrackingPdaPage() {
       <div className="p-0">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-3xl font-bold text-white mb-1">📡 Tracking PDA</h2>
+            <div className="flex items-center gap-3 mb-1 flex-wrap">
+              <h2 className="text-3xl font-bold text-white">📡 Tracking PDA</h2>
+              {/* Le completate (esito definitivo negozio) spariscono in automatico:
+                  questo le fa rivedere. Accanto al titolo (Luca 03/08). */}
+              <button
+                type="button"
+                onClick={() => setMostraCompletate((v) => !v)}
+                title="Le pratiche con esito definitivo del negozio spariscono da sole: attiva per rivederle"
+                className={"px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors " + (mostraCompletate ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-400 hover:bg-white/5")}
+              >
+                {mostraCompletate ? "✓" : "✅"} Mostra completate
+              </button>
+            </div>
             <p className="text-slate-400 text-sm">Monitoraggio pratiche: esito negozio, esito admin, storico e malus</p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Filtro "Delegate a me" (richiesta Luca #6) */}
-            <button
-              type="button"
-              onClick={() => setOnlyMine((v) => !v)}
-              className={"px-4 py-2 rounded-lg border text-[13px] font-bold transition-colors " + (onlyMine ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-300 hover:bg-white/5")}
-            >
-              👤 Delegate a me
-            </button>
-            {/* Le completate (esito definitivo negozio) spariscono in automatico:
-                questo le fa rivedere quando serve (Luca 03/08) */}
-            <button
-              type="button"
-              onClick={() => setMostraCompletate((v) => !v)}
-              title="Le pratiche con esito definitivo del negozio spariscono da sole: attiva per rivederle"
-              className={"px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors " + (mostraCompletate ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-400 hover:bg-white/5")}
-            >
-              {mostraCompletate ? "✓" : "✅"} Mostra completate
-            </button>
+            {/* Filtri personali (Luca 03/08): chi riceve deleghe ha "📥 Delegate
+                a me"; chi puo' delegare ha "📤 Delegate da me"; l'amministrazione
+                al posto del primo ha "⚡ Da lavorare" = pratiche chiuse dal
+                negozio che aspettano la verifica admin. */}
+            {!canEditAdmin && (
+              <button
+                type="button"
+                onClick={() => setOnlyMine((v) => !v)}
+                className={"px-4 py-2 rounded-lg border text-[13px] font-bold transition-colors " + (onlyMine ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-300 hover:bg-white/5")}
+              >
+                📥 Delegate a me
+              </button>
+            )}
+            {canDelegate && (
+              <button
+                type="button"
+                onClick={() => setOnlyDelegate((v) => !v)}
+                title="Solo le pratiche che HAI delegato a qualcuno"
+                className={"px-4 py-2 rounded-lg border text-[13px] font-bold transition-colors " + (onlyDelegate ? "border-violet-500 bg-violet-500/15 text-violet-300" : "border-slate-600 text-slate-300 hover:bg-white/5")}
+              >
+                📤 Delegate da me
+              </button>
+            )}
+            {canEditAdmin && (
+              <button
+                type="button"
+                onClick={() => setSoloDaLavorare((v) => !v)}
+                title="Pratiche chiuse dal negozio che aspettano la verifica dell'amministrazione"
+                className={"px-4 py-2 rounded-lg border text-[13px] font-bold transition-colors " + (soloDaLavorare ? "border-amber-500 bg-amber-500/15 text-amber-300" : "border-slate-600 text-slate-300 hover:bg-white/5")}
+              >
+                ⚡ Da lavorare
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowRegole(true)}
@@ -1857,9 +2046,57 @@ export default function TrackingPdaPage() {
               negozioSel={negozioSel}
               setNegozioSel={setNegozioSel}
               negozi={seesAll ? Array.from(new Set(data.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort() : []}
+              utenti={seesAll ? Array.from(new Set(data.filter((r) => !negozioSel || r.negozio === negozioSel).map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []}
+              utentiSel={utentiSel}
+              setUtentiSel={setUtentiSel}
             />
-            <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} archivio={episodiPerRiga} />
+            <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} archivio={episodiPerRiga} canDelete={["admin", "dev"].includes(user?.role || "")} onAskDelete={setDaEliminare} />
           </>
+        )}
+
+        {/* Popup cestino: riga tracking o intero contratto? */}
+        {daEliminare && (
+          <div
+            className="fixed inset-0 bg-black/60 z-[1200] flex items-center justify-center p-4"
+            onClick={() => { if (!eliminando) setDaEliminare(null); }}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl border border-white/10 p-6"
+              style={{ background: "#0e1526", boxShadow: "0 18px 50px rgba(0,0,0,.55)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-lg font-extrabold text-slate-100 mb-1">🗑️ Elimina pratica</div>
+              <div className="text-[13px] text-slate-400 mb-5">
+                {daEliminare.nominativo} — {daEliminare.brand} · {daEliminare.categoria}
+              </div>
+              <button
+                type="button"
+                disabled={eliminando}
+                onClick={() => handleElimina(daEliminare, "riga")}
+                className="w-full text-left rounded-xl border border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors px-4 py-3 mb-2.5 cursor-pointer disabled:opacity-50"
+              >
+                <div className="text-sm font-bold text-indigo-200">📡 Solo da Tracking PDA</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">La pratica sparisce da qui ma resta in Ricerca Vendite</div>
+              </button>
+              <button
+                type="button"
+                disabled={eliminando}
+                onClick={() => handleElimina(daEliminare, "contratto")}
+                className="w-full text-left rounded-xl border border-red-500/60 bg-red-500/10 hover:bg-red-500/20 transition-colors px-4 py-3 cursor-pointer disabled:opacity-50"
+              >
+                <div className="text-sm font-bold text-red-300">💥 Elimina l&apos;intero contratto</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">Sparisce da TUTTO il CRM, anche da Ricerca Vendite. Irreversibile.</div>
+              </button>
+              <button
+                type="button"
+                disabled={eliminando}
+                onClick={() => setDaEliminare(null)}
+                className="w-full rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] transition-colors px-4 py-2.5 mt-2.5 text-[13px] font-bold text-slate-300 cursor-pointer disabled:opacity-50"
+              >
+                Annulla
+              </button>
+            </div>
+          </div>
         )}
 
         {showArchivio && (
