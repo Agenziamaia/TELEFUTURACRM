@@ -5318,7 +5318,7 @@ function CRM() {
 
   // ═══════════ FORM ═══════════
   const formContent = (
-    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:16,maxWidth:1180,margin:"0 auto"}}>
+    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:0,width:"100%"}}>
       {/* ═══════════════════════════════════════════════════════════════════
           RIEPILOGO VENDITE — SIDEBAR DESKTOP
           Per gli SVILUPPATORI: questa sidebar (className "crmSidebar") è
@@ -5407,19 +5407,17 @@ select.rvIn{cursor:pointer}
       </div>
       {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"#FFD800",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
       {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#28a745",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
-      <div style={{background:bG,borderRadius:12,padding:"14px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:36,height:36,background:"rgba(255,255,255,.2)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{bObj?bObj.icon:"⚡"}</div><div><div style={{color:"#fff",fontWeight:700,fontSize:16}}>Registra Vendita</div><div style={{color:"rgba(255,255,255,.7)",fontSize:11}}>{bObj?bObj.label:"Seleziona brand"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div></div></div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          
-          
-        </div>
+      {/* titolo in alto a sinistra + contenuto a tutta pagina, come Ricerca Vendite (Luca 03/08) */}
+      <div style={{marginBottom:18}}>
+        <h1 style={{fontSize:28,fontWeight:800,color:"#f8fafc",margin:0,letterSpacing:-0.3}}>Registra Vendita</h1>
+        <div style={{color:"#94a3b8",fontSize:13,marginTop:3}}>{bObj?`${bObj.icon} ${bObj.label}`:"Seleziona un brand per iniziare"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div>
       </div>
 
       {/* STEPPER (revamp 03/08): pillole sul tema scuro del CRM — attiva col
           colore brand, fatte in verde bordato, future spente; le fatte si
           cliccano per tornare indietro (fisarmonica sotto). */}
       <div style={{display:"flex",gap:4,marginBottom:16}}>
-        {["Brand","Tipo Cliente","Anagrafica","Prodotti","Allegati","Attribuzione","Note"].map((st,i)=>{const ss=gSS(i);const clk=ss==="done";return <div key={i} onClick={()=>{if(clk){if(i<=2){setShowAna(true);setShowStep4(false);}else{setShowStep4(true);}}}}
+        {["Brand","Tipo Cliente","Anagrafica","Prodotti","Allegati","Attribuzione","Note"].map((st,i)=>{const ss=gSS(i);const clk=ss==="done";return <div key={i} onClick={()=>{if(!clk)return;if(i===0){setCambioBrand(true);try{window.scrollTo({top:0,behavior:"smooth"});}catch(e){}}else if(i===1){setShowAna(false);setShowStep4(false);}else if(i===2){setShowAna(true);setShowStep4(false);}else{setShowStep4(true);}}}
           style={{flex:1,textAlign:"center",padding:"9px 2px",borderRadius:8,fontSize:11,fontWeight:700,
             background:ss==="active"?bC:ss==="done"?"rgba(40,167,69,0.15)":"rgba(255,255,255,0.04)",
             border:ss==="active"?"1px solid "+bC:ss==="done"?"1px solid rgba(40,167,69,0.5)":"1px solid rgba(255,255,255,0.07)",
@@ -5432,25 +5430,25 @@ select.rvIn{cursor:pointer}
 
       {!brand?<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:20,marginBottom:10}}>
         <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Step 1 — Brand</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-          {BRANDS.map(b=><button key={b.id} onClick={()=>_pickBrand(b)} style={{padding:16,borderRadius:12,border:"2px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
+          {BRANDS.map(b=><button key={b.id} onClick={()=>_pickBrand(b)} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:"2px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="rgba(255,255,255,0.05)";}}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.02)";}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:56,marginBottom:12}}>{b.logo?<Image src={b.logo} alt={b.label} width={180} height={56} style={{height:56,width:"auto",maxWidth:"85%",objectFit:"contain"}}/>:<span style={{fontSize:36}}>{b.icon}</span>}</div><div style={{fontWeight:800,fontSize:15,color:b.color}}>{b.label}</div><div style={{fontSize:10,color:"#64748b",marginTop:3}}>{b.desc}</div>
+            {/* SOLO il logo, grande (Luca 03/08): il nome del brand e' gia' nel logo */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:84,width:"auto",maxWidth:"92%",objectFit:"contain"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>
           </button>)}
           {/* Segnalazione 68: "Prodotti & Marginalita'" non e' piu' una barra a tutta
               larghezza sotto la griglia, ma una casella della griglia accanto ai brand. */}
-          <button onClick={()=>setShowMargPOS(true)} style={{padding:16,borderRadius:12,border:"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden"}}>
+          <button onClick={()=>setShowMargPOS(true)} title="Prodotti & Marginalità" style={{padding:"26px 16px",borderRadius:14,border:"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden"}}>
             {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"#6f42c1",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:56,marginBottom:12}}><span style={{fontSize:36}}>📦</span></div>
-            <div style={{fontWeight:800,fontSize:15,color:"#6f42c1"}}>Prodotti & Marginalità</div>
-            <div style={{fontSize:10,color:"#9b59b6",marginTop:3}}>Vendite prodotti senza attivazione brand</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}><span style={{fontSize:52}}>📦</span></div>
+            <div style={{fontWeight:800,fontSize:14,color:"#6f42c1",marginTop:6}}>Prodotti & Marginalità</div>
           </button>
         </div>
       </div>:<div onClick={()=>setCambioBrand(v=>!v)} title="Apri per cambiare brand (il lavoro nel carrello resta)" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 1</span><span style={{fontSize:13,fontWeight:600}}>Brand: <span style={{color:bObj.color}}>{bObj.icon} {bObj.label}{tipoCliente==="business"?" Business":""}</span></span><span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:"#8892b0"}}>{cambioBrand?"▴ chiudi":"✏️ cambia"}</span></div>}
       {brand&&cambioBrand&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,border:"1px dashed rgba(255,255,255,0.12)"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:12,textTransform:"uppercase"}}>Cambia brand — quello attuale resta nel carrello se già aggiunto</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:8}}>
-          {BRANDS.filter(b=>b.ready&&b.id!==brand).map(b=><button key={b.id} onClick={()=>{setCambioBrand(false);_pickBrand(b);}} disabled={turista&&b.id!=="windtre"} style={{padding:"10px 8px",borderRadius:10,border:"2px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",textAlign:"center",opacity:turista&&b.id!=="windtre"?0.35:1}}><div style={{fontSize:18}}>{b.icon}</div><div style={{fontSize:11,fontWeight:700,color:b.color,marginTop:2}}>{b.label}</div></button>)}
+        <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:12,textTransform:"uppercase"}}>Scegli il brand — il lavoro già nel carrello resta</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
+          {BRANDS.filter(b=>b.ready).map(b=><button key={b.id} onClick={()=>{setCambioBrand(false);if(b.id!==brand)_pickBrand(b);}} disabled={turista&&b.id!=="windtre"} title={b.label} style={{padding:"16px 10px",borderRadius:12,border:b.id===brand?"2px solid "+b.color:"2px solid rgba(255,255,255,0.08)",background:b.id===brand?b.color+"22":"rgba(255,255,255,0.03)",cursor:"pointer",textAlign:"center",opacity:turista&&b.id!=="windtre"?0.35:1}}><div style={{display:"flex",alignItems:"center",justifyContent:"center",height:54}}>{b.logo?<Image src={b.logo} alt={b.label} width={170} height={54} style={{height:48,width:"auto",maxWidth:"92%",objectFit:"contain"}}/>:<span style={{fontSize:32}}>{b.icon}</span>}</div></button>)}
         </div>
       </div>}
 
