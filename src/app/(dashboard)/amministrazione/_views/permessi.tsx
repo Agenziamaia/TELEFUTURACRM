@@ -15,7 +15,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { roleLabel, AREAS } from "@/lib/roles";
+import { roleLabel, AREAS, gradesFor } from "@/lib/roles";
+import { roleGradeKey } from "@/lib/usePermissions";
 import { useRoles } from "@/lib/useRoles";
 import { NAVIGATION, effectiveAllowed, OUTBOUND_HIDDEN_GROUPS, hubChildKey, hubSubKey, groupKey, type PermMap } from "@/lib/nav";
 import { CAPABILITIES, capKey, capAllowed, capChoice, type CapGroup, type CapGroupChoice } from "@/lib/capabilities";
@@ -66,17 +67,29 @@ export function PermessiView() {
     const ruoli = useMemo(() => allRoles.filter((r) => !["admin", "dev"].includes(r.id)), [allRoles]);
     const [ruolo, setRuolo] = useState<string>("");
     const [righe, setRighe] = useState<PermMap>(new Map());
+    // ECCEZIONI PER GRADO (Luca 03/08): righe role "ruolo@grado" — vincono
+    // sulla riga di ruolo per chi ha quel grado. Qui per la matrice.
+    const [righeGradi, setRigheGradi] = useState<Map<string, PermMap>>(new Map());
     const [busy, setBusy] = useState<string | null>(null);
     // ⚙️ aperto: le opzioni di comportamento esplodono SOTTO la riga della sezione
     const [capOpen, setCapOpen] = useState<string | null>(null);
     const gruppi = useMemo(catalogo, []);
 
     const load = async (r: string) => {
-        const { data, error } = await supabase.from("role_permissions").select("perm_key,allowed").eq("role", r);
+        const { data, error } = await supabase.from("role_permissions").select("role,perm_key,allowed")
+            .or(`role.eq.${r},role.like.${r}@%`);
         if (error) { dbError("permessi", error); return; }
         const m: PermMap = new Map();
-        (data ?? []).forEach((x: { perm_key: string; allowed: boolean }) => m.set(x.perm_key, x.allowed));
+        const gm = new Map<string, PermMap>();
+        ((data ?? []) as { role: string; perm_key: string; allowed: boolean }[]).forEach((x) => {
+            if (x.role === r) { m.set(x.perm_key, x.allowed); return; }
+            const g = x.role.slice(r.length + 1);
+            const pm = gm.get(g) || new Map();
+            pm.set(x.perm_key, x.allowed);
+            gm.set(g, pm);
+        });
         setRighe(m);
+        setRigheGradi(gm);
     };
     useEffect(() => { if (ruolo) load(ruolo); }, [ruolo]);
 
@@ -97,6 +110,28 @@ export function PermessiView() {
         setBusy(null);
         if (error) { dbError("salvataggio permesso", error); return; }
         notify(`${v.nome}: ${!attuale ? "visibile" : "nascosta"} per ${roleLabel(ruolo)}`, "ok");
+        load(ruolo);
+    };
+
+    // SPLIT PER GRADO (Luca 03/08): tutti i gradi pre-accesi = eredita il
+    // ruolo (nessuna riga); il click scrive l'eccezione — e se l'eccezione
+    // torna uguale al ruolo, la riga si CANCELLA (si torna a ereditare).
+    const toggleGrado = async (v: Riga, grado: string) => {
+        if (!ruolo || busy) return;
+        const key = v.href + "@" + grado;
+        setBusy(key);
+        const effRuolo = effectiveAllowed(ruolo, v.href, v.defaultRoles, righe, v.gruppo);
+        const effGrado = righeGradi.get(grado)?.get(v.href) ?? effRuolo;
+        const nuovo = !effGrado;
+        const roleKey = roleGradeKey(ruolo, grado);
+        const { error } = nuovo === effRuolo
+            ? await supabase.from("role_permissions").delete().eq("role", roleKey).eq("perm_key", v.href)
+            : await supabase.from("role_permissions").upsert(
+                { role: roleKey, perm_key: v.href, allowed: nuovo, updated_by: user?.name || "—", updated_at: new Date().toISOString() },
+                { onConflict: "role,perm_key" });
+        setBusy(null);
+        if (error) { dbError("salvataggio permesso di grado", error); return; }
+        notify(`${v.nome}: ${nuovo ? "visibile" : "nascosta"} per ${roleLabel(ruolo)} · grado ${grado}`, "ok");
         load(ruolo);
     };
 
@@ -212,6 +247,27 @@ export function PermessiView() {
                                                     <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${eff ? "left-6" : "left-0.5"}`} />
                                                 </button>
                                             </div>
+                                            {gradesFor(ruolo).length > 0 && !padreOff && (
+                                                <div className="flex items-center gap-1.5 flex-wrap pb-2.5 pr-4 -mt-0.5" style={{ paddingLeft: 16 + ((v.livello || 0) + 1) * 26 }}>
+                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">gradi</span>
+                                                    {gradesFor(ruolo).map((gr) => {
+                                                        const effG = righeGradi.get(gr.id)?.get(v.href) ?? eff;
+                                                        const eccezione = righeGradi.get(gr.id)?.has(v.href) ?? false;
+                                                        return (
+                                                            <button key={gr.id} disabled={busy === v.href + "@" + gr.id}
+                                                                onClick={() => toggleGrado(v, gr.id)}
+                                                                title={effG
+                                                                    ? `${gr.label}: la vede${eccezione ? " (eccezione)" : " (come il ruolo)"} — clicca per escludere questo grado`
+                                                                    : `${gr.label}: esclusa${eccezione ? " (eccezione)" : " (come il ruolo)"} — clicca per concederla a questo grado`}
+                                                                className={`text-[10px] px-2 py-0.5 rounded-full border font-bold transition-colors ${effG
+                                                                    ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-200"
+                                                                    : "border-white/10 bg-white/[0.03] text-slate-500 line-through"} ${eccezione ? "ring-1 ring-amber-400/50" : ""}`}>
+                                                                {effG ? "✓ " : ""}{gr.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                             {capGroup && capOpen === v.href && (
                                                 <div className="pb-3 pr-4 space-y-2" style={{ paddingLeft: 16 + ((v.livello || 0) + 1) * 26 }}>
                                                     {capGroups.map((cg) => (

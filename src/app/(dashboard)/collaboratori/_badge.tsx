@@ -46,7 +46,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     // amministrabili da Amministrazione → Utenti → Permessi). Default storici:
     // timbra = area call center; supervisione = ruoli manageriali tranne il
     // Back Office/Caller, che timbra come un caller.
-    const { perms: capPerms } = useRolePermissions(user?.role);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
     const puoTimbrare = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TIMBRA, capPerms);
     const vistaTeam = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TEAM, capPerms);
     const status: "off" | "running" | "paused" = !activeShift ? "off" : activeShift.pause_started_at ? "paused" : "running";
@@ -1008,7 +1008,7 @@ function TimelineTurnoModal({ shift, onClose }: { shift: ShiftRow; onClose: () =
     Si mostra solo a chi ha la capacita' di timbratura (cap timbra). */
 export function BadgeWidget() {
     const { user } = useAuth();
-    const { perms: capPerms } = useRolePermissions(user?.role);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
     const puoTimbrare = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TIMBRA, capPerms);
     const [shift, setShift] = useState<ShiftRow | null>(null);
     const [sec, setSec] = useState(0);

@@ -120,7 +120,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // Capacita' "Allegati del cliente" (ingranaggio Clienti in Permessi): senza,
     // la sezione Documenti/PDA non compare proprio.
     const { user: uAll } = useAuth();
-    const { perms: permAll } = useRolePermissions(uAll?.role);
+    const { perms: permAll } = useRolePermissions(uAll?.role, uAll?.grade);
     const vedeAllegati = capAllowed(uAll?.role, "/clienti", CAP_CLIENTI_ALLEGATI, permAll);
     const [docs, setDocs] = useState<{ id: string; file_url: string; file_name: string; contract_id: string; file_type: string | null; created_at: string | null }[]>([]);
     // Immagine aperta a schermo (prima si apriva in una scheda nuova).
@@ -592,6 +592,15 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             setError("La Ragione Sociale è obbligatoria per i clienti Business.");
             return;
         }
+        // P.IVA OBBLIGATORIA per il business (Luca 03/08): prima era facoltativa
+        if (tipo === "business" && !cfPiva.trim()) {
+            setError("La Partita IVA è obbligatoria per i clienti Business.");
+            return;
+        }
+        if (tipo === "business" && cfPiva.trim() && !/^\d{11}$/.test(cfPiva.trim()) && !/^[A-Z0-9]{16}$/i.test(cfPiva.trim())) {
+            setError("Partita IVA non valida: 11 cifre (o CF di 16 caratteri per le ditte individuali).");
+            return;
+        }
         if (!cliente && !acquisito) {
             setError("Seleziona da chi è stato acquisito il cliente (negozio o Agenzia).");
             return;
@@ -796,7 +805,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{tipo === "business" ? "Partita IVA" : "Codice Fiscale"} <span className="text-slate-600 normal-case font-normal">(facoltativo)</span></label>
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{tipo === "business" ? "Partita IVA" : "Codice Fiscale"} {tipo === "business" ? <span className="text-rose-400">*</span> : <span className="text-slate-600 normal-case font-normal">(facoltativo)</span>}</label>
                                 <input
                                     type="text"
                                     value={cfPiva}

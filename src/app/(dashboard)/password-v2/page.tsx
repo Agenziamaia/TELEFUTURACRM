@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { LockKeyhole, Wifi, Radio, Tv, Zap, Leaf, ArrowLeft, RotateCcw, Eye, EyeOff, Copy, Key, ShieldCheck, Info, Loader2 } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capAllowed, CAP_PASSWORD, CAP_PASSWORD_MODIFICA } from "@/lib/capabilities";
 import { useStoreRecords } from "@/lib/org";
 import { supabase } from "@/lib/supabaseClient";
 import { Plus, Pencil, Trash2, Save } from "lucide-react";
@@ -96,9 +98,11 @@ export default function PasswordV2Page() {
     const [copiedId, setCopiedId] = useState<number | null>(null);
 
     const isAllowed = user && ["admin", "store_manager", "direttore_commerciale", "dev", "direttore_generale", "amministrativo"].includes(user.role);
-    // Segnalazione 73: dal Direttore Commerciale in su si possono gestire categorie
-    // e credenziali (creare raccolte per ogni brand). Gli altri restano in sola lettura.
-    const canManage = !!user && ["direttore_commerciale", "amministrativo", "admin", "dev", "direttore_generale"].includes(user.role);
+    // ROTELLINA Permessi (Luca 03/08): chi puo' MODIFICARE e AGGIUNGERE si
+    // decide per ruolo dalla capability "modifica" — default store manager in
+    // su; gli altri con accesso restano in sola consultazione.
+    const { perms } = useRolePermissions(user?.role, user?.grade);
+    const canManage = !!user && capAllowed(user.role, CAP_PASSWORD.section, CAP_PASSWORD_MODIFICA, perms);
 
     // Categorie dal DB (password_categories), gestibili quando canManage.
     const [dbCats, setDbCats] = useState<{ id: number; brand_id: string; cat_key: string; name: string; sort: number }[]>([]);
@@ -607,7 +611,7 @@ export default function PasswordV2Page() {
                 <div className="space-y-1">
                     <p className="font-black text-amber-500 uppercase tracking-widest text-[10px]">Nota di sicurezza</p>
                     <p className="text-[13px] leading-relaxed">
-                        Questa sezione contiene credenziali sensibili. La consultazione è riservata; la gestione (creare, modificare, eliminare categorie e credenziali) è riservata al <span className="text-amber-200 font-bold">Direttore Commerciale</span> e ruoli superiori.
+                        Questa sezione contiene credenziali sensibili. La consultazione è riservata; chi può anche <span className="text-amber-200 font-bold">creare, modificare ed eliminare</span> lo decide l&apos;Admin dalla rotellina in Permessi (default: dallo Store Manager in su).
                         Le password sono visibili solo dopo aver cliccato sull&apos;icona dell&apos;occhio. <span className="underline decoration-amber-500/50 underline-offset-4">Non condividere queste credenziali.</span>
                     </p>
                 </div>

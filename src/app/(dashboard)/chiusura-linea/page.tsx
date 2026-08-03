@@ -430,7 +430,7 @@ export default function ChiusuraLineaPage() {
     const { user } = useAuth();
     // due livelli decisi da Amministrazione → Utenti → Permessi (rotellina
     // "Chiusura Linea"): accesso semplice (invia) e gestione (vista direzione)
-    const { perms } = useRolePermissions(user?.role);
+    const { perms } = useRolePermissions(user?.role, user?.grade);
     const direzione = capAllowed(user?.role, CAP_DISDETTE.section, CAP_DISDETTE_GESTISCE, perms);
     const puoInviare = direzione || capAllowed(user?.role, CAP_DISDETTE.section, CAP_DISDETTE_INVIA, perms);
     const wholeStore = seesWholeStore(user?.role);

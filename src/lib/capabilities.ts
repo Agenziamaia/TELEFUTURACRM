@@ -285,7 +285,23 @@ export const CAP_DISDETTE: CapGroupFlags = {
     caps: [CAP_DISDETTE_INVIA, CAP_DISDETTE_GESTISCE],
 };
 
+// ─── PASSWORD: chi modifica e aggiunge (Luca 03/08) ──────────────────────────
+// La consultazione resta decisa dalla visibilità della voce; QUI si decide chi
+// puo' anche cambiare e aggiungere credenziali e categorie.
+export const CAP_PASSWORD_MODIFICA: CapDef = {
+    id: "modifica",
+    label: "Modifica e aggiunge password",
+    desc: "Può creare, modificare ed eliminare credenziali e categorie. Spenta: la sezione resta in sola consultazione. Default (Luca 03/08): dallo Store Manager in su.",
+    default: (r) => ["store_manager", "direttore_commerciale", "amministrativo", "direttore_generale", "admin", "dev"].includes(r),
+};
+export const CAP_PASSWORD: CapGroupFlags = {
+    mode: "flags",
+    section: "/password-v2",
+    sectionLabel: "Password",
+    caps: [CAP_PASSWORD_MODIFICA],
+};
+
 /** Catalogo completo: la pagina Permessi lo rende amministrabile da solo.
  *  Piu' gruppi possono condividere la stessa sezione: l'ingranaggio li mostra
  *  impilati nello stesso pannello. */
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];

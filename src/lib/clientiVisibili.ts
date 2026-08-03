@@ -51,7 +51,7 @@ export interface ClientiVisibili {
 export function useClientiVisibili(): ClientiVisibili {
     const { user } = useAuth();
     const role = user?.role || "";
-    const { perms: capPerms } = useRolePermissions(role);
+    const { perms: capPerms } = useRolePermissions(role, user?.grade);
     const scope = capChoice(role, CAP_CLIENTI, capPerms);
     const { seesAll: seesAllVis, stores: visStores } = useVisibleStores();
     const maskAttivo = scope !== "tutti" && !seesAllVis;
