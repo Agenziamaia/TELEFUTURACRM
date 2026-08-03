@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
-import { roleLabel, AREAS, gradesFor } from "@/lib/roles";
+import { roleLabel, AREAS, gradesFor, gradeLabel } from "@/lib/roles";
 import { roleGradeKey } from "@/lib/usePermissions";
 import { useRoles } from "@/lib/useRoles";
 import { NAVIGATION, effectiveAllowed, OUTBOUND_HIDDEN_GROUPS, hubChildKey, hubSubKey, groupKey, type PermMap } from "@/lib/nav";
@@ -68,8 +68,13 @@ export function PermessiView() {
     const [ruolo, setRuolo] = useState<string>("");
     const [righe, setRighe] = useState<PermMap>(new Map());
     // ECCEZIONI PER GRADO (Luca 03/08): righe role "ruolo@grado" — vincono
-    // sulla riga di ruolo per chi ha quel grado. Qui per la matrice.
+    // sulla riga di ruolo per chi ha quel grado.
     const [righeGradi, setRigheGradi] = useState<Map<string, PermMap>>(new Map());
+    // GRADO SELEZIONATO IN TESTA (Luca 03/08 sera): "" = tutti i gradi (si
+    // regola il RUOLO); un grado scelto COMMUTA l'intera matrice su di lui —
+    // gli interruttori mostrano e scrivono le sue eccezioni.
+    const [grado, setGrado] = useState<string>("");
+    useEffect(() => { setGrado(""); }, [ruolo]);
     const [busy, setBusy] = useState<string | null>(null);
     // ⚙️ aperto: le opzioni di comportamento esplodono SOTTO la riga della sezione
     const [capOpen, setCapOpen] = useState<string | null>(null);
@@ -93,6 +98,16 @@ export function PermessiView() {
     };
     useEffect(() => { if (ruolo) load(ruolo); }, [ruolo]);
 
+    // vista corrente: righe di ruolo, con le eccezioni del grado SOPRA
+    const permsEff = useMemo<PermMap>(() => {
+        if (!grado) return righe;
+        const m: PermMap = new Map(righe);
+        (righeGradi.get(grado) ?? new Map()).forEach((v, k) => m.set(k, v));
+        return m;
+    }, [righe, righeGradi, grado]);
+    // dove SCRIVONO interruttori e rotelline in questa vista
+    const chiaveScrittura = grado ? roleGradeKey(ruolo, grado) : ruolo;
+
     if (!isAdmin) return (
         <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">
             Sezione riservata all&apos;Admin.
@@ -102,36 +117,27 @@ export function PermessiView() {
     const toggle = async (v: Riga) => {
         if (!ruolo || busy) return;
         setBusy(v.href);
-        const attuale = effectiveAllowed(ruolo, v.href, v.defaultRoles, righe, v.gruppo);
-        const { error } = await supabase.from("role_permissions").upsert(
-            { role: ruolo, perm_key: v.href, allowed: !attuale, updated_by: user?.name || "—", updated_at: new Date().toISOString() },
-            { onConflict: "role,perm_key" },
-        );
+        const attuale = effectiveAllowed(ruolo, v.href, v.defaultRoles, permsEff, v.gruppo);
+        let error: { message: string } | null = null;
+        if (grado) {
+            // ECCEZIONE DI GRADO: se il nuovo valore torna uguale al ruolo,
+            // la riga si CANCELLA da sola (si torna a ereditare)
+            const effRuolo = effectiveAllowed(ruolo, v.href, v.defaultRoles, righe, v.gruppo);
+            const nuovo = !attuale;
+            ({ error } = nuovo === effRuolo
+                ? await supabase.from("role_permissions").delete().eq("role", chiaveScrittura).eq("perm_key", v.href)
+                : await supabase.from("role_permissions").upsert(
+                    { role: chiaveScrittura, perm_key: v.href, allowed: nuovo, updated_by: user?.name || "—", updated_at: new Date().toISOString() },
+                    { onConflict: "role,perm_key" }));
+        } else {
+            ({ error } = await supabase.from("role_permissions").upsert(
+                { role: ruolo, perm_key: v.href, allowed: !attuale, updated_by: user?.name || "—", updated_at: new Date().toISOString() },
+                { onConflict: "role,perm_key" },
+            ));
+        }
         setBusy(null);
         if (error) { dbError("salvataggio permesso", error); return; }
-        notify(`${v.nome}: ${!attuale ? "visibile" : "nascosta"} per ${roleLabel(ruolo)}`, "ok");
-        load(ruolo);
-    };
-
-    // SPLIT PER GRADO (Luca 03/08): tutti i gradi pre-accesi = eredita il
-    // ruolo (nessuna riga); il click scrive l'eccezione — e se l'eccezione
-    // torna uguale al ruolo, la riga si CANCELLA (si torna a ereditare).
-    const toggleGrado = async (v: Riga, grado: string) => {
-        if (!ruolo || busy) return;
-        const key = v.href + "@" + grado;
-        setBusy(key);
-        const effRuolo = effectiveAllowed(ruolo, v.href, v.defaultRoles, righe, v.gruppo);
-        const effGrado = righeGradi.get(grado)?.get(v.href) ?? effRuolo;
-        const nuovo = !effGrado;
-        const roleKey = roleGradeKey(ruolo, grado);
-        const { error } = nuovo === effRuolo
-            ? await supabase.from("role_permissions").delete().eq("role", roleKey).eq("perm_key", v.href)
-            : await supabase.from("role_permissions").upsert(
-                { role: roleKey, perm_key: v.href, allowed: nuovo, updated_by: user?.name || "—", updated_at: new Date().toISOString() },
-                { onConflict: "role,perm_key" });
-        setBusy(null);
-        if (error) { dbError("salvataggio permesso di grado", error); return; }
-        notify(`${v.nome}: ${nuovo ? "visibile" : "nascosta"} per ${roleLabel(ruolo)} · grado ${grado}`, "ok");
+        notify(`${v.nome}: ${!attuale ? "visibile" : "nascosta"} per ${roleLabel(ruolo)}${grado ? ` · ${gradeLabel(ruolo, grado)}` : ""}`, "ok");
         load(ruolo);
     };
 
@@ -144,7 +150,7 @@ export function PermessiView() {
         if (!ruolo || busy) return;
         setBusy("cap:" + g.section);
         const rows = g.caps.map((c) => ({
-            role: ruolo, perm_key: capKey(g.section, c.id), allowed: c.id === sceltaId,
+            role: chiaveScrittura, perm_key: capKey(g.section, c.id), allowed: c.id === sceltaId,
             updated_by: user?.name || "—", updated_at: new Date().toISOString(),
         }));
         const { error } = await supabase.from("role_permissions").upsert(rows, { onConflict: "role,perm_key" });
@@ -157,7 +163,7 @@ export function PermessiView() {
         if (!ruolo || busy) return;
         setBusy("cap:" + g.section + capId);
         const { error } = await supabase.from("role_permissions").upsert({
-            role: ruolo, perm_key: capKey(g.section, capId), allowed: !attuale,
+            role: chiaveScrittura, perm_key: capKey(g.section, capId), allowed: !attuale,
             updated_by: user?.name || "—", updated_at: new Date().toISOString(),
         }, { onConflict: "role,perm_key" });
         setBusy(null);
@@ -189,8 +195,42 @@ export function PermessiView() {
                             })}
                         </div>
                     ))}
+                    {/* GRADI IN TESTA (Luca 03/08 sera): scegliendo un grado qui sopra
+                        cambia TUTTA la matrice — interruttori e rotelline mostrano e
+                        scrivono le eccezioni di QUEL grado; senza scelta vale il ruolo. */}
+                    {ruolo && gradesFor(ruolo).length > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-white/5">
+                            <span className="text-[10px] font-bold uppercase tracking-widest w-24 shrink-0 text-amber-300">Grado</span>
+                            <button onClick={() => setGrado("")}
+                                className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
+                                style={!grado
+                                    ? { color: "#fbbf24", borderColor: "#f59e0b", background: "rgba(245,158,11,0.14)" }
+                                    : { color: "#94a3b8", borderColor: "rgba(255,255,255,0.1)" }}>
+                                Tutti i gradi{!grado && " ✓"}
+                            </button>
+                            {gradesFor(ruolo).map((g) => {
+                                const on = grado === g.id;
+                                const nEcc = righeGradi.get(g.id)?.size ?? 0;
+                                return (
+                                    <button key={g.id} onClick={() => setGrado(on ? "" : g.id)}
+                                        className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
+                                        style={on
+                                            ? { color: "#fbbf24", borderColor: "#f59e0b", background: "rgba(245,158,11,0.14)" }
+                                            : { color: "#94a3b8", borderColor: "rgba(255,255,255,0.1)" }}>
+                                        {g.label}{on && " ✓"}{nEcc > 0 && <span className="ml-1.5 text-[10px] font-black text-amber-400">·{nEcc}</span>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                    {ruolo && grado && (
+                        <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                            Stai regolando <b>{roleLabel(ruolo)} · {gradeLabel(ruolo, grado)}</b>: gli interruttori mostrano cosa vede questo grado.
+                            Le voci senza pallino ambra seguono il ruolo; rimettendo un interruttore com&apos;è per il ruolo, l&apos;eccezione si cancella da sola.
+                        </p>
+                    )}
                     <p className="text-xs text-slate-500 pt-1">
-                        Gli interruttori mostrano cosa VEDE il ruolo scelto: menù e accesso alle pagine seguono in automatico.
+                        Gli interruttori mostrano cosa VEDE il ruolo scelto{ruolo && gradesFor(ruolo).length > 0 ? " (o il grado selezionato qui sopra)" : ""}: menù e accesso alle pagine seguono in automatico.
                         L&apos;Admin vede sempre tutto e non è modificabile da qui.
                     </p>
                 </div>
@@ -212,7 +252,8 @@ export function PermessiView() {
                             <div className="px-4 py-2.5 bg-white/[0.03] border-b border-white/5 text-xs font-bold uppercase tracking-wider text-slate-400">{g.titolo}</div>
                             <div className="divide-y divide-white/5">
                                 {g.voci.map((v) => {
-                                    const eff = effectiveAllowed(ruolo, v.href, v.defaultRoles, righe, v.gruppo);
+                                    const eff = effectiveAllowed(ruolo, v.href, v.defaultRoles, permsEff, v.gruppo);
+                                    const eccezione = !!grado && (righeGradi.get(grado)?.has(v.href) ?? false);
                                     // COERENZA GERARCHICA (regola Luca): con un antenato spento la voce
                                     // non conta nulla e NON si puo' accendere — prima si accende l'hub
                                     // (o la sezione), poi si scelgono le voci interne una a una.
@@ -220,7 +261,7 @@ export function PermessiView() {
                                     for (let ph = v.padre; ph; ) {
                                         const par = g.voci.find((x) => x.href === ph);
                                         if (!par) break;
-                                        if (!effectiveAllowed(ruolo, par.href, par.defaultRoles, righe, par.gruppo)) { padreOff = true; break; }
+                                        if (!effectiveAllowed(ruolo, par.href, par.defaultRoles, permsEff, par.gruppo)) { padreOff = true; break; }
                                         ph = par.padre;
                                     }
                                     // capacita' agganciate a QUESTA sezione (possono essere piu' gruppi)
@@ -241,38 +282,18 @@ export function PermessiView() {
                                                         ⚙️
                                                     </button>
                                                 )}
+                                                {eccezione && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title={`Eccezione del grado ${gradeLabel(ruolo, grado)} su questa voce`} />}
                                                 <button onClick={() => { if (!padreOff) toggle(v); }} disabled={busy === v.href || padreOff}
                                                     className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"} ${busy === v.href ? "opacity-50" : ""} ${padreOff ? "cursor-not-allowed" : ""}`}
                                                     title={padreOff ? "Prima accendi l'accesso all'hub (la riga sopra): con l'hub spento le voci interne non si possono abilitare" : eff ? "Visibile — clicca per nascondere" : "Nascosta — clicca per concedere"}>
                                                     <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${eff ? "left-6" : "left-0.5"}`} />
                                                 </button>
                                             </div>
-                                            {gradesFor(ruolo).length > 0 && !padreOff && (
-                                                <div className="flex items-center gap-1.5 flex-wrap pb-2.5 pr-4 -mt-0.5" style={{ paddingLeft: 16 + ((v.livello || 0) + 1) * 26 }}>
-                                                    <span className="text-[9px] font-bold uppercase tracking-widest text-slate-600">gradi</span>
-                                                    {gradesFor(ruolo).map((gr) => {
-                                                        const effG = righeGradi.get(gr.id)?.get(v.href) ?? eff;
-                                                        const eccezione = righeGradi.get(gr.id)?.has(v.href) ?? false;
-                                                        return (
-                                                            <button key={gr.id} disabled={busy === v.href + "@" + gr.id}
-                                                                onClick={() => toggleGrado(v, gr.id)}
-                                                                title={effG
-                                                                    ? `${gr.label}: la vede${eccezione ? " (eccezione)" : " (come il ruolo)"} — clicca per escludere questo grado`
-                                                                    : `${gr.label}: esclusa${eccezione ? " (eccezione)" : " (come il ruolo)"} — clicca per concederla a questo grado`}
-                                                                className={`text-[10px] px-2 py-0.5 rounded-full border font-bold transition-colors ${effG
-                                                                    ? "border-emerald-400/60 bg-emerald-500/15 text-emerald-200"
-                                                                    : "border-white/10 bg-white/[0.03] text-slate-500 line-through"} ${eccezione ? "ring-1 ring-amber-400/50" : ""}`}>
-                                                                {effG ? "✓ " : ""}{gr.label}
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
                                             {capGroup && capOpen === v.href && (
                                                 <div className="pb-3 pr-4 space-y-2" style={{ paddingLeft: 16 + ((v.livello || 0) + 1) * 26 }}>
                                                     {capGroups.map((cg) => (
                                                         <div key={cg.sectionLabel} className="rounded-lg border border-indigo-500/25 bg-indigo-500/[0.04] overflow-hidden">
-                                                            <CapOptions g={cg} ruolo={ruolo} righe={righe} busy={busy}
+                                                            <CapOptions g={cg} ruolo={ruolo} righe={permsEff} busy={busy}
                                                                 onChoice={(id) => setCapChoice(cg as CapGroupChoice, id)}
                                                                 onFlag={(id, att) => toggleCapFlag(cg, id, att)} />
                                                         </div>
