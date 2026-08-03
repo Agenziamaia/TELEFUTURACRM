@@ -113,12 +113,11 @@ export const ROLES: RoleDef[] = [
         id: "amministrativo",
         label: "Amministrativo",
         area: "sede",
-        // "Back Office" NON e' un grado dell'amministrativo (Luca 03/08): e'
-        // un RUOLO a se' in sede (role_defs, custom) — tolto da qui; nessun
-        // utente amministrativo lo usava come grado (verificato a DB).
-        grades: [
-            { id: "amministrazione", label: "Amministrazione" },
-        ],
+        // NIENTE GRADI (Luca 03/08): "amministrativo e' amministrativo, punto".
+        // "Back Office" era cablato qui per errore ma e' un RUOLO a se' in sede
+        // (role_defs custom); "Amministrazione" era ridondante col ruolo stesso.
+        // Grado azzerato anche sugli utenti esistenti (erano solo Claudia e Sandra).
+        grades: [],
     },
     { id: "direttore_generale", label: "Direttore Generale", area: "sede", grades: [] },
     { id: "admin", label: "Admin", area: "sede", grades: [] },
