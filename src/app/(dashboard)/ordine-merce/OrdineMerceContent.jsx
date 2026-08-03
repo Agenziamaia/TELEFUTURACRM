@@ -54,6 +54,8 @@ const STATUS = {
 const ITEM_STATUS = {
   pending: { label: "In Attesa", color: C.gray, bg: C.grayBg },
   ordinato: { label: "Ordinato", color: C.orange, bg: C.orangeBg },
+  // PARZIALE (Luca 03/08): inviati N pezzi su M richiesti — il residuo resta in vista
+  parziale: { label: "Parziale", color: C.info, bg: C.infoBg },
   evaso: { label: "Evaso", color: C.success, bg: C.successBg },
   non_disponibile: { label: "Non Disponibile", color: C.danger, bg: C.dangerBg },
 };
@@ -65,9 +67,11 @@ const computeOrderStatus = (items, currentStatus) => {
   const allPending = items.every(i => i.itemStatus === "pending");
   const allResolved = items.every(i => i.itemStatus === "evaso" || i.itemStatus === "non_disponibile");
   const someResolved = items.some(i => i.itemStatus === "evaso" || i.itemStatus === "non_disponibile");
+  const someParziale = items.some(i => i.itemStatus === "parziale");
   const someOrdinato = items.some(i => i.itemStatus === "ordinato");
   const somePending = items.some(i => i.itemStatus === "pending");
   if (allResolved) return "evaso";
+  if (someParziale) return "parziale";
   if (someResolved && (someOrdinato || somePending)) return "parziale";
   if (someOrdinato && !someResolved) return "lavorazione";
   if (allPending) return "nuovo";
@@ -426,6 +430,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
           ...i,
           itemStatus: i.item_status,
           itemEta: i.item_eta,
+          qtySent: i.qty_sent,
           cat: i.category,
           subCat: i.sub_cat
         }))
@@ -570,8 +575,10 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const [createStep, setCreateStep] = useState(0); // 0=build, 1=review
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
-  const [editingItemIdx, setEditingItemIdx] = useState(null);
-  const [editForm, setEditForm] = useState({ name: "", qty: 1 });
+  // EVASIONE PARZIALE (Luca 03/08): via la matita (cambiava la quantita'
+  // ORDINATA, un non-senso) — i casi sono tre: intera, parziale, non disponibile.
+  const [parzialeIdx, setParzialeIdx] = useState(null);
+  const [parzialeQty, setParzialeQty] = useState("");
 
   // PANNELLO amministrazione (azioni, colonne, bulk): dipende dal RUOLO.
   const isAdmin = ["admin","dev","direttore_generale","amministrativo","back_office_caller","back_office"].includes(role || "");
@@ -589,6 +596,14 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   // Un solo negozio -> automatico; piu' negozi (o nessuno, es. admin) -> scelta esplicita.
   const storeOrdine = negoziMiei.length === 1 ? negoziMiei[0] : orderStore;
 
+  // FILTRO PREIMPOSTATO (Luca 03/08): l'amministrazione apre la sezione SENZA
+  // evasi e annullati (lo storico e' a un click sui pulsanti dedicati); i
+  // negozi vedono tutto ma col sort attivi-in-testa. Vale solo come default.
+  const fStatusPreset = useRef(false);
+  useEffect(() => {
+    if (!fStatusPreset.current && isAdmin) { setFStatus("attivi"); fStatusPreset.current = true; }
+  }, [isAdmin]);
+
   /* ─── Filter logic ─── */
   const toggleCatFilter = (cat) => {
     setFCats(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]);
@@ -597,7 +612,8 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const filtered = useMemo(() => {
     return orders.filter(o => {
       if (!vedeTutti && !negoziMiei.some(st => sameStore(o.store, st))) return false;
-      if (fStatus !== "tutti" && o.status !== fStatus) return false;
+      if (fStatus === "attivi" && (o.status === "evaso" || o.status === "annullato")) return false;
+      if (fStatus !== "tutti" && fStatus !== "attivi" && o.status !== fStatus) return false;
       if (fStore !== "tutti" && o.store !== fStore) return false;
       if (fCats.length > 0) {
         const orderCats = [...new Set(o.items.map(i => i.cat))];
@@ -608,6 +624,11 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
         if (!o.id.toLowerCase().includes(q) && !o.items.some(i => i.name.toLowerCase().includes(q))) return false;
       }
       return true;
+    }).sort((a, b) => {
+      // SORT (Luca 03/08): evasi e annullati in fondo, il resto in testa —
+      // dentro ogni gruppo comanda la data (piu' recente prima)
+      const chiuso = (o) => (o.status === "evaso" || o.status === "annullato") ? 1 : 0;
+      return chiuso(a) - chiuso(b) || new Date(b.created_at || b.date) - new Date(a.created_at || a.date);
     });
   }, [orders, vedeTutti, negoziMiei, fStatus, fStore, fCats, fSearch]);
 
@@ -620,6 +641,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
       lavorazione: base.filter(o => o.status === "lavorazione").length,
       parziale: base.filter(o => o.status === "parziale").length,
       evasi: base.filter(o => o.status === "evaso").length,
+      annullati: base.filter(o => o.status === "annullato").length,
     };
   }, [orders, isAdmin, myStore]);
 
@@ -706,6 +728,23 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
       alert("Errore inserimento articoli: " + itemsError.message);
       // Optional: delete order if items fail?
     } else {
+      // TASK ⚡ ai designati dell'incarico "Nuovo ordine merce" (Luca 03/08):
+      // stesso meccanismo di ferie e chiusura linea — senza designati o con
+      // fulmine spento non parte nulla, l'ordine resta creato comunque.
+      try {
+        const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine").eq("chiave", "ordine_merce").maybeSingle();
+        const ass = (inc?.assegnatari ?? []);
+        if (inc?.fulmine && ass.length) {
+          const pezzi = cart.reduce((a, c) => a + c.qty, 0);
+          await supabase.from("admin_tasks").insert(ass.map((uid) => ({
+            tipo: "ordine_merce",
+            titolo: `📦 Nuovo ordine ${nextNum} — ${storeOrdine}`,
+            dettaglio: `${cart.length} ${cart.length === 1 ? "articolo" : "articoli"} (${pezzi} pezzi)${orderNote ? ` · Nota: ${orderNote}` : ""} — da ${userName || "negozio"}`,
+            link: "/ordine-merce",
+            target_role: "admin", created_by: userName || null, target_user_id: uid,
+          })));
+        }
+      } catch { /* il task e' un di piu': l'ordine e' gia' a database */ }
       await fetchOrders();
       resetCreate();
     }
@@ -721,18 +760,21 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
     const { error } = await supabase.from("merchandise_orders").update({ eta }).eq("id", oid);
     if (!error) fetchOrders();
   };
-  const updateItemStatus = async (oid, idx, newSt) => {
+  const updateItemStatus = async (oid, idx, newSt, qtySent = null) => {
     const order = orders.find(o => o.id === oid);
     if (!order) return;
     const item = order.items[idx];
+    // evaso pieno = tutti i pezzi; parziale = quelli dichiarati; il resto azzera
+    const sent = newSt === "evaso" ? (item.qty ?? qtySent) : newSt === "parziale" ? qtySent : null;
     const { error } = await supabase.from("merchandise_order_items").update({
       item_status: newSt,
+      qty_sent: sent,
       ...(newSt !== "ordinato" ? { item_eta: null } : {})
     }).eq("id", item.id);
 
     if (!error) {
       // Re-fetch to compute auto status if needed, or compute here and update order status too
-      const updatedItems = order.items.map((it, i) => i === idx ? { ...it, itemStatus: newSt } : it);
+      const updatedItems = order.items.map((it, i) => i === idx ? { ...it, itemStatus: newSt, qtySent: sent } : it);
       const autoStatus = computeOrderStatus(updatedItems, order.status);
       if (autoStatus !== order.status) {
         await supabase.from("merchandise_orders").update({ status: autoStatus }).eq("id", oid);
@@ -750,11 +792,15 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
 
   /* ─── Stat filter click ─── */
   const handleStatClick = (key) => {
-    if (key === "totale") { setFStatus("tutti"); return; }
-    if (key === "nuovi") { setFStatus(fStatus === "nuovo" ? "tutti" : "nuovo"); return; }
-    if (key === "lavorazione") { setFStatus(fStatus === "lavorazione" ? "tutti" : "lavorazione"); return; }
-    if (key === "parziale") { setFStatus(fStatus === "parziale" ? "tutti" : "parziale"); return; }
-    if (key === "evasi") { setFStatus(fStatus === "evaso" ? "tutti" : "evaso"); return; }
+    // il click su Evasi/Annullati DESELEZIONA tutto e filtra solo quello
+    // (come Ricerca Vendite); il ritorno va al default del ruolo
+    const base = isAdmin ? "attivi" : "tutti";
+    if (key === "totale") { setFStatus(base); return; }
+    if (key === "nuovi") { setFStatus(fStatus === "nuovo" ? base : "nuovo"); return; }
+    if (key === "lavorazione") { setFStatus(fStatus === "lavorazione" ? base : "lavorazione"); return; }
+    if (key === "parziale") { setFStatus(fStatus === "parziale" ? base : "parziale"); return; }
+    if (key === "evasi") { setFStatus(fStatus === "evaso" ? base : "evaso"); return; }
+    if (key === "annullati") { setFStatus(fStatus === "annullato" ? base : "annullato"); return; }
   };
 
   /* ═══ STYLES (CRM dark theme) ═══ */
@@ -1582,6 +1628,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
 
     const total = order.items.length;
     const evasi = order.items.filter(i => i.itemStatus === "evaso").length;
+    const parziali = order.items.filter(i => i.itemStatus === "parziale").length;
     const nonDisp = order.items.filter(i => i.itemStatus === "non_disponibile").length;
     const ordinati = order.items.filter(i => i.itemStatus === "ordinato").length;
     const inAttesa = order.items.filter(i => i.itemStatus === "pending").length;
@@ -1609,7 +1656,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
               </div>
               <div style={{ display: "flex", gap: 16, fontSize: 13, color: C.textSec }}>
                 <span>📍 {storeName(order.store)}</span>
-                <span>📅 {new Date(order.date).toLocaleDateString("it-IT")}</span>
+                <span>📅 {new Date(order.created_at || order.date).toLocaleDateString("it-IT")}</span>
                 <span>{total} voci</span>
               </div>
             </div>
@@ -1634,6 +1681,10 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
               <div style={{ padding: "8px 14px", borderRadius: 8, background: C.successBg, border: `1px solid ${C.success}30` }}>
                 <span style={{ fontSize: 11, color: C.gray }}>Evase</span>
                 <span style={{ fontSize: 18, fontWeight: 800, color: C.success, marginLeft: 8 }}>{evasi}</span>
+              </div>
+              <div style={{ padding: "8px 14px", borderRadius: 8, background: C.infoBg, border: `1px solid ${C.info}30` }}>
+                <span style={{ fontSize: 11, color: C.gray }}>Parziali</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: C.info, marginLeft: 8 }}>{parziali}</span>
               </div>
               <div style={{ padding: "8px 14px", borderRadius: 8, background: C.orangeBg, border: `1px solid ${C.orange}30` }}>
                 <span style={{ fontSize: 11, color: C.gray }}>Ordinati</span>
@@ -1675,31 +1726,23 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
               });
 
               const renderItemRow = (it) => {
-                const isEditing = editingItemIdx === it._idx;
                 const ist = ITEM_STATUS[it.itemStatus] || ITEM_STATUS.pending;
+                const mancano = it.itemStatus === "parziale" ? Math.max(0, (it.qty || 0) - (it.qtySent || 0)) : 0;
 
                 return (
-                  <tr key={it._idx} style={{ background: isEditing ? "rgba(99, 102, 241, 0.1)" : ist.bg }}>
+                  <tr key={it._idx} style={{ background: ist.bg }}>
                     <td style={{ ...s.td, fontWeight: 600 }}>
-                      {isEditing ? (
-                        <input style={{ ...s.input, padding: "4px 8px", fontSize: 13, width: "100%" }}
-                          value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
-                      ) : (
-                        <>
-                          {it.name}
-                          {it.brand && !it.phoneBrand && <span style={{ marginLeft: 6, fontSize: 10, color: C.grayLight }}>
-                            ({BRANDS.find(b => b.id === it.brand)?.name}{it.channel ? (" — " + (BRAND_SUB[it.sub]?.items[it.brand]?.channels?.[it.channel]?.label || it.channel)) : ""})
-                          </span>}
-                        </>
-                      )}
+                      {it.name}
+                      {it.brand && !it.phoneBrand && <span style={{ marginLeft: 6, fontSize: 10, color: C.grayLight }}>
+                        ({BRANDS.find(b => b.id === it.brand)?.name}{it.channel ? (" — " + (BRAND_SUB[it.sub]?.items[it.brand]?.channels?.[it.channel]?.label || it.channel)) : ""})
+                      </span>}
                     </td>
                     <td style={{ ...s.td, textAlign: "center", fontWeight: 700 }}>
-                      {isEditing ? (
-                        <input type="number" style={{ ...s.input, padding: "4px 8px", fontSize: 13, width: 60, textAlign: "center" }}
-                          value={editForm.qty} onChange={e => setEditForm({ ...editForm, qty: parseInt(e.target.value) || 0 })} />
-                      ) : it.qty}
+                      {it.itemStatus === "parziale" && it.qtySent != null
+                        ? <span style={{ color: C.info }} title={`Inviati ${it.qtySent} su ${it.qty}`}>{it.qtySent}/{it.qty}</span>
+                        : it.qty}
                     </td>
-                    <td style={s.td}><Pill {...ist} small /></td>
+                    <td style={s.td}><Pill {...ist} label={it.itemStatus === "parziale" && it.qtySent != null ? `Parziale ${it.qtySent}/${it.qty}` : ist.label} small /></td>
                     <td style={s.td}>
                       {it.itemStatus === "ordinato" ? (
                         isAdmin ? (
@@ -1710,47 +1753,49 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                             {new Date(it.itemEta).toLocaleDateString("it-IT")}
                           </span> : <span style={{ fontSize: 11, color: C.grayLight }}>Da definire</span>
                         )
+                      ) : it.itemStatus === "parziale" ? (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: C.warning }}>mancano {mancano} {mancano === 1 ? "pezzo" : "pezzi"}</span>
                       ) : (
                         <span style={{ fontSize: 11, color: C.grayLight }}>—</span>
                       )}
                     </td>
                     {isAdmin && (
                       <td style={s.td}>
-                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                          {isEditing ? (
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                          {parzialeIdx === it._idx ? (
                             <>
-                              <button style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: C.success, color: "#fff" }}
-                                onClick={async () => {
-                                  const { error } = await supabase.from("merchandise_order_items")
-                                    .update({ name: editForm.name, qty: editForm.qty })
-                                    .eq("id", it.id);
-                                  if (!error) {
-                                    setOrders(prev => prev.map(o => o.id === order.id ? {
-                                      ...o, items: o.items.map(item => item.id === it.id ? { ...item, name: editForm.name, qty: editForm.qty } : item)
-                                    } : o));
-                                    setEditingItemIdx(null);
-                                  } else {
-                                    alert("Errore salvataggio: " + error.message);
-                                  }
-                                }}>💾 Salva</button>
+                              {/* PARZIALE (Luca 03/08): quanti pezzi PARTONO ora — il residuo resta in vista */}
+                              <input type="number" min={1} max={Math.max(1, (it.qty || 1) - 1)} value={parzialeQty} autoFocus
+                                onChange={e => setParzialeQty(e.target.value)}
+                                onKeyDown={e => { if (e.key === "Escape") { setParzialeIdx(null); setParzialeQty(""); } }}
+                                placeholder={`su ${it.qty}`}
+                                style={{ ...s.input, padding: "3px 6px", fontSize: 11, width: 60, textAlign: "center" }} />
+                              <button style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: C.info, color: "#fff" }}
+                                onClick={() => {
+                                  const n = parseInt(parzialeQty);
+                                  if (!n || n < 1 || n >= (it.qty || 1)) { alert(`Quantità parziale: da 1 a ${(it.qty || 1) - 1} su ${it.qty} richiesti. Se li invii tutti usa ✓ Evaso.`); return; }
+                                  updateItemStatus(order.id, it._idx, "parziale", n);
+                                  setParzialeIdx(null); setParzialeQty("");
+                                }}>✓ Conferma</button>
                               <button style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: "transparent", border: `1px solid ${C.border}`, color: C.gray }}
-                                onClick={() => setEditingItemIdx(null)}>✕</button>
+                                onClick={() => { setParzialeIdx(null); setParzialeQty(""); }}>✕</button>
                             </>
                           ) : (
                             <>
-                              <button style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: "transparent", border: `1px solid ${C.border}`, color: C.gray }}
-                                title="Modifica riga"
-                                onClick={() => {
-                                  setEditingItemIdx(it._idx);
-                                  setEditForm({ name: it.name, qty: it.qty });
-                                }}>✏️</button>
                               {it.itemStatus !== "evaso" && (
                                 <button onClick={() => updateItemStatus(order.id, it._idx, "evaso")}
                                   style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: C.success, color: "#fff" }}>
                                   ✓ Evaso
                                 </button>
                               )}
-                              {it.itemStatus !== "ordinato" && it.itemStatus !== "evaso" && (
+                              {(it.qty || 0) > 1 && it.itemStatus !== "evaso" && (
+                                <button onClick={() => { setParzialeIdx(it._idx); setParzialeQty(it.qtySent ? String(it.qtySent) : ""); }}
+                                  title="Inviata una parte dei pezzi richiesti: dichiara quanti"
+                                  style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: C.infoBg, color: C.info, border: `1px solid ${C.info}50` }}>
+                                  📤 Parziale
+                                </button>
+                              )}
+                              {it.itemStatus !== "ordinato" && it.itemStatus !== "evaso" && it.itemStatus !== "parziale" && (
                                 <button onClick={() => updateItemStatus(order.id, it._idx, "ordinato")}
                                   style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: C.orange, color: "#fff" }}>
                                   📋 Ordinato
@@ -1762,7 +1807,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                                   ✗ Non Disp.
                                 </button>
                               )}
-                              {(it.itemStatus === "evaso" || it.itemStatus === "ordinato" || it.itemStatus === "non_disponibile") && (
+                              {(it.itemStatus === "evaso" || it.itemStatus === "ordinato" || it.itemStatus === "non_disponibile" || it.itemStatus === "parziale") && (
                                 <button onClick={() => updateItemStatus(order.id, it._idx, "pending")}
                                   style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: "transparent", border: `1px solid ${C.border}`, color: C.gray }}>
                                   ↩ Reset
@@ -1882,11 +1927,10 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
         {/* Stats — clickable */}
         <div style={s.statsRow}>
           {[
-            { key: "totale", label: "Totale Ordini", val: stats.totale, color: C.text, icon: "📋", active: fStatus === "tutti" },
+            { key: "totale", label: "Totale Ordini", val: stats.totale, color: C.text, icon: "📋", active: fStatus === "tutti" || fStatus === "attivi" },
             { key: "nuovi", label: "Nuovi", val: stats.nuovi, color: C.primary, icon: "🆕", active: fStatus === "nuovo" },
             { key: "lavorazione", label: "In Lavorazione", val: stats.lavorazione, color: C.warning, icon: "⏳", active: fStatus === "lavorazione" },
             { key: "parziale", label: "Parz. Evasi", val: stats.parziale, color: C.info, icon: "📦", active: fStatus === "parziale" },
-            { key: "evasi", label: "Evasi", val: stats.evasi, color: C.success, icon: "✅", active: fStatus === "evaso" },
           ].map(st => (
             <div key={st.key} onClick={() => handleStatClick(st.key)}
               style={{
@@ -1903,6 +1947,26 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
               </div>
             </div>
           ))}
+          {/* STORICO a coppia (Luca 03/08): nell'ingombro di UNA card, Evasi
+              sopra e Annullati sotto — esclusi dal default admin, un click
+              deseleziona tutto e mostra SOLO quelli */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[
+              { key: "evasi", label: "Evasi", val: stats.evasi, color: C.success, icon: "✅", active: fStatus === "evaso" },
+              { key: "annullati", label: "Annullati", val: stats.annullati, color: C.danger, icon: "❌", active: fStatus === "annullato" },
+            ].map(st => (
+              <div key={st.key} onClick={() => handleStatClick(st.key)}
+                style={{
+                  background: C.card, borderRadius: 10, padding: "6px 14px", cursor: "pointer", flex: 1,
+                  border: st.active ? `2px solid ${st.color}` : `1px solid ${C.border}`,
+                  transition: "all .15s", boxShadow: st.active ? `0 0 0 3px ${st.color}20` : "none",
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                }}>
+                <span style={{ fontSize: 11, color: C.grayLight, fontWeight: 600 }}>{st.icon} {st.label}</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: st.color }}>{st.val}</span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Filters */}
@@ -1911,6 +1975,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
             value={fSearch} onChange={e => setFSearch(e.target.value)} />
           <select style={s.select} value={fStatus} onChange={e => setFStatus(e.target.value)}>
             <option value="tutti">Tutti gli stati</option>
+            <option value="attivi">Attivi (senza evasi e annullati)</option>
             {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
 
@@ -1999,7 +2064,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                       )}
                       <td style={{ ...s.td, fontWeight: 700, fontFamily: "monospace", fontSize: 13 }}>{order.order_number || order.id}</td>
                       {isAdmin && <td style={s.td}>{storeName(order.store)}</td>}
-                      <td style={{ ...s.td, color: C.textSec }}>{new Date(order.date).toLocaleDateString("it-IT")}</td>
+                      <td style={{ ...s.td, color: C.textSec }}>{new Date(order.created_at || order.date).toLocaleDateString("it-IT")}</td>
                       <td style={s.td}>
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                           {cats.map(c => <Pill key={c} label={CATEGORIES[c]?.icon + " " + CATEGORIES[c]?.label}
