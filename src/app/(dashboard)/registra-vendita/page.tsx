@@ -1372,21 +1372,29 @@ const SCd = ({session,codici,val,onCh}) => {
   return content;
 };
 
+// ACCENTO DEL BRAND ATTIVO (Luca 03/08): i componenti di modulo (RB, header
+// "Dati Contratto"…) leggono da qui il colore del brand in corso — prima i
+// dettagli restavano BLU (o rosso Vodafone) dentro qualsiasi operatore.
+let _brandAccento = "#6366f1";
+
 const CartItem = ({it,ii,gi,total,expI,setExpI}) => {
   const exp = expI[gi+"_"+ii];
   const dets = it.details ? Object.entries(it.details).filter(([k,v])=>v&&k!=="hasContract") : [];
+  // DETTAGLIO MODERNO (Luca 03/08): chip di categoria, schedine dettagli,
+  // via il look bootstrap blu del vecchio carrello
   const content = (
-    <div style={{borderBottom:ii<total-1?"1px solid rgba(255,255,255,0.03)":"none"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0"}}>
-        <span style={{fontSize:14}}>{it.macroIcon}</span><span style={{fontSize:12,fontWeight:600,color:it.macroColor}}>{it.macro}</span><span style={{color:"rgba(255,255,255,0.1)"}}>›</span><span style={{fontSize:12,color:"#f8fafc"}}>{it.sub}</span>
-        {it.details&&it.details.hasContract&&<span style={{fontSize:9,fontWeight:600,color:"#fff",background:it.macroColor,padding:"1px 6px",borderRadius:4}}>CONTRATTO</span>}
-        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
-          <span style={{fontSize:10,color:"#64748b"}}>V.#{it.saleNum}</span>
-          <button onClick={()=>setExpI(p=>({...p,[gi+"_"+ii]:!p[gi+"_"+ii]}))} style={{background:exp?"rgba(0,114,198,0.10)":"rgba(255,255,255,0.03)",border:exp?"1px solid #2E75B6":"1px solid rgba(255,255,255,0.1)",borderRadius:5,padding:"3px 10px",fontSize:10,fontWeight:600,cursor:"pointer",color:exp?"#2E75B6":"#64748b"}}>{exp?"▲ Nascondi":"👁 Mostra"}</button>
+    <div style={{borderBottom:ii<total-1?"1px solid rgba(255,255,255,0.05)":"none"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 0",flexWrap:"wrap"}}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:999,background:it.macroColor+"1f",border:"1px solid "+it.macroColor+"55",fontSize:11,fontWeight:800,color:it.macroColor}}>{it.macroIcon} {it.macro}</span>
+        <span style={{fontSize:13.5,fontWeight:700,color:"#f8fafc"}}>{it.sub}</span>
+        {it.details&&it.details.hasContract&&<span style={{fontSize:9,fontWeight:800,color:"#fff",background:it.macroColor,padding:"2px 8px",borderRadius:5,letterSpacing:.5}}>CONTRATTO</span>}
+        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:10,fontWeight:700,color:"#64748b",background:"rgba(255,255,255,0.05)",borderRadius:999,padding:"2px 9px"}}>V.{it.saleNum}</span>
+          <button onClick={()=>setExpI(p=>({...p,[gi+"_"+ii]:!p[gi+"_"+ii]}))} style={{background:exp?"rgba(99,102,241,0.18)":"rgba(255,255,255,0.04)",border:exp?"1px solid rgba(129,140,248,0.6)":"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:"5px 13px",fontSize:11,fontWeight:800,cursor:"pointer",color:exp?"#c7d2fe":"#94a3b8",transition:"all .15s"}}>{exp?"▲ Nascondi":"👁 Dettagli"}</button>
         </div>
       </div>
-      {exp&&<div style={{padding:"8px 12px 12px 32px"}}><div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:12,border:"1px solid rgba(255,255,255,0.12)"}}><div style={{fontSize:11,fontWeight:700,color:it.macroColor,marginBottom:8}}>📋 {it.sub}</div>
-        {dets.length>0?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px 16px"}}>{dets.map(([k,v])=><div key={k}><span style={{fontSize:10,fontWeight:600,color:"#64748b",textTransform:"uppercase"}}>{k}</span><div style={{fontSize:12,color:"#f8fafc",marginTop:1}}>{String(v)}</div></div>)}</div>
+      {exp&&<div style={{padding:"0 0 12px 6px"}}><div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:14,border:"1px solid rgba(255,255,255,0.08)",borderLeft:"3px solid "+it.macroColor}}>
+        {dets.length>0?<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:8}}>{dets.map(([k,v])=><div key={k} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:9,padding:"7px 11px"}}><div style={{fontSize:9,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:.6}}>{k}</div><div style={{fontSize:12.5,fontWeight:600,color:"#f8fafc",marginTop:2,wordBreak:"break-word"}}>{String(v)}</div></div>)}</div>
         :<div style={{fontSize:12,color:"#64748b"}}>Nessun dettaglio — premi ✏️ Modifica</div>}
       </div></div>}
     </div>
@@ -1475,7 +1483,7 @@ const FWMobile = ({sd, uP, sc, biz}) => {
           )}
 
           <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+            <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
               <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwCodIns||""} onCh={v=>upv("fwCodIns",v)}/>
               {hasMNP?(
@@ -1531,7 +1539,7 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
       )}
       {sd.fwFGnp&&(
         <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwFCodIns||""} onCh={v=>upv("fwFCodIns",v)}/>
             {sd.fwFGnp==="Sì"?(
@@ -1562,7 +1570,7 @@ const FWEnergia = ({sd, uP, sc, subTitle, dupCheck}) => {
   const isGas = subTitle === "GAS";
   const content = (
     <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwEnCodIns||""} onCh={v=>upv("fwEnCodIns",v)}/>
         <DD l="Operatore provenienza" r v={sd.fwEnProv||""} o={v=>upv("fwEnProv",v)} vals={opProv}/>
@@ -1609,7 +1617,7 @@ const RB = ({label,val,opts,onCh}) => {
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         {opts.map(o=>(
           <button key={o} onClick={()=>onCh(val===o?null:o)}
-            style={{padding:"9px 22px",borderRadius:999,border:val===o?"1.5px solid "+VF_C:"1px solid rgba(255,255,255,0.12)",background:val===o?VF_C:"rgba(255,255,255,0.04)",color:val===o?"#fff":"#8892b0",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all .15s",boxShadow:val===o?"0 4px 14px "+VF_C+"55":"none"}}>
+            style={{padding:"9px 22px",borderRadius:999,border:val===o?"1.5px solid "+_brandAccento:"1px solid rgba(255,255,255,0.12)",background:val===o?_brandAccento:"rgba(255,255,255,0.04)",color:val===o?"#fff":"#8892b0",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all .15s",boxShadow:val===o?"0 4px 14px "+_brandAccento+"55":"none"}}>
             {val===o?"✓ ":""}{o}
           </button>
         ))}
@@ -1972,7 +1980,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
                       {/* Dati Contratto */}
                       {(sd.vfTnp||isDV||isDati)&&(
                         <div style={{marginTop:12,background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+                          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                             {sd.vfMnp==="Sì"?(
                               <TF l="Numero Provvisorio" r v={sd.dcNumProv||""} o={v=>upv("dcNumProv",v)} p="393XXXXXXX"/>
@@ -2051,7 +2059,7 @@ const VFMobileGAFisso = ({sd,uP,sc}) => {
 
                   {/* Dati Contratto */}
                   <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+                    <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                       <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfFCodIns||""} onCh={v=>upv("vfFCodIns",v)}/>
                       {sd.vfFGnp==="Sì"?(
@@ -2236,7 +2244,7 @@ const VFBizMobile = ({sd,uP,sc}) => {
                 </div>
               )}
               <div style={{marginTop:8,background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-                <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+                <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                   <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfbCodIns||""} onCh={v=>upv("vfbCodIns",v)}/>
                   <TF l="Numero" v={sd.vfbNum||""} o={v=>upv("vfbNum",v)} p="3XXXXXXXXX"/>
@@ -2264,7 +2272,7 @@ const VFBizMobileCB = ({sd,uP,sc}) => {
       </div>
       {sd.vfbCbOn&&(
         <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{marginBottom:10}}>
             <TF l="Numero di cellulare" r v={sd.vfbCbCell||""} o={v=>upv("vfbCbCell",v)} p="3XXXXXXXXX"/>
           </div>
@@ -2307,7 +2315,7 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
       {sd.vfbFGnp&&(
         <div>
           <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+            <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
               <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfbFCodIns||""} onCh={v=>upv("vfbFCodIns",v)}/>
               {sd.vfbFGnp==="Sì"?(
@@ -2387,7 +2395,7 @@ const ILMobile = ({sd, uP, sc}) => {
           {sd.ilMnp&&<RB label="Domiciliata?" val={sd.ilDom} opts={["Sì","No"]} onCh={v=>upv("ilDom",v)}/>}
           {sd.ilDom&&(
             <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+              <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilCodIns||""} onCh={v=>upv("ilCodIns",v)}/>
                 {sd.ilMnp==="Sì"?(
@@ -2413,7 +2421,7 @@ const ILFisso = ({sd, uP, sc}) => {
       <RB label="GNP?" val={sd.ilFGnp} opts={["Sì","No"]} onCh={v=>{upv("ilFGnp",v);if(v==="No"){upv("ilFGnpBrand","");upv("ilFGnpNum","");}}}/>
       {sd.ilFGnp&&(
         <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilFCodIns||""} onCh={v=>upv("ilFCodIns",v)}/>
             {sd.ilFGnp==="Sì"?(
@@ -2436,7 +2444,7 @@ const ILFwa = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilFwaCodIns||""} onCh={v=>upv("ilFwaCodIns",v)}/>
         <TF l="ICCID" r v={sd.ilFwaIccid||""} o={v=>upv("ilFwaIccid",v)} p="8939..." nt="Barcode 📷"/>
@@ -2820,7 +2828,7 @@ const TIMMobile = ({sd, uP, sc}) => {
           )}
           {sd.timTnp&&(
             <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+              <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <SCd session={sc} codici={TIM_CODICI_NEGOZIO} val={sd.timCodIns||""} onCh={v=>upv("timCodIns",v)}/>
                 {sd.timMnp==="Sì"?(
@@ -2864,7 +2872,7 @@ const TIMFisso = ({sd, uP, sc}) => {
           )}
           {sd.timFGnp&&(
             <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14,marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+              <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <TF l="Numero Fisso Provvisorio" r v={sd.timFNumProv||""} o={v=>upv("timFNumProv",v)} p="06XXXXXXXX"/>
                 <SCd session={sc} codici={TIM_CODICI_NEGOZIO} val={sd.timFCodIns||""} onCh={v=>upv("timFCodIns",v)}/>
@@ -2897,7 +2905,7 @@ const TIMTelepass = ({sd, uP, sc}) => {
       <RB label="Twin?" val={sd.timTpTwin} opts={["Sì","No"]} onCh={v=>upv("timTpTwin",v)}/>
       {sd.timTpTwin&&(
         <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="Seriale Telepass" r v={sd.timTpSeriale||""} o={v=>upv("timTpSeriale",v)} p="Seriale"/>
             <TF l="Recapito Cliente" r v={sd.timTpRecapito||""} o={v=>upv("timTpRecapito",v)} p="Tel/Email"/>
@@ -2965,7 +2973,7 @@ const SimpleMobile = ({sd, uP, pfx, accent, codici, sc}) => {
           )}
           {sd[K("RicaricaAuto")]&&(
             <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+              <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <SCd session={sc} codici={codici} val={sd[K("CodIns")]||""} onCh={v=>upv(K("CodIns"),v)}/>
                 {sd[K("Mnp")]==="Sì"?(
@@ -3017,7 +3025,7 @@ const ILBizMobile = ({sd, uP, sc}) => {
               <RB label="Domiciliata?" val={sd.ilBizDom} opts={["Sì","No"]} onCh={v=>upv("ilBizDom",v)}/>
               {sd.ilBizDom&&(
                 <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14,marginTop:8}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+                  <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                     <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilBizCodIns||""} onCh={v=>upv("ilBizCodIns",v)}/>
                     <TF l="Numero Provvisorio" r v={sd.ilBizNum||""} o={v=>upv("ilBizNum",v)} p="3XXXXXXXXX"/>
@@ -3038,7 +3046,7 @@ const W3SostSim = ({sd, uP, sc, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
+      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <TF l="Numero" r v={sd.w3SostCell||""} o={v=>upv("w3SostCell",v)} p="3XXXXXXXXX"/>
         <TF l="ICCID" r v={sd.w3SostIccid||""} o={v=>upv("w3SostIccid",v)} p="19 cifre" nt="Barcode 📷"/>
@@ -3069,7 +3077,7 @@ const VFSostSim = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
+      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <TF l="Numero" r v={sd.vfSostCell||""} o={v=>upv("vfSostCell",v)} p="3XXXXXXXXX"/>
         <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfSostCodIns||""} onCh={v=>upv("vfSostCodIns",v)}/>
@@ -3084,7 +3092,7 @@ const ENLuceGas = ({sd, uP, sub, dupCheck, sc}) => {
   const isLuce = sub.enProd==="Luce"||sub.enProd==="LuceRID";
   const content = (
     <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — {sub.enBrand} {sub.title}</div>
+      <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — {sub.enBrand} {sub.title}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <SCd session={sc} codici={EN_CODICI_NEGOZIO} val={sd.enCodIns||""} onCh={v=>upv("enCodIns",v)}/>
         <DD l="Operatore provenienza" r v={sd.enProv||""} o={v=>upv("enProv",v)} vals={opProv}/>
@@ -3727,7 +3735,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {sub.isVFFissoBiz&&<VFBizFisso sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} isCombo={!!sub.isCombinatoFissoBiz} sc={sessionCode}/>}
       {sub.isVFSolDig&&(
         <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
+          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <SCd session={sessionCode} codici={VF_CODICI_NEGOZIO} val={sd.vfSolDigCodIns||""} onCh={v=>uP(group.id,si,sub.id,"vfSolDigCodIns",v)}/>
         </div>
       )}
@@ -3735,7 +3743,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {/* Kasko Facile */}
       {sub.isKaskoFacile&&(
         <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Kasko Facile</div>
+          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Kasko Facile</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="IMEI" r v={f.kfImei||""} o={v=>uF(group.id,si,sub.id,"kfImei",v)} p="15 cifre" nt="Barcode 📷"/>
             <TF l="Numero di telefono" r v={f.kfTelefono||""} o={v=>uF(group.id,si,sub.id,"kfTelefono",v)} p="3XXXXXXXXX"/>
@@ -3755,7 +3763,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {/* Vodafone Care */}
       {sub.isVFCare&&(
         <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#0066cc",marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Vodafone Care</div>
+          <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Vodafone Care</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="Numero di telefono" r v={f.vcTelefono||""} o={v=>uF(group.id,si,sub.id,"vcTelefono",v)} p="3XXXXXXXXX"/>
             <TF l="IMEI" r v={f.vcImei||""} o={v=>uF(group.id,si,sub.id,"vcImei",v)} p="15 cifre" nt="Barcode 📷"/>
@@ -5087,6 +5095,7 @@ function CRM() {
   // SENZA brand niente grigio topo (Luca 03/08): il colore di piattaforma
   // e' l'indigo del CRM — il grigio compariva su stepper, riepilogo e carrello
   const bC=bObj?bObj.color:"#6366f1";
+  _brandAccento=bC;   // i dettagli dei flussi seguono il brand (Luca 03/08)
   const bG=bObj?bObj.gradient:"linear-gradient(135deg,#4f46e5,#6366f1)";
   // CF/P.IVA SEMPRE OBBLIGATORIO su qualsiasi brand (Luca 02/08): senza,
   // la vendita non si registra. Il campo sta nell'anagrafica, cosi' anche
@@ -5183,8 +5192,8 @@ function CRM() {
         {!onlyMarg&&(allG.length===0?<div style={{background:"rgba(255,255,255,0.02)",borderRadius:12,padding:40,textAlign:"center",color:"#64748b"}}><div style={{fontSize:40}}>🛒</div><div style={{fontSize:15,fontWeight:600,marginTop:10}}>Vuoto</div></div>:
           allG.map((g,gi)=>(
             <div key={gi} style={{background:"rgba(255,255,255,0.02)",borderRadius:12,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
-              <div style={{background:g.brandColor,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={120} height={30} style={{height:26,width:"auto",maxWidth:110,objectFit:"contain",filter:"brightness(0) invert(1)"}}/>:<span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandIcon} {g.brandLabel}</span>;})()}<span style={{background:"rgba(255,255,255,.25)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"#FFD800",borderRadius:12,padding:"2px 10px",color:"#f8fafc",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
+              <div style={{background:g.brandColor,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={190} height={46} style={{height:40,width:"auto",maxWidth:180,objectFit:"contain",filter:"brightness(0) invert(1)"}}/>:<span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandIcon} {g.brandLabel}</span>;})()}<span style={{background:"rgba(255,255,255,.25)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"#FFD800",borderRadius:12,padding:"2px 10px",color:"#f8fafc",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={()=>g.isCurrent?setShowCart(false):editCG(gi)} style={{background:"rgba(255,255,255,.25)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>✏️ Modifica</button>
                   {!g.isCurrent&&<button onClick={()=>rmCG(gi)} style={{background:"rgba(255,0,0,.25)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:600}}>✕ Rimuovi</button>}
@@ -5391,6 +5400,12 @@ select.rvIn{cursor:pointer}
             <div style={{flex:1,background:"rgba(255,255,255,.12)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{tCI}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:9}}>PRODOTTI</div></div>
             <div style={{flex:1,background:"rgba(255,255,255,.12)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{margItems.length}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:9}}>P&M</div></div>
           </div>
+          {/* il contatore piu' bello: i SOLDONI del carrello (Luca 03/08) */}
+          {(()=>{const val=margItems.reduce((t,m)=>t+(Number(m.importo)||0)*(Number(m.qty)||1),0);return (
+            <div style={{marginTop:8,background:"rgba(255,255,255,.16)",border:"1px solid rgba(255,255,255,.25)",borderRadius:10,padding:"9px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{color:"rgba(255,255,255,.75)",fontSize:11,fontWeight:800,letterSpacing:.6}}>💰 VALORE CARRELLO</span>
+              <span style={{color:"#fff",fontWeight:900,fontSize:21}}>€ {val.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            </div>);})()}
         </div>
         <div style={{padding:14,flex:1}}>
           {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].length===0&&margItems.length===0?(
@@ -5399,7 +5414,7 @@ select.rvIn{cursor:pointer}
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].map((g,gi)=>(
                 <div key={gi} onClick={()=>setExpR(p=>({...p,["g"+gi]:!p["g"+gi]}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid "+(g.brandColor||"#64748b"),borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:6}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={96} height={24} style={{height:20,width:"auto",maxWidth:92,objectFit:"contain"}}/>:<span style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{g.brandIcon} {g.brandLabel}</span>;})()}{g.isCurrent?<span style={{color:"#FFD800",fontWeight:900}}>•</span>:null}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"#64748b"}}>{g.items.length} {expR["g"+gi]?"▾":"▸"}</div></div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:6}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={130} height={32} style={{height:27,width:"auto",maxWidth:125,objectFit:"contain"}}/>:<span style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{g.brandIcon} {g.brandLabel}</span>;})()}{g.isCurrent?<span style={{color:"#FFD800",fontWeight:900}}>•</span>:null}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"#64748b"}}>{g.items.length} {expR["g"+gi]?"▾":"▸"}</div></div>
                   {!expR["g"+gi]&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>}
                   {expR["g"+gi]&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                     {g.items.map((it,ii)=>{const det=it.details||{};const off=det["Offerta Mobile"]||det.offerta||det["Offerta"]||"";return (
@@ -5489,7 +5504,7 @@ select.rvIn{cursor:pointer}
       {vistaStep==="brand"&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:20,marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
-          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(b.id===brand){setVistaStep("cliente");return;}_pickBrand(b);setVistaStep("cliente");}} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid rgba(255,255,255,0.06)",background:b.id===brand?b.color+"14":"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="rgba(255,255,255,0.05)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.02)";}}}>
+          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid rgba(255,255,255,0.06)",background:b.id===brand?b.color+"14":"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="rgba(255,255,255,0.05)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.02)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
             {(()=>{const nBr=(cart.find(g=>g.brandId===b.id)?.items.length)||0;return nBr>0?<span style={{position:"absolute",top:8,right:8,background:b.color,color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800,zIndex:3}}>{nBr}</span>:null;})()}
             {/* SOLO il logo, grande (Luca 03/08): il nome del brand e' gia' nel logo */}
@@ -5590,8 +5605,8 @@ select.rvIn{cursor:pointer}
         </div>
       </div>}
 
-      {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6")}}>
-        <div style={{fontSize:11,fontWeight:700,color:brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6",marginBottom:14,textTransform:"uppercase"}}>📂 Prodotti e Contratto</div>
+      {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+bC}}>
+        <div style={{fontSize:11,fontWeight:700,color:bC,marginBottom:14,textTransform:"uppercase"}}>📂 Prodotti e Contratto</div>
         <div style={{background:"rgba(0,114,198,0.10)",borderRadius:8,padding:10,marginBottom:14,display:"flex",alignItems:"center",gap:12,border:"1px solid rgba(255,255,255,0.12)",flexWrap:"wrap"}}>
           <span style={{fontSize:10,fontWeight:800,color:"#8892b0",textTransform:"uppercase",letterSpacing:.8}}>Codice inserimento</span>
           {/* RIQUADRI negozio a selezione SINGOLA (Luca 03/08): via la tendina
