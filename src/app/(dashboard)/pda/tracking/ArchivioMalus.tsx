@@ -10,7 +10,7 @@
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { SelectPersona } from "@/components/SelectPersona";
-import { getCat } from "./trackingHelpers";
+import { getCat, regolaDi, fermaMalus } from "./trackingHelpers";
 import { type EpisodioMalus, totaliEpisodi, formatDataIt } from "./malusStorico";
 
 export function StatoEpisodioBadge({ ep }: { ep: EpisodioMalus }) {
@@ -130,8 +130,20 @@ export function ArchivioMalus({
     onAggiornato({ ...ep, ...(patch as Partial<EpisodioMalus>) } as EpisodioMalus);
   };
 
-  // ELIMINA (Luca 03/08, mig. 150): tombstone, NON delete — la ricostruzione
-  // deterministica rifarebbe nascere la riga al prossimo giro di sync.
+  // ELIMINA (Luca 03/08, mig. 150 + raffinamento sera): tombstone, NON delete
+  // — la ricostruzione deterministica rifarebbe nascere la riga. E la PRATICA
+  // non si tocca: se NON e' in stato definitivo, il contatore riparte e la
+  // pratica torna SUBITO in WARNING (evento in storia retrodatato di
+  // soglia_warning giorni lavorativi: il venditore la vede e la lavora, e il
+  // malus rimatura solo se resta ferma di nuovo). Se e' definitiva, si chiude
+  // cosi', senza malus.
+  const _sottraiLavorativi = (da: Date, n: number) => {
+    const d = new Date(da); d.setHours(12, 0, 0, 0);
+    let resta = n;
+    while (resta > 0) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0) resta--; }
+    return d;
+  };
+  const _isoData = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const elimina = async (ep: EpisodioMalus) => {
     setSalvando(true);
     setErrAzione(null);
@@ -139,9 +151,28 @@ export function ArchivioMalus({
       eliminato: true, eliminato_il: new Date().toISOString(), eliminato_da: utente,
       updated_at: new Date().toISOString(),
     }).eq("id", ep.id);
+    if (error) { setSalvando(false); setEliminaId(null); setErrAzione(error.message); return; }
+    try {
+      const { data: pr } = await supabase.from("contracts")
+        .select("stato_negozio, stati_categoria, storia").eq("id", ep.contract_id).maybeSingle();
+      if (pr) {
+        const statoCat = (((pr.stati_categoria || {}) as Record<string, string>)[ep.categoria]) || (pr.stato_negozio as string) || "";
+        if (!fermaMalus(statoCat, ep.categoria)) {
+          const r = regolaDi(ep.categoria);
+          const soglia = (r?.succ_warning ?? r?.senza_warning ?? 0) as number;
+          const evento = {
+            data: _isoData(_sottraiLavorativi(new Date(), soglia)),
+            tipo: "malus_azzerato",
+            testo: "🗑 Malus eliminato dall'amministrazione: contatore azzerato, pratica riportata in WARNING per la lavorazione",
+            utente, ruolo: "admin",
+          };
+          const storia = Array.isArray(pr.storia) ? [...(pr.storia as unknown[]), evento] : [evento];
+          await supabase.from("contracts").update({ storia }).eq("id", ep.contract_id);
+        }
+      }
+    } catch { /* pratica non trovata: il tombstone e' comunque andato */ }
     setSalvando(false);
     setEliminaId(null);
-    if (error) { setErrAzione(error.message); return; }
     onAggiornato({ ...ep, eliminato: true } as EpisodioMalus);
   };
 
@@ -401,7 +432,7 @@ export function ArchivioMalus({
                                       disabled={salvando}
                                       onClick={() => elimina(ep)}
                                       className="px-2 py-1 rounded-md bg-rose-600 text-white text-[11px] font-bold disabled:opacity-40"
-                                      title="Sparisce da archivio, contatori e badge — e non rinasce"
+                                      title="Il malus sparisce (e non rinasce); la pratica NON si tocca: se non è chiusa riparte subito in WARNING, se è chiusa finisce lì"
                                     >
                                       Elimino?
                                     </button>
@@ -418,7 +449,7 @@ export function ArchivioMalus({
                                     type="button"
                                     onClick={() => setEliminaId(ep.id)}
                                     className="px-2 py-1 rounded-md border border-rose-700/60 text-rose-400/90 text-[11px] ml-1.5 hover:bg-rose-600/10"
-                                    title="Elimina il malus (solo admin)"
+                                    title="Elimina il malus (solo admin): contatore azzerato — pratica non chiusa → torna in warning; chiusa → conclusa senza malus"
                                   >
                                     🗑
                                   </button>
