@@ -21,7 +21,8 @@ import {
     FileSignature,
     AlertCircle,
     PhoneCall,
-    FolderInput
+    FolderInput,
+    PenLine
 } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
@@ -174,6 +175,7 @@ function formatDateForDoc(d: Date): string {
 }
 
 import { ImportListino } from "./_importListino";
+import PdfFillEditor from "./_pdfEditor";
 
 export default function DocumentazionePage() {
     const [view, setView] = useState<{ brandId: string | null; catId: string | null }>({ brandId: null, catId: null });
@@ -343,6 +345,8 @@ export default function DocumentazionePage() {
 
     const [previewDoc, setPreviewDoc] = useState<DocEntry | null>(null);
     const [fillDoc, setFillDoc] = useState<DocEntry | null>(null);
+    // Editor PDF in-app (Francesco 03/08): compila a video il modulo e stampa.
+    const [editorDoc, setEditorDoc] = useState<DocEntry | null>(null);
     const [showUpload, setShowUpload] = useState(false);
     const [adminAct, setAdminAct] = useState<{ doc: DocEntry; action: string } | null>(null);
 
@@ -762,6 +766,16 @@ export default function DocumentazionePage() {
                                                             title={doc.file_path ? "Scarica" : "Nessun file"}
                                                         >
                                                             <Download className="w-4 h-4" />
+                                                        </button>
+                                                        {/* Compila a video (Francesco 03/08): apre l'editor PDF in-app
+                                                            per riempire il modulo e stamparlo pronto da firmare. */}
+                                                        <button
+                                                            onClick={() => doc.file_path && setEditorDoc(doc)}
+                                                            disabled={!doc.file_path}
+                                                            className="p-1.5 hover:bg-indigo-500/20 rounded-lg text-slate-300 hover:text-indigo-300 transition-colors tooltip-trigger disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            title={doc.file_path ? "Compila e stampa" : "Nessun file"}
+                                                        >
+                                                            <PenLine className="w-4 h-4" />
                                                         </button>
                                                         {doc.fillable && (
                                                             <button
@@ -1190,6 +1204,15 @@ export default function DocumentazionePage() {
 
             {showImportListino && brand && puoListini && (
                 <ImportListino brandId={brand.id} brandName={brand.name} gestore={user?.name || ""} onClose={() => setShowImportListino(false)} />
+            )}
+
+            {/* Editor PDF in-app: compila il modulo a video e stampa (Francesco 03/08) */}
+            {editorDoc && editorDoc.file_path && (
+                <PdfFillEditor
+                    url={getDocPublicUrl(editorDoc.file_path)}
+                    name={editorDoc.name}
+                    onClose={() => setEditorDoc(null)}
+                />
             )}
         </div>
     );
