@@ -4134,6 +4134,7 @@ export default function CRM() {
   const chiudiMargSave=()=>{setShowMargSave(false);setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);};
   const [margItems,setMargItems]=useState([]);
   const [expR,setExpR]=useState({}); // riepilogo destro: gruppi esplosi/chiusi
+  const [cambioBrand,setCambioBrand]=useState(false); // fisarmonica Step 1 (revamp 03/08)
   // Step 7 — nota e promemoria (segnalazione 21)
   const [notaOn,setNotaOn]=useState(false);
   const [nota,setNota]=useState("");
@@ -4440,6 +4441,10 @@ export default function CRM() {
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
   const rmCG=idx=>setCart(p=>p.filter((_,i)=>i!==idx));
+  // SCELTA/CAMBIO BRAND (estratta per il pannello "cambia brand", revamp 03/08):
+  // stessa logica storica — conferma se c'e' lavoro fuori carrello, ripresa
+  // del gruppo dal carrello se il brand c'era gia'.
+  const _pickBrand=(b)=>{if(!b.ready)return;if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
   const fullReset=()=>{setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
@@ -5114,7 +5119,13 @@ export default function CRM() {
         {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#28a745",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
         <div style={{background:"linear-gradient(135deg,#1e293b,#16213e,#0f3460)",borderRadius:16,padding:"24px 28px",marginBottom:20}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div><div style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"rgba(255,255,255,.6)",fontSize:13}}>{onlyMarg?"Riepilogo vendite 💰":((tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale)+" - Riepilogo vendite 💰")}</div></div>
+            <div><div style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"rgba(255,255,255,.6)",fontSize:13}}>{onlyMarg?"Riepilogo vendite 💰":((tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale)+" - Riepilogo vendite 💰")}</div>
+              {!onlyMarg&&(ana.cf||ana.email||ana.iban)&&<div style={{marginTop:4,display:"flex",gap:12,flexWrap:"wrap"}}>
+                {ana.cf&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)",fontFamily:"monospace"}}>🪪 {ana.cf}</span>}
+                {ana.email&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)"}}>✉️ {ana.email}</span>}
+                {ana.iban&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)",fontFamily:"monospace"}}>🏦 {ana.iban}</span>}
+              </div>}
+            </div>
             <div style={{display:"flex",gap:8}}>
               <div style={{background:"rgba(255,255,255,.15)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:22}}>{allG.length}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>BRAND</div></div>
               <div style={{background:"rgba(255,255,255,.15)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:22}}>{tp}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>PRODOTTI</div></div>
@@ -5348,6 +5359,12 @@ export default function CRM() {
         <div style={{background:bG,borderRadius:"14px 14px 0 0",padding:"16px 18px"}}>
           <div style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
           <div style={{color:"rgba(255,255,255,.6)",fontSize:11,marginTop:2}}>{(tipoCliente==="privato"?(ana.nome+" "+ana.cognome).trim():ana.ragioneSociale)||"In compilazione"}</div>
+          {/* dati chiave del cliente SOTTO il nome (Luca 03/08): solo se compilati nello Step 3 */}
+          {(ana.cf||ana.email||ana.iban)&&<div style={{marginTop:7,display:"flex",flexDirection:"column",gap:3}}>
+            {ana.cf&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)",fontFamily:"monospace",letterSpacing:.5}}>🪪 {ana.cf}</div>}
+            {ana.email&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)"}}>✉️ {ana.email}</div>}
+            {ana.iban&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)",fontFamily:"monospace",letterSpacing:.5}}>🏦 {ana.iban}</div>}
+          </div>}
           <div style={{display:"flex",gap:8,marginTop:12}}>
             <div style={{flex:1,background:"rgba(255,255,255,.12)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{cart.length+(colItems().length>0?1:0)}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:9}}>BRAND</div></div>
             <div style={{flex:1,background:"rgba(255,255,255,.12)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{tCI}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:9}}>PRODOTTI</div></div>
@@ -5406,8 +5423,17 @@ export default function CRM() {
         </div>
       </div>
 
-      <div style={{display:"flex",gap:3,marginBottom:16}}>
-        {["Brand","Tipo Cliente","Anagrafica","Prodotti","Allegati","Attribuzione","Note"].map((st,i)=>{const ss=gSS(i);const clk=ss==="done";return <div key={i} onClick={()=>{if(clk){if(i<=2){setShowAna(true);setShowStep4(false);}else{setShowStep4(true);}}}} style={{flex:1,textAlign:"center",padding:"9px 2px",borderRadius:6,fontSize:11,fontWeight:700,background:ss==="active"?bC:ss==="done"?"#28a745":"#e9ecef",color:ss==="pending"?"#64748b":"#fff",cursor:clk?"pointer":"default",transition:"transform .1s"}}>{ss==="done"?"✓ ":""}{st}</div>;})}
+      {/* STEPPER (revamp 03/08): pillole sul tema scuro del CRM — attiva col
+          colore brand, fatte in verde bordato, future spente; le fatte si
+          cliccano per tornare indietro (fisarmonica sotto). */}
+      <div style={{display:"flex",gap:4,marginBottom:16}}>
+        {["Brand","Tipo Cliente","Anagrafica","Prodotti","Allegati","Attribuzione","Note"].map((st,i)=>{const ss=gSS(i);const clk=ss==="done";return <div key={i} onClick={()=>{if(clk){if(i<=2){setShowAna(true);setShowStep4(false);}else{setShowStep4(true);}}}}
+          style={{flex:1,textAlign:"center",padding:"9px 2px",borderRadius:8,fontSize:11,fontWeight:700,
+            background:ss==="active"?bC:ss==="done"?"rgba(40,167,69,0.15)":"rgba(255,255,255,0.04)",
+            border:ss==="active"?"1px solid "+bC:ss==="done"?"1px solid rgba(40,167,69,0.5)":"1px solid rgba(255,255,255,0.07)",
+            color:ss==="active"?"#fff":ss==="done"?"#4ade80":"#64748b",
+            cursor:clk?"pointer":"default",transition:"all .15s"}}
+          title={clk?"Torna a questo step":undefined}>{ss==="done"?"✓ ":""}{st}</div>;})}
       </div>
 
       {(cart.length>0||margItems.length>0)&&<div onClick={()=>setShowCart(true)} style={{background:"linear-gradient(90deg,#1e293b,#16213e)",borderRadius:10,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>🛒</span><span style={{color:"#fff",fontSize:12,fontWeight:600}}>Carrello:</span>{cart.map((g,i)=><span key={i} style={{background:g.brandColor,color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>{g.brandIcon} {g.items.length}</span>)}{margItems.length>0&&<span style={{background:"#6f42c1",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>📦 {margItems.length}</span>}</div><span style={{color:"rgba(255,255,255,.5)",fontSize:11}}>Vedi →</span></div>}
@@ -5415,7 +5441,7 @@ export default function CRM() {
       {!brand?<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:20,marginBottom:10}}>
         <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Step 1 — Brand</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}}} style={{padding:16,borderRadius:12,border:"2px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden"}}>
+          {BRANDS.map(b=><button key={b.id} onClick={()=>_pickBrand(b)} style={{padding:16,borderRadius:12,border:"2px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden"}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:56,marginBottom:12}}>{b.logo?<Image src={b.logo} alt={b.label} width={180} height={56} style={{height:56,width:"auto",maxWidth:"85%",objectFit:"contain"}}/>:<span style={{fontSize:36}}>{b.icon}</span>}</div><div style={{fontWeight:800,fontSize:15,color:b.color}}>{b.label}</div><div style={{fontSize:10,color:"#64748b",marginTop:3}}>{b.desc}</div>
           </button>)}
@@ -5428,7 +5454,13 @@ export default function CRM() {
             <div style={{fontSize:10,color:"#9b59b6",marginTop:3}}>Vendite prodotti senza attivazione brand</div>
           </button>
         </div>
-      </div>:<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 1</span><span style={{fontSize:13,fontWeight:600}}>Brand: <span style={{color:bObj.color}}>{bObj.icon} {bObj.label}{tipoCliente==="business"?" Business":""}</span></span></div>}
+      </div>:<div onClick={()=>setCambioBrand(v=>!v)} title="Apri per cambiare brand (il lavoro nel carrello resta)" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 1</span><span style={{fontSize:13,fontWeight:600}}>Brand: <span style={{color:bObj.color}}>{bObj.icon} {bObj.label}{tipoCliente==="business"?" Business":""}</span></span><span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:"#8892b0"}}>{cambioBrand?"▴ chiudi":"✏️ cambia"}</span></div>}
+      {brand&&cambioBrand&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,border:"1px dashed rgba(255,255,255,0.12)"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:12,textTransform:"uppercase"}}>Cambia brand — quello attuale resta nel carrello se già aggiunto</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:8}}>
+          {BRANDS.filter(b=>b.ready&&b.id!==brand).map(b=><button key={b.id} onClick={()=>{setCambioBrand(false);_pickBrand(b);}} disabled={turista&&b.id!=="windtre"} style={{padding:"10px 8px",borderRadius:10,border:"2px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",cursor:"pointer",textAlign:"center",opacity:turista&&b.id!=="windtre"?0.35:1}}><div style={{fontSize:18}}>{b.icon}</div><div style={{fontSize:11,fontWeight:700,color:b.color,marginTop:2}}>{b.label}</div></button>)}
+        </div>
+      </div>}
 
       {brand&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #6f42c1"}}>
         <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:12,textTransform:"uppercase"}}>Step 2 — Tipo Cliente</div>
@@ -5477,6 +5509,20 @@ export default function CRM() {
         </div>}
       </div>}
 
+      {brand&&showStep4&&tipoCliente&&<div onClick={()=>{setShowAna(true);setShowStep4(false);}} title="Riapri tipo cliente e ricerca" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+        <span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 2</span>
+        <span style={{fontSize:13,fontWeight:600}}>Cliente: <span style={{color:"#a78bfa"}}>{tipoCliente==="privato"?"👤 Privato":"🏢 Business"}</span>{turista?" · 🌍 turista":""}{clienteFound?" · in anagrafica":""}</span>
+        <span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:"#8892b0"}}>✏️ modifica</span>
+      </div>}
+      {showAna&&showStep4&&<div onClick={()=>{setShowAna(true);setShowStep4(false);}} title="Riapri l'anagrafica per correggerla" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10,cursor:"pointer",flexWrap:"wrap"}}>
+        <span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 3</span>
+        <span style={{fontSize:13,fontWeight:600}}>{(tipoCliente==="privato"?`${ana.nome} ${ana.cognome}`.trim():ana.ragioneSociale)||"Anagrafica"}</span>
+        {ana.cf&&<span style={{fontSize:11,color:"#8892b0",fontFamily:"monospace"}}>🪪 {ana.cf}</span>}
+        {ana.cellulare&&<span style={{fontSize:11,color:"#8892b0"}}>📱 {ana.cellulare}</span>}
+        {ana.email&&<span style={{fontSize:11,color:"#8892b0"}}>✉️ {ana.email}</span>}
+        {ana.iban&&<span style={{fontSize:11,color:"#8892b0",fontFamily:"monospace"}}>🏦 {ana.iban}</span>}
+        <span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:"#8892b0"}}>✏️ modifica</span>
+      </div>}
       {showAna&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #1B3A5C"}}>
         <div style={{fontSize:11,fontWeight:700,color:"#1B3A5C",marginBottom:14,textTransform:"uppercase"}}>📝 Step 3 — Anagrafica</div>
         {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/>{!turista&&<TF l="Codice Fiscale" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501Z" pf={clienteFound&&!!ana.cf}/>}<TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div>{turista&&<p style={{marginTop:10,fontSize:12,fontWeight:700,color:"#f59e0b"}}>🌍 Cliente TURISTA — CF non richiesto (consentiti solo WindTre privato: Mobile Wallet e CB, oppure Marginalità)</p>}<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
