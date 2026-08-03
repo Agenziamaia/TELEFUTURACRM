@@ -626,8 +626,8 @@ export default function Comunicazioni() {
                                                         platea; apparse = viste a display; rinviate = "Più tardi"
                                                         senza ancora una conferma (mig. 141) */}
                                                     {(() => { const dest = destinatariDi(com); return dest == null ? "" : `📤 ${dest} inviat${dest === 1 ? "a" : "e"} · `; })()}
-                                                    {isPopup
-                                                        ? `👁 ${cnt.letture} appars${cnt.letture === 1 ? "a" : "e"} · ✓ ${cnt.conferme} confermat${cnt.conferme === 1 ? "a" : "e"} · ⏰ ${cnt.rinviate} rinviat${cnt.rinviate === 1 ? "a" : "e"}`
+                                                    {isPopup || com.esiti?.length
+                                                        ? `👁 ${cnt.letture} ${isPopup ? (cnt.letture === 1 ? "apparsa" : "apparse") : (cnt.letture === 1 ? "lettura" : "letture")} · ✓ ${cnt.conferme} confermat${cnt.conferme === 1 ? "a" : "e"}${isPopup ? ` · ⏰ ${cnt.rinviate} rinviat${cnt.rinviate === 1 ? "a" : "e"}` : ""}`
                                                         : `${cnt.letture} lettur${cnt.letture === 1 ? "a" : "e"}`}
                                                     <span className="text-[10px]">{espansa === com.id ? "▲" : "▼"}</span>
                                                 </button>

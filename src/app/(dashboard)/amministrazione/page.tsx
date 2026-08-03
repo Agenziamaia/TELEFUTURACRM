@@ -85,6 +85,7 @@ import {
 interface AppUser {
     id: string;
     full_name: string;
+    nome_riservato?: string | null;   // nome vero dietro l'alias (mig. 142) — solo amministrazione
     match_name: string | null;
     email: string | null;
     pec: string | null;
@@ -1219,6 +1220,31 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
         if (error) { alert("Cambio stato NON riuscito: " + error.message); return; }
         onStatoCambiato?.();
     };
+    // ── ALIAS (mig. 142, 03/08): l'alias diventa l'UNICO nome del gestionale
+    //    (applica_alias sostituisce il nome in ogni colonna testo/jsonb);
+    //    il nome vero resta in nome_riservato, visibile solo qui.
+    const [aliasNuovo, setAliasNuovo] = useState("");
+    const [aliasBusy, setAliasBusy] = useState(false);
+    const applicaAlias = async () => {
+        const a = aliasNuovo.trim();
+        if (!a || aliasBusy) return;
+        if (!window.confirm(`Applicare l'alias "${a}" a ${u.full_name}?
+
+Da questo momento in TUTTO il gestionale (vendite, ferie, storici, comunicazioni…) esisterà solo "${a}". Il nome attuale resterà visibile SOLO all'amministrazione, in questa scheda.`)) return;
+        setAliasBusy(true);
+        const { data, error } = await supabase.rpc("applica_alias", { p_user_id: u.id, p_alias: a });
+        setAliasBusy(false);
+        if (error) { alert("Alias NON applicato: " + error.message); return; }
+        const toccate = data && typeof data === "object" ? Object.entries(data as Record<string, unknown>).map(([k, v]) => `${k}: ${v}`).join("\n") : "";
+        alert(`Alias applicato ✓
+
+Righe aggiornate:
+${toccate || "—"}
+
+La persona vedrà il nuovo nome dal prossimo accesso.`);
+        setAliasNuovo("");
+        onStatoCambiato?.();
+    };
     const detailRules = useRoleCosts();
     const matchName = u.match_name || u.full_name;
     const area = areaOf(u.role);
@@ -1495,6 +1521,19 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
                                     <p className="text-sm text-slate-300">{u.note}</p>
                                 </div>
                             )}
+
+                            {/* ── ALIAS privacy (mig. 142): nome riservato SOLO qui ── */}
+                            <div className="glass-card p-4 rounded-xl space-y-2">
+                                <p className="text-xs text-slate-500 uppercase tracking-widest font-bold">Alias (privacy)</p>
+                                {u.nome_riservato && (
+                                    <p className="text-sm text-slate-300">🔒 Nome riservato: <b className="text-white">{u.nome_riservato}</b> <span className="text-xs text-slate-500">— nel gestionale esiste solo «{u.full_name}»</span></p>
+                                )}
+                                <div className="flex gap-2">
+                                    <input value={aliasNuovo} onChange={(e) => setAliasNuovo(e.target.value)} placeholder={u.nome_riservato ? "Nuovo alias…" : "Nome scelto dalla persona"} className="glass-input flex-1 text-sm rounded-lg py-2" />
+                                    <button onClick={applicaAlias} disabled={aliasBusy || !aliasNuovo.trim()} className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold disabled:opacity-40 whitespace-nowrap">{aliasBusy ? "Applico…" : "Applica ovunque"}</button>
+                                </div>
+                                <p className="text-[11px] text-slate-600">L&apos;alias sostituisce il nome in OGNI sezione (vendite, ferie, storici, comunicazioni…); il nome precedente resta visibile solo all&apos;amministrazione, qui.</p>
+                            </div>
 
                             {/* pulsantone LICENZIA / RIASSUMI sotto i dati (Luca 31/07) */}
                             <div className="glass-card p-4 rounded-xl">

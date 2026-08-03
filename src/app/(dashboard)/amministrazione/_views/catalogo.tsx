@@ -371,43 +371,62 @@ export function CatalogoView() {
                     <b className="text-slate-300"> Mai eliminare un campo usato in passato: si nasconde.</b>
                 </p>
                 {!inEdit ? (
-                    <div className="flex flex-wrap gap-1.5">
-                        {righe.length === 0 && <p className="text-sm text-slate-600 py-2">Nessun campo per questa offerta: “Personalizza” per aggiungerne.</p>}
+                    <div className="divide-y divide-white/5 rounded-xl border border-white/10 overflow-hidden">
+                        {righe.length === 0 && <p className="text-sm text-slate-600 p-4">Nessun campo per questa offerta: “Personalizza” per aggiungerne.</p>}
                         {righe.map((c, i) => (
-                            <span key={i} className={cn("inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg border", c.attivo === false ? "border-white/5 text-slate-600 line-through" : "border-white/10 bg-white/[0.04] text-slate-200")}>
-                                {c.fonte === "offerta" ? <i className="not-italic" title="Campo della regola dedicata a questa offerta">🎯</i> : <i className="not-italic opacity-60" title="Campo ereditato dalle regole generali">📐</i>}
-                                {c.nome}
-                                <i className="not-italic text-[9px] uppercase text-slate-500">{c.tipo}</i>
-                                {c.facoltativo ? <i className="not-italic text-[9px] uppercase px-1 rounded bg-white/10 text-slate-400">facolt.</i> : <i className="not-italic text-[9px] uppercase px-1 rounded bg-amber-500/20 text-amber-300">obblig.</i>}
-                                {c.attivo === false && <i className="not-italic text-[9px] uppercase text-slate-500">nascosto</i>}
-                            </span>
+                            <div key={i} className={cn("flex items-center gap-3 flex-wrap px-4 py-3 bg-white/[0.02]", c.attivo === false && "opacity-50")}>
+                                <span className="text-base" title={c.fonte === "offerta" ? "Campo della regola dedicata a questa offerta" : "Campo ereditato dalle regole generali"}>{c.fonte === "offerta" ? "🎯" : "📐"}</span>
+                                <span className={cn("text-sm font-semibold", c.attivo === false ? "text-slate-500 line-through" : "text-white")}>{c.nome}</span>
+                                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400">{c.tipo}</span>
+                                {c.facoltativo
+                                    ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/10 text-slate-400">facoltativo</span>
+                                    : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">obbligatorio</span>}
+                                {c.attivo === false && <span className="text-[10px] font-bold uppercase text-slate-500">nascosto</span>}
+                                {c.nota && <span className="text-xs text-slate-500 italic ml-auto">{c.nota}</span>}
+                            </div>
                         ))}
                     </div>
                 ) : (
-                    <div className="space-y-1.5">
+                    <div className="space-y-2.5">
                         {righe.map((c, i) => (
-                            <div key={i} className={cn("flex items-center gap-1.5 flex-wrap", c.attivo === false && "opacity-50")}>
-                                <span className="text-sm w-5 text-center" title={c.fonte === "generale" ? "Ereditato dalle regole generali" : c.fonte === "nuovo" ? "Nuovo campo" : "Della regola di questa offerta"}>{c.fonte === "generale" ? "📐" : c.fonte === "nuovo" ? "✳️" : "🎯"}</span>
-                                <input value={c.nome} onChange={(e) => upCampoOff(i, { nome: e.target.value })} placeholder="Nome campo" className="glass-input text-xs rounded-lg py-1.5 px-2 flex-1 min-w-[160px]" />
-                                <select value={c.tipo} onChange={(e) => upCampoOff(i, { tipo: e.target.value })} className="glass-input text-xs rounded-lg py-1.5 px-2">
-                                    {TIPI_CAMPO.map((t) => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                                <input value={c.nota} onChange={(e) => upCampoOff(i, { nota: e.target.value })} placeholder="nota (es. 19 cifre)" className="glass-input text-xs rounded-lg py-1.5 px-2 w-40" />
-                                <button title={c.facoltativo ? "FACOLTATIVO — clicca per renderlo obbligatorio" : "OBBLIGATORIO — clicca per renderlo facoltativo"}
-                                    onClick={() => upCampoOff(i, { facoltativo: !c.facoltativo })}
-                                    className={cn("px-1.5 py-1 rounded text-[9px] font-bold uppercase", c.facoltativo ? "bg-white/5 text-slate-400" : "bg-amber-500/20 text-amber-300")}>
-                                    {c.facoltativo ? "facolt." : "obblig."}
-                                </button>
-                                {c.fonte === "nuovo" ? (
-                                    <button title="Togli questo campo appena aggiunto" onClick={() => setCampiOff((p) => p ? p.filter((_, x) => x !== i) : p)} className="p-1 rounded text-rose-400/70 hover:text-rose-300"><X className="w-3.5 h-3.5" /></button>
-                                ) : (
-                                    <button title={c.attivo === false ? "Nascosto per questa offerta — clicca per rimetterlo" : "Togli per questa offerta (si nasconde: i dati storici restano)"}
-                                        onClick={() => upCampoOff(i, { attivo: c.attivo === false ? true : false })} className="text-sm">{c.attivo === false ? "🙈" : "👁"}</button>
-                                )}
+                            <div key={i} className={cn("rounded-xl border border-white/10 bg-white/[0.02] p-3.5", c.attivo === false && "opacity-50")}>
+                                <div className="flex items-center gap-3 flex-wrap">
+                                    <span className="text-lg" title={c.fonte === "generale" ? "Ereditato dalle regole generali" : c.fonte === "nuovo" ? "Nuovo campo" : "Della regola di questa offerta"}>{c.fonte === "generale" ? "📐" : c.fonte === "nuovo" ? "✳️" : "🎯"}</span>
+                                    <div className="flex-1 min-w-[240px]">
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nome campo</p>
+                                        <input value={c.nome} onChange={(e) => upCampoOff(i, { nome: e.target.value })} placeholder="Es. ICCID" className="glass-input text-sm rounded-lg py-2.5 px-3 w-full" />
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Tipo</p>
+                                        <select value={c.tipo} onChange={(e) => upCampoOff(i, { tipo: e.target.value })} className="glass-input text-sm rounded-lg py-2.5 px-3">
+                                            {TIPI_CAMPO.map((t) => <option key={t} value={t}>{t}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="flex-1 min-w-[220px]">
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nota per il venditore</p>
+                                        <input value={c.nota} onChange={(e) => upCampoOff(i, { nota: e.target.value })} placeholder="Es. 19 cifre" className="glass-input text-sm rounded-lg py-2.5 px-3 w-full" />
+                                    </div>
+                                    <div className="flex items-center gap-2 pt-4">
+                                        <button title={c.facoltativo ? "FACOLTATIVO — clicca per renderlo obbligatorio" : "OBBLIGATORIO — clicca per renderlo facoltativo"}
+                                            onClick={() => upCampoOff(i, { facoltativo: !c.facoltativo })}
+                                            className={cn("px-3 py-2 rounded-lg text-xs font-bold uppercase", c.facoltativo ? "bg-white/5 text-slate-400 border border-white/10" : "bg-amber-500/20 text-amber-300 border border-amber-500/40")}>
+                                            {c.facoltativo ? "Facoltativo" : "Obbligatorio"}
+                                        </button>
+                                        {c.fonte === "nuovo" ? (
+                                            <button title="Togli questo campo appena aggiunto" onClick={() => setCampiOff((p) => p ? p.filter((_, x) => x !== i) : p)} className="px-3 py-2 rounded-lg text-xs font-bold bg-rose-500/10 border border-rose-500/40 text-rose-300 hover:bg-rose-500/20">✕ Togli</button>
+                                        ) : (
+                                            <button title={c.attivo === false ? "Nascosto per questa offerta — clicca per rimetterlo" : "Togli per questa offerta (si nasconde: i dati storici restano)"}
+                                                onClick={() => upCampoOff(i, { attivo: c.attivo === false ? true : false })}
+                                                className={cn("px-3 py-2 rounded-lg text-xs font-bold border", c.attivo === false ? "bg-white/5 border-white/10 text-slate-400" : "bg-rose-500/10 border-rose-500/40 text-rose-300 hover:bg-rose-500/20")}>
+                                                {c.attivo === false ? "🙈 Nascosto — ripristina" : "🗑 Togli (nascondi)"}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         ))}
                         <button onClick={() => setCampiOff((p) => [...(p || []), { nome: "", tipo: "testo", nota: "", conferma: false, attivo: true, fonte: "nuovo" }])}
-                            className="mt-1 flex items-center gap-1 text-xs font-bold text-violet-300 hover:text-white"><Plus className="w-3.5 h-3.5" /> Aggiungi campo</button>
+                            className="mt-1 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold"><Plus className="w-4 h-4" /> Aggiungi campo</button>
                     </div>
                 )}
             </div>

@@ -1,8 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { SelectPersona } from "@/components/SelectPersona";
-import { Suspense, useState, useEffect, useCallback } from "react";
+import { SelectPersona, SelectMulti } from "@/components/SelectPersona";
+import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2, Pencil } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
@@ -109,7 +109,6 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const [meseCal, setMeseCal] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
     const [rifiutoId, setRifiutoId] = useState<number | null>(null);
     const [rifiutoNota, setRifiutoNota] = useState("");
-    const [qPersona, setQPersona] = useState("");   // ricerca a scrittura nel filtro persone
     const canDeleteRow = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
     // REGISTRAZIONE DIRETTA col "+" (03/08, dall'amministrativo in su): ferie
     // gia' concordate per altre vie (a voce, telefono…) entrano nel registro
@@ -153,6 +152,35 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
         const { data } = await supabase.from("vacation_requests").select("*").order("created_at", { ascending: false });
         setRequests((data ?? []) as VacationRequest[]);
     }, []);
+
+    // ── GIORNI FESTIVI (mig. 143, 03/08): i "giorni rossi" — mai contati nei
+    //    giorni effettivi di ferie (come le domeniche, MAI lavorative),
+    //    evidenziati nel calendario, amministrabili dal bottone Festivi.
+    const [festivi, setFestivi] = useState<{ giorno: string; nome: string }[]>([]);
+    const caricaFestivi = useCallback(async () => {
+        const { data } = await supabase.from("giorni_festivi").select("giorno, nome").order("giorno");
+        setFestivi((data ?? []) as { giorno: string; nome: string }[]);
+    }, []);
+    useEffect(() => { caricaFestivi(); }, [caricaFestivi]);
+    const festiviSet = useMemo(() => new Set(festivi.map(f => f.giorno)), [festivi]);
+    const festiviMap = useMemo(() => new Map(festivi.map(f => [f.giorno, f.nome] as [string, string])), [festivi]);
+    const [showFestivi, setShowFestivi] = useState(false);
+    const [nFestivoData, setNFestivoData] = useState("");
+    const [nFestivoNome, setNFestivoNome] = useState("");
+    // giorni EFFETTIVI di una richiesta: esclusi domeniche e festivi
+    const giorniEffettivi = useCallback((r: VacationRequest) => {
+        const conta = (ymd: string) => { const d = new Date(ymd + "T12:00"); return d.getDay() !== 0 && !festiviSet.has(ymd); };
+        if (r.half_day) return conta(r.date_from) ? 0.5 : 0;
+        let n = 0;
+        const d = new Date(r.date_from + "T12:00");
+        const fine = new Date(r.date_to + "T12:00");
+        while (d <= fine) {
+            const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            if (conta(ymd)) n++;
+            d.setDate(d.getDate() + 1);
+        }
+        return n;
+    }, [festiviSet]);
 
     useEffect(() => {
         fetchRequests();
@@ -216,10 +244,6 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
         await fetchRequests();
     };
 
-    const inFerieOggi = requests.filter(r => r.status === "approved" && r.date_from <= new Date().toISOString().slice(0, 10) && r.date_to >= new Date().toISOString().slice(0, 10)).length;
-    const programmate = requests.filter(r => r.status === "approved" && r.date_from > new Date().toISOString().slice(0, 10)).length;
-    const inAttesa = requests.filter(r => r.status === "pending").length;
-
     const filteredRequests = requests.filter(r =>
         (!fPersone.length || fPersone.includes(r.employee_name)) &&
         (!fNegozi.length || fNegozi.includes(r.store)) &&
@@ -227,6 +251,15 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     );
     const persone = [...new Set(requests.map(r => r.employee_name))].sort();
     const negozi = [...new Set(requests.map(r => r.store).filter(Boolean))].sort();
+    // contatori sul FILTRO attivo (03/08): scegliendo persone/negozi/periodo i
+    // numeri seguono; i due nuovi parlano di GIORNI EFFETTIVI (no domeniche/festivi)
+    const oggiYmd = new Date().toISOString().slice(0, 10);
+    const inFerieOggi = filteredRequests.filter(r => r.status === "approved" && r.date_from <= oggiYmd && r.date_to >= oggiYmd).length;
+    const programmate = filteredRequests.filter(r => r.status === "approved" && r.date_from > oggiYmd).length;
+    const inAttesa = filteredRequests.filter(r => r.status === "pending").length;
+    const giorniApprovati = filteredRequests.filter(r => r.status === "approved").reduce((s, r) => s + giorniEffettivi(r), 0);
+    const giorniInAttesa = filteredRequests.filter(r => r.status === "pending").reduce((s, r) => s + giorniEffettivi(r), 0);
+    const fmtGiorni = (n: number) => (Math.round(n * 10) / 10).toLocaleString("it-IT");
 
     const formatDate = (iso: string) => {
         return new Date(iso).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -235,18 +268,37 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {isAdminLike && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="glass-panel p-5 border-l-4 border-l-sky-500">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">In Ferie Oggi</p>
-                        <p className="text-2xl font-black text-white">{inFerieOggi}</p>
-                    </div>
-                    <div className="glass-panel p-5 border-l-4 border-l-emerald-500">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Programmate</p>
-                        <p className="text-2xl font-black text-white">{programmate}</p>
-                    </div>
-                    <div className="glass-panel p-5 border-l-4 border-l-amber-500">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Richieste in Attesa</p>
-                        <p className="text-2xl font-black text-white">{inAttesa}</p>
+                <div className="space-y-2">
+                    {puoRegistrare && (
+                        <div className="flex justify-end">
+                            <button onClick={() => setShowFestivi(true)} title="I giorni rossi considerati nel conteggio dei giorni effettivi (domeniche escluse a prescindere)"
+                                className="px-3 py-1.5 rounded-lg border border-rose-400/40 bg-rose-500/10 text-rose-300 text-[11px] font-bold hover:bg-rose-500/20">
+                                🔴 Festivi considerati ({festivi.length})
+                            </button>
+                        </div>
+                    )}
+                    {/* tessere COMPATTE (03/08) + 2 contatori sui GIORNI effettivi */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div className="glass-panel p-3.5 border-l-4 border-l-sky-500">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">In Ferie Oggi</p>
+                            <p className="text-xl font-black text-white">{inFerieOggi}</p>
+                        </div>
+                        <div className="glass-panel p-3.5 border-l-4 border-l-emerald-500">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Programmate</p>
+                            <p className="text-xl font-black text-white">{programmate}</p>
+                        </div>
+                        <div className="glass-panel p-3.5 border-l-4 border-l-amber-500">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">In Attesa</p>
+                            <p className="text-xl font-black text-white">{inAttesa}</p>
+                        </div>
+                        <div className="glass-panel p-3.5 border-l-4 border-l-indigo-500" title="Somma dei giorni EFFETTIVI delle ferie approvate nel filtro attivo (domeniche e festivi esclusi)">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Giorni approvati</p>
+                            <p className="text-xl font-black text-white">{fmtGiorni(giorniApprovati)}</p>
+                        </div>
+                        <div className="glass-panel p-3.5 border-l-4 border-l-orange-500" title="Somma dei giorni EFFETTIVI delle richieste in attesa nel filtro attivo (domeniche e festivi esclusi)">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">Giorni in attesa</p>
+                            <p className="text-xl font-black text-white">{fmtGiorni(giorniInAttesa)}</p>
+                        </div>
                     </div>
                 </div>
             )}
@@ -353,7 +405,8 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
 
                         {isAdminLike && (
                             <button onClick={() => {
-                                const giorni = (r: VacationRequest) => r.half_day ? 0.5 : (Math.round((new Date(r.date_to).getTime() - new Date(r.date_from).getTime()) / 86400000) + 1);
+                                // giorni EFFETTIVI (03/08): domeniche e festivi non contano
+                                const giorni = giorniEffettivi;
                                 const righe = [["Collaboratore", "Negozio", "Dal", "Al", "Giorni", "Mezza giornata", "Stato", "Motivazione", "Nota amministrazione"].join(";")];
                                 filteredRequests.forEach(r => righe.push([
                                     r.employee_name, r.store, formatDate(r.date_from), formatDate(r.date_to),
@@ -403,45 +456,11 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                 <input type="date" value={fA} onChange={e => setFA(e.target.value)} className="glass-input !h-8 text-xs" />
                                 {(fDa || fA) && <button onClick={() => { setFDa(""); setFA(""); }} className="text-[10px] font-bold text-slate-500 hover:text-white">✕ azzera</button>}
                             </div>
-                            {/* PERSONE: ricerca a scrittura (Luca 29/07 — "saranno tantissime"):
-                                scrivi il nome, lo selezioni, ne scrivi un altro; i selezionati
-                                restano come chip rimovibili. Invio = primo suggerimento. */}
-                            <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest w-16">Persone</span>
-                                <div className="relative">
-                                    <input value={qPersona} onChange={e => setQPersona(e.target.value)}
-                                        onKeyDown={e => {
-                                            if (e.key === "Enter") {
-                                                e.preventDefault();
-                                                const primo = persone.filter(n => !fPersone.includes(n) && n.toLowerCase().includes(qPersona.trim().toLowerCase()))[0];
-                                                if (qPersona.trim() && primo) { setFPersone(p => [...p, primo]); setQPersona(""); }
-                                            }
-                                        }}
-                                        placeholder="Scrivi un nome…" className="glass-input !h-8 text-xs w-44" />
-                                    {qPersona.trim() && (
-                                        <div className="absolute z-40 mt-1 w-56 rounded-lg border border-white/10 bg-[#0f111a] shadow-2xl overflow-hidden">
-                                            {persone.filter(n => !fPersone.includes(n) && n.toLowerCase().includes(qPersona.trim().toLowerCase())).slice(0, 8).map(n => (
-                                                <button key={n} onClick={() => { setFPersone(p => [...p, n]); setQPersona(""); }}
-                                                    className="block w-full text-left px-3 py-1.5 text-xs text-slate-200 hover:bg-indigo-500/15">
-                                                    {n}
-                                                </button>
-                                            ))}
-                                            {persone.filter(n => !fPersone.includes(n) && n.toLowerCase().includes(qPersona.trim().toLowerCase())).length === 0 && (
-                                                <p className="px-3 py-1.5 text-xs text-slate-600">Nessun nome corrispondente</p>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                                {fPersone.map(n => (
-                                    <span key={n} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border border-indigo-400/70 bg-indigo-500/20 text-indigo-100">
-                                        {n}
-                                        <button onClick={() => setFPersone(p => p.filter(x => x !== n))} className="opacity-70 hover:opacity-100">✕</button>
-                                    </span>
-                                ))}
-                                {fPersone.length > 0 && (
-                                    <button onClick={() => setFPersone([])} className="text-[10px] font-bold text-slate-500 hover:text-white uppercase tracking-widest">✕ tutte</button>
-                                )}
-                                {fPersone.length === 0 && <span className="text-[11px] text-slate-600">tutte le persone</span>}
+                            {/* PERSONE: SelectMulti STANDARD (03/08) — allineata alle altre tendine,
+                                multiselezione con chips */}
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest w-16 shrink-0">Persone</span>
+                                <div className="w-80"><SelectMulti values={fPersone} onChange={setFPersone} opzioni={persone} maxVoci={100} placeholder="Tutte — scrivi per filtrare" className="glass-input text-xs rounded-lg py-1.5 w-full" /></div>
                             </div>
                             <div className="flex flex-wrap items-center gap-1.5">
                                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest w-16">Negozi</span>
@@ -460,6 +479,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             richieste={filteredRequests.filter(r => r.status !== "rejected")}
                             mese={meseCal}
                             setMese={setMeseCal}
+                            festivi={festiviMap}
                         />
                     )}
 
@@ -619,6 +639,41 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                 </div>
             )}
 
+            {/* modale FESTIVI (mig. 143): i giorni rossi considerati nel conteggio */}
+            {showFestivi && (
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setShowFestivi(false)}>
+                    <div className="glass-card w-full max-w-lg shadow-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-white">🔴 Giorni festivi considerati</h3>
+                            <button onClick={() => setShowFestivi(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-5 space-y-4 overflow-y-auto">
+                            <p className="text-xs text-slate-500">Questi giorni (più TUTTE le domeniche, mai lavorative) non contano nei giorni effettivi di ferie e sono evidenziati in rosso sul calendario.</p>
+                            <div className="divide-y divide-white/5 rounded-xl border border-white/10 overflow-hidden">
+                                {festivi.map(f => (
+                                    <div key={f.giorno} className="flex items-center gap-3 px-4 py-2.5 bg-white/[0.02] text-sm">
+                                        <span className="font-mono text-rose-300">{f.giorno.split("-").reverse().join("/")}</span>
+                                        <span className="text-slate-200">{f.nome || "—"}</span>
+                                        <button onClick={async () => { if (!window.confirm(`Togliere "${f.nome}" (${f.giorno.split("-").reverse().join("/")}) dai festivi?`)) return; await supabase.from("giorni_festivi").delete().eq("giorno", f.giorno); await caricaFestivi(); }}
+                                            title="Togli dai festivi" className="ml-auto p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button>
+                                    </div>
+                                ))}
+                                {festivi.length === 0 && <p className="p-4 text-sm text-slate-500">Nessun festivo censito.</p>}
+                            </div>
+                            <div className="rounded-xl border border-white/10 p-3.5 space-y-2">
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Aggiungi un festivo</p>
+                                <div className="flex gap-2 flex-wrap">
+                                    <input type="date" value={nFestivoData} onChange={e => setNFestivoData(e.target.value)} className="glass-input !h-10 text-xs" />
+                                    <input value={nFestivoNome} onChange={e => setNFestivoNome(e.target.value)} placeholder="Nome (es. Patrono)" className="glass-input !h-10 text-xs flex-1 min-w-[160px]" />
+                                    <button onClick={async () => { if (!nFestivoData) return; const { error } = await supabase.from("giorni_festivi").upsert({ giorno: nFestivoData, nome: nFestivoNome.trim() || "Festivo" }); if (error) { alert("Non aggiunto: " + error.message); return; } setNFestivoData(""); setNFestivoNome(""); await caricaFestivi(); }}
+                                        disabled={!nFestivoData} className="px-4 h-10 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold disabled:opacity-40">Aggiungi</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* modale NOTA DI RIFIUTO: il collaboratore la vedrà sulla sua riga */}
             {rifiutoId != null && (
                 <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setRifiutoId(null)}>
@@ -647,7 +702,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
 /* ── CALENDARIO FERIE dedicato (Luca 29/07) — per chi approva: mese navigabile
    con i periodi APPROVATI (verde) e IN ATTESA (ambra), per vedere al volo le
    sovrapposizioni prima di autorizzare. Rispetta i filtri persone/negozi. ── */
-function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequest[]; mese: Date; setMese: (d: Date) => void }) {
+function CalendarioFerie({ richieste, mese, setMese, festivi }: { richieste: VacationRequest[]; mese: Date; setMese: (d: Date) => void; festivi: Map<string, string> }) {
     const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
     // INTERATTIVO (03/08): due viste (Mese / Persone), giorno cliccabile con
     // pannello di dettaglio, toggle per includere o no le richieste in attesa.
@@ -713,8 +768,12 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
 
             {modo === "giorno" && (() => {
                 const rr = delGiorno(dataRif).sort((a, b) => (a.status === b.status ? a.employee_name.localeCompare(b.employee_name) : a.status === "approved" ? -1 : 1));
+                const festaG = festivi.get(iso(dataRif));
                 return (
                     <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                        {(festaG || dataRif.getDay() === 0) && (
+                            <p className="mb-3 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-bold">🔴 {festaG || "Domenica"} — giorno non lavorativo: non conta nei giorni di ferie</p>
+                        )}
                         {rr.length === 0 ? (
                             <p className="text-sm text-slate-500 italic py-4 text-center">Nessuno in ferie in questo giorno (con questi filtri).</p>
                         ) : (
@@ -742,8 +801,8 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
             {modo === "settimana" && (<>
                 <div className="grid grid-cols-7 gap-px text-center mb-1">
                     {settimana.map((d, i) => (
-                        <div key={i} className={cn("text-[10px] font-bold uppercase tracking-widest py-1", d.getTime() === oggi.getTime() ? "text-indigo-300" : "text-slate-500")}>
-                            {d.toLocaleDateString("it-IT", { weekday: "short" })} {d.getDate()}
+                        <div key={i} title={festivi.get(iso(d)) || undefined} className={cn("text-[10px] font-bold uppercase tracking-widest py-1", d.getTime() === oggi.getTime() ? "text-indigo-300" : (festivi.get(iso(d)) || d.getDay() === 0) ? "text-rose-400" : "text-slate-500")}>
+                            {d.toLocaleDateString("it-IT", { weekday: "short" })} {d.getDate()}{festivi.get(iso(d)) ? " 🔴" : ""}
                         </div>
                     ))}
                 </div>
@@ -753,8 +812,9 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
                         const rr = delGiorno(d);
                         return (
                             <div key={i} onClick={() => setGiornoSel(giornoSel === k ? null : k)}
-                                title={rr.length ? "Clicca per il dettaglio del giorno" : undefined}
+                                title={festivi.get(k) ? `🔴 ${festivi.get(k)}` : rr.length ? "Clicca per il dettaglio del giorno" : undefined}
                                 className={cn("min-h-[150px] p-1.5 bg-[#0f111a] cursor-pointer transition-colors hover:bg-[#161a2c]",
+                                    festivi.get(k) && "bg-rose-500/[0.07]",
                                     d.getTime() === oggi.getTime() && "bg-indigo-500/[0.06]", giornoSel === k && "ring-2 ring-inset ring-indigo-400/80")}>
                                 <div className="space-y-0.5">
                                     {rr.slice(0, 7).map(r => (
@@ -784,10 +844,11 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
                         const rr = delGiorno(d);
                         return (
                             <div key={i} onClick={() => setGiornoSel(giornoSel === k ? null : k)}
-                                title={rr.length ? "Clicca per il dettaglio del giorno" : undefined}
+                                title={festivi.get(k) ? `🔴 ${festivi.get(k)}` : rr.length ? "Clicca per il dettaglio del giorno" : undefined}
                                 className={cn("min-h-[86px] p-1.5 bg-[#0f111a] cursor-pointer transition-colors hover:bg-[#161a2c]",
+                                    festivi.get(k) && "bg-rose-500/[0.07]",
                                     fuoriMese && "opacity-40", giornoSel === k && "ring-2 ring-inset ring-indigo-400/80")}>
-                                <div className={cn("text-[11px] font-bold mb-1", isOggi ? "text-indigo-300" : "text-slate-500")}>
+                                <div className={cn("text-[11px] font-bold mb-1", isOggi ? "text-indigo-300" : (festivi.get(k) || d.getDay() === 0) ? "text-rose-400" : "text-slate-500")}>
                                     {isOggi ? <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/25">{d.getDate()}</span> : d.getDate()}
                                 </div>
                                 <div className="space-y-0.5">
@@ -817,7 +878,8 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
                                 {Array.from({ length: nGiorniMese }, (_, i) => {
                                     const d = new Date(mese.getFullYear(), mese.getMonth(), i + 1);
                                     const weekend = d.getDay() === 0 || d.getDay() === 6;
-                                    return <div key={i} className={cn("text-center text-[9px] font-bold py-0.5", weekend ? "text-slate-600" : "text-slate-400", d.getTime() === oggi.getTime() && "text-indigo-300")}>{i + 1}</div>;
+                                    const festaP = festivi.get(iso(d));
+                                    return <div key={i} title={festaP || undefined} className={cn("text-center text-[9px] font-bold py-0.5", festaP || d.getDay() === 0 ? "text-rose-400" : weekend ? "text-slate-600" : "text-slate-400", d.getTime() === oggi.getTime() && "text-indigo-300")}>{i + 1}</div>;
                                 })}
                             </div>
                         </div>
@@ -836,7 +898,7 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
                                             <div key={i} onClick={() => rr.length && setGiornoSel(giornoSel === k ? null : k)}
                                                 title={rr.map(r => `${r.status === "approved" ? "✅" : "⏳"} ${fmt(r.date_from)} → ${fmt(r.date_to)}${r.half_day ? ` (½ ${r.half_day})` : ""}${r.reason ? ` — ${r.reason}` : ""}`).join("\n") || undefined}
                                                 className={cn("h-7 border-r border-b border-white/5",
-                                                    st === "approved" ? "bg-emerald-500/40 cursor-pointer" : st === "pending" ? "bg-amber-500/35 cursor-pointer" : weekend ? "bg-white/[0.04]" : "bg-white/[0.01]",
+                                                    st === "approved" ? "bg-emerald-500/40 cursor-pointer" : st === "pending" ? "bg-amber-500/35 cursor-pointer" : festivi.get(k) ? "bg-rose-500/[0.10]" : weekend ? "bg-white/[0.04]" : "bg-white/[0.01]",
                                                     d.getTime() === oggi.getTime() && "ring-1 ring-inset ring-indigo-400/60",
                                                     giornoSel === k && st && "ring-2 ring-inset ring-indigo-300")} />
                                         );
@@ -880,6 +942,7 @@ function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequ
             <div className="flex items-center gap-4 mt-3 text-[11px] text-slate-400 flex-wrap">
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500/40" /> Approvate</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-500/40" /> In attesa</span>
+                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-rose-500/40" /> Festivo (come la domenica: mai contato nei giorni)</span>
                 <span className="text-slate-600">Giorno · Settimana · Mese · Persone — nelle griglie clicca un giorno per il dettaglio</span>
             </div>
         </div>

@@ -31,6 +31,7 @@ interface Cliente {
     nomeRef?: string;
     cognomeRef?: string;
     cfRef?: string;
+    turista?: boolean;   // cliente di passaggio senza CF italiano (mig. 140)
     cellulare: string;
     telefonoFisso?: string | null;   // recapito fisso FACOLTATIVO delle business (mig. 124)
     email: string;
@@ -71,6 +72,7 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
         nomeRef: (row.nome_ref as string) ?? undefined,
         cognomeRef: (row.cognome_ref as string) ?? undefined,
         cfRef: (row.cf_ref as string) ?? undefined,
+        turista: !!row.turista,
         cellulare: row.cellulare as string,
         telefonoFisso: (row.telefono_fisso as string | null) ?? null,
         email: row.email as string,
@@ -889,7 +891,7 @@ const defaultClientiView = {
     showFilters: false,
     itemsPerPage: 25 as number,
     currentPage: 1,
-    filterTipo: "tutti" as "tutti" | "consumer" | "business",
+    filterTipo: "tutti" as "tutti" | "consumer" | "business" | "turista",
     filterNome: "",
     filterCognome: "",
     filterRagione: "",
@@ -916,7 +918,7 @@ export default function ClientiPage() {
     const currentPage = view.currentPage;
     const setCurrentPage = (v: number) => setView((p) => ({ ...p, currentPage: v }));
     const filterTipo = view.filterTipo;
-    const setFilterTipo = (v: "tutti" | "consumer" | "business") => setView((p) => ({ ...p, filterTipo: v }));
+    const setFilterTipo = (v: "tutti" | "consumer" | "business" | "turista") => setView((p) => ({ ...p, filterTipo: v }));
     const filterNome = view.filterNome;
     const setFilterNome = (v: string) => setView((p) => ({ ...p, filterNome: v }));
     const filterCognome = view.filterCognome;
@@ -1170,7 +1172,8 @@ export default function ClientiPage() {
 
             // 2. Advanced filters
             if (gestitiSet && !gestitiSet.has(c.id)) return false;
-            if (filterTipo !== "tutti" && c.tipo !== filterTipo) return false;
+            if (filterTipo === "turista") { if (!c.turista) return false; }
+            else if (filterTipo !== "tutti" && c.tipo !== filterTipo) return false;
             // per le business il "Nome/Cognome Referente" puo' stare in nome_ref
             // (Registra Vendita) o in nome (caller): il filtro guarda entrambi
             if (filterNome && !`${c.nome} ${c.nomeRef || ""}`.toLowerCase().includes(filterNome.toLowerCase())) return false;
@@ -1338,7 +1341,7 @@ export default function ClientiPage() {
                                 <div className="lg:col-span-4 flex flex-col gap-2 mb-2">
                                     <span className="text-xs font-medium text-slate-400">Tipo Cliente</span>
                                     <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 w-max">
-                                        {(["tutti", "consumer", "business"] as const).map((t) => (
+                                        {(["tutti", "consumer", "business", "turista"] as const).map((t) => (
                                             <button
                                                 key={t}
                                                 onClick={() => { setFilterTipo(t); setCurrentPage(1); }}
@@ -1347,7 +1350,7 @@ export default function ClientiPage() {
                                                     : "text-slate-400 hover:text-white"
                                                     }`}
                                             >
-                                                {t}
+                                                {t === "turista" ? "🌍 turisti" : t}
                                             </button>
                                         ))}
                                     </div>
@@ -1554,6 +1557,7 @@ export default function ClientiPage() {
                                                             <div className="text-xs text-slate-500 capitalize flex items-center gap-1.5 mt-0.5">
                                                                 <span className={`w-1.5 h-1.5 rounded-full ${cliente.tipo === 'business' ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
                                                                 {cliente.tipo} {cliente.tipo === 'business' && `- Ref: ${cliente.nome} ${cliente.cognome}`}
+                                                                {cliente.turista && <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 normal-case">🌍 Turista</span>}
                                                             </div>
                                                         </div>
                                                     </div>
