@@ -7,7 +7,7 @@
 // Chi puo' creare e verso quali ruoli si amministra da Permessi
 // (cap:/comunicazioni:*). Le letture ora stanno a DB (comunicazioni_ricevute):
 // il localStorage resta solo come eredita' del vecchio "letto" locale.
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Bell, Info, AlertTriangle, CheckCircle2, Plus, Eye, X, Trash2 , Rocket } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
@@ -40,6 +40,8 @@ export type Comunicazione = {
     created_by_name: string | null;
     created_at?: string | null;   // per il filtro periodo
     meeting_id?: number | null;   // invito riunione (mig. 122)
+    allegati?: { url: string; name: string }[] | null;   // mig. 147
+    size?: string | null;                                  // 'normale' | 'grande' (mig. 147)
 };
 
 type Ricevuta = {
@@ -83,7 +85,7 @@ function dataDisplayOggi(): string {
 export default function Comunicazioni() {
     const { user } = useAuth();
     const role = user?.role || "";
-    const { perms } = useRolePermissions(role);
+    const { perms } = useRolePermissions(role, user?.grade);
     const canCreate = capAllowed(role, CAP_COMUNICAZIONI.section, CAP_COM_CREA, perms);
     const destinatariPossibili = ruoliDestinatariComunicazioni(role, perms);
     // ambito del mittente (negozi assegnati + visibilità + sede): serve a
@@ -105,12 +107,14 @@ export default function Comunicazioni() {
     // bastava un click a vuoto sulla card e "letta" scattava senza leggere.
     const [aperte, setAperte] = useState<Set<number>>(new Set());
     const [festa, setFesta] = useState<number | null>(null);   // coriandoli sulle buone notizie
+    // filtro del dettaglio ricevute (03/08): chips cliccabili sui contatori
+    const [dettFiltro, setDettFiltro] = useState<"tutti" | "apparse" | "confermate" | "rinviate" | "mai">("tutti");
 
     const fetchAll = useCallback(async () => {
         // select a scalare: completa (mig. 116, con esiti) → estesa (112) → legacy
         const completa = await supabase
             .from("comunicazioni")
-            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, created_by, created_by_name, created_at")
+            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, allegati, size, created_by, created_by_name, created_at")
             .order("created_at", { ascending: false });
         const esteso = completa.error ? await supabase
             .from("comunicazioni")
@@ -226,6 +230,33 @@ export default function Comunicazioni() {
     const [fTitle, setFTitle] = useState("");
     const [fContent, setFContent] = useState("");
     const [fType, setFType] = useState<"info" | "warning" | "success" | "update">("info");
+    // EDITOR (03/08, mig. 147): dimensione, allegati, emoji rapide
+    const [fSize, setFSize] = useState<"normale" | "grande">("normale");
+    const [fAllegati, setFAllegati] = useState<{ url: string; name: string }[]>([]);
+    const [fCaricando, setFCaricando] = useState(false);
+    const testoRef = useRef<HTMLTextAreaElement | null>(null);
+    const EMOJI_RAPIDE = ["🎉", "🚀", "🔥", "💪", "🏆", "📈", "✅", "⚠️", "🚨", "📌", "📣", "👏", "🤝", "⭐", "🎯", "💡"];
+    const inserisciEmoji = (e: string) => {
+        const ta = testoRef.current;
+        if (!ta) { setFContent((p) => p + e); return; }
+        const ini = ta.selectionStart ?? fContent.length, fine = ta.selectionEnd ?? fContent.length;
+        const nuovo = fContent.slice(0, ini) + e + fContent.slice(fine);
+        setFContent(nuovo);
+        requestAnimationFrame(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = ini + e.length; });
+    };
+    const caricaAllegati = async (files: FileList | null) => {
+        if (!files?.length || fCaricando) return;
+        setFCaricando(true);
+        try {
+            for (const f of Array.from(files)) {
+                const path = `comunicazioni/${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${f.name.replace(/[^\w.\-]/g, "_")}`;
+                const { error: eUp } = await supabase.storage.from("contracts").upload(path, f);
+                if (eUp) { setError("Allegato non caricato: " + eUp.message); continue; }
+                const { data: pu } = supabase.storage.from("contracts").getPublicUrl(path);
+                setFAllegati((p) => [...p, { url: pu.publicUrl, name: f.name }]);
+            }
+        } finally { setFCaricando(false); }
+    };
     const [fKind, setFKind] = useState<"bacheca" | "popup">("bacheca");
     const [fTutti, setFTutti] = useState(true);
     const [fRuoli, setFRuoli] = useState<string[]>([]);
@@ -340,6 +371,8 @@ export default function Comunicazioni() {
             title: fTitle.trim(),
             content: fContent.trim(),
             type: fType,
+            size: fSize,   // mig. 147
+            allegati: fAllegati,
             kind: fKind,
             target_roles: fTutti || !ruoliTarget.length ? null : ruoliTarget,
             target_stores: fTutti || !fNegozi.length ? null : fNegozi,
@@ -359,20 +392,20 @@ export default function Comunicazioni() {
         }
         setError(null);
         setFormOpen(false);
-        setFTitle(""); setFContent(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget(); setFEsiti([]); setFEsitoNuovo("");
+        setFTitle(""); setFContent(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget(); setFEsiti([]); setFEsitoNuovo(""); setFSize("normale"); setFAllegati([]);
         fetchAll();
     };
 
     // ── DESTINATARI = "quante inviate" (03/08): platea degli utenti attivi col
     //    loro contesto (negozi assegnati, brand del punto vendita) — la stessa
     //    regola comunicazionePerMe del popup, applicata a tutti in blocco.
-    const [platea, setPlatea] = useState<{ id: string; role: string; negozio: string; negozi: string[]; brands: string[] }[] | null>(null);
+    const [platea, setPlatea] = useState<{ id: string; nome: string; role: string; negozio: string; negozi: string[]; brands: string[] }[] | null>(null);
     useEffect(() => {
         if (platea) return;
         if (!isAdminRicevute && !list.some((c) => c.created_by === user?.id)) return;
         (async () => {
             const [u, us, st] = await Promise.all([
-                supabase.from("app_users").select("id, role, primary_store").eq("active", true),
+                supabase.from("app_users").select("id, full_name, role, primary_store").eq("active", true),
                 supabase.from("user_stores").select("user_id, store_name"),
                 supabase.from("stores").select("name, brands"),
             ]);
@@ -382,8 +415,8 @@ export default function Comunicazioni() {
             });
             const brandsDi = new Map<string, string[]>();
             ((st.data ?? []) as { name: string; brands: string[] | null }[]).forEach((r) => brandsDi.set(String(r.name || "").trim().toLowerCase(), r.brands || []));
-            setPlatea(((u.data ?? []) as { id: string; role: string | null; primary_store: string | null }[]).map((x) => ({
-                id: x.id, role: x.role || "", negozio: x.primary_store || "",
+            setPlatea(((u.data ?? []) as { id: string; full_name?: string | null; role: string | null; primary_store: string | null }[]).map((x) => ({
+                id: x.id, nome: x.full_name || "", role: x.role || "", negozio: x.primary_store || "",
                 negozi: negoziDi.get(x.id) || [],
                 brands: brandsDi.get(String(x.primary_store || "").trim().toLowerCase()) || [],
             })));
@@ -537,9 +570,15 @@ export default function Comunicazioni() {
                                 className={cn(
                                     "glass-card p-6 relative overflow-hidden transition-all cursor-pointer",
                                     !read && "border-l-4 border-l-primary",
-                                    com.type === "warning" && "border border-rose-500/30"
+                                    com.type === "warning" && "border border-rose-500/30 bg-gradient-to-br from-rose-500/[0.08] to-transparent",
+                                    com.type === "success" && "bg-gradient-to-br from-emerald-500/[0.08] via-transparent to-fuchsia-500/[0.07]",
+                                    com.type === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent"
                                 )}
                             >
+                                {/* filigrana decorativa per tipo (03/08) */}
+                                {com.type === "success" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.08] rotate-12 pointer-events-none select-none">🎉</span>}
+                                {com.type === "update" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.07] rotate-12 pointer-events-none select-none">🚀</span>}
+                                {com.type === "warning" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.07] rotate-12 pointer-events-none select-none">🚨</span>}
                                 {festa === com.id && <Confetti />}
                                 <div className="absolute top-6 right-6 flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
                                     {!read && (
@@ -562,8 +601,8 @@ export default function Comunicazioni() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="mb-1">
-                                            <h3 className={cn("text-lg font-semibold", !read ? "text-white" : "text-slate-200")}>
-                                                {com.title}
+                                            <h3 className={cn(com.size === "grande" ? "text-2xl font-black" : "text-lg font-semibold", !read ? "text-white" : "text-slate-200")}>
+                                                {com.size === "grande" && "📢 "}{com.title}
                                             </h3>
                                             <p className="text-sm text-slate-500">
                                                 {com.date_display}
@@ -599,9 +638,20 @@ export default function Comunicazioni() {
                                         {collassata ? (
                                             <p className="text-xs text-slate-500 mt-2 italic select-none">▾ Clicca per leggere il contenuto{com.esiti?.length ? " e rispondere" : ""}</p>
                                         ) : (
-                                            <p className="text-slate-300 mt-3 leading-relaxed whitespace-pre-wrap">
+                                            <p className={cn("mt-3 leading-relaxed whitespace-pre-wrap", com.size === "grande" ? "text-base text-slate-100" : "text-slate-300")}>
                                                 {com.content}
                                             </p>
+                                        )}
+                                        {/* ALLEGATI (mig. 147): apribili anche PRIMA di confermare */}
+                                        {!collassata && (com.allegati?.length ?? 0) > 0 && (
+                                            <div className="flex items-center gap-2 flex-wrap mt-3" onClick={(e) => e.stopPropagation()}>
+                                                {com.allegati!.map((a) => (
+                                                    <a key={a.url} href={a.url} target="_blank" rel="noreferrer"
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/15 bg-white/[0.05] text-slate-200 text-xs font-bold hover:bg-white/10">
+                                                        📎 {a.name}
+                                                    </a>
+                                                ))}
+                                            </div>
                                         )}
 
                                         {!collassata && <div className="mt-4 flex items-center gap-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
@@ -635,7 +685,7 @@ export default function Comunicazioni() {
                                             {vedeRicevute && cnt && (
                                                 <button
                                                     type="button"
-                                                    onClick={() => setEspansa(espansa === com.id ? null : com.id)}
+                                                    onClick={() => { setEspansa(espansa === com.id ? null : com.id); setDettFiltro("tutti"); }}
                                                     className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors"
                                                     title="Chi l'ha letta / confermata"
                                                 >
@@ -654,9 +704,55 @@ export default function Comunicazioni() {
 
                                         {espansa === com.id && vedeRicevute && !collassata && (
                                             <div className="mt-3 rounded-xl border border-white/10 bg-black/30 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                                                {dettaglio.length === 0 ? (
-                                                    <div className="p-3 text-sm text-slate-500">Nessuno l&apos;ha ancora aperta.</div>
-                                                ) : dettaglio.map((r) => (
+                                                {/* CONTATORI CLICCABILI (03/08): filtrano l'elenco; "mai apparsa"
+                                                    = destinatari senza lettura, cioe' chi non ha ancora fatto login */}
+                                                {(() => {
+                                                    const dset = destinatariSet(com);
+                                                    const dTot = dset ? dset.size : null;
+                                                    const maiN = dset ? [...dset].filter((id) => !dettaglio.some((r) => r.user_id === id)).length : null;
+                                                    const chips = [
+                                                        { k: "tutti", l: `📤 Inviate${dTot != null ? ` ${dTot}` : ""}` },
+                                                        { k: "apparse", l: `👁 ${isPopup ? "Apparse" : "Lette"} ${cnt!.letture}` },
+                                                        ...(isPopup || com.esiti?.length ? [{ k: "confermate", l: `✓ Confermate ${cnt!.conferme}` }] : []),
+                                                        ...(isPopup ? [{ k: "rinviate", l: `⏰ Rinviate ${cnt!.rinviate}` }] : []),
+                                                        ...(maiN != null ? [{ k: "mai", l: `🚫 Mai apparse ${maiN}` }] : []),
+                                                    ] as { k: typeof dettFiltro; l: string }[];
+                                                    return (
+                                                        <div className="flex gap-1.5 flex-wrap p-2.5 border-b border-white/10 bg-white/[0.02]">
+                                                            {chips.map((c) => (
+                                                                <button key={c.k} type="button" onClick={() => setDettFiltro(dettFiltro === c.k ? "tutti" : c.k)}
+                                                                    className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors",
+                                                                        dettFiltro === c.k ? "border-violet-400/70 bg-violet-500/20 text-violet-100" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                                                    {c.l}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })()}
+                                                {dettFiltro === "mai" ? (() => {
+                                                    const dset = destinatariSet(com);
+                                                    const mai = dset ? (platea || []).filter((u) => dset.has(u.id) && !dettaglio.some((r) => r.user_id === u.id)) : [];
+                                                    return mai.length === 0
+                                                        ? <div className="p-3 text-sm text-slate-500">Nessuno: è apparsa a tutti i destinatari. 🎉</div>
+                                                        : mai.map((u) => (
+                                                            <div key={u.id} className="flex items-center gap-3 px-3.5 py-2 border-b border-white/5 last:border-b-0 text-sm">
+                                                                <span className="text-slate-200 font-medium">{u.nome || u.id}</span>
+                                                                <span className="ml-auto text-xs text-rose-300/90">🚫 mai apparsa — non ha ancora fatto login</span>
+                                                            </div>
+                                                        ));
+                                                })() : dettaglio
+                                                    .filter((r) => dettFiltro === "tutti" ? true
+                                                        : dettFiltro === "apparse" ? !!r.letto_il
+                                                            : dettFiltro === "confermate" ? !!r.confermato_il
+                                                                : dettFiltro === "rinviate" ? (!!r.rinviato_il && !r.confermato_il) : true)
+                                                    .length === 0 ? (
+                                                    <div className="p-3 text-sm text-slate-500">Nessuno in questo stato.</div>
+                                                ) : dettaglio
+                                                    .filter((r) => dettFiltro === "tutti" ? true
+                                                        : dettFiltro === "apparse" ? !!r.letto_il
+                                                            : dettFiltro === "confermate" ? !!r.confermato_il
+                                                                : dettFiltro === "rinviate" ? (!!r.rinviato_il && !r.confermato_il) : true)
+                                                    .map((r) => (
                                                     <div key={r.user_id} className="flex items-center gap-3 px-3.5 py-2 border-b border-white/5 last:border-b-0 text-sm">
                                                         <span className="text-slate-200 font-medium">{r.user_name || r.user_id}</span>
                                                         <span className="ml-auto text-xs text-slate-500">
@@ -699,12 +795,15 @@ export default function Comunicazioni() {
             {/* ─── Modale creazione ─── */}
             {formOpen && (
                 <div className="fixed inset-0 bg-black/70 z-[1200] flex items-center justify-center p-4" onClick={() => setFormOpen(false)} role="dialog" aria-modal="true">
-                    <div className="bg-[#12141f] border border-white/10 rounded-2xl w-full max-w-[640px] max-h-[90vh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-[#12141f] border border-white/10 rounded-2xl w-[min(1500px,96vw)] h-[92vh] shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between py-5 px-6 border-b border-white/10">
                             <h3 className="text-lg font-bold text-white">Nuova comunicazione</h3>
                             <button type="button" onClick={() => setFormOpen(false)} className="text-slate-500 hover:text-white"><X className="w-5 h-5" /></button>
                         </div>
-                        <div className="p-6 space-y-5">
+                        {/* EDITOR a sinistra, DESTINATARI a destra (03/08): niente
+                            pagina scrollabile all'infinito, due colonne indipendenti */}
+                        <div className="flex-1 grid grid-cols-1 xl:grid-cols-[1.35fr_1fr] min-h-0">
+                        <div className="p-6 space-y-5 overflow-y-auto xl:border-r xl:border-white/5">
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Genere</label>
                                 <div className="flex gap-2 mt-2">
@@ -727,7 +826,13 @@ export default function Comunicazioni() {
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Testo</label>
-                                <textarea value={fContent} onChange={(e) => setFContent(e.target.value)} className={inputStyle + " mt-2 min-h-[120px] resize-y"} placeholder="Il contenuto della comunicazione…" />
+                                <div className="flex gap-1 mt-2 flex-wrap">
+                                    {EMOJI_RAPIDE.map((e) => (
+                                        <button key={e} type="button" onClick={() => inserisciEmoji(e)} title="Inserisci nel testo"
+                                            className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/10 hover:bg-white/10 text-base leading-none">{e}</button>
+                                    ))}
+                                </div>
+                                <textarea ref={testoRef} value={fContent} onChange={(e) => setFContent(e.target.value)} className={inputStyle + " mt-2 min-h-[240px] resize-y"} placeholder="Il contenuto della comunicazione…" />
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aspetto</label>
@@ -738,6 +843,33 @@ export default function Comunicazioni() {
                                                 fType === t ? "border-violet-500 bg-violet-500/10 text-white" : "border-white/10 text-slate-400 hover:border-white/25")}>
                                             {l}
                                         </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dimensione</label>
+                                <div className="flex gap-2 mt-2">
+                                    {([["normale", "Normale"], ["grande", "📢 Grande — per le comunicazioni importanti"]] as const).map(([sz, l]) => (
+                                        <button key={sz} type="button" onClick={() => setFSize(sz)}
+                                            className={cn("px-3.5 py-1.5 rounded-full border text-sm transition-all",
+                                                fSize === sz ? "border-violet-500 bg-violet-500/10 text-white" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                            {l}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Allegati <span className="normal-case font-normal">(chi riceve può aprirli anche PRIMA di confermare)</span></label>
+                                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                                    <label className={cn("px-4 py-2 rounded-xl border border-white/15 text-slate-300 text-sm font-bold cursor-pointer hover:bg-white/5", fCaricando && "opacity-50 pointer-events-none")}>
+                                        📎 {fCaricando ? "Carico…" : "Aggiungi allegato"}
+                                        <input type="file" multiple className="hidden" onChange={(e) => { caricaAllegati(e.target.files); e.target.value = ""; }} />
+                                    </label>
+                                    {fAllegati.map((a) => (
+                                        <span key={a.url} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/15 bg-white/[0.04] text-slate-200 text-sm">
+                                            📎 {a.name}
+                                            <button type="button" onClick={() => setFAllegati((p) => p.filter((x) => x.url !== a.url))} className="text-slate-500 hover:text-white text-xs">✕</button>
+                                        </span>
                                     ))}
                                 </div>
                             </div>
@@ -833,8 +965,12 @@ export default function Comunicazioni() {
                                 </div>
                                 <p className="text-[11px] text-slate-600 mt-1.5">La campanella in alto squilla per chi rientra nei destinatari{fKind === "popup" ? "; il pop-up compare al centro dello schermo appena aprono il CRM" : ""}.</p>
                             </div>
+                            </div>
+                            {/* ── colonna DESTRA: destinatari ── */}
+                            <div className="p-6 space-y-5 overflow-y-auto">
+                            <p className="text-sm font-black text-white uppercase tracking-widest">📬 Destinatari</p>
                             <div>
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Destinatari — per ruolo</label>
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Per ruolo</label>
                                 <div className="flex gap-2 mt-2 flex-wrap">
                                     {puoTutti && (
                                         <button type="button" onClick={() => { setFTutti(true); azzeraTarget(); }}
@@ -904,8 +1040,9 @@ export default function Comunicazioni() {
                                     })}
                                 </div>
                             </div>}
+                            </div>
                         </div>
-                        <div className="flex items-center justify-end gap-2.5 py-4 px-6 border-t border-white/10">
+                        <div className="flex items-center justify-end gap-2.5 py-4 px-6 border-t border-white/10 shrink-0">
                             <button type="button" onClick={() => setFormOpen(false)} className="px-4 py-2.5 rounded-xl border border-white/10 text-slate-300 text-sm">Annulla</button>
                             <button type="button" disabled={salvando} onClick={salvaComunicazione}
                                 className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-bold disabled:opacity-40">

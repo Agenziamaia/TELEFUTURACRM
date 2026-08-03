@@ -27,8 +27,14 @@ type ComPopup = {
     target_brands?: string[] | null;
     esiti?: string[] | null;   // risposte cliccabili (mig. 116); null = solo conferma
     meeting_id?: number | null;   // invito riunione (mig. 122): la risposta si riflette sul calendario
+    allegati?: { url: string; name: string }[] | null;   // mig. 147: apribili PRIMA di confermare
+    size?: string | null;                                 // mig. 147: 'grande' = testo in evidenza
     kind: string | null;
 };
+
+const cnBody = (size?: string | null) => size === "grande"
+    ? "px-6 pb-5 text-slate-100 text-lg font-medium leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto"
+    : "px-6 pb-5 text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto";
 
 export function ComunicazioniPopup() {
     const { user } = useAuth();
@@ -39,13 +45,18 @@ export function ComunicazioniPopup() {
     const carica = useCallback(async () => {
         if (!user?.id) return;
         try {
-            // select a scalare: completa (mig. 116) → senza esiti (mig. 112) → legacy
-            const completa = await supabase
+            // select a scalare: v147 (allegati+size) → completa (mig. 116) → senza esiti (mig. 112) → legacy
+            const v147 = await supabase
+                .from("comunicazioni")
+                .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, allegati, size, kind")
+                .eq("kind", "popup")
+                .order("created_at", { ascending: true });
+            const completa = v147.error ? await supabase
                 .from("comunicazioni")
                 .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, kind")
                 .eq("kind", "popup")
-                .order("created_at", { ascending: true });
-            const esteso = completa.error ? await supabase
+                .order("created_at", { ascending: true }) : null;
+            const esteso = (completa && completa.error) ? await supabase
                 .from("comunicazioni")
                 .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, target_stores, target_users, target_brands, kind")
                 .eq("kind", "popup")
@@ -55,7 +66,7 @@ export function ComunicazioniPopup() {
                 .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, kind")
                 .eq("kind", "popup")
                 .order("created_at", { ascending: true }) : null;
-            const coms = ((legacy ? legacy.data : esteso ? esteso.data : completa.data) ?? null) as unknown as ComPopup[] | null;
+            const coms = ((legacy ? legacy.data : esteso ? esteso.data : completa ? completa.data : v147.data) ?? null) as unknown as ComPopup[] | null;
             if (!coms) return;
             const brandsNegozio = await brandDelNegozio(user.negozio);
             const negozi = await negoziAssegnati(user.id);
@@ -188,15 +199,28 @@ export function ComunicazioniPopup() {
                         <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: stile.color }}>
                             Comunicazione da confermare
                         </div>
-                        <h3 className="text-xl font-bold text-white leading-tight">{attuale.title}</h3>
+                        <h3 className={attuale.size === "grande" ? "text-2xl font-black text-white leading-tight" : "text-xl font-bold text-white leading-tight"}>
+                            {attuale.size === "grande" ? "📢 " : ""}{attuale.title}
+                        </h3>
                         <p className="text-xs text-slate-500 mt-1">
                             {attuale.date_display}{attuale.created_by_name ? ` — ${attuale.created_by_name}` : ""}
                         </p>
                     </div>
                 </div>
-                <div className="px-6 pb-5 text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto">
+                <div className={cnBody(attuale.size)}>
                     {attuale.content}
                 </div>
+                {/* ALLEGATI (mig. 147): apribili SUBITO, senza dover confermare */}
+                {(attuale.allegati?.length ?? 0) > 0 && (
+                    <div className="px-6 pb-4 flex flex-wrap gap-2">
+                        {attuale.allegati!.map((a) => (
+                            <a key={a.url} href={a.url} target="_blank" rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 text-xs font-semibold text-slate-200 hover:bg-white/10 hover:border-white/30 transition-colors">
+                                📎 {a.name}
+                            </a>
+                        ))}
+                    </div>
+                )}
                 {/* la conferma E' la scelta di una risposta (esiti, mig. 116);
                     "Piu' tardi" e' solo un RINVIO di un'ora, piccolo e a sinistra
                     (Luca 31/07): il pop-up torna finche' non c'e' l'esito */}
