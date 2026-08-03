@@ -1925,11 +1925,12 @@ function CallerPageInner() {
                                             <Th>Caller</Th>
                                             <Th>Stato</Th>
                                             <Th>Appuntamento</Th>
+                                            <Th> </Th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {loading && (<tr><td colSpan={10} className="text-center py-12 text-slate-500">Caricamento...</td></tr>)}
-                                        {!loading && filtered.length === 0 && (<tr><td colSpan={10} className="text-center py-12 text-slate-500">Nessuna call trovata</td></tr>)}
+                                        {loading && (<tr><td colSpan={12} className="text-center py-12 text-slate-500">Caricamento...</td></tr>)}
+                                        {!loading && filtered.length === 0 && (<tr><td colSpan={12} className="text-center py-12 text-slate-500">Nessuna call trovata</td></tr>)}
                                         {filtered.map((c) => (
                                             <tr
                                                 key={c.id}
@@ -1971,28 +1972,7 @@ function CallerPageInner() {
                                                 <td className="px-2 py-3 font-mono text-[11px] text-slate-500 whitespace-nowrap">{formatTimeShort(c.data_chiamata)}</td>
                                                 <td className="px-4 py-3 text-slate-300">{c.caller}</td>
                                                 <td className="px-4 py-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statoBadgeClasses(c.stato)}`}>{c.stato}</span>
-                                                        {canDeleteRows && (
-                                                            <span onClick={(e) => e.stopPropagation()} className="ml-auto shrink-0">
-                                                                {delConfirmId === c.id ? (
-                                                                    <span className="inline-flex gap-1">
-                                                                        <button onClick={() => eliminaCallCascata(c)}
-                                                                            className="px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold"
-                                                                            title="Elimina la pratica E l'eventuale appuntamento in calendario">
-                                                                            Elimina?
-                                                                        </button>
-                                                                        <button onClick={() => setDelConfirmId(null)}
-                                                                            className="px-2 py-1 rounded-md border border-white/15 text-slate-400 text-[11px]">✕</button>
-                                                                    </span>
-                                                                ) : (
-                                                                    <button onClick={() => setDelConfirmId(c.id)}
-                                                                        title="Elimina la pratica (a cascata anche l'appuntamento collegato in calendario)"
-                                                                        className="p-1 rounded-md border border-rose-500/30 text-rose-400/70 hover:text-rose-300 hover:bg-rose-500/15 text-[11px] leading-none">🗑</button>
-                                                                )}
-                                                            </span>
-                                                        )}
-                                                    </div>
+                                                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statoBadgeClasses(c.stato)}`}>{c.stato}</span>
                                                 </td>
                                                 {/* COLONNA APPUNTAMENTO (03/08): la data si vede da fuori;
                                                     vuota quando lo stato non prevede una data */}
@@ -2008,6 +1988,28 @@ function CallerPageInner() {
                                                             ⏰ {formatDateShort(c.data_richiamo)}{c.fascia_richiamo === "mattina" ? " ☀️" : c.fascia_richiamo === "pomeriggio" ? " 🌇" : ""}
                                                         </span>
                                                     ) : null}
+                                                </td>
+                                                {/* CESTINO in coda, dopo l'Appuntamento (Luca 03/08) */}
+                                                <td className="px-2 py-3 text-right whitespace-nowrap">
+                                                    {canDeleteRows && (
+                                                        <span onClick={(e) => e.stopPropagation()}>
+                                                            {delConfirmId === c.id ? (
+                                                                <span className="inline-flex gap-1">
+                                                                    <button onClick={() => eliminaCallCascata(c)}
+                                                                        className="px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold"
+                                                                        title="Elimina la pratica E l'eventuale appuntamento in calendario">
+                                                                        Elimina?
+                                                                    </button>
+                                                                    <button onClick={() => setDelConfirmId(null)}
+                                                                        className="px-2 py-1 rounded-md border border-white/15 text-slate-400 text-[11px]">✕</button>
+                                                                </span>
+                                                            ) : (
+                                                                <button onClick={() => setDelConfirmId(c.id)}
+                                                                    title="Elimina la pratica (a cascata anche l'appuntamento collegato in calendario)"
+                                                                    className="p-1 rounded-md border border-rose-500/30 text-rose-400/70 hover:text-rose-300 hover:bg-rose-500/15 text-[11px] leading-none">🗑</button>
+                                                            )}
+                                                        </span>
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}
