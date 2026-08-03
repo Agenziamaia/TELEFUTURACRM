@@ -196,7 +196,7 @@ export function ArchivioMalus({
       aria-label="Archivio Malus"
     >
       <div
-        className="bg-white/[0.05] border border-white/10 rounded-2xl w-full max-w-[1150px] max-h-[90vh] overflow-y-auto shadow-2xl"
+        className="bg-[#0e1526] border border-white/10 rounded-2xl w-full max-w-[1150px] max-h-[90vh] overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between py-5 px-7 border-b border-white/10 sticky top-0 bg-[#12141f] z-10">

@@ -554,7 +554,7 @@ function FilterBar({
           </button>
           {statoOpen && (
             <div
-              className="absolute top-full left-0 right-0 mt-1 bg-white/[0.03] border border-white/10 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
+              className="absolute top-full left-0 right-0 mt-1 bg-[#0e1526] border border-white/10 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
               style={{ boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}
             >
               <div className="flex items-center justify-between py-2 px-3 border-b border-white/10">
@@ -628,7 +628,7 @@ function FilterBar({
             </button>
             {utentiOpen && (
               <div
-                className="absolute top-full left-0 right-0 mt-1 bg-white/[0.03] border border-white/10 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
+                className="absolute top-full left-0 right-0 mt-1 bg-[#0e1526] border border-white/10 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
                 style={{ boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}
               >
                 <div className="flex items-center justify-between py-2 px-3 border-b border-white/10">
@@ -723,14 +723,14 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
 
   if (rows.length === 0) {
     return (
-      <div className="bg-white/[0.03] border border-white/10 rounded-xl py-12 px-12 text-center text-slate-500">
+      <div className="bg-[#0d1424] border border-white/10 rounded-xl py-12 px-12 text-center text-slate-500">
         Nessuna pratica trovata con i filtri selezionati.
       </div>
     );
   }
 
   return (
-    <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
+    <div className="bg-[#0d1424] border border-white/10 rounded-xl overflow-hidden">
       {/* Barra delega rapida: compare quando selezioni una o piu' pratiche */}
       {canDelegate && checked.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 py-2.5 px-3.5 bg-indigo-900/40 border-b border-indigo-700">
@@ -1991,7 +1991,7 @@ export default function TrackingPdaPage() {
             aria-label="Regole di Ingaggio"
           >
             <div
-              className="bg-white/[0.03] border border-white/10 rounded-2xl w-full max-w-[980px] max-h-[88vh] overflow-y-auto shadow-2xl"
+              className="bg-[#0e1526] border border-white/10 rounded-2xl w-full max-w-[980px] max-h-[88vh] overflow-y-auto shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between py-5 px-7 border-b border-white/10">
