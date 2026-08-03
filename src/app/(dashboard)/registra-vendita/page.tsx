@@ -5593,8 +5593,23 @@ select.rvIn{cursor:pointer}
       {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6")}}>
         <div style={{fontSize:11,fontWeight:700,color:brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6",marginBottom:14,textTransform:"uppercase"}}>📂 Prodotti e Contratto</div>
         <div style={{background:"rgba(0,114,198,0.10)",borderRadius:8,padding:10,marginBottom:14,display:"flex",alignItems:"center",gap:12,border:"1px solid rgba(255,255,255,0.12)",flexWrap:"wrap"}}>
-          <span style={{fontSize:11,fontWeight:700,color:"#1B3A5C"}}>Codice inserimento:</span>
-          <select value={sesCode} onChange={e=>setSesCode(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.02)",minWidth:140}}><option value="">— Seleziona —</option>{(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="dojo"?DOJO_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <span style={{fontSize:10,fontWeight:800,color:"#8892b0",textTransform:"uppercase",letterSpacing:.8}}>Codice inserimento</span>
+          {/* RIQUADRI negozio a selezione SINGOLA (Luca 03/08): via la tendina
+              nativa — un click sceglie, ricliccando lo stesso si toglie */}
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="dojo"?DOJO_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=>{
+              const on=sesCode===c;
+              return <button key={c} type="button" onClick={()=>setSesCode(on?"":c)}
+                title={on?"Selezionato — clicca per togliere":"Usa il codice di "+c}
+                style={{padding:"9px 18px",borderRadius:10,cursor:"pointer",fontSize:12.5,fontWeight:800,transition:"all .15s",
+                  border:on?"1.5px solid "+bC:"1px solid rgba(255,255,255,0.12)",
+                  background:on?bC:"rgba(255,255,255,0.04)",
+                  color:on?"#fff":(sesCode?"#586174":"#cbd5e1"),
+                  opacity:sesCode&&!on?0.5:1,
+                  boxShadow:on?"0 4px 14px "+bC+"55":"none"}}>
+                {on?"✓ ":""}{c}
+              </button>;})}
+          </div>
         </div>
         {cats.map(group=>{const cc=catCounts(group.id,group.subs);const aperta=catAperta(group);return <div key={group.id} style={{marginBottom:aperta?16:6}}>
           <div onClick={()=>togCat(group)} title={aperta?"Chiudi la categoria":"Esplodi la categoria"} style={{display:"flex",alignItems:"center",gap:8,marginBottom:aperta?8:0,cursor:"pointer",userSelect:"none",padding:aperta?0:"8px 12px",borderRadius:8,background:aperta?"transparent":"rgba(255,255,255,0.03)",border:aperta?"none":"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:11,color:"#64748b"}}>{aperta?"▾":"▸"}</span><span style={{fontSize:16}}>{group.icon}</span><span style={{fontSize:13,fontWeight:700,color:group.color,textTransform:"uppercase"}}>{group.title}</span>{cc.tot>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:"#8892b0",background:"transparent",borderRadius:999,padding:"2px 10px"}}>{cc.tot} {cc.tot===1?"vendita":"vendite"}{cc.ok>0&&<span style={{color:"#28a745"}}>· {cc.ok} ✓</span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>· {cc.warn} ⚠</span>}{cc.empty>0&&<span style={{color:"#64748b"}}>· {cc.empty} ●</span>}</span>}</div>
