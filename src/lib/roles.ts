@@ -113,9 +113,11 @@ export const ROLES: RoleDef[] = [
         id: "amministrativo",
         label: "Amministrativo",
         area: "sede",
+        // "Back Office" NON e' un grado dell'amministrativo (Luca 03/08): e'
+        // un RUOLO a se' in sede (role_defs, custom) — tolto da qui; nessun
+        // utente amministrativo lo usava come grado (verificato a DB).
         grades: [
             { id: "amministrazione", label: "Amministrazione" },
-            { id: "back_office", label: "Back Office" },
         ],
     },
     { id: "direttore_generale", label: "Direttore Generale", area: "sede", grades: [] },
