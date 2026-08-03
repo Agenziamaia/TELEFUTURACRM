@@ -56,7 +56,7 @@ const SIM_BRANDS={
   telefutura:{logo:"/logo-crm.png",         label:"Telefutura",  color:"#6f42c1"},
 };
 const SIM_BRAND_ORDER=["windtre","vodafone","fastweb","tim","iliad","sky","ho","very","kena","telefutura"];
-const MARG_PRODUCTS=[
+const MARG_PRODUCTS_LEGACY=[
   {cat:"📦 Prodotti",items:[{id:"accessori",name:"Accessori",price:null,pctMargin:24.59,hasQty:true,icon:"🎧",type:"pct"},{id:"tel_senior",name:"Telefoni Senior",price:null,pctMargin:12.30,needsModel:true,icon:"📱",type:"pct"},{id:"earbuds",name:"Ear Buds",price:null,pctMargin:40.98,icon:"🎵",type:"pct"},{id:"vendita_usato",name:"Vendita Usato",price:null,pctMargin:13.00,needsModel:true,needsImei:true,icon:"♻️",type:"pct"},
     {id:"plx",name:"PLX",price:null,fixedMargin:8,hasQty:true,icon:"📦",type:"fixed"},
     {id:"cncp",name:"CN/CP",price:null,fixedMargin:2,hasQty:true,icon:"💳",type:"fixed"},
@@ -118,13 +118,72 @@ const MARG_PRODUCTS=[
   ]},
 ];
 
+// ── PANNELLO = FONTE UNICA della marginalita' (Luca 03/08): il catalogo si
+//    legge da marg_categories/marg_items (Amministrazione → Marginalità).
+//    Regole margine del pannello: costo fisso → utile = prezzo − costo
+//    azienda; % margine → utile = prezzo × %. Le voci del pannello SENZA
+//    valori compilati tengono i margini storici del codice (match per nome),
+//    cosi' le gare non perdono i margini finche' il pannello non li definisce.
+//    I comportamenti speciali (magazzino usato, Telefono Cash, quantita',
+//    modello) restano agganciati per nome alla voce storica.
+let MARG_PRODUCTS = MARG_PRODUCTS_LEGACY;
+let _margCatAttesa = null;
+const _margNorm = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const _MARG_BRAND_MAP = { WINDTRE: "windtre", VODAFONE: "vodafone", FASTWEB: "fastweb", TIM: "tim", ILIAD: "iliad", SKY: "sky", S4: "s4", VERYMOBILE: "very", HOMOBILE: "ho", KENAMOBILE: "kena", DOJO: "dojo" };
+const _MARG_CAT_EMOJI = { PRODOTTI: "📦", SERVIZI: "🔧", KASKO: "🛡️", SIM: "📶", ESIM: "📲", TELEFONOCASH: "📱" };
+const caricaMargCatalogo = () => {
+  if (_margCatAttesa) return _margCatAttesa;
+  _margCatAttesa = (async () => {
+    try {
+      const [rc, ri] = await Promise.all([
+        supabase.from("marg_categories").select("id,name,kind,sort_order,active").order("sort_order"),
+        supabase.from("marg_items").select("*").eq("active", true).order("sort_order"),
+      ]);
+      const cats = (rc.data || []).filter(c => c.active !== false);
+      const items = ri.data || [];
+      if (!cats.length || !items.length) return MARG_PRODUCTS;
+      const legacyByName = {};
+      MARG_PRODUCTS_LEGACY.forEach(c => c.items.forEach(it => { legacyByName[_margNorm(it.name)] = it; }));
+      const gruppi = [];
+      cats.forEach(c => {
+        const voci = items.filter(i => i.category_id === c.id).map(i => {
+          const legacy = legacyByName[_margNorm(i.name)] || {};
+          const haCosto = i.cost_mode === "costo_fisso" && i.company_cost != null;
+          const haPct = i.cost_mode !== "costo_fisso" && i.margin_percent != null;
+          const margine = haCosto ? { type: "cost", companyCost: Number(i.company_cost) }
+            : haPct ? { type: "pct", pctMargin: Number(i.margin_percent) }
+              : legacy.type ? { type: legacy.type, fixedMargin: legacy.fixedMargin, pctMargin: legacy.pctMargin }
+                : { type: "pct", pctMargin: 0 };
+          return {
+            id: legacy.id || "mi_" + i.id,
+            name: i.name,
+            price: i.default_price != null ? Number(i.default_price) : (legacy.price !== undefined ? legacy.price : null),
+            icon: legacy.icon || (c.kind === "servizi" ? "🔧" : "📦"),
+            brand: i.brand ? (_MARG_BRAND_MAP[_margNorm(i.brand)] || _margNorm(i.brand).toLowerCase()) : legacy.brand,
+            linked: !!(i.auto_link || legacy.linked || i.brand),
+            hasQty: legacy.hasQty, needsModel: legacy.needsModel, needsImei: legacy.needsImei,
+            isTelCash: legacy.isTelCash, countsPhone: legacy.countsPhone,
+            vat: i.vat_rate, visibile: i.visible_value,
+            ...margine,
+          };
+        });
+        if (voci.length) gruppi.push({ cat: (_MARG_CAT_EMOJI[_margNorm(c.name)] || "🏷️") + " " + c.name, grouped: _margNorm(c.name) === "SIM" || _margNorm(c.name) === "ESIM", items: voci });
+      });
+      if (gruppi.length) MARG_PRODUCTS = gruppi;
+    } catch { /* pannello irraggiungibile: resta il catalogo storico */ }
+    return MARG_PRODUCTS;
+  })();
+  return _margCatAttesa;
+};
+if (typeof window !== "undefined") caricaMargCatalogo();
+
 // ── MARGINALITÀ POS OVERLAY ──
 const calcMargLabel=(selProd,price,qty)=>{
   if(!selProd)return"";
   const pVal=selProd.price!==null?selProd.price:parseFloat(price)||0;
-  const mVal=selProd.type==="fixed"?(selProd.fixedMargin||0):selProd.type==="pct"?(pVal*(selProd.pctMargin||0)/100):0;
+  const mVal=selProd.type==="fixed"?(selProd.fixedMargin||0):selProd.type==="pct"?(pVal*(selProd.pctMargin||0)/100):selProd.type==="cost"?(pVal-(selProd.companyCost||0)):0;
   const q=parseInt(qty)||1;
-  const label=selProd.type==="pct"?`${selProd.pctMargin}% di €${pVal.toFixed(2)} = €${mVal.toFixed(2)}`:`€${mVal.toFixed(2)}`;
+  const label=selProd.type==="pct"?`${selProd.pctMargin}% di €${pVal.toFixed(2)} = €${mVal.toFixed(2)}`:selProd.type==="cost"?`€${pVal.toFixed(2)} − costo €${(selProd.companyCost||0).toFixed(2)} = €${mVal.toFixed(2)}`:`€${mVal.toFixed(2)}`;
   return`${label}${q>1?` × ${q} = €${(mVal*q).toFixed(2)}`:""}`;
 };
 // ── MAGAZZINO USATI (reale: tabella "usati") ──
@@ -177,6 +236,10 @@ async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback){
 }
 const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
   const [selCat,setSelCat]=useState(0);
+  // catalogo dal PANNELLO (03/08): al primo render il modulo potrebbe avere
+  // ancora il ripiego storico — quando la lettura dal DB arriva si ridisegna
+  const [,_margTick]=useState(0);
+  useEffect(()=>{let vivo=true;caricaMargCatalogo().then(()=>{if(vivo)_margTick(x=>x+1);});return()=>{vivo=false};},[]);
   const [selProd,setSelProd]=useState(null);
   const [price,setPrice]=useState("");
   const [qty,setQty]=useState("1");
@@ -241,7 +304,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
   // (SIM/ESIM/Sost, linked) e per quelle a margine percentuale (senza importo il
   // margine verrebbe 0). Le vendite SIM a importo NULL nascevano proprio da qui:
   // la guardia al checkout copriva solo le voci AUTO del flusso brand.
-  const needImporto=!!(selProd&&(selProd.linked||selProd.type==="pct"));
+  const needImporto=!!(selProd&&(selProd.linked||selProd.type==="pct"||selProd.type==="cost"));
   const importoMissing=needImporto&&String(importo).trim()==="";
   const handleAdd=()=>{
     if(!selProd)return;
@@ -250,7 +313,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
     const impVal=String(importo).trim()===""?null:(parseFloat(importo)||0);
     // Telefono Cash: la base del 4% e' l'importo di VENDITA inserito.
     const pVal=p.isTelCash?(parseFloat(importo)||0):(p.price!==null?p.price:parseFloat(price)||0);
-    const mVal=p.type==="fixed"?(p.fixedMargin||0):p.type==="pct"?(pVal*(p.pctMargin||0)/100):0;
+    const mVal=p.type==="fixed"?(p.fixedMargin||0):p.type==="pct"?(pVal*(p.pctMargin||0)/100):p.type==="cost"?(pVal-(p.companyCost||0)):0;
     if(p.needsImei){
       // SOLO telefoni scelti dal magazzino (Luca 31/07): niente IMEI a mano.
       const units=usatoUnits.filter(u=>u.usatoId).map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId,prezzo:(u.prezzo!=null&&String(u.prezzo).trim()!=="")?(parseFloat(String(u.prezzo).replace(",","."))||null):null}));
