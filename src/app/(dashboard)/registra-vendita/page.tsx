@@ -5331,7 +5331,7 @@ function CRM() {
             sempre a destra. Su schermi piccoli/anteprima resta nascosto.
           Nessuna configurazione extra richiesta lato sviluppatore.
       ═══════════════════════════════════════════════════════════════════ */}
-      <style>{`@media(min-width:1100px){.crmSidebar{display:flex!important}.crmShell{margin-right:368px!important}}
+      <style>{`@media(min-width:1100px){.crmSidebar{display:flex!important;width:clamp(320px,24vw,480px)!important}.crmShell{margin-right:calc(clamp(320px,24vw,480px) + 26px)!important}}
 .rvLab{font-size:10px;font-weight:800;color:#8892b0;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
 .rvIn{width:100%;padding:10px 12px;border-radius:10px;font-size:13px;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);color:#f8fafc;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
 .rvIn:focus{border-color:rgba(129,140,248,.75);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:rgba(99,102,241,.06)}
@@ -5347,7 +5347,7 @@ select.rvIn{cursor:pointer}
       {drawerCarrello&&<div onClick={()=>setDrawerCarrello(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",backdropFilter:"blur(2px)",zIndex:4400}}/>}
       {/* stessa pelle delle card del CRM (glass-panel): niente piu' grigio
           fuori tema, e sul tema chiaro diventa bianca come tutto il resto */}
-      <div className="crmSidebar glass-panel" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:80,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":344,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 96px)",overflowY:"auto",flexDirection:"column",background:drawerCarrello?"#12141f":undefined,borderRadius:drawerCarrello?0:undefined,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30}}>
+      <div className="crmSidebar glass-panel" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:80,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":undefined,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 96px)",overflowY:"auto",flexDirection:"column",background:drawerCarrello?"#12141f":undefined,borderRadius:drawerCarrello?0:undefined,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30}}>
         <div style={{background:bG,borderRadius:drawerCarrello?0:"15px 15px 0 0",padding:"16px 18px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
