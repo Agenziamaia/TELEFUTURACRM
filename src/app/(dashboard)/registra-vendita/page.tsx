@@ -2,6 +2,7 @@
 "use client";
 import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer, useMemo, createContext } from "react";
 import { createPortal } from "react-dom";
+import { ErrorBoundaryClient } from "@/components/ErrorBoundaryClient";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
@@ -1221,10 +1222,13 @@ const TF = ({l,r,v,o,p,pf,dis,nt,err}) => {
   const bad=!!vErr;
   const content = (
   <div>
-    <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{l} {r&&<span style={{color:"#dc3545"}}>*</span>}</div>
+    <div className="rvLab">{l} {r&&<span style={{color:"#f87171"}}>*</span>}</div>
     <input value={v||""} onChange={e=>onCh(e.target.value)} placeholder={p} disabled={dis} readOnly={dis}
-      style={{width:"100%",padding:"7px 10px",borderRadius:6,border:bad?"2px solid #dc3545":dis?"2px solid #17a2b8":pf?"2px solid #28a745":"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:bad?"rgba(220,53,69,0.12)":dis?"#e8f4f8":pf?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:dis?"#17a2b8":"#f8fafc",fontStyle:dis?"italic":"normal"}} />
-    {bad?<div style={{fontSize:10,color:"#dc3545",marginTop:2,fontWeight:700}}>⚠ {vErr}</div>:(nt&&<div style={{fontSize:10,color:dis?"#17a2b8":"#64748b",marginTop:2}}>{nt}</div>)}
+      className="rvIn"
+      style={bad?{border:"1.5px solid #ef4444",background:"rgba(239,68,68,0.10)"}
+        :dis?{border:"1.5px solid rgba(34,211,238,0.45)",background:"rgba(23,162,184,0.10)",color:"#7dd3fc",fontStyle:"italic"}
+        :pf?{border:"1.5px solid rgba(52,211,153,0.55)",background:"rgba(40,167,69,0.10)"}:undefined} />
+    {bad?<div style={{fontSize:11,color:"#f87171",marginTop:3,fontWeight:700}}>⚠ {vErr}</div>:(nt&&<div style={{fontSize:11,color:dis?"#67e8f9":"#64748b",marginTop:3}}>{nt}</div>)}
   </div>
   );
   return content;
@@ -1234,9 +1238,9 @@ const TF = ({l,r,v,o,p,pf,dis,nt,err}) => {
 // dalla lista e CAP + città dell'anagrafica si compilano da soli (onPick).
 const TFVia = ({v,o,pf,onPick}) => (
   <div>
-    <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Via</div>
+    <div className="rvLab">Via</div>
     <IndirizzoAutocomplete value={v||""} onChange={o} onPick={onPick} placeholder="Via Roma 12"
-      inputStyle={{width:"100%",padding:"7px 10px",borderRadius:6,border:pf?"2px solid #28a745":"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:pf?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:"#f8fafc"}} />
+      inputStyle={{width:"100%",padding:"10px 12px",borderRadius:10,border:pf?"1.5px solid rgba(52,211,153,0.55)":"1px solid rgba(255,255,255,0.12)",fontSize:13,boxSizing:"border-box",background:pf?"rgba(40,167,69,0.10)":"rgba(255,255,255,0.04)",color:"#f8fafc",outline:"none"}} />
   </div>
 );
 
@@ -1278,20 +1282,21 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
   filtered.forEach(x=>{const k=x.g||"";if(!byGroup[k])byGroup[k]=[];byGroup[k].push(x.it);});
   const content = (
     <div style={{position:"relative"}}>
-      <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{l} {r&&<span style={{color:"#dc3545"}}>*</span>}</div>
-      <input value={open?q:(v||"")} placeholder={v?v:"Cerca o seleziona…"}
+      <div className="rvLab">{l} {r&&<span style={{color:"#f87171"}}>*</span>}</div>
+      <input value={open?q:(v||"")} placeholder={v?v:"Scrivi per filtrare o scegli…"}
         onFocus={()=>{setOpen(true);setQ("");}}
         onChange={e=>{setQ(e.target.value);setOpen(true);}}
         onBlur={()=>setTimeout(()=>setOpen(false),180)}
-        style={{width:"100%",padding:"7px 10px",borderRadius:6,border:v?"2px solid #28a745":"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:v&&!open?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}}/>
+        className="rvIn"
+        style={v?{border:"1.5px solid rgba(52,211,153,0.55)",background:open?undefined:"rgba(40,167,69,0.10)"}:undefined}/>
       {open&&(
-        <div style={{position:"absolute",zIndex:200,left:0,right:0,top:"100%",marginTop:2,background:"#161a26",border:"1px solid rgba(255,255,255,0.14)",borderRadius:8,boxShadow:"0 12px 32px rgba(0,0,0,.6)",maxHeight:260,overflowY:"auto"}}>
-          {v&&<div onMouseDown={()=>{o&&o("");setOpen(false);}} style={{padding:"7px 10px",fontSize:11,color:"#dc3545",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.06)"}}>✕ Deseleziona</div>}
-          {filtered.length===0&&!extra.some(g=>g.voci&&g.voci.length)&&<div style={{padding:"10px",fontSize:12,color:"#64748b"}}>Nessun risultato</div>}
+        <div className="rvMenu">
+          {v&&<div onMouseDown={()=>{o&&o("");setOpen(false);}} style={{padding:"8px 12px",fontSize:12,color:"#f87171",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.06)",fontWeight:700}}>✕ Deseleziona</div>}
+          {filtered.length===0&&!extra.some(g=>g.voci&&g.voci.length)&&<div style={{padding:"12px",fontSize:13,color:"#64748b"}}>Nessun risultato — scrivi per cercare</div>}
           {Object.keys(byGroup).map(gk=>(
             <div key={gk||"_"}>
-              {gk&&<div style={{padding:"5px 10px",fontSize:10,fontWeight:700,color:"#94a3b8",background:"#1f2533",textTransform:"uppercase",position:"sticky",top:0}}>{gk}</div>}
-              {byGroup[gk].map(it=><div key={it} onMouseDown={()=>{o&&o(it);setOpen(false);setQ("");}} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",background:v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:"#f8fafc"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"} onMouseLeave={e=>e.currentTarget.style.background=v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}>{it}</div>)}
+              {gk&&<div className="rvGrp">{gk}</div>}
+              {byGroup[gk].map(it=><div key={it} onMouseDown={()=>{o&&o(it);setOpen(false);setQ("");}} className="rvOpt" style={v===it?{background:"rgba(40,167,69,0.16)",fontWeight:700}:undefined}>{it}</div>)}
             </div>
           ))}
           {(()=>{const visti=new Set(flat.map(x=>x.it.toLowerCase()));return extra.map(g=>{
@@ -1301,8 +1306,8 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
             const oro=String(g.gruppo||"").includes("Listino");
             return (
             <div key={g.gruppo}>
-              <div style={{padding:"5px 10px",fontSize:10,fontWeight:700,color:oro?"#6ee7b7":"#a5b4fc",background:"#1f2533",textTransform:"uppercase",position:"sticky",top:0}}>{g.gruppo}</div>
-              {ex.map(it=><div key={g.gruppo+"_"+it} onMouseDown={()=>{o&&o(it);setOpen(false);setQ("");}} style={{padding:"7px 12px",fontSize:12,cursor:"pointer",background:v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:"#f8fafc"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"} onMouseLeave={e=>e.currentTarget.style.background=v===it?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}>{it}</div>)}
+              <div className="rvGrp" style={{color:oro?"#6ee7b7":"#a5b4fc"}}>{g.gruppo}</div>
+              {ex.map(it=><div key={g.gruppo+"_"+it} onMouseDown={()=>{o&&o(it);setOpen(false);setQ("");}} className="rvOpt" style={v===it?{background:"rgba(40,167,69,0.16)",fontWeight:700}:undefined}>{it}</div>)}
             </div>);});})()}
         </div>
       )}
@@ -1323,7 +1328,7 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
       {typeof v==="string"&&(v==="Altro"||v.startsWith("Altro:"))&&(
         <input autoFocus value={v.replace(/^Altro:?\s*/,"")} placeholder="Inserisci il modello non in lista…"
           onChange={e=>{const t=e.target.value;o&&o(t?("Altro: "+t):"Altro");}}
-          style={{width:"100%",marginTop:6,padding:"7px 10px",borderRadius:6,fontSize:12,boxSizing:"border-box",border:"1px solid rgba(111,66,193,0.5)",background:"rgba(111,66,193,0.10)",color:"#f8fafc"}}/>
+          className="rvIn" style={{marginTop:6,border:"1.5px solid rgba(139,92,246,0.55)",background:"rgba(111,66,193,0.10)"}}/>
       )}
     </div>
   );
@@ -1340,13 +1345,14 @@ const SCd = ({session,codici,val,onCh}) => {
   const isOv=val&&val!==session;
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Codice <span style={{color:"#dc3545"}}>*</span></div>
-      <select value={actual} onChange={e=>onCh(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,fontSize:12,border:actual?"2px solid #28a745":"1px solid rgba(255,255,255,0.1)",background:actual&&!isOv?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)"}}>
+      <div className="rvLab">Codice <span style={{color:"#f87171"}}>*</span></div>
+      <select value={actual} onChange={e=>onCh(e.target.value)} className="rvIn"
+        style={actual?{border:"1.5px solid rgba(52,211,153,0.55)",background:isOv?undefined:"rgba(40,167,69,0.10)"}:undefined}>
         <option value="">— Seleziona —</option>
         {codici.map(c=><option key={c} value={c}>{c}</option>)}
       </select>
-      {actual&&!isOv&&<div style={{fontSize:10,color:"#28a745",marginTop:2}}>✓ Da codice inserimento</div>}
-      {isOv&&<div style={{fontSize:10,color:"#fd7e14",marginTop:2}}>⚠ Modificato</div>}
+      {actual&&!isOv&&<div style={{fontSize:11,color:"#34d399",marginTop:3}}>✓ Da codice inserimento</div>}
+      {isOv&&<div style={{fontSize:11,color:"#fb923c",marginTop:3}}>⚠ Modificato</div>}
     </div>
   );
   return content;
@@ -1585,12 +1591,12 @@ const MiniC = ({label,val,opts,onCh,locked,lockVal}) => {
 const RB = ({label,val,opts,onCh}) => {
   const content = (
     <div style={{marginBottom:12}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:6,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
-      <div style={{display:"flex",gap:8}}>
+      <div className="rvLab">{label}</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         {opts.map(o=>(
           <button key={o} onClick={()=>onCh(val===o?null:o)}
-            style={{padding:"7px 20px",borderRadius:8,border:val===o?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:val===o?VF_C:"rgba(255,255,255,0.04)",color:val===o?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-            {o}
+            style={{padding:"9px 22px",borderRadius:999,border:val===o?"1.5px solid "+VF_C:"1px solid rgba(255,255,255,0.12)",background:val===o?VF_C:"rgba(255,255,255,0.04)",color:val===o?"#fff":"#8892b0",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all .15s",boxShadow:val===o?"0 4px 14px "+VF_C+"55":"none"}}>
+            {val===o?"✓ ":""}{o}
           </button>
         ))}
       </div>
@@ -4088,7 +4094,7 @@ const NoteStep = ({store,show,setShow,nota,setNota,pData,setPData,pOra,setPOra,p
 // MAIN
 // ═══════════════════════════════════════════════════════════════════════════
 
-export default function CRM() {
+function CRM() {
   // Sottoscrizione alle liste caricate dal DB: senza queste, `venditori` e
   // `negozi` si riempiono dopo il primo render e il menu a tendina resta vuoto
   // finche' qualcos'altro non provoca un aggiornamento. useNegozi() esisteva
@@ -4228,6 +4234,9 @@ export default function CRM() {
   }, [qrToken, qrBox]);
   const [draftLoaded,setDraftLoaded]=useState(false);
   const [showCart,setShowCart]=useState(false);
+  // DRAWER carrello (revamp 03/08): il riepilogo live si apre su QUALSIASI
+  // schermo dal bottone flottante; sui monitor >=1600px resta fisso come prima
+  const [drawerCarrello,setDrawerCarrello]=useState(false);
   const [toast,setToast]=useState(null);
   const [expI,setExpI]=useState({});
   const [tipoCliente,setTipoCliente]=useState(null);
@@ -5090,7 +5099,19 @@ export default function CRM() {
     return miss;
   })();
 
-  const gSS=i=>{if(i===0)return brand?"done":"active";if(i===1)return !brand?"pending":tipoCliente?"done":"active";if(i===2)return !tipoCliente?"pending":showAna?"done":"active";return showAna?"active":"pending"};
+  // stati VERI anche per le tappe finali (revamp 03/08): Prodotti = qualcosa
+  // in carrello/selezione, Allegati = almeno un file, Attribuzione = completa,
+  // Note = facoltativa (fatta solo se scritta)
+  const gSS=i=>{
+    if(i===0)return brand?"done":"active";
+    if(i===1)return !brand?"pending":tipoCliente?"done":"active";
+    if(i===2)return !tipoCliente?"pending":showAna?"done":"active";
+    if(!showAna)return "pending";
+    if(i===3)return (showStep4&&tCI>0)?"done":"active";
+    if(i===4)return attachments.length>0?"done":"active";
+    if(i===5)return (selVend&&selNeg&&dataVendita)?"done":"active";
+    return (notaOn&&nota.trim())?"done":"active";
+  };
 
   // #124: il popup di conferma reset è condiviso da form E carrello (il carrello
   // fa un return anticipato, quindi il modal inline nel form non lo raggiunge).
@@ -5174,55 +5195,11 @@ export default function CRM() {
             </div>
           ))}
         </div>}
-        {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #17a2b8",marginTop:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#17a2b8",marginBottom:14,textTransform:"uppercase"}}>📎 Step 5 — Allegati</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-            {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
-              onDragOver={e=>onBoxDragOver(e,a.t)} onDragEnter={e=>onBoxDragOver(e,a.t)}
-              onDragLeave={onBoxDragLeave} onDrop={e=>onBoxDrop(e,a.t)}
-              style={{display:"block",border:"2px dashed "+(over?"#17a2b8":(cnt>0?"rgba(23,162,184,0.55)":"rgba(255,255,255,0.1)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"rgba(255,255,255,0.03)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-flex",gap:6,alignItems:"center",justifyContent:"center"}}><span style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:700}}>Carica</span><button type="button" onClick={e=>{e.preventDefault();e.stopPropagation();openQr(a.t);}} title="Carica dal telefono via QR" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,background:"rgba(23,162,184,0.12)",border:"1px solid rgba(23,162,184,0.5)",color:"#5fd3e6",fontSize:10,fontWeight:700,cursor:"pointer"}}>📱 QR</button></div><div style={{fontSize:9,color:"#64748b",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"#17a2b8",fontWeight:700}}>{cnt} file</div>}</label>;})}
-          </div>
-          {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid rgba(255,255,255,0.05)":"none"}}><div style={{fontSize:11,color:"#f8fafc"}}><span onClick={()=>apriAnteprima(file)} title="Anteprima" style={{cursor:"pointer",textDecoration:"underline",textDecorationColor:"rgba(255,255,255,0.3)",textUnderlineOffset:2}}>{file.name}</span> <span style={{color:"#64748b",fontSize:10}}>· {file.type}</span></div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
-        </div>}
-        {preview&&createPortal(<div onClick={chiudiAnteprima} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"#11141d",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,width:"100%",maxWidth:840,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#f8fafc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{preview.name}</div>
-              <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                <a href={preview.url} target="_blank" rel="noreferrer" style={{fontSize:12,color:"#5fd3e6",textDecoration:"none",fontWeight:700}}>Apri ↗</a>
-                <button onClick={chiudiAnteprima} style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}}>✕</button>
-              </div>
-            </div>
-            <div style={{flex:1,minHeight:0,background:"#0b0d14",display:"flex",alignItems:"center",justifyContent:"center",overflow:"auto"}}>
-              {(preview.mime||"").startsWith("image/")
-                ? <img src={preview.url} alt={preview.name} style={{maxWidth:"100%",maxHeight:"80vh",objectFit:"contain"}}/>
-                : (preview.mime||"").includes("pdf")
-                  ? <iframe src={preview.url} title={preview.name} style={{width:"100%",height:"80vh",border:"none",background:"#fff"}}/>
-                  : <div style={{padding:40,color:"#94a3b8",textAlign:"center"}}>Anteprima non disponibile.<br/><a href={preview.url} target="_blank" rel="noreferrer" style={{color:"#5fd3e6"}}>Scarica il file</a></div>}
-            </div>
-          </div>
-        </div>, document.body)}
-        {qrBox&&createPortal(<div onClick={closeQr} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"#11141d",border:"1px solid rgba(255,255,255,.08)",borderRadius:16,width:"100%",maxWidth:360,padding:24,margin:"0 16px",textAlign:"center"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div style={{fontWeight:800,fontSize:16,color:"#f8fafc"}}>📱 Carica dal telefono</div>
-              <button onClick={closeQr} style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}}>✕</button>
-            </div>
-            {qrRecv?(
-              <div style={{padding:"22px 0"}}><div style={{fontSize:48,marginBottom:8}}>✅</div><div style={{fontSize:16,fontWeight:800,color:"#34d399"}}>Ricevuto!</div><div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>{qrRecv.n} file aggiunt{qrRecv.n===1?"o":"i"} agli allegati.</div></div>
-            ):(<>
-              <div style={{fontSize:12,color:"#94a3b8",marginBottom:14}}>Inquadra il QR con la fotocamera del telefono e carica {qrBox==="documento"?"la foto del documento (PNG/JPEG)":"il PDF — se scansioni più pagine verranno unite in un unico file"}.</div>
-              {qrImg?<img src={qrImg} alt="QR" style={{width:216,height:216,borderRadius:12,background:"#fff",padding:8,boxSizing:"border-box",display:"block",margin:"0 auto"}}/>:<div style={{width:216,height:216,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b"}}>Genero…</div>}
-              <div style={{fontSize:11,color:"#f59e0b",marginTop:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{width:8,height:8,borderRadius:4,background:"#f59e0b",display:"inline-block"}}/>In attesa della scansione…</div>
-            </>)}
-          </div>
-        </div>, document.body)}
-        {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Step 6 — Attribuzione</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
-            <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
-            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
-          </div>
+        {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"12px 16px",marginTop:12,marginBottom:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>📎 {attachments.length} allegat{attachments.length===1?"o":"i"}</span>
+          <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>🏪 {selVend||"—"} · {selNeg||"—"} · {dataVendita?dataVendita.split("-").reverse().join("/"):"—"}</span>
+          <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>📝 {notaOn&&nota.trim()?"nota inserita":"nessuna nota"}</span>
+          <button onClick={()=>setShowCart(false)} style={{marginLeft:"auto",padding:"7px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.04)",color:"#cbd5e1",fontSize:11,fontWeight:800,cursor:"pointer"}}>✏️ Modifica in pagina</button>
         </div>}
         {onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745",marginTop:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
@@ -5232,7 +5209,6 @@ export default function CRM() {
             <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Giorno <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
-        {!onlyMarg&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
         {dupCellCliente&&<div style={{marginTop:14,padding:"12px 16px",borderRadius:10,background:"rgba(245,158,11,0.10)",border:"1px solid rgba(245,158,11,0.45)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#fbbf24",marginBottom:8}}>📱 Questo cellulare è già associato a “{dupCellCliente.label}”, un&apos;anagrafica dello STESSO tipo — lo stesso numero può stare solo su una consumer e una business insieme.</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -5353,11 +5329,26 @@ export default function CRM() {
             sempre a destra. Su schermi piccoli/anteprima resta nascosto.
           Nessuna configurazione extra richiesta lato sviluppatore.
       ═══════════════════════════════════════════════════════════════════ */}
-      <style>{`@media(min-width:1600px){.crmSidebar{display:flex!important}.crmShell{margin-right:380px!important}}`}</style>
-      {/* SIDEBAR CARRELLO LIVE (desktop) */}
-      <div className="crmSidebar" style={{display:"none",position:"fixed",top:76,right:16,width:344,maxHeight:"calc(100vh - 92px)",overflowY:"auto",flexDirection:"column",background:"rgba(255,255,255,0.02)",borderRadius:14,boxShadow:"0 8px 30px rgba(0,0,0,.12)",zIndex:30,border:"2px solid "+bC}}>
-        <div style={{background:bG,borderRadius:"14px 14px 0 0",padding:"16px 18px"}}>
-          <div style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
+      <style>{`@media(min-width:1600px){.crmSidebar{display:flex!important}.crmShell{margin-right:380px!important}}
+.rvLab{font-size:10px;font-weight:800;color:#8892b0;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
+.rvIn{width:100%;padding:10px 12px;border-radius:10px;font-size:13px;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);color:#f8fafc;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
+.rvIn:focus{border-color:rgba(129,140,248,.75);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:rgba(99,102,241,.06)}
+.rvIn::placeholder{color:#586174}
+select.rvIn{cursor:pointer}
+.rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:#161a2c;border:1px solid rgba(255,255,255,0.15);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.65);max-height:280px;overflow-y:auto}
+.rvOpt{padding:9px 13px;font-size:13px;cursor:pointer;color:#f8fafc}
+.rvOpt:hover{background:rgba(99,102,241,.18)}
+.rvGrp{padding:5px 12px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#94a3b8;background:#1b2030;text-transform:uppercase;position:sticky;top:0}
+.crmFab{position:fixed;bottom:18px;right:18px;z-index:4300;display:flex;align-items:center;gap:8px;padding:13px 18px;border-radius:999px;border:none;cursor:pointer;color:#fff;font-size:14px;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+@media(min-width:1600px){.crmFab{display:none}}`}</style>
+      {/* SIDEBAR CARRELLO LIVE (desktop) + DRAWER su richiesta (ogni schermo) */}
+      {drawerCarrello&&<div onClick={()=>setDrawerCarrello(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",backdropFilter:"blur(2px)",zIndex:4400}}/>}
+      <div className="crmSidebar" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:76,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":344,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 92px)",overflowY:"auto",flexDirection:"column",background:drawerCarrello?"#12141f":"rgba(255,255,255,0.02)",borderRadius:drawerCarrello?0:14,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30,border:"2px solid "+bC}}>
+        <div style={{background:bG,borderRadius:drawerCarrello?0:"14px 14px 0 0",padding:"16px 18px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
+            {drawerCarrello&&<button onClick={()=>setDrawerCarrello(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:800,padding:"4px 10px",cursor:"pointer"}}>✕</button>}
+          </div>
           <div style={{color:"rgba(255,255,255,.6)",fontSize:11,marginTop:2}}>{(tipoCliente==="privato"?(ana.nome+" "+ana.cognome).trim():ana.ragioneSociale)||"In compilazione"}</div>
           {/* dati chiave del cliente SOTTO il nome (Luca 03/08): solo se compilati nello Step 3 */}
           {(ana.cf||ana.email||ana.iban)&&<div style={{marginTop:7,display:"flex",flexDirection:"column",gap:3}}>
@@ -5414,6 +5405,7 @@ export default function CRM() {
           <button onClick={()=>setShowCart(true)} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:bG,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>Apri carrello →</button>
         </div>
       </div>
+      {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"#FFD800",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
       {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#28a745",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
       <div style={{background:bG,borderRadius:12,padding:"14px 20px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:36,height:36,background:"rgba(255,255,255,.2)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{bObj?bObj.icon:"⚡"}</div><div><div style={{color:"#fff",fontWeight:700,fontSize:16}}>Registra Vendita</div><div style={{color:"rgba(255,255,255,.7)",fontSize:11}}>{bObj?bObj.label:"Seleziona brand"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div></div></div>
@@ -5754,7 +5746,59 @@ export default function CRM() {
         </div>
       </div>}
 
-{showAna&&showStep4&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
+        {showAna&&showStep4&&!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #17a2b8",marginTop:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#17a2b8",marginBottom:14,textTransform:"uppercase"}}>📎 Step 5 — Allegati</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+            {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
+              onDragOver={e=>onBoxDragOver(e,a.t)} onDragEnter={e=>onBoxDragOver(e,a.t)}
+              onDragLeave={onBoxDragLeave} onDrop={e=>onBoxDrop(e,a.t)}
+              style={{display:"block",border:"2px dashed "+(over?"#17a2b8":(cnt>0?"rgba(23,162,184,0.55)":"rgba(255,255,255,0.1)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"rgba(255,255,255,0.03)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-flex",gap:6,alignItems:"center",justifyContent:"center"}}><span style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:700}}>Carica</span><button type="button" onClick={e=>{e.preventDefault();e.stopPropagation();openQr(a.t);}} title="Carica dal telefono via QR" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,background:"rgba(23,162,184,0.12)",border:"1px solid rgba(23,162,184,0.5)",color:"#5fd3e6",fontSize:10,fontWeight:700,cursor:"pointer"}}>📱 QR</button></div><div style={{fontSize:9,color:"#64748b",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"#17a2b8",fontWeight:700}}>{cnt} file</div>}</label>;})}
+          </div>
+          {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid rgba(255,255,255,0.05)":"none"}}><div style={{fontSize:11,color:"#f8fafc"}}><span onClick={()=>apriAnteprima(file)} title="Anteprima" style={{cursor:"pointer",textDecoration:"underline",textDecorationColor:"rgba(255,255,255,0.3)",textUnderlineOffset:2}}>{file.name}</span> <span style={{color:"#64748b",fontSize:10}}>· {file.type}</span></div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
+        </div>}
+        {preview&&createPortal(<div onClick={chiudiAnteprima} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#11141d",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,width:"100%",maxWidth:840,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#f8fafc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{preview.name}</div>
+              <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                <a href={preview.url} target="_blank" rel="noreferrer" style={{fontSize:12,color:"#5fd3e6",textDecoration:"none",fontWeight:700}}>Apri ↗</a>
+                <button onClick={chiudiAnteprima} style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}}>✕</button>
+              </div>
+            </div>
+            <div style={{flex:1,minHeight:0,background:"#0b0d14",display:"flex",alignItems:"center",justifyContent:"center",overflow:"auto"}}>
+              {(preview.mime||"").startsWith("image/")
+                ? <img src={preview.url} alt={preview.name} style={{maxWidth:"100%",maxHeight:"80vh",objectFit:"contain"}}/>
+                : (preview.mime||"").includes("pdf")
+                  ? <iframe src={preview.url} title={preview.name} style={{width:"100%",height:"80vh",border:"none",background:"#fff"}}/>
+                  : <div style={{padding:40,color:"#94a3b8",textAlign:"center"}}>Anteprima non disponibile.<br/><a href={preview.url} target="_blank" rel="noreferrer" style={{color:"#5fd3e6"}}>Scarica il file</a></div>}
+            </div>
+          </div>
+        </div>, document.body)}
+        {qrBox&&createPortal(<div onClick={closeQr} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#11141d",border:"1px solid rgba(255,255,255,.08)",borderRadius:16,width:"100%",maxWidth:360,padding:24,margin:"0 16px",textAlign:"center"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:16,color:"#f8fafc"}}>📱 Carica dal telefono</div>
+              <button onClick={closeQr} style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}}>✕</button>
+            </div>
+            {qrRecv?(
+              <div style={{padding:"22px 0"}}><div style={{fontSize:48,marginBottom:8}}>✅</div><div style={{fontSize:16,fontWeight:800,color:"#34d399"}}>Ricevuto!</div><div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>{qrRecv.n} file aggiunt{qrRecv.n===1?"o":"i"} agli allegati.</div></div>
+            ):(<>
+              <div style={{fontSize:12,color:"#94a3b8",marginBottom:14}}>Inquadra il QR con la fotocamera del telefono e carica {qrBox==="documento"?"la foto del documento (PNG/JPEG)":"il PDF — se scansioni più pagine verranno unite in un unico file"}.</div>
+              {qrImg?<img src={qrImg} alt="QR" style={{width:216,height:216,borderRadius:12,background:"#fff",padding:8,boxSizing:"border-box",display:"block",margin:"0 auto"}}/>:<div style={{width:216,height:216,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b"}}>Genero…</div>}
+              <div style={{fontSize:11,color:"#f59e0b",marginTop:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{width:8,height:8,borderRadius:4,background:"#f59e0b",display:"inline-block"}}/>In attesa della scansione…</div>
+            </>)}
+          </div>
+        </div>, document.body)}
+        {showAna&&showStep4&&!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #28a745"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Step 6 — Attribuzione</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
+            <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
+            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
+          </div>
+        </div>}
+        {showAna&&showStep4&&!onlyMarg&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
+
+      {showAna&&showStep4&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <button onClick={()=>setShowStep4(false)} style={{padding:"11px 20px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
           <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
@@ -5796,4 +5840,10 @@ export default function CRM() {
     </div>
   );
   return <ReqCtx.Provider value={_reqApi}>{formContent}</ReqCtx.Provider>;
+}
+
+// PARACADUTE (Luca 03/08): se il render di Registra Vendita esplode, invece
+// della schermata bianca compare un riquadro con l'errore leggibile + Ricarica.
+export default function RegistraVenditaPage() {
+  return <ErrorBoundaryClient nome="Registra Vendita"><CRM /></ErrorBoundaryClient>;
 }
