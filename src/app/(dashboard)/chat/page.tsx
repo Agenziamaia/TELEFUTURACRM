@@ -133,7 +133,15 @@ function ChatPageInner() {
   //    nativo del browser (si puo' scegliere lo schermo intero, non solo il
   //    CRM); il file finisce tra gli allegati del messaggio in scrittura ──
   const [recording, setRecording] = useState(false);
-  const recRef = useRef<{ rec: MediaRecorder; stream: MediaStream } | null>(null);
+  // agganci al registratore di MODULO (vedi in fondo al file): montandomi
+  // riprendo lo stato vivo e ritiro l'eventuale registrazione finita altrove
+  useEffect(() => {
+    _regConsegna = (f: File) => { setFiles((p: File[]) => [...p, f]); setRecording(false); };
+    if (_regViva) setRecording(true);
+    if (_regPronta) { const f = _regPronta; _regPronta = null; setFiles((p: File[]) => [...p, f]); }
+    return () => { _regConsegna = null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // due modalita' (Luca 02/08): finestra intera O selezione manuale di
   // un'area col tratteggio; in entrambi i casi si passa dall'EDITOR
   // (matita/cerchio/rettangolo/freccia stile WhatsApp) prima di allegare
@@ -161,7 +169,7 @@ function ChatPageInner() {
     } catch { /* annullato dal picker */ }
   };
   const toggleRegistrazione = async () => {
-    if (recording && recRef.current) { recRef.current.rec.stop(); return; }
+    if (_regViva) { _regViva.rec.stop(); return; }
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
       const rec = new MediaRecorder(stream, MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? { mimeType: "video/webm;codecs=vp9" } : undefined);
@@ -169,13 +177,17 @@ function ChatPageInner() {
       rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
       rec.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
-        setRecording(false); recRef.current = null;
+        _regViva = null;
         const blob = new Blob(chunks, { type: "video/webm" });
-        if (blob.size) setFiles((p: File[]) => [...p, new File([blob], `registrazione-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.webm`, { type: "video/webm" })]);
+        const file = blob.size ? new File([blob], `registrazione-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.webm`, { type: "video/webm" }) : null;
+        if (!file) return;
+        // se la chat e' aperta si allega subito; altrimenti il file ASPETTA
+        // il prossimo ingresso in chat (niente piu' registrazioni perse)
+        if (_regConsegna) _regConsegna(file); else _regPronta = file;
       };
       stream.getVideoTracks()[0].onended = () => { if (rec.state !== "inactive") rec.stop(); };
       rec.start(1000);
-      recRef.current = { rec, stream };
+      _regViva = { rec, stream, chunks };
       setRecording(true);
     } catch { /* annullato dal picker */ }
   };
@@ -452,7 +464,7 @@ function ChatPageInner() {
   const otherPart = selConv?.type === "dm" ? parts.find((p) => p.user_id !== meId) : null;
   // RICEVUTE UNIVERSALI (03/08, richiesta Luca): valgono anche nei GRUPPI —
   // 👀 = letto da TUTTI (come le spunte blu), 👁 x/y = letto da alcuni,
-  // ✉️ = consegnato, 🕊️ = inviato. Emoji al posto delle spunte: sul tema
+  // ✉️ = consegnato, 📤 = inviato. Emoji al posto delle spunte: sul tema
   // scuro le due grigie/blu si confondevano.
   const receiptFor = (m) => {
     const altri = parts.filter((p) => p.user_id !== meId);
@@ -776,7 +788,7 @@ function ChatPageInner() {
                             if (r.stato === "seen") return <span title={gruppo ? `👀 Letto da TUTTI (${r.tot})` : "👀 Letto"} className="text-[11px] leading-none">👀</span>;
                             if (r.stato === "partial") return <span title={`👁 Letto da ${r.letti} su ${r.tot} — dettaglio sulla ⓘ`} className="text-[11px] leading-none">👁 <i className="not-italic font-bold">{r.letti}/{r.tot}</i></span>;
                             if (r.stato === "delivered") return <span title="✉️ Consegnato (non ancora letto)" className="text-[11px] leading-none">✉️</span>;
-                            return <span title="🕊️ Inviato" className="text-[11px] leading-none opacity-80">🕊️</span>;
+                            return <span title="📤 Inviato" className="text-[11px] leading-none">📤</span>;
                           })()}
                         </p>
                       </div>
@@ -1182,3 +1194,10 @@ export default function ChatPage() {
         </Suspense>
     );
 }
+
+/* ── REGISTRATORE SCHERMO di MODULO (03/08): sopravvive al cambio di
+   sezione del CRM. La registrazione parte dalla chat, continua ovunque tu
+   navighi, e si allega quando torni (o appena fermi la condivisione). ── */
+let _regViva: { rec: MediaRecorder; stream: MediaStream; chunks: Blob[] } | null = null;
+let _regPronta: File | null = null;
+let _regConsegna: ((f: File) => void) | null = null;
