@@ -217,12 +217,12 @@ function KpiBar({
   const malusTotale = data.reduce((acc, r) => acc + calcolaMalus(r), 0);
 
   const cards = [
-    { label: "Totale Monitorati", val: totale, color: "#94a3b8", filter: null as string | null },
-    { label: "Nuovi", val: nuovi, color: "#64748b", filter: "nuovo" },
-    { label: "Da Lavorare", val: daLavorare, color: "#eab308", filter: "__da_lavorare__" },
-    { label: "Warning", val: problema, color: "#f97316", filter: "__attenzione__" },
-    { label: "Malus", val: malusCount, color: "#dc2626", filter: "__malus__" },
-    { label: "Non Conforme", val: nonConformi, color: "#7c3aed", filter: "__non_conforme__" },
+    { label: "Totale Monitorati", emoji: "📡", val: totale, color: "#94a3b8", filter: null as string | null },
+    { label: "Nuovi", emoji: "🆕", val: nuovi, color: "#60a5fa", filter: "nuovo" },
+    { label: "Da Lavorare", emoji: "⚡", val: daLavorare, color: "#eab308", filter: "__da_lavorare__" },
+    { label: "Warning", emoji: "⚠️", val: problema, color: "#f97316", filter: "__attenzione__" },
+    { label: "Malus", emoji: "🔴", val: malusCount, color: "#ef4444", filter: "__malus__" },
+    { label: "Non Conforme", emoji: "🚫", val: nonConformi, color: "#a78bfa", filter: "__non_conforme__" },
   ];
 
   return (
@@ -237,16 +237,18 @@ function KpiBar({
               tabIndex={0}
               onClick={() => onFilter(isActive ? null : c.filter)}
               onKeyDown={(e) => e.key === "Enter" && onFilter(isActive ? null : c.filter)}
-              className="rounded-xl border p-3.5 text-center cursor-pointer select-none transition-all hover:border-opacity-60"
+              className="rounded-xl border p-3.5 text-center cursor-pointer select-none transition-all"
               style={{
-                background: isActive ? c.color + "22" : "#1e293b",
-                borderColor: isActive ? c.color : "#334155",
+                background: isActive ? c.color + "1f" : "rgba(255,255,255,0.03)",
+                borderColor: isActive ? c.color : "rgba(255,255,255,0.08)",
+                boxShadow: isActive ? `0 0 0 3px ${c.color}22` : "none",
               }}
             >
-              <div className="text-2xl font-bold" style={{ color: c.color }}>
-                {c.val}
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-xl" style={{ opacity: .85 }}>{c.emoji}</span>
+                <span className="text-2xl font-black" style={{ color: c.color }}>{c.val}</span>
               </div>
-              <div className="text-[11px] mt-0.5 font-medium" style={{ color: isActive ? c.color : "#94a3b8" }}>
+              <div className="text-[11px] mt-1 font-bold uppercase tracking-wider" style={{ color: isActive ? c.color : "#94a3b8" }}>
                 {c.label}
               </div>
               {c.filter === "__malus__" && malusTotale > 0 && (
@@ -278,8 +280,8 @@ function KpiBar({
         onClick={() => setEscludiConfermati(!escludiConfermati)}
         className="flex items-center gap-2.5 rounded-xl border py-2.5 px-4 cursor-pointer select-none transition-all mb-2"
         style={{
-          background: escludiConfermati ? "#0c1a0c" : "#1e293b",
-          borderColor: escludiConfermati ? "#22c55e" : "#334155",
+          background: escludiConfermati ? "rgba(34,197,94,0.08)" : "rgba(255,255,255,0.03)",
+          borderColor: escludiConfermati ? "rgba(34,197,94,0.5)" : "rgba(255,255,255,0.08)",
         }}
       >
         <div
@@ -303,8 +305,8 @@ function KpiBar({
         onClick={() => setEscludiCompletati(!escludiCompletati)}
         className="flex items-center gap-2.5 rounded-xl border py-2.5 px-4 cursor-pointer select-none transition-all mt-2"
         style={{
-          background: escludiCompletati ? "#0c1a0c" : "#1e293b",
-          borderColor: escludiCompletati ? "#22c55e" : "#334155",
+          background: escludiCompletati ? "rgba(34,197,94,0.08)" : "rgba(255,255,255,0.03)",
+          borderColor: escludiCompletati ? "rgba(34,197,94,0.5)" : "rgba(255,255,255,0.08)",
         }}
       >
         <div
@@ -407,10 +409,10 @@ function FilterBar({
   });
 
   const inputStyle =
-    "bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none box-border w-full";
+    "bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none box-border w-full";
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-4">
+    <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4 mb-4">
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <span className="text-xs text-slate-400 font-semibold mr-1">CATEGORIA</span>
         {CATEGORIE.map((cat) => {
@@ -422,7 +424,7 @@ function FilterBar({
               onClick={() => toggleCat(cat.id)}
               className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
               style={{
-                borderColor: sel ? cat.color : "#334155",
+                borderColor: sel ? cat.color : "rgba(255,255,255,0.10)",
                 background: sel ? cat.color + "33" : "transparent",
                 color: sel ? cat.color : "#94a3b8",
               }}
@@ -435,7 +437,7 @@ function FilterBar({
           <button
             type="button"
             onClick={() => { setCatSel([]); setStatoSel([]); }}
-            className="rounded-full px-3 py-1 text-[11px] cursor-pointer border border-slate-600 bg-transparent text-slate-500"
+            className="rounded-full px-3 py-1 text-[11px] cursor-pointer border border-white/15 bg-transparent text-slate-500"
           >
             ✕ Deseleziona tutto
           </button>
@@ -462,7 +464,7 @@ function FilterBar({
               onClick={() => toggleBrand(b)}
               className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
               style={{
-                borderColor: sel ? color : "#334155",
+                borderColor: sel ? color : "rgba(255,255,255,0.10)",
                 background: sel ? color + "33" : "transparent",
                 color: sel ? color : "#94a3b8",
               }}
@@ -475,7 +477,7 @@ function FilterBar({
           <button
             type="button"
             onClick={() => setBrandSel([])}
-            className="rounded-full px-3 py-1 text-[11px] cursor-pointer border border-slate-600 bg-transparent text-slate-500"
+            className="rounded-full px-3 py-1 text-[11px] cursor-pointer border border-white/15 bg-transparent text-slate-500"
           >
             ✕ Tutti i brand
           </button>
@@ -491,7 +493,7 @@ function FilterBar({
             onClick={() => setNegozioSel("")}
             className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
             style={{
-              borderColor: negozioSel === "" ? "#6366f1" : "#334155",
+              borderColor: negozioSel === "" ? "#6366f1" : "rgba(255,255,255,0.10)",
               background: negozioSel === "" ? "#6366f133" : "transparent",
               color: negozioSel === "" ? "#818cf8" : "#94a3b8",
             }}
@@ -507,7 +509,7 @@ function FilterBar({
                 onClick={() => setNegozioSel(sel ? "" : n)}
                 className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
                 style={{
-                  borderColor: sel ? "#6366f1" : "#334155",
+                  borderColor: sel ? "#6366f1" : "rgba(255,255,255,0.10)",
                   background: sel ? "#6366f133" : "transparent",
                   color: sel ? "#818cf8" : "#94a3b8",
                 }}
@@ -529,7 +531,7 @@ function FilterBar({
             onClick={() => setVenditoreSel("")}
             className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
             style={{
-              borderColor: venditoreSel === "" ? "#6366f1" : "#334155",
+              borderColor: venditoreSel === "" ? "#6366f1" : "rgba(255,255,255,0.10)",
               background: venditoreSel === "" ? "#6366f133" : "transparent",
               color: venditoreSel === "" ? "#818cf8" : "#94a3b8",
             }}
@@ -545,7 +547,7 @@ function FilterBar({
                 onClick={() => setVenditoreSel(sel ? "" : n)}
                 className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
                 style={{
-                  borderColor: sel ? "#6366f1" : "#334155",
+                  borderColor: sel ? "#6366f1" : "rgba(255,255,255,0.10)",
                   background: sel ? "#6366f133" : "transparent",
                   color: sel ? "#818cf8" : "#94a3b8",
                 }}
@@ -586,10 +588,10 @@ function FilterBar({
           </button>
           {statoOpen && (
             <div
-              className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
+              className="absolute top-full left-0 right-0 mt-1 bg-white/[0.03] border border-white/10 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
               style={{ boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}
             >
-              <div className="flex items-center justify-between py-2 px-3 border-b border-slate-700">
+              <div className="flex items-center justify-between py-2 px-3 border-b border-white/10">
                 <span className="text-[11px] text-slate-500 font-semibold">
                   {statoSel.length > 0 ? `${statoSel.length} selezionati` : "Seleziona esiti"}
                 </span>
@@ -631,7 +633,7 @@ function FilterBar({
                 role="button"
                 tabIndex={0}
                 onClick={() => setStatoOpen(false)}
-                className="py-2 px-3 border-t border-slate-700 text-center text-[11px] text-slate-500 cursor-pointer"
+                className="py-2 px-3 border-t border-white/10 text-center text-[11px] text-slate-500 cursor-pointer"
               >
                 Chiudi ▲
               </div>
@@ -648,7 +650,7 @@ function FilterBar({
             <button
               type="button"
               onClick={() => { setPeriodoDA(""); setPeriodoA(""); }}
-              className="py-1 px-2.5 rounded-md text-[11px] cursor-pointer border border-slate-600 bg-transparent text-slate-500 whitespace-nowrap"
+              className="py-1 px-2.5 rounded-md text-[11px] cursor-pointer border border-white/15 bg-transparent text-slate-500 whitespace-nowrap"
             >
               ✕
             </button>
@@ -669,7 +671,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
   archivio?: Map<string, EpisodioMalus[]>;
 }) {
   const thStyle =
-    "py-2.5 px-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700 whitespace-nowrap";
+    "py-2.5 px-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/10 whitespace-nowrap";
   // Selezione multipla per delega rapida dalla dashboard.
   const [checked, setChecked] = useState<string[]>([]);
   const [bulkTo, setBulkTo] = useState("");
@@ -679,20 +681,20 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
 
   if (rows.length === 0) {
     return (
-      <div className="bg-slate-800 border border-slate-700 rounded-xl py-12 px-12 text-center text-slate-500">
+      <div className="bg-white/[0.03] border border-white/10 rounded-xl py-12 px-12 text-center text-slate-500">
         Nessuna pratica trovata con i filtri selezionati.
       </div>
     );
   }
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+    <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
       {/* Barra delega rapida: compare quando selezioni una o piu' pratiche */}
       {canDelegate && checked.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 py-2.5 px-3.5 bg-indigo-900/40 border-b border-indigo-700">
           <span className="text-[13px] font-bold text-indigo-200">{checked.length} pratic{checked.length === 1 ? "a" : "he"} selezionat{checked.length === 1 ? "a" : "e"}</span>
           <select value={bulkTo} onChange={(e) => setBulkTo(e.target.value)}
-            className="bg-slate-900 border border-slate-600 rounded-lg text-slate-100 text-[13px] p-1.5 outline-none">
+            className="bg-white/[0.05] border border-white/15 rounded-lg text-slate-100 text-[13px] p-1.5 outline-none">
             <option value="">— Delega a… —</option>
             {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
           </select>
@@ -701,14 +703,14 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
             className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[13px] font-bold disabled:opacity-40">
             Delega
           </button>
-          <button type="button" onClick={() => setChecked([])} className="px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-[13px]">Annulla</button>
+          <button type="button" onClick={() => setChecked([])} className="px-3 py-1.5 rounded-lg border border-white/15 text-slate-300 text-[13px]">Annulla</button>
           <span className="text-[11px] text-slate-400 ml-auto">Solo collaboratori del tuo punto vendita</span>
         </div>
       )}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
-            <tr className="bg-slate-900">
+            <tr className="bg-white/[0.04]">
               {canDelegate && (
                 <th className={thStyle + " w-8"}>
                   <input type="checkbox" checked={allChecked}
@@ -779,7 +781,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                       if (totStorico > 0) {
                         return (
                           <div className="inline-flex flex-col items-center gap-0.5" title="Malus generato in passato, archiviato">
-                            <div className="bg-slate-900 border border-slate-600 rounded-md px-2.5 py-0.5 text-[11px] font-bold text-slate-400">
+                            <div className="bg-white/[0.05] border border-white/15 rounded-md px-2.5 py-0.5 text-[11px] font-bold text-slate-400">
                               € {Math.round(totStorico)} storico
                             </div>
                           </div>
@@ -811,7 +813,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
           </tbody>
         </table>
       </div>
-      <div className="py-2.5 px-4 border-t border-slate-700 text-slate-500 text-xs flex items-center gap-4">
+      <div className="py-2.5 px-4 border-t border-white/10 text-slate-500 text-xs flex items-center gap-4">
         <span>{rows.length} pratiche visualizzate</span>
         {(() => {
           const totMalus = rows.reduce((acc, r) => acc + calcolaMalus(r), 0);
@@ -931,7 +933,7 @@ function Drawer({
   const labelStyle = "text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1";
   const valStyle = "text-[13px] text-slate-200";
   const panelStyle =
-    "bg-slate-800 border border-slate-700 rounded-xl p-4 mb-3.5";
+    "bg-white/[0.03] border border-white/10 rounded-xl p-4 mb-3.5";
 
   const tipoColor = (tipo: string) => {
     if (tipo === "stato_admin" || tipo === "nota_admin") return "#a78bfa";
@@ -981,13 +983,13 @@ function Drawer({
         {/* Delega verifica: NON fa parte della sezione admin — e' una funzione
             dallo store manager in su, quindi sta fuori dai tab. */}
         {canDelegate && (
-          <div className="mt-3.5 p-3 rounded-lg border border-slate-700 bg-slate-900/60">
+          <div className="mt-3.5 p-3 rounded-lg border border-slate-700 bg-black/25">
             <div className={labelStyle + " mb-2"}>Delega verifica a</div>
             {row.delegated_to && (
               <div className="mb-2 text-[12px] text-emerald-400">Attualmente delegata a <b>{delegatoNome || "collaboratore"}</b></div>
             )}
             <select value={row.delegated_to || ""} onChange={(e) => onDelegate?.(row.id, e.target.value || null)}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-[13px] p-2 outline-none">
+              className="w-full bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] p-2 outline-none">
               <option value="">— Nessuna delega —</option>
               {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
             </select>
@@ -1030,7 +1032,7 @@ function Drawer({
               <div className="col-span-2"><div className={labelStyle}>C.F. / P.IVA</div><div className={valStyle + " font-mono"}>{row.cf}</div></div>
             </div>
             {row.categoria === "fisso" && (row.gnp || row.numFissoProvvisorio || row.numFissoDefinitivo) && (
-              <div className={panelStyle + " border-indigo-500 bg-slate-900/50"}>
+              <div className={panelStyle + " border-indigo-500 bg-black/25"}>
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" />
                   <div className="text-xs font-bold text-indigo-300 uppercase tracking-wider">Portabilità numero fisso (GNP)</div>
@@ -1042,7 +1044,7 @@ function Drawer({
               </div>
             )}
             {row.categoria === "energia" && (
-              <div className={panelStyle + " border-green-700 bg-slate-900/50"}>
+              <div className={panelStyle + " border-green-700 bg-black/25"}>
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
                   <div className="text-xs font-bold text-green-500 uppercase tracking-wider">Dati energia</div>
@@ -1060,7 +1062,7 @@ function Drawer({
               </div>
             )}
             {row.categoria === "finanziamento" && (
-              <div className={panelStyle + " border-amber-700 bg-slate-900/50"}>
+              <div className={panelStyle + " border-amber-700 bg-black/25"}>
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
                   <div className="text-xs font-bold text-amber-400 uppercase tracking-wider">Dati finanziamento</div>
@@ -1144,7 +1146,7 @@ function Drawer({
                       onClick={() => setEditStatoN(s.id)}
                       className="rounded-full py-1.5 px-3.5 text-xs font-semibold cursor-pointer border transition-all"
                       style={{
-                        borderColor: sel ? s.color : "#334155",
+                        borderColor: sel ? s.color : "rgba(255,255,255,0.10)",
                         background: sel ? s.color + "33" : "transparent",
                         color: sel ? s.color : "#64748b",
                       }}
@@ -1161,9 +1163,9 @@ function Drawer({
                     <div key={idx} className="bg-slate-900 rounded-lg p-2.5 mb-2 border border-purple-500/30">
                       <div className="text-[11px] font-bold text-purple-400 mb-2">{fu.label}</div>
                       <div className="grid grid-cols-2 gap-2">
-                        <div><div className="text-[10px] text-slate-500 mb-0.5">Data</div><input type="date" value={fu.data} onChange={(e) => updateFollowup(idx, "data", e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-md text-slate-100 text-xs py-1 px-2 outline-none" /></div>
-                        <div><div className="text-[10px] text-slate-500 mb-0.5">Esito</div><input type="text" value={fu.esito} onChange={(e) => updateFollowup(idx, "esito", e.target.value)} placeholder="es. Nessuna risposta" className="w-full bg-slate-800 border border-slate-700 rounded-md text-slate-100 text-xs py-1 px-2 outline-none" /></div>
-                        <div className="col-span-2"><div className="text-[10px] text-slate-500 mb-0.5">Note</div><input type="text" value={fu.note} onChange={(e) => updateFollowup(idx, "note", e.target.value)} placeholder="es. Chiamato alle 10:30" className="w-full bg-slate-800 border border-slate-700 rounded-md text-slate-100 text-xs py-1 px-2 outline-none" /></div>
+                        <div><div className="text-[10px] text-slate-500 mb-0.5">Data</div><input type="date" value={fu.data} onChange={(e) => updateFollowup(idx, "data", e.target.value)} className="w-full bg-white/[0.03] border border-white/10 rounded-md text-slate-100 text-xs py-1 px-2 outline-none" /></div>
+                        <div><div className="text-[10px] text-slate-500 mb-0.5">Esito</div><input type="text" value={fu.esito} onChange={(e) => updateFollowup(idx, "esito", e.target.value)} placeholder="es. Nessuna risposta" className="w-full bg-white/[0.03] border border-white/10 rounded-md text-slate-100 text-xs py-1 px-2 outline-none" /></div>
+                        <div className="col-span-2"><div className="text-[10px] text-slate-500 mb-0.5">Note</div><input type="text" value={fu.note} onChange={(e) => updateFollowup(idx, "note", e.target.value)} placeholder="es. Chiamato alle 10:30" className="w-full bg-white/[0.03] border border-white/10 rounded-md text-slate-100 text-xs py-1 px-2 outline-none" /></div>
                       </div>
                     </div>
                   ))}
@@ -1173,7 +1175,7 @@ function Drawer({
                 value={notaNegozio}
                 onChange={(e) => setNotaNegozio(e.target.value)}
                 placeholder="Nota negozio (es: cliente contattato…)"
-                className="w-full min-h-[68px] bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-[13px] p-2.5 resize-y outline-none box-border mb-2.5"
+                className="w-full min-h-[68px] bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] p-2.5 resize-y outline-none box-border mb-2.5"
               />
               <button
                 type="button"
@@ -1209,7 +1211,7 @@ function Drawer({
                       onClick={() => setEditStatoA(s.id)}
                       className="rounded-full py-1.5 px-3.5 text-xs font-semibold cursor-pointer border transition-all"
                       style={{
-                        borderColor: sel ? s.color : "#334155",
+                        borderColor: sel ? s.color : "rgba(255,255,255,0.10)",
                         background: sel ? s.color + "33" : "transparent",
                         color: sel ? s.color : "#64748b",
                       }}
@@ -1224,7 +1226,7 @@ function Drawer({
               value={notaAdmin}
               onChange={(e) => setNotaAdmin(e.target.value)}
               placeholder="Nota amministrazione…"
-              className="w-full min-h-[68px] bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-[13px] p-2.5 resize-y outline-none box-border mb-2.5"
+              className="w-full min-h-[68px] bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] p-2.5 resize-y outline-none box-border mb-2.5"
             />
             <button
               type="button"
@@ -1807,7 +1809,7 @@ export default function TrackingPdaPage() {
       <div className="p-0">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-1">Tracking PDA</h2>
+            <h2 className="text-3xl font-bold text-white mb-1">📡 Tracking PDA</h2>
             <p className="text-slate-400 text-sm">Monitoraggio pratiche: esito negozio, esito admin, storico e malus</p>
           </div>
           <div className="flex items-center gap-2">
@@ -1838,10 +1840,10 @@ export default function TrackingPdaPage() {
             aria-label="Regole di Ingaggio"
           >
             <div
-              className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-[980px] max-h-[88vh] overflow-y-auto shadow-2xl"
+              className="bg-white/[0.03] border border-white/10 rounded-2xl w-full max-w-[980px] max-h-[88vh] overflow-y-auto shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between py-5 px-7 border-b border-slate-700">
+              <div className="flex items-center justify-between py-5 px-7 border-b border-white/10">
                 <div>
                   <div className="text-lg font-extrabold text-slate-100">📋 Regole di Ingaggio — Tracking PDA</div>
                   <div className="text-xs text-slate-500 mt-0.5">

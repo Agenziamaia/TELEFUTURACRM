@@ -89,7 +89,7 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
                     </thead>
                     <tbody>
                         {CATEGORIE_UI.map((c) => (
-                            <tr key={c.id} className="border-t border-slate-700/60">
+                            <tr key={c.id} className="border-t border-white/10/60">
                                 <td className="py-2.5 px-3">
                                     <span className="inline-flex items-center gap-2 font-extrabold" style={{ color: c.color }}>
                                         <span className="w-2.5 h-2.5 rounded-full" style={{ background: c.color }} />{c.label}
@@ -106,7 +106,7 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
                                                         {admin ? (
                                                             <input value={campo(c.id, chiave)} onChange={(e) => setCampo(c.id, chiave, e.target.value)}
                                                                 inputMode="numeric" placeholder="—"
-                                                                className="w-11 text-center rounded-md bg-slate-900 border border-slate-700 py-1 text-[13px] font-bold text-slate-100 focus:border-indigo-500 outline-none" />
+                                                                className="w-11 text-center rounded-md bg-white/[0.05] border border-white/10 py-1 text-[13px] font-bold text-slate-100 focus:border-indigo-500 outline-none" />
                                                         ) : (
                                                             <span className="w-11 text-center py-1 text-[13px] font-bold" style={{ color: campo(c.id, chiave) ? f.colore : "#475569" }}>{campo(c.id, chiave) || "—"}</span>
                                                         )}
@@ -122,7 +122,7 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
                                             <span className="text-slate-400">€</span>
                                             <input value={campo(c.id, "malus_euro")} onChange={(e) => setCampo(c.id, "malus_euro", e.target.value)}
                                                 inputMode="numeric"
-                                                className="w-14 text-center rounded-md bg-slate-900 border border-slate-700 py-1 text-[13px] font-bold text-rose-300 focus:border-indigo-500 outline-none" />
+                                                className="w-14 text-center rounded-md bg-white/[0.05] border border-white/10 py-1 text-[13px] font-bold text-rose-300 focus:border-indigo-500 outline-none" />
                                         </div>
                                     ) : (
                                         <span className="font-bold text-rose-300">€ {campo(c.id, "malus_euro") || "0"}</span>

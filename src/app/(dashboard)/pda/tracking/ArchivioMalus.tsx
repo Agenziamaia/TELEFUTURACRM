@@ -184,8 +184,8 @@ export function ArchivioMalus({
   ];
 
   const thStyle =
-    "py-2 px-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700 whitespace-nowrap";
-  const tdStyle = "py-2 px-3 border-b border-slate-800 text-[12px]";
+    "py-2 px-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/10 whitespace-nowrap";
+  const tdStyle = "py-2 px-3 border-b border-white/5 text-[12px]";
 
   return (
     <div
@@ -196,10 +196,10 @@ export function ArchivioMalus({
       aria-label="Archivio Malus"
     >
       <div
-        className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-[1150px] max-h-[90vh] overflow-y-auto shadow-2xl"
+        className="bg-white/[0.05] border border-white/10 rounded-2xl w-full max-w-[1150px] max-h-[90vh] overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between py-5 px-7 border-b border-slate-700 sticky top-0 bg-slate-900 z-10">
+        <div className="flex items-center justify-between py-5 px-7 border-b border-white/10 sticky top-0 bg-[#12141f] z-10">
           <div>
             <div className="text-lg font-extrabold text-slate-100">💰 Archivio Malus</div>
             <div className="text-xs text-slate-500 mt-0.5">
@@ -260,7 +260,7 @@ export function ArchivioMalus({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Cerca per cliente, venditore, negozio, brand…"
-                className="bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-[13px] py-2 px-3 pl-9 outline-none w-full box-border"
+                className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 pl-9 outline-none w-full box-border"
               />
             </div>
             {venditori.length > 1 && (
@@ -270,7 +270,7 @@ export function ArchivioMalus({
                   onChange={setVenditoreSel}
                   opzioni={venditori}
                   placeholder="Tutti i venditori — scrivi per filtrare"
-                  className="bg-slate-950 border border-slate-700 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none w-full"
+                  className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none w-full"
                 />
               </div>
             )}
@@ -280,11 +280,11 @@ export function ArchivioMalus({
           {perVenditore.length > 1 && (
             <div className="mb-6">
               <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Totali per collaboratore</div>
-              <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+              <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse">
                     <thead>
-                      <tr className="bg-slate-900">
+                      <tr className="bg-white/[0.04]">
                         <th className={thStyle}>Venditore</th>
                         <th className={thStyle}>Negozio</th>
                         <th className={thStyle + " text-center"}>Episodi</th>
@@ -322,15 +322,15 @@ export function ArchivioMalus({
             Episodi {statoSel !== "tutti" ? `· ${cards.find((c) => c.id === statoSel)?.label}` : ""}
           </div>
           {ordinati.length === 0 ? (
-            <div className="bg-slate-800 border border-slate-700 rounded-xl py-10 px-6 text-center text-slate-500 text-[13px]">
+            <div className="bg-white/[0.03] border border-white/10 rounded-xl py-10 px-6 text-center text-slate-500 text-[13px]">
               Nessun episodio di malus con i filtri selezionati.
             </div>
           ) : (
-            <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+            <div className="bg-white/[0.03] border border-white/10 rounded-xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-slate-900">
+                    <tr className="bg-white/[0.04]">
                       <th className={thStyle}>Cliente</th>
                       <th className={thStyle}>Categoria</th>
                       <th className={thStyle}>Brand</th>
@@ -398,7 +398,7 @@ export function ArchivioMalus({
                                     <button
                                       type="button"
                                       onClick={() => setConfermaId(null)}
-                                      className="px-2 py-1 rounded-md border border-slate-600 text-slate-400 text-[11px]"
+                                      className="px-2 py-1 rounded-md border border-white/15 text-slate-400 text-[11px]"
                                     >
                                       ✕
                                     </button>
@@ -418,7 +418,7 @@ export function ArchivioMalus({
                                   type="button"
                                   disabled={salvando}
                                   onClick={() => setCompensato(ep, false)}
-                                  className="px-2 py-1 rounded-md border border-slate-600 text-slate-500 text-[11px] hover:text-slate-300"
+                                  className="px-2 py-1 rounded-md border border-white/15 text-slate-500 text-[11px] hover:text-slate-300"
                                   title="Riporta l'episodio tra gli attivi"
                                 >
                                   Annulla
@@ -439,7 +439,7 @@ export function ArchivioMalus({
                                     <button
                                       type="button"
                                       onClick={() => setEliminaId(null)}
-                                      className="px-2 py-1 rounded-md border border-slate-600 text-slate-400 text-[11px]"
+                                      className="px-2 py-1 rounded-md border border-white/15 text-slate-400 text-[11px]"
                                     >
                                       ✕
                                     </button>
@@ -463,7 +463,7 @@ export function ArchivioMalus({
                   </tbody>
                 </table>
               </div>
-              <div className="py-2.5 px-4 border-t border-slate-700 text-slate-500 text-xs">
+              <div className="py-2.5 px-4 border-t border-white/10 text-slate-500 text-xs">
                 {ordinati.length} episodi · la compensazione automatica arrivera&apos; con il sistema gare/commissioning
               </div>
             </div>
