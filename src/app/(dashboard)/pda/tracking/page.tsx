@@ -202,7 +202,7 @@ const TRK_BRAND_COLORS: Record<string, string> = {
 };
 // I file 900x900 (WindTre, Vodafone) hanno il marchio annegato nel canvas
 // trasparente: scala OTTICA per pareggiarli, il box resta identico.
-const TRK_LOGO_SCALE: Record<string, number> = { windtre: 1.35, vodafone: 1.35 };
+const TRK_LOGO_SCALE: Record<string, number> = { windtre: 1.35, vodafone: 1.6, fastweb: 1.4 };
 // Ordine voluto da Luca (03/08): W3, Sky, VF, S4, FW; gli altri a seguire.
 const TRK_BRAND_PRIORITA = ["windtre", "sky", "vodafone", "s4", "energy", "fastweb"];
 const ordinaBrandTracking = (arr: string[]) => [...arr].sort((a, b) => {
