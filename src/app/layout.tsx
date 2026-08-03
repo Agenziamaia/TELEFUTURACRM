@@ -37,6 +37,12 @@ export default function RootLayout({
         {/* TEMA (Luca 29/07): applicato PRIMA del primo paint — senza questo
             script chi usa il tema chiaro vedrebbe un lampo scuro a ogni pagina. */}
         <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem("crm_theme")==="chiaro")document.documentElement.classList.add("light");var f=(localStorage.getItem("tf_fs")||"").split(",");if(f[0]&&f[0]!=="0")document.documentElement.setAttribute("data-fs-sm",f[0]);if(f[1]&&f[1]!=="0")document.documentElement.setAttribute("data-fs-lg",f[1])}catch(e){}` }} />
+        {/* GUARD ANTI-SKEW (03/08): dopo un deploy i pezzi dell'app cambiano
+            nome — una tab rimasta aperta sulla versione vecchia esplodeva con
+            "Application error: a client-side exception…". Se fallisce il
+            caricamento di un chunk, la pagina si RICARICA da sola (al massimo
+            una volta ogni 60s, per non ciclare se la rete e' giu'). */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){function ric(m){try{var t=Number(sessionStorage.getItem("crm_skew_ric")||0);if(Date.now()-t<60000)return;sessionStorage.setItem("crm_skew_ric",String(Date.now()));location.reload();}catch(e){}}function eChunk(x){x=String(x||"");return x.indexOf("ChunkLoadError")>-1||x.indexOf("Loading chunk")>-1||x.indexOf("Failed to fetch dynamically imported module")>-1||x.indexOf("Importing a module script failed")>-1}window.addEventListener("error",function(e){if(eChunk(e&&e.message))ric(e.message)},true);window.addEventListener("unhandledrejection",function(e){var r=e&&e.reason;if(eChunk(r&&(r.name+" "+r.message)))ric(r.message)})})();` }} />
         <AuthProvider>
           <NotificationCenter />
           {/* Pop-up comunicazioni con conferma: sopra tutto, per gli utenti loggati */}
