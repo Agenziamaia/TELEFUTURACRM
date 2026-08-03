@@ -5329,7 +5329,7 @@ function CRM() {
             sempre a destra. Su schermi piccoli/anteprima resta nascosto.
           Nessuna configurazione extra richiesta lato sviluppatore.
       ═══════════════════════════════════════════════════════════════════ */}
-      <style>{`@media(min-width:1600px){.crmSidebar{display:flex!important}.crmShell{margin-right:380px!important}}
+      <style>{`@media(min-width:1100px){.crmSidebar{display:flex!important}.crmShell{margin-right:368px!important}}
 .rvLab{font-size:10px;font-weight:800;color:#8892b0;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
 .rvIn{width:100%;padding:10px 12px;border-radius:10px;font-size:13px;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);color:#f8fafc;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
 .rvIn:focus{border-color:rgba(129,140,248,.75);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:rgba(99,102,241,.06)}
@@ -5340,11 +5340,13 @@ select.rvIn{cursor:pointer}
 .rvOpt:hover{background:rgba(99,102,241,.18)}
 .rvGrp{padding:5px 12px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#94a3b8;background:#1b2030;text-transform:uppercase;position:sticky;top:0}
 .crmFab{position:fixed;bottom:18px;right:18px;z-index:4300;display:flex;align-items:center;gap:8px;padding:13px 18px;border-radius:999px;border:none;cursor:pointer;color:#fff;font-size:14px;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.45)}
-@media(min-width:1600px){.crmFab{display:none}}`}</style>
+@media(min-width:1100px){.crmFab{display:none}}`}</style>
       {/* SIDEBAR CARRELLO LIVE (desktop) + DRAWER su richiesta (ogni schermo) */}
       {drawerCarrello&&<div onClick={()=>setDrawerCarrello(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",backdropFilter:"blur(2px)",zIndex:4400}}/>}
-      <div className="crmSidebar" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:76,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":344,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 92px)",overflowY:"auto",flexDirection:"column",background:drawerCarrello?"#12141f":"rgba(255,255,255,0.02)",borderRadius:drawerCarrello?0:14,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30,border:"2px solid "+bC}}>
-        <div style={{background:bG,borderRadius:drawerCarrello?0:"14px 14px 0 0",padding:"16px 18px"}}>
+      {/* stessa pelle delle card del CRM (glass-panel): niente piu' grigio
+          fuori tema, e sul tema chiaro diventa bianca come tutto il resto */}
+      <div className="crmSidebar glass-panel" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:80,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":344,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 96px)",overflowY:"auto",flexDirection:"column",background:drawerCarrello?"#12141f":undefined,borderRadius:drawerCarrello?0:undefined,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30}}>
+        <div style={{background:bG,borderRadius:drawerCarrello?0:"15px 15px 0 0",padding:"16px 18px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
             {drawerCarrello&&<button onClick={()=>setDrawerCarrello(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:800,padding:"4px 10px",cursor:"pointer"}}>✕</button>}
