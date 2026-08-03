@@ -19,7 +19,15 @@ export async function POST(req: Request) {
 
   const b = await req.json().catch(() => ({} as any));
   const kind = String(b.kind || "status");
-  const request_xml = buildRequestXml(kind, { lines: b.lines, requestXml: b.requestXml, items: b.items, payment: b.payment });
+  let request_xml: string | null;
+  try {
+    // buildRequestXml puo' LANCIARE se un reparto IVA e' mancante/non valido
+    // (sicurezza fiscale, richiamo di Luca 01/08): meglio un 400 chiaro che uno
+    // scontrino con l'IVA sbagliata.
+    request_xml = buildRequestXml(kind, { lines: b.lines, requestXml: b.requestXml, items: b.items, payment: b.payment });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "dati non validi" }, { status: 400 });
+  }
   if (!request_xml) return NextResponse.json({ error: `kind non valido o dati mancanti: ${kind}` }, { status: 400 });
 
   const { data, error } = await supabase.from("print_jobs").insert({

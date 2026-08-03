@@ -96,14 +96,26 @@ export interface FiscalPayment {
 const money = (n: unknown) => Number(n || 0).toFixed(2);
 
 export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment = {}, operator = "1"): string {
-  const rows = (items || []).map((it) =>
-    `<printRecItem operator="${esc(operator)}"` +
-    ` description="${esc(it.description)}"` +
-    ` quantity="${Number(it.quantity ?? 1)}"` +
-    ` unitPrice="${money(it.unitPrice)}"` +
-    ` department="${Number(it.department) || 1}"` +
-    ` justification="1" />`
-  ).join("");
+  if (!items || !items.length) throw new Error("Scontrino fiscale senza righe.");
+  const rows = items.map((it) => {
+    // ⚠️ SICUREZZA IVA (richiamo di Luca 01/08/2026): il `department` e' il REPARTO
+    // della stampante e DECIDE l'aliquota/natura IVA del documento fiscale VERO
+    // (es. rep 2 = 22%, rep 1 = NON soggetta, rep 3 = 4%, rep 7 = usato…). Un
+    // reparto sbagliato o mancante = IVA sbagliata su uno scontrino fiscale.
+    // Percio' qui il reparto e' OBBLIGATORIO ed ESPLICITO: niente default a 1
+    // (era `|| 1`, cioe' "Non soggetta"). Se manca, si RIFIUTA di costruire il
+    // documento invece di indovinare.
+    const dept = Number(it.department);
+    if (!Number.isInteger(dept) || dept < 1 || dept > 40) {
+      throw new Error(`Reparto IVA mancante o non valido per la riga "${it.description}" (department=${String(it.department)}). Indicare il reparto esatto della stampante (es. 2 = IVA 22%).`);
+    }
+    return `<printRecItem operator="${esc(operator)}"` +
+      ` description="${esc(it.description)}"` +
+      ` quantity="${Number(it.quantity ?? 1)}"` +
+      ` unitPrice="${money(it.unitPrice)}"` +
+      ` department="${dept}"` +
+      ` justification="1" />`;
+  }).join("");
   const total =
     `<printRecTotal operator="${esc(operator)}"` +
     ` description="${esc(payment.description || "CONTANTE")}"` +
