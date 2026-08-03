@@ -237,6 +237,7 @@ async function scaricaUsatiVenduti(items,clientId,dateStr,vendFallback){
 }
 const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
   const [selCat,setSelCat]=useState(0);
+  const [qMarg,setQMarg]=useState("");   // ricerca libera su TUTTO il catalogo (Luca 03/08)
   // catalogo dal PANNELLO (03/08): al primo render il modulo potrebbe avere
   // ancora il ripiego storico — quando la lettura dal DB arriva si ridisegna
   const [,_margTick]=useState(0);
@@ -339,10 +340,23 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem})=>{
         <button onClick={onClose} style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕</button>
       </div>
       <div style={{display:"flex",gap:4,padding:"10px 16px",overflowX:"auto",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
-        {MARG_PRODUCTS.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null)}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:selCat===ci?"rgba(111,66,193,0.12)":"rgba(255,255,255,0.04)",color:selCat===ci?"#6f42c1":"#8892b0"}}>{cat.cat}</button>))}
+        <input value={qMarg} onChange={e=>{setQMarg(e.target.value);setSelProd(null);}} placeholder="🔍 Cerca in tutto il catalogo…"
+          style={{minWidth:190,flex:"0 1 220px",padding:"7px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"#f8fafc",fontSize:12,outline:"none"}}/>
+        {MARG_PRODUCTS.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null);setQMarg("")}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:selCat===ci?"rgba(111,66,193,0.12)":"rgba(255,255,255,0.04)",color:selCat===ci?"#6f42c1":"#8892b0"}}>{cat.cat}</button>))}
       </div>
       <div style={{flex:1,overflow:"auto",padding:16}}>
-        {!selProd?(MARG_PRODUCTS[selCat].grouped?(
+        {!selProd?(qMarg.trim()?(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8}}>
+            {MARG_PRODUCTS.flatMap((c)=>c.items.map(pr=>({pr,catNome:c.cat}))).filter(x=>x.pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).slice(0,60).map(({pr,catNome})=>(
+              <button key={catNome+"_"+pr.id} onClick={()=>{setSelProd(pr);if(pr.price!==null)setPrice(String(pr.price));setQMarg("");}}
+                style={{padding:"14px 8px",borderRadius:12,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                <span style={{fontSize:22}}>{pr.icon||"📦"}</span>
+                <span style={{fontSize:10,fontWeight:600,color:"#f8fafc",lineHeight:1.2}}>{pr.name}</span>
+                <span style={{fontSize:9,color:"#8892b0"}}>{catNome}</span>
+              </button>))}
+            {MARG_PRODUCTS.flatMap((c)=>c.items).filter(pr=>pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:20,color:"#64748b",fontSize:12}}>Nessun prodotto per “{qMarg}”</div>}
+          </div>
+        ):MARG_PRODUCTS[selCat].grouped?(
           // #102: SIM/ESIM affiancate e ordinate per brand (senza titolo), logo grande del brand
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
             {SIM_BRAND_ORDER.flatMap(bk=>MARG_PRODUCTS[selCat].items.filter(p=>p.brand===bk)).map(p=>{const info=SIM_BRANDS[p.brand]||{color:"#64748b",logo:"/logo-crm.png"};return (
@@ -4145,6 +4159,9 @@ function CRM() {
   // attivo; si naviga dalla barra in alto. Il flusso dati (showAna/showStep4)
   // resta com'era: questa e' solo la vista.
   const [vistaStep,setVistaStep]=useState("brand");
+  // gli step "si compilano" solo quando ci APPRODI (Luca: niente 100% regalati)
+  const [stepVisti,setStepVisti]=useState({});
+  useEffect(()=>{setStepVisti(p=>p[vistaStep]?p:{...p,[vistaStep]:true});},[vistaStep]);
   // Step 7 — nota e promemoria (segnalazione 21)
   const [notaOn,setNotaOn]=useState(false);
   const [nota,setNota]=useState("");
@@ -5150,8 +5167,9 @@ function CRM() {
         <div style={{background:"linear-gradient(135deg,#1e293b,#16213e,#0f3460)",borderRadius:16,padding:"24px 28px",marginBottom:20}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div><div style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"rgba(255,255,255,.6)",fontSize:13}}>{onlyMarg?"Riepilogo vendite 💰":((tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale)+" - Riepilogo vendite 💰")}</div>
-              {!onlyMarg&&(ana.cf||ana.email||ana.iban)&&<div style={{marginTop:4,display:"flex",gap:12,flexWrap:"wrap"}}>
+              {!onlyMarg&&(ana.cf||ana.cellulare||ana.email||ana.iban)&&<div style={{marginTop:4,display:"flex",gap:12,flexWrap:"wrap"}}>
                 {ana.cf&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)",fontFamily:"monospace"}}>🪪 {ana.cf}</span>}
+                {ana.cellulare&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)"}}>📱 {ana.cellulare}</span>}
                 {ana.email&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)"}}>✉️ {ana.email}</span>}
                 {ana.iban&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)",fontFamily:"monospace"}}>🏦 {ana.iban}</span>}
               </div>}
@@ -5166,7 +5184,7 @@ function CRM() {
           allG.map((g,gi)=>(
             <div key={gi} style={{background:"rgba(255,255,255,0.02)",borderRadius:12,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
               <div style={{background:g.brandColor,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:20}}>{g.brandIcon}</span><span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandLabel}</span><span style={{background:"rgba(255,255,255,.25)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"#FFD800",borderRadius:12,padding:"2px 10px",color:"#f8fafc",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={120} height={30} style={{height:26,width:"auto",maxWidth:110,objectFit:"contain",filter:"brightness(0) invert(1)"}}/>:<span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandIcon} {g.brandLabel}</span>;})()}<span style={{background:"rgba(255,255,255,.25)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"#FFD800",borderRadius:12,padding:"2px 10px",color:"#f8fafc",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={()=>g.isCurrent?setShowCart(false):editCG(gi)} style={{background:"rgba(255,255,255,.25)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>✏️ Modifica</button>
                   {!g.isCurrent&&<button onClick={()=>rmCG(gi)} style={{background:"rgba(255,0,0,.25)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:600}}>✕ Rimuovi</button>}
@@ -5362,8 +5380,9 @@ select.rvIn{cursor:pointer}
           </div>
           <div style={{color:"rgba(255,255,255,.6)",fontSize:11,marginTop:2}}>{(tipoCliente==="privato"?(ana.nome+" "+ana.cognome).trim():ana.ragioneSociale)||"In compilazione"}</div>
           {/* dati chiave del cliente SOTTO il nome (Luca 03/08): solo se compilati nello Step 3 */}
-          {(ana.cf||ana.email||ana.iban)&&<div style={{marginTop:7,display:"flex",flexDirection:"column",gap:3}}>
+          {(ana.cf||ana.cellulare||ana.email||ana.iban)&&<div style={{marginTop:7,display:"flex",flexDirection:"column",gap:3}}>
             {ana.cf&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)",fontFamily:"monospace",letterSpacing:.5}}>🪪 {ana.cf}</div>}
+            {ana.cellulare&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)"}}>📱 {ana.cellulare}</div>}
             {ana.email&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)"}}>✉️ {ana.email}</div>}
             {ana.iban&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)",fontFamily:"monospace",letterSpacing:.5}}>🏦 {ana.iban}</div>}
           </div>}
@@ -5380,7 +5399,7 @@ select.rvIn{cursor:pointer}
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].map((g,gi)=>(
                 <div key={gi} onClick={()=>setExpR(p=>({...p,["g"+gi]:!p["g"+gi]}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid "+(g.brandColor||"#64748b"),borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{g.brandIcon} {g.brandLabel}{g.isCurrent?" •":""}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"#64748b"}}>{g.items.length} {expR["g"+gi]?"▾":"▸"}</div></div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:6}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={96} height={24} style={{height:20,width:"auto",maxWidth:92,objectFit:"contain"}}/>:<span style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{g.brandIcon} {g.brandLabel}</span>;})()}{g.isCurrent?<span style={{color:"#FFD800",fontWeight:900}}>•</span>:null}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"#64748b"}}>{g.items.length} {expR["g"+gi]?"▾":"▸"}</div></div>
                   {!expR["g"+gi]&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>}
                   {expR["g"+gi]&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                     {g.items.map((it,ii)=>{const det=it.details||{};const off=det["Offerta Mobile"]||det.offerta||det["Offerta"]||"";return (
@@ -5436,8 +5455,7 @@ select.rvIn{cursor:pointer}
           {id:"brand",label:"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{bObj?bObj.icon:"⚡"}</span>,perc:brand?100:0,abil:true},
           {id:"cliente",label:"Cliente",icona:<span style={{fontSize:20}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
           {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:20}}>🛒</span>,perc:(showStep4&&tCI>0)?100:(showStep4?50:0),abil:!!(showAna&&showStep4)},
-          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:20}}>📎</span>,perc:attachments.length>0?100:0,abil:!!(showAna&&showStep4)},
-          {id:"attribuzione",label:"Attribuzione",icona:<span style={{fontSize:20}}>🏪</span>,perc:(selVend&&selNeg&&dataVendita)?100:0,abil:!!(showAna&&showStep4)},
+          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:20}}>📎</span>,perc:(attachments.length>0?50:0)+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:!!(showAna&&showStep4)},
           {id:"note",label:"Note",icona:<span style={{fontSize:20}}>📝</span>,perc:(notaOn&&nota.trim())?100:0,abil:!!(showAna&&showStep4),opz:true},
         ];
         return (
@@ -5466,13 +5484,14 @@ select.rvIn{cursor:pointer}
         );
       })()}
 
-      {(cart.length>0||margItems.length>0)&&<div onClick={()=>setShowCart(true)} style={{background:"linear-gradient(90deg,#1e293b,#16213e)",borderRadius:10,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>🛒</span><span style={{color:"#fff",fontSize:12,fontWeight:600}}>Carrello:</span>{cart.map((g,i)=><span key={i} style={{background:g.brandColor,color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>{g.brandIcon} {g.items.length}</span>)}{margItems.length>0&&<span style={{background:"#6f42c1",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>📦 {margItems.length}</span>}</div><span style={{color:"rgba(255,255,255,.5)",fontSize:11}}>Vedi →</span></div>}
+
 
       {vistaStep==="brand"&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:20,marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
           {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(b.id===brand){setVistaStep("cliente");return;}_pickBrand(b);setVistaStep("cliente");}} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid rgba(255,255,255,0.06)",background:b.id===brand?b.color+"14":"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="rgba(255,255,255,0.05)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.02)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
+            {(()=>{const nBr=(cart.find(g=>g.brandId===b.id)?.items.length)||0;return nBr>0?<span style={{position:"absolute",top:8,right:8,background:b.color,color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800,zIndex:3}}>{nBr}</span>:null;})()}
             {/* SOLO il logo, grande (Luca 03/08): il nome del brand e' gia' nel logo */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:84,width:"auto",maxWidth:"92%",objectFit:"contain"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>
           </button>)}
@@ -5723,19 +5742,6 @@ select.rvIn{cursor:pointer}
 
 
       
-      {/* ── PRODOTTI & MARGINALITÀ ── */}
-      {(margItems.length>0||(showAna&&showStep4&&brand))&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",textTransform:"uppercase"}}>📦 Prodotti & Marginalità</div>
-          <button onClick={()=>setShowMargPOS(true)} style={{padding:"6px 16px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Aggiungi</button>
-        </div>
-        {margItems.length>0?(<div>
-          {margItems.map((it,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
-            <span style={{fontSize:12,color:"#f8fafc"}}>{it.product} ×{it.qty||1}{it.model?` (${it.model})`:""}{it.importo!=null?` — €${Number(it.importo).toFixed(2)}`:""}</span>
-            <button onClick={()=>rmMargItem(i)} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:10}}>✕</button>
-          </div>))}
-        </div>):(<div style={{textAlign:"center",padding:14,color:"#64748b",fontSize:12}}>Nessun prodotto. Usa "+ Aggiungi" o 📦 nella topbar.</div>)}
-      </div>}
       <MargPOS show={showMargPOS} onClose={()=>{setShowMargPOS(false);setMargEditItem(null)}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>
       <MargList items={margItems} onRemove={rmMargItem} show={showMargList} onClose={()=>setShowMargList(false)}/>
 
@@ -5810,7 +5816,7 @@ select.rvIn{cursor:pointer}
             </>)}
           </div>
         </div>, document.body)}
-        {vistaStep==="attribuzione"&&showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745"}}>
+        {vistaStep==="allegati"&&showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745"}}>
           <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
@@ -5819,14 +5825,14 @@ select.rvIn{cursor:pointer}
         </div>}
         {vistaStep==="note"&&showAna&&showStep4&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
 
-      {["prodotti","allegati","attribuzione","note"].includes(vistaStep)&&showAna&&showStep4&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
+      {["prodotti","allegati","note"].includes(vistaStep)&&showAna&&showStep4&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>{const PREV={prodotti:"cliente",allegati:"prodotti",attribuzione:"allegati",note:"attribuzione"};setVistaStep(PREV[vistaStep]||"cliente");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
-          {({prodotti:"allegati",allegati:"attribuzione",attribuzione:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"attribuzione",attribuzione:"note"})[vistaStep])} style={{padding:"11px 22px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"#c7d2fe",fontSize:13,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
+          <button onClick={()=>{const PREV={prodotti:"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"cliente");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
+          {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} style={{padding:"11px 22px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"#c7d2fe",fontSize:13,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
           <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          {brand&&<button onClick={()=>{addCart();}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"rgba(255,255,255,0.1)":"#28a745"),background:blockSaveAll?"rgba(255,255,255,0.03)":"rgba(40,167,69,0.12)",color:blockSaveAll?"#64748b":"#28a745",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>📦 Salva brand</button>}
+          {brand&&<button onClick={()=>{addCart();setVistaStep("brand");}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"rgba(255,255,255,0.1)":"#28a745"),background:blockSaveAll?"rgba(255,255,255,0.03)":"rgba(40,167,69,0.12)",color:blockSaveAll?"#64748b":"#28a745",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>💾 Salva vendita</button>}
           <button onClick={()=>setShowCart(true)} style={{padding:"11px 26px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1e293b,#0f3460)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>🛒 Riepilogo carrello{tCI>0&&<span style={{background:"#FFD800",color:"#f8fafc",borderRadius:10,padding:"1px 8px",fontSize:12,fontWeight:800}}>{tCI}</span>}</button>
         </div>
       </div>}
