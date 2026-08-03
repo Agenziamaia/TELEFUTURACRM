@@ -188,6 +188,7 @@ export type TrackingRow = {
   // Delega verifica (Tracking PDA): a chi e' delegata la pratica.
   delegated_to?: string | null;
   delegated_by?: string | null;
+  tracking_nascosto?: boolean;
   delegatoNome?: string | null;
   // optional category-specific
   gnp?: boolean;

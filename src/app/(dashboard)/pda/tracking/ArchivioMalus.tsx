@@ -383,7 +383,7 @@ export function ArchivioMalus({
                             )}
                           </td>
                           {(canCompensare || puoEliminare) && (
-                            <td className={tdStyle + " whitespace-nowrap"} onClick={(e) => e.stopPropagation()}>
+                            <td className={tdStyle + " whitespace-nowrap text-right"} onClick={(e) => e.stopPropagation()}>
                               {canCompensare && ep.stato !== "compensato" && ep.data_fine !== null && (
                                 confermaId === ep.id ? (
                                   <span className="inline-flex gap-1.5">

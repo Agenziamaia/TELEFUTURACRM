@@ -284,22 +284,44 @@ export async function sincronizzaMalusStorico(
     }
   }
 
+  // SPAZZINO (03/08, caso Sanna): un episodio APERTO la cui pratica non e'
+  // piu' tra le righe (esclusa dal tracking, nascosta col cestino o contratto
+  // eliminato) non verrebbe MAI piu' chiuso dal giro qui sopra — resterebbe
+  // "in corso" per sempre in archivio. Lo si congela a oggi.
+  for (const e of esistenti) {
+    if (e.data_fine !== null) continue;
+    const k = `${e.contract_id}#${e.categoria}`;
+    if (visti.has(k)) continue;
+    updates.push({
+      id: e.id,
+      patch: { data_fine: toISODate(new Date()), stato: e.stato === "compensato" ? "compensato" : "attivo" },
+    });
+  }
+
+  // Scritture RESILIENTI: un errore su una riga non deve piu' bloccare tutte
+  // le altre (prima il primo throw abortiva l'intera sync in silenzio).
   let scritture = 0;
+  const errori: string[] = [];
   if (inserts.length) {
     const { error } = await supabase
       .from("malus_storico")
       .upsert(inserts, { onConflict: "contract_id,categoria,data_inizio", ignoreDuplicates: true });
-    if (error) throw error;
-    scritture += inserts.length;
+    if (error) {
+      errori.push("insert: " + error.message);
+      console.error("[SYNC-MALUS] insert fallito:", error.message);
+    } else scritture += inserts.length;
   }
   for (const u of updates) {
     const { error } = await supabase
       .from("malus_storico")
       .update({ ...u.patch, updated_at: new Date().toISOString() })
       .eq("id", u.id);
-    if (error) throw error;
-    scritture++;
+    if (error) {
+      errori.push(u.id + ": " + error.message);
+      console.error("[SYNC-MALUS] update fallito:", u.id, error.message);
+    } else scritture++;
   }
+  if (errori.length) throw new Error(`${errori.length} scritture fallite — ${errori[0]}`);
   return scritture;
 }
 

@@ -102,6 +102,7 @@ function mapContractToTrackingRow(
     // tendina di delega confrontavano con undefined (bug silenzioso).
     delegated_to: (c.delegated_to as string | null) ?? null,
     delegated_by: (c.delegated_by as string | null) ?? null,
+    tracking_nascosto: !!c.tracking_nascosto,
     categoria,
     brand: (c.brand as string) ?? "—",
     negozio: (c.negozio as string) ?? "—",
@@ -202,7 +203,10 @@ const TRK_BRAND_COLORS: Record<string, string> = {
 };
 // I file 900x900 (WindTre, Vodafone) hanno il marchio annegato nel canvas
 // trasparente: scala OTTICA per pareggiarli, il box resta identico.
-const TRK_LOGO_SCALE: Record<string, number> = { windtre: 1.35, vodafone: 1.6, fastweb: 1.4 };
+const TRK_LOGO_SCALE: Record<string, number> = {
+  windtre: 1.5, vodafone: 1.75, fastweb: 1.55, sky: 1.15, iliad: 1.2,
+  tim: 1.2, dojo: 1.15, homobile: 1.2, kenamobile: 1.2,
+};
 // Ordine voluto da Luca (03/08): W3, Sky, VF, S4, FW; gli altri a seguire.
 const TRK_BRAND_PRIORITA = ["windtre", "sky", "vodafone", "s4", "energy", "fastweb"];
 const ordinaBrandTracking = (arr: string[]) => [...arr].sort((a, b) => {
@@ -229,6 +233,7 @@ function KpiBar({
   brands,
   brandSel,
   setBrandSel,
+  dataBrand,
 }: {
   data: TrackingRow[];
   onFilter: (f: string | null) => void;
@@ -236,6 +241,7 @@ function KpiBar({
   brands: string[];
   brandSel: string[];
   setBrandSel: (v: string[]) => void;
+  dataBrand: TrackingRow[];
   storicoTotale: number;
   onApriStorico: () => void;
 }) {
@@ -309,12 +315,23 @@ function KpiBar({
             const logo = TRK_BRAND_LOGOS[trkBrandKey(b)];
             const esclusivo = brandSel.length === 1 && brandSel[0] === b;
             const on = brandSel.length === 0 || brandSel.includes(b);
+            // quante pratiche di QUESTO brand col filtro KPI applicato (Luca 03/08)
+            const contaKpi = (r: TrackingRow) => {
+              if (!activeFilter) return true;
+              if (activeFilter === "__attenzione__") return isAttenzioneRow(r) && !isMalusRow(r);
+              if (activeFilter === "__da_lavorare__") return isDaLavorareRow(r) && !isMalusRow(r);
+              if (activeFilter === "__malus__") return isMalusRow(r);
+              if (activeFilter === "__non_conforme__") return r.statoAdmin === "non_conforme";
+              return r.statoNegozio === activeFilter;
+            };
+            const nBrand = dataBrand.filter((r) => r.brand === b && contaKpi(r)).length;
+            const colBadge = activeFilter ? (cards.find((c) => c.filter === activeFilter)?.color || "#94a3b8") : "#94a3b8";
             return (
               <button key={b} type="button"
                 onClick={() => setBrandSel(esclusivo ? [] : [b])}
-                title={esclusivo ? b + " — filtro attivo, clicca per tornare a tutti" : "Mostra solo " + b}
+                title={esclusivo ? b + " — filtro attivo, clicca per tornare a tutti" : "Mostra solo " + b + (activeFilter ? " (conteggio sul filtro attivo)" : "")}
                 aria-label={b}
-                className="rounded-xl border flex items-center justify-center transition-all cursor-pointer"
+                className="rounded-xl border flex items-center justify-center gap-2 transition-all cursor-pointer"
                 style={{
                   height: 72,
                   borderColor: esclusivo ? color : "rgba(255,255,255,0.10)",
@@ -324,10 +341,15 @@ function KpiBar({
                   filter: on ? "none" : "grayscale(1)",
                 }}>
                 {logo ? (
-                  <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(b)] || 1})` }} />
+                  <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "80%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(b)] || 1})` }} />
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "#586174" }}>{b}</span>
                 )}
+                {/* numeretto a fianco: pratiche del brand col filtro KPI attivo */}
+                <span className="text-[11px] font-black leading-none px-1.5 py-1 rounded-md flex-shrink-0"
+                  style={{ color: colBadge, background: colBadge + "1f", opacity: nBrand === 0 ? .45 : 1 }}>
+                  {nBrand}
+                </span>
               </button>
             );
           })}
@@ -1533,7 +1555,6 @@ export default function TrackingPdaPage() {
       // pratiche da lavorare (nessuna attivazione da seguire) e sporcavano
       // l'elenco. Richiesta di Francesco insieme alla visibilita' del Tecnico.
       const lavorabili = (list as RawRow[]).filter((r: Record<string, unknown>) => {
-        if (r.tracking_nascosto) return false; // cestino: nascosta SOLO dal Tracking
         const b = String(r.brand || "").trim().toLowerCase();
         const p = String(r.prodotto || "").trim().toLowerCase();
         if (b === "extra" || b.startsWith("marginal") || /sost/.test(p)) return false;
@@ -1660,6 +1681,8 @@ export default function TrackingPdaPage() {
         const { data: eps, error } = await supabase.from("malus_storico").select("*").limit(5000);
         if (error) throw error;
         const scritture = await sincronizzaMalusStorico(data, (eps ?? []) as EpisodioMalus[]);
+        // diagnostica leggera, cercabile in console come [CRASH:]
+        console.debug("[SYNC-MALUS] scritture:", scritture);
         if (scritture > 0) {
           const { data: eps2, error: err2 } = await supabase.from("malus_storico").select("*").limit(5000);
           if (err2) throw err2;
@@ -1704,7 +1727,9 @@ export default function TrackingPdaPage() {
   // Dall'archivio si apre la pratica: stessa riga (id+categoria) del tracking.
   const apriPraticaDaArchivio = useCallback((cid: string, cat: string) => {
     const hit = data.find((r) => r.id === cid && r.categoria === cat) || data.find((r) => r.id === cid);
-    if (hit) { setSelected(hit); setShowArchivio(false); }
+    if (hit) { setSelected(hit); setShowArchivio(false); return; }
+    // pratica esclusa dal tracking o contratto eliminato: dillo, non ignorare il click
+    alert("Questa pratica non è più nel Tracking (esclusa o eliminata): il dettaglio non è disponibile.");
   }, [data]);
 
   const deepOpened = useRef(false);
@@ -1729,6 +1754,9 @@ export default function TrackingPdaPage() {
 
   const filtered = useMemo(() => {
     return data.filter((row) => {
+      // cestino "Solo da Tracking": fuori dalla vista, ma la riga resta in
+      // data cosi' la sync malus puo' ancora chiudere i suoi episodi.
+      if (row.tracking_nascosto) return false;
       // ⚡ Da lavorare (amministrazione): SOLO pratiche chiuse dal negozio che
       // aspettano ancora l'esito definitivo dell'admin — bypassa la regola
       // che nasconde le completate, altrimenti la coda sarebbe invisibile.
@@ -1787,13 +1815,15 @@ export default function TrackingPdaPage() {
     });
   }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, mostraCompletate, soloDaLavorare, onlyMine, onlyDelegate, user?.id, venditoreSel, negozioSel, utentiSel, regoleV]);
 
-  const filteredPerKpi = useMemo(() => {
+  // Base per i BADGE sui loghi brand: tutti i filtri TRANNE il brand stesso
+  // (senno' i brand non selezionati farebbero sempre 0).
+  const filteredPerBrand = useMemo(() => {
     return data.filter((row) => {
+      if (row.tracking_nascosto) return false;
       // Esito definitivo del negozio = pratica completata = sparisce da sola.
       // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
       if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
-      if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (utentiSel.length > 0 && !utentiSel.includes(row.venditore)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
       if (negozioSel && row.negozio !== negozioSel) return false;
@@ -1827,7 +1857,13 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, mostraCompletate, negozioSel, utentiSel, regoleV]);
+  }, [data, catSel, search, statoSel, periodoDA, periodoA, mostraCompletate, negozioSel, utentiSel, regoleV]);
+
+  // I numeri delle card KPI rispettano ANCHE il brand selezionato.
+  const filteredPerKpi = useMemo(
+    () => (brandSel.length > 0 ? filteredPerBrand.filter((r) => brandSel.includes(r.brand)) : filteredPerBrand),
+    [filteredPerBrand, brandSel]
+  );
 
   // Delega la verifica di una pratica a un collaboratore (o rimuove la delega).
   const handleDelegate = useCallback(async (rowId: string, toId: string | null) => {
@@ -1853,11 +1889,12 @@ export default function TrackingPdaPage() {
       if (modo === "riga") {
         const { error } = await supabase.from("contracts").update({ tracking_nascosto: true }).eq("id", row.id);
         if (error) throw error;
+        setRawList((prev) => prev.map((r) => ((r.id as string) === row.id ? { ...r, tracking_nascosto: true } : r)));
       } else {
         const { error } = await supabase.from("contracts").delete().eq("id", row.id);
         if (error) throw error;
+        setRawList((prev) => prev.filter((r) => (r.id as string) !== row.id));
       }
-      setRawList((prev) => prev.filter((r) => (r.id as string) !== row.id));
       setSelected((sel) => (sel && sel.id === row.id ? null : sel));
       setDaEliminare(null);
     } catch (e) {
@@ -2038,7 +2075,8 @@ export default function TrackingPdaPage() {
               activeFilter={kpiFilter}
               storicoTotale={storicoTotale}
               onApriStorico={() => setShowArchivio(true)}
-              brands={ordinaBrandTracking([...new Set(data.map((r) => r.brand).filter(Boolean))])}
+              brands={ordinaBrandTracking([...new Set(data.filter((r) => !r.tracking_nascosto).map((r) => r.brand).filter(Boolean))])}
+              dataBrand={filteredPerBrand}
               brandSel={brandSel}
               setBrandSel={setBrandSel}
             />
@@ -2066,7 +2104,7 @@ export default function TrackingPdaPage() {
               negozioSel={negozioSel}
               setNegozioSel={setNegozioSel}
               negozi={seesAll ? Array.from(new Set(data.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort() : []}
-              utenti={seesAll ? Array.from(new Set(data.filter((r) => !negozioSel || r.negozio === negozioSel).map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []}
+              utenti={seesAll ? Array.from(new Set(data.filter((r) => !r.tracking_nascosto && (!negozioSel || r.negozio === negozioSel)).map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []}
               utentiSel={utentiSel}
               setUtentiSel={setUtentiSel}
             />
