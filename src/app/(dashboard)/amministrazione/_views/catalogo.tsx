@@ -27,7 +27,7 @@ interface Opz { id: string; offerta_id: string; nome: string; tipo: string | nul
 interface CampoRegola { nome: string; tipo: string; nota: string; conferma: boolean; attivo?: boolean; facoltativo?: boolean }
 /* riga della QUINTA tabella (03/08): campo risolto per l'offerta selezionata,
    con la provenienza — "offerta" = regola dedicata, "generale" = regole comuni */
-interface CampoOffRow extends CampoRegola { fonte: "offerta" | "generale" | "nuovo" }
+interface CampoOffRow extends CampoRegola { fonte: "offerta" | "generale" | "nuovo" | "opzione" }
 interface RegolaCampi { id?: string; etichetta: string; condizioni: Record<string, string[]>; campi: CampoRegola[]; ordine: number; attivo: boolean }
 const COND_KEYS: { k: string; label: string; hint: string }[] = [
     { k: "brand", label: "Brand", hint: "slug: windtre, vodafone, s4…" },
@@ -80,6 +80,11 @@ export function CatalogoView() {
     //    sola lettura (risolti); array = modifica in corso, si salva come
     //    regola dedicata con condizione "offerta" esatta e ordine minimo.
     const [campiOff, setCampiOff] = useState<CampoOffRow[] | null>(null);
+    // OPZIONI cliccabili (03/08): alcune opzioni AGGIUNGONO campi — spuntandole
+    // si vedono; con UNA sola opzione spuntata si personalizzano (regola
+    // offerta+opzione). Cambio selezione = si riparte puliti.
+    const [opzSel, setOpzSel] = useState<Set<string>>(new Set());
+    useEffect(() => { setCampiOff(null); setOpzSel(new Set()); }, [offSel, tipoSel, catSel, prodSel]);
 
     // editor inline: una sola riga in modifica per volta
     const [edit, setEdit] = useState<{ table: string; id: string; nome: string } | null>(null);
@@ -293,14 +298,16 @@ export function CatalogoView() {
     const offCur = offerte.find((o) => o.id === offSel);
     const prodCur = prodotti.find((p) => p.id === prodSel);
     const catNomeCur = cats.find((c) => c.id === catSel)?.nome || "";
-    const regolaOffertaEsistente = (offNome: string, prodNome: string) => regole.find((r) => {
+    const regolaOffertaEsistente = (offNome: string, prodNome: string, opzione?: string) => regole.find((r) => {
         const c = r.condizioni || {};
+        const opzOk = opzione ? ((c.opzioni || []).length === 1 && (c.opzioni || [])[0] === opzione) : !(c.opzioni && c.opzioni.length);
         return (c.offerta || []).includes(offNome)
+            && opzOk
             && (!c.prodotto || c.prodotto.includes(prodNome))
             && (!c.brand || c.brand.includes(brandSel))
             && (!c.tipo || c.tipo.includes(tipoSel));
     });
-    const risolviPerOfferta = (offNome: string, prodNome: string): CampoOffRow[] => {
+    const risolviPerOfferta = (offNome: string, prodNome: string, opzTest: string[] = []): CampoOffRow[] => {
         const attive = [...regole].filter((r) => r.attivo !== false).sort((a, b) => a.ordine - b.ordine);
         const out: CampoOffRow[] = []; const visti = new Set<string>();
         for (const r of attive) {
@@ -312,12 +319,14 @@ export function CatalogoView() {
             if (c.offerta && !c.offerta.includes(offNome)) continue;
             if (c.offertaNon && c.offertaNon.includes(offNome)) continue;
             if (c.offertaContiene && !c.offertaContiene.some((x) => offNome.toLowerCase().includes(x.toLowerCase()))) continue;
-            if (c.opzioni) continue;   // legati alle opzioni: compaiono solo in vendita
+            // campi legati alle OPZIONI: entrano quando l'opzione e' spuntata qui
+            if (c.opzioni && !c.opzioni.some((o) => opzTest.includes(o))) continue;
+            const daOpzione = !!c.opzioni;
             const propria = !!(c.offerta && c.offerta.includes(offNome));
             for (const cmp of (r.campi || [])) {
                 if (visti.has(cmp.nome)) continue;
                 visti.add(cmp.nome);
-                out.push({ ...cmp, fonte: propria ? "offerta" : "generale" });
+                out.push({ ...cmp, fonte: daOpzione ? "opzione" : propria ? "offerta" : "generale" });
             }
         }
         return out;
@@ -326,21 +335,24 @@ export function CatalogoView() {
         if (!campiOff || !offCur || !prodCur) return;
         const campi = campiOff.filter((c) => c.nome.trim()).map(({ fonte: _f, ...c }) => c);
         if (!campi.length) { notify("Serve almeno un campo — oppure Annulla"); return; }
-        const esistente = regolaOffertaEsistente(offCur.nome, prodCur.nome);
+        const opzione = opzSel.size === 1 ? [...opzSel][0] : undefined;
+        const esistente = regolaOffertaEsistente(offCur.nome, prodCur.nome, opzione);
         const body = {
-            etichetta: `🎯 Offerta: ${offCur.nome} — ${prodCur.nome} (${brandCur?.nome || brandSel} ${tipoSel})`,
-            condizioni: { brand: [brandSel], tipo: [tipoSel], categoria: [catNomeCur], prodotto: [prodCur.nome], offerta: [offCur.nome] },
+            etichetta: opzione
+                ? `🎯🧩 Offerta: ${offCur.nome} + ${opzione} — ${prodCur.nome} (${brandCur?.nome || brandSel} ${tipoSel})`
+                : `🎯 Offerta: ${offCur.nome} — ${prodCur.nome} (${brandCur?.nome || brandSel} ${tipoSel})`,
+            condizioni: { brand: [brandSel], tipo: [tipoSel], categoria: [catNomeCur], prodotto: [prodCur.nome], offerta: [offCur.nome], ...(opzione ? { opzioni: [opzione] } : {}) },
             campi, attivo: true,
             ordine: esistente ? esistente.ordine : Math.min(0, ...regole.map((r) => r.ordine)) - 1,
         };
         const ok = await run("Campi offerta", () =>
             esistente?.id ? supabase.from("catalog_campi_regole").update(body).eq("id", esistente.id)
-                : supabase.from("catalog_campi_regole").insert(body), "Campi dell'offerta salvati ✓");
+                : supabase.from("catalog_campi_regole").insert(body), opzione ? `Campi per ${offCur.nome} + ${opzione} salvati ✓` : "Campi dell'offerta salvati ✓");
         if (ok) setCampiOff(null);
     };
     const upCampoOff = (i: number, patch: Partial<CampoOffRow>) => setCampiOff((p) => p ? p.map((c, x) => x === i ? { ...c, ...patch } : c) : p);
     const pannelloCampiOfferta = offCur && prodCur ? (() => {
-        const risolti = risolviPerOfferta(offCur.nome, prodCur.nome);
+        const risolti = risolviPerOfferta(offCur.nome, prodCur.nome, [...opzSel]);
         const inEdit = campiOff !== null;
         const righe = inEdit ? campiOff! : risolti;
         return (
@@ -351,9 +363,11 @@ export function CatalogoView() {
                         <span className="ml-2 text-slate-600 normal-case tracking-normal font-normal">({prodCur.nome} · {tipoSel} · {brandCur?.nome || brandSel})</span>
                     </h3>
                     {!inEdit ? (
-                        <button onClick={() => setCampiOff(risolti.map((c) => ({ ...c })))}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold">
-                            <Pencil className="w-3.5 h-3.5" /> Personalizza per questa offerta
+                        <button onClick={() => setCampiOff((opzSel.size === 1 ? risolti.filter((c) => c.fonte === "opzione" || c.fonte === "offerta") : risolti).map((c) => ({ ...c })))}
+                            disabled={opzSel.size > 1}
+                            title={opzSel.size > 1 ? "Per personalizzare i campi di un'opzione lasciane spuntata UNA sola" : opzSel.size === 1 ? `Personalizza i campi di ${offCur.nome} con l'opzione ${[...opzSel][0]}` : "Personalizza i campi di questa offerta"}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold disabled:opacity-40">
+                            <Pencil className="w-3.5 h-3.5" /> {opzSel.size === 1 ? `Personalizza offerta + ${[...opzSel][0]}` : "Personalizza per questa offerta"}
                         </button>
                     ) : (
                         <span className="flex gap-2">
@@ -362,20 +376,36 @@ export function CatalogoView() {
                         </span>
                     )}
                 </div>
-                <p className="text-xs text-slate-500 mb-3">
+                <p className="text-xs text-slate-500 mb-2">
                     Sono le caselle che il venditore compila scegliendo questa offerta. Qui si possono
                     <b className="text-slate-300"> rinominare, aggiungere, togliere</b> e marcare
                     <b className="text-amber-300"> obbligatorie</b> o <b className="text-slate-300">facoltative</b>:
-                    le modifiche valgono SOLO per questa offerta (regola dedicata 🎯). I campi legati alle
-                    opzioni compaiono in vendita all&apos;attivazione dell&apos;opzione e non si gestiscono da qui.
+                    le modifiche valgono SOLO per questa offerta (regola dedicata 🎯).
                     <b className="text-slate-300"> Mai eliminare un campo usato in passato: si nasconde.</b>
                 </p>
+                {/* OPZIONI dell'offerta (03/08): alcune AGGIUNGONO campi — spuntale
+                    per vederli (🧩); con UNA sola spuntata, "Personalizza" salva i
+                    campi di offerta+opzione (chiesti solo con l'opzione attiva) */}
+                {opzOf(offSel).length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Opzioni:</span>
+                        {opzOf(offSel).map((k) => (
+                            <button key={k.id} disabled={inEdit}
+                                onClick={() => setOpzSel((p) => { const n = new Set(p); if (n.has(k.nome)) n.delete(k.nome); else n.add(k.nome); return n; })}
+                                className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors disabled:opacity-50",
+                                    opzSel.has(k.nome) ? "border-violet-400/70 bg-violet-500/20 text-violet-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25")}>
+                                {opzSel.has(k.nome) ? "🧩 " : ""}{k.nome}
+                            </button>
+                        ))}
+                        {opzSel.size > 1 && <span className="text-[10px] text-amber-400">con più opzioni spuntate la vista è cumulativa: per PERSONALIZZARE i campi di un'opzione lasciane spuntata una sola</span>}
+                    </div>
+                )}
                 {!inEdit ? (
                     <div className="divide-y divide-white/5 rounded-xl border border-white/10 overflow-hidden">
                         {righe.length === 0 && <p className="text-sm text-slate-600 p-4">Nessun campo per questa offerta: “Personalizza” per aggiungerne.</p>}
                         {righe.map((c, i) => (
                             <div key={i} className={cn("flex items-center gap-3 flex-wrap px-4 py-3 bg-white/[0.02]", c.attivo === false && "opacity-50")}>
-                                <span className="text-base" title={c.fonte === "offerta" ? "Campo della regola dedicata a questa offerta" : "Campo ereditato dalle regole generali"}>{c.fonte === "offerta" ? "🎯" : "📐"}</span>
+                                <span className="text-base" title={c.fonte === "opzione" ? "Campo che compare con un'opzione attiva" : c.fonte === "offerta" ? "Campo della regola dedicata a questa offerta" : "Campo ereditato dalle regole generali"}>{c.fonte === "opzione" ? "🧩" : c.fonte === "offerta" ? "🎯" : "📐"}</span>
                                 <span className={cn("text-sm font-semibold", c.attivo === false ? "text-slate-500 line-through" : "text-white")}>{c.nome}</span>
                                 <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400">{c.tipo}</span>
                                 {c.facoltativo
@@ -391,7 +421,7 @@ export function CatalogoView() {
                         {righe.map((c, i) => (
                             <div key={i} className={cn("rounded-xl border border-white/10 bg-white/[0.02] p-3.5", c.attivo === false && "opacity-50")}>
                                 <div className="flex items-center gap-3 flex-wrap">
-                                    <span className="text-lg" title={c.fonte === "generale" ? "Ereditato dalle regole generali" : c.fonte === "nuovo" ? "Nuovo campo" : "Della regola di questa offerta"}>{c.fonte === "generale" ? "📐" : c.fonte === "nuovo" ? "✳️" : "🎯"}</span>
+                                    <span className="text-lg" title={c.fonte === "opzione" ? "Campo legato a un'opzione" : c.fonte === "generale" ? "Ereditato dalle regole generali" : c.fonte === "nuovo" ? "Nuovo campo" : "Della regola di questa offerta"}>{c.fonte === "opzione" ? "🧩" : c.fonte === "generale" ? "📐" : c.fonte === "nuovo" ? "✳️" : "🎯"}</span>
                                     <div className="flex-1 min-w-[240px]">
                                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nome campo</p>
                                         <input value={c.nome} onChange={(e) => upCampoOff(i, { nome: e.target.value })} placeholder="Es. ICCID" className="glass-input text-sm rounded-lg py-2.5 px-3 w-full" />
@@ -456,19 +486,8 @@ export function CatalogoView() {
                     </div>
                 </div>
 
-                {/* vista: catalogo (6 livelli) o campi vendita (strato dati) */}
-                <div className="flex gap-2 mt-4">
-                    <button onClick={() => setVista("catalogo")}
-                        className={cn("px-4 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all",
-                            vista === "catalogo" ? "border-violet-400/70 bg-violet-500/15 text-violet-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25")}>
-                        📦 Catalogo
-                    </button>
-                    <button onClick={() => setVista("campi")}
-                        className={cn("px-4 py-1.5 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all",
-                            vista === "campi" ? "border-violet-400/70 bg-violet-500/15 text-violet-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25")}>
-                        🧾 Campi vendita <span className="opacity-60 normal-case tracking-normal">({regole.length} regole)</span>
-                    </button>
-                </div>
+                {/* il tab "Campi vendita" e' stato tolto (Luca 03/08): i campi si
+                    governano dalla tabella per-offerta in fondo alla pagina */}
 
                 {vista === "catalogo" && (<>
                 {/* brand */}
