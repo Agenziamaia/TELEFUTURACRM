@@ -200,6 +200,17 @@ const TRK_BRAND_COLORS: Record<string, string> = {
   sky: "#0072C6", dojo: "#14b8a6", verymobile: "#84cc16", homobile: "#9b26b6",
   kenamobile: "#e4002b", kena: "#e4002b",
 };
+// I file 900x900 (WindTre, Vodafone) hanno il marchio annegato nel canvas
+// trasparente: scala OTTICA per pareggiarli, il box resta identico.
+const TRK_LOGO_SCALE: Record<string, number> = { windtre: 1.35, vodafone: 1.35 };
+// Ordine voluto da Luca (03/08): W3, Sky, VF, S4, FW; gli altri a seguire.
+const TRK_BRAND_PRIORITA = ["windtre", "sky", "vodafone", "s4", "energy", "fastweb"];
+const ordinaBrandTracking = (arr: string[]) => [...arr].sort((a, b) => {
+  const ia = TRK_BRAND_PRIORITA.indexOf(trkBrandKey(a));
+  const ib = TRK_BRAND_PRIORITA.indexOf(trkBrandKey(b));
+  if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  return a.localeCompare(b);
+});
 // stessi loghi di Registra Vendita (public/)
 const TRK_BRAND_LOGOS: Record<string, string> = {
   vodafone: "/vodaphone - Copy.png", fastweb: "/fastweb.png", windtre: "/windtre.png",
@@ -313,7 +324,7 @@ function KpiBar({
                   filter: on ? "none" : "grayscale(1)",
                 }}>
                 {logo ? (
-                  <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block" }} />
+                  <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(b)] || 1})` }} />
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "#586174" }}>{b}</span>
                 )}
@@ -2027,7 +2038,7 @@ export default function TrackingPdaPage() {
               activeFilter={kpiFilter}
               storicoTotale={storicoTotale}
               onApriStorico={() => setShowArchivio(true)}
-              brands={[...new Set(data.map((r) => r.brand).filter(Boolean))].sort()}
+              brands={ordinaBrandTracking([...new Set(data.map((r) => r.brand).filter(Boolean))])}
               brandSel={brandSel}
               setBrandSel={setBrandSel}
             />
