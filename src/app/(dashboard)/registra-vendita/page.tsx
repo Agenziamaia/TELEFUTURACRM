@@ -5060,8 +5060,10 @@ function CRM() {
 
 
   const tCI=cart.reduce((s,g)=>s+g.items.length,0)+colItems().length+margItems.length;
-  const bC=bObj?bObj.color:"#8892b0";
-  const bG=bObj?bObj.gradient:"linear-gradient(135deg,#374151,#8892b0)";
+  // SENZA brand niente grigio topo (Luca 03/08): il colore di piattaforma
+  // e' l'indigo del CRM — il grigio compariva su stepper, riepilogo e carrello
+  const bC=bObj?bObj.color:"#6366f1";
+  const bG=bObj?bObj.gradient:"linear-gradient(135deg,#4f46e5,#6366f1)";
   // CF/P.IVA SEMPRE OBBLIGATORIO su qualsiasi brand (Luca 02/08): senza,
   // la vendita non si registra. Il campo sta nell'anagrafica, cosi' anche
   // per i clienti gia' in archivio SENZA codice lo si aggiunge a mano e
@@ -5318,7 +5320,7 @@ function CRM() {
 
   // ═══════════ FORM ═══════════
   const formContent = (
-    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:0,width:"100%"}}>
+    <div className="crmShell" style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:0}}>
       {/* ═══════════════════════════════════════════════════════════════════
           RIEPILOGO VENDITE — SIDEBAR DESKTOP
           Per gli SVILUPPATORI: questa sidebar (className "crmSidebar") è
