@@ -136,9 +136,17 @@ function ChatPageInner() {
   // agganci al registratore di MODULO (vedi in fondo al file): montandomi
   // riprendo lo stato vivo e ritiro l'eventuale registrazione finita altrove
   useEffect(() => {
-    _regConsegna = (f: File) => { setFiles((p: File[]) => [...p, f]); setRecording(false); };
+    _regConsegna = (f: File) => {
+      // la registrazione APPARTIENE alla chat da cui e' partita (Luca 03/08):
+      // alla consegna si torna li' e il file si allega in quel composer
+      if (_regConv) setSelId(_regConv);
+      setFiles((p: File[]) => [...p, f]); setRecording(false); _regConv = null;
+    };
+    // rientrando in chat con una registrazione viva o pronta, si RIAPRE la
+    // conversazione d'origine (prima si finiva sulla lista generale)
+    if ((_regViva || _regPronta) && _regConv) setSelId(_regConv);
     if (_regViva) setRecording(true);
-    if (_regPronta) { const f = _regPronta; _regPronta = null; setFiles((p: File[]) => [...p, f]); }
+    if (_regPronta) { const f = _regPronta; _regPronta = null; setFiles((p: File[]) => [...p, f]); _regConv = null; }
     return () => { _regConsegna = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -188,6 +196,7 @@ function ChatPageInner() {
       stream.getVideoTracks()[0].onended = () => { if (rec.state !== "inactive") rec.stop(); };
       rec.start(1000);
       _regViva = { rec, stream, chunks };
+      _regConv = selId || null;   // chat d'origine: al ritorno si riapre lei
       setRecording(true);
     } catch { /* annullato dal picker */ }
   };
@@ -1201,3 +1210,6 @@ export default function ChatPage() {
 let _regViva: { rec: MediaRecorder; stream: MediaStream; chunks: Blob[] } | null = null;
 let _regPronta: File | null = null;
 let _regConsegna: ((f: File) => void) | null = null;
+// conversazione da cui e' PARTITA la registrazione (Luca 03/08): rientrando
+// in chat si riapre lei, e il file consegnato si allega li'
+let _regConv: string | null = null;
