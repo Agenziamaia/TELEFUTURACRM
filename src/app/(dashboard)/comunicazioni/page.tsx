@@ -16,7 +16,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
-import { Confetti } from "@/components/ComunicazioniPopup";
+import { Confetti, SfondoComunicazione } from "@/components/ComunicazioniPopup";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
 import { sameStore, useVisibleStores } from "@/lib/visibleStores";
@@ -572,9 +572,13 @@ export default function Comunicazioni() {
                                     !read && "border-l-4 border-l-primary",
                                     com.type === "warning" && "border border-rose-500/30 bg-gradient-to-br from-rose-500/[0.08] to-transparent",
                                     com.type === "success" && "bg-gradient-to-br from-emerald-500/[0.08] via-transparent to-fuchsia-500/[0.07]",
-                                    com.type === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent"
+                                    com.type === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent",
+                                    !collassata && com.type === "warning" && "anim-bordo-rosso"
                                 )}
                             >
+                                {/* SFONDO VIVO (Luca 03/08): da aperta, il genere si muove —
+                                    coriandoli+fuochi, stelle, hazard o riflesso cromato */}
+                                {!collassata && <SfondoComunicazione genere={com.type} />}
                                 {/* filigrana decorativa per tipo (03/08) */}
                                 {com.type === "success" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.08] rotate-12 pointer-events-none select-none">🎉</span>}
                                 {com.type === "update" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.07] rotate-12 pointer-events-none select-none">🚀</span>}
@@ -595,8 +599,8 @@ export default function Comunicazioni() {
                                     )}
                                 </div>
 
-                                <div className="flex gap-4">
-                                    <div className={cn("shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border", styles.bg, styles.border, styles.color)}>
+                                <div className="relative flex gap-4">
+                                    <div className={cn("shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border", styles.bg, styles.border, styles.color, !collassata && com.type === "warning" && "anim-scossa")}>
                                         <Icon className="w-6 h-6" />
                                     </div>
                                     <div className="flex-1 min-w-0">

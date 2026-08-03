@@ -32,6 +32,98 @@ type ComPopup = {
     kind: string | null;
 };
 
+/* SFONDO ANIMATO del riquadro comunicazione (Luca 03/08): il genere si VEDE.
+   🎉 successo: coriandoli in caduta continua + fuochi d'artificio dentro il
+   riquadro; 🚀 update: cielo di stelle che salgono; 🚨 urgente: strisce
+   hazard in movimento (con bordo pulsante e icona che vibra, classi sotto);
+   ℹ️ info: riflesso "cromato" che attraversa la card. Canvas e CSS puri,
+   niente librerie: gira anche sui PC dei negozi. */
+const CSS_SFONDI = `@keyframes hazardScorri{0%{transform:translateX(0)}100%{transform:translateX(62px)}}
+.anim-hazard{animation:hazardScorri 2.2s linear infinite}
+@keyframes cromoScorri{0%{background-position:130% 0}100%{background-position:-130% 0}}
+.anim-cromo{animation:cromoScorri 3.4s ease-in-out infinite}
+@keyframes bordoRosso{0%,100%{box-shadow:0 0 0 0 rgba(244,63,94,.55)}50%{box-shadow:0 0 28px 6px rgba(244,63,94,.30)}}
+.anim-bordo-rosso{animation:bordoRosso 1.5s ease-in-out infinite}
+@keyframes scossaIcona{0%,86%,100%{transform:rotate(0)}88%{transform:rotate(-9deg)}90%{transform:rotate(8deg)}92%{transform:rotate(-6deg)}94%{transform:rotate(5deg)}96%{transform:rotate(-2deg)}}
+.anim-scossa{animation:scossaIcona 2.8s ease-in-out infinite}`;
+
+export function fondoComunicazione(genere?: string | null): string {
+    return genere === "success" ? "linear-gradient(160deg,#0d1f13 0%,#12141f 55%,#0f2417 100%)"
+        : genere === "warning" ? "linear-gradient(160deg,#220d13 0%,#12141f 55%,#2a0f16 100%)"
+            : genere === "update" ? "linear-gradient(160deg,#170f2b 0%,#12141f 55%,#1a1233 100%)"
+                : "linear-gradient(160deg,#0f1522 0%,#12141f 60%,#101a2c 100%)";
+}
+
+export function SfondoComunicazione({ genere }: { genere?: string | null }) {
+    const ref = useRef<HTMLCanvasElement | null>(null);
+    const animato = genere === "success" || genere === "update";
+    useEffect(() => {
+        if (!animato) return;
+        const cv = ref.current; if (!cv) return;
+        const ctx = cv.getContext("2d"); if (!ctx) return;
+        let W = 0, H = 0, raf = 0, vivo = true;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const setup = () => {
+            const r = cv.parentElement?.getBoundingClientRect();
+            W = Math.max(1, Math.floor(r?.width || 560)); H = Math.max(1, Math.floor(r?.height || 400));
+            cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + "px"; cv.style.height = H + "px";
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        };
+        setup();
+        const colori = ["#f59e0b", "#22c55e", "#3b82f6", "#ec4899", "#a78bfa", "#facc15", "#34d399"];
+        type Cor = { x: number; y: number; vx: number; vy: number; rot: number; vr: number; w: number; h: number; c: string };
+        type Scia = { x: number; y: number; vx: number; vy: number; vita: number; max: number; c: string };
+        const coriandoli: Cor[] = []; const scie: Scia[] = [];
+        const stelle: { x: number; y: number; v: number; r: number; tw: number }[] = [];
+        if (genere === "success") for (let i = 0; i < 34; i++) coriandoli.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - .5) * .5, vy: .55 + Math.random() * .9, rot: Math.random() * Math.PI, vr: (Math.random() - .5) * .12, w: 5 + Math.random() * 5, h: 3 + Math.random() * 4, c: colori[(Math.random() * colori.length) | 0] });
+        if (genere === "update") for (let i = 0; i < 42; i++) stelle.push({ x: Math.random() * W, y: Math.random() * H, v: .18 + Math.random() * .5, r: .6 + Math.random() * 1.5, tw: Math.random() * Math.PI * 2 });
+        let ultimoBotto = 0;
+        const botto = () => {
+            const cx = 40 + Math.random() * Math.max(40, W - 80), cy = 26 + Math.random() * (H * .45), c = colori[(Math.random() * colori.length) | 0];
+            for (let i = 0; i < 16; i++) { const a = (Math.PI * 2 * i) / 16 + Math.random() * .2; const sp = 1.4 + Math.random() * 1.6; scie.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vita: 0, max: 46 + Math.random() * 22, c }); }
+        };
+        const tick = (t: number) => {
+            if (!vivo) return;
+            ctx.clearRect(0, 0, W, H);
+            if (genere === "success") {
+                if (t - ultimoBotto > 2400) { ultimoBotto = t; botto(); }
+                coriandoli.forEach(pt => {
+                    pt.x += pt.vx + Math.sin((pt.y + t * .02) * .02) * .3; pt.y += pt.vy; pt.rot += pt.vr;
+                    if (pt.y > H + 8) { pt.y = -8; pt.x = Math.random() * W; }
+                    ctx.save(); ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot); ctx.globalAlpha = .8; ctx.fillStyle = pt.c; ctx.fillRect(-pt.w / 2, -pt.h / 2, pt.w, pt.h); ctx.restore();
+                });
+                for (let i = scie.length - 1; i >= 0; i--) { const sc = scie[i]; sc.vita++; sc.x += sc.vx; sc.y += sc.vy; sc.vy += .028; const a = 1 - sc.vita / sc.max; if (a <= 0) { scie.splice(i, 1); continue; } ctx.globalAlpha = a * .9; ctx.fillStyle = sc.c; ctx.beginPath(); ctx.arc(sc.x, sc.y, 1.8, 0, Math.PI * 2); ctx.fill(); }
+                ctx.globalAlpha = 1;
+            } else {
+                stelle.forEach(st => { st.y -= st.v; st.tw += .05; if (st.y < -4) { st.y = H + 4; st.x = Math.random() * W; } ctx.globalAlpha = .35 + Math.abs(Math.sin(st.tw)) * .5; ctx.fillStyle = "#c4b5fd"; ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2); ctx.fill(); });
+                ctx.globalAlpha = 1;
+            }
+            raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        const ro = new ResizeObserver(setup);
+        if (cv.parentElement) ro.observe(cv.parentElement);
+        return () => { vivo = false; cancelAnimationFrame(raf); ro.disconnect(); };
+    }, [genere, animato]);
+
+    return (
+        <>
+            <style>{CSS_SFONDI}</style>
+            {animato ? (
+                <canvas ref={ref} className="absolute inset-0 pointer-events-none" aria-hidden />
+            ) : genere === "warning" ? (
+                <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
+                    <div className="absolute -inset-16 anim-hazard" style={{ background: "repeating-linear-gradient(45deg, rgba(244,63,94,0.10) 0 22px, transparent 22px 44px)" }} />
+                </div>
+            ) : (
+                <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
+                    <div className="absolute inset-0 anim-cromo" style={{ background: "linear-gradient(105deg, transparent 42%, rgba(255,255,255,0.09) 50%, transparent 58%)", backgroundSize: "260% 100%" }} />
+                </div>
+            )}
+        </>
+    );
+}
+
 const cnBody = (size?: string | null) => size === "grande"
     ? "px-6 pb-5 text-slate-100 text-lg font-medium leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto"
     : "px-6 pb-5 text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto";
@@ -188,10 +280,11 @@ export function ComunicazioniPopup() {
         <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
             {/* buone notizie (type success): esplosione di coriandoli all'apertura */}
             {attuale.type === "success" && <Confetti key={attuale.id} />}
-            <div className="w-full max-w-[560px] rounded-2xl border shadow-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200"
-                style={{ background: "#12141f", borderColor: stile.border }}>
-                <div className="flex items-start gap-4 p-6 pb-4">
-                    <div className="shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border"
+            <div className={`relative w-full max-w-[560px] rounded-2xl border shadow-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200${attuale.type === "warning" ? " anim-bordo-rosso" : ""}`}
+                style={{ background: fondoComunicazione(attuale.type), borderColor: stile.border }}>
+                <SfondoComunicazione genere={attuale.type} />
+                <div className="relative flex items-start gap-4 p-6 pb-4">
+                    <div className={`shrink-0 w-12 h-12 rounded-xl flex items-center justify-center border${attuale.type === "warning" ? " anim-scossa" : ""}`}
                         style={{ background: stile.bg, borderColor: stile.border, color: stile.color }}>
                         <Icon className="w-6 h-6" />
                     </div>
@@ -207,12 +300,12 @@ export function ComunicazioniPopup() {
                         </p>
                     </div>
                 </div>
-                <div className={cnBody(attuale.size)}>
+                <div className={"relative " + cnBody(attuale.size)}>
                     {attuale.content}
                 </div>
                 {/* ALLEGATI (mig. 147): apribili SUBITO, senza dover confermare */}
                 {(attuale.allegati?.length ?? 0) > 0 && (
-                    <div className="px-6 pb-4 flex flex-wrap gap-2">
+                    <div className="relative px-6 pb-4 flex flex-wrap gap-2">
                         {attuale.allegati!.map((a) => (
                             <a key={a.url} href={a.url} target="_blank" rel="noreferrer"
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/15 text-xs font-semibold text-slate-200 hover:bg-white/10 hover:border-white/30 transition-colors">
@@ -224,7 +317,7 @@ export function ComunicazioniPopup() {
                 {/* la conferma E' la scelta di una risposta (esiti, mig. 116);
                     "Piu' tardi" e' solo un RINVIO di un'ora, piccolo e a sinistra
                     (Luca 31/07): il pop-up torna finche' non c'e' l'esito */}
-                <div className="flex items-center justify-between gap-2.5 flex-wrap px-6 py-4 border-t border-white/10 bg-black/20">
+                <div className="relative flex items-center justify-between gap-2.5 flex-wrap px-6 py-4 border-t border-white/10 bg-black/20">
                     <button type="button" onClick={rinvia} title="Te lo ripropongo tra un'ora, finché non dai una risposta"
                         className="px-2 py-1.5 rounded-lg text-[11px] text-slate-500 hover:text-slate-300 transition-colors shrink-0">
                         Più tardi
