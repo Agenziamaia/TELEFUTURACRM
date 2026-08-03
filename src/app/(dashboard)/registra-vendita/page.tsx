@@ -4145,7 +4145,6 @@ function CRM() {
   // attivo; si naviga dalla barra in alto. Il flusso dati (showAna/showStep4)
   // resta com'era: questa e' solo la vista.
   const [vistaStep,setVistaStep]=useState("brand");
-  useEffect(()=>{if(showStep4)setVistaStep("prodotti");},[showStep4]);
   // Step 7 — nota e promemoria (segnalazione 21)
   const [notaOn,setNotaOn]=useState(false);
   const [nota,setNota]=useState("");
@@ -4308,6 +4307,9 @@ function CRM() {
   },[user]);
   const [confirmReset,setConfirmReset]=useState(false);
   const [showStep4,setShowStep4]=useState(false);
+  // quando il flusso apre i prodotti, la vista segue (qui e NON piu' in alto:
+  // le dipendenze dell'effect si valutano subito → showStep4 deve esistere)
+  useEffect(()=>{if(showStep4)setVistaStep("prodotti");},[showStep4]);
   const [vfQtyModal,setVfQtyModal]=useState(null);
 
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
