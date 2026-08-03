@@ -1040,6 +1040,7 @@ const listinoPerModello = async (modello) => {
 // il listino ufficiale di QUEL brand (Luca 02/08). Il form di vendita e' uno
 // solo per volta, quindi basta un riferimento di modulo aggiornato dal render.
 let _brandVendita = null;
+let _numeriMobiliVendita = [];
 const _compBrand = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 // FASTWEB usa il listino VODAFONE in vigore (Luca 03/08): stesso street
 // price, ma SENZA marginalita' sul prodotto — il margine non si mostra.
@@ -1310,8 +1311,9 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
           {listini.map(li=>{
             const pz=Number(li.prezzo||0), mp=Number(li.margine_pct??0);
             const marg=_senzaMargine()?" · senza marginalità (Fastweb)":(mp>0?` · margine ${mp}% = € ${(pz*mp/100).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"");
-            const rate=Array.isArray(li.rate)&&li.rate.length?` · ${li.rate.slice(0,3).map(r=>`${r.mesi}×€${Number(r.rata||0).toLocaleString("it-IT",{minimumFractionDigits:2})}${r.anticipo?` (+ant. €${r.anticipo})`:""}`).join(" / ")}`:"";
-            return `💰 Listino ${li.brand}: € ${pz.toLocaleString("it-IT",{minimumFractionDigits:2})}${marg}${rate}`;
+            // SOLO street price + marginalità (Luca 03/08): le rate mostrate
+            // dal listino erano sbagliate — via tutto il resto
+            return `💰 Listino ${li.brand}: € ${pz.toLocaleString("it-IT",{minimumFractionDigits:2})}${marg}`;
           }).join("  ·  ")}
         </div>
       )}
@@ -3105,6 +3107,7 @@ const _codiciDi=(pageBrand)=>pageBrand==="vodafone"?VF_CODICI_NEGOZIO:pageBrand=
 const _sceltaVals=(nome,categoria)=>{
   if(nome==="Operatore di Provenienza")return categoria==="Energia"?opProv:brandMNP;
   if(nome==="Operatore GNP")return GNP_FISSO_BRANDS;
+  if(nome==="GNP")return ["Sì","No"];
   return [];
 };
 // TELEFONO A RATE su nuova attivazione (Luca 01/08): il telefono venduto a
@@ -3198,9 +3201,29 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px"}}>
           {campi.map(cmp=>{
             if(cmp.nome==="Codice Inserimento")return <SCd key={cmp.nome} session={sc} codici={codici} val={f[cmp.nome]||""} onCh={v=>setF(cmp.nome,v)}/>;
+            if(/^gnp$/i.test(cmp.nome))return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);if(v!=="Sì")setF("Operatore GNP","");}} vals={["Sì","No"]} nt={cmp.nota||undefined}/>;
+            if(/^operatore gnp$/i.test(cmp.nome)&&(f["GNP"]||"")!=="Sì")return null;
             if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
             if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"#dc3545"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>{cmp.nota&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{cmp.nota}</div>}</div>);
             if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={SOLO_ALTRO} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
+            if(/mobile di convergenza/i.test(cmp.nome))return (
+              <div key={cmp.nome}>
+                <TF l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p="3XXXXXXXXX" nt={cmp.nota||undefined}/>
+                {/* AGGANCIO SMART (03/08): se in questa vendita c'e' gia' un
+                    numero mobile, si propone — un click e la convergenza e' fatta */}
+                {_numeriMobiliVendita.filter(n=>n!==(f[cmp.nome]||"")).length>0&&(
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
+                    {_numeriMobiliVendita.filter(n=>n!==(f[cmp.nome]||"")).slice(0,4).map(n=>(
+                      <button key={n} type="button" onClick={()=>setF(cmp.nome,n)}
+                        title="Numero mobile trovato in questa vendita: clicca per agganciarlo alla convergenza"
+                        style={{padding:"4px 10px",borderRadius:999,border:"1px solid rgba(52,211,153,0.5)",background:"rgba(52,211,153,0.10)",color:"#34d399",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                        📱 Aggancia {n}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
             return <TF key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p={cmp.nota||""}/>;
           })}
         </div>
@@ -3224,6 +3247,7 @@ const subComplete=(sub,d)=>{
     const _campi=risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,f["Offerta"]||"",_att);
     for(const cmp of _campi){
       if(cmp.nome==="Codice Inserimento"){if(!_NE(f[cmp.nome])&&!_NE(_sesRef.v))return false;}
+      else if(/^operatore gnp$/i.test(cmp.nome)){if((f["GNP"]||"")==="Sì"&&!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;}
       else if(!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;
     }
     return true;
@@ -4274,6 +4298,10 @@ export default function CRM() {
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
   // le tendine del terminale leggono il listino di QUESTO brand
   _brandVendita = brand || null;
+  // NUMERI MOBILI della vendita in corso (03/08): per l'aggancio della
+  // CONVERGENZA — si scandaglia tutto (vendita corrente + carrello) e ogni
+  // numero che sembra un cellulare diventa proponibile con un click
+  _numeriMobiliVendita = [...new Set(((JSON.stringify({ sales, cart }) || "").match(/\b3\d{8,9}\b/g) || []))];
   // GRUPPI DAL CATALOGO (stessa forma dei vecchi getXX, per TUTTI i brand,
   // Sky compreso): una card per CATEGORIA con i PRODOTTI del tipo cliente.
   const cats=useMemo(()=>{
@@ -4979,9 +5007,21 @@ export default function CRM() {
   useEffect(()=>{
     const v=(lookupValue||"").trim();
     if(_suggTO.current)clearTimeout(_suggTO.current);
+    const compat=v.replace(/\s+/g,"");
+    // P.IVA MODE (Luca 03/08): mentre scrivo cifre, filtro i clienti per
+    // cf_piva — stesso comportamento dei suggerimenti per cognome
+    const pivaMode=/^\d{4,}$/.test(compat);
     const nomeMode=v.length>=3&&/[A-ZÀ-Ù]/i.test(v)&&(v.includes(" ")||/^[A-ZÀ-Ù' ]+$/i.test(v));
-    if(!nomeMode){setSugg([]);return;}
+    if(!nomeMode&&!pivaMode){setSugg([]);return;}
     _suggTO.current=setTimeout(async()=>{
+      if(pivaMode){
+        const {data}=await supabase.from("clients")
+          .select("id,nome,cognome,ragione_sociale,cf_piva,cellulare,tipo")
+          .ilike("cf_piva",`%${compat}%`)
+          .limit(25);
+        setSugg((data||[]).filter(c=>visCli.visibile(c.id)).slice(0,6));
+        return;
+      }
       const termini=v.toLowerCase().split(/\s+/).filter(Boolean);
       const chiave=[...termini].sort((a,b)=>b.length-a.length)[0].replace(/[,()%]/g,"");
       if(!chiave){setSugg([]);return;}
@@ -5411,6 +5451,13 @@ export default function CRM() {
               </button>
             )}
           </div>
+          {(()=>{
+            // CONTROLLO P.IVA (Luca 03/08): 11 cifre e basta — oltre, lo dico subito
+            const num=(lookupValue||"").replace(/\s+/g,"");
+            if(/^\d{12,}$/.test(num))return <div style={{marginTop:8,background:"rgba(220,38,38,0.12)",border:"1px solid rgba(220,38,38,0.35)",borderRadius:6,padding:"7px 12px",fontSize:12,color:"#fca5a5",fontWeight:700}}>⚠️ Una Partita IVA italiana ha 11 cifre — ne hai scritte {num.length}</div>;
+            if(/^\d{11}$/.test(num))return <div style={{marginTop:8,background:"rgba(40,167,69,0.10)",borderRadius:6,padding:"6px 12px",fontSize:11,color:"#28a745",fontWeight:600}}>✓ P.IVA — 11 cifre</div>;
+            return null;
+          })()}
           {sugg.length>0&&(
             <div style={{marginTop:8,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(15,17,26,0.98)",overflow:"hidden"}}>
               <div style={{padding:"6px 12px",fontSize:10,fontWeight:700,color:"#8892b0",textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>Clienti in visibilità</div>
