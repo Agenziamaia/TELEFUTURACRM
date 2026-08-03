@@ -444,7 +444,10 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   }, [fetchOrders]);
 
   /* Filters */
-  const [fStatus, setFStatus] = useState("tutti");
+  // INSIEME di stati flaggati (Luca 03/08 v2): [] = tutti; l'admin parte con
+  // nuovi+lavorazione+parziali gia' FLAGGATI e visibili; Evasi/Annullati sono
+  // esclusivi al click; i tre attivi si accendono/spengono singolarmente.
+  const [fStati, setFStati] = useState([]);
   const [fStore, setFStore] = useState("tutti");
   const [fCats, setFCats] = useState([]); // multi-select categories
   const [fSearch, setFSearch] = useState("");
@@ -601,7 +604,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   // negozi vedono tutto ma col sort attivi-in-testa. Vale solo come default.
   const fStatusPreset = useRef(false);
   useEffect(() => {
-    if (!fStatusPreset.current && isAdmin) { setFStatus("attivi"); fStatusPreset.current = true; }
+    if (!fStatusPreset.current && isAdmin) { setFStati(["nuovo", "lavorazione", "parziale"]); fStatusPreset.current = true; }
   }, [isAdmin]);
 
   /* ─── Filter logic ─── */
@@ -612,8 +615,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   const filtered = useMemo(() => {
     return orders.filter(o => {
       if (!vedeTutti && !negoziMiei.some(st => sameStore(o.store, st))) return false;
-      if (fStatus === "attivi" && (o.status === "evaso" || o.status === "annullato")) return false;
-      if (fStatus !== "tutti" && fStatus !== "attivi" && o.status !== fStatus) return false;
+      if (fStati.length > 0 && !fStati.includes(o.status)) return false;
       if (fStore !== "tutti" && o.store !== fStore) return false;
       if (fCats.length > 0) {
         const orderCats = [...new Set(o.items.map(i => i.cat))];
@@ -630,7 +632,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
       const chiuso = (o) => (o.status === "evaso" || o.status === "annullato") ? 1 : 0;
       return chiuso(a) - chiuso(b) || new Date(b.created_at || b.date) - new Date(a.created_at || a.date);
     });
-  }, [orders, vedeTutti, negoziMiei, fStatus, fStore, fCats, fSearch]);
+  }, [orders, vedeTutti, negoziMiei, fStati, fStore, fCats, fSearch]);
 
   /* ─── Stats ─── */
   const stats = useMemo(() => {
@@ -752,6 +754,24 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   };
 
   /* ─── Admin actions ─── */
+  // ELIMINAZIONE COMPLETA (Luca 03/08): SOLO admin/dev — via righe articoli e
+  // ordine, definitivo. L'amministrativo non la vede.
+  const isSuperAdmin = ["admin", "dev"].includes(role || "");
+  const [eliminaOrdineId, setEliminaOrdineId] = useState(null);
+  const [eliminandoOrdine, setEliminandoOrdine] = useState(false);
+  const eliminaOrdine = async (oid) => {
+    setEliminandoOrdine(true);
+    try {
+      await supabase.from("merchandise_order_items").delete().eq("order_id", oid);
+      const { error } = await supabase.from("merchandise_orders").delete().eq("id", oid);
+      if (error) throw error;
+      setOrders(prev => prev.filter(o => o.id !== oid));
+      setSelectedIds(prev => prev.filter(x => x !== oid));
+      if (expandedId === oid) setExpandedId(null);
+    } catch (e) { alert("Eliminazione non riuscita: " + (e?.message || e)); }
+    setEliminandoOrdine(false);
+    setEliminaOrdineId(null);
+  };
   const updateStatus = async (oid, s) => {
     const { error } = await supabase.from("merchandise_orders").update({ status: s }).eq("id", oid);
     if (!error) fetchOrders();
@@ -792,15 +812,21 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
 
   /* ─── Stat filter click ─── */
   const handleStatClick = (key) => {
-    // il click su Evasi/Annullati DESELEZIONA tutto e filtra solo quello
-    // (come Ricerca Vendite); il ritorno va al default del ruolo
-    const base = isAdmin ? "attivi" : "tutti";
-    if (key === "totale") { setFStatus(base); return; }
-    if (key === "nuovi") { setFStatus(fStatus === "nuovo" ? base : "nuovo"); return; }
-    if (key === "lavorazione") { setFStatus(fStatus === "lavorazione" ? base : "lavorazione"); return; }
-    if (key === "parziale") { setFStatus(fStatus === "parziale" ? base : "parziale"); return; }
-    if (key === "evasi") { setFStatus(fStatus === "evaso" ? base : "evaso"); return; }
-    if (key === "annullati") { setFStatus(fStatus === "annullato" ? base : "annullato"); return; }
+    // Totale = tutto; Evasi/Annullati = ESCLUSIVI (deselezionano il resto,
+    // ri-click = torna al default del ruolo); i tre stati attivi si
+    // flaggano/sflaggano uno a uno (Luca 03/08 v2)
+    const DEF = isAdmin ? ["nuovo", "lavorazione", "parziale"] : [];
+    if (key === "totale") { setFStati([]); return; }
+    if (key === "evasi") { setFStati(p => (p.length === 1 && p[0] === "evaso") ? DEF : ["evaso"]); return; }
+    if (key === "annullati") { setFStati(p => (p.length === 1 && p[0] === "annullato") ? DEF : ["annullato"]); return; }
+    const st = { nuovi: "nuovo", lavorazione: "lavorazione", parziale: "parziale" }[key];
+    if (!st) return;
+    setFStati(p => {
+      const base = (p.includes("evaso") || p.includes("annullato")) ? [] : [...p];
+      const i = base.indexOf(st);
+      if (i >= 0) base.splice(i, 1); else base.push(st);
+      return base;
+    });
   };
 
   /* ═══ STYLES (CRM dark theme) ═══ */
@@ -1927,20 +1953,21 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
         {/* Stats — clickable */}
         <div style={s.statsRow}>
           {[
-            { key: "totale", label: "Totale Ordini", val: stats.totale, color: C.text, icon: "📋", active: fStatus === "tutti" || fStatus === "attivi" },
-            { key: "nuovi", label: "Nuovi", val: stats.nuovi, color: C.primary, icon: "🆕", active: fStatus === "nuovo" },
-            { key: "lavorazione", label: "In Lavorazione", val: stats.lavorazione, color: C.warning, icon: "⏳", active: fStatus === "lavorazione" },
-            { key: "parziale", label: "Parz. Evasi", val: stats.parziale, color: C.info, icon: "📦", active: fStatus === "parziale" },
+            { key: "totale", label: "Totale Ordini", val: stats.totale, color: C.text, icon: "📋", active: fStati.length === 0 },
+            { key: "nuovi", label: "Nuovi", val: stats.nuovi, color: C.primary, icon: "🆕", active: fStati.includes("nuovo") },
+            { key: "lavorazione", label: "In Lavorazione", val: stats.lavorazione, color: C.warning, icon: "⏳", active: fStati.includes("lavorazione") },
+            { key: "parziale", label: "Parz. Evasi", val: stats.parziale, color: C.info, icon: "📦", active: fStati.includes("parziale") },
           ].map(st => (
             <div key={st.key} onClick={() => handleStatClick(st.key)}
+              title={st.active ? "Filtro attivo — clicca per toglierlo" : "Clicca per filtrare"}
               style={{
-                background: C.card, borderRadius: 10, padding: "16px 20px", cursor: "pointer",
-                border: st.active && st.key !== "totale" ? `2px solid ${st.color}` : `1px solid ${C.border}`,
-                transition: "all .15s", boxShadow: st.active && st.key !== "totale" ? `0 0 0 3px ${st.color}20` : "none",
+                background: st.active ? `${st.color}12` : C.card, borderRadius: 10, padding: "16px 20px", cursor: "pointer",
+                border: st.active ? `2px solid ${st.color}` : `1px solid ${C.border}`,
+                transition: "all .15s", boxShadow: st.active ? `0 0 0 3px ${st.color}20` : "none",
               }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: 12, color: C.grayLight, fontWeight: 500 }}>{st.label}</div>
+                  <div style={{ fontSize: 12, color: st.active ? st.color : C.grayLight, fontWeight: st.active ? 800 : 500 }}>{st.active ? "✓ " : ""}{st.label}</div>
                   <div style={{ fontSize: 28, fontWeight: 800, color: st.color, marginTop: 2 }}>{st.val}</div>
                 </div>
                 <span style={{ fontSize: 28, opacity: 0.7 }}>{st.icon}</span>
@@ -1952,8 +1979,8 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
               deseleziona tutto e mostra SOLO quelli */}
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {[
-              { key: "evasi", label: "Evasi", val: stats.evasi, color: C.success, icon: "✅", active: fStatus === "evaso" },
-              { key: "annullati", label: "Annullati", val: stats.annullati, color: C.danger, icon: "❌", active: fStatus === "annullato" },
+              { key: "evasi", label: "Evasi", val: stats.evasi, color: C.success, icon: "✅", active: fStati.includes("evaso") },
+              { key: "annullati", label: "Annullati", val: stats.annullati, color: C.danger, icon: "❌", active: fStati.includes("annullato") },
             ].map(st => (
               <div key={st.key} onClick={() => handleStatClick(st.key)}
                 style={{
@@ -1962,7 +1989,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                   transition: "all .15s", boxShadow: st.active ? `0 0 0 3px ${st.color}20` : "none",
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                 }}>
-                <span style={{ fontSize: 11, color: C.grayLight, fontWeight: 600 }}>{st.icon} {st.label}</span>
+                <span style={{ fontSize: 11, color: st.active ? st.color : C.grayLight, fontWeight: st.active ? 800 : 600 }}>{st.icon} {st.active ? "✓ " : ""}{st.label}</span>
                 <span style={{ fontSize: 16, fontWeight: 800, color: st.color }}>{st.val}</span>
               </div>
             ))}
@@ -1973,9 +2000,11 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
         <div style={s.filtersRow}>
           <input style={{ ...s.input, width: 220 }} placeholder="🔍 Cerca per ID o articolo..."
             value={fSearch} onChange={e => setFSearch(e.target.value)} />
-          <select style={s.select} value={fStatus} onChange={e => setFStatus(e.target.value)}>
+          <select style={s.select}
+            value={fStati.length === 0 ? "tutti" : fStati.length === 1 ? fStati[0] : "attivi"}
+            onChange={e => { const v = e.target.value; setFStati(v === "tutti" ? [] : v === "attivi" ? ["nuovo", "lavorazione", "parziale"] : [v]); }}>
             <option value="tutti">Tutti gli stati</option>
-            <option value="attivi">Attivi (senza evasi e annullati)</option>
+            <option value="attivi">Attivi (nuovi + lavorazione + parziali)</option>
             {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
 
@@ -2073,8 +2102,25 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                       </td>
                       <td style={{ ...s.td, color: C.textSec }}>{order.items.length} voci</td>
                       <td style={s.td}><Pill {...STATUS[order.status]} /></td>
-                      <td style={{ ...s.td, textAlign: "center", fontSize: 14, color: C.primary, fontWeight: 600 }}>
+                      <td style={{ ...s.td, textAlign: "center", fontSize: 14, color: C.primary, fontWeight: 600, whiteSpace: "nowrap" }}>
                         Apri →
+                        {isSuperAdmin && (
+                          <span onClick={e => e.stopPropagation()} style={{ marginLeft: 10 }}>
+                            {eliminaOrdineId === order.id ? (
+                              <span style={{ display: "inline-flex", gap: 4 }}>
+                                <button disabled={eliminandoOrdine} onClick={() => eliminaOrdine(order.id)}
+                                  style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: C.danger, color: "#fff", opacity: eliminandoOrdine ? .5 : 1 }}
+                                  title="Elimina ordine e articoli: definitivo">Elimino?</button>
+                                <button onClick={() => setEliminaOrdineId(null)}
+                                  style={{ ...s.btn, fontSize: 10, padding: "3px 6px", background: "transparent", border: `1px solid ${C.border}`, color: C.gray }}>✕</button>
+                              </span>
+                            ) : (
+                              <button onClick={() => setEliminaOrdineId(order.id)}
+                                style={{ ...s.btn, fontSize: 12, padding: "3px 8px", background: "rgba(220,53,69,0.12)", color: C.danger, border: `1px solid ${C.danger}40` }}
+                                title="Elimina completamente l'ordine (solo admin)">🗑</button>
+                            )}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );
