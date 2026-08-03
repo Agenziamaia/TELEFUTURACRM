@@ -4010,7 +4010,7 @@ export default function CRM() {
   const [showMargSave,setShowMargSave]=useState(false);
   // anagrafica COMPLETA come nel flusso brand (Luca 31/07): privato/business
   // con CF/P.IVA, residenza, email — non solo nome+telefono
-  const MARG_FORM_VUOTO={tipo:"privato",nome:"",cognome:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cf:"",tel:"",fisso:"",email:"",via:"",cap:"",citta:"",anonimo:false};
+  const MARG_FORM_VUOTO={tipo:"privato",nome:"",cognome:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",cf:"",tel:"",fisso:"",email:"",via:"",cap:"",citta:"",anonimo:false};
   const [margSaveForm,setMargSaveForm]=useState({...MARG_FORM_VUOTO});
   // RICERCA ANAGRAFICA nel checkout (Luca 31/07): stesso campo unico di
   // Registra Vendita / Registra Usato — cognome, nome, cellulare o CF; se
@@ -4142,7 +4142,12 @@ export default function CRM() {
   const [lookupDone,setLookupDone]=useState(false);
   const [lookupBusy,setLookupBusy]=useState(false);
   const [showAna,setShowAna]=useState(false);
-  const [ana,setAna]=useState({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  const [ana,setAna]=useState({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  // FLAG TURISTA (03/08, mig. 140): cliente di passaggio SENZA CF italiano.
+  // Col flag attivo il CF non e' richiesto, ma la vendita e' limitata a
+  // WindTre PRIVATO (categorie Mobile Wallet e Customer Base) o Marginalita'.
+  const [turista,setTurista]=useState(false);
+  useEffect(()=>{if(tipoCliente==="business"&&turista)setTurista(false);},[tipoCliente,turista]);
   const [sales,setSales]=useState({});
   const [sesCode,setSesCode]=useState("");
   const [cart,setCart]=useState([]);
@@ -4205,10 +4210,13 @@ export default function CRM() {
   const cats=useMemo(()=>{
     if(!brand||!catTree)return [];
     const tipoCat=tipoCliente==="business"?"Business":"Consumer";
+    // TURISTA: si vendono solo Mobile Wallet e Customer Base (03/08)
+    const catTurista=turista?["mobile wallet","customer base"]:null;
     const slug=SLUG_CATALOGO[brand];
     const offByProd={};
     (catTree.offerte||[]).forEach(o=>{(offByProd[o.prodotto_id]=offByProd[o.prodotto_id]||[]).push(o);});
     return (catTree.categorie||[]).map(cat=>{
+      if(catTurista&&!catTurista.includes(String(cat.nome||"").toLowerCase()))return null;
       const prods=(catTree.prodotti||[]).filter(x=>x.categoria_id===cat.id&&x.tipo_cliente===tipoCat).sort((a,b)=>a.ordine-b.ordine||a.nome.localeCompare(b.nome));
       if(!prods.length)return null;
       const macro=CAT_MACRO_ID[cat.nome]||"extra";
@@ -4219,7 +4227,7 @@ export default function CRM() {
         catOfferte:(offByProd[x.id]||[]).sort((a,b)=>a.ordine-b.ordine||a.nome.localeCompare(b.nome)).map(o=>({nome:o.nome,opzioni:((o.catalog_opzioni||[]).filter(k=>k.attivo)).sort((a,b)=>a.ordine-b.ordine).map(k=>({nome:k.nome,tipo:k.tipo,gruppo:k.gruppo_singolo}))})),
       }))};
     }).filter(Boolean);
-  },[brand,catTree,tipoCliente]);
+  },[brand,catTree,tipoCliente,turista]);
   _sesRef.v=sesCode; // per il fallback Cod.Ins. dentro subComplete
   // Segnalazione 84: con un contratto energia serve la cartella "Fattura".
   const haEnergia=cats.some(g=>g.catMacro==="energia"&&(sales[g.id]||[]).some(sale=>sale&&g.subs.some(sub=>sale[sub.id]&&sale[sub.id].active)));
@@ -4335,14 +4343,14 @@ export default function CRM() {
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
   const rmCG=idx=>setCart(p=>p.filter((_,i)=>i!==idx));
-  const fullReset=()=>{setBrand(null);setTipoCliente(null);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  const fullReset=()=>{setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
     setSelVend(user?.name||"");setSelNeg(user?.negozio||"");};
   // ── Auto-save every state change (solo dopo il ripristino della bozza) ──
   // #118: si salva l'intera vendita in corso (brand, prodotti, carrello, flusso).
-  useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,cart,selVend,selNeg,lookupValue,margItems,clienteFound,lookupDone,showAna,showStep4,notaOn,nota,promData,promOra,promNeg,promDesc},draftLoaded);
+  useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,cart,selVend,selNeg,lookupValue,margItems,clienteFound,lookupDone,showAna,showStep4,notaOn,nota,promData,promOra,promNeg,promDesc,turista},draftLoaded);
 
   // ── Load draft on mount (once) ──
   // #118: ripristino COMPLETO della vendita in corso. Prima si ricaricava solo un
@@ -4356,6 +4364,7 @@ export default function CRM() {
     if(d.brand)setBrand(d.brand);if(d.sales)setSales(d.sales);if(d.sesCode)setSesCode(d.sesCode);
     if(Array.isArray(d.skyS))setSkyS(d.skyS);if(Array.isArray(d.cart))setCart(d.cart);
     if(d.lookupValue)setLookupValue(d.lookupValue);
+    if(typeof d.turista==="boolean")setTurista(d.turista);
     if(typeof d.clienteFound==="boolean")setClienteFound(d.clienteFound);
     if(typeof d.lookupDone==="boolean")setLookupDone(d.lookupDone);
     if(typeof d.showAna==="boolean")setShowAna(d.showAna);
@@ -4528,6 +4537,8 @@ export default function CRM() {
         ragione_sociale: keep(ana.ragioneSociale, "ragione_sociale"),
         nome_ref: keep(ana.nomeRef, "nome_ref"),
         cognome_ref: keep(ana.cognomeRef, "cognome_ref"),
+        // CF del referente business (mig. 139): obbligatorio in questo flusso
+        cf_ref: tipoCliente === "business" ? (keep(ana.cfRef, "cf_ref") || null) : ((prev.cf_ref as string | null) ?? null),
         // archivio SENZA +39 (Luca 31/07): prefisso solo all'invio nelle integrazioni
         cellulare: numeroNazionale(keep(ana.cellulare || ana.recapito, "cellulare")) || keep(ana.cellulare || ana.recapito, "cellulare"),
         // recapito FISSO facoltativo delle business (mig. 124)
@@ -4549,7 +4560,9 @@ export default function CRM() {
         // Segnalazione 56: negozio di acquisizione. Storico: il primo contratto
         // vince, i successivi non lo modificano.
         acquisito_da: (prev.acquisito_da as string) || selNeg || null,
-        is_demo: false
+        is_demo: false,
+        // cliente turista (mig. 140): resta sull'anagrafica per le prossime vendite
+        turista: tipoCliente === "privato" ? !!turista : false
       };
 
       const { error: clientErr } = await supabase.from("clients").upsert(clientData, { onConflict: "id" });
@@ -4743,8 +4756,12 @@ export default function CRM() {
       // percorso chiedeva solo ragione sociale e telefono, ed era la porta da
       // cui nascevano business senza referente. E niente return silenzioso:
       // si dice COSA manca.
+      const cfRefM=(f.cfRef||"").trim().toUpperCase().replace(/\s+/g,"");
       const miss=f.tipo==="business"
-        ?[!f.ragioneSociale.trim()&&"Ragione Sociale",!f.nomeRef.trim()&&"Nome Referente",!f.cognomeRef.trim()&&"Cognome Referente",!f.tel.trim()&&"Cellulare"].filter(Boolean)
+        ?[!f.ragioneSociale.trim()&&"Ragione Sociale",!f.nomeRef.trim()&&"Nome Referente",!f.cognomeRef.trim()&&"Cognome Referente",
+          // CF referente obbligatorio anche qui (03/08, mig. 139)
+          (!cfRefM||!/^[A-Z0-9]{16}$/.test(cfRefM))&&"CF Referente (16 caratteri)",
+          !f.tel.trim()&&"Cellulare"].filter(Boolean)
         :[!f.nome.trim()&&"Nome",!f.cognome.trim()&&"Cognome",!f.tel.trim()&&"Cellulare"].filter(Boolean);
       if(miss.length){showToast("⚠️ Campi obbligatori mancanti: "+miss.join(", "));return;}
     }
@@ -4796,6 +4813,7 @@ export default function CRM() {
           nome:keep(f.nome,"nome"),cognome:keep(f.cognome,"cognome"),
           ragione_sociale:keep(f.ragioneSociale,"ragione_sociale"),
           nome_ref:keep(f.nomeRef,"nome_ref"),cognome_ref:keep(f.cognomeRef,"cognome_ref"),
+          cf_ref:business?(keep(f.cfRef,"cf_ref")||null):(prev.cf_ref??null),
           cellulare:numeroNazionale(keep(f.tel,"cellulare"))||keep(f.tel,"cellulare"),
           telefono_fisso:business?(keep(f.fisso,"telefono_fisso")||null):(prev.telefono_fisso??null),
           email:keep(f.email,"email"),cf_piva:cfPiva||null,
@@ -4853,10 +4871,12 @@ export default function CRM() {
       ragioneSociale:c.ragione_sociale||"",
       nomeRef:c.nome_ref||(c.tipo==="business"?c.nome||"":""),
       cognomeRef:c.cognome_ref||(c.tipo==="business"?c.cognome||"":""),
+      cfRef:c.cf_ref||"",
       recapito:c.cellulare||"",fisso:c.telefono_fisso||"",
     });
     if(c.tipo==="business"&&tipoCliente!=="business")setTipoCliente("business");
     if(c.tipo==="consumer"&&tipoCliente!=="privato")setTipoCliente("privato");
+    setTurista(!!c.turista&&c.tipo!=="business");
   };
   const doLookup=async()=>{
     const v=(lookupValue||"").trim();
@@ -4872,7 +4892,8 @@ export default function CRM() {
       setShowAna(true);setShowStep4(false);
       if(!c){
         setClienteFound(false);
-        setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:/^[A-Z0-9]{11,16}$/.test(v.replace(/\s+/g,""))?v.replace(/\s+/g,""):"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+        setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:/^[A-Z0-9]{11,16}$/.test(v.replace(/\s+/g,""))?v.replace(/\s+/g,""):"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+        setTurista(false);
         return;
       }
       applicaCliente(c);
@@ -4929,6 +4950,11 @@ export default function CRM() {
       if(!(ana.ragioneSociale||"").trim())miss.push("Ragione Sociale");
       if(!(ana.nomeRef||"").trim())miss.push("Nome Ref.");
       if(!(ana.cognomeRef||"").trim())miss.push("Cognome Ref.");
+      // CF del REFERENTE obbligatorio (03/08, mig. 139): serve la persona
+      // fisica dietro l'azienda, non basta la P.IVA
+      const cfR=(ana.cfRef||"").trim().toUpperCase().replace(/\s+/g,"");
+      if(!cfR)miss.push("CF Ref.");
+      else if(!/^[A-Z0-9]{16}$/.test(cfR))miss.push("CF Ref. (16 caratteri)");
       if(!(ana.recapito||"").trim())miss.push("Recapito");
       if(!cf)miss.push("P.IVA");
       else if(!/^\d{11}$/.test(cf)&&!/^[A-Z0-9]{16}$/.test(cf))miss.push("P.IVA (11 cifre, o CF 16 caratteri per le ditte individuali)");
@@ -4936,8 +4962,16 @@ export default function CRM() {
       if(!(ana.nome||"").trim())miss.push("Nome");
       if(!(ana.cognome||"").trim())miss.push("Cognome");
       if(!(ana.cellulare||"").trim())miss.push("Cellulare");
-      if(!cf)miss.push("Codice Fiscale");
-      else if(!/^[A-Z0-9]{16}$/.test(cf))miss.push("Codice Fiscale (16 caratteri)");
+      // TURISTA (03/08, mig. 140): cliente senza CF italiano — il codice
+      // non si chiede, ma la vendita resta limitata (vedi guardie sotto)
+      if(!turista){
+        if(!cf)miss.push("Codice Fiscale");
+        else if(!/^[A-Z0-9]{16}$/.test(cf))miss.push("Codice Fiscale (16 caratteri)");
+      }
+    }
+    if(turista){
+      if(tipoCliente==="business")miss.push("Turista: solo clienti privati");
+      if(brand&&brand!=="windtre")miss.push("Turista: consentiti solo WindTre e Marginalità");
     }
     return miss;
   })();
@@ -5147,6 +5181,7 @@ export default function CRM() {
                       <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Nome Referente <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.nomeRef} onChange={e=>setMargSaveForm(p=>({...p,nomeRef:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
                       <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Cognome Referente <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.cognomeRef} onChange={e=>setMargSaveForm(p=>({...p,cognomeRef:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
                     </div>
+                    <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>CF Referente <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.cfRef} onChange={e=>setMargSaveForm(p=>({...p,cfRef:e.target.value.toUpperCase().replace(/\s+/g,"")}))} maxLength={16} placeholder="Es. RSSMRA80A01H501B" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
                     <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Telefono Fisso</div><input value={margSaveForm.fisso} onChange={e=>setMargSaveForm(p=>({...p,fisso:e.target.value.replace(/\D/g,"").slice(0,11)}))} placeholder="Es. 061234567 (facoltativo)" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
                   </>
                 ):(
@@ -5271,7 +5306,7 @@ export default function CRM() {
       {!brand?<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:20,marginBottom:10}}>
         <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Step 1 — Brand</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}}} style={{padding:16,borderRadius:12,border:"2px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:b.ready?1:.6,position:"relative",overflow:"hidden"}}>
+          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}}} style={{padding:16,borderRadius:12,border:"2px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden"}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:56,marginBottom:12}}>{b.logo?<Image src={b.logo} alt={b.label} width={180} height={56} style={{height:56,width:"auto",maxWidth:"85%",objectFit:"contain"}}/>:<span style={{fontSize:36}}>{b.icon}</span>}</div><div style={{fontWeight:800,fontSize:15,color:b.color}}>{b.label}</div><div style={{fontSize:10,color:"#64748b",marginTop:3}}>{b.desc}</div>
           </button>)}
@@ -5319,7 +5354,7 @@ export default function CRM() {
 
       {showAna&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,borderLeft:"4px solid #1B3A5C"}}>
         <div style={{fontSize:11,fontWeight:700,color:"#1B3A5C",marginBottom:14,textTransform:"uppercase"}}>📝 Step 3 — Anagrafica</div>
-        {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/><TF l="Codice Fiscale" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501Z" pf={clienteFound&&!!ana.cf}/><TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
+        {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/><TF l="Codice Fiscale" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501Z" pf={clienteFound&&!!ana.cf}/><TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div><label style={{display:"flex",alignItems:"center",gap:8,marginTop:10,fontSize:12,fontWeight:700,color:turista?"#f59e0b":"#8892b0",cursor:"pointer"}}><input type="checkbox" checked={turista} onChange={e=>setTurista(e.target.checked)} style={{accentColor:"#f59e0b",width:15,height:15}}/>🌍 Cliente TURISTA — senza Codice Fiscale italiano (consentiti solo WindTre privato: Mobile Wallet e CB, oppure Marginalità)</label><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
         <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"#8892b0"}}>
           <input type="checkbox" checked={!!ana.intDiverso} onChange={e=>uA("intDiverso",e.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
           Diverso intestatario
@@ -5329,7 +5364,7 @@ export default function CRM() {
           <TF l="Cognome intestatario" r v={ana.intCognome} o={v=>uA("intCognome",v)} p="Rossi"/>
           <TF l="Codice Fiscale intestatario" r v={ana.intCf} o={v=>uA("intCf",v.toUpperCase())} p="RSSMRA80A01H501Z"/>
         </div>}</>
-        :<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Ragione Sociale" r v={ana.ragioneSociale} o={v=>uA("ragioneSociale",v)} p="Rossi Srl" pf={clienteFound}/><TF l="Partita IVA" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="12345678901" pf={clienteFound&&!!ana.cf}/><TF l="Nome Ref." r v={ana.nomeRef} o={v=>uA("nomeRef",v)} p="Mario" pf={clienteFound}/><TF l="Cognome Ref." r v={ana.cognomeRef} o={v=>uA("cognomeRef",v)} p="Rossi" pf={clienteFound}/><TF l="Recapito" r v={ana.recapito} o={v=>uA("recapito",v)} p="333..." pf={clienteFound}/><TF l="Telefono Fisso" v={ana.fisso} o={v=>uA("fisso",v)} p="06..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="info@" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
+        :<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Ragione Sociale" r v={ana.ragioneSociale} o={v=>uA("ragioneSociale",v)} p="Rossi Srl" pf={clienteFound}/><TF l="Partita IVA" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="12345678901" pf={clienteFound&&!!ana.cf}/><TF l="Nome Ref." r v={ana.nomeRef} o={v=>uA("nomeRef",v)} p="Mario" pf={clienteFound}/><TF l="Cognome Ref." r v={ana.cognomeRef} o={v=>uA("cognomeRef",v)} p="Rossi" pf={clienteFound}/><TF l="CF Ref." r v={ana.cfRef} o={v=>uA("cfRef",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501B" pf={clienteFound&&!!ana.cfRef}/><TF l="Recapito" r v={ana.recapito} o={v=>uA("recapito",v)} p="333..." pf={clienteFound}/><TF l="Telefono Fisso" v={ana.fisso} o={v=>uA("fisso",v)} p="06..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="info@" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
         <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"#8892b0"}}>
           <input type="checkbox" checked={!!ana.intDiverso} onChange={e=>uA("intDiverso",e.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
           Diverso intestatario
@@ -5341,7 +5376,7 @@ export default function CRM() {
         </div>}</>}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>{setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});setLookupValue("");setClienteFound(false);setShowStep4(false)}} style={{padding:"9px 18px",borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>↺ Reset anagrafica</button>
+            <button onClick={()=>{setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});setLookupValue("");setClienteFound(false);setShowStep4(false)}} style={{padding:"9px 18px",borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>↺ Reset anagrafica</button>
             {/* #124: reset TOTALE del form disponibile anche allo step 3 (prima solo dallo step 4) */}
             <button onClick={()=>setConfirmReset(true)} style={{padding:"9px 18px",borderRadius:8,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
           </div>

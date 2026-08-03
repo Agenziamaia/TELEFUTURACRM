@@ -17,7 +17,7 @@ import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 
 interface Voce {
     id: string;
-    tipo: "contratto" | "cliente" | "task";
+    tipo: "contratto" | "cliente" | "task" | "ferie";
     titolo: string;
     richiedente: string;
     esito: "approved" | "rejected" | "done";
@@ -36,6 +36,7 @@ const TIPO = {
     contratto: "📄 Modifica contratto",
     cliente: "🔓 Accesso cliente",
     task: "⚡ Task urgente",
+    ferie: "🏖 Ferie",
 } as const;
 
 export default function StoricoApprovazioni() {
@@ -52,7 +53,7 @@ export default function StoricoApprovazioni() {
     useEffect(() => {
         if (!isDirezione) return;
         (async () => {
-            const [ccr, car, tk] = await Promise.all([
+            const [ccr, car, tk, fer] = await Promise.all([
                 supabase.from("contract_change_requests")
                     .select("id,contract_id,requested_by_name,status,reviewed_by_name,reviewed_at,review_note,created_at")
                     .neq("status", "pending").order("reviewed_at", { ascending: false }).limit(200),
@@ -62,6 +63,12 @@ export default function StoricoApprovazioni() {
                 supabase.from("admin_tasks")
                     .select("id,titolo,created_by,done_by,done_at")
                     .eq("done", true).order("done_at", { ascending: false }).limit(200),
+                // FERIE con l'ESITO VERO (mig. 138, 03/08): prima qui compariva
+                // solo la task "Completata" del fulmine, che non dice se le
+                // ferie fossero state approvate o rifiutate.
+                supabase.from("vacation_requests")
+                    .select("id,employee_name,store,date_from,date_to,reason,status,admin_note,decided_by,decided_at,created_at")
+                    .neq("status", "pending").order("created_at", { ascending: false }).limit(200),
             ]);
             const out: Voce[] = [];
             (ccr.data ?? []).forEach((r: Record<string, unknown>) => out.push({
@@ -95,6 +102,16 @@ export default function StoricoApprovazioni() {
                 decisore: String(r.done_by || "—"),
                 quando: String(r.done_at || ""),
             }));
+            const gg = (s: unknown) => String(s || "").split("-").reverse().join("/");
+            (fer.data ?? []).forEach((r: Record<string, unknown>) => out.push({
+                id: `f-${r.id}`, tipo: "ferie",
+                titolo: `Ferie di ${r.employee_name}${r.store ? ` (${r.store})` : ""} · ${gg(r.date_from)}${r.date_to !== r.date_from ? ` → ${gg(r.date_to)}` : ""}`,
+                richiedente: String(r.employee_name || "—"),
+                esito: r.status === "approved" ? "approved" : "rejected",
+                decisore: String(r.decided_by || "—"),
+                quando: String(r.decided_at || r.created_at || ""),
+                nota: (r.admin_note as string) || (r.reason as string) || null,
+            }));
             out.sort((x, y) => (y.quando || "").localeCompare(x.quando || ""));
             setVoci(out);
             setLoading(false);
@@ -104,7 +121,7 @@ export default function StoricoApprovazioni() {
     // FILTRI (Luca 02/08): per APPROVATORE (chi ha deciso) e per TIPOLOGIA
     const [fDecisori, setFDecisori] = useState<string[]>([]);
     const [fTipo, setFTipo] = useState("");
-    const TIPO_FILTRO: Record<string, Voce["tipo"]> = { "Modifiche contratto": "contratto", "Accessi cliente": "cliente", "Task": "task" };
+    const TIPO_FILTRO: Record<string, Voce["tipo"]> = { "Modifiche contratto": "contratto", "Accessi cliente": "cliente", "Task": "task", "Ferie": "ferie" };
     const decisori = useMemo(() => [...new Set(voci.map(v => v.decisore).filter(d => d && d !== "—"))].sort(), [voci]);
     const vociFiltrate = useMemo(() => voci.filter(v => {
         if (fDecisori.length && !fDecisori.includes(v.decisore)) return false;

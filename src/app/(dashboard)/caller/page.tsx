@@ -1007,6 +1007,10 @@ function CallerPageInner() {
         if (c.tipo_cliente === "business") {
             if (!String(c.ragione_sociale || "").trim()) { alert("RAGIONE SOCIALE obbligatoria (anche sui Non risponde): è il cliente che stiamo lavorando."); return false; }
             if (!String(c.piva || "").trim()) { alert("P.IVA obbligatoria: crea l'anagrafica del cliente e traccia lo storico delle chiamate."); return false; }
+            // REFERENTE obbligatorio anche qui (03/08): senza, l'anagrafica
+            // business nasce monca (caso delle 18 senza referente del 31/07).
+            // Il CF del referente invece resta facoltativo al telefono.
+            if (!String(c.nome || "").trim() || !String(c.cognome || "").trim()) { alert("NOME e COGNOME del REFERENTE obbligatori: è la persona con cui stai parlando per l'azienda."); return false; }
         } else {
             if (!String(c.nome || "").trim() || !String(c.cognome || "").trim()) { alert("NOME e COGNOME obbligatori (anche sui Non risponde): è il cliente che stiamo lavorando."); return false; }
             if (!String(c.cf || "").trim()) { alert("CODICE FISCALE obbligatorio: crea l'anagrafica del cliente e traccia lo storico delle chiamate."); return false; }
@@ -1070,6 +1074,9 @@ function CallerPageInner() {
                 // sembrava "senza referente" nelle schermate che leggono nome_ref
                 nome_ref: c.tipo_cliente === "business" ? (c.nome || "") : "",
                 cognome_ref: c.tipo_cliente === "business" ? (c.cognome || "") : "",
+                // CF del referente (mig. 139): per le business il campo CF della
+                // pratica e' il CF del referente, facoltativo al telefono
+                cf_ref: c.tipo_cliente === "business" ? (c.cf || "") : "",
                 data_nascita: dataNascitaDaCF(idf),
                 // cliente REALE: senza il campo scattava il default true del DB
                 // e l'anagrafica risultava "demo" (trovato su 18 business, 01/08)
@@ -2269,9 +2276,25 @@ function CallerPageInner() {
                                     )}
 
                                     {isBusiness ? (
-                                        <FormGroup label="Ragione Sociale">
-                                            <input className="glass-input rounded-lg py-2 w-full" value={editCall.ragione_sociale} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("ragione_sociale", e.target.value)} placeholder="Es. Azienda SRL" />
-                                        </FormGroup>
+                                        <>
+                                            <FormGroup label="Ragione Sociale">
+                                                <input className="glass-input rounded-lg py-2 w-full" value={editCall.ragione_sociale} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("ragione_sociale", e.target.value)} placeholder="Es. Azienda SRL" />
+                                            </FormGroup>
+                                            {/* REFERENTE obbligatorio anche dal caller (03/08): nome/cognome
+                                                della pratica = referente (regola business 01/08); il CF del
+                                                referente e' FACOLTATIVO — al telefono spesso non ce l'hanno */}
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <FormGroup label="Nome referente">
+                                                    <input className="glass-input rounded-lg py-2 w-full" value={editCall.nome} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("nome", e.target.value)} placeholder="Es. Mario" />
+                                                </FormGroup>
+                                                <FormGroup label="Cognome referente">
+                                                    <input className="glass-input rounded-lg py-2 w-full" value={editCall.cognome} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("cognome", e.target.value)} placeholder="Es. Rossi" />
+                                                </FormGroup>
+                                            </div>
+                                            <FormGroup label="CF referente (facoltativo)">
+                                                <input className="glass-input rounded-lg py-2 w-full font-mono" value={editCall.cf} maxLength={16} readOnly={editCall.clienteRiconosciuto} onChange={(e) => updateField("cf", e.target.value.toUpperCase())} placeholder="RSSMRA80A01H501B" />
+                                            </FormGroup>
+                                        </>
                                     ) : (
                                         <div className="grid grid-cols-2 gap-3">
                                             <FormGroup label="Nome">
@@ -2499,6 +2522,19 @@ function CallerPageInner() {
                                                         <div className="col-span-2">
                                                             <label className="text-[10px] text-slate-500 uppercase tracking-widest">Partita IVA</label>
                                                             <input className="glass-input w-full rounded-lg py-2 mt-1 font-mono" value={editCall.piva} onChange={(e) => handleIdentificativoChange("piva", e.target.value.toUpperCase())} placeholder="11 cifre" />
+                                                        </div>
+                                                        {/* referente OBBLIGATORIO, CF referente facoltativo (03/08) */}
+                                                        <div>
+                                                            <label className="text-[10px] text-slate-500 uppercase tracking-widest">Nome referente</label>
+                                                            <input className="glass-input w-full rounded-lg py-2 mt-1" value={editCall.nome} onChange={(e) => updateField("nome", e.target.value)} placeholder="Nome" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[10px] text-slate-500 uppercase tracking-widest">Cognome referente</label>
+                                                            <input className="glass-input w-full rounded-lg py-2 mt-1" value={editCall.cognome} onChange={(e) => updateField("cognome", e.target.value)} placeholder="Cognome" />
+                                                        </div>
+                                                        <div className="col-span-2">
+                                                            <label className="text-[10px] text-slate-500 uppercase tracking-widest">CF referente (facoltativo)</label>
+                                                            <input className="glass-input w-full rounded-lg py-2 mt-1 font-mono" value={editCall.cf} maxLength={16} onChange={(e) => updateField("cf", e.target.value.toUpperCase())} placeholder="16 caratteri" />
                                                         </div>
                                                     </>
                                                 ) : (

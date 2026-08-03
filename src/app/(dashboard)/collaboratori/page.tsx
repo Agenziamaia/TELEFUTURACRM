@@ -111,6 +111,43 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const [rifiutoNota, setRifiutoNota] = useState("");
     const [qPersona, setQPersona] = useState("");   // ricerca a scrittura nel filtro persone
     const canDeleteRow = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    // REGISTRAZIONE DIRETTA col "+" (03/08, dall'amministrativo in su): ferie
+    // gia' concordate per altre vie (a voce, telefono…) entrano nel registro
+    // direttamente come APPROVATE, con nota di chi le ha registrate.
+    const puoRegistrare = canDeleteRow;
+    const [regOpen, setRegOpen] = useState(false);
+    const [regPersona, setRegPersona] = useState("");
+    const [regDal, setRegDal] = useState("");
+    const [regAl, setRegAl] = useState("");
+    const [regMotivo, setRegMotivo] = useState("");
+    const [regHalf, setRegHalf] = useState<"" | "mattina" | "pomeriggio">("");
+    const [regBusy, setRegBusy] = useState(false);
+    const [staff, setStaff] = useState<{ full_name: string; primary_store: string | null }[]>([]);
+    useEffect(() => {
+        if (!puoRegistrare) return;
+        supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name")
+            .then(({ data }) => setStaff((data ?? []) as never));
+    }, [puoRegistrare]);
+    const regGiornoSingolo = !!regDal && !!regAl && regDal === regAl;
+    const registraDiretta = async () => {
+        if (!regPersona || !regDal || !regAl || regAl < regDal || regBusy) return;
+        setRegBusy(true);
+        await supabase.from("vacation_requests").insert({
+            employee_name: regPersona,
+            store: staff.find(s => s.full_name === regPersona)?.primary_store || "",
+            date_from: regDal,
+            date_to: regAl,
+            reason: regMotivo.trim() || null,
+            status: "approved",
+            half_day: regGiornoSingolo && regHalf ? regHalf : null,
+            admin_note: `Registrata direttamente da ${user?.name || "—"}`,
+            decided_by: user?.name || "—",
+            decided_at: new Date().toISOString(),
+        });
+        setRegBusy(false); setRegOpen(false);
+        setRegPersona(""); setRegDal(""); setRegAl(""); setRegMotivo(""); setRegHalf("");
+        await fetchRequests();
+    };
 
     const fetchRequests = useCallback(async () => {
         const { data } = await supabase.from("vacation_requests").select("*").order("created_at", { ascending: false });
@@ -159,14 +196,16 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
         setSubmitting(false);
     };
 
+    // DECISORE E MOMENTO (mig. 138, 03/08): viaggiano con la richiesta — cosi'
+    // lo Storico Approvazioni mostra CHI ha approvato o rifiutato le ferie.
     const approva = async (id: number) => {
-        await supabase.from("vacation_requests").update({ status: "approved" }).eq("id", id);
+        await supabase.from("vacation_requests").update({ status: "approved", decided_by: user?.name || "—", decided_at: new Date().toISOString() }).eq("id", id);
         await fetchRequests();
     };
     // RIFIUTO CON NOTA (Luca 29/07): la nota la vede il collaboratore in riga
     const confermaRifiuto = async () => {
         if (rifiutoId == null) return;
-        await supabase.from("vacation_requests").update({ status: "rejected", admin_note: rifiutoNota.trim() || null }).eq("id", rifiutoId);
+        await supabase.from("vacation_requests").update({ status: "rejected", admin_note: rifiutoNota.trim() || null, decided_by: user?.name || "—", decided_at: new Date().toISOString() }).eq("id", rifiutoId);
         setRifiutoId(null); setRifiutoNota("");
         await fetchRequests();
     };
@@ -309,6 +348,13 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             </button>
                         )}
 
+                        {puoRegistrare && (
+                            <button onClick={() => setRegOpen(true)}
+                                title="Registra ferie già approvate per altre vie: entrano nel registro direttamente come Approvate"
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25 flex items-center gap-1.5">
+                                <span className="text-base leading-none">＋</span> Registra ferie
+                            </button>
+                        )}
                         {isAdminLike && (
                             <button onClick={() => {
                                 const giorni = (r: VacationRequest) => r.half_day ? 0.5 : (Math.round((new Date(r.date_to).getTime() - new Date(r.date_from).getTime()) / 86400000) + 1);
@@ -420,6 +466,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                     <tr className="bg-white/[0.02] border-b border-white/5">
                                         <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Periodo</th>
                                         <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Collaboratore</th>
+                                        <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Motivazione</th>
                                         <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Stato</th>
                                         <th className="px-5 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-right">Azioni</th>
                                     </tr>
@@ -428,22 +475,27 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                     {(isAdminLike ? filteredRequests : requests.filter(r => r.employee_name === user?.name)).map(r => (
                                         <tr key={r.id} className="hover:bg-white/[0.01] transition-colors group">
                                             <td className="px-5 py-4">
+                                                {/* PERIODO su UNA riga (03/08): dal → al; giorno singolo = solo la data */}
                                                 <div className="flex flex-col">
-                                                    <span className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors">
-                                                        {formatDate(r.date_from)}
+                                                    <span className="text-sm font-bold text-white group-hover:text-indigo-400 transition-colors whitespace-nowrap">
+                                                        {formatDate(r.date_from)}{r.date_to !== r.date_from && <span> → {formatDate(r.date_to)}</span>}
                                                     </span>
-                                                    {r.half_day ? (
+                                                    {r.half_day && (
                                                         <span className="mt-0.5 inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase tracking-tight">
                                                             {r.half_day === "mattina" ? "☀️" : "🌇"} ½ giornata · {r.half_day}
                                                         </span>
-                                                    ) : (
-                                                        <span className="text-[10px] text-slate-500">al {formatDate(r.date_to)}</span>
                                                     )}
                                                 </div>
                                             </td>
                                             <td className="px-5 py-4">
                                                 <p className="text-sm font-medium text-slate-300">{r.employee_name}</p>
                                                 <p className="text-[10px] text-slate-500 uppercase tracking-wider">{r.store}</p>
+                                            </td>
+                                            <td className="px-5 py-4">
+                                                {/* MOTIVAZIONE della richiesta (03/08): sempre in colonna */}
+                                                {r.reason
+                                                    ? <p className="text-xs text-slate-400 leading-snug max-w-[280px]">{r.reason}</p>
+                                                    : <span className="text-xs text-slate-600 italic">—</span>}
                                             </td>
                                             <td className="px-5 py-4 text-center">
                                                 <span className={cn(
@@ -455,7 +507,8 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                                     {r.status === "approved" ? "Approvata" : r.status === "rejected" ? "Rifiutata" : "In Attesa"}
                                                 </span>
                                                 {r.admin_note && (
-                                                    <p className="text-[10px] text-rose-300/90 mt-1.5 max-w-[240px] mx-auto leading-snug">📝 {r.admin_note}</p>
+                                                    /* rosso solo sui rifiuti; per le registrazioni dirette e' una nota d'archivio */
+                                                    <p className={cn("text-[10px] mt-1.5 max-w-[240px] mx-auto leading-snug", r.status === "rejected" ? "text-rose-300/90" : "text-slate-500")}>📝 {r.admin_note}</p>
                                                 )}
                                             </td>
                                             <td className="px-5 py-4 text-right">
@@ -492,7 +545,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                     ))}
                                     {requests.length === 0 && (
                                         <tr>
-                                            <td colSpan={4} className="px-5 py-10 text-center text-slate-500 text-sm italic">Nessuna richiesta trovata</td>
+                                            <td colSpan={5} className="px-5 py-10 text-center text-slate-500 text-sm italic">Nessuna richiesta trovata</td>
                                         </tr>
                                     )}
                                 </tbody>
@@ -502,6 +555,64 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                     )}
                 </div>
             </div>
+
+            {/* modale REGISTRAZIONE DIRETTA (03/08): ferie gia' approvate per
+                altre vie — entrano nel registro come Approvate, con audit */}
+            {regOpen && (
+                <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setRegOpen(false)}>
+                    <div className="glass-card w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-lg font-bold text-white">＋ Registra ferie approvate</h3>
+                            <button onClick={() => setRegOpen(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <p className="text-xs text-slate-500 leading-relaxed">Per ferie già concordate fuori dal CRM (a voce, al telefono…): la riga entra nel registro direttamente come <strong className="text-emerald-400">Approvata</strong>, con la nota di chi l&apos;ha registrata.</p>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
+                                <SelectPersona value={regPersona} onChange={setRegPersona} opzioni={staff.map(s => s.full_name)} placeholder="Scrivi o scegli il collaboratore…" className="glass-input rounded-lg py-2 w-full text-sm" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Dal</label>
+                                    <input type="date" value={regDal} onChange={e => setRegDal(e.target.value)} className="glass-input !h-10 text-xs w-full" />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Al</label>
+                                    <input type="date" value={regAl} onChange={e => setRegAl(e.target.value)} className="glass-input !h-10 text-xs w-full" />
+                                </div>
+                            </div>
+                            {regDal && regAl && regAl < regDal && <p className="text-[11px] text-rose-400">La data di fine è prima di quella di inizio.</p>}
+                            {regGiornoSingolo && (
+                                <div className="flex items-center gap-2">
+                                    <label className="flex items-center gap-2 text-xs font-bold text-slate-200 cursor-pointer">
+                                        <input type="checkbox" checked={!!regHalf} onChange={e => setRegHalf(e.target.checked ? "mattina" : "")} className="accent-amber-500 w-4 h-4" />
+                                        Mezza giornata
+                                    </label>
+                                    {!!regHalf && ([["mattina", "☀️ Mattina"], ["pomeriggio", "🌇 Pomeriggio"]] as const).map(([k, lab]) => (
+                                        <button key={k} type="button" onClick={() => setRegHalf(k)}
+                                            className={cn("px-3 py-1.5 rounded-lg border text-xs font-bold transition-all", regHalf === k ? "border-amber-400/70 bg-amber-500/20 text-amber-200" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                            {lab}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Motivazione</label>
+                                <textarea value={regMotivo} onChange={e => setRegMotivo(e.target.value)} rows={2}
+                                    placeholder="Es. concordate a voce col negozio per il ponte di Ferragosto"
+                                    className="glass-input w-full text-sm py-2 resize-none" />
+                            </div>
+                            <div className="flex justify-end gap-2 pt-1">
+                                <button onClick={() => setRegOpen(false)} className="px-4 py-2 rounded-lg border border-white/15 text-slate-300 text-sm hover:bg-white/5">Annulla</button>
+                                <button onClick={registraDiretta} disabled={!regPersona || !regDal || !regAl || regAl < regDal || regBusy}
+                                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">
+                                    {regBusy ? "Salvataggio…" : "Registra come approvata"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* modale NOTA DI RIFIUTO: il collaboratore la vedrà sulla sua riga */}
             {rifiutoId != null && (
@@ -533,53 +644,163 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
    sovrapposizioni prima di autorizzare. Rispetta i filtri persone/negozi. ── */
 function CalendarioFerie({ richieste, mese, setMese }: { richieste: VacationRequest[]; mese: Date; setMese: (d: Date) => void }) {
     const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+    // INTERATTIVO (03/08): due viste (Mese / Persone), giorno cliccabile con
+    // pannello di dettaglio, toggle per includere o no le richieste in attesa.
+    const [modo, setModo] = useState<"mese" | "persone">("mese");
+    const [conAttesa, setConAttesa] = useState(true);
+    const [giornoSel, setGiornoSel] = useState<string | null>(null);
+    const visibili = conAttesa ? richieste : richieste.filter(r => r.status === "approved");
     const primo = new Date(mese.getFullYear(), mese.getMonth(), 1);
     const inizio = new Date(primo);
     inizio.setDate(primo.getDate() - ((primo.getDay() + 6) % 7));   // lunedì della prima settimana
     const giorni: Date[] = Array.from({ length: 42 }, (_, i) => { const d = new Date(inizio); d.setDate(inizio.getDate() + i); return d; });
     const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const delGiorno = (d: Date) => { const k = iso(d); return richieste.filter(r => r.date_from <= k && r.date_to >= k); };
+    const delGiorno = (d: Date) => { const k = iso(d); return visibili.filter(r => r.date_from <= k && r.date_to >= k); };
     const nomeCorto = (n: string) => { const p = n.trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[1][0]}.` : p[0]; };
+    const fmt = (s: string) => new Date(s).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const cambiaMese = (delta: number) => { setGiornoSel(null); setMese(new Date(mese.getFullYear(), mese.getMonth() + delta, 1)); };
+    // vista PERSONE: timeline del mese, una riga per collaboratore
+    const nGiorniMese = new Date(mese.getFullYear(), mese.getMonth() + 1, 0).getDate();
+    const kIni = iso(primo), kFine = iso(new Date(mese.getFullYear(), mese.getMonth(), nGiorniMese));
+    const nelMese = visibili.filter(r => r.date_from <= kFine && r.date_to >= kIni);
+    const personeMese = [...new Set(nelMese.map(r => r.employee_name))].sort();
+    const selEntries = giornoSel ? visibili.filter(r => r.date_from <= giornoSel && r.date_to >= giornoSel) : [];
     return (
         <div className="glass-card p-4">
-            <div className="flex items-center justify-between mb-3">
-                <button onClick={() => setMese(new Date(mese.getFullYear(), mese.getMonth() - 1, 1))} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">‹</button>
-                <div className="flex items-center gap-3">
-                    <h4 className="text-base font-black text-white capitalize">{mese.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</h4>
-                    <button onClick={() => { const d = new Date(); setMese(new Date(d.getFullYear(), d.getMonth(), 1)); }} className="text-[10px] font-bold uppercase tracking-widest text-indigo-300 hover:text-white">Oggi</button>
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                    <button onClick={() => cambiaMese(-1)} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">‹</button>
+                    <h4 className="text-base font-black text-white capitalize min-w-[150px] text-center">{mese.toLocaleDateString("it-IT", { month: "long", year: "numeric" })}</h4>
+                    <button onClick={() => cambiaMese(1)} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">›</button>
+                    <button onClick={() => { const d = new Date(); setGiornoSel(null); setMese(new Date(d.getFullYear(), d.getMonth(), 1)); }} className="text-[10px] font-bold uppercase tracking-widest text-indigo-300 hover:text-white ml-1">Oggi</button>
                 </div>
-                <button onClick={() => setMese(new Date(mese.getFullYear(), mese.getMonth() + 1, 1))} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">›</button>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1 rounded-xl border border-white/10 p-1 bg-white/[0.03]">
+                        {([["mese", "🗓 Mese"], ["persone", "👥 Persone"]] as const).map(([m, l]) => (
+                            <button key={m} onClick={() => setModo(m)}
+                                className={cn("px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-widest transition-colors",
+                                    modo === m ? "bg-indigo-500/25 text-indigo-200" : "text-slate-500 hover:text-slate-300")}>
+                                {l}
+                            </button>
+                        ))}
+                    </div>
+                    <button onClick={() => setConAttesa(v => !v)}
+                        className={cn("px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-colors",
+                            conAttesa ? "border-amber-400/60 bg-amber-500/15 text-amber-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>
+                        {conAttesa ? "✓ " : ""}In attesa
+                    </button>
+                </div>
             </div>
-            <div className="grid grid-cols-7 gap-px text-center mb-1">
-                {["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"].map(g => <div key={g} className="text-[10px] font-bold text-slate-500 uppercase tracking-widest py-1">{g}</div>)}
-            </div>
-            <div className="grid grid-cols-7 gap-px bg-white/5 rounded-xl overflow-hidden">
-                {giorni.map((d, i) => {
-                    const fuoriMese = d.getMonth() !== mese.getMonth();
-                    const isOggi = d.getTime() === oggi.getTime();
-                    const rr = delGiorno(d);
-                    return (
-                        <div key={i} className={cn("min-h-[86px] p-1.5 bg-[#0f111a]", fuoriMese && "opacity-40")}>
-                            <div className={cn("text-[11px] font-bold mb-1", isOggi ? "text-indigo-300" : "text-slate-500")}>
-                                {isOggi ? <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/25">{d.getDate()}</span> : d.getDate()}
+
+            {modo === "mese" && (<>
+                <div className="grid grid-cols-7 gap-px text-center mb-1">
+                    {["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"].map(g => <div key={g} className="text-[10px] font-bold text-slate-500 uppercase tracking-widest py-1">{g}</div>)}
+                </div>
+                <div className="grid grid-cols-7 gap-px bg-white/5 rounded-xl overflow-hidden">
+                    {giorni.map((d, i) => {
+                        const fuoriMese = d.getMonth() !== mese.getMonth();
+                        const isOggi = d.getTime() === oggi.getTime();
+                        const k = iso(d);
+                        const rr = delGiorno(d);
+                        return (
+                            <div key={i} onClick={() => setGiornoSel(giornoSel === k ? null : k)}
+                                title={rr.length ? "Clicca per il dettaglio del giorno" : undefined}
+                                className={cn("min-h-[86px] p-1.5 bg-[#0f111a] cursor-pointer transition-colors hover:bg-[#161a2c]",
+                                    fuoriMese && "opacity-40", giornoSel === k && "ring-2 ring-inset ring-indigo-400/80")}>
+                                <div className={cn("text-[11px] font-bold mb-1", isOggi ? "text-indigo-300" : "text-slate-500")}>
+                                    {isOggi ? <span className="px-1.5 py-0.5 rounded-md bg-indigo-500/25">{d.getDate()}</span> : d.getDate()}
+                                </div>
+                                <div className="space-y-0.5">
+                                    {rr.slice(0, 3).map(r => (
+                                        <div key={r.id} title={`${r.employee_name} (${r.store}) — ${r.status === "approved" ? "approvata" : "in attesa"}${r.reason ? `: ${r.reason}` : ""}`}
+                                            className={cn("truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight",
+                                                r.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200")}>
+                                            {r.half_day ? (r.half_day === "mattina" ? "½☀️ " : "½🌇 ") : ""}{nomeCorto(r.employee_name)}
+                                        </div>
+                                    ))}
+                                    {rr.length > 3 && <div className="text-[9px] text-slate-500 px-1">+{rr.length - 3} altre</div>}
+                                </div>
                             </div>
-                            <div className="space-y-0.5">
-                                {rr.slice(0, 3).map(r => (
-                                    <div key={r.id} title={`${r.employee_name} (${r.store}) — ${r.status === "approved" ? "approvata" : "in attesa"}${r.reason ? `: ${r.reason}` : ""}`}
-                                        className={cn("truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight",
-                                            r.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200")}>
-                                        {r.half_day ? (r.half_day === "mattina" ? "½☀️ " : "½🌇 ") : ""}{nomeCorto(r.employee_name)}
-                                    </div>
-                                ))}
-                                {rr.length > 3 && <div className="text-[9px] text-slate-500 px-1">+{rr.length - 3} altre</div>}
+                        );
+                    })}
+                </div>
+            </>)}
+
+            {modo === "persone" && (
+                /* TIMELINE per collaboratore: una riga a testa, un quadretto al
+                   giorno — le sovrapposizioni si vedono in verticale a colpo d'occhio */
+                <div className="overflow-x-auto custom-scrollbar">
+                    <div style={{ minWidth: nGiorniMese * 26 + 176 }}>
+                        <div className="flex items-center mb-1">
+                            <div className="w-44 shrink-0" />
+                            <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${nGiorniMese}, minmax(22px, 1fr))` }}>
+                                {Array.from({ length: nGiorniMese }, (_, i) => {
+                                    const d = new Date(mese.getFullYear(), mese.getMonth(), i + 1);
+                                    const weekend = d.getDay() === 0 || d.getDay() === 6;
+                                    return <div key={i} className={cn("text-center text-[9px] font-bold py-0.5", weekend ? "text-slate-600" : "text-slate-400", d.getTime() === oggi.getTime() && "text-indigo-300")}>{i + 1}</div>;
+                                })}
                             </div>
                         </div>
-                    );
-                })}
-            </div>
-            <div className="flex items-center gap-4 mt-3 text-[11px] text-slate-400">
+                        {personeMese.length === 0 && <p className="text-sm text-slate-500 italic py-6 text-center">Nessuna ferie nel mese (con questi filtri).</p>}
+                        {personeMese.map(p => (
+                            <div key={p} className="flex items-center">
+                                <div className="w-44 shrink-0 truncate text-xs font-semibold text-slate-200 pr-2 py-0.5" title={p}>{p}</div>
+                                <div className="grid flex-1 rounded overflow-hidden" style={{ gridTemplateColumns: `repeat(${nGiorniMese}, minmax(22px, 1fr))` }}>
+                                    {Array.from({ length: nGiorniMese }, (_, i) => {
+                                        const d = new Date(mese.getFullYear(), mese.getMonth(), i + 1);
+                                        const k = iso(d);
+                                        const rr = nelMese.filter(r => r.employee_name === p && r.date_from <= k && r.date_to >= k);
+                                        const st = rr.some(r => r.status === "approved") ? "approved" : rr.length ? "pending" : "";
+                                        const weekend = d.getDay() === 0 || d.getDay() === 6;
+                                        return (
+                                            <div key={i} onClick={() => rr.length && setGiornoSel(giornoSel === k ? null : k)}
+                                                title={rr.map(r => `${r.status === "approved" ? "✅" : "⏳"} ${fmt(r.date_from)} → ${fmt(r.date_to)}${r.half_day ? ` (½ ${r.half_day})` : ""}${r.reason ? ` — ${r.reason}` : ""}`).join("\n") || undefined}
+                                                className={cn("h-7 border-r border-b border-white/5",
+                                                    st === "approved" ? "bg-emerald-500/40 cursor-pointer" : st === "pending" ? "bg-amber-500/35 cursor-pointer" : weekend ? "bg-white/[0.04]" : "bg-white/[0.01]",
+                                                    d.getTime() === oggi.getTime() && "ring-1 ring-inset ring-indigo-400/60",
+                                                    giornoSel === k && st && "ring-2 ring-inset ring-indigo-300")} />
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* DETTAGLIO del giorno cliccato: chi c'e' in ferie, periodo e stato */}
+            {giornoSel && (
+                <div className="mt-3 p-3.5 rounded-xl border border-indigo-500/30 bg-indigo-500/[0.06]">
+                    <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest">🏖 Ferie del {fmt(giornoSel)}</p>
+                        <button onClick={() => setGiornoSel(null)} className="text-slate-400 hover:text-white text-xs font-bold">✕ chiudi</button>
+                    </div>
+                    {selEntries.length === 0 ? (
+                        <p className="text-sm text-slate-500 italic">Nessuno in ferie in questo giorno.</p>
+                    ) : (
+                        <div className="space-y-1.5">
+                            {selEntries.map(r => (
+                                <div key={r.id} className="flex items-center gap-3 flex-wrap text-sm">
+                                    <span className={cn("w-2 h-2 rounded-full shrink-0", r.status === "approved" ? "bg-emerald-400" : "bg-amber-400")} />
+                                    <span className="font-semibold text-white">{r.employee_name}</span>
+                                    {r.store && <span className="text-[10px] text-slate-500 uppercase tracking-wider">{r.store}</span>}
+                                    <span className="text-xs text-slate-300 whitespace-nowrap">{fmt(r.date_from)}{r.date_to !== r.date_from && <> → {fmt(r.date_to)}</>}</span>
+                                    {r.half_day && <span className="text-[10px] font-black text-amber-300 uppercase">½ {r.half_day}</span>}
+                                    <span className={cn("text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border", r.status === "approved" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" : "bg-amber-500/10 text-amber-400 border-amber-500/30")}>
+                                        {r.status === "approved" ? "Approvata" : "In attesa"}
+                                    </span>
+                                    {r.reason && <span className="text-xs text-slate-500 italic">“{r.reason}”</span>}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <div className="flex items-center gap-4 mt-3 text-[11px] text-slate-400 flex-wrap">
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500/40" /> Approvate</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-500/40" /> In attesa</span>
+                <span className="text-slate-600">Clicca un giorno per il dettaglio · vista Persone = una riga per collaboratore</span>
             </div>
         </div>
     );

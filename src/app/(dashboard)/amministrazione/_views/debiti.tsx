@@ -254,6 +254,10 @@ export function DebitiView({ gestore }: { gestore: string }) {
             .sort((a, b) => b.totale - a.totale);
     }, [filtrate]);
     const totaleDebiti = useMemo(() => filtrate.reduce((s, r) => s + valoreRiga(r, fMese || undefined), 0), [filtrate, fMese]);
+    // CLICK SUL NOME = nascondi/mostra le righe del collaboratore (03/08):
+    // il cumulato resta sempre visibile anche a dettaglio chiuso
+    const [chiusi, setChiusi] = useState<Set<string>>(new Set());
+    const togChiuso = (uid: string) => setChiusi(p => { const n = new Set(p); if (n.has(uid)) n.delete(uid); else n.add(uid); return n; });
     const nStorico = useMemo(() => righe.filter(r => r.origine === "debito" && r.stato === "saldato"
         && (!fUtenti.length || fUtenti.includes(nomeDi(r.user_id)))).length, [righe, fUtenti, nomeDi]);
 
@@ -372,10 +376,14 @@ export function DebitiView({ gestore }: { gestore: string }) {
             ) : gruppi.map(g => (
                 <div key={g.uid} className="glass-card overflow-hidden">
                     <div className="px-4 py-3 bg-white/[0.03] border-b border-white/5 flex items-center justify-between gap-3 flex-wrap">
-                        <p className="text-sm font-bold text-white flex items-center gap-2"><Wallet className="w-4 h-4 text-rose-400" /> {nomeDi(g.uid)}</p>
+                        <button onClick={() => togChiuso(g.uid)} title={chiusi.has(g.uid) ? "Mostra il dettaglio delle righe" : "Nascondi il dettaglio delle righe"}
+                            className="text-sm font-bold text-white flex items-center gap-2 hover:text-rose-200 transition-colors">
+                            <Wallet className="w-4 h-4 text-rose-400" /> {nomeDi(g.uid)}
+                            <span className="text-xs font-normal text-slate-500">{chiusi.has(g.uid) ? `▸ ${g.rows.length} voc${g.rows.length === 1 ? "e" : "i"}` : "▾"}</span>
+                        </button>
                         <p className={cn("text-sm font-black", g.totale > 0 ? "text-rose-400" : "text-emerald-400")}>{g.totale > 0 ? `cumulato ${eur(g.totale)}` : g.totale < 0 ? `in credito ${eur(-g.totale)}` : "in pari"}</p>
                     </div>
-                    <div className="divide-y divide-white/5">
+                    {!chiusi.has(g.uid) && <div className="divide-y divide-white/5">
                         {g.rows.map(r => (
                             <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
                                 <div className="flex-1 min-w-[220px]">
@@ -404,7 +412,7 @@ export function DebitiView({ gestore }: { gestore: string }) {
                                     className="p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button>
                             </div>
                         ))}
-                    </div>
+                    </div>}
                 </div>
             ))}
         </div>

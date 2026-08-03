@@ -283,7 +283,7 @@ export default function InviaPda() {
   const [clienteFound, setClienteFound] = useState(!!draft?.clienteFound);
   const [lookupDone, setLookupDone] = useState(!!draft?.lookupDone);
   const [anConsumer, setAnConsumer] = useState({ nome: "", cognome: "", cf: "", email: "", numeroFisso: "", cellulare: "", iban: "", domicilio: "", note: "", ...draft?.anConsumer });
-  const [anBusiness, setAnBusiness] = useState({ ragioneSociale: "", piva: "", referente: "", numeroFisso: "", mobile: "", email: "", pec: "", codiceUnivoco: "", iban: "", sedeLegale: "", note: "", ...draft?.anBusiness });
+  const [anBusiness, setAnBusiness] = useState({ ragioneSociale: "", piva: "", referente: "", cfReferente: "", numeroFisso: "", mobile: "", email: "", pec: "", codiceUnivoco: "", iban: "", sedeLegale: "", note: "", ...draft?.anBusiness });
 
   const [brand, setBrand] = useState(draft?.brand ?? null);
 
@@ -366,6 +366,7 @@ export default function InviaPda() {
         // il referente canonico sta in nome_ref/cognome_ref (nome resta il
         // ripiego per lo storico caller pre-mig. 124)
         referente: [data.nome_ref || data.nome, data.cognome_ref || data.cognome].filter(Boolean).join(" "),
+        cfReferente: data.cf_ref || "",
         numeroFisso: data.telefono_fisso || "",
         email: data.email || "",
         mobile: data.cellulare || "",
@@ -452,7 +453,7 @@ export default function InviaPda() {
     setStep(1); setVenditore("");
     setTipoCliente(null); setLookupValue(""); setClienteFound(false); setLookupDone(false);
     setAnConsumer({ nome: "", cognome: "", cf: "", email: "", numeroFisso: "", cellulare: "", iban: "", domicilio: "", note: "" });
-    setAnBusiness({ ragioneSociale: "", piva: "", referente: "", numeroFisso: "", mobile: "", email: "", pec: "", codiceUnivoco: "", iban: "", sedeLegale: "", note: "" });
+    setAnBusiness({ ragioneSociale: "", piva: "", referente: "", cfReferente: "", numeroFisso: "", mobile: "", email: "", pec: "", codiceUnivoco: "", iban: "", sedeLegale: "", note: "" });
     setBrand(null); setAllSales({});
     setCart([]); setShowCart(false); setExpI({}); setConfirmReset(false);
     setAttachments([]); setUploading(false);
@@ -484,6 +485,13 @@ export default function InviaPda() {
       return;
     }
 
+    // REFERENTE e suo CF obbligatori per le business (03/08, mig. 139)
+    if (tipoCliente === "business") {
+      const cfR = String(anBusiness.cfReferente || "").trim().toUpperCase();
+      if (!String(anBusiness.referente || "").trim()) { showToast("\u26a0\ufe0f REFERENTE obbligatorio per i clienti business"); return; }
+      if (!/^[A-Z0-9]{16}$/.test(cfR)) { showToast("\u26a0\ufe0f CF REFERENTE obbligatorio (16 caratteri) per i clienti business"); return; }
+    }
+
     try {
       // 1. Client Upsert
       const isBus = tipoCliente === "business";
@@ -497,6 +505,7 @@ export default function InviaPda() {
         nome: isBus ? (ana.referente || "Ragione Sociale") : (ana.nome || ""),
         cognome: isBus ? "" : (ana.cognome || ""),
         ragione_sociale: isBus ? (ana.ragioneSociale || "") : "",
+        cf_ref: isBus ? (ana.cfReferente || null) : null,
         cellulare: numeroNazionale(isBus ? ana.mobile : ana.cellulare) || (isBus ? (ana.mobile || "") : (ana.cellulare || "")),
         email: ana.email || "",
         cf_piva: lookupValue || (isBus ? ana.piva : ana.cf) || "",
@@ -593,7 +602,11 @@ export default function InviaPda() {
 
   const canProceed = () => {
     if (step === 1) return !!venditore;
-    if (step === 2) return !!tipoCliente && lookupDone;
+    if (step === 2) {
+      // business: referente e CF referente obbligatori (03/08, mig. 139)
+      if (tipoCliente === "business" && (!String(anBusiness.referente || "").trim() || !/^[A-Z0-9]{16}$/.test(String(anBusiness.cfReferente || "").trim().toUpperCase()))) return false;
+      return !!tipoCliente && lookupDone;
+    }
     if (step === 3) return !!brand;
     return true;
   };
@@ -2028,6 +2041,8 @@ export default function InviaPda() {
                           <AField label="Ragione Sociale" required value={anBusiness.ragioneSociale} onChange={v => setAnBusiness(p => ({ ...p, ragioneSociale: v }))} pf={clienteFound} ph="Rossi S.r.l." />
                           <AField label="Partita IVA" required value={anBusiness.piva} onChange={v => setAnBusiness(p => ({ ...p, piva: v }))} pf={clienteFound} ph="12345678901" mono />
                           <AField label="Referente" required value={anBusiness.referente} onChange={v => setAnBusiness(p => ({ ...p, referente: v }))} pf={clienteFound} ph="Mario Rossi" />
+                          {/* CF del REFERENTE obbligatorio (03/08, mig. 139) */}
+                          <AField label="CF Referente" required value={anBusiness.cfReferente} onChange={v => setAnBusiness(p => ({ ...p, cfReferente: String(v).toUpperCase().replace(/\s+/g, "") }))} pf={clienteFound} ph="RSSMRA80A01H501B" mono />
                           <AField label="Numero Fisso" value={anBusiness.numeroFisso} onChange={v => setAnBusiness(p => ({ ...p, numeroFisso: v }))} pf={clienteFound} ph="06 1234567" />
                           <AField label="Numero Mobile" value={anBusiness.mobile} onChange={v => setAnBusiness(p => ({ ...p, mobile: v }))} pf={clienteFound} ph="333 1234567" />
                           <AField label="Email" value={anBusiness.email} onChange={v => setAnBusiness(p => ({ ...p, email: v }))} pf={clienteFound} ph="info@rossi.it" />

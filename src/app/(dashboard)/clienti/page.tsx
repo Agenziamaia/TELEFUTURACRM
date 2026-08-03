@@ -30,6 +30,7 @@ interface Cliente {
     ragioneSociale?: string;
     nomeRef?: string;
     cognomeRef?: string;
+    cfRef?: string;
     cellulare: string;
     telefonoFisso?: string | null;   // recapito fisso FACOLTATIVO delle business (mig. 124)
     email: string;
@@ -69,6 +70,7 @@ function mapRowToCliente(row: Record<string, unknown>): Cliente {
         ragioneSociale: (row.ragione_sociale as string) ?? undefined,
         nomeRef: (row.nome_ref as string) ?? undefined,
         cognomeRef: (row.cognome_ref as string) ?? undefined,
+        cfRef: (row.cf_ref as string) ?? undefined,
         cellulare: row.cellulare as string,
         telefonoFisso: (row.telefono_fisso as string | null) ?? null,
         email: row.email as string,
@@ -545,6 +547,8 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
     const [nome, setNome] = useState((cliente?.nome || "").trim() ? cliente!.nome : (cliente?.nomeRef ?? ""));
     const [cognome, setCognome] = useState((cliente?.cognome || "").trim() ? (cliente?.cognome ?? "") : (cliente?.cognomeRef ?? ""));
     const [ragioneSociale, setRagioneSociale] = useState(cliente?.ragioneSociale ?? "");
+    // CF del referente (mig. 139): qui e' compilabile ma non bloccante
+    const [cfRef, setCfRef] = useState(cliente?.cfRef ?? "");
     const [cellulare, setCellulare] = useState(cliente?.cellulare ?? "");
     // recapito FISSO facoltativo, solo business (mig. 124)
     const [fisso, setFisso] = useState(cliente?.telefonoFisso ?? "");
@@ -611,6 +615,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
             ragione_sociale: tipo === "business" ? ragioneSociale : null,
             nome_ref: tipo === "business" ? nome : null,
             cognome_ref: tipo === "business" ? cognome : null,
+            cf_ref: tipo === "business" ? (cfRef.trim().toUpperCase() || null) : null,
             // archivio SENZA +39 (Luca 31/07): il prefisso lo aggiungono le
             // integrazioni all'invio
             cellulare: numeroNazionale(cellulare) || cellulare,
@@ -710,6 +715,19 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                                         onChange={(e) => setRagioneSociale(e.target.value)}
                                         className="w-full glass-input text-sm rounded-xl py-3"
                                         placeholder="Nome Azienda Srl"
+                                    />
+                                </div>
+                            )}
+                            {tipo === "business" && (
+                                <div className="md:col-span-2 space-y-1.5">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">CF Referente</label>
+                                    <input
+                                        type="text"
+                                        value={cfRef}
+                                        maxLength={16}
+                                        onChange={(e) => setCfRef(e.target.value.toUpperCase().replace(/\s+/g, ""))}
+                                        className="w-full glass-input text-sm rounded-xl py-3 font-mono"
+                                        placeholder="RSSMRA80A01H501B"
                                     />
                                 </div>
                             )}
