@@ -83,7 +83,7 @@ export function SelectPersona({
     }, [aperta]);
 
     const q = testo.trim().toLowerCase();
-    const filtrate = !aperta ? [] : opzioni.filter((n) => {
+    const tutte = !aperta ? [] : opzioni.filter((n) => {
         if (!q || q === value.trim().toLowerCase()) return true;   // focus senza digitare: tutte
         const nome = n.toLowerCase();
         // match per inclusione O per iniziali delle parole (es. "ma ro" → Mario Rossi)
@@ -91,7 +91,11 @@ export function SelectPersona({
         const parole = nome.split(/\s+/);
         const termini = q.split(/\s+/);
         return termini.every((t) => parole.some((p) => p.startsWith(t)));
-    }).slice(0, maxVoci);
+    });
+    const filtrate = tutte.slice(0, maxVoci);
+    // quante voci restano FUORI dal tetto: prima il taglio era muto e su liste
+    // lunghe (brand/modelli usati) sembrava che la tendina "si fermasse" (03/08)
+    const oltre = tutte.length - filtrate.length;
 
     const scegli = (n: string) => { onChange(n); setTesto(n); setAperta(false); };
 
@@ -107,6 +111,11 @@ export function SelectPersona({
                 </button>
             )) : (
                 <div className="px-3.5 py-2.5 text-sm text-slate-500">{vuotoMsg}</div>
+            )}
+            {oltre > 0 && (
+                <div className="px-3.5 py-2 text-[11px] font-semibold text-amber-300/90 bg-amber-500/[0.06]">
+                    … e altre {oltre} voci — scrivi per filtrare
+                </div>
             )}
         </div>
     ) : null;

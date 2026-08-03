@@ -340,7 +340,11 @@ function MultiSelect({ label, options, selected, onChange, renderOpt }: {
   onChange: (v: string[]) => void; renderOpt?: (o: string) => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  // RICERCA nella tendina (Luca 03/08): il filtro Brand ha centinaia di voci
+  // — senza scrittura "si fermava" visivamente e trovare un brand era una pena
+  const [cerca, setCerca] = useState("");
   const allSel = selected.length === options.length;
+  const visibili = cerca.trim() ? options.filter(o => o.toLowerCase().includes(cerca.trim().toLowerCase())) : options;
   const toggle = (o: string) => onChange(selected.includes(o) ? selected.filter(x => x !== o) : [...selected, o]);
   return (
     <div className="relative">
@@ -352,13 +356,21 @@ function MultiSelect({ label, options, selected, onChange, renderOpt }: {
         <span className="text-[10px] text-slate-500">{open ? "" : ""}</span>
       </button>
       {open && <>
-        <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-        <div className="absolute top-full mt-1 left-0 z-50 bg-[#12141f] border border-white/10 rounded-xl shadow-2xl w-52 max-h-72 overflow-auto py-1">
+        <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setCerca(""); }} />
+        <div className="absolute top-full mt-1 left-0 z-50 bg-[#12141f] border border-white/10 rounded-xl shadow-2xl w-60 max-h-80 overflow-auto py-1">
+          {options.length > 12 && (
+            <div className="px-2 pt-1.5 pb-2 border-b border-white/5 sticky top-0 bg-[#12141f]">
+              <input value={cerca} onChange={e => setCerca(e.target.value)} autoFocus
+                placeholder="Scrivi per filtrare…"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-purple-400/50" />
+            </div>
+          )}
           <div className="px-3 py-2 text-[11px] font-bold uppercase text-purple-400 border-b border-white/5 cursor-pointer hover:bg-white/5"
             onClick={() => onChange(allSel ? [] : [...options])}>
             {allSel ? "Deseleziona Tutti" : "Seleziona Tutti"}
           </div>
-          {options.map(o => (
+          {visibili.length === 0 && <div className="px-3 py-2.5 text-xs text-slate-500">Nessuna voce corrispondente</div>}
+          {visibili.map(o => (
             <div key={o} onClick={() => toggle(o)}
               className={cn("flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-white/5 transition-colors",
                 selected.includes(o) ? "bg-purple-500/10 text-purple-300" : "text-slate-300")}>
@@ -1333,10 +1345,10 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
         {tipoProdotto && <>
           <div className="grid grid-cols-2 gap-4">
             <div><label className={lbl}>Brand *</label>
-              <SelectOpzioni value={brand} onChange={(v) => { setBrand(v); setModel(""); }} opzioni={brandOptions} maxVoci={100} placeholder="Scrivi o scegli il brand…" className={inp} />
+              <SelectOpzioni value={brand} onChange={(v) => { setBrand(v); setModel(""); }} opzioni={brandOptions} maxVoci={1000} placeholder="Scrivi per filtrare i brand…" className={inp} />
             </div>
             <div><label className={lbl}>Modello *</label>
-              <SelectOpzioni value={model} onChange={setModel} disabled={!brand} opzioni={brand ? modelOptions : []} maxVoci={100} placeholder="Scrivi o scegli il modello…" className={inp} />
+              <SelectOpzioni value={model} onChange={setModel} disabled={!brand} opzioni={brand ? modelOptions : []} maxVoci={1000} placeholder="Scrivi per filtrare i modelli…" className={inp} />
             </div>
             <div><label className={lbl}>Capacit� *</label>
               <SelectOpzioni value={capacita} onChange={setCapacita} opzioni={CAPACITA_OPTIONS} placeholder="Scrivi o scegli…" className={inp} />
