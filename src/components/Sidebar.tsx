@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
+import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import {
     Home,
@@ -16,7 +17,7 @@ import {
     MessageSquare,
     MessagesSquare,
     Sparkles,
-    LogOut,
+    Megaphone,
     Database,
     FilePlus,
     CalendarDays,
@@ -99,7 +100,41 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
         const wantTab = q ? new URLSearchParams(q).get("tab") : null;
         return (searchParams.get("tab") ?? null) === wantTab;
     };
-    const { user, logout } = useAuth();
+    const { user } = useAuth();
+    // ── COMUNICAZIONI DA LEGGERE (03/08): l'avviso in fondo alla sidebar al
+    //    posto del logout — quante comunicazioni indirizzate a me non hanno
+    //    ancora la lettura a DB. Si aggiorna a ogni navigazione, ogni 5' e in
+    //    realtime su nuove comunicazioni o nuove letture mie.
+    const [comDaLeggere, setComDaLeggere] = useState(0);
+    useEffect(() => {
+        if (!user?.id) { setComDaLeggere(0); return; }
+        let vivo = true;
+        const conta = async () => {
+            try {
+                const { data: coms } = await supabase.from("comunicazioni")
+                    .select("id, created_by, target_roles, target_stores, target_users, target_brands, kind")
+                    .order("created_at", { ascending: false }).limit(300);
+                if (!coms?.length) { if (vivo) setComDaLeggere(0); return; }
+                const brandsNegozio = await brandDelNegozio(user.negozio);
+                const negozi = await negoziAssegnati(user.id);
+                const perMe = coms.filter((c) => comunicazionePerMe(c as never, { userId: user.id, role: user.role || "", negozio: user.negozio, negozi, brandsNegozio }));
+                if (!perMe.length) { if (vivo) setComDaLeggere(0); return; }
+                const { data: ric } = await supabase.from("comunicazioni_ricevute")
+                    .select("comunicazione_id, letto_il").eq("user_id", user.id)
+                    .in("comunicazione_id", perMe.map((c) => c.id));
+                const lette = new Set(((ric ?? []) as { comunicazione_id: number; letto_il: string | null }[]).filter((r) => r.letto_il).map((r) => r.comunicazione_id));
+                if (vivo) setComDaLeggere(perMe.filter((c) => !lette.has(c.id)).length);
+            } catch { /* tabelle non migrate o rete: niente avviso */ }
+        };
+        conta();
+        const t = setInterval(conta, 5 * 60 * 1000);
+        const ch = supabase.channel("sidebar_comunicazioni")
+            .on("postgres_changes", { event: "INSERT", schema: "public", table: "comunicazioni" }, conta)
+            .on("postgres_changes", { event: "*", schema: "public", table: "comunicazioni_ricevute", filter: `user_id=eq.${user.id}` }, conta)
+            .subscribe();
+        return () => { vivo = false; clearInterval(t); supabase.removeChannel(ch); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id, pathname]);
     // override per ruolo dal DB (Amministrazione → Permessi); default = codice
     const { perms } = useRolePermissions(user?.role);
     const vede = (href: string, roles: string[], group?: string) => effectiveAllowed(user?.role, href, roles, perms, group);
@@ -335,12 +370,17 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
                         })}
                     </nav>
 
-                    <div className="p-4 border-t border-white/5">
-                        <button onClick={logout} className="nav-link w-full text-rose-400 hover:text-rose-300 hover:bg-rose-500/10">
-                            <LogOut className="w-5 h-5" />
-                            Logout
-                        </button>
-                    </div>
+                    {/* LOG OUT SPOSTATO nel menu del profilo in alto a destra (03/08):
+                        qui al suo posto compare l'avviso delle comunicazioni da leggere */}
+                    {comDaLeggere > 0 && (
+                        <div className="p-4 border-t border-white/5">
+                            <Link href="/comunicazioni" onClick={() => setIsOpen?.(false)}
+                                className="nav-link w-full text-amber-300 hover:text-amber-200 hover:bg-amber-500/10">
+                                <Megaphone className="w-5 h-5 shrink-0" />
+                                <span className="text-sm font-semibold leading-tight">{comDaLeggere === 1 ? "Hai 1 comunicazione da leggere" : `Hai ${comDaLeggere} comunicazioni da leggere`}</span>
+                            </Link>
+                        </div>
+                    )}
                 </div>
             </aside>
         </>

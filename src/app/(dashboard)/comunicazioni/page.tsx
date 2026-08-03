@@ -96,6 +96,10 @@ export default function Comunicazioni() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [espansa, setEspansa] = useState<number | null>(null);    // pannello ricevute aperto
+    // BACHECA A TITOLI CHIUSI (03/08): da fuori si vede solo il titolo; il
+    // click APRE il contenuto ed e' quello che conta come lettura — prima
+    // bastava un click a vuoto sulla card e "letta" scattava senza leggere.
+    const [aperte, setAperte] = useState<Set<number>>(new Set());
 
     const fetchAll = useCallback(async () => {
         // select a scalare: completa (mig. 116, con esiti) → estesa (112) → legacy
@@ -488,6 +492,9 @@ export default function Comunicazioni() {
                         const styles = getTypeStyles(com.type);
                         const Icon = styles.icon;
                         const isPopup = com.kind === "popup";
+                        // bacheca: chiusa finche' non la si apre (i popup restano estesi:
+                        // la loro lettura passa gia' dal pop-up con conferma)
+                        const collassata = !isPopup && !aperte.has(com.id);
                         const perMe = comunicazionePerMe(com, { userId: user?.id, role, negozio: user?.negozio, negozi: mieiAssegnati, brandsNegozio });
                         const vedeRicevute = isAdminRicevute || mia;
                         const cnt = vedeRicevute ? contatori(com.id, com.created_by) : null;
@@ -500,8 +507,13 @@ export default function Comunicazioni() {
                                 key={com.id}
                                 role="button"
                                 tabIndex={0}
-                                onClick={() => !read && scriviRicevuta(com.id, false)}
-                                onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !read) scriviRicevuta(com.id, false); }}
+                                onClick={() => {
+                                    if (isPopup) { if (!read) scriviRicevuta(com.id, false); return; }
+                                    const apre = !aperte.has(com.id);
+                                    setAperte((p) => { const n = new Set(p); if (apre) n.add(com.id); else n.delete(com.id); return n; });
+                                    if (apre && !read) scriviRicevuta(com.id, false);   // APRIRE = leggere
+                                }}
+                                onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !isPopup && !aperte.has(com.id)) { setAperte((p) => new Set(p).add(com.id)); if (!read) scriviRicevuta(com.id, false); } }}
                                 className={cn(
                                     "glass-card p-6 relative overflow-hidden transition-all cursor-pointer",
                                     !read && "border-l-4 border-l-primary"
@@ -553,11 +565,15 @@ export default function Comunicazioni() {
                                                 </span>
                                             )}
                                         </div>
-                                        <p className="text-slate-300 mt-3 leading-relaxed whitespace-pre-wrap">
-                                            {com.content}
-                                        </p>
+                                        {collassata ? (
+                                            <p className="text-xs text-slate-500 mt-2 italic select-none">▾ Clicca per leggere il contenuto{com.esiti?.length ? " e rispondere" : ""}</p>
+                                        ) : (
+                                            <p className="text-slate-300 mt-3 leading-relaxed whitespace-pre-wrap">
+                                                {com.content}
+                                            </p>
+                                        )}
 
-                                        <div className="mt-4 flex items-center gap-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                                        {!collassata && <div className="mt-4 flex items-center gap-3 flex-wrap" onClick={(e) => e.stopPropagation()}>
                                             {(isPopup || !!com.esiti?.length) && perMe && (
                                                 isConfermata(com.id) ? (
                                                     <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-400">
@@ -603,9 +619,9 @@ export default function Comunicazioni() {
                                                     <span className="text-[10px]">{espansa === com.id ? "▲" : "▼"}</span>
                                                 </button>
                                             )}
-                                        </div>
+                                        </div>}
 
-                                        {espansa === com.id && vedeRicevute && (
+                                        {espansa === com.id && vedeRicevute && !collassata && (
                                             <div className="mt-3 rounded-xl border border-white/10 bg-black/30 overflow-hidden" onClick={(e) => e.stopPropagation()}>
                                                 {dettaglio.length === 0 ? (
                                                     <div className="p-3 text-sm text-slate-500">Nessuno l&apos;ha ancora aperta.</div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon } from "lucide-react";
+import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon, KeyRound } from "lucide-react";
 import { useTema } from "@/lib/theme";
 import { UrgentTasks } from "@/components/UrgentTasks";
 import { useRouter, usePathname } from "next/navigation";
@@ -60,6 +60,14 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
     }, [user?.id]);
     const chiudiAvviso = () => { setAvvisoProfilo(false); try { sessionStorage.setItem("profilo_avvisato", "1"); } catch { /* no-op */ } };
     const lastPathRef = useRef<string | null>(null);
+    // menu del profilo (03/08): si chiude al click fuori
+    const [menuUtente, setMenuUtente] = useState(false);
+    const menuUtenteRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        const h = (e: MouseEvent) => { if (menuUtenteRef.current && !menuUtenteRef.current.contains(e.target as Node)) setMenuUtente(false); };
+        document.addEventListener("mousedown", h);
+        return () => document.removeEventListener("mousedown", h);
+    }, []);
     const previousPathRef = useRef<string | null>(null);
 
     // ─── Ricerca globale (segnalazione 75) ───
@@ -356,17 +364,11 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                     )}
                 </button>
 
-                {/* Mobile Quick Logout */}
-                <button
-                    onClick={logout}
-                    className="lg:hidden text-rose-400 hover:text-rose-300 transition-colors p-2"
-                >
-                    <LogOut className="h-5 w-5" />
-                </button>
-
-                {/* User Profile — cliccabile (Luca 31/07): porta a /profilo; il
-                    pallino rosso segnala i dati mancanti da completare */}
-                <button onClick={() => router.push("/profilo")} title="Il mio profilo"
+                {/* MENU PROFILO (03/08): il click apre un menu — profilo, cambio
+                    password e LOG OUT (spostato qui dalla sidebar, dove ora vive
+                    l'avviso delle comunicazioni da leggere) */}
+                <div className="relative" ref={menuUtenteRef}>
+                <button onClick={() => setMenuUtente((o) => !o)} title="Profilo, password e log out"
                     className="flex items-center gap-3 pl-4 border-l border-white/10 cursor-pointer text-left">
                     <div className="hidden text-right md:block">
                         <p className="text-sm font-medium text-white leading-none">{user?.name || "Ospite"}</p>
@@ -381,6 +383,24 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                         {profiloIncompleto && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-rose-500 border-2 border-[#0f111a] animate-pulse" />}
                     </div>
                 </button>
+                {menuUtente && (
+                    <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-white/10 bg-[#0f1420] shadow-2xl z-[200] p-1.5 space-y-0.5">
+                        <button onClick={() => { setMenuUtente(false); router.push("/profilo"); }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-200 hover:bg-white/5">
+                            <UserIcon className="w-4 h-4 text-slate-400" /> Il mio profilo
+                        </button>
+                        <button onClick={() => { setMenuUtente(false); router.push("/profilo#cambio-password"); }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-200 hover:bg-white/5">
+                            <KeyRound className="w-4 h-4 text-slate-400" /> Cambia password
+                        </button>
+                        <div className="border-t border-white/10 my-1" />
+                        <button onClick={() => { setMenuUtente(false); logout(); }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-rose-300 hover:bg-rose-500/10">
+                            <LogOut className="w-4 h-4" /> Log out
+                        </button>
+                    </div>
+                )}
+                </div>
             </div>
             {/* avviso UNA volta per sessione: profilo da completare */}
             {avvisoProfilo && (

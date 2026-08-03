@@ -241,7 +241,7 @@ export default function ProfiloPage() {
                 ))}
             </div>
 
-            <div className="glass-card p-4">
+            <div id="cambio-password" className="glass-card p-4 scroll-mt-24">
                 {!showPw ? (
                     <button onClick={() => setShowPw(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-sm font-bold hover:bg-indigo-500/25">
                         <KeyRound className="w-4 h-4" /> Cambia password
