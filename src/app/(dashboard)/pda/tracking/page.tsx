@@ -305,7 +305,7 @@ function KpiBar({
                 aria-label={b}
                 className="rounded-xl border flex items-center justify-center transition-all cursor-pointer"
                 style={{
-                  height: 58,
+                  height: 72,
                   borderColor: esclusivo ? color : "rgba(255,255,255,0.10)",
                   background: esclusivo ? color + "18" : "rgba(255,255,255,0.03)",
                   boxShadow: esclusivo ? `0 0 0 3px ${color}22` : "none",
@@ -313,7 +313,7 @@ function KpiBar({
                   filter: on ? "none" : "grayscale(1)",
                 }}>
                 {logo ? (
-                  <img src={logo} alt={b} style={{ maxHeight: 44, maxWidth: "90%", objectFit: "contain", display: "block" }} />
+                  <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block" }} />
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "#586174" }}>{b}</span>
                 )}
@@ -1526,6 +1526,8 @@ export default function TrackingPdaPage() {
         const b = String(r.brand || "").trim().toLowerCase();
         const p = String(r.prodotto || "").trim().toLowerCase();
         if (b === "extra" || b.startsWith("marginal") || /sost/.test(p)) return false;
+        // Very Mobile fuori dal Tracking (Luca 03/08): non si lavora qui.
+        if (b.startsWith("very")) return false;
         // Segnalazione 91: una pratica MOBILE senza finanziamento e senza MNP non
         // e' da lavorare -> fuori dal Tracking (e in Ricerca risulta gia' Attivo).
         const macro = String(r.categoria_macro || "").toLowerCase()
