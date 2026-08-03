@@ -17,6 +17,10 @@ export interface RegolaDb {
     etichetta?: string;
     condizioni: {
         brand?: string[]; tipo?: string[]; categoria?: string[]; prodotto?: string[];
+        /** match ESATTO sul nome offerta (03/08): e' la chiave delle regole
+         *  per-offerta del pannello Catalogo — vincono sulle generali perche'
+         *  hanno ordine piu' basso e i loro campi "prenotano" il nome */
+        offerta?: string[];
         offertaContiene?: string[]; offertaNon?: string[]; opzioni?: string[];
     };
     campi: CampoDb[];
@@ -55,6 +59,7 @@ export function risolviCampi(
         if (c.tipo && c.tipo.indexOf(tipoCliente) === -1) return;
         if (c.categoria && c.categoria.indexOf(categoria) === -1) return;
         if (c.prodotto && c.prodotto.indexOf(prodottoNome) === -1) return;
+        if (c.offerta && c.offerta.indexOf(offertaNome) === -1) return;   // match esatto (03/08)
         if (c.offertaNon && c.offertaNon.indexOf(offertaNome) !== -1) return;
         if (c.offertaContiene) {
             const low = (offertaNome || "").toLowerCase();
@@ -64,9 +69,12 @@ export function risolviCampi(
             if (!c.opzioni.some((o) => opzNomi.indexOf(o) !== -1)) return;
         }
         (r.campi || []).forEach((cmp) => {
-            if (cmp.attivo === false) return;    // campo NASCOSTO: non si chiede più
             if (visti[cmp.nome]) return;
+            // il nome si PRENOTA anche da nascosto (03/08): cosi' la regola
+            // per-offerta puo' TOGLIERE un campo ereditato dalle generali
+            // mettendolo attivo=false — prima il nascosto non bloccava nulla
             visti[cmp.nome] = true;
+            if (cmp.attivo === false) return;    // campo NASCOSTO: non si chiede più
             out.push(cmp);
         });
     });

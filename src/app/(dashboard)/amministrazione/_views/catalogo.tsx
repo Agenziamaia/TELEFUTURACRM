@@ -24,13 +24,17 @@ interface Brand { id: string; nome: string; colore1: string; colore2: string; or
 interface Prod { id: string; brand_id: string; tipo_cliente: string; categoria_id: string; nome: string; ordine: number; attivo: boolean }
 interface Off { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean }
 interface Opz { id: string; offerta_id: string; nome: string; tipo: string | null; gruppo_singolo: string | null; ordine: number; attivo: boolean }
-interface CampoRegola { nome: string; tipo: string; nota: string; conferma: boolean; attivo?: boolean }
+interface CampoRegola { nome: string; tipo: string; nota: string; conferma: boolean; attivo?: boolean; facoltativo?: boolean }
+/* riga della QUINTA tabella (03/08): campo risolto per l'offerta selezionata,
+   con la provenienza — "offerta" = regola dedicata, "generale" = regole comuni */
+interface CampoOffRow extends CampoRegola { fonte: "offerta" | "generale" | "nuovo" }
 interface RegolaCampi { id?: string; etichetta: string; condizioni: Record<string, string[]>; campi: CampoRegola[]; ordine: number; attivo: boolean }
 const COND_KEYS: { k: string; label: string; hint: string }[] = [
     { k: "brand", label: "Brand", hint: "slug: windtre, vodafone, s4…" },
     { k: "tipo", label: "Tipo cliente", hint: "Consumer, Business" },
     { k: "categoria", label: "Categoria", hint: "es. Fisso, Energia" },
     { k: "prodotto", label: "Prodotto", hint: "es. Mobile MNP" },
+    { k: "offerta", label: "Offerta (esatta)", hint: "nome esatto — regole per-offerta" },
     { k: "offertaContiene", label: "Offerta contiene", hint: "es. Conv, Indoor" },
     { k: "offertaNon", label: "Offerta esclusa", hint: "nome esatto" },
     { k: "opzioni", label: "Opzione attiva", hint: "es. RID, GNP" },
@@ -72,6 +76,10 @@ export function CatalogoView() {
     const [vista, setVista] = useState<"catalogo" | "campi">("catalogo");
     const [regole, setRegole] = useState<RegolaCampi[]>([]);
     const [regEdit, setRegEdit] = useState<RegolaCampi | null>(null);   // editor aperto
+    // ── QUINTA TABELLA (03/08): campi vendita della singola OFFERTA. null =
+    //    sola lettura (risolti); array = modifica in corso, si salva come
+    //    regola dedicata con condizione "offerta" esatta e ordine minimo.
+    const [campiOff, setCampiOff] = useState<CampoOffRow[] | null>(null);
 
     // editor inline: una sola riga in modifica per volta
     const [edit, setEdit] = useState<{ table: string; id: string; nome: string } | null>(null);
@@ -122,7 +130,7 @@ export function CatalogoView() {
     }, [loadBase, loadBrand]);
 
     const pickBrand = async (bid: string) => {
-        setBrandSel(bid); setProdSel(""); setOffSel(""); setEdit(null);
+        setBrandSel(bid); setProdSel(""); setOffSel(""); setEdit(null); setCampiOff(null);
         // se il brand non ha il tipo selezionato, passa all'altro
         await loadBrand(bid);
     };
@@ -275,6 +283,137 @@ export function CatalogoView() {
         </span>
     ) : null;
 
+    /* ── QUINTA TABELLA: campi vendita dell'OFFERTA selezionata (03/08) ──
+       Mostra i campi che il venditore compilera' scegliendo QUESTA offerta
+       (risolti dalle regole, stessa semantica del Registra Vendita, opzioni
+       escluse) e li rende amministrabili: rinomina, aggiungi, togli,
+       obbligatorio/facoltativo. Il salvataggio crea/aggiorna UNA regola
+       dedicata con condizione "offerta" esatta e ordine minimo: vince sulle
+       generali perche' i suoi campi prenotano il nome (lib/campiRegole). */
+    const offCur = offerte.find((o) => o.id === offSel);
+    const prodCur = prodotti.find((p) => p.id === prodSel);
+    const catNomeCur = cats.find((c) => c.id === catSel)?.nome || "";
+    const regolaOffertaEsistente = (offNome: string, prodNome: string) => regole.find((r) => {
+        const c = r.condizioni || {};
+        return (c.offerta || []).includes(offNome)
+            && (!c.prodotto || c.prodotto.includes(prodNome))
+            && (!c.brand || c.brand.includes(brandSel))
+            && (!c.tipo || c.tipo.includes(tipoSel));
+    });
+    const risolviPerOfferta = (offNome: string, prodNome: string): CampoOffRow[] => {
+        const attive = [...regole].filter((r) => r.attivo !== false).sort((a, b) => a.ordine - b.ordine);
+        const out: CampoOffRow[] = []; const visti = new Set<string>();
+        for (const r of attive) {
+            const c = r.condizioni || {};
+            if (c.brand && !c.brand.includes(brandSel)) continue;
+            if (c.tipo && !c.tipo.includes(tipoSel)) continue;
+            if (c.categoria && !c.categoria.includes(catNomeCur)) continue;
+            if (c.prodotto && !c.prodotto.includes(prodNome)) continue;
+            if (c.offerta && !c.offerta.includes(offNome)) continue;
+            if (c.offertaNon && c.offertaNon.includes(offNome)) continue;
+            if (c.offertaContiene && !c.offertaContiene.some((x) => offNome.toLowerCase().includes(x.toLowerCase()))) continue;
+            if (c.opzioni) continue;   // legati alle opzioni: compaiono solo in vendita
+            const propria = !!(c.offerta && c.offerta.includes(offNome));
+            for (const cmp of (r.campi || [])) {
+                if (visti.has(cmp.nome)) continue;
+                visti.add(cmp.nome);
+                out.push({ ...cmp, fonte: propria ? "offerta" : "generale" });
+            }
+        }
+        return out;
+    };
+    const salvaCampiOfferta = async () => {
+        if (!campiOff || !offCur || !prodCur) return;
+        const campi = campiOff.filter((c) => c.nome.trim()).map(({ fonte: _f, ...c }) => c);
+        if (!campi.length) { notify("Serve almeno un campo — oppure Annulla"); return; }
+        const esistente = regolaOffertaEsistente(offCur.nome, prodCur.nome);
+        const body = {
+            etichetta: `🎯 Offerta: ${offCur.nome} — ${prodCur.nome} (${brandCur?.nome || brandSel} ${tipoSel})`,
+            condizioni: { brand: [brandSel], tipo: [tipoSel], categoria: [catNomeCur], prodotto: [prodCur.nome], offerta: [offCur.nome] },
+            campi, attivo: true,
+            ordine: esistente ? esistente.ordine : Math.min(0, ...regole.map((r) => r.ordine)) - 1,
+        };
+        const ok = await run("Campi offerta", () =>
+            esistente?.id ? supabase.from("catalog_campi_regole").update(body).eq("id", esistente.id)
+                : supabase.from("catalog_campi_regole").insert(body), "Campi dell'offerta salvati ✓");
+        if (ok) setCampiOff(null);
+    };
+    const upCampoOff = (i: number, patch: Partial<CampoOffRow>) => setCampiOff((p) => p ? p.map((c, x) => x === i ? { ...c, ...patch } : c) : p);
+    const pannelloCampiOfferta = offCur && prodCur ? (() => {
+        const risolti = risolviPerOfferta(offCur.nome, prodCur.nome);
+        const inEdit = campiOff !== null;
+        const righe = inEdit ? campiOff! : risolti;
+        return (
+            <div className="glass-card p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                    <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                        🧾 Campi vendita dell&apos;offerta <span className="text-amber-300 normal-case tracking-normal">— {offCur.nome}</span>
+                        <span className="ml-2 text-slate-600 normal-case tracking-normal font-normal">({prodCur.nome} · {tipoSel} · {brandCur?.nome || brandSel})</span>
+                    </h3>
+                    {!inEdit ? (
+                        <button onClick={() => setCampiOff(risolti.map((c) => ({ ...c })))}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold">
+                            <Pencil className="w-3.5 h-3.5" /> Personalizza per questa offerta
+                        </button>
+                    ) : (
+                        <span className="flex gap-2">
+                            <button onClick={() => setCampiOff(null)} className="px-3 py-1.5 rounded-lg border border-white/15 text-slate-300 text-xs font-bold hover:bg-white/5">Annulla</button>
+                            <button onClick={salvaCampiOfferta} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"><Check className="w-3.5 h-3.5" /> Salva campi offerta</button>
+                        </span>
+                    )}
+                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                    Sono le caselle che il venditore compila scegliendo questa offerta. Qui si possono
+                    <b className="text-slate-300"> rinominare, aggiungere, togliere</b> e marcare
+                    <b className="text-amber-300"> obbligatorie</b> o <b className="text-slate-300">facoltative</b>:
+                    le modifiche valgono SOLO per questa offerta (regola dedicata 🎯). I campi legati alle
+                    opzioni compaiono in vendita all&apos;attivazione dell&apos;opzione e non si gestiscono da qui.
+                    <b className="text-slate-300"> Mai eliminare un campo usato in passato: si nasconde.</b>
+                </p>
+                {!inEdit ? (
+                    <div className="flex flex-wrap gap-1.5">
+                        {righe.length === 0 && <p className="text-sm text-slate-600 py-2">Nessun campo per questa offerta: “Personalizza” per aggiungerne.</p>}
+                        {righe.map((c, i) => (
+                            <span key={i} className={cn("inline-flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-lg border", c.attivo === false ? "border-white/5 text-slate-600 line-through" : "border-white/10 bg-white/[0.04] text-slate-200")}>
+                                {c.fonte === "offerta" ? <i className="not-italic" title="Campo della regola dedicata a questa offerta">🎯</i> : <i className="not-italic opacity-60" title="Campo ereditato dalle regole generali">📐</i>}
+                                {c.nome}
+                                <i className="not-italic text-[9px] uppercase text-slate-500">{c.tipo}</i>
+                                {c.facoltativo ? <i className="not-italic text-[9px] uppercase px-1 rounded bg-white/10 text-slate-400">facolt.</i> : <i className="not-italic text-[9px] uppercase px-1 rounded bg-amber-500/20 text-amber-300">obblig.</i>}
+                                {c.attivo === false && <i className="not-italic text-[9px] uppercase text-slate-500">nascosto</i>}
+                            </span>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="space-y-1.5">
+                        {righe.map((c, i) => (
+                            <div key={i} className={cn("flex items-center gap-1.5 flex-wrap", c.attivo === false && "opacity-50")}>
+                                <span className="text-sm w-5 text-center" title={c.fonte === "generale" ? "Ereditato dalle regole generali" : c.fonte === "nuovo" ? "Nuovo campo" : "Della regola di questa offerta"}>{c.fonte === "generale" ? "📐" : c.fonte === "nuovo" ? "✳️" : "🎯"}</span>
+                                <input value={c.nome} onChange={(e) => upCampoOff(i, { nome: e.target.value })} placeholder="Nome campo" className="glass-input text-xs rounded-lg py-1.5 px-2 flex-1 min-w-[160px]" />
+                                <select value={c.tipo} onChange={(e) => upCampoOff(i, { tipo: e.target.value })} className="glass-input text-xs rounded-lg py-1.5 px-2">
+                                    {TIPI_CAMPO.map((t) => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <input value={c.nota} onChange={(e) => upCampoOff(i, { nota: e.target.value })} placeholder="nota (es. 19 cifre)" className="glass-input text-xs rounded-lg py-1.5 px-2 w-40" />
+                                <button title={c.facoltativo ? "FACOLTATIVO — clicca per renderlo obbligatorio" : "OBBLIGATORIO — clicca per renderlo facoltativo"}
+                                    onClick={() => upCampoOff(i, { facoltativo: !c.facoltativo })}
+                                    className={cn("px-1.5 py-1 rounded text-[9px] font-bold uppercase", c.facoltativo ? "bg-white/5 text-slate-400" : "bg-amber-500/20 text-amber-300")}>
+                                    {c.facoltativo ? "facolt." : "obblig."}
+                                </button>
+                                {c.fonte === "nuovo" ? (
+                                    <button title="Togli questo campo appena aggiunto" onClick={() => setCampiOff((p) => p ? p.filter((_, x) => x !== i) : p)} className="p-1 rounded text-rose-400/70 hover:text-rose-300"><X className="w-3.5 h-3.5" /></button>
+                                ) : (
+                                    <button title={c.attivo === false ? "Nascosto per questa offerta — clicca per rimetterlo" : "Togli per questa offerta (si nasconde: i dati storici restano)"}
+                                        onClick={() => upCampoOff(i, { attivo: c.attivo === false ? true : false })} className="text-sm">{c.attivo === false ? "🙈" : "👁"}</button>
+                                )}
+                            </div>
+                        ))}
+                        <button onClick={() => setCampiOff((p) => [...(p || []), { nome: "", tipo: "testo", nota: "", conferma: false, attivo: true, fonte: "nuovo" }])}
+                            className="mt-1 flex items-center gap-1 text-xs font-bold text-violet-300 hover:text-white"><Plus className="w-3.5 h-3.5" /> Aggiungi campo</button>
+                    </div>
+                )}
+            </div>
+        );
+    })() : null;
+
     return (<>
         <div className="mb-3 flex items-center gap-3 flex-wrap">
           <button onClick={aggiornaDispositivi} disabled={syncBusy} className="px-4 py-2.5 rounded-xl border border-indigo-400/50 bg-indigo-500/15 text-indigo-200 text-sm font-bold hover:bg-indigo-500/25 disabled:opacity-50">{syncBusy ? "Aggiornamento in corso…" : "📱 Aggiorna catalogo dispositivi (Apple + Google)"}</button>
@@ -422,6 +561,7 @@ export function CatalogoView() {
                                                 {TIPI_CAMPO.map((t) => <option key={t} value={t}>{t}</option>)}
                                             </select>
                                             <input value={c.nota} onChange={(e) => { const campi = [...regEdit.campi]; campi[i] = { ...c, nota: e.target.value }; setRegEdit({ ...regEdit, campi }); }} placeholder="nota (es. 19 cifre)" className="glass-input text-xs rounded-lg py-1.5 px-2 w-40" />
+                                            <button title={c.facoltativo ? "FACOLTATIVO: non blocca il completamento — clicca per renderlo obbligatorio" : "OBBLIGATORIO: blocca il completamento — clicca per renderlo facoltativo"} onClick={() => { const campi = [...regEdit.campi]; campi[i] = { ...c, facoltativo: !c.facoltativo }; setRegEdit({ ...regEdit, campi }); }} className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase", c.facoltativo ? "bg-white/5 text-slate-400" : "bg-amber-500/20 text-amber-300")}>{c.facoltativo ? "facolt." : "obblig."}</button>
                                             <button title={c.attivo === false ? "Nascosto — clicca per mostrare" : "Visibile — clicca per nascondere"} onClick={() => { const campi = [...regEdit.campi]; campi[i] = { ...c, attivo: c.attivo === false ? true : false }; setRegEdit({ ...regEdit, campi }); }} className="text-sm">{c.attivo === false ? "🙈" : "👁"}</button>
                                             <button title="Togli riga (solo per campi mai usati)" onClick={() => setRegEdit({ ...regEdit, campi: regEdit.campi.filter((_, x) => x !== i) })} className="p-1 rounded text-rose-400/70 hover:text-rose-300"><X className="w-3.5 h-3.5" /></button>
                                         </div>
@@ -439,7 +579,7 @@ export function CatalogoView() {
             )}
 
             {/* colonne a cascata */}
-            {vista === "catalogo" && (
+            {vista === "catalogo" && (<>
             <div className="grid grid-cols-12 gap-4 items-start">
                 {/* ── CATEGORIE ── */}
                 <div className="col-span-12 md:col-span-3 lg:col-span-2 glass-card p-3">
@@ -597,7 +737,9 @@ export function CatalogoView() {
                     )}
                 </div>
             </div>
-            )}
+            {/* QUINTA TABELLA (03/08): campi vendita della singola offerta */}
+            {pannelloCampiOfferta}
+            </>)}
         </div>
     </>);
 }

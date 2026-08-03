@@ -348,13 +348,6 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             </button>
                         )}
 
-                        {puoRegistrare && (
-                            <button onClick={() => setRegOpen(true)}
-                                title="Registra ferie già approvate per altre vie: entrano nel registro direttamente come Approvate"
-                                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25 flex items-center gap-1.5">
-                                <span className="text-base leading-none">＋</span> Registra ferie
-                            </button>
-                        )}
                         {isAdminLike && (
                             <button onClick={() => {
                                 const giorni = (r: VacationRequest) => r.half_day ? 0.5 : (Math.round((new Date(r.date_to).getTime() - new Date(r.date_from).getTime()) / 86400000) + 1);
@@ -373,7 +366,15 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                 URL.revokeObjectURL(url);
                             }} disabled={filteredRequests.length === 0}
                                 className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
-                                ⬇️ Excel commercialista
+                                ⬇️ Excel
+                            </button>
+                        )}
+
+                        {puoRegistrare && (
+                            <button onClick={() => setRegOpen(true)}
+                                title="Registra ferie già approvate per altre vie: entrano nel registro direttamente come Approvate"
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25 flex items-center gap-1.5">
+                                <span className="text-base leading-none">＋</span> Registra ferie
                             </button>
                         )}
                         {isAdminLike && (

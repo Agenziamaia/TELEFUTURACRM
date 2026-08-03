@@ -48,6 +48,8 @@ type Ricevuta = {
     letto_il: string | null;
     confermato_il: string | null;
     esito?: string | null;     // quale risposta ha cliccato (mig. 116)
+    rinviato_il?: string | null;   // ultimo "Più tardi" (mig. 141)
+    rinvii?: number | null;        // quante volte ha rinviato (mig. 141)
 };
 
 function getLocalReadSet(): Set<number> {
@@ -114,10 +116,15 @@ export default function Comunicazioni() {
         if (e) { setError(e.message); setList([]); setLoading(false); return; }
         setError(null);
         setList((data ?? []) as Comunicazione[]);
-        const ricCompleta = await supabase
+        // select a scalare: rinvii (mig. 141) → esiti (116) → legacy
+        const ricRinvii = await supabase
+            .from("comunicazioni_ricevute")
+            .select("comunicazione_id, user_id, user_name, letto_il, confermato_il, esito, rinviato_il, rinvii")
+            .limit(10000);
+        const ricCompleta = ricRinvii.error ? await supabase
             .from("comunicazioni_ricevute")
             .select("comunicazione_id, user_id, user_name, letto_il, confermato_il, esito")
-            .limit(10000);
+            .limit(10000) : ricRinvii;
         const { data: ric } = ricCompleta.error ? await supabase
             .from("comunicazioni_ricevute")
             .select("comunicazione_id, user_id, user_name, letto_il, confermato_il")
@@ -350,8 +357,44 @@ export default function Comunicazioni() {
     // l'AUTORE non conta tra letture/conferme della propria comunicazione
     const contatori = useCallback((comId: number, autore: string | null) => {
         const r = ricevute.filter((x) => x.comunicazione_id === comId && (!autore || x.user_id !== autore));
-        return { letture: r.filter((x) => x.letto_il).length, conferme: r.filter((x) => x.confermato_il).length };
+        return {
+            letture: r.filter((x) => x.letto_il).length,
+            conferme: r.filter((x) => x.confermato_il).length,
+            // "rinviata" = ha premuto Più tardi e non ha ancora confermato
+            rinviate: r.filter((x) => x.rinviato_il && !x.confermato_il).length,
+        };
     }, [ricevute]);
+
+    // ── DESTINATARI = "quante inviate" (03/08): platea degli utenti attivi col
+    //    loro contesto (negozi assegnati, brand del punto vendita) — la stessa
+    //    regola comunicazionePerMe del popup, applicata a tutti in blocco.
+    const [platea, setPlatea] = useState<{ id: string; role: string; negozio: string; negozi: string[]; brands: string[] }[] | null>(null);
+    useEffect(() => {
+        if (platea) return;
+        if (!isAdminRicevute && !list.some((c) => c.created_by === user?.id)) return;
+        (async () => {
+            const [u, us, st] = await Promise.all([
+                supabase.from("app_users").select("id, role, primary_store").eq("active", true),
+                supabase.from("user_stores").select("user_id, store_name"),
+                supabase.from("stores").select("name, brands"),
+            ]);
+            const negoziDi = new Map<string, string[]>();
+            ((us.data ?? []) as { user_id: string; store_name: string }[]).forEach((r) => {
+                const a = negoziDi.get(r.user_id) || []; a.push(r.store_name); negoziDi.set(r.user_id, a);
+            });
+            const brandsDi = new Map<string, string[]>();
+            ((st.data ?? []) as { name: string; brands: string[] | null }[]).forEach((r) => brandsDi.set(String(r.name || "").trim().toLowerCase(), r.brands || []));
+            setPlatea(((u.data ?? []) as { id: string; role: string | null; primary_store: string | null }[]).map((x) => ({
+                id: x.id, role: x.role || "", negozio: x.primary_store || "",
+                negozi: negoziDi.get(x.id) || [],
+                brands: brandsDi.get(String(x.primary_store || "").trim().toLowerCase()) || [],
+            })));
+        })();
+    }, [platea, isAdminRicevute, list, user?.id]);
+    const destinatariDi = useCallback((c: Comunicazione): number | null => {
+        if (!platea) return null;
+        return platea.filter((u) => comunicazionePerMe(c, { userId: u.id, role: u.role, negozio: u.negozio, negozi: u.negozi, brandsNegozio: u.brands })).length;
+    }, [platea]);
 
     const inputStyle = "w-full bg-black/40 border border-white/10 rounded-xl text-slate-100 text-sm py-2.5 px-3.5 outline-none focus:border-violet-500/50";
 
@@ -550,8 +593,13 @@ export default function Comunicazioni() {
                                                     title="Chi l'ha letta / confermata"
                                                 >
                                                     <Eye className="w-4 h-4" />
-                                                    {cnt.letture} lettur{cnt.letture === 1 ? "a" : "e"}
-                                                    {isPopup ? ` · ${cnt.conferme} conferm${cnt.conferme === 1 ? "a" : "e"}` : ""}
+                                                    {/* VISIBILITÀ POST-INVIO (03/08): inviate = destinatari della
+                                                        platea; apparse = viste a display; rinviate = "Più tardi"
+                                                        senza ancora una conferma (mig. 141) */}
+                                                    {(() => { const dest = destinatariDi(com); return dest == null ? "" : `📤 ${dest} inviat${dest === 1 ? "a" : "e"} · `; })()}
+                                                    {isPopup
+                                                        ? `👁 ${cnt.letture} appars${cnt.letture === 1 ? "a" : "e"} · ✓ ${cnt.conferme} confermat${cnt.conferme === 1 ? "a" : "e"} · ⏰ ${cnt.rinviate} rinviat${cnt.rinviate === 1 ? "a" : "e"}`
+                                                        : `${cnt.letture} lettur${cnt.letture === 1 ? "a" : "e"}`}
                                                     <span className="text-[10px]">{espansa === com.id ? "▲" : "▼"}</span>
                                                 </button>
                                             )}
@@ -570,6 +618,11 @@ export default function Comunicazioni() {
                                                         {/* l'ESITO scelto (mig. 116): chi ha cliccato cosa */}
                                                         {r.esito && (
                                                             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30">{r.esito}</span>
+                                                        )}
+                                                        {!!r.rinvii && !r.confermato_il && (
+                                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30" title={r.rinviato_il ? `ultimo rinvio: ${new Date(r.rinviato_il).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : undefined}>
+                                                                ⏰ rinviata ×{r.rinvii}
+                                                            </span>
                                                         )}
                                                         {(isPopup || !!com.esiti?.length) && (
                                                             r.confermato_il ? (

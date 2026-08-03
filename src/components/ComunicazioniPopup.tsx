@@ -102,11 +102,26 @@ export function ComunicazioniPopup() {
     const adesso = Date.now();
     const visibili = coda.filter((c) => !(rinvii[c.id] > adesso));
     const attuale = visibili[0] || null;
-    const rinvia = () => {
+    const rinvia = async () => {
         if (!attuale || !user?.id) return;
         const next = { ...rinvii, [attuale.id]: Date.now() + 60 * 60 * 1000 };
         setRinvii(next);
         try { localStorage.setItem(`popup_rinvii_${user.id}`, JSON.stringify(next)); } catch { /* no-op */ }
+        // RINVIO TRACCIATO (mig. 141): prima il "Più tardi" restava solo nel
+        // localStorage del dispositivo e il mittente non vedeva nulla — ora
+        // scrive rinviato_il (ultimo) e incrementa il contatore rinvii.
+        try {
+            const { data: cur } = await supabase.from("comunicazioni_ricevute")
+                .select("letto_il, rinvii").eq("comunicazione_id", attuale.id).eq("user_id", user.id).maybeSingle();
+            await supabase.from("comunicazioni_ricevute").upsert([{
+                comunicazione_id: attuale.id,
+                user_id: user.id,
+                user_name: user.name || null,
+                letto_il: (cur as { letto_il?: string | null } | null)?.letto_il || new Date().toISOString(),
+                rinviato_il: new Date().toISOString(),
+                rinvii: (Number((cur as { rinvii?: number | null } | null)?.rinvii) || 0) + 1,
+            }], { onConflict: "comunicazione_id,user_id" });
+        } catch { /* mig. 141 non applicata: il rinvio resta almeno locale */ }
     };
 
     // La sola visualizzazione conta come LETTURA (una volta per comunicazione).
