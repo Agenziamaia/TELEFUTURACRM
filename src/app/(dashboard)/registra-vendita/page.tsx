@@ -5374,15 +5374,15 @@ function CRM() {
           Nessuna configurazione extra richiesta lato sviluppatore.
       ═══════════════════════════════════════════════════════════════════ */}
       <style>{`@media(min-width:1100px){.crmSidebar{display:flex!important;width:clamp(320px,24vw,480px)!important}.crmShell{margin-right:calc(clamp(320px,24vw,480px) + 26px)!important}}
-.rvLab{font-size:10px;font-weight:800;color:#8892b0;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
-.rvIn{width:100%;padding:10px 12px;border-radius:10px;font-size:13px;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);color:#f8fafc;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
+.rvLab{font-size:11.5px;font-weight:800;color:#8892b0;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
+.rvIn{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);color:#f8fafc;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
 .rvIn:focus{border-color:rgba(129,140,248,.75);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:rgba(99,102,241,.06)}
 .rvIn::placeholder{color:#586174}
 select.rvIn{cursor:pointer}
 .rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:#161a2c;border:1px solid rgba(255,255,255,0.15);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.65);max-height:280px;overflow-y:auto}
-.rvOpt{padding:9px 13px;font-size:13px;cursor:pointer;color:#f8fafc}
+.rvOpt{padding:10px 14px;font-size:14px;cursor:pointer;color:#f8fafc}
 .rvOpt:hover{background:rgba(99,102,241,.18)}
-.rvGrp{padding:5px 12px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#94a3b8;background:#1b2030;text-transform:uppercase;position:sticky;top:0}
+.rvGrp{padding:6px 12px;font-size:11px;font-weight:800;letter-spacing:.6px;color:#94a3b8;background:#1b2030;text-transform:uppercase;position:sticky;top:0}
 .crmFab{position:fixed;bottom:18px;right:18px;z-index:4300;display:flex;align-items:center;gap:8px;padding:13px 18px;border-radius:999px;border:none;cursor:pointer;color:#fff;font-size:14px;font-weight:800;box-shadow:0 10px 30px rgba(0,0,0,.45)}
 @media(min-width:1100px){.crmFab{display:none}}`}</style>
       {/* SIDEBAR CARRELLO LIVE (desktop) + DRAWER su richiesta (ogni schermo) */}
@@ -5475,10 +5475,10 @@ select.rvIn{cursor:pointer}
         const cAtt=bObj?bC:"#6366f1";
         const STEPS=[
           {id:"brand",label:margFlow&&!brand?"Marginalità":"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{margFlow&&!brand?"📦":(bObj?bObj.icon:"⚡")}</span>,perc:(brand||margFlow)?100:0,abil:true},
-          {id:"cliente",label:"Cliente",icona:<span style={{fontSize:20}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
-          {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:20}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
-          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:20}}>📎</span>,perc:(attachments.length>0?50:0)+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
-          {id:"note",label:"Note",icona:<span style={{fontSize:20}}>📝</span>,perc:(notaOn&&nota.trim())?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
+          {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
+          {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:23}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
+          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:(attachments.length>0?50:0)+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
+          {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:(notaOn&&nota.trim())?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
         ];
         return (
           <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
@@ -5493,9 +5493,9 @@ select.rvIn{cursor:pointer}
                     background:attivo?"rgba(99,102,241,0.14)":fatto?"rgba(40,167,69,0.07)":"rgba(255,255,255,0.03)",
                     border:attivo?"1.5px solid "+cAtt:fatto?"1px solid rgba(40,167,69,0.40)":"1px solid rgba(255,255,255,0.08)",
                     opacity:st.abil?1:.45,transition:"all .15s"}}>
-                  <span style={{width:38,height:38,borderRadius:10,background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{st.icona}</span>
+                  <span style={{width:42,height:42,borderRadius:11,background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{st.icona}</span>
                   <span style={{minWidth:0,flex:1}}>
-                    <span style={{display:"block",fontSize:12.5,fontWeight:800,color:attivo?"#fff":fatto?"#4ade80":"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fatto?"✓ ":""}{st.label}{st.opz&&!fatto?<span style={{fontWeight:600,color:"#64748b"}}> · opz.</span>:null}</span>
+                    <span style={{display:"block",fontSize:14.5,fontWeight:800,color:attivo?"#fff":fatto?"#4ade80":"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fatto?"✓ ":""}{st.label}{st.opz&&!fatto?<span style={{fontWeight:600,color:"#64748b"}}> · opz.</span>:null}</span>
                     <span style={{display:"block",height:4,borderRadius:2,background:"rgba(255,255,255,0.08)",marginTop:6}}>
                       <span style={{display:"block",height:4,borderRadius:2,width:st.perc+"%",background:fatto?"#28a745":cAtt,transition:"width .25s"}}/>
                     </span>
@@ -5509,7 +5509,7 @@ select.rvIn{cursor:pointer}
 
 
       {vistaStep==="brand"&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:20,marginBottom:12}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
+        <div style={{fontSize:12.5,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
           {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid rgba(255,255,255,0.06)",background:b.id===brand?b.color+"14":"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="rgba(255,255,255,0.05)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.02)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
@@ -5519,7 +5519,16 @@ select.rvIn{cursor:pointer}
           </button>)}
           {/* Segnalazione 68: "Prodotti & Marginalita'" non e' piu' una barra a tutta
               larghezza sotto la griglia, ma una casella della griglia accanto ai brand. */}
-          <button onClick={()=>{setMargFlow(true);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} title="Prodotti & Marginalità" style={{padding:"26px 16px",borderRadius:14,border:margFlow?"2px solid #6f42c1":"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:margFlow?"0 0 0 3px rgba(111,66,193,0.25)":"none"}}>
+          <button onClick={()=>{
+            // P&M = come cambiare brand (bug Luca 04/08: il brand restava
+            // attivo e i gate margFlow&&!brand mostravano i SUOI prodotti).
+            // Conferma se c'e' lavoro brand non in carrello; il CLIENTE resta.
+            const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));
+            if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: passando a Prodotti & Marginalità la perdi.\n\nContinuare?"))return;
+            setBrand(null);setSales({});setSesCode("");setShowStep4(false);setShowAna(false);setCambioBrand(false);
+            setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);
+            setMargFlow(true);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));
+          }} title="Prodotti & Marginalità" style={{padding:"26px 16px",borderRadius:14,border:margFlow?"2px solid #6f42c1":"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:margFlow?"0 0 0 3px rgba(111,66,193,0.25)":"none"}}>
             {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"#6f42c1",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}><span style={{fontSize:52}}>📦</span></div>
             <div style={{fontWeight:800,fontSize:14,color:"#6f42c1",marginTop:6}}>Prodotti & Marginalità</div>
@@ -5618,9 +5627,9 @@ select.rvIn{cursor:pointer}
       </div>}
 
       {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+bC}}>
-        <div style={{fontSize:11,fontWeight:700,color:bC,marginBottom:14,textTransform:"uppercase"}}>📂 Prodotti e Contratto</div>
+        <div style={{fontSize:12.5,fontWeight:700,color:bC,marginBottom:14,textTransform:"uppercase"}}>📂 Prodotti e Contratto</div>
         <div style={{background:"rgba(0,114,198,0.10)",borderRadius:10,padding:"14px 12px",marginBottom:14,display:"flex",flexDirection:"column",alignItems:"center",gap:10,border:"1px solid rgba(255,255,255,0.12)"}}>
-          <span style={{fontSize:10,fontWeight:800,color:"#8892b0",textTransform:"uppercase",letterSpacing:.8}}>Codice inserimento</span>
+          <span style={{fontSize:12,fontWeight:800,color:"#8892b0",textTransform:"uppercase",letterSpacing:.8}}>Codice inserimento</span>
           {/* RIQUADRI negozio a selezione SINGOLA (Luca 03/08): via la tendina
               nativa — un click sceglie, ricliccando lo stesso si toglie */}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
@@ -5628,7 +5637,7 @@ select.rvIn{cursor:pointer}
               const on=sesCode===c;
               return <button key={c} type="button" onClick={()=>setSesCode(on?"":c)}
                 title={on?"Selezionato — clicca per togliere":"Usa il codice di "+c}
-                style={{padding:"9px 18px",borderRadius:10,cursor:"pointer",fontSize:12.5,fontWeight:800,transition:"all .15s",
+                style={{padding:"10px 20px",borderRadius:10,cursor:"pointer",fontSize:14,fontWeight:800,transition:"all .15s",
                   border:on?"1.5px solid "+bC:"1px solid rgba(255,255,255,0.12)",
                   background:on?bC:"rgba(255,255,255,0.04)",
                   color:on?"#fff":(sesCode?"#586174":"#cbd5e1"),
@@ -5646,8 +5655,8 @@ select.rvIn{cursor:pointer}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
             {cats.map(group=>{const cc=catCounts(group.id,group.subs);const righe=gS(group.id);return <div key={group.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:16,display:"flex",flexDirection:"column"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:12,textAlign:"center"}}>
-                <span style={{fontSize:19}}>{iconW3Cat(group)}</span>
-                <span style={{fontSize:12.5,fontWeight:800,color:group.color,textTransform:"uppercase",letterSpacing:.4}}>{group.title}</span>
+                <span style={{fontSize:23}}>{iconW3Cat(group)}</span>
+                <span style={{fontSize:14.5,fontWeight:800,color:group.color,textTransform:"uppercase",letterSpacing:.4}}>{group.title}</span>
                 {cc.tot>0&&<span style={{fontSize:10,fontWeight:800,color:"#8892b0",whiteSpace:"nowrap"}}>{cc.ok>0&&<span style={{color:"#28a745"}}>✓{cc.ok} </span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>⚠{cc.warn} </span>}{cc.empty>0&&<span>●{cc.empty}</span>}</span>}
               </div>
               {righe.map((sale,si)=><div key={si} style={{marginBottom:8,paddingBottom:si<righe.length-1?10:0,borderBottom:si<righe.length-1?"1px dashed rgba(255,255,255,0.09)":"none"}}>
@@ -5666,7 +5675,7 @@ select.rvIn{cursor:pointer}
                     return <button key={sub.id}
                       onClick={()=>{if(!att)togSub(group.id,si,sub.id,group.radio?group.subs.map(x=>x.id):null);setProdModal({gid:group.id,si,subId:sub.id});}}
                       title={att?"Apri e modifica i campi":"Aggiungi e compila nel riquadro"}
-                      style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,minHeight:52,padding:"11px 8px",borderRadius:12,cursor:"pointer",fontSize:12.5,fontWeight:700,textAlign:"center",transition:"all .15s",
+                      style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,minHeight:54,padding:"11px 8px",borderRadius:12,cursor:"pointer",fontSize:14,fontWeight:700,textAlign:"center",transition:"all .15s",
                         border:att?"2px solid "+group.color:"1px solid rgba(255,255,255,0.10)",
                         background:att?group.color+"22":"rgba(255,255,255,0.04)",
                         color:att?"#f8fafc":"#8892b0"}}>
@@ -5692,7 +5701,7 @@ select.rvIn{cursor:pointer}
         const d=sale[sub.id];if(!(d&&d.active))return null;
         const b=subBadge(d,dupCheck,sub,_reqMissing(group.id+"-"+prodModal.si+"-"+sub.id));
         return <div onClick={()=>setProdModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div onClick={e=>e.stopPropagation()} style={{width:"min(1280px,96vw)",height:"92vh",overflowY:"auto",background:"#12141f",border:"1px solid "+bC+"55",borderRadius:16,boxShadow:"0 18px 50px rgba(0,0,0,.55)"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"min(920px,94vw)",height:"86vh",overflowY:"auto",background:"#12141f",border:"1px solid "+bC+"55",borderRadius:16,boxShadow:"0 18px 50px rgba(0,0,0,.55)"}}>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"15px 20px",borderBottom:"1px solid rgba(255,255,255,0.08)",position:"sticky",top:0,background:"#12141f",zIndex:1}}>
               <span style={{fontSize:21}}>{iconW3Cat(group)}</span>
               <div style={{flex:1,minWidth:0}}>
@@ -5923,8 +5932,8 @@ select.rvIn{cursor:pointer}
 
       {["prodotti","allegati","note"].includes(vistaStep)&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>{const PREV={prodotti:(margFlow&&!brand)?"brand":"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
-          {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} style={{padding:"11px 22px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"#c7d2fe",fontSize:13,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
+          <button onClick={()=>{const PREV={prodotti:(margFlow&&!brand)?"brand":"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
+          {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} style={{padding:"11px 22px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"#c7d2fe",fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
           <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
