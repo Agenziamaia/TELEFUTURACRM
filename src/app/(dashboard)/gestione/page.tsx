@@ -170,9 +170,14 @@ export default function GestionePda() {
     };
 
     const fetchList = useCallback(async () => {
+        // SOLO le pratiche arrivate da INVIA PDA (Luca 03/08): id 'PDA-%'.
+        // Il flusso e': agente → Invia PDA → qui il back office la lavora e la
+        // inserisce sui sistemi operatori → Registra Vendita → Tracking PDA.
+        // Le vendite di Registra Vendita NON c'entrano con questa scrivania.
         const { data, error } = await supabase
             .from("contracts")
             .select("id, brand, categoria, stato, venditore, negozio, data_registrazione, data, created_at, note, operatore_bo, clients(ragione_sociale, cf_piva, tipo)")
+            .like("id", "PDA-%")
             .order("created_at", { ascending: false });
         if (error) {
             setLoadError(error.message);
@@ -228,6 +233,29 @@ export default function GestionePda() {
         if (!error) {
             setRawList(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
         }
+    }, []);
+
+    // CESTINO ADMIN (Luca 03/08): via la pratica PDA — allegati (meta + file
+    // nel bucket) e riga contratto. Doppia conferma inline.
+    const [eliminaId, setEliminaId] = useState<string | null>(null);
+    const [eliminando, setEliminando] = useState(false);
+    const eliminaPratica = useCallback(async (id: string) => {
+        setEliminando(true);
+        try {
+            const { data: atts } = await supabase.from("contract_attachments").select("id, file_url").eq("contract_id", id);
+            const paths = ((atts ?? []) as { file_url: string | null }[])
+                .map(a => (a.file_url || "").split("/contracts/").slice(1).join("/contracts/"))
+                .filter(Boolean).map(p => p.startsWith("contracts/") ? p : `contracts/${p}`);
+            if (paths.length) await supabase.storage.from("contracts").remove(paths);
+            await supabase.from("contract_attachments").delete().eq("contract_id", id);
+            const { error } = await supabase.from("contracts").delete().eq("id", id);
+            if (error) throw error;
+            setRawList(prev => prev.filter(r => r.id !== id));
+        } catch (e) {
+            setLoadError("Eliminazione non riuscita: " + ((e as Error)?.message || e));
+        }
+        setEliminando(false);
+        setEliminaId(null);
     }, []);
 
     const handleSaveNote = useCallback(async () => {
@@ -340,6 +368,19 @@ export default function GestionePda() {
                                             <button type="button" onClick={() => { setSelectedNote({ id: row.id, text: row.note }); setNoteDraft(row.note); }} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Apri pratica"><FolderOpen className="w-4 h-4" /></button>
                                             {!readOnly && <button type="button" onClick={() => {}} className="p-1.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors" title="Allegati"><Paperclip className="w-4 h-4" /></button>}
                                             {!readOnly && <button type="button" onClick={() => {}} className="p-1.5 rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors" title="Archivia"><Archive className="w-4 h-4" /></button>}
+                                            {isAdmin && (eliminaId === row.id ? (
+                                                <span className="inline-flex gap-1">
+                                                    <button type="button" disabled={eliminando} onClick={() => eliminaPratica(row.id)}
+                                                        className="px-2 py-1 rounded bg-rose-600 text-white text-[11px] font-bold disabled:opacity-40"
+                                                        title="Elimina pratica, allegati e file: definitivo">Elimino?</button>
+                                                    <button type="button" onClick={() => setEliminaId(null)}
+                                                        className="px-1.5 py-1 rounded border border-white/15 text-slate-400 text-[11px]">✕</button>
+                                                </span>
+                                            ) : (
+                                                <button type="button" onClick={() => setEliminaId(row.id)}
+                                                    className="p-1.5 rounded bg-rose-500/15 text-rose-400 hover:bg-rose-500/30 transition-colors"
+                                                    title="Elimina la pratica (solo admin)">🗑</button>
+                                            ))}
                                             {readOnly && (row.stato === "Sospeso Mancanza di Documento" ? (
                                                 <button type="button" onClick={() => { setIntegra({ id: row.id }); setIntFiles([]); setIntNote(""); setIntMsg(""); }}
                                                     className="px-2 py-1.5 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors text-[11px] font-bold whitespace-nowrap"

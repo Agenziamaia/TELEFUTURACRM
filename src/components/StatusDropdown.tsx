@@ -15,6 +15,9 @@ export interface StatusOption {
 }
 
 export const STATUS_OPTIONS: StatusOption[] = [
+    // Stato INIZIALE del flusso outbound (Luca 03/08): lo scrive Invia PDA,
+    // da qui il back office la lavora in Gestione PDA
+    { label: "PDA Inviata", type: "info", isAutomatic: true, agentCanEdit: false, agentCanView: true },
     // Automatic statuses
     { label: "Assegnata", type: "info", isAutomatic: true, agentCanEdit: false, agentCanView: true },
     { label: "Ricevuta", type: "info", isAutomatic: true, agentCanEdit: false, agentCanView: true },

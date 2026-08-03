@@ -584,6 +584,24 @@ export default function InviaPda() {
         }
       }
 
+      // TASK ⚡ ai designati dell'incarico "PDA inviata" (Luca 03/08): il back
+      // office deve accorgersi SUBITO che c'e' una pratica da lavorare in
+      // Gestione PDA. Senza designati o con fulmine spento non parte nulla.
+      try {
+        const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine").eq("chiave", "pda_inviata").maybeSingle();
+        const ass = (inc?.assegnatari ?? []);
+        if (inc?.fulmine && ass.length) {
+          const righe = contractRows.map(r => `${r.brand} ${r.categoria}`).join(", ");
+          await supabase.from("admin_tasks").insert(ass.map((uid) => ({
+            tipo: "pda_inviata",
+            titolo: `📨 Nuova PDA da ${venditore || "agente"}`,
+            dettaglio: `${contractRows.length} ${contractRows.length === 1 ? "pratica" : "pratiche"}: ${righe} — cliente ${clientData.ragione_sociale || `${clientData.nome} ${clientData.cognome}`.trim()}`,
+            link: "/gestione",
+            target_role: "admin", created_by: venditore || null, target_user_id: uid,
+          })));
+        }
+      } catch { /* la PDA e' gia' inviata: il task e' un di piu' */ }
+
       showToast("🎉 PDA Inviata con successo!");
       setTimeout(fullReset, 2500);
     } catch (err) {
