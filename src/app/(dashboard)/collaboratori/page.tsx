@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { SelectPersona, SelectMulti } from "@/components/SelectPersona";
 import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
-import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2, Pencil, Plus } from "lucide-react";
+import { Clock, Users, UsersRound, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2, Pencil, Plus } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -32,7 +32,7 @@ function CollaboratoriPageContent() {
         ferie: { label: "Ferie", icon: CalendarDays, desc: "Pianificazione, richieste e approvazione ferie" },
         malattia: { label: "Malattia", icon: Shield, desc: "Registro e monitoraggio assenze per malattia" },
         ritardi: { label: "Ritardi", icon: Clock3, desc: "Segnalazione e monitoraggio ritardi (staff di negozio)" },
-        turni: { label: "Turni", icon: Store, desc: "Chi è in quale punto vendita, orari e coperture" },
+        turni: { label: "Turni", icon: UsersRound, desc: "Chi è in quale punto vendita, orari e coperture" },
     };
 
     const currentSection = sectionInfo[tab] || sectionInfo.ferie;

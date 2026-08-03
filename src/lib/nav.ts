@@ -17,7 +17,7 @@
 
 import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
-    Database, FilePlus, CalendarDays, Clock, Clock3, Users, Smartphone, Store,
+    Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
     ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors,
 } from "lucide-react";
@@ -87,7 +87,8 @@ export const NAVIGATION: NavEntry[] = [
         icon: Users,
         children: [
             { name: "Ferie", href: "/collaboratori?tab=ferie", icon: CalendarDays, roles: EVERYONE },
-            { name: "Turni", href: "/collaboratori?tab=turni", icon: Store, roles: EVERYONE },
+            // icona PERSONE IN CERCHIO (Luca 03/08): i turni sono squadra, non negozio
+            { name: "Turni", href: "/collaboratori?tab=turni", icon: UsersRound, roles: EVERYONE },
             { name: "Malattia", href: "/collaboratori?tab=malattia", icon: Shield, roles: MANAGERS },
             { name: "Ritardi", href: "/collaboratori?tab=ritardi", icon: Clock3, roles: EVERYONE },
         ],
