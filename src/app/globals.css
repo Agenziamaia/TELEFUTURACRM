@@ -509,3 +509,22 @@ html.light .chip-corso { background: rgba(14, 165, 233, 0.16) !important; color:
 .testo-ricco a { color: #818cf8; text-decoration: underline; }
 .testo-ricco blockquote { border-left: 3px solid rgba(255,255,255,.25); padding-left: .8em; margin: .4em 0; color: #cbd5e1; }
 .testo-ricco font[size="5"], .testo-ricco font[size="6"] { line-height: 1.25; }
+
+
+/* ── CALENDARIETTO VISIBILE OVUNQUE (Luca 03/08): l'iconcina nativa dei campi
+   data/ora era NERA su sfondo scuro — invisibile in TUTTO il CRM (ferie,
+   malattia, caller, calendario, ordini, usati, tracking, registra…).
+   color-scheme governa il colore dell'indicatore nativo del browser:
+   dark → iconcina chiara; nel tema chiaro si torna a quella scura. ── */
+input[type="date"], input[type="time"], input[type="datetime-local"], input[type="month"], input[type="week"] {
+  color-scheme: dark;
+}
+html.light input[type="date"], html.light input[type="time"], html.light input[type="datetime-local"], html.light input[type="month"], html.light input[type="week"] {
+  color-scheme: light;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: .85;
+}
