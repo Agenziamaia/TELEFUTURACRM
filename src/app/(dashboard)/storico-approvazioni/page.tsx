@@ -57,7 +57,7 @@ export default function StoricoApprovazioni() {
                     .select("id,contract_id,requested_by_name,status,reviewed_by_name,reviewed_at,review_note,created_at")
                     .neq("status", "pending").order("reviewed_at", { ascending: false }).limit(200),
                 supabase.from("client_access_requests")
-                    .select("id,requested_by_name,status,decided_by,decided_at,created_at,clients(nome,cognome,ragione_sociale,tipo)")
+                    .select("id,requested_by_name,status,decided_by,decided_at,created_at,motivo,clients(nome,cognome,ragione_sociale,tipo)")
                     .neq("status", "pending").order("decided_at", { ascending: false }).limit(200),
                 supabase.from("admin_tasks")
                     .select("id,titolo,created_by,done_by,done_at")
@@ -83,6 +83,8 @@ export default function StoricoApprovazioni() {
                     esito: r.status === "approved" ? "approved" : "rejected",
                     decisore: String(r.decided_by || "—"),
                     quando: String(r.decided_at || r.created_at || ""),
+                    // motivo della richiesta (mig. 137): stessa colonna nota dei contratti
+                    nota: (r.motivo as string) || null,
                 });
             });
             (tk.data ?? []).forEach((r: Record<string, unknown>) => out.push({

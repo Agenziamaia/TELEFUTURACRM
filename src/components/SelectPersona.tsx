@@ -16,7 +16,10 @@ import { createPortal } from "react-dom";
 
 /** Variante GENERICA per qualsiasi filtro (Luca 30/07: "tutte le tendine
  *  identiche a questa"): stessa estetica e stesso comportamento — si scrive
- *  per filtrare o si sceglie col mouse; campo vuoto = nessun filtro. */
+ *  per filtrare o si sceglie col mouse; campo vuoto = nessun filtro.
+ *  Le liste di OPZIONI si mostrano per intero (tetto alto, 03/08): col tetto
+ *  a 12 le voci in coda non comparivano mai — gli esiti negativi del Caller
+ *  risultavano "spariti" ai caller pur essendo attivi a DB. Il menu scorre. */
 export function SelectOpzioni(props: {
     value: string;
     onChange: (v: string) => void;
@@ -24,13 +27,17 @@ export function SelectOpzioni(props: {
     placeholder?: string;
     className?: string;
     disabled?: boolean;
+    maxVoci?: number;
 }) {
-    return <SelectPersona {...props} vuotoMsg="Nessuna voce corrispondente" />;
+    return <SelectPersona maxVoci={100} {...props} vuotoMsg="Nessuna voce corrispondente" />;
 }
 
 export function SelectPersona({
     value, onChange, opzioni, placeholder = "Scrivi o scegli…", className = "", disabled = false,
     vuotoMsg = "Nessun collaboratore corrispondente",
+    // 12 va bene per le PERSONE (si scrive per filtrare); le liste di opzioni
+    // passano un tetto alto perche' devono vedersi tutte (03/08)
+    maxVoci = 12,
 }: {
     value: string;
     onChange: (v: string) => void;
@@ -39,6 +46,7 @@ export function SelectPersona({
     className?: string;
     disabled?: boolean;
     vuotoMsg?: string;
+    maxVoci?: number;
 }) {
     const [testo, setTesto] = useState(value);
     const [aperta, setAperta] = useState(false);
@@ -83,7 +91,7 @@ export function SelectPersona({
         const parole = nome.split(/\s+/);
         const termini = q.split(/\s+/);
         return termini.every((t) => parole.some((p) => p.startsWith(t)));
-    }).slice(0, 12);
+    }).slice(0, maxVoci);
 
     const scegli = (n: string) => { onChange(n); setTesto(n); setAperta(false); };
 
@@ -133,7 +141,7 @@ export function SelectPersona({
  *  Nessuna selezione = nessun filtro. */
 export function SelectMulti({
     values, onChange, opzioni, placeholder = "Tutti — scrivi per filtrare", className = "",
-    vuotoMsg = "Nessuna voce corrispondente", disabled = false,
+    vuotoMsg = "Nessuna voce corrispondente", disabled = false, maxVoci = 12,
 }: {
     values: string[];
     onChange: (v: string[]) => void;
@@ -142,6 +150,7 @@ export function SelectMulti({
     className?: string;
     vuotoMsg?: string;
     disabled?: boolean;
+    maxVoci?: number;
 }) {
     const [testo, setTesto] = useState("");
     const [aperta, setAperta] = useState(false);
@@ -179,7 +188,7 @@ export function SelectMulti({
         if (nome.includes(q)) return true;
         const parole = nome.split(/\s+/);
         return q.split(/\s+/).every((t) => parole.some((p) => p.startsWith(t)));
-    }).slice(0, 12);
+    }).slice(0, maxVoci);
 
     const toggle = (n: string) => {
         onChange(values.includes(n) ? values.filter((x) => x !== n) : [...values, n]);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef, Suspense } from "react";
-import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
+import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -360,7 +360,8 @@ const defaultCallerView = {
     fDataAppA: "",
     fDataChiamataDa: "",
     fDataChiamataA: "",
-    fStato: "",
+    // Stato a MULTISELEZIONE (03/08): piu' stati insieme, chips sotto il campo
+    fStati: [] as string[],
     fCaller: "",
     fBrand: "",
     fProvenienza: "",
@@ -538,7 +539,7 @@ function CallerPageInner() {
     const fDataAppA = view.fDataAppA || "", setFDataAppA = (v: string) => setView((p) => ({ ...p, fDataAppA: v }));
     const fDataChiamataDa = view.fDataChiamataDa || "", setFDataChiamataDa = (v: string) => setView((p) => ({ ...p, fDataChiamataDa: v }));
     const fDataChiamataA = view.fDataChiamataA || "", setFDataChiamataA = (v: string) => setView((p) => ({ ...p, fDataChiamataA: v }));
-    const fStato = view.fStato, setFStato = (v: string) => setView((p) => ({ ...p, fStato: v }));
+    const fStati = view.fStati || [], setFStati = (v: string[]) => setView((p) => ({ ...p, fStati: v }));
     const fCaller = view.fCaller, setFCaller = (v: string) => setView((p) => ({ ...p, fCaller: v }));
     const fBrand = view.fBrand, setFBrand = (v: string) => setView((p) => ({ ...p, fBrand: v }));
     const fProvenienza = view.fProvenienza, setFProvenienza = (v: string) => setView((p) => ({ ...p, fProvenienza: v }));
@@ -725,7 +726,7 @@ function CallerPageInner() {
             if (fDataChiamataDa && d < fDataChiamataDa) return false;
             if (fDataChiamataA && d > fDataChiamataA) return false;
         }
-        if (fStato && c.stato !== fStato) return false;
+        if (fStati.length > 0 && !fStati.includes(c.stato)) return false;
         if (fCaller && c.caller !== fCaller) return false;
         if (!ignoraBrand && selBrands.size > 0 && !selBrands.has(c.brand)) return false;
         if (fProvenienza && c.provenienza !== fProvenienza) return false;
@@ -735,7 +736,7 @@ function CallerPageInner() {
         return true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
+    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const faseCounts = useMemo(() => {
         const cnt = { da_lavorare: 0, warning: 0, malus: 0, importo: 0 };
@@ -747,12 +748,12 @@ function CallerPageInner() {
             else if (fi.fase === "malus") { cnt.malus++; cnt.importo += fi.importo; }
         });
         return cnt;
-    }, [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
+    }, [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const brandCounts = useMemo(() => {
         const scoped = calls.filter((c) => matchFiltri(c, true));
         return BRANDS.map((b) => ({ brand: b as string, n: scoped.filter((c) => c.brand === b).length }));
-    }, [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStato, fCaller, fProvenienza, fTipologia, fObiettivo, fLista]);
+    }, [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, fProvenienza, fTipologia, fObiettivo, fLista]);
 
     function listaBrandLabel(l: ListaAssegnata): string {
         if (l.provenienza === "Acquistato") return l.brandAcq || "—";
@@ -1337,7 +1338,7 @@ function CallerPageInner() {
             ...p,
             fCf: "", fNome: "", fCellulare: "", fNegozio: "",
             fDataAppDa: "", fDataAppA: "", fDataChiamataDa: "", fDataChiamataA: "",
-            fStato: "", fCaller: "", fBrand: "", fProvenienza: "", fTipologia: "",
+            fStati: [], fCaller: "", fBrand: "", fProvenienza: "", fTipologia: "",
             fObiettivo: "", fLista: ""
         }));
         setSelBrands(new Set());
@@ -1878,7 +1879,8 @@ function CallerPageInner() {
                                         </div>
                                     </FilterField>
                                     <FilterField label="Stato">
-                                        <SelectOpzioni value={fStato} onChange={setFStato} opzioni={STATI_OPT} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
+                                        {/* MULTISELEZIONE (03/08): si sommano piu' stati, chips sotto il campo */}
+                                        <SelectMulti values={fStati} onChange={setFStati} opzioni={STATI_OPT} maxVoci={100} placeholder="Tutti — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />
                                     </FilterField>
                                     <FilterField label="Provenienza">
                                         <SelectOpzioni value={fProvenienza} onChange={setFProvenienza} opzioni={PROVENIENZE_OPT} placeholder="Tutte — scrivi per filtrare" className="glass-input text-sm rounded-lg py-2 w-full" />

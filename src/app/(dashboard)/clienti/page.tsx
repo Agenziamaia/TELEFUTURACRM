@@ -1035,14 +1035,26 @@ export default function ClientiPage() {
         return set;
     }, [canApproveAccess, filterGestitoDa, filterNegozioGestito, contrattiGest, acquisitiGest, utentiFiltro]);
 
-    const richiediAccesso = async (c: Cliente) => {
+    // MOTIVO OBBLIGATORIO (03/08): al click su "Richiedi accesso" si apre un
+    // modale dove si spiega PERCHE' serve quel cliente; il testo viaggia con
+    // la richiesta (client_access_requests.motivo, mig. 137) e l'amministrazione
+    // lo vede sulla richiesta pendente e nello Storico Approvazioni.
+    const [accessReqCliente, setAccessReqCliente] = useState<Cliente | null>(null);
+    const [accessReqMotivo, setAccessReqMotivo] = useState("");
+    const [accessReqInvio, setAccessReqInvio] = useState(false);
+    const richiediAccesso = async () => {
+        if (!accessReqCliente || !accessReqMotivo.trim() || accessReqInvio) return;
         setAccessMsg("");
+        setAccessReqInvio(true);
         const { error } = await supabase.from("client_access_requests").insert({
-            client_id: c.id, requested_by: user?.id || null, requested_by_name: user?.name || "—",
+            client_id: accessReqCliente.id, requested_by: user?.id || null, requested_by_name: user?.name || "—",
+            motivo: accessReqMotivo.trim(),
         });
-        if (error) { setAccessMsg("⚠️ Invio non riuscito (funzione in attivazione): riprova più tardi."); return; }
-        visCli.segnaPending(c.id);
+        setAccessReqInvio(false);
+        if (error) { setAccessMsg("⚠️ Invio non riuscito (funzione in attivazione): riprova più tardi."); setAccessReqCliente(null); return; }
+        visCli.segnaPending(accessReqCliente.id);
         setAccessMsg("✅ Richiesta inviata all'amministrazione: vedrai i dati appena approvata.");
+        setAccessReqCliente(null); setAccessReqMotivo("");
     };
     const eliminaCliente = async (c: Cliente) => {
         setAccessMsg("");
@@ -1197,12 +1209,16 @@ export default function ClientiPage() {
                                     const cl = r.clients as Record<string, unknown> | null;
                                     const nomeCl = cl ? (cl.tipo === "business" && cl.ragione_sociale ? String(cl.ragione_sociale) : `${cl.nome || ""} ${cl.cognome || ""}`.trim()) : String(r.client_id);
                                     return (
-                                        <div key={String(r.id)} className="flex items-center gap-3 text-sm text-slate-300 flex-wrap">
-                                            <span><strong className="text-white">{String(r.requested_by_name)}</strong> chiede l'accesso a <strong className="text-white">{nomeCl}</strong></span>
-                                            <span className="ml-auto flex gap-2">
-                                                <button onClick={() => decidiAccesso(String(r.id), true)} className="text-xs px-3 py-1.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 font-bold">Approva</button>
-                                                <button onClick={() => decidiAccesso(String(r.id), false)} className="text-xs px-3 py-1.5 rounded-md bg-rose-500/15 border border-rose-500/40 text-rose-300 hover:bg-rose-500/25 font-bold">Rifiuta</button>
-                                            </span>
+                                        <div key={String(r.id)} className="text-sm text-slate-300">
+                                            <div className="flex items-center gap-3 flex-wrap">
+                                                <span><strong className="text-white">{String(r.requested_by_name)}</strong> chiede l'accesso a <strong className="text-white">{nomeCl}</strong></span>
+                                                <span className="ml-auto flex gap-2">
+                                                    <button onClick={() => decidiAccesso(String(r.id), true)} className="text-xs px-3 py-1.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 font-bold">Approva</button>
+                                                    <button onClick={() => decidiAccesso(String(r.id), false)} className="text-xs px-3 py-1.5 rounded-md bg-rose-500/15 border border-rose-500/40 text-rose-300 hover:bg-rose-500/25 font-bold">Rifiuta</button>
+                                                </span>
+                                            </div>
+                                            {/* MOTIVO della richiesta (mig. 137): sempre in chiaro per chi decide */}
+                                            {!!r.motivo && <div className="mt-0.5 text-xs text-violet-200/80 italic">Motivo: &ldquo;{String(r.motivo)}&rdquo;</div>}
                                         </div>
                                     );
                                 })}
@@ -1221,6 +1237,35 @@ export default function ClientiPage() {
                     Nuovo Cliente
                 </button>
             </header>
+
+            {/* ── MODALE MOTIVO richiesta accesso (03/08): il motivo e' OBBLIGATORIO
+                e arriva in chiaro all'amministrazione insieme alla richiesta ── */}
+            {accessReqCliente && (
+                <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setAccessReqCliente(null)}>
+                    <div className="glass-panel w-full max-w-md shadow-2xl border-white/10 p-5" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-lg font-bold text-white">🔓 Richiesta di accesso</h3>
+                            <button onClick={() => setAccessReqCliente(null)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
+                        </div>
+                        <p className="text-sm text-slate-400 mb-3">
+                            Stai chiedendo i dati di <strong className="text-white">{accessReqCliente.tipo === "business" ? accessReqCliente.ragioneSociale : `${accessReqCliente.nome} ${accessReqCliente.cognome}`}</strong>.
+                            Scrivi il motivo: l&apos;amministrazione lo vedrà sulla richiesta.
+                        </p>
+                        <textarea
+                            value={accessReqMotivo} onChange={(e) => setAccessReqMotivo(e.target.value)} autoFocus rows={3}
+                            placeholder="Es. il cliente è passato in negozio per una nuova attivazione…"
+                            className="glass-input w-full rounded-lg py-2 text-sm resize-none"
+                        />
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button onClick={() => setAccessReqCliente(null)} className="text-xs px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 font-bold">Annulla</button>
+                            <button onClick={richiediAccesso} disabled={!accessReqMotivo.trim() || accessReqInvio}
+                                className="text-xs px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-bold disabled:opacity-40 disabled:cursor-not-allowed">
+                                {accessReqInvio ? "Invio…" : "Invia richiesta"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* CONTENT */}
             <div className="flex-1 overflow-y-auto p-4 md:p-8">
@@ -1464,7 +1509,7 @@ export default function ClientiPage() {
                                                     {accessPending.has(cliente.id) ? (
                                                         <span className="text-xs px-2.5 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-300 font-medium">⏳ In attesa di approvazione</span>
                                                     ) : (
-                                                        <button onClick={() => richiediAccesso(cliente)}
+                                                        <button onClick={() => { setAccessReqCliente(cliente); setAccessReqMotivo(""); }}
                                                             className="text-xs px-2.5 py-1.5 rounded-md bg-violet-500/15 border border-violet-500/40 text-violet-300 hover:bg-violet-500/25 transition-colors font-medium">
                                                             🔓 Richiedi accesso
                                                         </button>
