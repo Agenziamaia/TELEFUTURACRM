@@ -12,6 +12,7 @@ import { Info, AlertTriangle, CheckCircle2, Rocket } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
+import { sanificaHtml } from "@/components/EditorRicco";
 
 type ComPopup = {
     id: number;
@@ -29,6 +30,7 @@ type ComPopup = {
     meeting_id?: number | null;   // invito riunione (mig. 122): la risposta si riflette sul calendario
     allegati?: { url: string; name: string }[] | null;   // mig. 147: apribili PRIMA di confermare
     size?: string | null;                                 // mig. 147: 'grande' = testo in evidenza
+    content_html?: string | null;                         // mig. 155: testo RICCO dell'editor
     kind: string | null;
 };
 
@@ -140,7 +142,7 @@ export function ComunicazioniPopup() {
             // select a scalare: v147 (allegati+size) → completa (mig. 116) → senza esiti (mig. 112) → legacy
             const v147 = await supabase
                 .from("comunicazioni")
-                .select("id, title, content, type, date_display, created_by, created_by_name, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, allegati, size, kind")
+                .select("id, title, content, content_html, type, date_display, created_by, created_by_name, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, allegati, size, kind")
                 .eq("kind", "popup")
                 .order("created_at", { ascending: true });
             const completa = v147.error ? await supabase
@@ -301,7 +303,9 @@ export function ComunicazioniPopup() {
                     </div>
                 </div>
                 <div className={"relative " + cnBody(attuale.size)}>
-                    {attuale.content}
+                    {attuale.content_html
+                        ? <div className="testo-ricco" dangerouslySetInnerHTML={{ __html: sanificaHtml(attuale.content_html) }} />
+                        : attuale.content}
                 </div>
                 {/* ALLEGATI (mig. 147): apribili SUBITO, senza dover confermare */}
                 {(attuale.allegati?.length ?? 0) > 0 && (

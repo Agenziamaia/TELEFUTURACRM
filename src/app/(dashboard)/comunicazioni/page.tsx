@@ -17,6 +17,7 @@ import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_
 import { ROLES, BRANDS } from "@/lib/roles";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
 import { Confetti, SfondoComunicazione, fondoComunicazione } from "@/components/ComunicazioniPopup";
+import { EditorRicco, sanificaHtml } from "@/components/EditorRicco";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
 import { sameStore, useVisibleStores } from "@/lib/visibleStores";
@@ -29,6 +30,7 @@ export type Comunicazione = {
     date_display: string;
     type: string;
     content: string;
+    content_html?: string | null;   // mig. 155: testo RICCO dell'editor
     kind: string | null;             // 'bacheca' | 'popup'
     target_roles: string[] | null;   // NULL = tutti
     // destinatari ESTESI (mig. 112): negozi, persone singole, brand
@@ -114,7 +116,7 @@ export default function Comunicazioni() {
         // select a scalare: completa (mig. 116, con esiti) → estesa (112) → legacy
         const completa = await supabase
             .from("comunicazioni")
-            .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, allegati, size, created_by, created_by_name, created_at")
+            .select("id, title, date_display, type, content, content_html, kind, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, allegati, size, created_by, created_by_name, created_at")
             .order("created_at", { ascending: false });
         const esteso = completa.error ? await supabase
             .from("comunicazioni")
@@ -234,16 +236,10 @@ export default function Comunicazioni() {
     const [fSize, setFSize] = useState<"normale" | "grande">("normale");
     const [fAllegati, setFAllegati] = useState<{ url: string; name: string }[]>([]);
     const [fCaricando, setFCaricando] = useState(false);
-    const testoRef = useRef<HTMLTextAreaElement | null>(null);
+    // EDITOR RICCO (Luca 03/08): l'HTML formattato viaggia in content_html,
+    // il testo puro resta in fContent per validazioni e client vecchi
+    const [fContentHtml, setFContentHtml] = useState("");
     const EMOJI_RAPIDE = ["🎉", "🚀", "🔥", "💪", "🏆", "📈", "✅", "⚠️", "🚨", "📌", "📣", "👏", "🤝", "⭐", "🎯", "💡"];
-    const inserisciEmoji = (e: string) => {
-        const ta = testoRef.current;
-        if (!ta) { setFContent((p) => p + e); return; }
-        const ini = ta.selectionStart ?? fContent.length, fine = ta.selectionEnd ?? fContent.length;
-        const nuovo = fContent.slice(0, ini) + e + fContent.slice(fine);
-        setFContent(nuovo);
-        requestAnimationFrame(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = ini + e.length; });
-    };
     const caricaAllegati = async (files: FileList | null) => {
         if (!files?.length || fCaricando) return;
         setFCaricando(true);
@@ -370,6 +366,7 @@ export default function Comunicazioni() {
         const { error: e } = await supabase.from("comunicazioni").insert({
             title: fTitle.trim(),
             content: fContent.trim(),
+            content_html: fContent.trim() && fContentHtml.trim() ? fContentHtml : null,
             type: fType,
             size: fSize,   // mig. 147
             allegati: fAllegati,
@@ -392,7 +389,7 @@ export default function Comunicazioni() {
         }
         setError(null);
         setFormOpen(false);
-        setFTitle(""); setFContent(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget(); setFEsiti([]); setFEsitoNuovo(""); setFSize("normale"); setFAllegati([]);
+        setFTitle(""); setFContent(""); setFContentHtml(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget(); setFEsiti([]); setFEsitoNuovo(""); setFSize("normale"); setFAllegati([]);
         fetchAll();
     };
 
@@ -642,9 +639,14 @@ export default function Comunicazioni() {
                                         {collassata ? (
                                             <p className="text-xs text-slate-500 mt-2 italic select-none">▾ Clicca per leggere il contenuto{com.esiti?.length ? " e rispondere" : ""}</p>
                                         ) : (
+                                            com.content_html ? (
+                                                <div className={cn("testo-ricco mt-3 leading-relaxed", com.size === "grande" ? "text-base text-slate-100" : "text-slate-300")}
+                                                    dangerouslySetInnerHTML={{ __html: sanificaHtml(com.content_html) }} />
+                                            ) : (
                                             <p className={cn("mt-3 leading-relaxed whitespace-pre-wrap", com.size === "grande" ? "text-base text-slate-100" : "text-slate-300")}>
                                                 {com.content}
                                             </p>
+                                            )
                                         )}
                                         {/* ALLEGATI (mig. 147): apribili anche PRIMA di confermare */}
                                         {!collassata && (com.allegati?.length ?? 0) > 0 && (
@@ -829,14 +831,10 @@ export default function Comunicazioni() {
                                 <input type="text" value={fTitle} onChange={(e) => setFTitle(e.target.value)} className={inputStyle + " mt-2"} placeholder="Es. Nuovi listini da lunedì" />
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Testo</label>
-                                <div className="flex gap-1 mt-2 flex-wrap">
-                                    {EMOJI_RAPIDE.map((e) => (
-                                        <button key={e} type="button" onClick={() => inserisciEmoji(e)} title="Inserisci nel testo"
-                                            className="w-8 h-8 rounded-lg bg-white/[0.04] border border-white/10 hover:bg-white/10 text-base leading-none">{e}</button>
-                                    ))}
-                                </div>
-                                <textarea ref={testoRef} value={fContent} onChange={(e) => setFContent(e.target.value)} className={inputStyle + " mt-2 min-h-[240px] resize-y"} placeholder="Il contenuto della comunicazione…" />
+                                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Testo <span className="normal-case font-normal">— grassetto, colori, elenchi, emoji: formatta come vuoi</span></label>
+                                <EditorRicco emojiRapide={EMOJI_RAPIDE} minHeight={240}
+                                    placeholder="Il contenuto della comunicazione…"
+                                    onChange={(html, testo) => { setFContentHtml(html); setFContent(testo); }} />
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aspetto</label>
@@ -915,7 +913,10 @@ export default function Comunicazioni() {
                                                     ? { color: "#a78bfa", bg: "rgba(139,92,246,.12)", border: "rgba(139,92,246,.40)", Icona: Rocket }
                                                     : { color: "#60a5fa", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
                                         const titolo = fTitle.trim() || "Titolo della comunicazione";
-                                        const testo = fContent.trim() || "Il testo che scrivi sopra comparirà qui.";
+                                        const testoPuro = fContent.trim() || "Il testo che scrivi sopra comparirà qui.";
+                                        const testo = fContent.trim() && fContentHtml.trim()
+                                            ? <span className="testo-ricco" dangerouslySetInnerHTML={{ __html: sanificaHtml(fContentHtml) }} />
+                                            : testoPuro;
                                         const firma = `${dataDisplayOggi()} — ${user?.name || ""}`;
                                         if (fKind === "popup") return (
                                             <div className={`relative rounded-2xl border shadow-2xl overflow-hidden mx-auto max-w-[520px]${fType === "warning" ? " anim-bordo-rosso" : ""}`} style={{ background: fondoComunicazione(fType), borderColor: st.border }}>
