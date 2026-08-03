@@ -832,7 +832,10 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   /* ═══ STYLES (CRM dark theme) ═══ */
   const s = {
     wrap: { fontFamily: "inherit", background: C.bg, minHeight: "100%", color: C.text },
-    header: { background: C.card, borderBottom: `1px solid ${C.border}`, padding: "16px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, backdropFilter: "blur(12px)" },
+    // TITOLO SENZA LASTRA (Luca 03/08): prima era una fascia scura a tutta
+    // larghezza (C.card) sopra lo sfondo trasparente — sembrava un riquadro
+    // nero attorno al titolo. Ora il titolo poggia sullo sfondo della sezione.
+    header: { background: "transparent", padding: "16px 28px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 },
     title: { fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: -0.3 },
     subtitle: { fontSize: 13, color: C.grayLight, margin: 0 },
     btn: { padding: "9px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, transition: "all .15s" },
