@@ -4336,6 +4336,11 @@ function CRM() {
   // le dipendenze dell'effect si valutano subito → showStep4 deve esistere)
   useEffect(()=>{if(showStep4)setVistaStep("prodotti");},[showStep4]);
   const [vfQtyModal,setVfQtyModal]=useState(null);
+  // Griglia W3 privato (concept Gemini, Luca 03/08): i campi del prodotto si
+  // compilano in un MODALE centrale invece che inline. {gid,si,subId}
+  const [prodModal,setProdModal]=useState(null);
+  // icone su richiesta: Wallet=portafogli, Ric.Auto=banca, il resto invariato
+  const iconW3Cat=(g)=>{const n=String(g.title||"").toLowerCase();if(n.includes("wallet"))return "👛";if(n.includes("ric"))return "🏦";return g.icon;};
 
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
   // le tendine del terminale leggono il listino di QUESTO brand
@@ -5625,7 +5630,48 @@ select.rvIn{cursor:pointer}
               </button>;})}
           </div>
         </div>
-        {cats.map(group=>{const cc=catCounts(group.id,group.subs);const aperta=catAperta(group);return <div key={group.id} style={{marginBottom:aperta?16:6}}>
+        {(brand==="windtre"&&tipoCliente==="privato")?(
+          /* GRIGLIA A CARD (test W3 privato): 3 colonne responsive, prodotti a
+             pillola dentro la card, compilazione nel modale — la griglia resta
+             ferma, niente piu' pagina-fisarmonica. Stato e validazioni sono gli
+             stessi del flusso classico (togSub/SubCard/subBadge). */
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+            {cats.map(group=>{const cc=catCounts(group.id,group.subs);const righe=gS(group.id);return <div key={group.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:16,display:"flex",flexDirection:"column"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+                <span style={{fontSize:19}}>{iconW3Cat(group)}</span>
+                <span style={{fontSize:12.5,fontWeight:800,color:group.color,textTransform:"uppercase",letterSpacing:.4}}>{group.title}</span>
+                {cc.tot>0&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:800,color:"#8892b0",whiteSpace:"nowrap"}}>{cc.ok>0&&<span style={{color:"#28a745"}}>✓{cc.ok} </span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>⚠{cc.warn} </span>}{cc.empty>0&&<span>●{cc.empty}</span>}</span>}
+              </div>
+              {righe.map((sale,si)=><div key={si} style={{marginBottom:8,paddingBottom:si<righe.length-1?10:0,borderBottom:si<righe.length-1?"1px dashed rgba(255,255,255,0.09)":"none"}}>
+                {righe.length>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontSize:10,fontWeight:800,color:group.color}}>Vendita #{si+1}</span>
+                  <div style={{display:"flex",gap:5}}>
+                    <button onClick={()=>resetSale(group.id,si)} title="Reset questa vendita" style={{padding:"2px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>↺</button>
+                    {si>0&&<button onClick={()=>rmSl(group.id,si)} style={{padding:"2px 8px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"transparent",color:"#dc3545",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕</button>}
+                  </div>
+                </div>}
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {group.subs.map(sub=>{const d=sale[sub.id];const att=!!(d&&d.active);const b=att?subBadge(d,dupCheck,sub,_reqMissing(group.id+"-"+si+"-"+sub.id)):null;
+                    const spia=att?(b&&b.st==="ok"?"✓":b&&b.st==="warn"?"⚠":"●"):"+";
+                    const cSpia=att?(b&&b.st==="ok"?"#28a745":b&&b.st==="warn"?"#f59e0b":"#94a3b8"):bC;
+                    return <button key={sub.id}
+                      onClick={()=>{if(!att)togSub(group.id,si,sub.id,group.radio?group.subs.map(x=>x.id):null);setProdModal({gid:group.id,si,subId:sub.id});}}
+                      title={att?"Apri e modifica i campi":"Aggiungi e compila nel riquadro"}
+                      style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"11px 14px",borderRadius:10,cursor:"pointer",fontSize:13,fontWeight:700,textAlign:"left",transition:"all .15s",
+                        border:att?"2px solid "+group.color:"1px solid rgba(255,255,255,0.10)",
+                        background:att?group.color+"22":"rgba(255,255,255,0.04)",
+                        color:att?"#f8fafc":"#8892b0"}}>
+                      <span>{sub.title}</span>
+                      <span style={{fontSize:13,fontWeight:900,color:cSpia,flexShrink:0}}>{spia}</span>
+                    </button>;})}
+                </div>
+              </div>)}
+              <div style={{marginTop:"auto",paddingTop:8}}>
+                <button onClick={()=>addSl(group.id)} style={{width:"100%",padding:"8px 0",borderRadius:9,border:"1px dashed "+group.color+"66",background:"transparent",color:group.color,fontSize:11.5,fontWeight:800,cursor:"pointer"}}>+ Aggiungi vendita</button>
+              </div>
+            </div>;})}
+          </div>
+        ):(<>{cats.map(group=>{const cc=catCounts(group.id,group.subs);const aperta=catAperta(group);return <div key={group.id} style={{marginBottom:aperta?16:6}}>
           <div onClick={()=>togCat(group)} title={aperta?"Chiudi la categoria":"Esplodi la categoria"} style={{display:"flex",alignItems:"center",gap:8,marginBottom:aperta?8:0,cursor:"pointer",userSelect:"none",padding:aperta?0:"8px 12px",borderRadius:8,background:aperta?"transparent":"rgba(255,255,255,0.03)",border:aperta?"none":"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:11,color:"#64748b"}}>{aperta?"▾":"▸"}</span><span style={{fontSize:16}}>{group.icon}</span><span style={{fontSize:13,fontWeight:700,color:group.color,textTransform:"uppercase"}}>{group.title}</span>{cc.tot>0&&<span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,color:"#8892b0",background:"transparent",borderRadius:999,padding:"2px 10px"}}>{cc.tot} {cc.tot===1?"vendita":"vendite"}{cc.ok>0&&<span style={{color:"#28a745"}}>· {cc.ok} ✓</span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>· {cc.warn} ⚠</span>}{cc.empty>0&&<span style={{color:"#64748b"}}>· {cc.empty} ●</span>}</span>}</div>
           {aperta&&gS(group.id).map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+group.color}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
@@ -5643,8 +5689,38 @@ select.rvIn{cursor:pointer}
               <SubCard key={sub.id} sub={sub} rawSd={sale[sub.id]||{}} group={group} si={si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} mobiliRate={mobiliAggancioRate}/>
             )}
           </div>)}
-        </div>;})}
+        </div>;})}</>)}
       </div>}
+
+      {/* MODALE PRODOTTO (griglia W3 privato): dentro c'e' lo STESSO SubCard
+          del flusso classico — cambiare qui non tocca le validazioni. */}
+      {brand==="windtre"&&tipoCliente==="privato"&&showStep4&&prodModal&&(()=>{
+        const group=cats.find(g=>g.id===prodModal.gid);if(!group)return null;
+        const sale=(sales[prodModal.gid]||[{}])[prodModal.si]||{};
+        const sub=group.subs.find(x=>x.id===prodModal.subId);if(!sub)return null;
+        const d=sale[sub.id];if(!(d&&d.active))return null;
+        const b=subBadge(d,dupCheck,sub,_reqMissing(group.id+"-"+prodModal.si+"-"+sub.id));
+        return <div onClick={()=>setProdModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"min(680px,96vw)",maxHeight:"88vh",overflowY:"auto",background:"#12141f",border:"1px solid "+bC+"55",borderRadius:16,boxShadow:"0 18px 50px rgba(0,0,0,.55)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"15px 20px",borderBottom:"1px solid rgba(255,255,255,0.08)",position:"sticky",top:0,background:"#12141f",zIndex:1}}>
+              <span style={{fontSize:21}}>{iconW3Cat(group)}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:15,fontWeight:800,color:"#f8fafc"}}>{sub.title}</div>
+                <div style={{fontSize:10.5,color:group.color,fontWeight:800,textTransform:"uppercase",letterSpacing:.5}}>{group.title} · Vendita #{prodModal.si+1}</div>
+              </div>
+              {b&&<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,background:b.bg,color:b.fg,whiteSpace:"nowrap"}}>{b.label}</span>}
+              <button onClick={()=>setProdModal(null)} style={{background:"transparent",border:"none",color:"#64748b",fontSize:20,cursor:"pointer",lineHeight:1,padding:0}}>✕</button>
+            </div>
+            <div style={{padding:"16px 20px"}}>
+              <SubCard sub={sub} rawSd={d||{}} group={group} si={prodModal.si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} mobiliRate={mobiliAggancioRate}/>
+            </div>
+            <div style={{display:"flex",gap:10,padding:"13px 20px",borderTop:"1px solid rgba(255,255,255,0.08)",position:"sticky",bottom:0,background:"#12141f"}}>
+              <button onClick={()=>{togSub(prodModal.gid,prodModal.si,prodModal.subId,null);setProdModal(null);}} style={{padding:"11px 16px",borderRadius:10,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.08)",color:"#f87171",fontSize:12.5,fontWeight:800,cursor:"pointer"}}>🗑 Rimuovi</button>
+              <button onClick={()=>setProdModal(null)} style={{flex:1,padding:"11px 16px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#16a34a,#22c55e)",color:"#fff",fontSize:13.5,fontWeight:900,cursor:"pointer"}}>✔️ Fatto — torna ai prodotti</button>
+            </div>
+          </div>
+        </div>;
+      })()}
 
       {showAna&&showStep4&&brand==="tim"&&tipoCliente==="business"&&(
         <div style={{background:"linear-gradient(135deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)",borderRadius:16,padding:"44px 24px",marginBottom:10,border:"2px solid "+TIM_C+"33",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",boxShadow:"0 6px 20px rgba(0,0,0,.07)"}}>
