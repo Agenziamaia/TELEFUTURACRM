@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { ToastHost, dbError, notify } from "./_views/toast";
-import { FixedStoreCosts, StoreAttachments } from "./_views/store-extra";
+import { FixedStoreCosts, StoreAttachments, OrariChiusureView } from "./_views/store-extra";
 import { TargetSection } from "./_views/target";
 import { MarginalitaView } from "./_views/marginalita";
 import { PermessiView } from "./_views/permessi";
@@ -79,6 +79,7 @@ import {
     ShieldCheck,
     Compass,
     Target,
+    Clock3,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -185,6 +186,7 @@ const SEZIONI: Sezione[] = [
     { id: "costi", label: "Costi", icon: Euro, desc: "Il mini-hub dei costi: Negozi, Costi condivisi e Altri costi — in sequenza, con permessi separati per ogni sezione." },
     { id: "utenti", label: "Utenti", icon: Users, desc: "Lista utenti con costi e allegati; permessi di visibilità per ruolo; ruoli e organigramma." },
     { id: "negozi", label: "Negozi", icon: StoreIcon, gruppo: "costi", desc: "Punti vendita e categorie, costi per negozio e ripartizione dei condivisi." },
+    { id: "orari", label: "Orari & Chiusure", icon: Clock3, desc: "Orari di apertura dei punti vendita e chiusure straordinarie (base della sezione Turni)." },
     { id: "condivisi", label: "Costi condivisi", icon: Building2, gruppo: "costi", desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
     { id: "altri", label: "Altri costi", icon: Tag, gruppo: "costi", desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
     { id: "marginalita", label: "Marginalità", icon: Package, desc: "Catalogo prodotti e servizi: IVA, costi e margini, valore visibile per le gare, legami coi brand." },
@@ -537,6 +539,8 @@ function AmministrazioneInner() {
                         </>
                     );
                 })()
+            ) : sez === "orari" ? (
+                <OrariChiusureView />
             ) : sez === "marginalita" ? (
                 <MarginalitaView />
             ) : sez === "catalogo" ? (

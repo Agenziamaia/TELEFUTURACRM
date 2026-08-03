@@ -1814,6 +1814,7 @@ function TurniSection() {
     const [staff, setStaff] = useState<{ full_name: string; primary_store: string | null }[]>([]);
     const [assegnati, setAssegnati] = useState<Map<string, string[]>>(new Map());
     const [turni, setTurni] = useState<TurnoRow[]>([]);
+    const [chiusure, setChiusure] = useState<{ store: string; dal: string; al: string; motivo: string }[]>([]);
     const oggiYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
     const [dataSel, setDataSel] = useState(oggiYmd());
     const [nuovo, setNuovo] = useState<Record<string, { persona: string; inizio: string; fine: string }>>({});
@@ -1821,11 +1822,13 @@ function TurniSection() {
     const hhmm = (t: string | null | undefined, fallback: string) => (t || fallback).slice(0, 5);
 
     const caricaBase = useCallback(async () => {
-        const [st, us, links] = await Promise.all([
+        const [st, us, links, ch] = await Promise.all([
             supabase.from("stores").select("name, orario_apertura, orario_chiusura").order("name"),
             supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name"),
             supabase.from("user_stores").select("user_id, store_name, app_users!inner(full_name, active)"),
+            supabase.from("chiusure_negozio").select("store, dal, al, motivo"),
         ]);
+        setChiusure((ch.data ?? []) as never);
         setNegozi((st.data ?? []) as StoreRow[]);
         setStaff((us.data ?? []) as never);
         const m = new Map<string, string[]>();
@@ -1847,11 +1850,6 @@ function TurniSection() {
     useEffect(() => { caricaTurni(); }, [caricaTurni]);
 
     const spostaGiorno = (n: number) => { const d = new Date(dataSel + "T12:00"); d.setDate(d.getDate() + n); setDataSel(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`); };
-    const salvaOrario = async (store: string, campo: "orario_apertura" | "orario_chiusura", val: string) => {
-        if (!val) return;
-        await supabase.from("stores").update({ [campo]: val }).eq("name", store);
-        setNegozi(p => p.map(n => n.name === store ? { ...n, [campo]: val } : n));
-    };
     const aggiungiTurno = async (store: string, persona: string, inizio: string, fine: string, tipo: string) => {
         if (!persona || !inizio || !fine) return;
         const { error } = await supabase.from("turni_negozio").insert({ store, data: dataSel, persona, inizio, fine, tipo, creato_da: user?.name || null });
@@ -1886,75 +1884,68 @@ function TurniSection() {
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+            {/* RIGHE per PUNTO VENDITA (03/08, feedback Luca): negozi in
+                verticale, collaboratori in ORIZZONTALE — niente piu' card
+                confusionarie. Orari e chiusure si amministrano da
+                Amministrazione → Orari & Chiusure; qui solo si leggono. */}
+            <div className="glass-card overflow-hidden divide-y divide-white/5">
                 {negozi.map(n => {
                     const ap = hhmm(n.orario_apertura, "09:30"), ch = hhmm(n.orario_chiusura, "19:30");
+                    const chiusura = chiusure.find(c => c.store === n.name && c.dal <= dataSel && c.al >= dataSel);
                     const turniStore = turni.filter(t => t.store === n.name);
                     const aTurno = new Set(turniStore.map(t => t.persona));
                     const squadra = (assegnati.get(n.name) || []).filter(p => !aTurno.has(p));
                     const nv = nuovo[n.name] || { persona: "", inizio: ap, fine: ch };
                     const setNv = (patch: Partial<typeof nv>) => setNuovo(p => ({ ...p, [n.name]: { ...nv, ...patch } }));
                     return (
-                        <div key={n.name} className="glass-card overflow-hidden">
-                            <div className="px-4 py-3 bg-white/[0.03] border-b border-white/5 flex items-center justify-between gap-2 flex-wrap">
-                                <p className="text-sm font-bold text-white flex items-center gap-2"><Store className="w-4 h-4 text-indigo-400" /> {n.name}</p>
-                                <div className="flex items-center gap-1 text-[11px] text-slate-400">
-                                    🕐
-                                    {gestisce ? (<>
-                                        <input type="time" value={ap} onChange={e => salvaOrario(n.name, "orario_apertura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[74px]" />
-                                        <span>–</span>
-                                        <input type="time" value={ch} onChange={e => salvaOrario(n.name, "orario_chiusura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[74px]" />
-                                    </>) : <span className="font-mono">{ap}–{ch}</span>}
+                        <div key={n.name} className={cn("flex items-center gap-4 px-4 py-3 flex-wrap", chiusura && "bg-rose-500/[0.05]")}>
+                            {/* colonna negozio */}
+                            <div className="w-48 shrink-0">
+                                <p className="text-sm font-bold text-white truncate">🏬 {n.name}</p>
+                                {chiusura ? (
+                                    <p className="text-[10px] font-black uppercase text-rose-400 mt-0.5">🔒 Chiuso{chiusura.motivo ? ` · ${chiusura.motivo}` : ""}</p>
+                                ) : (
+                                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">🕐 {ap}–{ch}</p>
+                                )}
+                            </div>
+                            {/* persone in ORIZZONTALE */}
+                            <div className="flex-1 min-w-[320px] flex items-center gap-1.5 flex-wrap">
+                                {chiusura ? (
+                                    <span className="text-xs text-rose-300/80 italic">Punto vendita chiuso in questa data.</span>
+                                ) : (<>
+                                    {turniStore.map(t => (
+                                        <span key={t.id} className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold border",
+                                            t.tipo === "giornata" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/40"
+                                                : t.tipo === "mattina" ? "bg-sky-500/10 text-sky-300 border-sky-500/40"
+                                                    : t.tipo === "pomeriggio" ? "bg-amber-500/10 text-amber-300 border-amber-500/40"
+                                                        : "bg-violet-500/10 text-violet-300 border-violet-500/40")}>
+                                            {t.persona}
+                                            <i className="not-italic font-mono font-normal opacity-80">{t.inizio.slice(0, 5)}–{t.fine.slice(0, 5)}</i>
+                                            {gestisce && <button onClick={() => eliminaTurno(t)} title="Togli il turno" className="opacity-60 hover:opacity-100">✕</button>}
+                                        </span>
+                                    ))}
+                                    {squadra.map(p => (
+                                        <span key={p} title="Assegnato al negozio, non ancora a turno in questa data"
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] border border-dashed border-white/15 text-slate-500">
+                                            {p}
+                                            {gestisce && <button onClick={() => aggiungiTurno(n.name, p, ap, ch, "giornata")} title="Conferma a turno per la giornata" className="text-emerald-400 hover:text-emerald-300 font-black">＋</button>}
+                                        </span>
+                                    ))}
+                                    {turniStore.length === 0 && squadra.length === 0 && <span className="text-xs text-slate-600 italic">Nessuno assegnato.</span>}
+                                </>)}
+                            </div>
+                            {/* copertura rapida, in coda alla riga */}
+                            {gestisce && !chiusura && (
+                                <div className="flex items-center gap-1.5 flex-wrap shrink-0" onClick={e => e.stopPropagation()}>
+                                    <div className="w-44"><SelectPersona value={nv.persona} onChange={v => setNv({ persona: v })} opzioni={tuttiINomi} placeholder="Copertura…" className="glass-input text-xs rounded-lg py-1.5 w-full" /></div>
+                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, ch, "giornata")} disabled={!nv.persona} title="Giornata intera" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 disabled:opacity-40">G</button>
+                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, "14:00", "mattina")} disabled={!nv.persona} title="Mattina (apertura → 14)" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 disabled:opacity-40">M</button>
+                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, "14:00", ch, "pomeriggio")} disabled={!nv.persona} title="Pomeriggio (14 → chiusura)" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 disabled:opacity-40">P</button>
+                                    <input type="time" value={nv.inizio} onChange={e => setNv({ inizio: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
+                                    <input type="time" value={nv.fine} onChange={e => setNv({ fine: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
+                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, nv.inizio, nv.fine, "personalizzato")} disabled={!nv.persona} title="Orario personalizzato" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/15 border border-violet-500/40 text-violet-300 disabled:opacity-40">＋</button>
                                 </div>
-                            </div>
-                            <div className="p-3.5 space-y-2.5">
-                                {/* di turno nel giorno scelto */}
-                                {turniStore.length === 0 && <p className="text-xs text-slate-600 italic">Nessun turno registrato per questo giorno.</p>}
-                                {turniStore.map(t => (
-                                    <div key={t.id} className="flex items-center gap-2 text-sm">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                                        <span className="font-semibold text-white truncate">{t.persona}</span>
-                                        <span className="font-mono text-xs text-slate-300 whitespace-nowrap">{t.inizio.slice(0, 5)}–{t.fine.slice(0, 5)}</span>
-                                        <span className={cn("text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full border",
-                                            t.tipo === "giornata" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
-                                                : t.tipo === "mattina" ? "bg-sky-500/10 text-sky-300 border-sky-500/30"
-                                                    : t.tipo === "pomeriggio" ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
-                                                        : "bg-violet-500/10 text-violet-300 border-violet-500/30")}>{t.tipo}</span>
-                                        {gestisce && <button onClick={() => eliminaTurno(t)} title="Togli il turno" className="ml-auto p-1 rounded text-slate-600 hover:text-rose-400 hover:bg-rose-500/10"><Trash2 className="w-3.5 h-3.5" /></button>}
-                                    </div>
-                                ))}
-                                {/* squadra di casa non ancora a turno */}
-                                {squadra.length > 0 && (
-                                    <div className="pt-2 border-t border-dashed border-white/10 space-y-1.5">
-                                        <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Assegnati al negozio (non a turno)</p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {squadra.map(p => (
-                                                <span key={p} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] border border-white/10 bg-white/[0.04] text-slate-300">
-                                                    {p}
-                                                    {gestisce && <button onClick={() => aggiungiTurno(n.name, p, ap, ch, "giornata")} title="Conferma a turno per l'intera giornata" className="text-emerald-400 hover:text-emerald-300 font-black">＋</button>}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                                {/* copertura rapida */}
-                                {gestisce && (
-                                    <div className="pt-2 border-t border-white/10 space-y-1.5">
-                                        <SelectPersona value={nv.persona} onChange={v => setNv({ persona: v })} opzioni={tuttiINomi} placeholder="Aggiungi una copertura…" className="glass-input text-xs rounded-lg py-1.5 w-full" />
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                            <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, ch, "giornata")} disabled={!nv.persona} className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 disabled:opacity-40">Giornata</button>
-                                            <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, "14:00", "mattina")} disabled={!nv.persona} className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 disabled:opacity-40">Mattina</button>
-                                            <button onClick={() => aggiungiTurno(n.name, nv.persona, "14:00", ch, "pomeriggio")} disabled={!nv.persona} className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 disabled:opacity-40">Pomeriggio</button>
-                                            <span className="flex items-center gap-1 ml-auto">
-                                                <input type="time" value={nv.inizio} onChange={e => setNv({ inizio: e.target.value })} className="glass-input !h-7 !px-1.5 text-[11px] w-[74px]" />
-                                                <span className="text-slate-600 text-xs">–</span>
-                                                <input type="time" value={nv.fine} onChange={e => setNv({ fine: e.target.value })} className="glass-input !h-7 !px-1.5 text-[11px] w-[74px]" />
-                                                <button onClick={() => aggiungiTurno(n.name, nv.persona, nv.inizio, nv.fine, "personalizzato")} disabled={!nv.persona} title="Aggiungi con orario personalizzato" className="p-1.5 rounded-lg bg-violet-500/15 border border-violet-500/40 text-violet-300 disabled:opacity-40"><Plus className="w-3.5 h-3.5" /></button>
-                                            </span>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
+                            )}
                         </div>
                     );
                 })}

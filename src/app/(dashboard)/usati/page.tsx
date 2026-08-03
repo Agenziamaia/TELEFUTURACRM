@@ -166,6 +166,10 @@ const KPI_CARDS = [
 ];
 
 // NEGOZI dal DB (useStores)
+// SOLO questi punti vendita gestiscono gli usati (Luca 03/08): gli altri
+// spariscono dalle tendine della sezione (destinazione invio, correzione
+// sede, filtro bonifici). I gemelli W3/Multi condividono il magazzino.
+const NEGOZI_USATI = ["Acilia Multi", "Baleniere", "Collatina Multi", "Donna", "Garbatella", "Magliana Multi", "Promontori"];
 const DATE_FIELDS = [
   { key: "created_at", label: "Data Registrazione" },
   { key: "purchase_date", label: "Data Acquisto" },
@@ -707,7 +711,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                   <select value={targetStore} onChange={e => setTargetStore(e.target.value)}
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
                     <option value="">Seleziona Negozio...</option>
-                    {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
+                    {NEGOZI_USATI.map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
                 )}
                 {next && next !== "venduto" && <button onClick={advanceStatus} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/30 transition-all">
@@ -817,8 +821,8 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                     <div><div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Negozio</div>
                       <select value={dev.store} onChange={e => persist({ ...dev, store: e.target.value })}
                         className="w-full bg-black/40 border border-amber-500/30 rounded-lg px-2 py-1 text-sm text-white outline-none">
-                        {NEGOZI.map(nn => <option key={nn} value={nn}>{nn}</option>)}
-                        {!NEGOZI.includes(dev.store) && <option value={dev.store}>{dev.store}</option>}
+                        {NEGOZI_USATI.map(nn => <option key={nn} value={nn}>{nn}</option>)}
+                        {!NEGOZI_USATI.includes(dev.store) && <option value={dev.store}>{dev.store}</option>}
                       </select></div>
                   </>
                 ) : (
@@ -2432,7 +2436,7 @@ function GestioneUsatiInner() {
                   <select value={bonNegozio} onChange={e => setBonNegozio(e.target.value)}
                     className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none">
                     <option value="">Tutti i negozi</option>
-                    {NEGOZI.map(n => <option key={n} value={n}>{n}</option>)}
+                    {NEGOZI_USATI.map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
                   <input type="date" value={bonDa} onChange={e => setBonDa(e.target.value)} title="Periodo dal (acquisto per i da fare, esecuzione per i fatti)"
                     className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 outline-none" />

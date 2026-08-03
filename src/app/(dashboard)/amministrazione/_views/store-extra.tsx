@@ -226,3 +226,92 @@ export function StoreAttachments({ storeId }: { storeId: string }) {
         </div>
     );
 }
+
+/* ── ORARI & CHIUSURE (03/08, mig. 146) — pannello dedicato: orari di
+   apertura/chiusura dei punti vendita (prima si toccavano dalla sezione
+   Turni: spostati qui) e CHIUSURE STRAORDINARIE (es. chiusura estiva,
+   dal → al con motivo). La sezione Turni legge tutto da qui. ── */
+type ChiusuraRow = { id: number; store: string; dal: string; al: string; motivo: string };
+export function OrariChiusureView() {
+    const [negozi, setNegozi] = useState<{ name: string; orario_apertura: string | null; orario_chiusura: string | null }[]>([]);
+    const [chiusure, setChiusure] = useState<ChiusuraRow[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [nuova, setNuova] = useState<Record<string, { dal: string; al: string; motivo: string }>>({});
+    const carica = useCallback(async () => {
+        const [st, ch] = await Promise.all([
+            supabase.from("stores").select("name, orario_apertura, orario_chiusura").order("name"),
+            supabase.from("chiusure_negozio").select("id, store, dal, al, motivo").order("dal"),
+        ]);
+        setNegozi((st.data ?? []) as never);
+        setChiusure((ch.data ?? []) as ChiusuraRow[]);
+        setLoading(false);
+    }, []);
+    useEffect(() => { carica(); }, [carica]);
+    const hhmm = (t: string | null | undefined, fb: string) => (t || fb).slice(0, 5);
+    const salvaOrario = async (store: string, campo: "orario_apertura" | "orario_chiusura", val: string) => {
+        if (!val) return;
+        const { error } = await supabase.from("stores").update({ [campo]: val }).eq("name", store);
+        if (dbError("Orario negozio", error)) return;
+        setNegozi(p => p.map(n => n.name === store ? { ...n, [campo]: val } : n));
+    };
+    const aggiungiChiusura = async (store: string) => {
+        const f = nuova[store];
+        if (!f?.dal || !f?.al) { notify("Servono le date dal → al"); return; }
+        if (f.al < f.dal) { notify("La fine è prima dell'inizio"); return; }
+        const { error } = await supabase.from("chiusure_negozio").insert({ store, dal: f.dal, al: f.al, motivo: (f.motivo || "").trim() });
+        if (dbError("Chiusura straordinaria", error)) return;
+        setNuova(p => ({ ...p, [store]: { dal: "", al: "", motivo: "" } }));
+        notify("Chiusura registrata ✓", "ok");
+        carica();
+    };
+    const eliminaChiusura = async (c: ChiusuraRow) => {
+        if (!window.confirm(`Togliere la chiusura ${c.dal.split("-").reverse().join("/")} → ${c.al.split("-").reverse().join("/")}${c.motivo ? ` (${c.motivo})` : ""}?`)) return;
+        await supabase.from("chiusure_negozio").delete().eq("id", c.id);
+        carica();
+    };
+    const gg = (x: string) => x.split("-").reverse().join("/");
+    if (loading) return <div className="flex justify-center py-16 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>;
+    return (
+        <div className="space-y-3">
+            <p className="text-xs text-slate-500 max-w-2xl">
+                Gli <b className="text-slate-300">orari</b> sono la base dei turni (giornata, mattina, pomeriggio);
+                le <b className="text-rose-300">chiusure straordinarie</b> (ferie estive, lavori…) chiudono il punto
+                vendita nel periodo indicato: la sezione Turni lo mostra 🔒 e blocca le assegnazioni.
+            </p>
+            {negozi.map(n => {
+                const mie = chiusure.filter(c => c.store === n.name);
+                const f = nuova[n.name] || { dal: "", al: "", motivo: "" };
+                const setF = (patch: Partial<typeof f>) => setNuova(p => ({ ...p, [n.name]: { ...f, ...patch } }));
+                return (
+                    <div key={n.name} className="glass-card p-4 flex items-start gap-4 flex-wrap">
+                        <div className="w-44 shrink-0">
+                            <p className="text-sm font-bold text-white">🏬 {n.name}</p>
+                            <div className="flex items-center gap-1 mt-1.5 text-[11px] text-slate-400">
+                                <input type="time" value={hhmm(n.orario_apertura, "09:30")} onChange={e => salvaOrario(n.name, "orario_apertura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
+                                <span>–</span>
+                                <input type="time" value={hhmm(n.orario_chiusura, "19:30")} onChange={e => salvaOrario(n.name, "orario_chiusura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
+                            </div>
+                        </div>
+                        <div className="flex-1 min-w-[280px] space-y-1.5">
+                            {mie.length === 0 && <p className="text-xs text-slate-600 italic mt-1.5">Nessuna chiusura straordinaria.</p>}
+                            {mie.map(c => (
+                                <span key={c.id} className="inline-flex items-center gap-2 mr-2 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 border border-rose-500/40 text-rose-300">
+                                    🔒 {gg(c.dal)} → {gg(c.al)}{c.motivo ? ` · ${c.motivo}` : ""}
+                                    <button onClick={() => eliminaChiusura(c)} className="opacity-70 hover:opacity-100">✕</button>
+                                </span>
+                            ))}
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                                <input type="date" value={f.dal} onChange={e => setF({ dal: e.target.value })} className="glass-input !h-8 text-[11px]" />
+                                <span className="text-slate-600 text-xs">→</span>
+                                <input type="date" value={f.al} onChange={e => setF({ al: e.target.value })} className="glass-input !h-8 text-[11px]" />
+                                <input value={f.motivo} onChange={e => setF({ motivo: e.target.value })} placeholder="Motivo (es. chiusura estiva)" className="glass-input !h-8 text-[11px] w-52" />
+                                <button onClick={() => aggiungiChiusura(n.name)} disabled={!f.dal || !f.al}
+                                    className="px-3 h-8 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-bold disabled:opacity-40">＋ Chiusura</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}

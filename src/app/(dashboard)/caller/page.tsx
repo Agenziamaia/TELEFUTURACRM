@@ -1922,6 +1922,7 @@ function CallerPageInner() {
                                             <Th>Ora</Th>
                                             <Th>Caller</Th>
                                             <Th>Stato</Th>
+                                            <Th>Appuntamento</Th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -1970,20 +1971,6 @@ function CallerPageInner() {
                                                 <td className="px-4 py-3">
                                                     <div className="flex items-center gap-2">
                                                         <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${statoBadgeClasses(c.stato)}`}>{c.stato}</span>
-                                                        {/* QUANDO e' l'appuntamento/richiamo (03/08): visibile dall'esterno,
-                                                            accanto allo stato — prima bisognava aprire la pratica */}
-                                                        {APP_STATI.includes(c.stato) && c.data_appuntamento && (
-                                                            <span title={`Appuntamento del ${formatDate(c.data_appuntamento)}${eFascia(c.fascia_appuntamento) ? ` · ${fasciaLabel(c.fascia_appuntamento)}` : ""}${c.negozio_appuntamento ? ` · ${c.negozio_appuntamento}` : ""}`}
-                                                                className="px-2 py-1 rounded-full text-[11px] font-bold border bg-purple-500/10 border-purple-500/40 text-purple-300 whitespace-nowrap shrink-0">
-                                                                📅 {formatDateShort(c.data_appuntamento)}{c.fascia_appuntamento === "mattina" ? " ☀️" : c.fascia_appuntamento === "pomeriggio" ? " 🌇" : ""}
-                                                            </span>
-                                                        )}
-                                                        {RIC_STATI.includes(c.stato) && c.data_richiamo && (
-                                                            <span title={`Richiamo del ${formatDate(c.data_richiamo)}${eFascia(c.fascia_richiamo) ? ` · ${fasciaLabel(c.fascia_richiamo)}` : ""}`}
-                                                                className="px-2 py-1 rounded-full text-[11px] font-bold border bg-pink-500/10 border-pink-500/40 text-pink-300 whitespace-nowrap shrink-0">
-                                                                ⏰ {formatDateShort(c.data_richiamo)}{c.fascia_richiamo === "mattina" ? " ☀️" : c.fascia_richiamo === "pomeriggio" ? " 🌇" : ""}
-                                                            </span>
-                                                        )}
                                                         {canDeleteRows && (
                                                             <span onClick={(e) => e.stopPropagation()} className="ml-auto shrink-0">
                                                                 {delConfirmId === c.id ? (
@@ -2004,6 +1991,21 @@ function CallerPageInner() {
                                                             </span>
                                                         )}
                                                     </div>
+                                                </td>
+                                                {/* COLONNA APPUNTAMENTO (03/08): la data si vede da fuori;
+                                                    vuota quando lo stato non prevede una data */}
+                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                    {APP_STATI.includes(c.stato) && c.data_appuntamento ? (
+                                                        <span title={`Appuntamento del ${formatDate(c.data_appuntamento)}${eFascia(c.fascia_appuntamento) ? ` · ${fasciaLabel(c.fascia_appuntamento)}` : ""}${c.negozio_appuntamento ? ` · ${c.negozio_appuntamento}` : ""}`}
+                                                            className="px-2 py-1 rounded-full text-[11px] font-bold border bg-purple-500/10 border-purple-500/40 text-purple-300">
+                                                            📅 {formatDateShort(c.data_appuntamento)}{c.fascia_appuntamento === "mattina" ? " ☀️" : c.fascia_appuntamento === "pomeriggio" ? " 🌇" : ""}
+                                                        </span>
+                                                    ) : RIC_STATI.includes(c.stato) && c.data_richiamo ? (
+                                                        <span title={`Richiamo del ${formatDate(c.data_richiamo)}${eFascia(c.fascia_richiamo) ? ` · ${fasciaLabel(c.fascia_richiamo)}` : ""}`}
+                                                            className="px-2 py-1 rounded-full text-[11px] font-bold border bg-pink-500/10 border-pink-500/40 text-pink-300">
+                                                            ⏰ {formatDateShort(c.data_richiamo)}{c.fascia_richiamo === "mattina" ? " ☀️" : c.fascia_richiamo === "pomeriggio" ? " 🌇" : ""}
+                                                        </span>
+                                                    ) : null}
                                                 </td>
                                             </tr>
                                         ))}

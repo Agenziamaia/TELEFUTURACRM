@@ -20,7 +20,7 @@ const MAPPA_NEGOZI = {
   "Promontori": "Promontori",
   "Donna": "Donna",
   "Baleniere": "Baleniere",
-  // "Ostiense": ???  ← DA CONFERMARE con Luca (San Paolo o Garbatella?)
+  "Ostiense": "Garbatella",   // confermato da Luca 03/08: Ostiense = Garbatella
 };
 
 const env = Object.fromEntries(fs.readFileSync(path.join(__dirname, ".env.local"), "utf8")
@@ -74,7 +74,13 @@ const righeDati = (ws) => {
       if (imei) {
         const { rows: dup } = await client.query("select id from usati where imei = $1 limit 1", [imei]);
         if (dup.length) { skip++; continue; }
+      } else {
+        // senza IMEI la guardia va su negozio+modello (l'indice univoco
+        // sugli IMEI scatta anche sul vuoto: il runner non deve piantarsi)
+        const { rows: dup } = await client.query("select id from usati where store = $1 and model = $2 limit 1", [negozio, model]);
+        if (dup.length) { skip++; continue; }
       }
+      try {
       await client.query(`insert into usati
         (client_id, venditore, model, imei, status, sale_price, purchase_price, store, target_store,
          purchase_date, listed_date, sold_date, ricambi, note_tecnico, status_history, provenienza_subito,
@@ -87,6 +93,7 @@ const righeDati = (ws) => {
         gradoCrm, false,
       ]);
       ins++;
+      } catch (e) { skip++; console.log(`  ⚠️ riga saltata (${model}): ${e.message}`); }
     }
     totIns += ins; totSkip += skip;
     console.log(`${foglio} → "${negozio}": ${ins} inseriti${skip ? `, ${skip} saltati (IMEI già presente)` : ""}`);
