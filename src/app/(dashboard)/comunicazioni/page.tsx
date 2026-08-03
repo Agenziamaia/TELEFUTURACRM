@@ -358,16 +358,23 @@ export default function Comunicazioni() {
         fetchAll();
     };
 
-    // l'AUTORE non conta tra letture/conferme della propria comunicazione
-    const contatori = useCallback((comId: number, autore: string | null) => {
-        const r = ricevute.filter((x) => x.comunicazione_id === comId && (!autore || x.user_id !== autore));
+    // l'AUTORE non conta tra letture/conferme della propria comunicazione.
+    // E nemmeno i NON-destinatari (caso Claudia 03/08): l'amministrazione vede
+    // tutte le comunicazioni e aprendole scrive comunque la lettura, ma nella
+    // tabella e nei numeri contano SOLO i destinatari veri della platea.
+    const contatori = useCallback((com: Comunicazione) => {
+        const dset = destinatariSet(com);
+        const r = ricevute.filter((x) => x.comunicazione_id === com.id
+            && (!com.created_by || x.user_id !== com.created_by)
+            && (!dset || dset.has(x.user_id)));
         return {
             letture: r.filter((x) => x.letto_il).length,
             conferme: r.filter((x) => x.confermato_il).length,
             // "rinviata" = ha premuto Più tardi e non ha ancora confermato
             rinviate: r.filter((x) => x.rinviato_il && !x.confermato_il).length,
         };
-    }, [ricevute]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ricevute, platea]);
 
     // ── DESTINATARI = "quante inviate" (03/08): platea degli utenti attivi col
     //    loro contesto (negozi assegnati, brand del punto vendita) — la stessa
@@ -395,10 +402,14 @@ export default function Comunicazioni() {
             })));
         })();
     }, [platea, isAdminRicevute, list, user?.id]);
-    const destinatariDi = useCallback((c: Comunicazione): number | null => {
+    const destinatariSet = useCallback((c: Comunicazione): Set<string> | null => {
         if (!platea) return null;
-        return platea.filter((u) => comunicazionePerMe(c, { userId: u.id, role: u.role, negozio: u.negozio, negozi: u.negozi, brandsNegozio: u.brands })).length;
+        return new Set(platea.filter((u) => comunicazionePerMe(c, { userId: u.id, role: u.role, negozio: u.negozio, negozi: u.negozi, brandsNegozio: u.brands })).map((u) => u.id));
     }, [platea]);
+    const destinatariDi = useCallback((c: Comunicazione): number | null => {
+        const s = destinatariSet(c);
+        return s ? s.size : null;
+    }, [destinatariSet]);
 
     const inputStyle = "w-full bg-black/40 border border-white/10 rounded-xl text-slate-100 text-sm py-2.5 px-3.5 outline-none focus:border-violet-500/50";
 
@@ -497,9 +508,10 @@ export default function Comunicazioni() {
                         const collassata = !isPopup && !aperte.has(com.id);
                         const perMe = comunicazionePerMe(com, { userId: user?.id, role, negozio: user?.negozio, negozi: mieiAssegnati, brandsNegozio });
                         const vedeRicevute = isAdminRicevute || mia;
-                        const cnt = vedeRicevute ? contatori(com.id, com.created_by) : null;
+                        const cnt = vedeRicevute ? contatori(com) : null;
+                        const dsetCom = espansa === com.id ? destinatariSet(com) : null;
                         const dettaglio = espansa === com.id
-                            ? ricevute.filter((r) => r.comunicazione_id === com.id && r.letto_il && r.user_id !== com.created_by)
+                            ? ricevute.filter((r) => r.comunicazione_id === com.id && r.letto_il && r.user_id !== com.created_by && (!dsetCom || dsetCom.has(r.user_id)))
                                 .sort((a, b) => (b.confermato_il || b.letto_il || "").localeCompare(a.confermato_il || a.letto_il || ""))
                             : [];
                         return (
