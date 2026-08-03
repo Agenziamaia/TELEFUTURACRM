@@ -41,6 +41,11 @@ export type EpisodioMalus = {
   compensato_il: string | null;
   compensato_da: string | null;
   compensato_note: string | null;
+  // TOMBSTONE (mig. 150): eliminato dall'admin — resta a DB solo perche' la
+  // ricostruzione deterministica non lo faccia rinascere; sparisce ovunque.
+  eliminato?: boolean | null;
+  eliminato_il?: string | null;
+  eliminato_da?: string | null;
 };
 
 export type EpisodioDerivato = Pick<

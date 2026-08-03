@@ -38,6 +38,7 @@ export function ArchivioMalus({
   onClose,
   onApriPratica,
   canCompensare,
+  puoEliminare = false,
   utente,
   onAggiornato,
   venditoreIniziale,
@@ -47,6 +48,7 @@ export function ArchivioMalus({
   onClose: () => void;
   onApriPratica?: (contractId: string, categoria: string) => void;
   canCompensare: boolean;
+  puoEliminare?: boolean;   // solo admin/dev (Luca 03/08): via QUALSIASI episodio
   utente: string;
   onAggiornato: (ep: EpisodioMalus) => void;
   venditoreIniziale?: string;
@@ -56,6 +58,7 @@ export function ArchivioMalus({
   const [venditoreSel, setVenditoreSel] = useState(venditoreIniziale || "");
   const [search, setSearch] = useState("");
   const [confermaId, setConfermaId] = useState<string | null>(null);
+  const [eliminaId, setEliminaId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [errAzione, setErrAzione] = useState<string | null>(null);
 
@@ -125,6 +128,21 @@ export function ArchivioMalus({
     setConfermaId(null);
     if (error) { setErrAzione(error.message); return; }
     onAggiornato({ ...ep, ...(patch as Partial<EpisodioMalus>) } as EpisodioMalus);
+  };
+
+  // ELIMINA (Luca 03/08, mig. 150): tombstone, NON delete — la ricostruzione
+  // deterministica rifarebbe nascere la riga al prossimo giro di sync.
+  const elimina = async (ep: EpisodioMalus) => {
+    setSalvando(true);
+    setErrAzione(null);
+    const { error } = await supabase.from("malus_storico").update({
+      eliminato: true, eliminato_il: new Date().toISOString(), eliminato_da: utente,
+      updated_at: new Date().toISOString(),
+    }).eq("id", ep.id);
+    setSalvando(false);
+    setEliminaId(null);
+    if (error) { setErrAzione(error.message); return; }
+    onAggiornato({ ...ep, eliminato: true } as EpisodioMalus);
   };
 
   const cards: { id: "tutti" | "in_corso" | "attivo" | "compensato"; label: string; n: number; val: number; color: string; hint?: string }[] = [
@@ -292,7 +310,7 @@ export function ArchivioMalus({
                       <th className={thStyle + " text-center"}>GG</th>
                       <th className={thStyle + " text-right"}>Importo</th>
                       <th className={thStyle}>Stato</th>
-                      {canCompensare && <th className={thStyle}></th>}
+                      {(canCompensare || puoEliminare) && <th className={thStyle}></th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -333,9 +351,9 @@ export function ArchivioMalus({
                               </div>
                             )}
                           </td>
-                          {canCompensare && (
+                          {(canCompensare || puoEliminare) && (
                             <td className={tdStyle + " whitespace-nowrap"} onClick={(e) => e.stopPropagation()}>
-                              {ep.stato !== "compensato" && ep.data_fine !== null && (
+                              {canCompensare && ep.stato !== "compensato" && ep.data_fine !== null && (
                                 confermaId === ep.id ? (
                                   <span className="inline-flex gap-1.5">
                                     <button
@@ -364,7 +382,7 @@ export function ArchivioMalus({
                                   </button>
                                 )
                               )}
-                              {ep.stato === "compensato" && (
+                              {canCompensare && ep.stato === "compensato" && (
                                 <button
                                   type="button"
                                   disabled={salvando}
@@ -374,6 +392,37 @@ export function ArchivioMalus({
                                 >
                                   Annulla
                                 </button>
+                              )}
+                              {puoEliminare && (
+                                eliminaId === ep.id ? (
+                                  <span className="inline-flex gap-1.5 ml-1.5">
+                                    <button
+                                      type="button"
+                                      disabled={salvando}
+                                      onClick={() => elimina(ep)}
+                                      className="px-2 py-1 rounded-md bg-rose-600 text-white text-[11px] font-bold disabled:opacity-40"
+                                      title="Sparisce da archivio, contatori e badge — e non rinasce"
+                                    >
+                                      Elimino?
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEliminaId(null)}
+                                      className="px-2 py-1 rounded-md border border-slate-600 text-slate-400 text-[11px]"
+                                    >
+                                      ✕
+                                    </button>
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setEliminaId(ep.id)}
+                                    className="px-2 py-1 rounded-md border border-rose-700/60 text-rose-400/90 text-[11px] ml-1.5 hover:bg-rose-600/10"
+                                    title="Elimina il malus (solo admin)"
+                                  >
+                                    🗑
+                                  </button>
+                                )
                               )}
                             </td>
                           )}

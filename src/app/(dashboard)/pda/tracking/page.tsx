@@ -1593,9 +1593,12 @@ export default function TrackingPdaPage() {
   // Scoping dell'archivio per ruolo, stessa regola delle pratiche: consulente
   // i suoi episodi, store manager i negozi visibili, amministrazione tutto.
   const episodiVisibili = useMemo(() => {
-    if (seesAll) return episodi;
-    if (seesWhole) return episodi.filter((e) => visibleStores.some((st) => sameStore(e.negozio, st)));
-    return episodi.filter((e) => !!e.venditore && !!user?.name && e.venditore === user.name);
+    // i TOMBSTONE (mig. 150, eliminati dall'admin) restano solo per la sync:
+    // fuori da archivio, contatori e badge per chiunque
+    const vivi = episodi.filter((e) => !e.eliminato);
+    if (seesAll) return vivi;
+    if (seesWhole) return vivi.filter((e) => visibleStores.some((st) => sameStore(e.negozio, st)));
+    return vivi.filter((e) => !!e.venditore && !!user?.name && e.venditore === user.name);
   }, [episodi, seesAll, seesWhole, visibleStores, user?.name]);
 
   const episodiPerRiga = useMemo(() => {
@@ -1912,6 +1915,7 @@ export default function TrackingPdaPage() {
             onClose={() => setShowArchivio(false)}
             onApriPratica={apriPraticaDaArchivio}
             canCompensare={canEditAdmin}
+            puoEliminare={user?.role === "admin" || user?.role === "dev"}
             utente={user?.name || "—"}
             venditoreIniziale={malusDeepLink || undefined}
             onAggiornato={(ep) => setEpisodi((prev) => prev.map((e) => (e.id === ep.id ? ep : e)))}
