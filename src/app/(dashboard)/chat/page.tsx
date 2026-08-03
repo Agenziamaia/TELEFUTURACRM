@@ -450,12 +450,19 @@ function ChatPageInner() {
   const title = selConv ? (selConv.type === "group" ? selConv.title : selConv.other_name) : "";
   const dmOnline = selConv?.type === "dm" && isOnline(selConv.other_id);
   const otherPart = selConv?.type === "dm" ? parts.find((p) => p.user_id !== meId) : null;
+  // RICEVUTE UNIVERSALI (03/08, richiesta Luca): valgono anche nei GRUPPI —
+  // 👀 = letto da TUTTI (come le spunte blu), 👁 x/y = letto da alcuni,
+  // ✉️ = consegnato, 🕊️ = inviato. Emoji al posto delle spunte: sul tema
+  // scuro le due grigie/blu si confondevano.
   const receiptFor = (m) => {
-    if (!otherPart) return "sent";
+    const altri = parts.filter((p) => p.user_id !== meId);
+    if (!altri.length) return { stato: "sent", letti: 0, tot: 0 };
     const t = new Date(m.created_at).getTime();
-    if (otherPart.last_read_at && new Date(otherPart.last_read_at).getTime() >= t) return "seen";
-    if (otherPart.last_delivered_at && new Date(otherPart.last_delivered_at).getTime() >= t) return "delivered";
-    return "sent";
+    const letti = altri.filter((p) => p.last_read_at && new Date(p.last_read_at).getTime() >= t).length;
+    if (letti >= altri.length) return { stato: "seen", letti, tot: altri.length };
+    if (letti > 0) return { stato: "partial", letti, tot: altri.length };
+    const consegnato = altri.some((p) => p.last_delivered_at && new Date(p.last_delivered_at).getTime() >= t);
+    return { stato: consegnato ? "delivered" : "sent", letti, tot: altri.length };
   };
 
   let lastDay = null;
@@ -763,11 +770,13 @@ function ChatPageInner() {
                         )}
                         <p className={`text-[10px] mt-0.5 flex items-center gap-1 justify-end ${mine ? "text-indigo-200/70" : "text-slate-500"}`}>
                           {m.edited_at && <span className="italic opacity-70">modificato ·</span>} {fmtTime(m.created_at)}
-                          {mine && selConv.type === "dm" && (() => {
+                          {mine && (() => {
                             const r = receiptFor(m);
-                            if (r === "seen") return <CheckCheck className="w-3.5 h-3.5 text-sky-300" />;
-                            if (r === "delivered") return <CheckCheck className="w-3.5 h-3.5 text-indigo-200/70" />;
-                            return <Check className="w-3.5 h-3.5 text-indigo-200/70" />;
+                            const gruppo = selConv.type === "group";
+                            if (r.stato === "seen") return <span title={gruppo ? `👀 Letto da TUTTI (${r.tot})` : "👀 Letto"} className="text-[11px] leading-none">👀</span>;
+                            if (r.stato === "partial") return <span title={`👁 Letto da ${r.letti} su ${r.tot} — dettaglio sulla ⓘ`} className="text-[11px] leading-none">👁 <i className="not-italic font-bold">{r.letti}/{r.tot}</i></span>;
+                            if (r.stato === "delivered") return <span title="✉️ Consegnato (non ancora letto)" className="text-[11px] leading-none">✉️</span>;
+                            return <span title="🕊️ Inviato" className="text-[11px] leading-none opacity-80">🕊️</span>;
                           })()}
                         </p>
                       </div>
