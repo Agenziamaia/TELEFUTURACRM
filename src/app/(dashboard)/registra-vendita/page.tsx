@@ -4140,7 +4140,12 @@ function CRM() {
   const chiudiMargSave=()=>{setShowMargSave(false);setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);};
   const [margItems,setMargItems]=useState([]);
   const [expR,setExpR]=useState({}); // riepilogo destro: gruppi esplosi/chiusi
-  const [cambioBrand,setCambioBrand]=useState(false); // fisarmonica Step 1 (revamp 03/08)
+  const [cambioBrand,setCambioBrand]=useState(false); // (legacy, non piu' in UI)
+  // UNO STEP ALLA VOLTA (Luca 03/08 sera): la pagina mostra SOLO lo step
+  // attivo; si naviga dalla barra in alto. Il flusso dati (showAna/showStep4)
+  // resta com'era: questa e' solo la vista.
+  const [vistaStep,setVistaStep]=useState("brand");
+  useEffect(()=>{if(showStep4)setVistaStep("prodotti");},[showStep4]);
   // Step 7 — nota e promemoria (segnalazione 21)
   const [notaOn,setNotaOn]=useState(false);
   const [nota,setNota]=useState("");
@@ -5417,25 +5422,54 @@ select.rvIn{cursor:pointer}
         <div style={{color:"#94a3b8",fontSize:13,marginTop:3}}>{bObj?`${bObj.icon} ${bObj.label}`:"Seleziona un brand per iniziare"}{tipoCliente?" · "+(tipoCliente==="privato"?"Privato":"Business"):""}</div>
       </div>
 
-      {/* STEPPER (revamp 03/08): pillole sul tema scuro del CRM — attiva col
-          colore brand, fatte in verde bordato, future spente; le fatte si
-          cliccano per tornare indietro (fisarmonica sotto). */}
-      <div style={{display:"flex",gap:4,marginBottom:16}}>
-        {["Brand","Tipo Cliente","Anagrafica","Prodotti","Allegati","Attribuzione","Note"].map((st,i)=>{const ss=gSS(i);const clk=ss==="done";return <div key={i} onClick={()=>{if(!clk)return;if(i===0){setCambioBrand(true);try{window.scrollTo({top:0,behavior:"smooth"});}catch(e){}}else if(i===1){setShowAna(false);setShowStep4(false);}else if(i===2){setShowAna(true);setShowStep4(false);}else{setShowStep4(true);}}}
-          style={{flex:1,textAlign:"center",padding:"9px 2px",borderRadius:8,fontSize:11,fontWeight:700,
-            background:ss==="active"?bC:ss==="done"?"rgba(40,167,69,0.15)":"rgba(255,255,255,0.04)",
-            border:ss==="active"?"1px solid "+bC:ss==="done"?"1px solid rgba(40,167,69,0.5)":"1px solid rgba(255,255,255,0.07)",
-            color:ss==="active"?"#fff":ss==="done"?"#4ade80":"#64748b",
-            cursor:clk?"pointer":"default",transition:"all .15s"}}
-          title={clk?"Torna a questo step":undefined}>{ss==="done"?"✓ ":""}{st}</div>;})}
-      </div>
+      {/* BARRA STEP RICCA (Luca 03/08 sera): piu' alta, logo del brand scelto,
+          👤/🏢 per il cliente (tipo+anagrafica FUSI: 50% col tipo, 100% con
+          l'anagrafica), icone e barrette di avanzamento; la navigazione
+          indietro/avanti passa SOLO da qui — niente piu' righe riassunto. */}
+      {(()=>{
+        const anagOk=tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim());
+        const percCliente=!tipoCliente?0:(anagOk?100:50);
+        const cAtt=bObj?bC:"#6366f1";
+        const STEPS=[
+          {id:"brand",label:"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{bObj?bObj.icon:"⚡"}</span>,perc:brand?100:0,abil:true},
+          {id:"cliente",label:"Cliente",icona:<span style={{fontSize:20}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
+          {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:20}}>🛒</span>,perc:(showStep4&&tCI>0)?100:(showStep4?50:0),abil:!!(showAna&&showStep4)},
+          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:20}}>📎</span>,perc:attachments.length>0?100:0,abil:!!(showAna&&showStep4)},
+          {id:"attribuzione",label:"Attribuzione",icona:<span style={{fontSize:20}}>🏪</span>,perc:(selVend&&selNeg&&dataVendita)?100:0,abil:!!(showAna&&showStep4)},
+          {id:"note",label:"Note",icona:<span style={{fontSize:20}}>📝</span>,perc:(notaOn&&nota.trim())?100:0,abil:!!(showAna&&showStep4),opz:true},
+        ];
+        return (
+          <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+            {STEPS.map(st=>{
+              const attivo=vistaStep===st.id;
+              const fatto=st.perc>=100;
+              return (
+                <button key={st.id} type="button" disabled={!st.abil}
+                  onClick={()=>{if(st.abil)setVistaStep(st.id);}}
+                  title={!st.abil?"Completa prima gli step precedenti":attivo?"Sei qui":"Vai a "+st.label}
+                  style={{flex:"1 1 130px",minWidth:130,display:"flex",alignItems:"center",gap:11,padding:"11px 14px",borderRadius:13,cursor:st.abil?"pointer":"default",textAlign:"left",
+                    background:attivo?"rgba(99,102,241,0.14)":fatto?"rgba(40,167,69,0.07)":"rgba(255,255,255,0.03)",
+                    border:attivo?"1.5px solid "+cAtt:fatto?"1px solid rgba(40,167,69,0.40)":"1px solid rgba(255,255,255,0.08)",
+                    opacity:st.abil?1:.45,transition:"all .15s"}}>
+                  <span style={{width:38,height:38,borderRadius:10,background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{st.icona}</span>
+                  <span style={{minWidth:0,flex:1}}>
+                    <span style={{display:"block",fontSize:12.5,fontWeight:800,color:attivo?"#fff":fatto?"#4ade80":"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fatto?"✓ ":""}{st.label}{st.opz&&!fatto?<span style={{fontWeight:600,color:"#64748b"}}> · opz.</span>:null}</span>
+                    <span style={{display:"block",height:4,borderRadius:2,background:"rgba(255,255,255,0.08)",marginTop:6}}>
+                      <span style={{display:"block",height:4,borderRadius:2,width:st.perc+"%",background:fatto?"#28a745":cAtt,transition:"width .25s"}}/>
+                    </span>
+                  </span>
+                </button>
+              );})}
+          </div>
+        );
+      })()}
 
       {(cart.length>0||margItems.length>0)&&<div onClick={()=>setShowCart(true)} style={{background:"linear-gradient(90deg,#1e293b,#16213e)",borderRadius:10,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>🛒</span><span style={{color:"#fff",fontSize:12,fontWeight:600}}>Carrello:</span>{cart.map((g,i)=><span key={i} style={{background:g.brandColor,color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>{g.brandIcon} {g.items.length}</span>)}{margItems.length>0&&<span style={{background:"#6f42c1",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:700}}>📦 {margItems.length}</span>}</div><span style={{color:"rgba(255,255,255,.5)",fontSize:11}}>Vedi →</span></div>}
 
-      {!brand?<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:20,marginBottom:10}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Step 1 — Brand</div>
+      {vistaStep==="brand"&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:20,marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
-          {BRANDS.map(b=><button key={b.id} onClick={()=>_pickBrand(b)} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:"2px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="rgba(255,255,255,0.05)";}}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.02)";}}>
+          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(b.id===brand){setVistaStep("cliente");return;}_pickBrand(b);setVistaStep("cliente");}} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid rgba(255,255,255,0.06)",background:b.id===brand?b.color+"14":"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="rgba(255,255,255,0.05)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.02)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
             {/* SOLO il logo, grande (Luca 03/08): il nome del brand e' gia' nel logo */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:84,width:"auto",maxWidth:"92%",objectFit:"contain"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>
@@ -5448,16 +5482,11 @@ select.rvIn{cursor:pointer}
             <div style={{fontWeight:800,fontSize:14,color:"#6f42c1",marginTop:6}}>Prodotti & Marginalità</div>
           </button>
         </div>
-      </div>:<div onClick={()=>setCambioBrand(v=>!v)} title="Apri per cambiare brand (il lavoro nel carrello resta)" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}><span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 1</span><span style={{fontSize:13,fontWeight:600}}>Brand: <span style={{color:bObj.color}}>{bObj.icon} {bObj.label}{tipoCliente==="business"?" Business":""}</span></span><span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:"#8892b0"}}>{cambioBrand?"▴ chiudi":"✏️ cambia"}</span></div>}
-      {brand&&cambioBrand&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:10,padding:16,marginBottom:10,border:"1px dashed rgba(255,255,255,0.12)"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:12,textTransform:"uppercase"}}>Scegli il brand — il lavoro già nel carrello resta</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
-          {BRANDS.filter(b=>b.ready).map(b=><button key={b.id} onClick={()=>{setCambioBrand(false);if(b.id!==brand)_pickBrand(b);}} disabled={turista&&b.id!=="windtre"} title={b.label} style={{padding:"16px 10px",borderRadius:12,border:b.id===brand?"2px solid "+b.color:"2px solid rgba(255,255,255,0.08)",background:b.id===brand?b.color+"22":"rgba(255,255,255,0.03)",cursor:"pointer",textAlign:"center",opacity:turista&&b.id!=="windtre"?0.35:1}}><div style={{display:"flex",alignItems:"center",justifyContent:"center",height:54}}>{b.logo?<Image src={b.logo} alt={b.label} width={170} height={54} style={{height:48,width:"auto",maxWidth:"92%",objectFit:"contain"}}/>:<span style={{fontSize:32}}>{b.icon}</span>}</div></button>)}
-        </div>
       </div>}
 
-      {brand&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:12,textTransform:"uppercase"}}>Step 2 — Tipo Cliente</div>
+
+      {vistaStep==="cliente"&&brand&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:12,textTransform:"uppercase"}}>👥 Cliente — tipo e ricerca</div>
         <div style={{display:"flex",gap:12,marginBottom:tipoCliente?16:0}}>
           {(brand==="very"||brand==="ho"||brand==="kena"?["privato"]:["privato","business"]).map(t=><button key={t} onClick={()=>{setTipoCliente(t);setShowAna(false);setClienteFound(false);setLookupValue("");setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setShowStep4(false)}} style={{flex:1,padding:12,borderRadius:10,border:tipoCliente===t?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.06)",background:tipoCliente===t?"rgba(111,66,193,0.12)":"rgba(255,255,255,0.04)",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22,marginBottom:2}}>{t==="privato"?"👤":"🏢"}</div><div style={{fontWeight:700,fontSize:14,color:tipoCliente===t?"#6f42c1":"#f8fafc"}}>{t==="privato"?"Privato":"Business"}</div></button>)}
         </div>
@@ -5503,22 +5532,10 @@ select.rvIn{cursor:pointer}
         </div>}
       </div>}
 
-      {brand&&showStep4&&tipoCliente&&<div onClick={()=>{setShowAna(true);setShowStep4(false);}} title="Riapri tipo cliente e ricerca" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
-        <span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 2</span>
-        <span style={{fontSize:13,fontWeight:600}}>Cliente: <span style={{color:"#a78bfa"}}>{tipoCliente==="privato"?"👤 Privato":"🏢 Business"}</span>{turista?" · 🌍 turista":""}{clienteFound?" · in anagrafica":""}</span>
-        <span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:"#8892b0"}}>✏️ modifica</span>
-      </div>}
-      {showAna&&showStep4&&<div onClick={()=>{setShowAna(true);setShowStep4(false);}} title="Riapri l'anagrafica per correggerla" style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"12px 16px",marginBottom:10,display:"flex",alignItems:"center",gap:10,cursor:"pointer",flexWrap:"wrap"}}>
-        <span style={{fontSize:11,fontWeight:700,color:"#28a745"}}>✓ 3</span>
-        <span style={{fontSize:13,fontWeight:600}}>{(tipoCliente==="privato"?`${ana.nome} ${ana.cognome}`.trim():ana.ragioneSociale)||"Anagrafica"}</span>
-        {ana.cf&&<span style={{fontSize:11,color:"#8892b0",fontFamily:"monospace"}}>🪪 {ana.cf}</span>}
-        {ana.cellulare&&<span style={{fontSize:11,color:"#8892b0"}}>📱 {ana.cellulare}</span>}
-        {ana.email&&<span style={{fontSize:11,color:"#8892b0"}}>✉️ {ana.email}</span>}
-        {ana.iban&&<span style={{fontSize:11,color:"#8892b0",fontFamily:"monospace"}}>🏦 {ana.iban}</span>}
-        <span style={{marginLeft:"auto",fontSize:11,fontWeight:700,color:"#8892b0"}}>✏️ modifica</span>
-      </div>}
-      {showAna&&!showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #1B3A5C"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#1B3A5C",marginBottom:14,textTransform:"uppercase"}}>📝 Step 3 — Anagrafica</div>
+
+
+      {vistaStep==="cliente"&&showAna&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #1B3A5C"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#8fb4dd",marginBottom:14,textTransform:"uppercase"}}>📝 Anagrafica</div>
         {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/>{!turista&&<TF l="Codice Fiscale" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501Z" pf={clienteFound&&!!ana.cf}/>}<TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div>{turista&&<p style={{marginTop:10,fontSize:12,fontWeight:700,color:"#f59e0b"}}>🌍 Cliente TURISTA — CF non richiesto (consentiti solo WindTre privato: Mobile Wallet e CB, oppure Marginalità)</p>}<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
         <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"#8892b0"}}>
           <input type="checkbox" checked={!!ana.intDiverso} onChange={e=>uA("intDiverso",e.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
@@ -5552,8 +5569,8 @@ select.rvIn{cursor:pointer}
         </div>
       </div>}
 
-      {showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6")}}>
-        <div style={{fontSize:11,fontWeight:700,color:brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6",marginBottom:14,textTransform:"uppercase"}}>📂 Step 4 — Prodotti e Contratto</div>
+      {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+(brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6")}}>
+        <div style={{fontSize:11,fontWeight:700,color:brand==="vodafone"?"#E60000":brand==="fastweb"?"#CC9900":brand==="iliad"?"#C00028":brand==="energy"?"#28a745":brand==="tim"?TIM_C:brand==="very"?VERY_C:brand==="ho"?HO_C:brand==="kena"?KENA_C:brand==="dojo"?"#14b8a6":brand==="sky"?"#0072C6":"#2E75B6",marginBottom:14,textTransform:"uppercase"}}>📂 Prodotti e Contratto</div>
         <div style={{background:"rgba(0,114,198,0.10)",borderRadius:8,padding:10,marginBottom:14,display:"flex",alignItems:"center",gap:12,border:"1px solid rgba(255,255,255,0.12)",flexWrap:"wrap"}}>
           <span style={{fontSize:11,fontWeight:700,color:"#1B3A5C"}}>Codice inserimento:</span>
           <select value={sesCode} onChange={e=>setSesCode(e.target.value)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",fontSize:12,fontWeight:600,background:"rgba(255,255,255,0.02)",minWidth:140}}><option value="">— Seleziona —</option>{(brand==="vodafone"?VF_CODICI_NEGOZIO:brand==="fastweb"?FW_CODICI_NEGOZIO:brand==="iliad"?IL_CODICI_NEGOZIO:brand==="energy"?EN_CODICI_NEGOZIO:brand==="tim"?TIM_CODICI_NEGOZIO:brand==="very"?VERY_CODICI_NEGOZIO:brand==="ho"?HO_CODICI_NEGOZIO:brand==="kena"?KENA_CODICI_NEGOZIO:brand==="dojo"?DOJO_CODICI_NEGOZIO:brand==="sky"?SKY_CODICI_NEGOZIO:codiciW3).map(c=><option key={c} value={c}>{c}</option>)}</select>
@@ -5748,8 +5765,8 @@ select.rvIn{cursor:pointer}
         </div>
       </div>}
 
-        {showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #17a2b8",marginTop:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#17a2b8",marginBottom:14,textTransform:"uppercase"}}>📎 Step 5 — Allegati</div>
+        {vistaStep==="allegati"&&showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #17a2b8",marginTop:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#17a2b8",marginBottom:14,textTransform:"uppercase"}}>📎 Allegati</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
             {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
               onDragOver={e=>onBoxDragOver(e,a.t)} onDragEnter={e=>onBoxDragOver(e,a.t)}
@@ -5791,18 +5808,19 @@ select.rvIn{cursor:pointer}
             </>)}
           </div>
         </div>, document.body)}
-        {showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Step 6 — Attribuzione</div>
+        {vistaStep==="attribuzione"&&showAna&&showStep4&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
             <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
-        {showAna&&showStep4&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
+        {vistaStep==="note"&&showAna&&showStep4&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
 
-      {showAna&&showStep4&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
+      {["prodotti","allegati","attribuzione","note"].includes(vistaStep)&&showAna&&showStep4&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>setShowStep4(false)} style={{padding:"11px 20px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
+          <button onClick={()=>{const PREV={prodotti:"cliente",allegati:"prodotti",attribuzione:"allegati",note:"attribuzione"};setVistaStep(PREV[vistaStep]||"cliente");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
+          {({prodotti:"allegati",allegati:"attribuzione",attribuzione:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"attribuzione",attribuzione:"note"})[vistaStep])} style={{padding:"11px 22px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"#c7d2fe",fontSize:13,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
           <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
