@@ -56,8 +56,10 @@ const APPUNTAMENTO_STATI = ["1° Appuntamento", "2° Appuntamento", "3° Appunta
 const MESI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
 const ANNI = ["2024", "2025", "2026"];
 
-const CAMPI_CONSUMER = ["Ignora", "Nome", "Cognome", "Codice Fiscale", "Numero", "Cellulare", "Note"];
-const CAMPI_BUSINESS = ["Ignora", "Ragione Sociale", "Partita IVA", "Numero", "Cellulare", "Note"];
+// "Cellulare" TOLTO dal mapping (Luca 03/08): era un doppione mai consumato
+// dall'import — solo "Numero" alimenta il telefono della lista.
+const CAMPI_CONSUMER = ["Ignora", "Nome", "Cognome", "Codice Fiscale", "Numero", "Note"];
+const CAMPI_BUSINESS = ["Ignora", "Ragione Sociale", "Partita IVA", "Numero", "Note"];
 const COL_LETTERS = ["A", "B", "C", "D", "E", "F", "G"];
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -430,7 +432,7 @@ function CallerPageInner() {
     // ── hub Call Center: sezione corrente + pillole + visibilita' Badge ──
     const searchParams = useSearchParams();
     const hubTab = searchParams.get("tab") === "badge" ? "badge" : "caller";
-    const { perms: hubPerms } = useRolePermissions(user?.role);
+    const { perms: hubPerms } = useRolePermissions(user?.role, user?.grade);
     const badgeVisibile = effectiveAllowed(user?.role, "/caller?tab=badge", EVERYONE, hubPerms, "Call Center");
     const hubPills = (
         <div className="flex items-center gap-2">
