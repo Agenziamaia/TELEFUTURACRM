@@ -261,6 +261,10 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     };
 
     const [kpiFerie, setKpiFerie] = useState("");   // card-filtro attiva ("" = nessuna)
+    // SALTO CALENDARIO (Luca 03/08 sera): la card non solo filtra, PILOTA il
+    // calendario — oggi → vista Giorno su oggi; questa/prossima settimana →
+    // vista Settimana sul periodo giusto; In attesa → toggle attese acceso.
+    const [calSalto, setCalSalto] = useState<{ data?: string; modo?: "giorno" | "settimana"; attesa?: boolean; n: number } | null>(null);
     const filteredRequests = requests.filter(r =>
         (!fPersone.length || fPersone.includes(r.employee_name)) &&
         (!fNegozi.length || fNegozi.includes(r.store)) &&
@@ -322,8 +326,16 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             const bordo = col === "amber" ? "border-l-amber-500" : col === "sky" ? "border-l-sky-500" : col === "emerald" ? "border-l-emerald-500" : "border-l-indigo-500";
                             const ring = col === "amber" ? "ring-amber-400/60 bg-amber-500/10" : col === "sky" ? "ring-sky-400/60 bg-sky-500/10" : col === "emerald" ? "ring-emerald-400/60 bg-emerald-500/10" : "ring-indigo-400/60 bg-indigo-500/10";
                             return (
-                                <button key={id} type="button" onClick={() => setKpiFerie(attiva ? "" : id)}
-                                    title={attiva ? "Filtro attivo — clicca per toglierlo" : "Clicca per filtrare il registro"}
+                                <button key={id} type="button" onClick={() => {
+                                    const accendo = !attiva;
+                                    setKpiFerie(accendo ? id : "");
+                                    if (!accendo) return;
+                                    if (id === "oggi") setCalSalto({ data: oggiYmd, modo: "giorno", n: Date.now() });
+                                    else if (id === "settimana") setCalSalto({ data: oggiYmd, modo: "settimana", n: Date.now() });
+                                    else if (id === "prossima") setCalSalto({ data: lunProxYmd, modo: "settimana", n: Date.now() });
+                                    else if (id === "attesa") setCalSalto({ attesa: true, n: Date.now() });
+                                }}
+                                    title={attiva ? "Filtro attivo — clicca per toglierlo" : "Clicca per filtrare registro e calendario"}
                                     className={cn("glass-panel p-3.5 border-l-4 text-left transition-all cursor-pointer", bordo, attiva && `ring-2 ${ring}`)}>
                                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-0.5">{attiva ? "✓ " : ""}{label}</p>
                                     <p className="text-xl font-black text-white">{val}</p>
@@ -517,6 +529,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             setMese={setMeseCal}
                             festivi={festiviMap}
                             malattie={malattieFiltrate}
+                            vaiA={calSalto}
                         />
                     )}
 
@@ -749,7 +762,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
 /* ── CALENDARIO FERIE dedicato (Luca 29/07) — per chi approva: mese navigabile
    con i periodi APPROVATI (verde) e IN ATTESA (ambra), per vedere al volo le
    sovrapposizioni prima di autorizzare. Rispetta i filtri persone/negozi. ── */
-function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { richieste: VacationRequest[]; mese: Date; setMese: (d: Date) => void; festivi: Map<string, string>; malattie: { id: number; employee_name: string; store: string; date_from: string; date_to: string }[] }) {
+function CalendarioFerie({ richieste, mese, setMese, festivi, malattie, vaiA }: { richieste: VacationRequest[]; mese: Date; setMese: (d: Date) => void; festivi: Map<string, string>; malattie: { id: number; employee_name: string; store: string; date_from: string; date_to: string }[]; vaiA?: { data?: string; modo?: "giorno" | "settimana"; attesa?: boolean; n: number } | null }) {
     const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
     // INTERATTIVO (03/08): due viste (Mese / Persone), giorno cliccabile con
     // pannello di dettaglio, toggle per includere o no le richieste in attesa.
@@ -761,6 +774,19 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
     // SETTIMANA senza domenica (03/08): colonne piu' larghe, negozio mai aperto
     const [senzaDomenica, setSenzaDomenica] = useState(false);
     const [giornoSel, setGiornoSel] = useState<string | null>(null);
+    // le card-filtro sopra PILOTANO il calendario (Luca 03/08 sera)
+    useEffect(() => {
+        if (!vaiA) return;
+        setGiornoSel(null);
+        if (vaiA.attesa) setConAttesa(true);
+        if (vaiA.data) {
+            const d = new Date(vaiA.data + "T00:00:00"); d.setHours(0, 0, 0, 0);
+            setDataRif(d);
+            setMese(new Date(d.getFullYear(), d.getMonth(), 1));
+        }
+        if (vaiA.modo) setModo(vaiA.modo);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [vaiA?.n]);
     const visibili = conAttesa ? richieste : richieste.filter(r => r.status === "approved");
     const primo = new Date(mese.getFullYear(), mese.getMonth(), 1);
     const inizio = new Date(primo);
