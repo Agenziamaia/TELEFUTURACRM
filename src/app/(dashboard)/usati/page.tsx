@@ -454,10 +454,8 @@ function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, puoAmministrare, 
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-sm font-semibold text-slate-300"> {r.name}</span>
         {puoGestire ? (
-          <select value={r.stato} onChange={e => onUpdate(idx, { ...r, stato: e.target.value as RicambioState })}
-            className={cn("bg-black/40 border rounded-lg px-2 py-1 text-xs font-semibold outline-none cursor-pointer border-white/10", st?.colorClass)}>
-            {RICAMBIO_STATES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
+          <div className="w-44"><SelectOpzioni value={st?.label || r.stato} onChange={(v) => { const k = RICAMBIO_STATES.find(x => x.label === v)?.key; if (k) onUpdate(idx, { ...r, stato: k }); }}
+            opzioni={RICAMBIO_STATES.map(x => x.label)} placeholder="Stato ricambio…" className={cn("bg-black/40 border rounded-lg px-2 py-1 text-xs font-semibold outline-none w-full border-white/10", st?.colorClass)} /></div>
         ) : (
           <span className={cn("bg-black/40 border rounded-lg px-2 py-1 text-xs font-semibold border-white/10", st?.colorClass)}>{st?.label || r.stato}</span>
         )}
@@ -491,7 +489,7 @@ function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, puoAmministrare, 
 function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; onClose: () => void; onSave: (d: Device) => void; onDeleted: (id: number) => void }) {
   const NEGOZI = useStores();
   const { user } = useAuth();
-  const { perms } = useRolePermissions(user?.role);
+  const { perms } = useRolePermissions(user?.role, user?.grade);
   // capacita' dalla rotellina Gestione Usato (Luca 31/07)
   const lavoraLab = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_LAVORA, perms) && (user?.role !== "tecnico" || user?.grade === "tecnico_senior");
   const vedeCosti = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_COSTI, perms);
@@ -708,11 +706,8 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
             {canAdvance && puoMuovere(dev, user, lavoraLab, mieiNegozi) && (
               <div className="mt-4 flex flex-col gap-2">
                 {needsStore && (
-                  <select value={targetStore} onChange={e => setTargetStore(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
-                    <option value="">Seleziona Negozio...</option>
-                    {NEGOZI_USATI.map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
+                  <SelectOpzioni value={targetStore} onChange={setTargetStore} opzioni={NEGOZI_USATI}
+                    placeholder="Scrivi o scegli il negozio…" className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none" />
                 )}
                 {next && next !== "venduto" && <button onClick={advanceStatus} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/30 transition-all">
                   {needsStore ? <>📤 Invia a {targetStore || "…"}</>
@@ -728,11 +723,8 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                 {dev.status === "in_vendita" && (
                   <div className="flex flex-col gap-2 border-t border-white/10 pt-3 mt-1">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Trasferisci a un altro negozio</div>
-                    <select value={targetStore} onChange={e => setTargetStore(e.target.value)}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
-                      <option value="">Seleziona Negozio...</option>
-                      {NEGOZI.filter(n => n !== dev.store).map(n => <option key={n} value={n}>{n}</option>)}
-                    </select>
+                    <SelectOpzioni value={targetStore} onChange={setTargetStore} opzioni={NEGOZI_USATI.filter(n => n !== dev.store)}
+                      placeholder="Scrivi o scegli il negozio…" className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none" />
                     <button onClick={sendToStore} disabled={!targetStore} className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 text-sm font-semibold hover:bg-amber-500/30 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                       📤 Invia a {targetStore || "…"}
                     </button>
@@ -767,13 +759,10 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
             {isAmministrazione && (LIFECYCLE.indexOf(dev.status as any) > 0 || ["ko", "venduto", "smontato"].includes(dev.status)) && (
               <div className="mt-14 flex flex-col gap-2 border-t-2 border-dashed border-amber-500/20 pt-4 opacity-90">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80">↩ Correzione stato (amministrazione)</div>
-                <select value={indietroSel} onChange={e => setIndietroSel(e.target.value)}
-                  className="w-full bg-black/40 border border-amber-500/20 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none">
-                  <option value="">Riporta a…</option>
-                  {LIFECYCLE.filter((sk) => ["ko", "smontato"].includes(dev.status) ? sk !== "venduto" : LIFECYCLE.indexOf(sk) < LIFECYCLE.indexOf(dev.status as any)).map(sk => (
-                    <option key={sk} value={sk}>{statusMap[sk]?.icon} {statusMap[sk]?.label}</option>
-                  ))}
-                </select>
+                <SelectOpzioni value={indietroSel ? `${statusMap[indietroSel as UsatoStatus]?.icon} ${statusMap[indietroSel as UsatoStatus]?.label}` : ""}
+                  onChange={(v) => { const sk = LIFECYCLE.find(k => `${statusMap[k]?.icon} ${statusMap[k]?.label}` === v); setIndietroSel(sk || ""); }}
+                  opzioni={LIFECYCLE.filter((sk) => ["ko", "smontato"].includes(dev.status) ? sk !== "venduto" : LIFECYCLE.indexOf(sk) < LIFECYCLE.indexOf(dev.status as any)).map(sk => `${statusMap[sk]?.icon} ${statusMap[sk]?.label}`)}
+                  placeholder="Riporta a…" className="w-full bg-black/40 border border-amber-500/20 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none" />
                 <button onClick={tornaIndietro} disabled={!indietroSel}
                   className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-sm font-semibold hover:bg-amber-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                   ↩ Torna indietro
@@ -819,11 +808,9 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                       <input defaultValue={dev.imei} onBlur={e => { const v = e.target.value.replace(/[^0-9A-Za-z]/g, ""); if (v && v !== dev.imei) persist({ ...dev, imei: v }); }}
                         className="w-full bg-black/40 border border-amber-500/30 rounded-lg px-2 py-1 text-sm text-white font-mono outline-none" /></div>
                     <div><div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">Negozio</div>
-                      <select value={dev.store} onChange={e => persist({ ...dev, store: e.target.value })}
-                        className="w-full bg-black/40 border border-amber-500/30 rounded-lg px-2 py-1 text-sm text-white outline-none">
-                        {NEGOZI_USATI.map(nn => <option key={nn} value={nn}>{nn}</option>)}
-                        {!NEGOZI_USATI.includes(dev.store) && <option value={dev.store}>{dev.store}</option>}
-                      </select></div>
+                      <SelectOpzioni value={dev.store} onChange={(v) => v && persist({ ...dev, store: v })}
+                        opzioni={NEGOZI_USATI.includes(dev.store) ? NEGOZI_USATI : [...NEGOZI_USATI, dev.store]}
+                        placeholder="Scrivi o scegli…" className="w-full bg-black/40 border border-amber-500/30 rounded-lg px-2 py-1 text-sm text-white outline-none" /></div>
                   </>
                 ) : (
                   <>
@@ -942,11 +929,9 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
               {(lavoraLab || isAmministrazione) && showAdd && (
                 <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 mb-3 space-y-2">
                   <div className="flex gap-2">
-                    <select value={newRicambio} onChange={e => setNewRicambio(e.target.value)}
-                      className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none">
-                      <option value="">Seleziona ricambio...</option>
-                      {RICAMBI_CATALOG.filter(r => !dev.ricambi.some(x => x.name === r)).map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
+                    <div className="flex-1"><SelectOpzioni value={newRicambio} onChange={setNewRicambio}
+                      opzioni={RICAMBI_CATALOG.filter(r => !dev.ricambi.some(x => x.name === r))}
+                      placeholder="Scrivi o scegli il ricambio…" className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none" /></div>
                     <button onClick={addRicambio} className="px-3 py-2 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold hover:bg-emerald-500/30 transition-all">Aggiungi</button>
                   </div>
                   <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
@@ -1348,28 +1333,16 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
         {tipoProdotto && <>
           <div className="grid grid-cols-2 gap-4">
             <div><label className={lbl}>Brand *</label>
-              <select value={brand} onChange={e => { setBrand(e.target.value); setModel(""); }} className={inp}>
-                <option value="">Seleziona brand...</option>
-                {brandOptions.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
+              <SelectOpzioni value={brand} onChange={(v) => { setBrand(v); setModel(""); }} opzioni={brandOptions} maxVoci={100} placeholder="Scrivi o scegli il brand…" className={inp} />
             </div>
             <div><label className={lbl}>Modello *</label>
-              <select value={model} onChange={e => setModel(e.target.value)} disabled={!brand} className={inp}>
-                <option value="">Seleziona modello...</option>
-                {brand && modelOptions.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
+              <SelectOpzioni value={model} onChange={setModel} disabled={!brand} opzioni={brand ? modelOptions : []} maxVoci={100} placeholder="Scrivi o scegli il modello…" className={inp} />
             </div>
             <div><label className={lbl}>Capacit� *</label>
-              <select value={capacita} onChange={e => setCapacita(e.target.value)} className={inp}>
-                <option value="">Seleziona...</option>
-                {CAPACITA_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <SelectOpzioni value={capacita} onChange={setCapacita} opzioni={CAPACITA_OPTIONS} placeholder="Scrivi o scegli…" className={inp} />
             </div>
             <div><label className={lbl}>Colore *</label>
-              <select value={colore} onChange={e => setColore(e.target.value)} className={inp}>
-                <option value="">Seleziona...</option>
-                {COLORI_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <SelectOpzioni value={colore} onChange={setColore} opzioni={COLORI_OPTIONS} placeholder="Scrivi o scegli…" className={inp} />
             </div>
             <div><label className={lbl}>{imeiNumerico ? "IMEI *" : "Seriale *"}</label>
               {/* Segnalazione 58: le 15 cifre valgono SOLO per smartphone e tablet
@@ -1590,7 +1563,7 @@ function GestioneUsatiInner() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { perms: permsMain } = useRolePermissions(user?.role);
+  const { perms: permsMain } = useRolePermissions(user?.role, user?.grade);
   // capacita' COSTI (Luca 31/07): senza, il prezzo di acquisto sparisce da
   // tabella, card mobile e bonifici (che espongono gli importi)
   const vedeCosti = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_COSTI, permsMain);
@@ -2114,10 +2087,11 @@ function GestioneUsatiInner() {
           <input type="number" min="0" value={prezzoA} onChange={e => setPrezzoA(e.target.value)} placeholder="€ a"
             className="w-full sm:w-24 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all min-w-0" />
           {filtriCompleti && (<>
-          <select value={dateField} onChange={e => setDateField(e.target.value)}
-            className="col-span-2 sm:col-span-1 w-full sm:w-auto px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all">
-            {DATE_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
-          </select>
+          <div className="col-span-2 sm:col-span-1 w-full sm:w-52"><SelectOpzioni
+            value={DATE_FIELDS.find(f => f.key === dateField)?.label || ""}
+            onChange={(v) => { const k = DATE_FIELDS.find(f => f.label === v)?.key; if (k) setDateField(k); }}
+            opzioni={DATE_FIELDS.map(f => f.label)} placeholder="Campo data…"
+            className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 outline-none hover:bg-white/10 transition-all" /></div>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
             className="w-full sm:w-36 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 outline-none hover:bg-white/10 transition-all min-w-0" />
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
@@ -2433,11 +2407,8 @@ function GestioneUsatiInner() {
                     className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none" />
                   <input value={bonIban} onChange={e => setBonIban(e.target.value)} placeholder="IBAN…"
                     className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none font-mono" />
-                  <select value={bonNegozio} onChange={e => setBonNegozio(e.target.value)}
-                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none">
-                    <option value="">Tutti i negozi</option>
-                    {NEGOZI_USATI.map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
+                  <SelectOpzioni value={bonNegozio} onChange={setBonNegozio} opzioni={NEGOZI_USATI}
+                    placeholder="Tutti i negozi — scrivi per filtrare" className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-300 outline-none" />
                   <input type="date" value={bonDa} onChange={e => setBonDa(e.target.value)} title="Periodo dal (acquisto per i da fare, esecuzione per i fatti)"
                     className="bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-slate-400 outline-none" />
                   <div className="flex gap-2">
