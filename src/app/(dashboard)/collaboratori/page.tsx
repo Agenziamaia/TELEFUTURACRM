@@ -3,7 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { SelectPersona, SelectMulti } from "@/components/SelectPersona";
 import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
-import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2, Pencil } from "lucide-react";
+import { Clock, Users, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2, Pencil, Plus } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
@@ -14,7 +14,7 @@ import { useVisibleStores } from "@/lib/visibleStores";
 
 // Il tab BADGE e' stato SPOSTATO nell'hub Call Center (/caller?tab=badge, Luca 28/07):
 // componenti in ./_badge.tsx, permessi e capacita' migrati (mig. 096).
-type TabId = "ferie" | "malattia" | "ritardi";
+type TabId = "ferie" | "malattia" | "ritardi" | "turni";
 
 function CollaboratoriPageContent() {
     const { user } = useAuth();
@@ -32,6 +32,7 @@ function CollaboratoriPageContent() {
         ferie: { label: "Ferie", icon: CalendarDays, desc: "Pianificazione, richieste e approvazione ferie" },
         malattia: { label: "Malattia", icon: Shield, desc: "Registro e monitoraggio assenze per malattia" },
         ritardi: { label: "Ritardi", icon: Clock3, desc: "Segnalazione e monitoraggio ritardi (staff di negozio)" },
+        turni: { label: "Turni", icon: Store, desc: "Chi è in quale punto vendita, orari e coperture" },
     };
 
     const currentSection = sectionInfo[tab] || sectionInfo.ferie;
@@ -66,6 +67,7 @@ function CollaboratoriPageContent() {
                     </div>
                 )}
                 {tab === "ritardi" && <RitardiSection />}
+                {tab === "turni" && <TurniSection />}
             </div>
         </div>
     );
@@ -164,6 +166,17 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     useEffect(() => { caricaFestivi(); }, [caricaFestivi]);
     const festiviSet = useMemo(() => new Set(festivi.map(f => f.giorno)), [festivi]);
     const festiviMap = useMemo(() => new Map(festivi.map(f => [f.giorno, f.nome] as [string, string])), [festivi]);
+    // MALATTIE nel calendario ferie (03/08): per approvare sapendo chi manca
+    // gia' quel giorno — si mostrano in fucsia col simbolo 🤒
+    const [malattie, setMalattie] = useState<{ id: number; employee_name: string; store: string; date_from: string; date_to: string }[]>([]);
+    useEffect(() => {
+        supabase.from("sickness_absences").select("id, employee_name, store, date_from, date_to")
+            .then(({ data }) => setMalattie((data ?? []) as never));
+    }, []);
+    const malattieFiltrate = useMemo(() => malattie.filter(m =>
+        (!fPersone.length || fPersone.includes(m.employee_name)) &&
+        (!fNegozi.length || fNegozi.includes(m.store))
+    ), [malattie, fPersone, fNegozi]);
     const [showFestivi, setShowFestivi] = useState(false);
     const [nFestivoData, setNFestivoData] = useState("");
     const [nFestivoNome, setNFestivoNome] = useState("");
@@ -480,6 +493,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             mese={meseCal}
                             setMese={setMeseCal}
                             festivi={festiviMap}
+                            malattie={malattieFiltrate}
                         />
                     )}
 
@@ -702,7 +716,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
 /* ── CALENDARIO FERIE dedicato (Luca 29/07) — per chi approva: mese navigabile
    con i periodi APPROVATI (verde) e IN ATTESA (ambra), per vedere al volo le
    sovrapposizioni prima di autorizzare. Rispetta i filtri persone/negozi. ── */
-function CalendarioFerie({ richieste, mese, setMese, festivi }: { richieste: VacationRequest[]; mese: Date; setMese: (d: Date) => void; festivi: Map<string, string> }) {
+function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { richieste: VacationRequest[]; mese: Date; setMese: (d: Date) => void; festivi: Map<string, string>; malattie: { id: number; employee_name: string; store: string; date_from: string; date_to: string }[] }) {
     const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
     // INTERATTIVO (03/08): due viste (Mese / Persone), giorno cliccabile con
     // pannello di dettaglio, toggle per includere o no le richieste in attesa.
@@ -718,6 +732,7 @@ function CalendarioFerie({ richieste, mese, setMese, festivi }: { richieste: Vac
     const giorni: Date[] = Array.from({ length: 42 }, (_, i) => { const d = new Date(inizio); d.setDate(inizio.getDate() + i); return d; });
     const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const delGiorno = (d: Date) => { const k = iso(d); return visibili.filter(r => r.date_from <= k && r.date_to >= k); };
+    const malDelGiorno = (d: Date) => { const k = iso(d); return malattie.filter(m => m.date_from <= k && m.date_to >= k); };
     const nomeCorto = (n: string) => { const p = n.trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[1][0]}.` : p[0]; };
     const fmt = (s: string) => new Date(s).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" });
     const cambiaMese = (delta: number) => { setGiornoSel(null); setMese(new Date(mese.getFullYear(), mese.getMonth() + delta, 1)); };
@@ -768,11 +783,26 @@ function CalendarioFerie({ richieste, mese, setMese, festivi }: { richieste: Vac
 
             {modo === "giorno" && (() => {
                 const rr = delGiorno(dataRif).sort((a, b) => (a.status === b.status ? a.employee_name.localeCompare(b.employee_name) : a.status === "approved" ? -1 : 1));
+                const mm = malDelGiorno(dataRif).sort((a, b) => a.employee_name.localeCompare(b.employee_name));
                 const festaG = festivi.get(iso(dataRif));
                 return (
                     <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
                         {(festaG || dataRif.getDay() === 0) && (
                             <p className="mb-3 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-bold">🔴 {festaG || "Domenica"} — giorno non lavorativo: non conta nei giorni di ferie</p>
+                        )}
+                        {mm.length > 0 && (
+                            <div className="mb-3 space-y-1">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-fuchsia-300">🤒 In malattia ({mm.length})</p>
+                                {mm.map(m => (
+                                    <div key={m.id} className="flex items-center gap-3 flex-wrap text-sm py-1 border-b border-white/5 last:border-b-0">
+                                        <span className="w-2 h-2 rounded-full shrink-0 bg-fuchsia-400" />
+                                        <span className="font-semibold text-white">{m.employee_name}</span>
+                                        {m.store && <span className="text-[10px] text-slate-500 uppercase tracking-wider">{m.store}</span>}
+                                        <span className="text-xs text-slate-300 whitespace-nowrap">{fmt(m.date_from)}{m.date_to !== m.date_from && <> → {fmt(m.date_to)}</>}</span>
+                                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30">Malattia</span>
+                                    </div>
+                                ))}
+                            </div>
                         )}
                         {rr.length === 0 ? (
                             <p className="text-sm text-slate-500 italic py-4 text-center">Nessuno in ferie in questo giorno (con questi filtri).</p>
@@ -825,6 +855,12 @@ function CalendarioFerie({ richieste, mese, setMese, festivi }: { richieste: Vac
                                         </div>
                                     ))}
                                     {rr.length > 7 && <div className="text-[9px] text-slate-500 px-1">+{rr.length - 7} altre</div>}
+                                    {malDelGiorno(d).slice(0, 4).map(m => (
+                                        <div key={"m" + m.id} title={`${m.employee_name} (${m.store}) — in malattia`}
+                                            className="truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight bg-fuchsia-500/20 text-fuchsia-200">
+                                            🤒 {nomeCorto(m.employee_name)}
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
                         );
@@ -860,6 +896,13 @@ function CalendarioFerie({ richieste, mese, setMese, festivi }: { richieste: Vac
                                         </div>
                                     ))}
                                     {rr.length > 3 && <div className="text-[9px] text-slate-500 px-1">+{rr.length - 3} altre</div>}
+                                    {malDelGiorno(d).slice(0, 2).map(m => (
+                                        <div key={"m" + m.id} title={`${m.employee_name} (${m.store}) — in malattia`}
+                                            className="truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight bg-fuchsia-500/20 text-fuchsia-200">
+                                            🤒 {nomeCorto(m.employee_name)}
+                                        </div>
+                                    ))}
+                                    {malDelGiorno(d).length > 2 && <div className="text-[9px] text-fuchsia-400/70 px-1">+{malDelGiorno(d).length - 2} malattie</div>}
                                 </div>
                             </div>
                         );
@@ -917,6 +960,18 @@ function CalendarioFerie({ richieste, mese, setMese, festivi }: { richieste: Vac
                         <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest">🏖 Ferie del {fmt(giornoSel)}</p>
                         <button onClick={() => setGiornoSel(null)} className="text-slate-400 hover:text-white text-xs font-bold">✕ chiudi</button>
                     </div>
+                    {(() => { const mm = malattie.filter(m => giornoSel && m.date_from <= giornoSel && m.date_to >= giornoSel); return mm.length > 0 && (
+                        <div className="mb-2 space-y-1">
+                            {mm.map(m => (
+                                <div key={"m" + m.id} className="flex items-center gap-3 flex-wrap text-sm">
+                                    <span className="w-2 h-2 rounded-full shrink-0 bg-fuchsia-400" />
+                                    <span className="font-semibold text-white">{m.employee_name}</span>
+                                    {m.store && <span className="text-[10px] text-slate-500 uppercase tracking-wider">{m.store}</span>}
+                                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/30">🤒 Malattia</span>
+                                </div>
+                            ))}
+                        </div>
+                    ); })()}
                     {selEntries.length === 0 ? (
                         <p className="text-sm text-slate-500 italic">Nessuno in ferie in questo giorno.</p>
                     ) : (
@@ -942,6 +997,7 @@ function CalendarioFerie({ richieste, mese, setMese, festivi }: { richieste: Vac
             <div className="flex items-center gap-4 mt-3 text-[11px] text-slate-400 flex-wrap">
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500/40" /> Approvate</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-500/40" /> In attesa</span>
+                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-fuchsia-500/40" /> 🤒 Malattia</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-rose-500/40" /> Festivo (come la domenica: mai contato nei giorni)</span>
                 <span className="text-slate-600">Giorno · Settimana · Mese · Persone — nelle griglie clicca un giorno per il dettaglio</span>
             </div>
@@ -1688,3 +1744,169 @@ function RitardiSection() {
    - PresenzeAdmin: per amministrazione/direzione outbound — lista presenze con
      filtri periodo+persona, export CSV e KPI col benchmark dei mesi passati.
    ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── SEZIONE TURNI (03/08, mig. 144) — la fotografia dei punti vendita:
+   chi c'e' OGGI (o nel giorno scelto) in ogni negozio, con orario. La
+   preselezione arriva dagli ASSEGNATI al negozio (user_stores + negozio
+   principale): un click li conferma a giornata intera. Le coperture si
+   aggiungono con mezzi turni (mattina/pomeriggio dagli orari del negozio)
+   o orari personalizzati. Orari di apertura/chiusura modificabili qui. ── */
+type TurnoRow = { id: number; store: string; data: string; persona: string; inizio: string; fine: string; tipo: string; creato_da: string | null };
+type StoreRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null };
+
+function TurniSection() {
+    const { user } = useAuth();
+    const gestisce = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    const [negozi, setNegozi] = useState<StoreRow[]>([]);
+    const [staff, setStaff] = useState<{ full_name: string; primary_store: string | null }[]>([]);
+    const [assegnati, setAssegnati] = useState<Map<string, string[]>>(new Map());
+    const [turni, setTurni] = useState<TurnoRow[]>([]);
+    const oggiYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+    const [dataSel, setDataSel] = useState(oggiYmd());
+    const [nuovo, setNuovo] = useState<Record<string, { persona: string; inizio: string; fine: string }>>({});
+
+    const hhmm = (t: string | null | undefined, fallback: string) => (t || fallback).slice(0, 5);
+
+    const caricaBase = useCallback(async () => {
+        const [st, us, links] = await Promise.all([
+            supabase.from("stores").select("name, orario_apertura, orario_chiusura").order("name"),
+            supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name"),
+            supabase.from("user_stores").select("user_id, store_name, app_users!inner(full_name, active)"),
+        ]);
+        setNegozi((st.data ?? []) as StoreRow[]);
+        setStaff((us.data ?? []) as never);
+        const m = new Map<string, string[]>();
+        const aggiungi = (store: string | null, nome: string | null | undefined) => {
+            const sKey = String(store || "").trim(); const n = String(nome || "").trim();
+            if (!sKey || !n) return;
+            const arr = m.get(sKey) || []; if (!arr.includes(n)) arr.push(n); m.set(sKey, arr);
+        };
+        ((us.data ?? []) as { full_name: string; primary_store: string | null }[]).forEach(u => aggiungi(u.primary_store, u.full_name));
+        ((links.data ?? []) as unknown as { store_name: string; app_users: { full_name: string; active: boolean } }[])
+            .forEach(l => { if (l.app_users?.active) aggiungi(l.store_name, l.app_users.full_name); });
+        setAssegnati(m);
+    }, []);
+    const caricaTurni = useCallback(async () => {
+        const { data } = await supabase.from("turni_negozio").select("*").eq("data", dataSel).order("inizio");
+        setTurni((data ?? []) as TurnoRow[]);
+    }, [dataSel]);
+    useEffect(() => { caricaBase(); }, [caricaBase]);
+    useEffect(() => { caricaTurni(); }, [caricaTurni]);
+
+    const spostaGiorno = (n: number) => { const d = new Date(dataSel + "T12:00"); d.setDate(d.getDate() + n); setDataSel(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`); };
+    const salvaOrario = async (store: string, campo: "orario_apertura" | "orario_chiusura", val: string) => {
+        if (!val) return;
+        await supabase.from("stores").update({ [campo]: val }).eq("name", store);
+        setNegozi(p => p.map(n => n.name === store ? { ...n, [campo]: val } : n));
+    };
+    const aggiungiTurno = async (store: string, persona: string, inizio: string, fine: string, tipo: string) => {
+        if (!persona || !inizio || !fine) return;
+        const { error } = await supabase.from("turni_negozio").insert({ store, data: dataSel, persona, inizio, fine, tipo, creato_da: user?.name || null });
+        if (error && !/duplicate/i.test(error.message)) { alert("Turno non salvato: " + error.message); return; }
+        await caricaTurni();
+    };
+    const eliminaTurno = async (t: TurnoRow) => {
+        await supabase.from("turni_negozio").delete().eq("id", t.id);
+        setTurni(p => p.filter(x => x.id !== t.id));
+    };
+
+    const dataLabel = new Date(dataSel + "T12:00").toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+    const eOggi = dataSel === oggiYmd();
+    const tuttiINomi = staff.map(s => s.full_name);
+
+    return (
+        <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                    <button onClick={() => spostaGiorno(-1)} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">‹</button>
+                    <div className="text-center min-w-[240px]">
+                        <p className="text-base font-black text-white capitalize">{dataLabel}</p>
+                        {eOggi && <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-300">Oggi</p>}
+                    </div>
+                    <button onClick={() => spostaGiorno(1)} className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-bold">›</button>
+                    {!eOggi && <button onClick={() => setDataSel(oggiYmd())} className="text-[10px] font-bold uppercase tracking-widest text-indigo-300 hover:text-white ml-1">Oggi</button>}
+                    <input type="date" value={dataSel} onChange={e => e.target.value && setDataSel(e.target.value)} className="glass-input !h-9 text-xs ml-2" />
+                </div>
+                <p className="text-xs text-slate-500 max-w-md">
+                    Gli <b className="text-slate-300">assegnati</b> al negozio sono la squadra di casa: un click li mette
+                    a turno per la giornata. Le <b className="text-slate-300">coperture</b> si aggiungono anche a mezzo turno.
+                </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                {negozi.map(n => {
+                    const ap = hhmm(n.orario_apertura, "09:30"), ch = hhmm(n.orario_chiusura, "19:30");
+                    const turniStore = turni.filter(t => t.store === n.name);
+                    const aTurno = new Set(turniStore.map(t => t.persona));
+                    const squadra = (assegnati.get(n.name) || []).filter(p => !aTurno.has(p));
+                    const nv = nuovo[n.name] || { persona: "", inizio: ap, fine: ch };
+                    const setNv = (patch: Partial<typeof nv>) => setNuovo(p => ({ ...p, [n.name]: { ...nv, ...patch } }));
+                    return (
+                        <div key={n.name} className="glass-card overflow-hidden">
+                            <div className="px-4 py-3 bg-white/[0.03] border-b border-white/5 flex items-center justify-between gap-2 flex-wrap">
+                                <p className="text-sm font-bold text-white flex items-center gap-2"><Store className="w-4 h-4 text-indigo-400" /> {n.name}</p>
+                                <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                                    🕐
+                                    {gestisce ? (<>
+                                        <input type="time" value={ap} onChange={e => salvaOrario(n.name, "orario_apertura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[74px]" />
+                                        <span>–</span>
+                                        <input type="time" value={ch} onChange={e => salvaOrario(n.name, "orario_chiusura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[74px]" />
+                                    </>) : <span className="font-mono">{ap}–{ch}</span>}
+                                </div>
+                            </div>
+                            <div className="p-3.5 space-y-2.5">
+                                {/* di turno nel giorno scelto */}
+                                {turniStore.length === 0 && <p className="text-xs text-slate-600 italic">Nessun turno registrato per questo giorno.</p>}
+                                {turniStore.map(t => (
+                                    <div key={t.id} className="flex items-center gap-2 text-sm">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                                        <span className="font-semibold text-white truncate">{t.persona}</span>
+                                        <span className="font-mono text-xs text-slate-300 whitespace-nowrap">{t.inizio.slice(0, 5)}–{t.fine.slice(0, 5)}</span>
+                                        <span className={cn("text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full border",
+                                            t.tipo === "giornata" ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                                                : t.tipo === "mattina" ? "bg-sky-500/10 text-sky-300 border-sky-500/30"
+                                                    : t.tipo === "pomeriggio" ? "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                                        : "bg-violet-500/10 text-violet-300 border-violet-500/30")}>{t.tipo}</span>
+                                        {gestisce && <button onClick={() => eliminaTurno(t)} title="Togli il turno" className="ml-auto p-1 rounded text-slate-600 hover:text-rose-400 hover:bg-rose-500/10"><Trash2 className="w-3.5 h-3.5" /></button>}
+                                    </div>
+                                ))}
+                                {/* squadra di casa non ancora a turno */}
+                                {squadra.length > 0 && (
+                                    <div className="pt-2 border-t border-dashed border-white/10 space-y-1.5">
+                                        <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600">Assegnati al negozio (non a turno)</p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {squadra.map(p => (
+                                                <span key={p} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] border border-white/10 bg-white/[0.04] text-slate-300">
+                                                    {p}
+                                                    {gestisce && <button onClick={() => aggiungiTurno(n.name, p, ap, ch, "giornata")} title="Conferma a turno per l'intera giornata" className="text-emerald-400 hover:text-emerald-300 font-black">＋</button>}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {/* copertura rapida */}
+                                {gestisce && (
+                                    <div className="pt-2 border-t border-white/10 space-y-1.5">
+                                        <SelectPersona value={nv.persona} onChange={v => setNv({ persona: v })} opzioni={tuttiINomi} placeholder="Aggiungi una copertura…" className="glass-input text-xs rounded-lg py-1.5 w-full" />
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, ch, "giornata")} disabled={!nv.persona} className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 disabled:opacity-40">Giornata</button>
+                                            <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, "14:00", "mattina")} disabled={!nv.persona} className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 disabled:opacity-40">Mattina</button>
+                                            <button onClick={() => aggiungiTurno(n.name, nv.persona, "14:00", ch, "pomeriggio")} disabled={!nv.persona} className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 disabled:opacity-40">Pomeriggio</button>
+                                            <span className="flex items-center gap-1 ml-auto">
+                                                <input type="time" value={nv.inizio} onChange={e => setNv({ inizio: e.target.value })} className="glass-input !h-7 !px-1.5 text-[11px] w-[74px]" />
+                                                <span className="text-slate-600 text-xs">–</span>
+                                                <input type="time" value={nv.fine} onChange={e => setNv({ fine: e.target.value })} className="glass-input !h-7 !px-1.5 text-[11px] w-[74px]" />
+                                                <button onClick={() => aggiungiTurno(n.name, nv.persona, nv.inizio, nv.fine, "personalizzato")} disabled={!nv.persona} title="Aggiungi con orario personalizzato" className="p-1.5 rounded-lg bg-violet-500/15 border border-violet-500/40 text-violet-300 disabled:opacity-40"><Plus className="w-3.5 h-3.5" /></button>
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+

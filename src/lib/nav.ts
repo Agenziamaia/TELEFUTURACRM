@@ -86,6 +86,7 @@ export const NAVIGATION: NavEntry[] = [
         icon: Users,
         children: [
             { name: "Ferie", href: "/collaboratori?tab=ferie", icon: CalendarDays, roles: EVERYONE },
+            { name: "Turni", href: "/collaboratori?tab=turni", icon: Store, roles: EVERYONE },
             { name: "Malattia", href: "/collaboratori?tab=malattia", icon: Shield, roles: MANAGERS },
             { name: "Ritardi", href: "/collaboratori?tab=ritardi", icon: Clock3, roles: EVERYONE },
         ],
