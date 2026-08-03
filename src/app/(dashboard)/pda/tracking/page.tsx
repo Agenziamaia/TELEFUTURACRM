@@ -191,15 +191,22 @@ function CatBadge({ id }: { id: string }) {
 }
 
 // ─── KpiBar ───────────────────────────────────────────────────────────────────
+// Chiave brand NORMALIZZATA (minuscole, niente spazi/punti): a DB convivono
+// "Very Mobile", "TIM", "WindTre"... — il lookup esatto perdeva pezzi.
+const trkBrandKey = (b: string) => String(b).toLowerCase().replace(/[^a-z0-9]/g, "");
 const TRK_BRAND_COLORS: Record<string, string> = {
-  Vodafone: "#ef4444", Fastweb: "#eab308", WindTre: "#f97316", Iliad: "#a855f7",
-  Tim: "#14b8a6", "S4": "#22c55e", Sky: "#0072C6", Dojo: "#14b8a6",
+  vodafone: "#E60000", fastweb: "#eab308", windtre: "#f97316", wind3: "#f97316",
+  iliad: "#C00028", tim: "#0050FF", s4: "#22c55e", energy: "#22c55e",
+  sky: "#0072C6", dojo: "#14b8a6", verymobile: "#84cc16", homobile: "#9b26b6",
+  kenamobile: "#e4002b", kena: "#e4002b",
 };
-// stessi loghi di Registra Vendita (public/) — chiave minuscola
+// stessi loghi di Registra Vendita (public/)
 const TRK_BRAND_LOGOS: Record<string, string> = {
   vodafone: "/vodaphone - Copy.png", fastweb: "/fastweb.png", windtre: "/windtre.png",
-  iliad: "/iliad.png", tim: "/tim-logo-v2.png", s4: "/energy - Copy.png",
-  sky: "/sky.png", dojo: "/dojo-round.png",
+  wind3: "/windtre.png", iliad: "/iliad.png", tim: "/tim-logo-v2.png",
+  s4: "/energy - Copy.png", energy: "/energy - Copy.png", sky: "/sky.png",
+  dojo: "/dojo-round.png", verymobile: "/very-mobile.png", homobile: "/ho-mobile.png",
+  kenamobile: "/kena-mobile-v2.png", kena: "/kena-mobile-v2.png",
 };
 
 function KpiBar({
@@ -287,8 +294,8 @@ function KpiBar({
       {brands.length > 0 && (
         <div className="grid gap-2.5 mb-2.5" style={{ gridTemplateColumns: `repeat(${brands.length}, minmax(0, 1fr))` }}>
           {brands.map((b) => {
-            const color = TRK_BRAND_COLORS[b] || "#94a3b8";
-            const logo = TRK_BRAND_LOGOS[String(b).toLowerCase()];
+            const color = TRK_BRAND_COLORS[trkBrandKey(b)] || "#94a3b8";
+            const logo = TRK_BRAND_LOGOS[trkBrandKey(b)];
             const esclusivo = brandSel.length === 1 && brandSel[0] === b;
             const on = brandSel.length === 0 || brandSel.includes(b);
             return (
@@ -306,7 +313,7 @@ function KpiBar({
                   filter: on ? "none" : "grayscale(1)",
                 }}>
                 {logo ? (
-                  <img src={logo} alt={b} style={{ maxHeight: 30, maxWidth: "78%", objectFit: "contain", display: "block" }} />
+                  <img src={logo} alt={b} style={{ maxHeight: 44, maxWidth: "90%", objectFit: "contain", display: "block" }} />
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "#586174" }}>{b}</span>
                 )}
