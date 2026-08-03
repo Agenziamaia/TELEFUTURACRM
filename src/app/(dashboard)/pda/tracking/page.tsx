@@ -187,24 +187,27 @@ function CatBadge({ id }: { id: string }) {
 }
 
 // ─── KpiBar ───────────────────────────────────────────────────────────────────
+const TRK_BRAND_COLORS: Record<string, string> = {
+  Vodafone: "#ef4444", Fastweb: "#eab308", WindTre: "#f97316", Iliad: "#a855f7",
+  Tim: "#14b8a6", "S4": "#22c55e", Sky: "#0072C6", Dojo: "#14b8a6",
+};
+
 function KpiBar({
   data,
   onFilter,
   activeFilter,
-  escludiConfermati,
-  setEscludiConfermati,
-  escludiCompletati,
-  setEscludiCompletati,
   storicoTotale,
   onApriStorico,
+  brands,
+  brandSel,
+  setBrandSel,
 }: {
   data: TrackingRow[];
   onFilter: (f: string | null) => void;
   activeFilter: string | null;
-  escludiConfermati: boolean;
-  setEscludiConfermati: (v: boolean) => void;
-  escludiCompletati: boolean;
-  setEscludiCompletati: (v: boolean) => void;
+  brands: string[];
+  brandSel: string[];
+  setBrandSel: (v: string[]) => void;
   storicoTotale: number;
   onApriStorico: () => void;
 }) {
@@ -247,83 +250,53 @@ function KpiBar({
               <div className="flex items-center justify-center gap-2">
                 <span className="text-xl" style={{ opacity: .85 }}>{c.emoji}</span>
                 <span className="text-2xl font-black" style={{ color: c.color }}>{c.val}</span>
+                {/* maturati + storico A DESTRA del numero (Luca 03/08): card bassa come le altre */}
+                {c.filter === "__malus__" && (
+                  <span className="ml-1.5 pl-2 text-left" style={{ borderLeft: "1px solid rgba(255,255,255,0.10)" }}>
+                    {malusTotale > 0 && <span className="block text-[10px] font-bold leading-tight" style={{ color: isActive ? "#fca5a5" : "#94a3b8" }}>€ {malusTotale.toFixed(0)} maturati</span>}
+                    <span
+                      role="button" tabIndex={0}
+                      onClick={(e) => { e.stopPropagation(); onApriStorico(); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onApriStorico(); } }}
+                      className="block text-[10px] font-bold underline decoration-dotted underline-offset-2 text-slate-400 hover:text-red-300 leading-tight"
+                      title="Apri l'archivio storico dei malus"
+                    >📂 {storicoTotale > 0 ? `€ ${Math.round(storicoTotale)}` : "Storico"} →</span>
+                  </span>
+                )}
               </div>
               <div className="text-[11px] mt-1 font-bold uppercase tracking-wider" style={{ color: isActive ? c.color : "#94a3b8" }}>
                 {c.label}
               </div>
-              {c.filter === "__malus__" && malusTotale > 0 && (
-                <div className="text-[10px] mt-1" style={{ color: isActive ? "#fca5a5" : "#64748b" }}>
-                  € {malusTotale.toFixed(0)} maturati
-                </div>
-              )}
-              {/* Il contatore sopra dice i malus ATTIVI adesso; questa riga apre
-                  l'archivio con tutto lo storico (anche il gia' sanato). */}
-              {c.filter === "__malus__" && (
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => { e.stopPropagation(); onApriStorico(); }}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onApriStorico(); } }}
-                  className="text-[10px] mt-1 font-bold underline decoration-dotted underline-offset-2 text-slate-400 hover:text-red-300"
-                  title="Apri l'archivio storico dei malus"
-                >
-                  📂 Storico{storicoTotale > 0 ? `: € ${Math.round(storicoTotale)}` : ""} →
-                </div>
-              )}
             </div>
           );
         })}
       </div>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setEscludiConfermati(!escludiConfermati)}
-        className="flex items-center gap-2.5 rounded-xl border py-2.5 px-4 cursor-pointer select-none transition-all mb-2"
-        style={{
-          background: escludiConfermati ? "rgba(34,197,94,0.08)" : "rgba(255,255,255,0.03)",
-          borderColor: escludiConfermati ? "rgba(34,197,94,0.5)" : "rgba(255,255,255,0.08)",
-        }}
-      >
-        <div
-          className="w-[18px] h-[18px] rounded border-2 flex items-center justify-center flex-shrink-0"
-          style={{ borderColor: escludiConfermati ? "#22c55e" : "#475569", background: escludiConfermati ? "#22c55e" : "transparent" }}
-        >
-          {escludiConfermati && <span className="text-black text-[11px] font-black">✓</span>}
+      {/* BRAND in prima linea (Luca 03/08): tutti preselezionati; un click ne
+          fa IL filtro (stile Ricerca Vendite), riclick = di nuovo tutti */}
+      {brands.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap mb-2.5">
+          {brands.map((b) => {
+            const color = TRK_BRAND_COLORS[b] || "#94a3b8";
+            const esclusivo = brandSel.length === 1 && brandSel[0] === b;
+            const on = brandSel.length === 0 || brandSel.includes(b);
+            return (
+              <button key={b} type="button"
+                onClick={() => setBrandSel(esclusivo ? [] : [b])}
+                title={esclusivo ? "Filtro attivo — clicca per tornare a tutti" : "Mostra solo " + b}
+                className="rounded-full px-4 py-1.5 text-xs font-bold border transition-all"
+                style={{
+                  borderColor: on ? color : "rgba(255,255,255,0.08)",
+                  background: on ? color + "24" : "rgba(255,255,255,0.02)",
+                  color: on ? color : "#586174",
+                  opacity: on ? 1 : .5,
+                  boxShadow: esclusivo ? `0 0 0 3px ${color}22` : "none",
+                }}>
+                {esclusivo ? "✓ " : ""}{b}
+              </button>
+            );
+          })}
         </div>
-        <div>
-          <div className="text-xs font-bold" style={{ color: escludiConfermati ? "#4ade80" : "#94a3b8" }}>
-            Escludi pratiche confermate o superiori
-          </div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
-            Nasconde contratti con esito admin: Confermato, Pagato, Stornato
-          </div>
-        </div>
-      </div>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setEscludiCompletati(!escludiCompletati)}
-        className="flex items-center gap-2.5 rounded-xl border py-2.5 px-4 cursor-pointer select-none transition-all mt-2"
-        style={{
-          background: escludiCompletati ? "rgba(34,197,94,0.08)" : "rgba(255,255,255,0.03)",
-          borderColor: escludiCompletati ? "rgba(34,197,94,0.5)" : "rgba(255,255,255,0.08)",
-        }}
-      >
-        <div
-          className="w-[18px] h-[18px] rounded border-2 flex items-center justify-center flex-shrink-0"
-          style={{ borderColor: escludiCompletati ? "#22c55e" : "#475569", background: escludiCompletati ? "#22c55e" : "transparent" }}
-        >
-          {escludiCompletati && <span className="text-black text-[11px] font-black">✓</span>}
-        </div>
-        <div>
-          <div className="text-xs font-bold" style={{ color: escludiCompletati ? "#4ade80" : "#94a3b8" }}>
-            Escludi pratiche completate
-          </div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
-            Nasconde contratti con esito negozio: Completato, Liquidato, Completo, Attivo
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -443,46 +416,7 @@ function FilterBar({
           </button>
         )}
       </div>
-      <div className="flex items-center gap-2 flex-wrap mb-3">
-        <span className="text-xs text-slate-400 font-semibold mr-1">BRAND</span>
-        {ALL_BRANDS.map((b) => {
-          const brandColors: Record<string, string> = {
-            Vodafone: "#ef4444",
-            Fastweb: "#3b82f6",
-            WindTre: "#f97316",
-            Iliad: "#a855f7",
-            Tim: "#14b8a6",
-            "S4": "#22c55e",
-            Sky: "#ef4444",
-          };
-          const color = brandColors[b] || "#94a3b8";
-          const sel = brandSel.includes(b);
-          return (
-            <button
-              key={b}
-              type="button"
-              onClick={() => toggleBrand(b)}
-              className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
-              style={{
-                borderColor: sel ? color : "rgba(255,255,255,0.10)",
-                background: sel ? color + "33" : "transparent",
-                color: sel ? color : "#94a3b8",
-              }}
-            >
-              {b}
-            </button>
-          );
-        })}
-        {brandSel.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setBrandSel([])}
-            className="rounded-full px-3 py-1 text-[11px] cursor-pointer border border-white/15 bg-transparent text-slate-500"
-          >
-            ✕ Tutti i brand
-          </button>
-        )}
-      </div>
+
       {/* Filtro NEGOZIO (richiesta Luca 28/07): visibile dall'amministrativa in
           su (chi vede tutti i negozi); stessi chip cliccabili degli altri filtri. */}
       {negozi.length > 0 && (
@@ -731,34 +665,41 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
           </thead>
           <tbody>
             {rows.map((row, i) => {
-              const bg = isMalusRow(row) ? "#2d0a0a" : i % 2 === 0 ? "transparent" : "#172033";
+              // RIGHE SFUMATE (Luca 03/08): la fase colora la riga con un
+              // gradiente che sfuma da sinistra + barretta colore — via il
+              // monocolore da foglio Excel
+              const fase = isMalusRow(row) ? "malus" : isAttenzioneRow(row) ? "warning" : isDaLavorareRow(row) ? "lavorare" : "";
+              const cFase = fase === "malus" ? "#ef4444" : fase === "warning" ? "#f97316" : fase === "lavorare" ? "#eab308" : "";
+              const bg = fase
+                ? `linear-gradient(90deg, ${cFase}24, ${cFase}08 45%, transparent 75%)`
+                : i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)";
               return (
                 <tr
                   key={row.rowKey || row.id}
-                  className="cursor-pointer transition-colors hover:!bg-indigo-900/30"
-                  style={{ background: bg }}
+                  className="cursor-pointer transition-all hover:!bg-indigo-900/30"
+                  style={{ background: bg, boxShadow: fase ? `inset 3px 0 0 ${cFase}` : "none" }}
                   onClick={() => onSelect(row)}
                 >
                   {canDelegate && (
-                    <td className="py-2.5 px-3.5 border-b border-slate-800" onClick={(e) => e.stopPropagation()}>
+                    <td className="py-2.5 px-3.5 border-b border-white/5" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={checked.includes(row.id)} onChange={() => toggle(row.id)} />
                     </td>
                   )}
-                  <td className="py-2.5 px-3.5 border-b border-slate-800">
+                  <td className="py-2.5 px-3.5 border-b border-white/5">
                     <CatBadge id={row.categoria} />
                   </td>
-                  <td className="py-2.5 px-3.5 border-b border-slate-800 text-slate-100 text-[13px] font-semibold">{row.brand}</td>
-                  <td className="py-2.5 px-3.5 border-b border-slate-800 text-slate-200 text-[13px]">{row.nominativo}</td>
-                  <td className="py-2.5 px-3.5 border-b border-slate-800 text-slate-400 text-xs">{row.negozio}</td>
-                  <td className="py-2.5 px-3.5 border-b border-slate-800 text-slate-400 text-xs">{row.venditore}</td>
-                  <td className="py-2.5 px-3.5 border-b border-slate-800 text-slate-500 text-xs">{row.dataInserimento}</td>
-                  <td className="py-2.5 px-3.5 border-b border-slate-800">
+                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-100 text-[13px] font-semibold">{row.brand}</td>
+                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-200 text-[13px]">{row.nominativo}</td>
+                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-400 text-xs">{row.negozio}</td>
+                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-400 text-xs">{row.venditore}</td>
+                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-500 text-xs">{row.dataInserimento}</td>
+                  <td className="py-2.5 px-3.5 border-b border-white/5">
                     <StatoBadge id={row.statoNegozio} set="negozio" />
                   </td>
-                  <td className="py-2.5 px-3.5 border-b border-slate-800">
+                  <td className="py-2.5 px-3.5 border-b border-white/5">
                     <StatoBadge id={row.statoAdmin} set="admin" />
                   </td>
-                  <td className="py-2.5 px-3.5 border-b border-slate-800 text-center">
+                  <td className="py-2.5 px-3.5 border-b border-white/5 text-center">
                     {(() => {
                       // Oltre al malus che sta maturando ADESSO, la colonna dice
                       // quanto la pratica ha gia' generato in passato (episodi
@@ -790,7 +731,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                       return <span className="text-slate-800 text-xs">—</span>;
                     })()}
                   </td>
-                  <td className="py-2.5 px-3.5 border-b border-slate-800 text-center">
+                  <td className="py-2.5 px-3.5 border-b border-white/5 text-center">
                     {isMalusRow(row) ? (
                       <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-red-950 border border-red-600 text-red-200">
                         🔴 Malus
@@ -956,7 +897,7 @@ function Drawer({
       className="fixed top-0 right-0 bottom-0 w-full max-w-[520px] flex flex-col z-[1000] border-l border-slate-700"
       style={{ background: "#0f172a", boxShadow: "-8px 0 32px rgba(0,0,0,.5)" }}
     >
-      <div className="pt-5 px-6 pb-0 border-b border-slate-800 flex-shrink-0">
+      <div className="pt-5 px-6 pb-0 border-b border-white/5 flex-shrink-0">
         <div className="flex items-start justify-between mb-3.5">
           <div>
             <div className="text-base font-bold text-slate-100 mb-1.5">{row.nominativo}</div>
@@ -1386,8 +1327,9 @@ export default function TrackingPdaPage() {
   const [malusErr, setMalusErr] = useState<string | null>(null);
   const [showArchivio, setShowArchivio] = useState(false);
   const [kpiFilter, setKpiFilter] = useState<string | null>(null);
-  const [escludiConfermati, setEscludiConfermati] = useState(false);
-  const [escludiCompletati, setEscludiCompletati] = useState(false);
+  // Le completate spariscono DA SOLE (Luca 03/08): il toggle e' diventato
+  // "Mostra pratiche completate" in alto a destra, spento di default.
+  const [mostraCompletate, setMostraCompletate] = useState(false);
   const [showRegole, setShowRegole] = useState(false);
   // regole del tracking dal DB (mig. 098): senza righe valgono i default in
   // codice; regoleV forza il ricalcolo di fasce e KPI dopo un salvataggio
@@ -1631,13 +1573,13 @@ export default function TrackingPdaPage() {
     if (hit) { setSelected(hit); deepOpened.current = true; }
   }, [data]);
 
-  const statiConfermato = ["confermato", "pagato", "stornato"];
   const statiCompletatiNegozio = ["attivato", "liquidato", "completo_sky", "attivo_sky"];
 
   const filtered = useMemo(() => {
     return data.filter((row) => {
-      if (escludiConfermati && statiConfermato.includes(row.statoAdmin)) return false;
-      if (escludiCompletati && statiCompletatiNegozio.includes(row.statoNegozio)) return false;
+      // Esito definitivo del negozio = pratica completata = sparisce da sola.
+      // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
+      if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
       if (onlyMine && row.delegated_to !== user?.id) return false; // "delegate a me"
       if (kpiFilter !== null) {
         if (kpiFilter === "__attenzione__") {
@@ -1685,12 +1627,13 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, escludiConfermati, escludiCompletati, onlyMine, user?.id, venditoreSel, negozioSel, regoleV]);
+  }, [data, catSel, brandSel, search, statoSel, kpiFilter, periodoDA, periodoA, mostraCompletate, onlyMine, user?.id, venditoreSel, negozioSel, regoleV]);
 
   const filteredPerKpi = useMemo(() => {
     return data.filter((row) => {
-      if (escludiConfermati && statiConfermato.includes(row.statoAdmin)) return false;
-      if (escludiCompletati && statiCompletatiNegozio.includes(row.statoNegozio)) return false;
+      // Esito definitivo del negozio = pratica completata = sparisce da sola.
+      // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
+      if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (brandSel.length > 0 && !brandSel.includes(row.brand)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
@@ -1725,7 +1668,7 @@ export default function TrackingPdaPage() {
       }
       return true;
     });
-  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, escludiConfermati, escludiCompletati, negozioSel, regoleV]);
+  }, [data, catSel, brandSel, search, statoSel, periodoDA, periodoA, mostraCompletate, negozioSel, regoleV]);
 
   // Delega la verifica di una pratica a un collaboratore (o rimuove la delega).
   const handleDelegate = useCallback(async (rowId: string, toId: string | null) => {
@@ -1821,6 +1764,16 @@ export default function TrackingPdaPage() {
             >
               👤 Delegate a me
             </button>
+            {/* Le completate (esito definitivo negozio) spariscono in automatico:
+                questo le fa rivedere quando serve (Luca 03/08) */}
+            <button
+              type="button"
+              onClick={() => setMostraCompletate((v) => !v)}
+              title="Le pratiche con esito definitivo del negozio spariscono da sole: attiva per rivederle"
+              className={"px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors " + (mostraCompletate ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-400 hover:bg-white/5")}
+            >
+              {mostraCompletate ? "✓" : "✅"} Mostra completate
+            </button>
             <button
               type="button"
               onClick={() => setShowRegole(true)}
@@ -1874,12 +1827,11 @@ export default function TrackingPdaPage() {
               data={filteredPerKpi}
               onFilter={setKpiFilter}
               activeFilter={kpiFilter}
-              escludiConfermati={escludiConfermati}
-              setEscludiConfermati={setEscludiConfermati}
-              escludiCompletati={escludiCompletati}
-              setEscludiCompletati={setEscludiCompletati}
               storicoTotale={storicoTotale}
               onApriStorico={() => setShowArchivio(true)}
+              brands={[...new Set(data.map((r) => r.brand).filter(Boolean))].sort()}
+              brandSel={brandSel}
+              setBrandSel={setBrandSel}
             />
             <FilterBar
               catSel={catSel}
