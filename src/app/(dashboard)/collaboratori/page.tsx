@@ -744,6 +744,8 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
     // giorno di riferimento per le viste Giorno/Settimana (03/08)
     const [dataRif, setDataRif] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
     const [conAttesa, setConAttesa] = useState(true);
+    // SETTIMANA senza domenica (03/08): colonne piu' larghe, negozio mai aperto
+    const [senzaDomenica, setSenzaDomenica] = useState(false);
     const [giornoSel, setGiornoSel] = useState<string | null>(null);
     const visibili = conAttesa ? richieste : richieste.filter(r => r.status === "approved");
     const primo = new Date(mese.getFullYear(), mese.getMonth(), 1);
@@ -798,6 +800,13 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
                             conAttesa ? "border-amber-400/60 bg-amber-500/15 text-amber-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>
                         {conAttesa ? "✓ " : ""}In attesa
                     </button>
+                    {modo === "settimana" && (
+                        <button onClick={() => setSenzaDomenica(v => !v)} title="La domenica i negozi sono chiusi: nascondendola le colonne respirano"
+                            className={cn("px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-colors",
+                                senzaDomenica ? "border-rose-400/60 bg-rose-500/15 text-rose-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>
+                            {senzaDomenica ? "🙈 Domenica nascosta" : "Nascondi domenica"}
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -854,16 +863,16 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
                    (nome del negozio, lineetta sottile, poi le persone), con
                    ferie, mezze giornate, CORSI (azzurro 🎓) e malattie (🤒) */
                 <div className="overflow-x-auto custom-scrollbar rounded-2xl">
-                    <div className="min-w-[1080px]">
-                        <div className="grid grid-cols-7 gap-px text-center mb-1">
-                            {settimana.map((d, i) => (
+                    <div className={senzaDomenica ? "min-w-[960px]" : "min-w-[1080px]"}>
+                        <div className={cn("grid gap-px text-center mb-1", senzaDomenica ? "grid-cols-6" : "grid-cols-7")}>
+                            {settimana.filter(d => !senzaDomenica || d.getDay() !== 0).map((d, i) => (
                                 <div key={i} title={festivi.get(iso(d)) || undefined} className={cn("text-[11px] font-bold uppercase tracking-widest py-1.5", d.getTime() === oggi.getTime() ? "text-indigo-300" : (festivi.get(iso(d)) || d.getDay() === 0) ? "text-rose-400" : "text-slate-500")}>
                                     {d.toLocaleDateString("it-IT", { weekday: "short" })} {d.getDate()}{festivi.get(iso(d)) ? " 🔴" : ""}
                                 </div>
                             ))}
                         </div>
-                        <div className="grid grid-cols-7 gap-px bg-white/5 rounded-2xl overflow-hidden">
-                            {settimana.map((d, i) => {
+                        <div className={cn("grid gap-px bg-white/5 rounded-2xl overflow-hidden", senzaDomenica ? "grid-cols-6" : "grid-cols-7")}>
+                            {settimana.filter(d => !senzaDomenica || d.getDay() !== 0).map((d, i) => {
                                 const k = iso(d);
                                 const rr = delGiorno(d);
                                 const mm = malDelGiorno(d);
@@ -875,14 +884,14 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
                                 return (
                                     <div key={i} onClick={() => setGiornoSel(giornoSel === k ? null : k)}
                                         title={festivi.get(k) ? `🔴 ${festivi.get(k)}` : (rr.length || mm.length) ? "Clicca per il dettaglio del giorno" : undefined}
-                                        className={cn("min-h-[260px] p-2 bg-[#0f111a] cursor-pointer transition-colors hover:bg-[#161a2c]",
+                                        className={cn("min-h-[380px] p-2.5 bg-[#0f111a] cursor-pointer transition-colors hover:bg-[#161a2c]",
                                             festivi.get(k) && "bg-rose-500/[0.07]",
                                             d.getTime() === oggi.getTime() && "bg-indigo-500/[0.06]", giornoSel === k && "ring-2 ring-inset ring-indigo-400/80")}>
                                         {negozi.length === 0 && <p className="text-[10px] text-slate-700 italic mt-1 text-center">—</p>}
                                         <div className="space-y-2.5">
                                             {negozi.map(neg => (
                                                 <div key={neg}>
-                                                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 truncate">{neg}</p>
+                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 truncate">🏬 {neg}</p>
                                                     <div className="border-b border-white/10 mb-1 mt-0.5" />
                                                     <div className="space-y-0.5">
                                                         {(perNegozio.get(neg) || []).map(({ r, malattia }, x) => (

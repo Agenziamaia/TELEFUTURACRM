@@ -484,7 +484,7 @@ function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, puoAmministrare, 
 }
 
 //  DevicePanel 
-function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () => void; onSave: (d: Device) => void }) {
+function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; onClose: () => void; onSave: (d: Device) => void; onDeleted: (id: number) => void }) {
   const NEGOZI = useStores();
   const { user } = useAuth();
   const { perms } = useRolePermissions(user?.role);
@@ -532,6 +532,30 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
   // persiste subito, come nel resto del gestionale. Note e prezzo si salvano
   // quando si esce dal campo (onBlur).
   const persist = (u: Device) => { setDev(u); onSave(u); };
+
+  // ── CESTINO ADMIN (03/08, richiesta Luca): eliminazione DEFINITIVA di un
+  //    usato, senza lasciare traccia — riga di magazzino (con dentro la sua
+  //    cronologia), eventuali malus di laboratorio collegati e allegati sul
+  //    bucket. Solo admin/dev, doppia conferma. Le vendite gia' registrate in
+  //    Registra Vendita NON si toccano: sono contratti, non magazzino.
+  const puoEliminareTutto = ["admin", "dev"].includes(user?.role || "");
+  const [eliminando, setEliminando] = useState(false);
+  const eliminaDefinitivamente = async () => {
+    if (!puoEliminareTutto || eliminando) return;
+    if (!window.confirm(`⚠️ ELIMINAZIONE DEFINITIVA\n\n${dev.model}${dev.imei ? ` — IMEI ${dev.imei}` : ""} (${dev.store || "—"})\n\nSparisce da magazzino, cronologia e malus di laboratorio, e si cancellano gli allegati. NON si puo' annullare.\n\nEliminare?`)) return;
+    if (!window.confirm("Ultima conferma: eliminare COMPLETAMENTE questo usato e ogni sua traccia?")) return;
+    setEliminando(true);
+    try {
+      try { await supabase.from("usati_malus").delete().eq("usato_id", dev.id); } catch { /* tabella/colonna assente */ }
+      for (const url of [dev.allegato_documento, dev.allegato_dichiarazione]) {
+        const m = String(url || "").split("/contracts/")[1];
+        if (m) { try { await supabase.storage.from("contracts").remove(["contracts/" + m]); } catch { /* best-effort */ } }
+      }
+      const { error } = await supabase.from("usati").delete().eq("id", dev.id);
+      if (error) { alert("Eliminazione NON riuscita: " + error.message); setEliminando(false); return; }
+      onDeleted(dev.id);
+    } catch (e) { alert("Eliminazione NON riuscita: " + String((e as Error)?.message || e)); setEliminando(false); }
+  };
 
   // cliente da cui e' stato ACQUISTATO (mig. 113) — per i telefoni registrati
   // prima l'anagrafica non veniva salvata: resta il "—"
@@ -749,6 +773,16 @@ function DevicePanel({ device, onClose, onSave }: { device: Device; onClose: () 
                 <button onClick={tornaIndietro} disabled={!indietroSel}
                   className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-sm font-semibold hover:bg-amber-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                   ↩ Torna indietro
+                </button>
+              </div>
+            )}
+            {/* eliminazione TOTALE — solo admin, in fondo, ben staccata */}
+            {puoEliminareTutto && (
+              <div className="mt-6 border-t-2 border-dashed border-rose-500/20 pt-4">
+                <button onClick={eliminaDefinitivamente} disabled={eliminando}
+                  title="Elimina il telefono da magazzino, cronologia, malus e allegati: nessuna traccia"
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/30 text-xs font-bold hover:bg-rose-500/20 transition-all disabled:opacity-40">
+                  🗑 {eliminando ? "Elimino…" : "Elimina definitivamente (admin)"}
                 </button>
               </div>
             )}
@@ -2207,7 +2241,7 @@ function GestioneUsatiInner() {
 
 
       {/* Modals */}
-      {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { handleSaveDevice(u); setSelectedDevice(u); }} />}
+      {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { handleSaveDevice(u); setSelectedDevice(u); }} onDeleted={(id) => { setDevices(p => p.filter(d => d.id !== id)); setSelectedDevice(null); }} />}
       {showRegistra && <RegistraUsatoPanel onClose={() => setShowRegistra(false)} onSave={handleRegistra} />}
 
       {/* ── REGOLE del laboratorio (Luca 31/07): dentro la sezione, come il
