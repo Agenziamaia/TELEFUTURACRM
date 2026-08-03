@@ -6,6 +6,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 // chiudere/ricaricare la pagina SENZA inviare l'ordine, e riprenderlo piu' tardi.
 const CART_STORAGE_KEY = "ordine-merce-cart-v1";
 import { supabase } from "@/lib/supabaseClient";
+import { designatiIncarico } from "@/lib/incarichi";
 import { brandsDispositivi, modelliDispositivi } from "@/lib/dispositivi";
 import { useStores } from "@/lib/org";
 import { useAuth } from "@/context/AuthContext";
@@ -734,9 +735,8 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
       // stesso meccanismo di ferie e chiusura linea — senza designati o con
       // fulmine spento non parte nulla, l'ordine resta creato comunque.
       try {
-        const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine").eq("chiave", "ordine_merce").maybeSingle();
-        const ass = (inc?.assegnatari ?? []);
-        if (inc?.fulmine && ass.length) {
+        const { ids: ass, fulmine } = await designatiIncarico("ordine_merce");
+        if (fulmine && ass.length) {
           const pezzi = cart.reduce((a, c) => a + c.qty, 0);
           await supabase.from("admin_tasks").insert(ass.map((uid) => ({
             tipo: "ordine_merce",

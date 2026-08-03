@@ -7,6 +7,7 @@ import { Search, ShoppingBag, User, Check, ChevronLeft, ChevronRight, Plus, Tras
 import { calculateCF, _CNA, _PNA } from "@/lib/cf";
 import { getDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { supabase } from "@/lib/supabaseClient";
+import { designatiIncarico } from "@/lib/incarichi";
 import { useAuth } from "@/context/AuthContext";
 import { numeroNazionale } from "@/lib/telefono";
 import { useStores, useSellers } from "@/lib/org";
@@ -588,9 +589,8 @@ export default function InviaPda() {
       // office deve accorgersi SUBITO che c'e' una pratica da lavorare in
       // Gestione PDA. Senza designati o con fulmine spento non parte nulla.
       try {
-        const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine").eq("chiave", "pda_inviata").maybeSingle();
-        const ass = (inc?.assegnatari ?? []);
-        if (inc?.fulmine && ass.length) {
+        const { ids: ass, fulmine } = await designatiIncarico("pda_inviata");
+        if (fulmine && ass.length) {
           const righe = contractRows.map(r => `${r.brand} ${r.categoria}`).join(", ");
           await supabase.from("admin_tasks").insert(ass.map((uid) => ({
             tipo: "pda_inviata",

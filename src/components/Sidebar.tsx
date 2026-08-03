@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { designatiIncarico } from "@/lib/incarichi";
 import {
     Home,
     Send,
@@ -68,11 +69,11 @@ function useFeriePendenti(userId: string | undefined, role: string | undefined):
         const load = async () => {
             try {
                 const [inc, pend] = await Promise.all([
-                    supabase.from("incarichi").select("assegnatari").eq("chiave", "ferie").maybeSingle(),
+                    designatiIncarico("ferie"),
                     supabase.from("vacation_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
                 ]);
                 if (!vivo) return;
-                const ass = (inc.data?.assegnatari ?? []) as string[];
+                const ass = inc.ids;
                 const designato = ass.length ? ass.includes(userId) : ["amministrativo", "admin", "dev", "direttore_generale"].includes(role || "");
                 setN(designato ? (pend.count ?? 0) : 0);
             } catch { /* pallino best-effort */ }

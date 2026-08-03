@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { SelectPersona, SelectMulti } from "@/components/SelectPersona";
+import { designatiIncarico } from "@/lib/incarichi";
 import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { Clock, Users, UsersRound, CalendarDays, Shield, X, MapPin, Play, Pause, Square, History, Search, Store, ArrowUpDown, ChevronUp, ChevronDown, Check, Clock3, Download, Trash2, Pencil, Plus } from "lucide-react";
 import { cn } from "@/utils";
@@ -218,9 +219,8 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
         // FULMINE ai DESIGNATI (incarico 'ferie', se il flag è attivo): task ⚡
         // indirizzato solo a loro; il pallino sulla sezione arriva comunque.
         try {
-            const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine").eq("chiave", "ferie").maybeSingle();
-            const ass = (inc?.assegnatari ?? []) as string[];
-            if (inc?.fulmine && ass.length) {
+            const { ids: ass, fulmine } = await designatiIncarico("ferie");
+            if (fulmine && ass.length) {
                 await supabase.from("admin_tasks").insert(ass.map((uid) => ({
                     tipo: "ferie_richiesta",
                     titolo: `🏖 Richiesta ferie: ${user.name} (${dateFrom.split("-").reverse().join("/")} → ${dateTo.split("-").reverse().join("/")})`,

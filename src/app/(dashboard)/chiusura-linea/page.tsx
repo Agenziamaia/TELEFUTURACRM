@@ -29,6 +29,7 @@ import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { cn } from "@/utils";
 import { Loader2, Scissors, Upload, X, FileText, Search } from "lucide-react";
 import { useRolePermissions } from "@/lib/usePermissions";
+import { designatiIncarico } from "@/lib/incarichi";
 import { capAllowed, CAP_DISDETTE, CAP_DISDETTE_INVIA, CAP_DISDETTE_GESTISCE } from "@/lib/capabilities";
 
 const BRANDS = ["WindTre", "Vodafone", "Fastweb", "TIM", "Iliad", "Sky", "Very Mobile", "Ho. Mobile", "Kena Mobile", "Altro"];
@@ -274,9 +275,8 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
 // task ⚡ ai designati dell'incarico (come le ferie); usato da invio e reintegro
 async function taskAiDesignati(titolo: string, dettaglio: string, autore: string) {
     try {
-        const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine").eq("chiave", "chiusura_linea").maybeSingle();
-        const ass = (inc?.assegnatari ?? []) as string[];
-        if (inc?.fulmine && ass.length) {
+        const { ids: ass, fulmine } = await designatiIncarico("chiusura_linea");
+        if (fulmine && ass.length) {
             await supabase.from("admin_tasks").insert(ass.map((uid) => ({
                 tipo: "chiusura_linea", titolo, dettaglio, link: "/chiusura-linea",
                 target_role: "admin", created_by: autore, target_user_id: uid,

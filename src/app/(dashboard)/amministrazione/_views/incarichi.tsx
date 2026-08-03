@@ -12,8 +12,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { Loader2, Zap, Users } from "lucide-react";
 import { notify, dbError } from "./toast";
+import { useRoles } from "@/lib/useRoles";
 
-interface Incarico { chiave: string; titolo: string; descrizione: string; assegnatari: string[]; fulmine: boolean; whatsapp?: string | null }
+interface Incarico { chiave: string; titolo: string; descrizione: string; assegnatari: string[]; ruoli?: string[] | null; fulmine: boolean; whatsapp?: string | null }
 interface Persona { id: string; full_name: string; role: string }
 
 export function IncarichiView() {
@@ -51,6 +52,16 @@ export function IncarichiView() {
         salva(inc.chiave, { assegnatari: next });
     };
 
+    // RUOLI DESIGNATI (Luca 03/08, mig. 156): tutto un ruolo insieme — la
+    // risoluzione in persone avviene AL MOMENTO dell'evento, quindi chi viene
+    // creato in futuro con quel ruolo entra nell'incarico da solo.
+    const { roles: tuttiRuoli } = useRoles();
+    const togRuolo = (inc: Incarico, ruoloId: string) => {
+        const cur = (inc.ruoli ?? []) as string[];
+        const next = cur.includes(ruoloId) ? cur.filter((x) => x !== ruoloId) : [...cur, ruoloId];
+        salva(inc.chiave, { ruoli: next } as Partial<Incarico>);
+    };
+
     if (loading) return <div className="flex items-center gap-3 text-slate-400 py-16 justify-center"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento incarichi…</div>;
 
     // in prima fila chi fa parte dell'amministrazione, ma OGNI utente è designabile
@@ -68,6 +79,8 @@ export function IncarichiView() {
                 <b className="text-slate-200"> pallino</b> sulla sezione interessata; con il fulmine attivo
                 anche il <b className="text-slate-200">task ⚡</b>, indirizzato solo a loro.
                 Senza designati, le notifiche seguono il comportamento standard (tutta l&apos;amministrazione).
+                Si può designare anche un <b className="text-slate-200">RUOLO intero</b>: vale per tutti i suoi utenti,
+                <b className="text-slate-200"> compresi quelli creati in futuro</b> (la risoluzione avviene al momento dell&apos;evento).
             </p>
             {incarichi.map((inc) => (
                 <div key={inc.chiave} className="glass-card p-5 space-y-3">
@@ -131,6 +144,21 @@ export function IncarichiView() {
                                         {p?.full_name || id}
                                         <button onClick={() => togAssegnatario(inc, id)} className="opacity-70 hover:opacity-100" title="Rimuovi designato">✕</button>
                                     </span>
+                                );
+                            })}
+                        </div>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-3 mb-1.5">
+                            Ruoli designati <span className="normal-case font-normal">(tutti gli utenti del ruolo, anche futuri)</span>
+                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {tuttiRuoli.map((r) => {
+                                const on = ((inc.ruoli ?? []) as string[]).includes(r.id);
+                                return (
+                                    <button key={r.id} onClick={() => togRuolo(inc, r.id)}
+                                        className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors",
+                                            on ? "border-sky-400/70 bg-sky-500/20 text-sky-100" : "border-white/10 text-slate-500 hover:border-white/25 hover:text-slate-300")}>
+                                        {on ? "✓ " : ""}{r.label}
+                                    </button>
                                 );
                             })}
                         </div>

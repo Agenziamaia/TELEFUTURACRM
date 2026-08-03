@@ -8,6 +8,7 @@ import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
+import { designatiIncarico } from "@/lib/incarichi";
 import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
 import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
 import { brandsDispositivi, modelliDispositivi, type CategoriaDispositivo } from "@/lib/dispositivi";
@@ -1834,9 +1835,8 @@ function GestioneUsatiInner() {
         const eraDaOrdinare = new Set((prima?.ricambi ?? []).filter(r => r.stato === "da_ordinare").map(r => r.name));
         const nuovi = u.ricambi.filter(r => r.stato === "da_ordinare" && !eraDaOrdinare.has(r.name));
         if (nuovi.length) {
-          const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine").eq("chiave", "ricambi").maybeSingle();
-          const ass = (inc?.assegnatari ?? []) as string[];
-          if (ass.length && inc?.fulmine) {
+          const { ids: ass, fulmine } = await designatiIncarico("ricambi");
+          if (ass.length && fulmine) {
             await supabase.from("admin_tasks").insert(ass.map((uid) => ({
               tipo: "ricambio_da_ordinare",
               titolo: `🔧 Ricambi da ordinare: ${u.model} — ${nuovi.map(r => r.name).join(", ")}`,
@@ -1931,11 +1931,11 @@ function GestioneUsatiInner() {
     // ── NOTIFICHE INCARICHI (Luca 29/07) — best-effort, l'acquisto è già salvo ──
     if (data.metodoPagamento === "bonifico") {
       try {
-        const { data: inc } = await supabase.from("incarichi").select("assegnatari,fulmine,whatsapp").eq("chiave", "bonifici").maybeSingle();
-        const ass = (inc?.assegnatari ?? []) as string[];
+        const inc = await designatiIncarico("bonifici");
+        const ass = inc.ids;
         const istantaneo = (data.tipoBonifico || "ordinario") === "istantaneo";
         // task ⚡: sempre per l'istantaneo; per l'ordinario solo col fulmine attivo
-        if (ass.length && (istantaneo || inc?.fulmine)) {
+        if (ass.length && (istantaneo || inc.fulmine)) {
           await supabase.from("admin_tasks").insert(ass.map((uid) => ({
             tipo: "bonifico_usato",
             titolo: `${istantaneo ? "🚨 BONIFICO ISTANTANEO" : "🏦 Bonifico"} usato: ${modelName} (€${Number(data.prezzoAcquisto) || 0})`,
@@ -1945,11 +1945,11 @@ function GestioneUsatiInner() {
           })));
         }
         // WhatsApp SOLO per l'istantaneo, sul numero personale dell'incarico
-        if (istantaneo && String(inc?.whatsapp || "").replace(/\D/g, "").length >= 6) {
+        if (istantaneo && String(inc.whatsapp || "").replace(/\D/g, "").length >= 6) {
           fetch("/api/whatsapp/notify", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              number: inc!.whatsapp,
+              number: inc.whatsapp,
               text: `🚨 BONIFICO ISTANTANEO da fare — ${modelName} €${Number(data.prezzoAcquisto) || 0}\nNegozio ${data.negozio} · IMEI ${data.imei} · registrato da ${data.venditore}.\nApri il CRM → Gestione Usati per i dettagli.`,
             }),
           }).catch(() => {});
