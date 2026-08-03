@@ -345,11 +345,12 @@ function KpiBar({
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "#586174" }}>{b}</span>
                 )}
-                {/* numeretto in angolo: pratiche del brand col filtro KPI attivo.
-                    ASSOLUTO e con fondo solido: i loghi scalati (transform)
-                    sbordano dal box di layout e si sovrapponevano al badge. */}
+                {/* numeretto A FIANCO del logo (Luca): assoluto così il logo
+                    resta perfettamente centrato, distanza dal bordo IDENTICA
+                    per tutti i brand; fondo solido perché i loghi scalati
+                    (transform) sbordano dal box di layout. */}
                 <span className="absolute text-[10px] font-black leading-none px-1.5 py-[3px] rounded-full"
-                  style={{ top: 4, right: 5, zIndex: 1, color: colBadge, background: "#0d1424", border: `1px solid ${colBadge}66`, opacity: nBrand === 0 ? .5 : 1 }}>
+                  style={{ right: 7, top: "50%", transform: "translateY(-50%)", zIndex: 1, color: colBadge, background: "#0d1424", border: `1px solid ${colBadge}66`, opacity: nBrand === 0 ? .5 : 1 }}>
                   {nBrand}
                 </span>
               </button>
