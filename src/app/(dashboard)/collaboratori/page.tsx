@@ -85,7 +85,7 @@ export default function CollaboratoriPage() {
     );
 }
 
-type VacationRequest = { id: number; employee_name: string; store: string; date_from: string; date_to: string; reason: string | null; status: string; admin_note: string | null; created_at: string; half_day?: string | null };
+type VacationRequest = { id: number; employee_name: string; store: string; date_from: string; date_to: string; reason: string | null; status: string; admin_note: string | null; created_at: string; half_day?: string | null; tipo?: string | null };
 
 function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const { user } = useAuth();
@@ -117,6 +117,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     // direttamente come APPROVATE, con nota di chi le ha registrate.
     const puoRegistrare = canDeleteRow;
     const [regOpen, setRegOpen] = useState(false);
+    const [regTipo, setRegTipo] = useState<"ferie" | "corso">("ferie");   // ＋ Ferie / ＋ Corsi (mig. 145)
     const [regPersona, setRegPersona] = useState("");
     const [regDal, setRegDal] = useState("");
     const [regAl, setRegAl] = useState("");
@@ -141,9 +142,10 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
             reason: regMotivo.trim() || null,
             status: "approved",
             half_day: regGiornoSingolo && regHalf ? regHalf : null,
-            admin_note: `Registrata direttamente da ${user?.name || "—"}`,
+            admin_note: regTipo === "corso" ? `Corso registrato da ${user?.name || "—"}` : `Registrata direttamente da ${user?.name || "—"}`,
             decided_by: user?.name || "—",
             decided_at: new Date().toISOString(),
+            tipo: regTipo,
         });
         setRegBusy(false); setRegOpen(false);
         setRegPersona(""); setRegDal(""); setRegAl(""); setRegMotivo(""); setRegHalf("");
@@ -180,6 +182,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     const [showFestivi, setShowFestivi] = useState(false);
     const [nFestivoData, setNFestivoData] = useState("");
     const [nFestivoNome, setNFestivoNome] = useState("");
+    const [annoFestivi, setAnnoFestivi] = useState(new Date().getFullYear());
     // giorni EFFETTIVI di una richiesta: esclusi domeniche e festivi
     const giorniEffettivi = useCallback((r: VacationRequest) => {
         const conta = (ymd: string) => { const d = new Date(ymd + "T12:00"); return d.getDay() !== 0 && !festiviSet.has(ymd); };
@@ -267,11 +270,12 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
     // contatori sul FILTRO attivo (03/08): scegliendo persone/negozi/periodo i
     // numeri seguono; i due nuovi parlano di GIORNI EFFETTIVI (no domeniche/festivi)
     const oggiYmd = new Date().toISOString().slice(0, 10);
-    const inFerieOggi = filteredRequests.filter(r => r.status === "approved" && r.date_from <= oggiYmd && r.date_to >= oggiYmd).length;
-    const programmate = filteredRequests.filter(r => r.status === "approved" && r.date_from > oggiYmd).length;
-    const inAttesa = filteredRequests.filter(r => r.status === "pending").length;
-    const giorniApprovati = filteredRequests.filter(r => r.status === "approved").reduce((s, r) => s + giorniEffettivi(r), 0);
-    const giorniInAttesa = filteredRequests.filter(r => r.status === "pending").reduce((s, r) => s + giorniEffettivi(r), 0);
+    const soloFerie = filteredRequests.filter(r => (r.tipo || "ferie") !== "corso");   // i CORSI non contano nei numeri ferie
+    const inFerieOggi = soloFerie.filter(r => r.status === "approved" && r.date_from <= oggiYmd && r.date_to >= oggiYmd).length;
+    const programmate = soloFerie.filter(r => r.status === "approved" && r.date_from > oggiYmd).length;
+    const inAttesa = soloFerie.filter(r => r.status === "pending").length;
+    const giorniApprovati = soloFerie.filter(r => r.status === "approved").reduce((s, r) => s + giorniEffettivi(r), 0);
+    const giorniInAttesa = soloFerie.filter(r => r.status === "pending").reduce((s, r) => s + giorniEffettivi(r), 0);
     const fmtGiorni = (n: number) => (Math.round(n * 10) / 10).toLocaleString("it-IT");
 
     const formatDate = (iso: string) => {
@@ -284,9 +288,9 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                 <div className="space-y-2">
                     {puoRegistrare && (
                         <div className="flex justify-end">
-                            <button onClick={() => setShowFestivi(true)} title="I giorni rossi considerati nel conteggio dei giorni effettivi (domeniche escluse a prescindere)"
+                            <button onClick={() => setShowFestivi(true)} title="I giorni rossi considerati nel conteggio dei giorni effettivi (domeniche escluse a prescindere) — dentro scorri anno per anno"
                                 className="px-3 py-1.5 rounded-lg border border-rose-400/40 bg-rose-500/10 text-rose-300 text-[11px] font-bold hover:bg-rose-500/20">
-                                🔴 Festivi considerati ({festivi.length})
+                                🔴 Festivi {new Date().getFullYear()} ({festivi.filter(f => f.giorno.startsWith(String(new Date().getFullYear()))).length})
                             </button>
                         </div>
                     )}
@@ -439,13 +443,18 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                             </button>
                         )}
 
-                        {puoRegistrare && (
-                            <button onClick={() => setRegOpen(true)}
+                        {puoRegistrare && (<>
+                            <button onClick={() => { setRegTipo("ferie"); setRegOpen(true); }}
                                 title="Registra ferie già approvate per altre vie: entrano nel registro direttamente come Approvate"
                                 className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/25 flex items-center gap-1.5">
-                                <span className="text-base leading-none">＋</span> Registra ferie
+                                <span className="text-base leading-none">＋</span> Ferie
                             </button>
-                        )}
+                            <button onClick={() => { setRegTipo("corso"); setRegOpen(true); }}
+                                title="Registra un CORSO di formazione: compare in calendario con un colore dedicato e non conta nei giorni di ferie"
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 hover:bg-sky-500/25 flex items-center gap-1.5">
+                                <span className="text-base leading-none">＋</span> Corsi
+                            </button>
+                        </>)}
                         {isAdminLike && (
                             <div className="flex items-center gap-1 rounded-xl border border-white/10 p-1 bg-white/[0.03]">
                                 {(["registro", "calendario"] as const).map(v => (
@@ -524,6 +533,9 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                                             {r.half_day === "mattina" ? "☀️" : "🌇"} ½ giornata · {r.half_day}
                                                         </span>
                                                     )}
+                                                    {(r.tipo || "ferie") === "corso" && (
+                                                        <span className="mt-0.5 inline-flex items-center gap-1 self-start px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[10px] font-black uppercase tracking-tight chip-corso">🎓 Corso</span>
+                                                    )}
                                                 </div>
                                             </td>
                                             <td className="px-5 py-4">
@@ -601,11 +613,11 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                 <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setRegOpen(false)}>
                     <div className="glass-card w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="p-5 border-b border-white/10 flex items-center justify-between">
-                            <h3 className="text-lg font-bold text-white">＋ Registra ferie approvate</h3>
+                            <h3 className="text-lg font-bold text-white">{regTipo === "corso" ? "＋ Registra corso di formazione" : "＋ Registra ferie approvate"}</h3>
                             <button onClick={() => setRegOpen(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
                         </div>
                         <div className="p-5 space-y-4">
-                            <p className="text-xs text-slate-500 leading-relaxed">Per ferie già concordate fuori dal CRM (a voce, al telefono…): la riga entra nel registro direttamente come <strong className="text-emerald-400">Approvata</strong>, con la nota di chi l&apos;ha registrata.</p>
+                            <p className="text-xs text-slate-500 leading-relaxed">{regTipo === "corso" ? <>Il corso entra nel registro come <strong className="text-sky-400">Corso</strong> (colore dedicato in calendario, escluso dai giorni di ferie), con la nota di chi l&apos;ha registrato.</> : <>Per ferie già concordate fuori dal CRM (a voce, al telefono…): la riga entra nel registro direttamente come <strong className="text-emerald-400">Approvata</strong>, con la nota di chi l&apos;ha registrata.</>}</p>
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Collaboratore</label>
                                 <SelectPersona value={regPersona} onChange={setRegPersona} opzioni={staff.map(s => s.full_name)} placeholder="Scrivi o scegli il collaboratore…" className="glass-input rounded-lg py-2 w-full text-sm" />
@@ -645,7 +657,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                 <button onClick={() => setRegOpen(false)} className="px-4 py-2 rounded-lg border border-white/15 text-slate-300 text-sm hover:bg-white/5">Annulla</button>
                                 <button onClick={registraDiretta} disabled={!regPersona || !regDal || !regAl || regAl < regDal || regBusy}
                                     className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed">
-                                    {regBusy ? "Salvataggio…" : "Registra come approvata"}
+                                    {regBusy ? "Salvataggio…" : regTipo === "corso" ? "Registra il corso" : "Registra come approvata"}
                                 </button>
                             </div>
                         </div>
@@ -658,13 +670,20 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                 <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setShowFestivi(false)}>
                     <div className="glass-card w-full max-w-lg shadow-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
                         <div className="p-5 border-b border-white/10 flex items-center justify-between">
-                            <h3 className="text-lg font-bold text-white">🔴 Giorni festivi considerati</h3>
+                            <h3 className="text-lg font-bold text-white flex items-center gap-3">🔴 Festivi
+                                <span className="flex items-center gap-1.5 text-sm font-black">
+                                    <button onClick={() => setAnnoFestivi(a => a - 1)} className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300">‹</button>
+                                    <span className="min-w-[54px] text-center">{annoFestivi}</span>
+                                    <button onClick={() => setAnnoFestivi(a => a + 1)} className="px-2 py-0.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300">›</button>
+                                </span>
+                                <span className="text-xs font-bold text-rose-300">{festivi.filter(f => f.giorno.startsWith(String(annoFestivi))).length} giorni</span>
+                            </h3>
                             <button onClick={() => setShowFestivi(false)} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"><X className="w-5 h-5" /></button>
                         </div>
                         <div className="p-5 space-y-4 overflow-y-auto">
                             <p className="text-xs text-slate-500">Questi giorni (più TUTTE le domeniche, mai lavorative) non contano nei giorni effettivi di ferie e sono evidenziati in rosso sul calendario.</p>
                             <div className="divide-y divide-white/5 rounded-xl border border-white/10 overflow-hidden">
-                                {festivi.map(f => (
+                                {festivi.filter(f => f.giorno.startsWith(String(annoFestivi))).map(f => (
                                     <div key={f.giorno} className="flex items-center gap-3 px-4 py-2.5 bg-white/[0.02] text-sm">
                                         <span className="font-mono text-rose-300">{f.giorno.split("-").reverse().join("/")}</span>
                                         <span className="text-slate-200">{f.nome || "—"}</span>
@@ -672,7 +691,7 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                                             title="Togli dai festivi" className="ml-auto p-1.5 rounded-lg text-slate-600 hover:text-rose-400 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button>
                                     </div>
                                 ))}
-                                {festivi.length === 0 && <p className="p-4 text-sm text-slate-500">Nessun festivo censito.</p>}
+                                {festivi.filter(f => f.giorno.startsWith(String(annoFestivi))).length === 0 && <p className="p-4 text-sm text-slate-500">Nessun festivo censito per il {annoFestivi}.</p>}
                             </div>
                             <div className="rounded-xl border border-white/10 p-3.5 space-y-2">
                                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Aggiungi un festivo</p>
@@ -720,7 +739,8 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
     const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
     // INTERATTIVO (03/08): due viste (Mese / Persone), giorno cliccabile con
     // pannello di dettaglio, toggle per includere o no le richieste in attesa.
-    const [modo, setModo] = useState<"giorno" | "settimana" | "mese" | "persone">("mese");
+    // SETTIMANA come vista regina (Luca 03/08): e' quella che usera' l'amministrazione
+    const [modo, setModo] = useState<"giorno" | "settimana" | "mese" | "persone">("settimana");
     // giorno di riferimento per le viste Giorno/Settimana (03/08)
     const [dataRif, setDataRif] = useState<Date>(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
     const [conAttesa, setConAttesa] = useState(true);
@@ -828,45 +848,68 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
                 );
             })()}
 
-            {modo === "settimana" && (<>
-                <div className="grid grid-cols-7 gap-px text-center mb-1">
-                    {settimana.map((d, i) => (
-                        <div key={i} title={festivi.get(iso(d)) || undefined} className={cn("text-[10px] font-bold uppercase tracking-widest py-1", d.getTime() === oggi.getTime() ? "text-indigo-300" : (festivi.get(iso(d)) || d.getDay() === 0) ? "text-rose-400" : "text-slate-500")}>
-                            {d.toLocaleDateString("it-IT", { weekday: "short" })} {d.getDate()}{festivi.get(iso(d)) ? " 🔴" : ""}
-                        </div>
-                    ))}
-                </div>
-                <div className="grid grid-cols-7 gap-px bg-white/5 rounded-xl overflow-hidden">
-                    {settimana.map((d, i) => {
-                        const k = iso(d);
-                        const rr = delGiorno(d);
-                        return (
-                            <div key={i} onClick={() => setGiornoSel(giornoSel === k ? null : k)}
-                                title={festivi.get(k) ? `🔴 ${festivi.get(k)}` : rr.length ? "Clicca per il dettaglio del giorno" : undefined}
-                                className={cn("min-h-[150px] p-1.5 bg-[#0f111a] cursor-pointer transition-colors hover:bg-[#161a2c]",
-                                    festivi.get(k) && "bg-rose-500/[0.07]",
-                                    d.getTime() === oggi.getTime() && "bg-indigo-500/[0.06]", giornoSel === k && "ring-2 ring-inset ring-indigo-400/80")}>
-                                <div className="space-y-0.5">
-                                    {rr.slice(0, 7).map(r => (
-                                        <div key={r.id} title={`${r.employee_name} (${r.store}) — ${r.status === "approved" ? "approvata" : "in attesa"}${r.reason ? `: ${r.reason}` : ""}`}
-                                            className={cn("truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight",
-                                                r.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200")}>
-                                            {r.half_day ? (r.half_day === "mattina" ? "½☀️ " : "½🌇 ") : ""}{nomeCorto(r.employee_name)}
-                                        </div>
-                                    ))}
-                                    {rr.length > 7 && <div className="text-[9px] text-slate-500 px-1">+{rr.length - 7} altre</div>}
-                                    {malDelGiorno(d).slice(0, 4).map(m => (
-                                        <div key={"m" + m.id} title={`${m.employee_name} (${m.store}) — in malattia`}
-                                            className="truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight bg-fuchsia-500/20 text-fuchsia-200">
-                                            🤒 {nomeCorto(m.employee_name)}
-                                        </div>
-                                    ))}
+            {modo === "settimana" && (
+                /* SETTIMANA = vista regina (Luca 03/08): colonne larghe e alte,
+                   dentro ogni giorno le persone RAGGRUPPATE PER PUNTO VENDITA
+                   (nome del negozio, lineetta sottile, poi le persone), con
+                   ferie, mezze giornate, CORSI (azzurro 🎓) e malattie (🤒) */
+                <div className="overflow-x-auto custom-scrollbar rounded-2xl">
+                    <div className="min-w-[1080px]">
+                        <div className="grid grid-cols-7 gap-px text-center mb-1">
+                            {settimana.map((d, i) => (
+                                <div key={i} title={festivi.get(iso(d)) || undefined} className={cn("text-[11px] font-bold uppercase tracking-widest py-1.5", d.getTime() === oggi.getTime() ? "text-indigo-300" : (festivi.get(iso(d)) || d.getDay() === 0) ? "text-rose-400" : "text-slate-500")}>
+                                    {d.toLocaleDateString("it-IT", { weekday: "short" })} {d.getDate()}{festivi.get(iso(d)) ? " 🔴" : ""}
                                 </div>
-                            </div>
-                        );
-                    })}
+                            ))}
+                        </div>
+                        <div className="grid grid-cols-7 gap-px bg-white/5 rounded-2xl overflow-hidden">
+                            {settimana.map((d, i) => {
+                                const k = iso(d);
+                                const rr = delGiorno(d);
+                                const mm = malDelGiorno(d);
+                                // raggruppo per NEGOZIO: prima le voci ferie/corsi, poi le malattie
+                                const perNegozio = new Map<string, { r: { id: number; employee_name: string; store: string; status?: string; tipo?: string | null; half_day?: string | null; reason?: string | null }; malattia: boolean }[]>();
+                                rr.forEach(r => { const key = r.store || "—"; const g = perNegozio.get(key) || []; g.push({ r, malattia: false }); perNegozio.set(key, g); });
+                                mm.forEach(m => { const key = m.store || "—"; const g = perNegozio.get(key) || []; g.push({ r: m, malattia: true }); perNegozio.set(key, g); });
+                                const negozi = [...perNegozio.keys()].sort((a, b) => a.localeCompare(b));
+                                return (
+                                    <div key={i} onClick={() => setGiornoSel(giornoSel === k ? null : k)}
+                                        title={festivi.get(k) ? `🔴 ${festivi.get(k)}` : (rr.length || mm.length) ? "Clicca per il dettaglio del giorno" : undefined}
+                                        className={cn("min-h-[260px] p-2 bg-[#0f111a] cursor-pointer transition-colors hover:bg-[#161a2c]",
+                                            festivi.get(k) && "bg-rose-500/[0.07]",
+                                            d.getTime() === oggi.getTime() && "bg-indigo-500/[0.06]", giornoSel === k && "ring-2 ring-inset ring-indigo-400/80")}>
+                                        {negozi.length === 0 && <p className="text-[10px] text-slate-700 italic mt-1 text-center">—</p>}
+                                        <div className="space-y-2.5">
+                                            {negozi.map(neg => (
+                                                <div key={neg}>
+                                                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 truncate">{neg}</p>
+                                                    <div className="border-b border-white/10 mb-1 mt-0.5" />
+                                                    <div className="space-y-0.5">
+                                                        {(perNegozio.get(neg) || []).map(({ r, malattia }, x) => (
+                                                            malattia ? (
+                                                                <div key={"m" + x} title={`${r.employee_name} — in malattia`}
+                                                                    className="truncate rounded-md px-1.5 py-1 text-[11px] font-semibold leading-tight bg-fuchsia-500/20 text-fuchsia-200 chip-malattia">
+                                                                    🤒 {r.employee_name}
+                                                                </div>
+                                                            ) : (
+                                                                <div key={r.id} title={`${r.employee_name} — ${(r.tipo || "ferie") === "corso" ? "corso" : r.status === "approved" ? "ferie approvate" : "ferie in attesa"}${r.reason ? `: ${r.reason}` : ""}`}
+                                                                    className={cn("truncate rounded-md px-1.5 py-1 text-[11px] font-semibold leading-tight",
+                                                                        (r.tipo || "ferie") === "corso" ? "bg-sky-500/25 text-sky-100 chip-corso" : r.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200")}>
+                                                                    {(r.tipo || "ferie") === "corso" ? "🎓 " : r.half_day ? (r.half_day === "mattina" ? "½☀️ " : "½🌇 ") : ""}{r.employee_name}
+                                                                </div>
+                                                            )
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
-            </>)}
+            )}
 
             {modo === "mese" && (<>
                 <div className="grid grid-cols-7 gap-px text-center mb-1">
@@ -889,16 +932,16 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
                                 </div>
                                 <div className="space-y-0.5">
                                     {rr.slice(0, 3).map(r => (
-                                        <div key={r.id} title={`${r.employee_name} (${r.store}) — ${r.status === "approved" ? "approvata" : "in attesa"}${r.reason ? `: ${r.reason}` : ""}`}
+                                        <div key={r.id} title={`${r.employee_name} (${r.store}) — ${(r.tipo || "ferie") === "corso" ? "corso" : r.status === "approved" ? "approvata" : "in attesa"}${r.reason ? `: ${r.reason}` : ""}`}
                                             className={cn("truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight",
-                                                r.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200")}>
-                                            {r.half_day ? (r.half_day === "mattina" ? "½☀️ " : "½🌇 ") : ""}{nomeCorto(r.employee_name)}
+                                                (r.tipo || "ferie") === "corso" ? "bg-sky-500/25 text-sky-100 chip-corso" : r.status === "approved" ? "bg-emerald-500/20 text-emerald-200" : "bg-amber-500/20 text-amber-200")}>
+                                            {(r.tipo || "ferie") === "corso" ? "🎓 " : r.half_day ? (r.half_day === "mattina" ? "½☀️ " : "½🌇 ") : ""}{nomeCorto(r.employee_name)}
                                         </div>
                                     ))}
                                     {rr.length > 3 && <div className="text-[9px] text-slate-500 px-1">+{rr.length - 3} altre</div>}
                                     {malDelGiorno(d).slice(0, 2).map(m => (
                                         <div key={"m" + m.id} title={`${m.employee_name} (${m.store}) — in malattia`}
-                                            className="truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight bg-fuchsia-500/20 text-fuchsia-200">
+                                            className="truncate rounded px-1 py-0.5 text-[10px] font-semibold leading-tight bg-fuchsia-500/20 text-fuchsia-200 chip-malattia">
                                             🤒 {nomeCorto(m.employee_name)}
                                         </div>
                                     ))}
@@ -935,13 +978,13 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
                                         const d = new Date(mese.getFullYear(), mese.getMonth(), i + 1);
                                         const k = iso(d);
                                         const rr = nelMese.filter(r => r.employee_name === p && r.date_from <= k && r.date_to >= k);
-                                        const st = rr.some(r => r.status === "approved") ? "approved" : rr.length ? "pending" : "";
+                                        const st = rr.some(r => (r.tipo || "ferie") === "corso") ? "corso" : rr.some(r => r.status === "approved") ? "approved" : rr.length ? "pending" : "";
                                         const weekend = d.getDay() === 0 || d.getDay() === 6;
                                         return (
                                             <div key={i} onClick={() => rr.length && setGiornoSel(giornoSel === k ? null : k)}
                                                 title={rr.map(r => `${r.status === "approved" ? "✅" : "⏳"} ${fmt(r.date_from)} → ${fmt(r.date_to)}${r.half_day ? ` (½ ${r.half_day})` : ""}${r.reason ? ` — ${r.reason}` : ""}`).join("\n") || undefined}
                                                 className={cn("h-7 border-r border-b border-white/5",
-                                                    st === "approved" ? "bg-emerald-500/40 cursor-pointer" : st === "pending" ? "bg-amber-500/35 cursor-pointer" : festivi.get(k) ? "bg-rose-500/[0.10]" : weekend ? "bg-white/[0.04]" : "bg-white/[0.01]",
+                                                    st === "corso" ? "bg-sky-500/40 cursor-pointer" : st === "approved" ? "bg-emerald-500/40 cursor-pointer" : st === "pending" ? "bg-amber-500/35 cursor-pointer" : festivi.get(k) ? "bg-rose-500/[0.10]" : weekend ? "bg-white/[0.04]" : "bg-white/[0.01]",
                                                     d.getTime() === oggi.getTime() && "ring-1 ring-inset ring-indigo-400/60",
                                                     giornoSel === k && st && "ring-2 ring-inset ring-indigo-300")} />
                                         );
@@ -997,6 +1040,7 @@ function CalendarioFerie({ richieste, mese, setMese, festivi, malattie }: { rich
             <div className="flex items-center gap-4 mt-3 text-[11px] text-slate-400 flex-wrap">
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-500/40" /> Approvate</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-500/40" /> In attesa</span>
+                <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-sky-500/40" /> 🎓 Corso</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-fuchsia-500/40" /> 🤒 Malattia</span>
                 <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-rose-500/40" /> Festivo (come la domenica: mai contato nei giorni)</span>
                 <span className="text-slate-600">Giorno · Settimana · Mese · Persone — nelle griglie clicca un giorno per il dettaglio</span>
