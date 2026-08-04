@@ -2267,12 +2267,23 @@ export default function InviaPda() {
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
 function StepCard({ title, color, icon, badge, children }) {
+  const m = /(\d+)/.exec(title || "");
+  const kicker = m ? `Passo ${m[1]} di ${STEP_LABELS.length}` : null;
+  const parts = title && title.includes("—") ? title.split("—") : null;
   return (
-    <div className="glass-panel p-6 md:p-8 animate-in slide-in-from-top-2 fade-in duration-200" style={{ borderLeft: `4px solid ${color}` }}>
+    <div className="glass-panel sc-card relative p-6 md:p-8 animate-in slide-in-from-top-2 fade-in duration-200">
+      <span className="sc-stripe" aria-hidden />
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <span className="text-xl">{icon}</span>
-          <h2 className="text-lg font-bold text-white uppercase tracking-wide">{title}</h2>
+        <div className="flex items-center gap-3.5">
+          <span className="sc-ic">{icon}</span>
+          <div className="min-w-0">
+            {kicker && <div className="sc-kicker">{kicker}</div>}
+            <h2 className="sc-title">
+              {parts
+                ? <>{parts[0].trim()} — <b>{parts.slice(1).join("—").trim()}</b></>
+                : title}
+            </h2>
+          </div>
         </div>
         {badge && (
           <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase">

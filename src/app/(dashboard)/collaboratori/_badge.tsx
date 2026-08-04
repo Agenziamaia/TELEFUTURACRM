@@ -143,7 +143,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Top Stats Bar - Only for Admins or to show personal today summary */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="glass-panel p-5 border-l-4 border-l-indigo-500">
+                <div className="glass-panel p-5 border-l-4 border-l-indigo-500 badge-kpi">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Stato Attuale</p>
                     <div className="flex items-center gap-3">
                         <div className={cn(
@@ -155,7 +155,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                     </div>
                 </div>
 
-                <div className="glass-panel p-5 border-l-4 border-l-emerald-500">
+                <div className="glass-panel p-5 border-l-4 border-l-emerald-500 badge-kpi">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Tempo Oggi</p>
                     <p className="text-2xl font-black text-white">
                         {Math.floor(todaySeconds / 3600)}h <span className="text-emerald-400">{String(Math.floor(todaySeconds / 60) % 60).padStart(2, "0")}m</span> <span className="text-sm text-slate-400">{String(todaySeconds % 60).padStart(2, "0")}s</span>
@@ -164,11 +164,11 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
 
                 {vistaTeam && (
                     <>
-                        <div className="glass-panel p-5 border-l-4 border-l-sky-500">
+                        <div className="glass-panel p-5 border-l-4 border-l-sky-500 badge-kpi">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Presenti Ora</p>
                             <p className="text-2xl font-black text-white">{teamStats.presenti}</p>
                         </div>
-                        <div className="glass-panel p-5 border-l-4 border-l-violet-500">
+                        <div className="glass-panel p-5 border-l-4 border-l-violet-500 badge-kpi">
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Totale Ore Team</p>
                             <p className="text-2xl font-black text-white">
                                 {Math.floor(teamStats.totalMinutes / 60)}h <span className="text-violet-400">{String(teamStats.totalMinutes % 60).padStart(2, "0")}m</span>
@@ -456,7 +456,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                             <div key={s.id}
                                 onClick={() => canForce && setTimelineLive(s)}
                                 title={canForce ? "Clicca per la timeline live (entrata e pause di oggi)" : undefined}
-                                className={cn("glass-panel p-4 flex flex-col gap-3 relative overflow-hidden group", canForce && "cursor-pointer hover:bg-white/[0.04] transition-colors")}>
+                                className={cn("glass-panel p-4 flex flex-col gap-3 relative overflow-hidden group badge-emp", s.pause_started_at ? "is-pausa" : "is-live", canForce && "cursor-pointer hover:bg-white/[0.04] transition-colors")}>
                                 <div className="absolute top-0 right-0 p-2 opacity-5 mt-1 mr-1">
                                     <Clock className="w-12 h-12" />
                                 </div>
@@ -466,7 +466,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                                         <p className="text-[10px] text-slate-500 uppercase tracking-wider">{s.store}</p>
                                     </div>
                                     <span className={cn(
-                                        "px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter border",
+                                        "px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tighter border badge-status",
                                         s.pause_started_at
                                             ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                                             : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"

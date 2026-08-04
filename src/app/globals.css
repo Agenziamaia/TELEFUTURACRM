@@ -660,3 +660,233 @@ html.light #clienti-shell > header{background:#ffffff !important;box-shadow:none
 /* off-white anche al login; header a filo (niente ombra sospesa) tranne Clienti-shell */
 html.light #login-root{background:linear-gradient(155deg,#f7f6f3 0%,#efeee9 100%) !important;}
 html.light header{box-shadow:none !important;border-bottom:1px solid rgba(15,23,42,.08) !important;}
+
+/* Caller: intera sezione in un pannello coeso come Clienti (no header isolato) */
+html.light #caller-shell{background:#ffffff !important;border:1px solid rgba(15,23,42,.10);border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.05),0 10px 28px rgba(15,23,42,.06);}
+html.light #caller-shell > header{background:#ffffff !important;box-shadow:none !important;border-bottom:1px solid rgba(15,23,42,.07) !important;border-radius:16px 16px 0 0;}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TEMA CHIARO — look PREMIUM (04/08, richiesta Luca): profondita', non piatto.
+   Non "colori scuri girati": fondo con micro-glow, card con gradiente + ombra a
+   strati + filo lucido in alto, velature-card che risaltano sull'off-white.
+   ═══════════════════════════════════════════════════════════════════════ */
+html.light body[class]{
+  background-color:#edeef3 !important;
+  background-image:
+    radial-gradient(900px 520px at 12% -8%, rgba(99,102,241,.06), transparent 60%),
+    radial-gradient(820px 480px at 100% 108%, rgba(236,72,153,.05), transparent 60%),
+    linear-gradient(180deg,#f4f4f8 0%,#e9eaf0 100%) !important;
+  background-attachment:fixed !important;
+}
+html.light .glass-card,html.light .glass-panel{
+  background:linear-gradient(180deg,#ffffff 0%,#f6f7fc 100%) !important;
+  border:1px solid rgba(30,41,90,.10) !important;
+  box-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 22px rgba(40,45,95,.10),0 22px 46px rgba(40,45,95,.06),inset 0 1px 0 rgba(255,255,255,.75) !important;
+}
+html.light .glass-card:hover{
+  border-color:rgba(79,70,229,.30) !important;
+  box-shadow:0 2px 6px rgba(15,23,42,.05),0 16px 38px rgba(79,70,229,.16),inset 0 1px 0 rgba(255,255,255,.8) !important;
+}
+/* velature-card inline a bassa opacita' (STEP, riquadri) → quasi bianche: risaltano */
+html.light{--tf-w20:rgba(255,255,255,.92);--tf-w30:rgba(255,255,255,.93);--tf-w40:rgba(255,255,255,.95);--tf-w50:rgba(255,255,255,.9);}
+/* --tf-w60 e' quasi sempre un BORDO (input/select), non una superficie: nel chiaro deve restare
+   grigio visibile, non bianco. Gli stati (verde valido / rosso errore) usano hex, non questa var. */
+html.light{--tf-w60:rgba(18,28,54,.14);}
+/* input crisp: leggera profondita' interna + focus ring viola (senza toccare i bordi di stato) */
+html.light input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html.light select,
+html.light textarea{ box-shadow:inset 0 1px 2px rgba(18,28,54,.045) !important; }
+html.light input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+html.light select:focus,
+html.light textarea:focus{ box-shadow:0 0 0 3px rgba(109,92,255,.14),inset 0 1px 2px rgba(18,28,54,.03) !important; }
+/* i pannelli/sezioni bianchi hanno anche loro un filo di profondita' */
+html.light #clienti-shell,html.light #caller-shell{background:linear-gradient(180deg,#ffffff,#f7f8fd) !important;box-shadow:0 1px 3px rgba(15,23,42,.05),0 12px 30px rgba(40,45,95,.08) !important;}
+
+/* card-div a velatura bassa (Invia PDA ecc.: bg-white/[0.02..0.05], non glass-card)
+   → bianche con bordo + ombra: profondita' anche fuori dai glass-card */
+html.light [class*="bg-white/[0.02]"],html.light [class*="bg-white/[0.03]"],html.light [class*="bg-white/[0.04]"],html.light [class*="bg-white/[0.05]"]{
+  background-color:#ffffff !important;
+  border-color:rgba(30,41,90,.09) !important;
+  box-shadow:0 1px 2px rgba(15,23,42,.04),0 6px 18px rgba(40,45,95,.07) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TEMA CHIARO — REDESIGN approvato (04/08, Luca). Questo blocco e' l'AUTORITA'
+   estetica: fondo con profondita', card con gradiente+glow+ombra a strati+filo
+   lucido. Match del mockup /artifact 581e525d.
+   ═══════════════════════════════════════════════════════════════════════ */
+html.light body[class]{
+  background-color:#eaecf3 !important;
+  background-image:
+    radial-gradient(900px 520px at 10% -10%, rgba(109,92,255,.10), transparent 62%),
+    radial-gradient(820px 480px at 105% 112%, rgba(236,72,153,.08), transparent 60%),
+    linear-gradient(180deg,#eef0f6 0%,#e5e7f0 100%) !important;
+  background-attachment:fixed !important;
+}
+html.light .glass-card,html.light .glass-panel{
+  background:
+    radial-gradient(130% 90% at 12% 0%, rgba(109,92,255,.055), transparent 58%),
+    linear-gradient(180deg,#ffffff 0%,#f8f9ff 100%) !important;
+  border:1px solid rgba(18,28,54,.09) !important;
+  box-shadow:0 1px 2px rgba(18,28,54,.05),0 10px 26px rgba(58,64,120,.10),0 34px 64px rgba(58,64,120,.06),inset 0 1px 0 rgba(255,255,255,.9) !important;
+}
+html.light .glass-card:hover{
+  border-color:rgba(109,92,255,.32) !important;
+  box-shadow:0 2px 6px rgba(18,28,54,.06),0 18px 44px rgba(109,92,255,.17),inset 0 1px 0 #fff !important;
+}
+html.light #clienti-shell,html.light #caller-shell{
+  background:linear-gradient(180deg,#ffffff 0%,#f8f9ff 100%) !important;
+  border-color:rgba(18,28,54,.10) !important;
+  box-shadow:0 1px 3px rgba(18,28,54,.05),0 14px 34px rgba(58,64,120,.08) !important;
+}
+/* riquadri inline (Registra Vendita STEP ecc.) ombra premium SOLO nel chiaro */
+:root{--rv-shadow:none;}
+html.light{--rv-shadow:0 1px 2px rgba(18,28,54,.05),0 10px 26px rgba(58,64,120,.10),0 26px 52px rgba(58,64,120,.05);}
+
+/* ===TFSTEPCARD=== Inserimento Contratto step cards — mockup signatures (stripe / icon tile / kicker / accent title). Dark defaults keep the approved look; html.light matches the approved light redesign. */
+.sc-stripe{ position:absolute; left:0; top:18px; bottom:18px; width:4px; border-radius:0 4px 4px 0; background:linear-gradient(180deg,#8b7cff,#ec4899); box-shadow:0 4px 14px rgba(139,92,246,.28); }
+.sc-ic{ width:44px; height:44px; border-radius:14px; flex:none; display:grid; place-items:center; font-size:20px; line-height:1;
+  background:linear-gradient(135deg, rgba(139,124,255,.20), rgba(236,72,153,.14));
+  border:1px solid rgba(139,124,255,.28); box-shadow:0 6px 16px rgba(139,124,255,.14); }
+.sc-kicker{ font-size:10px; font-weight:800; letter-spacing:.18em; text-transform:uppercase; color:rgba(148,163,184,.8); margin-bottom:3px; }
+.sc-title{ font-size:18px; font-weight:800; letter-spacing:.02em; text-transform:uppercase; color:#f1f5f9; line-height:1.15; }
+.sc-title b{ color:#c4b5fd; font-weight:800; }
+
+html.light .sc-stripe{ background:linear-gradient(180deg,#6d5cff,#ec4899); box-shadow:0 4px 14px rgba(109,92,255,.30); }
+html.light .sc-ic{ background:linear-gradient(135deg,#efeaff,#f7e9f6); border:1px solid rgba(109,92,255,.22); box-shadow:0 6px 16px rgba(109,92,255,.15); }
+html.light .sc-kicker{ color:#93a0b6; }
+html.light .sc-title{ color:#0e1526; }
+html.light .sc-title b{ color:#4b34e0; }
+
+/* ===TFSIDEBAR=== Sidebar premium nel chiaro: rail bianco netto (non velatura translucida
+   "fangosa" sul gradiente), bordo/ombra puliti, voce attiva a "pillola" con accento indaco. */
+html.light #crm-sidebar{
+  background:linear-gradient(180deg,#ffffff 0%,#fbfbff 100%) !important;
+  border-right:1px solid rgba(18,28,54,.085) !important;
+  box-shadow:8px 0 30px rgba(58,64,120,.05) !important;
+  backdrop-filter:none !important;
+}
+html.light #crm-sidebar .nav-link{ color:#54617a !important; font-weight:600; }
+html.light #crm-sidebar .nav-link:hover{ color:#0e1526 !important; background:rgba(109,92,255,.07) !important; }
+html.light #crm-sidebar .nav-link.active{
+  color:#4b34e0 !important; font-weight:700;
+  background:linear-gradient(90deg, rgba(109,92,255,.15), rgba(109,92,255,.05)) !important;
+  box-shadow:inset 0 0 0 1px rgba(109,92,255,.18) !important;
+}
+/* separatori/bordi interni della sidebar → grigio tenue coerente */
+html.light #crm-sidebar .border-b,
+html.light #crm-sidebar .border-t,
+html.light #crm-sidebar .border-l{ border-color:rgba(18,28,54,.08) !important; }
+/* logo header sidebar */
+html.light #crm-sidebar .text-white{ color:#0e1526 !important; }
+
+/* ===TFONCOLOR=== Utility per PANNELLI COLORATI/scuri che restano colorati anche nel chiaro
+   (es. header brand del carrello): al loro interno le velature bianche (--tf-w*) NON devono
+   diventare navy — vanno tenute bianche, altrimenti chip/etichette spariscono sul colore.
+   Ri-localizza le var per il sottoalbero. Solo tema chiaro; il dark usa gia' i default bianchi. */
+html.light .tf-on-color{
+  --tf-w120:rgba(255,255,255,.15);
+  --tf-w150:rgba(255,255,255,.16);
+  --tf-w160:rgba(255,255,255,.16);
+  --tf-w200:rgba(255,255,255,.20);
+  --tf-w250:rgba(255,255,255,.28);
+  --tf-w300:rgba(255,255,255,.32);
+  --tf-w400:rgba(255,255,255,.42);
+  --tf-w600:rgba(255,255,255,.74);
+  --tf-w750:rgba(255,255,255,.84);
+  --tf-w800:rgba(255,255,255,.90);
+}
+/* chip statistiche del carrello: leggero filo bianco per staccarle dal gradiente brand */
+html.light .tf-on-color [style*="var(--tf-w120)"]{ box-shadow:inset 0 0 0 1px rgba(255,255,255,.12); }
+
+/* ===TFCARTHEAD=== Riepilogo vendite (carrello) — TEMA CHIARO opzione B approvata (Luca 04/08):
+   testata indaco TENUE (non slab viola pieno), chip bianche, testi scuri leggibili.
+   Il dark resta lo slab brand approvato (regole solo html.light). */
+html.light .cart-head{
+  background:linear-gradient(180deg,#eef0ff 0%,#e7eafb 100%) !important;
+  border-bottom:1px solid rgba(109,92,255,.14);
+}
+html.light .cart-head .cart-ink{ color:#0e1526 !important; }
+html.light .cart-head .cart-stat{
+  background:#ffffff !important;
+  border:1px solid rgba(18,28,54,.08);
+  box-shadow:0 1px 2px rgba(18,28,54,.04);
+}
+html.light .cart-head .cart-val{
+  background:#ffffff !important;
+  border-color:rgba(109,92,255,.24) !important;
+  box-shadow:0 1px 2px rgba(18,28,54,.04);
+}
+html.light .cart-head .cart-valv{ color:#4b34e0 !important; }
+html.light .cart-head .cart-x{
+  background:#ffffff !important; color:#334155 !important;
+  border:1px solid rgba(18,28,54,.12) !important;
+}
+
+/* ===TFRVSTEP=== Barra step "ricca" Registra Vendita — TEMA CHIARO: niente bordo nero duro sul
+   pill attivo, niente etichetta bianca invisibile, niente tessere-icona grigie fangose.
+   Pill attivo = indaco pulito + testo indaco; tessere icona bianche. Dark invariato (solo html.light). */
+html.light .rv-step-ic{
+  background:#ffffff !important;
+  border:1px solid rgba(18,28,54,.08);
+  box-shadow:0 1px 2px rgba(18,28,54,.04);
+}
+html.light .rv-step.is-active{
+  border-color:rgba(109,92,255,.5) !important;
+  background:rgba(109,92,255,.09) !important;
+  box-shadow:0 4px 14px rgba(109,92,255,.13) !important;
+}
+html.light .rv-step.is-active .rv-step-ic{
+  background:linear-gradient(135deg,rgba(109,92,255,.16),rgba(168,85,247,.12)) !important;
+  border-color:rgba(109,92,255,.22) !important;
+}
+html.light .rv-step.is-active .rv-step-lab{ color:#4b34e0 !important; }
+html.light .rv-step.is-done:not(.is-active){ border-color:rgba(40,167,69,.35) !important; }
+
+/* ===TFRVJOURNEY=== Barra step Registra Vendita — percorso a NODI COLLEGATI (Opzione A approvata,
+   Luca 04/08). Struttura unica per entrambi i temi; colori/superfici per-tema via variabili.
+   Nodo = icona su cerchio bianco con anello di avanzamento (conic), spunta verde se completo,
+   glow indaco se attivo; binario dietro che si riempie coi passi fatti. */
+.rvsteps{position:relative;display:flex;margin-bottom:22px;padding-top:4px;--rv-track:rgba(255,255,255,.13);--rv-node:#161a26;--rv-badge-ring:#0f111a;}
+.rvsteps-rail{position:absolute;top:33px;left:10%;right:10%;height:3px;background:var(--rv-track);border-radius:3px;z-index:0;}
+.rvsteps-rail>i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#22c55e,#6d5cff);transition:width .3s ease;}
+.rvnode-step{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:none;padding:0;position:relative;z-index:1;cursor:pointer;}
+.rvnode-step:disabled{cursor:default;}
+.rvnode-ring{position:relative;width:56px;height:56px;border-radius:50%;display:grid;place-items:center;transition:transform .2s,box-shadow .2s;}
+.rvnode{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--rv-node);box-shadow:0 2px 8px rgba(0,0,0,.28);}
+.rvnode img{max-width:36px !important;max-height:28px !important;width:auto !important;height:auto !important;object-fit:contain;}
+.rvnode>span{font-size:22px;line-height:1;}
+.rvnode-check{position:absolute;top:-2px;right:-2px;width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;display:grid;place-items:center;font-size:11px;font-weight:900;box-shadow:0 3px 8px rgba(22,163,74,.45);border:2px solid var(--rv-badge-ring);}
+.rvnode-step.is-active .rvnode-ring{transform:scale(1.06);box-shadow:0 0 0 5px rgba(109,92,255,.16),0 10px 24px rgba(109,60,217,.30);}
+.rvnode-lab{font-size:13.5px;font-weight:800;letter-spacing:.01em;color:#94a3b8;}
+.rvnode-step.is-active .rvnode-lab{color:#c4b5fd;}
+.rvnode-step.is-done .rvnode-lab{color:#4ade80;}
+.rvnode-sub{font-size:9.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#647082;margin-top:-3px;}
+.rvnode-step.is-locked{opacity:.42;}
+
+html.light .rvsteps{--rv-track:rgba(18,28,54,.12);--rv-node:#ffffff;--rv-badge-ring:#eef0f6;}
+html.light .rvnode{box-shadow:0 2px 8px rgba(18,28,54,.09);}
+html.light .rvnode-lab{color:#5b6a86;}
+html.light .rvnode-step.is-active .rvnode-lab{color:#4b34e0;}
+html.light .rvnode-step.is-done .rvnode-lab{color:#15803d;}
+html.light .rvnode-sub{color:#93a0b6;}
+
+/* ===TFBADGE=== Sezione Badge / presenze — bellezza SOLO tema chiaro (Luca 04/08).
+   Classi inerti nel markup: tutto lo stile e' html.light, il dark resta identico. */
+/* card "in servizio": filo di stato a sinistra + sollevamento all'hover + ombra piu' ricca */
+html.light .badge-emp{ transition:transform .18s ease, box-shadow .18s ease; }
+html.light .badge-emp::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; z-index:6; }
+html.light .badge-emp.is-live::before{ background:linear-gradient(180deg,#22c55e,#16a34a); }
+html.light .badge-emp.is-pausa::before{ background:linear-gradient(180deg,#f59e0b,#d97706); }
+html.light .badge-emp:hover{ transform:translateY(-2px); box-shadow:0 2px 6px rgba(18,28,54,.06),0 16px 38px rgba(58,64,120,.15) !important; }
+/* pill di stato: piena, con pallino "live" pulsante */
+html.light .badge-emp .badge-status{ display:inline-flex; align-items:center; gap:5px; padding:2px 9px 2px 7px !important; }
+html.light .badge-emp .badge-status::before{ content:""; width:5px; height:5px; border-radius:50%; background:currentColor; box-shadow:0 0 0 0 currentColor; }
+html.light .badge-emp.is-live .badge-status{ background:linear-gradient(135deg,#22c55e,#16a34a) !important; color:#fff !important; border-color:transparent !important; box-shadow:0 3px 10px rgba(22,163,74,.30); }
+html.light .badge-emp.is-pausa .badge-status{ background:linear-gradient(135deg,#f59e0b,#d97706) !important; color:#fff !important; border-color:transparent !important; box-shadow:0 3px 10px rgba(217,119,6,.28); }
+html.light .badge-emp.is-live .badge-status::before{ animation:badgePulse 1.8s ease-in-out infinite; }
+@keyframes badgePulse{ 0%{box-shadow:0 0 0 0 rgba(255,255,255,.7)} 70%{box-shadow:0 0 0 5px rgba(255,255,255,0)} 100%{box-shadow:0 0 0 0 rgba(255,255,255,0)} }
+@media (prefers-reduced-motion:reduce){ html.light .badge-emp.is-live .badge-status::before{ animation:none; } }
+/* KPI in alto: leggero sollevamento all'hover, coerente con le card */
+html.light .badge-kpi{ transition:transform .18s ease, box-shadow .18s ease; }
+html.light .badge-kpi:hover{ transform:translateY(-2px); box-shadow:0 2px 6px rgba(18,28,54,.06),0 16px 36px rgba(58,64,120,.13) !important; }

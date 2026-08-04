@@ -1672,7 +1672,7 @@ function CallerPageInner() {
     );
 
     return (
-        <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <div id="caller-shell" className="flex-1 flex flex-col h-full overflow-hidden">
             {/* Telefono Aircall: la bolla ☎ vive SOLO nella sezione Caller (richiesta
                 Luca 26/07). Il login Aircall resta in cookie: uscendo e rientrando
                 dalla pagina non viene richiesto di nuovo. */}

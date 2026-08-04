@@ -4089,7 +4089,7 @@ const NoteStep = ({store,show,setShow,nota,setNota,pData,setPData,pOra,setPOra,p
   const negozioPro=pNeg, setNegozioPro=setPNeg;
   useEffect(()=>{if(store)setNegozioPro(p=>p||store);},[store]);
   const content = (
-    <div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #e83e8c"}}>
+    <div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #e83e8c",boxShadow:"var(--rv-shadow)"}}>
       <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e83e8c)",marginBottom:14,textTransform:"uppercase"}}>📝 Step 7 — Note / Promemoria</div>
       <div style={{textAlign:"center",marginBottom:show?16:0}}>
         <div style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",marginBottom:10}}>Nota o promemoria?</div>
@@ -5390,10 +5390,10 @@ select.rvIn{cursor:pointer}
       {/* stessa pelle delle card del CRM (glass-panel): niente piu' grigio
           fuori tema, e sul tema chiaro diventa bianca come tutto il resto */}
       <div className="crmSidebar glass-panel" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:96,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":undefined,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 112px)",overflowY:"auto",overscrollBehavior:"contain",flexDirection:"column",background:drawerCarrello?"var(--tf-12141f)":undefined,borderRadius:drawerCarrello?0:undefined,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30}}>
-        <div style={{background:bG,borderRadius:drawerCarrello?0:"15px 15px 0 0",padding:"16px 18px"}}>
+        <div className="cart-head" style={{background:bG,borderRadius:drawerCarrello?0:"15px 15px 0 0",padding:"16px 18px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
-            {drawerCarrello&&<button onClick={()=>setDrawerCarrello(false)} style={{background:"var(--tf-w150)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:800,padding:"4px 10px",cursor:"pointer"}}>✕</button>}
+            <div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
+            {drawerCarrello&&<button className="cart-x" onClick={()=>setDrawerCarrello(false)} style={{background:"var(--tf-w150)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:800,padding:"4px 10px",cursor:"pointer"}}>✕</button>}
           </div>
           <div style={{color:"var(--tf-w600)",fontSize:11,marginTop:2}}>{(tipoCliente==="privato"?(ana.nome+" "+ana.cognome).trim():ana.ragioneSociale)||"In compilazione"}</div>
           {/* dati chiave del cliente SOTTO il nome (Luca 03/08): solo se compilati nello Step 3 */}
@@ -5404,15 +5404,15 @@ select.rvIn{cursor:pointer}
             {ana.iban&&<div style={{fontSize:10.5,color:"var(--tf-w800)",fontFamily:"monospace",letterSpacing:.5}}>🏦 {ana.iban}</div>}
           </div>}
           <div style={{display:"flex",gap:8,marginTop:12}}>
-            <div style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{cart.length+(colItems().length>0?1:0)}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>BRAND</div></div>
-            <div style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{tCI}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>PRODOTTI</div></div>
-            <div style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{margItems.length}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>P&M</div></div>
+            <div className="cart-stat" style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{cart.length+(colItems().length>0?1:0)}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>BRAND</div></div>
+            <div className="cart-stat" style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{tCI}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>PRODOTTI</div></div>
+            <div className="cart-stat" style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{margItems.length}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>P&M</div></div>
           </div>
           {/* il contatore piu' bello: i SOLDONI del carrello (Luca 03/08) */}
           {(()=>{const val=margItems.reduce((t,m)=>t+(Number(m.importo)||0)*(Number(m.qty)||1),0);return (
-            <div style={{marginTop:8,background:"var(--tf-w160)",border:"1px solid var(--tf-w250)",borderRadius:10,padding:"9px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div className="cart-val" style={{marginTop:8,background:"var(--tf-w160)",border:"1px solid var(--tf-w250)",borderRadius:10,padding:"9px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <span style={{color:"var(--tf-w750)",fontSize:11,fontWeight:800,letterSpacing:.6}}>💰 VALORE CARRELLO</span>
-              <span style={{color:"#fff",fontWeight:900,fontSize:21}}>€ {val.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+              <span className="cart-valv" style={{color:"#fff",fontWeight:900,fontSize:21}}>€ {val.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
             </div>);})()}
         </div>
         <div style={{padding:14,flex:1}}>
@@ -5480,26 +5480,27 @@ select.rvIn{cursor:pointer}
           {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:(attachments.length>0?50:0)+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
           {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:(notaOn&&nota.trim())?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
         ];
+        const _doneCount=STEPS.filter(s=>s.perc>=100).length;
+        const _railPct=Math.min(100,(_doneCount/(STEPS.length-1))*100);
         return (
-          <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+          <div className="rvsteps">
+            <div className="rvsteps-rail"><i style={{width:_railPct+"%"}}/></div>
             {STEPS.map(st=>{
               const attivo=vistaStep===st.id;
               const fatto=st.perc>=100;
+              const ringC=fatto?"#22c55e":"#6d5cff";
+              const sub=fatto?"Completo":attivo?"Sei qui":st.perc>0?st.perc+"%":st.opz?"Opzionale":st.abil?"Da fare":"Bloccato";
               return (
                 <button key={st.id} type="button" disabled={!st.abil}
+                  className={"rvnode-step"+(attivo?" is-active":"")+(fatto?" is-done":"")+(st.abil?"":" is-locked")}
                   onClick={()=>{if(st.abil)setVistaStep(st.id);}}
-                  title={!st.abil?"Completa prima gli step precedenti":attivo?"Sei qui":"Vai a "+st.label}
-                  style={{flex:"1 1 130px",minWidth:130,display:"flex",alignItems:"center",gap:11,padding:"11px 14px",borderRadius:13,cursor:st.abil?"pointer":"default",textAlign:"left",
-                    background:attivo?"rgba(99,102,241,0.14)":fatto?"rgba(40,167,69,0.07)":"var(--tf-w30)",
-                    border:attivo?"1.5px solid "+cAtt:fatto?"1px solid rgba(40,167,69,0.40)":"1px solid var(--tf-w80)",
-                    opacity:st.abil?1:.45,transition:"all .15s"}}>
-                  <span style={{width:42,height:42,borderRadius:11,background:"var(--tf-w60)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{st.icona}</span>
-                  <span style={{minWidth:0,flex:1}}>
-                    <span style={{display:"block",fontSize:14.5,fontWeight:800,color:attivo?"#fff":fatto?"var(--tf-4ade80)":"var(--tf-94a3b8)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fatto?"✓ ":""}{st.label}{st.opz&&!fatto?<span style={{fontWeight:600,color:"var(--tf-64748b)"}}> · opz.</span>:null}</span>
-                    <span style={{display:"block",height:4,borderRadius:2,background:"var(--tf-w80)",marginTop:6}}>
-                      <span style={{display:"block",height:4,borderRadius:2,width:st.perc+"%",background:fatto?"var(--tf-28a745)":cAtt,transition:"width .25s"}}/>
-                    </span>
+                  title={!st.abil?"Completa prima gli step precedenti":attivo?"Sei qui":"Vai a "+st.label}>
+                  <span className="rvnode-ring" style={{background:`conic-gradient(${ringC} ${st.perc}%, var(--rv-track) 0)`}}>
+                    <span className="rvnode">{st.icona}</span>
+                    {fatto&&<span className="rvnode-check">✓</span>}
                   </span>
+                  <span className="rvnode-lab">{st.label}</span>
+                  <span className="rvnode-sub">{sub}</span>
                 </button>
               );})}
           </div>
