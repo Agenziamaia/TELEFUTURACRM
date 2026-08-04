@@ -31,6 +31,10 @@ const GARE_BRANDS = [
     { id: "dojo", label: "Dojo", desc: "Soglie e commissioning POS Dojo.", color: "var(--tf-14b8a6)", logo: "/dojo-round.png" },
 ] as const;
 
+// Scala ottica dei loghi col marchio piccolo dentro un canvas grande (stessi
+// valori di brandAssets); gli altri PNG sono gia' pieni e restano a 1.
+const GARE_LOGO_SCALE: Record<string, number> = { w3: 1.7, vs: 1.95, vnd: 1.95, fastweb: 1.75 };
+
 // le sezioni di GESTIONE traslocate dall'Amministrazione (Luca 03/08)
 const GARE_GESTIONE = [
     { id: "target", label: "Target", icon: ClipboardList, desc: "Gare e target per personale, ruoli, negozi e categorie; paletti e sblocco commissioning." },
@@ -116,8 +120,12 @@ function GareInner() {
                                 {/* SOLO il logo, grande (pattern Registra Vendita, Luca 04/08):
                                     il nome del brand e' gia' nel logo; label e desc restano
                                     nell'array per l'header interno */}
+                                {/* scala OTTICA solo per i PNG col marchio annegato nel
+                                    canvas (W3/VF/FW): senza correzione risultavano minuscoli
+                                    accanto agli altri (Luca 04/08). Il box resta 88px. */}
                                 <div className="flex items-center justify-center h-[88px]">
-                                    <Image src={b.logo} alt={b.label} width={260} height={88} className="h-[84px] w-auto max-w-[92%] object-contain" />
+                                    <Image src={b.logo} alt={b.label} width={260} height={88} className="h-[84px] w-auto max-w-[92%] object-contain"
+                                        style={{ transform: `scale(${GARE_LOGO_SCALE[b.id] || 1})` }} />
                                 </div>
                                 {/* le due Vodafone condividono il logo: mini-badge discreto
                                     SOLO per loro, altrimenti tessere indistinguibili (Luca 04/08) */}

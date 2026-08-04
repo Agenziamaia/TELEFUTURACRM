@@ -162,21 +162,25 @@ export async function leggiNuove(a: Account, maxCount = 30): Promise<{ messages:
     return { messages: out, lastUid, uidValidity };
 }
 
-// ── cartella Sent (EML-01) ────────────────────────────────────────────
-// Nomi comuni della "Posta inviata" quando il server non espone \Sent.
+// ── cartelle speciali: Sent (EML-01) e Trash (EML-03) ─────────────────
+// Individuazione: prima lo special-use IMAP, poi i nomi comuni dei server
+// che non lo espongono (cPanel, Outlook, client italiani).
 const NOMI_SENT = ["Sent", "INBOX.Sent", "Sent Items", "INBOX.Sent Items", "Sent Messages", "Posta inviata", "INBOX.Posta inviata"];
-async function trovaCartellaSent(client: ImapFlow): Promise<string | null> {
+const NOMI_TRASH = ["Trash", "INBOX.Trash", "Deleted Items", "INBOX.Deleted Items", "Deleted Messages", "INBOX.Deleted Messages", "Cestino", "INBOX.Cestino", "Posta eliminata", "INBOX.Posta eliminata"];
+async function trovaCartellaSpeciale(client: ImapFlow, specialUse: string, nomi: string[]): Promise<string | null> {
     try {
         const boxes: any[] = await client.list();
-        const special = boxes.find(b => b.specialUse === "\\Sent");
+        const special = boxes.find(b => b.specialUse === specialUse);
         if (special) return special.path;
-        for (const nome of NOMI_SENT) {
+        for (const nome of nomi) {
             const hit = boxes.find(b => String(b.path).toLowerCase() === nome.toLowerCase());
             if (hit) return hit.path;
         }
     } catch { /* list non disponibile */ }
     return null;
 }
+const trovaCartellaSent = (client: ImapFlow) => trovaCartellaSpeciale(client, "\\Sent", NOMI_SENT);
+const trovaCartellaTrash = (client: ImapFlow) => trovaCartellaSpeciale(client, "\\Trash", NOMI_TRASH);
 
 /** Legge le email NUOVE dalla cartella Sent IMAP (inviate da webmail/telefono,
  *  fuori dal CRM). Al PRIMO aggancio non importa lo storico: posiziona il
@@ -218,28 +222,37 @@ export async function leggiSentNuove(a: Account, maxCount = 30): Promise<{ messa
     return { messages: out, lastUid, uidValidity, folder };
 }
 
-/** Backfill storico (EML-01): legge UN blocco di INBOX per numero di SEQUENZA,
- *  andando all'indietro. belowSeq = limite superiore ESCLUSO (null = si parte
- *  dal fondo della casella). Il chiamante pagina coi blocchi successivi e si
- *  ferma al limite temporale; il cursore per seq resta valido tra invocazioni
- *  (con la tolleranza di qualche slittamento se nel frattempo si cancellano
- *  mail dal server: l'eventuale sovrapposizione viene deduplicata dall'upsert). */
-export async function leggiBloccoStorico(a: Account, opts: { belowSeq: number | null; block: number }): Promise<{ messages: EmailIn[]; lo: number; hi: number; exists: number }> {
+/** Backfill storico (EML-01/EML-03): legge UN blocco di una cartella per numero
+ *  di SEQUENZA, andando all'indietro. cartella: "inbox" (default), "sent" o
+ *  "trash" — Sent e Trash vengono individuate via special-use + nomi comuni;
+ *  se la cartella non esiste sul server torna folder=null (il chiamante chiude
+ *  la fase). belowSeq = limite superiore ESCLUSO (null = si parte dal fondo).
+ *  Il chiamante pagina coi blocchi successivi e si ferma al limite temporale;
+ *  il cursore per seq resta valido tra invocazioni (con la tolleranza di
+ *  qualche slittamento se nel frattempo si cancellano mail dal server:
+ *  l'eventuale sovrapposizione viene deduplicata dall'upsert). */
+export type CartellaBackfill = "inbox" | "sent" | "trash";
+export async function leggiBloccoStorico(a: Account, opts: { belowSeq: number | null; block: number; cartella?: CartellaBackfill }): Promise<{ messages: EmailIn[]; lo: number; hi: number; exists: number; folder: string | null }> {
     const client = imapClient(a);
     const out: EmailIn[] = [];
     await client.connect();
     try {
-        const lock = await client.getMailboxLock("INBOX");
+        const cart = opts.cartella || "inbox";
+        const folder = cart === "inbox" ? "INBOX"
+            : cart === "sent" ? await trovaCartellaSent(client)
+                : await trovaCartellaTrash(client);
+        if (!folder) return { messages: [], lo: 1, hi: 0, exists: 0, folder: null };
+        const lock = await client.getMailboxLock(folder);
         try {
             const exists = (client.mailbox as any)?.exists || 0;
             const hi = opts.belowSeq == null ? exists : Math.min(opts.belowSeq - 1, exists);
-            if (hi < 1) return { messages: [], lo: 1, hi: 0, exists };
+            if (hi < 1) return { messages: [], lo: 1, hi: 0, exists, folder };
             const lo = Math.max(1, hi - Math.max(1, opts.block) + 1);
             for await (const msg of client.fetch(`${lo}:${hi}`, { uid: true, source: true })) {
                 const m = await parsaGrezzo(Number(msg.uid), msg.source as Buffer);
                 if (m) out.push(m);
             }
-            return { messages: out, lo, hi, exists };
+            return { messages: out, lo, hi, exists, folder };
         } finally { lock.release(); }
     } finally { try { await client.logout(); } catch { } }
 }

@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
+import { caricaTutte } from "@/lib/fetchTutte";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { seesAllStores } from "@/lib/roles";
 import {
@@ -99,8 +100,12 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
         const load = async () => {
             const ids = visibleAccounts.map(a => a.id);
             if (!ids.length) { if (alive) setUnreadPerAcc({}); return; }
-            const { data } = await supabase.from("email_conversations")
-                .select("account_id, unread, trashed, spam, archived").in("account_id", ids);
+            // col backfill le conversazioni superano il tetto PostgREST (1000
+            // righe): caricaTutte pagina, altrimenti i badge contano a caso
+            const { data } = await caricaTutte<{ account_id: string; unread: number; trashed: boolean; spam: boolean; archived: boolean }>((from, to) =>
+                supabase.from("email_conversations")
+                    .select("account_id, unread, trashed, spam, archived").in("account_id", ids)
+                    .order("id").range(from, to));
             if (!alive) return;
             const m: Record<string, number> = {};
             (data || []).forEach((c: any) => { if (!c.trashed && !c.spam && !c.archived) m[c.account_id] = (m[c.account_id] || 0) + (c.unread || 0); });
@@ -161,24 +166,33 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     useEffect(() => { if (selAcc) aggiorna(selAcc); }, [selAcc]);            // poll all'apertura
     useEffect(() => { if (!selAcc) return; const t = setInterval(() => aggiorna(selAcc), 45000); return () => clearInterval(t); }, [selAcc]);  // e ogni 45s
 
-    // conversazioni (polling leggero da Supabase)
+    // conversazioni (polling leggero da Supabase). caricaTutte (EML-03): senza
+    // paginazione PostgREST tronca a 1000 righe IN SILENZIO — con lo storico di
+    // amministrazione@ la lista si sarebbe tappata e i conteggi mentirebbero.
+    // Ordine con .order("id") in coda: spareggio stabile tra le pagine.
     useEffect(() => {
         if (!selAcc) { setConvs([]); return; }
         let alive = true;
         const load = async () => {
-            const { data } = await supabase.from("email_conversations").select("*").eq("account_id", selAcc).order("last_message_at", { ascending: false, nullsFirst: false });
-            if (alive) setConvs((data ?? []) as Conv[]);
+            const { data } = await caricaTutte<Conv>((from, to) =>
+                supabase.from("email_conversations").select("*").eq("account_id", selAcc)
+                    .order("last_message_at", { ascending: false, nullsFirst: false }).order("id")
+                    .range(from, to));
+            if (alive) setConvs(data as Conv[]);
         };
         load(); const t = setInterval(load, 5000);
         return () => { alive = false; clearInterval(t); };
     }, [selAcc]);
 
-    // quali conversazioni hanno un messaggio in uscita (per la cartella Inviati)
+    // quali conversazioni hanno un messaggio in uscita (per la cartella Inviati);
+    // anche qui caricaTutte: le "out" storiche di una casella superano le 1000
     useEffect(() => {
         if (!selAcc) { setSentIds(new Set()); return; }
         let alive = true;
-        supabase.from("email_messages").select("conversation_id").eq("account_id", selAcc).eq("direction", "out")
-            .then(({ data }) => { if (alive) setSentIds(new Set((data ?? []).map((r: any) => r.conversation_id))); });
+        caricaTutte<{ conversation_id: string }>((from, to) =>
+            supabase.from("email_messages").select("conversation_id").eq("account_id", selAcc).eq("direction", "out")
+                .order("id").range(from, to))
+            .then(({ data }) => { if (alive) setSentIds(new Set(data.map(r => r.conversation_id))); });
         return () => { alive = false; };
     }, [selAcc, convs.length]);
 
@@ -190,13 +204,22 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     }, [selAcc]);
     useEffect(() => { loadDrafts(); const t = setInterval(loadDrafts, 8000); return () => clearInterval(t); }, [loadDrafts]);
 
-    // messaggi della conversazione selezionata
+    // messaggi della conversazione selezionata. Coi thread storici (EML-03: un
+    // mittente automatico ha 3.000+ messaggi) la vecchia query ascendente senza
+    // range veniva troncata dal tetto PostgREST ai 1000 PIU' VECCHI, nascondendo
+    // proprio i recenti. Si caricano gli ULTIMI 300 (poi girati in ordine
+    // cronologico) e un banner dichiara quanti ne restano fuori: caricare corpi
+    // HTML a migliaia ogni 4s ammazzerebbe browser e banda.
+    const [msgsTotali, setMsgsTotali] = useState(0);
     useEffect(() => {
-        if (!selConv) { setMsgs([]); return; }
+        if (!selConv) { setMsgs([]); setMsgsTotali(0); return; }
         let alive = true;
         const load = async () => {
-            const { data } = await supabase.from("email_messages").select("*").eq("conversation_id", selConv.id).order("email_date", { ascending: true, nullsFirst: true });
-            if (alive) setMsgs((data ?? []) as Msg[]);
+            const { data, count } = await supabase.from("email_messages").select("*", { count: "exact" })
+                .eq("conversation_id", selConv.id)
+                .order("email_date", { ascending: false, nullsFirst: false }).order("id", { ascending: false })
+                .range(0, 299);
+            if (alive) { setMsgs(((data ?? []) as Msg[]).reverse()); setMsgsTotali(count ?? (data?.length || 0)); }
         };
         load(); const t = setInterval(load, 4000);
         supabase.from("email_conversations").update({ unread: 0 }).eq("id", selConv.id).then(() => { });
@@ -275,7 +298,10 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     const draftsShown = q ? drafts.filter(d => `${d.to_addr || ""} ${d.subject || ""} ${d.body || ""}`.toLowerCase().includes(q)) : drafts;
     const inboxUnread = convs.filter(c => !c.trashed && !c.spam && !c.archived).reduce((a, c) => a + (c.unread || 0), 0);
     const spamCount = convs.filter(c => c.spam && !c.trashed).length;
-    const counts: Record<FolderId, number> = { inbox: inboxUnread, starred: 0, sent: 0, drafts: drafts.length, spam: spamCount, trash: 0 };
+    // il Cestino mostra quante conversazioni contiene (EML-03: "non vedo le
+    // mail nel cestino" — il numero sul rail rende subito visibile l'import)
+    const trashCount = convs.filter(c => c.trashed).length;
+    const counts: Record<FolderId, number> = { inbox: inboxUnread, starred: 0, sent: 0, drafts: drafts.length, spam: spamCount, trash: trashCount };
     const folderLabel = FOLDERS.find(f => f.id === folder)?.label || "";
 
     // ── stati "vuoto" ───────────────────────────────────────────────────────────
@@ -451,6 +477,11 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
                             </div>
 
                             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+                                {msgsTotali > msgs.length && (
+                                    <div className="text-center text-[11px] text-slate-500 py-1">
+                                        Conversazione lunga: mostrati gli ultimi {msgs.length} messaggi di {msgsTotali}.
+                                    </div>
+                                )}
                                 {msgs.map(m => {
                                     const mine = m.direction === "out";
                                     return (
