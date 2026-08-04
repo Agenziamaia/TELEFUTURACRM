@@ -59,18 +59,26 @@ export async function POST(request: Request) {
         // aircall_user_id, mig. 04/08) — sul numero unico 06 5528 0153 il
         // number_id è identico per tutti i punti vendita e solo l'utenza dice
         // chi ha risposto; il number_id resta come fallback per i numeri
-        // diretti (Collatina/Merulana). limit(1)+order: deterministico anche
-        // se un id venisse mappato su due negozi gemelli.
+        // diretti (Collatina/Merulana). GEMELLI (Luca 04/08): se la stessa
+        // utenza è mappata su DUE negozi (Collatina Multi + W3, una sola
+        // utenza Aircall) la chiamata si attribuisce alla RADICE comune
+        // ("Collatina"): sameStore/negozioInValues la fanno vedere a entrambi.
+        const nomeDaStores = (nomi: string[]): string | null => {
+            if (!nomi.length) return null;
+            if (nomi.length === 1) return nomi[0];
+            const radice = nomi[0].trim().split(" ")[0];
+            return nomi.every((n) => n.trim().split(" ")[0] === radice) ? radice : nomi.sort()[0];
+        };
         let negozio: string | null = null;
         if (aircallUserId) {
             const { data: st } = await supabase.from("stores").select("name")
-                .eq("aircall_user_id", aircallUserId).order("name").limit(1);
-            negozio = st?.[0]?.name ?? null;
+                .eq("aircall_user_id", aircallUserId).order("name").limit(5);
+            negozio = nomeDaStores((st ?? []).map((s) => s.name));
         }
         if (!negozio && numberId) {
             const { data: st } = await supabase.from("stores").select("name")
-                .eq("aircall_number_id", numberId).order("name").limit(1);
-            negozio = st?.[0]?.name ?? null;
+                .eq("aircall_number_id", numberId).order("name").limit(5);
+            negozio = nomeDaStores((st ?? []).map((s) => s.name));
         }
 
         // cliente dal numero: match condiviso (cellulare > client_numeri >
