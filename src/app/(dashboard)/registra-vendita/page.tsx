@@ -4577,7 +4577,24 @@ function CRM() {
     if(!brandLabel)return prev;
     const adds=[];
     // niente doppioni: se la stessa voce e' gia' stata aggiunta A MANO dal pannello, l'auto non la duplica
-    const push=(name,locked)=>{if(!adds.some(a=>a.product===name)&&!prev.some(m=>!m.auto&&m.product===name))adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,priceLocked:!!locked,priceRequired:!locked})};
+    const push=(name,locked,extra)=>{if(!adds.some(a=>a.product===name)&&!prev.some(m=>!m.auto&&m.product===name))adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,priceLocked:!!locked,priceRequired:!locked,...(extra||{})})};
+    // TNP dal listino (Luca 05/08): la voce auto entrava nel carrello VUOTA
+    // ("Telefono TNP (listino)" e basta) — ora porta modello, prezzo di
+    // listino e margine %, e il prezzo popola il valore del carrello.
+    const _tnpDaListino=(det)=>{
+      const mod=String(det["Modello Terminale"]||"").trim()
+        ||String(det["TNP CB Dispositivi"]||"").replace(/^TNP[^-]*-\s*/i,"").replace(/\s*\([^)]*\)\s*$/,"").trim();
+      if(!mod||/^altro/i.test(mod))return null;
+      if(!_listiniTutti)return {model:mod};   // cache fredda: il modello intanto si vede
+      const k=chiaveListino(mod);
+      const lb=_brandListino(brandLabel);
+      const r=_listiniTutti.find(x=>chiaveListino(x.modello)===k&&(!lb||_compBrand(x.brand)===lb));
+      if(!r)return {model:mod};
+      const pz=Number(r.prezzo||0);
+      const pct=_senzaMargine()?0:Number(r.margine_pct??4);
+      const mg=pz*pct/100;
+      return {model:mod,price:pz,importo:pz,margin:mg,totalMargin:mg,priceLocked:true,priceRequired:false};
+    };
     for(const it of (items||[])){
       const macro=String(it.macro||"").toUpperCase();const sub=String(it.sub||"");
       if(/sostituzione\s*sim/i.test(sub)){if(AUTO_SOST[brandId])push(AUTO_SOST[brandId]);}
@@ -4587,11 +4604,11 @@ function CRM() {
       // RV-03: telefono a rate BUSINESS a marginalita' SOLO su WindTre — per gli
       // altri brand niente voce auto. Le voci legacy (senza .catalogo) invariate.
       const skipTnpMarg=it.catalogo?.tipo==="Business"&&brandId!=="windtre";
-      if(!skipTnpMarg&&tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))push("Telefono TNP (listino)",true);
+      if(!skipTnpMarg&&tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))push("Telefono TNP (listino)",true,_tnpDaListino(det));
     }
     const kept=prev.filter(m=>!(m.auto&&m.autoFrom===brandLabel));
     // preserva i prezzi già digitati sugli auto identici
-    const merged=adds.map(a=>{const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&m.product===a.product);return old?{...a,importo:old.importo}:a});
+    const merged=adds.map(a=>{const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&m.product===a.product);return old?{...a,importo:a.importo!=null?a.importo:old.importo}:a});
     return adds.length||kept.length!==prev.length?[...kept,...merged]:prev;
   };
   // Blocca il salvataggio se manca il prezzo di vendita: voci AUTO obbligatorie
@@ -4599,7 +4616,12 @@ function CRM() {
   // bozze salvate prima di questo flag — qualsiasi voce di brand (linked: SIM/Sost).
   const margPriceMissing=(list)=>list.filter(m=>(m.priceRequired||m.linked)&&!m.priceLocked&&(m.importo==null||m.importo===""));
   // live: le voci auto seguono in tempo reale la selezione dei prodotti del brand corrente
-  useEffect(()=>{ if(bObj) setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); },[sales,skyS,brand]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(()=>{
+    if(!bObj)return;
+    setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems()));
+    // cache listini fredda: si carica e si ricalcola (il TNP prende il prezzo)
+    if(!_listiniTutti)caricaListini().then(()=>{ setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); });
+  },[sales,skyS,brand]); // eslint-disable-line react-hooks/exhaustive-deps
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
 
   // Segnalazione 27: i contratti si duplicavano perche' "Salva contratto" non
