@@ -81,7 +81,13 @@ export default function RegistroChiamatePage() {
         if (!seesAll) {
             const valori = negozioInValues(stores);
             if (valori.length === 0) { setEventi([]); setCarico(false); return; }
-            q = q.in("negozio", valori);
+            // ANCHE le chiamate del NUMERO UNICO (negozio null): squillano su
+            // tutti i punti vendita e sulle PERSE nessuna utenza risponde →
+            // Aircall non sa attribuirle (caso Ferrelli 04/08: 120 inbound su
+            // 158 erano invisibili agli store manager). Ogni negozio le vede
+            // e chi richiama/anagrafizza se le prende.
+            const inList = valori.map((v) => `"${String(v).replace(/"/g, "")}"`).join(",");
+            q = q.or(`negozio.is.null,negozio.in.(${inList})`);
         }
         const { data, error } = await q;
         if (error) { setErrore(error.message); setEventi([]); }
@@ -262,6 +268,10 @@ export default function RegistroChiamatePage() {
                                         <span className="text-white font-semibold">{quando(e.started_at)}</span>
                                         {mostraNegozio && !!e.negozio && (
                                             <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[11px] text-slate-300">🏪 {e.negozio}</span>
+                                        )}
+                                        {!e.negozio && (
+                                            <span title="Chiamata sul numero unico aziendale: squilla su tutti i negozi, nessuno ha risposto — non è attribuibile a un punto vendita"
+                                                className="px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/25 text-[11px] text-sky-300">🌐 Numero unico</span>
                                         )}
                                         <span className="text-slate-400">{String(e.agente_nome || "—")}</span>
                                         {e.missed

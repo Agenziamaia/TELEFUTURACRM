@@ -361,6 +361,9 @@ function ComunicazioniInner() {
         if (!fTitle.trim() || !fContent.trim()) { setError("Titolo e testo sono obbligatori."); return; }
         const qualcosa = fRuoli.length || fNegozi.length || fPersone.length || fBrand.length;
         if (!fTutti && !qualcosa) { setError("Scegli almeno un destinatario: ruoli, negozi, persone o brand (oppure Tutti)."); return; }
+        // cintura: "Tutti" non deve MAI partire da chi non ha il permesso
+        // (il chip è già nascosto: questa è la doppia sicurezza sul submit)
+        if (fTutti && !puoTutti) { setError("Non hai il permesso di inviare a tutta l'azienda: scegli i destinatari."); return; }
         const idsPersone = fPersone
             .map((nome) => utentiAttivi.find((u) => u.full_name === nome)?.id)
             .filter(Boolean) as string[];
@@ -457,8 +460,14 @@ function ComunicazioniInner() {
     //    vedevo CHI la riceve, lo scoprivo solo dopo l'invio". Replica in
     //    memoria la STESSA risoluzione del submit (ambito incluso) sulla
     //    platea, così i nomi si vedono PRIMA di pubblicare.
+    // selezione ancora vuota: NIENTE elenco (a target vuoti comunicazionePerMe
+    // direbbe "tutti" e l'anteprima mostrava l'intera azienda a chi non può —
+    // screenshot dello store manager, Luca 04/08). L'invio a vuoto era già
+    // bloccato: era solo l'anteprima a ingannare.
+    const selezioneVuota = !fTutti && !fRuoli.length && !fPersone.length && !fNegozi.length && !fBrand.length;
     const anteprimaDestinatari = useMemo(() => {
         if (!formOpen || !platea) return null;
+        if (selezioneVuota) return [];
         let ruoliTarget = fTutti ? [] : [...fRuoli];
         let idsAmbito: string[] = [];
         const ruoliAmbito = ruoliTarget.filter((r) => destinatarioSoloAmbito(role, r, perms));
@@ -479,7 +488,7 @@ function ComunicazioniInner() {
         return platea
             .filter((u) => comunicazionePerMe(pseudo, { userId: u.id, role: u.role, negozio: u.negozio, negozi: u.negozi, brandsNegozio: u.brands }))
             .sort((a, b) => a.nome.localeCompare(b.nome));
-    }, [formOpen, platea, fTutti, fRuoli, fPersone, fNegozi, fBrand, role, perms, ambitoMittente, user?.negozio]);
+    }, [formOpen, platea, selezioneVuota, fTutti, fRuoli, fPersone, fNegozi, fBrand, role, perms, ambitoMittente, user?.negozio]);
     const destinatariSet = useCallback((c: Comunicazione): Set<string> | null => {
         if (!platea) return null;
         return new Set(platea.filter((u) => comunicazionePerMe(c, { userId: u.id, role: u.role, negozio: u.negozio, negozi: u.negozi, brandsNegozio: u.brands })).map((u) => u.id));
@@ -1156,6 +1165,8 @@ function ComunicazioniInner() {
                                 </p>
                                 {!anteprimaDestinatari ? (
                                     <p className="text-[11px] text-slate-500 mt-1.5">Calcolo i destinatari…</p>
+                                ) : selezioneVuota ? (
+                                    <p className="text-[11px] text-slate-500 mt-1.5">Scegli i destinatari qui sopra: l&apos;elenco dei nomi apparirà qui prima di pubblicare.</p>
                                 ) : anteprimaDestinatari.length === 0 ? (
                                     <p className="text-xs text-amber-300 mt-1.5">⚠️ Con questa selezione nessuno la riceverebbe: controlla ruoli/negozi/persone.</p>
                                 ) : (
