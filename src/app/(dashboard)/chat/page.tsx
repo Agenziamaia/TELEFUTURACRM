@@ -359,6 +359,11 @@ function ChatPageInner() {
     setReplyTo(m);
     requestAnimationFrame(() => composerRef.current?.focus());
   };
+  // Luca 05/08: aprire una chat dalla lista = cursore GIÀ nel campo di
+  // scrittura, senza cliccarci (il rAF aspetta il render del thread)
+  useEffect(() => {
+    if (selId) requestAnimationFrame(() => composerRef.current?.focus());
+  }, [selId]);
   // Immagine aperta a schermo (prima si apriva in una scheda nuova).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const [files, setFiles] = useState([]);
