@@ -342,6 +342,9 @@ export function CatalogoView() {
             if (c.offertaContiene && !c.offertaContiene.some((x) => offNome.toLowerCase().includes(x.toLowerCase()))) continue;
             // campi legati alle OPZIONI: entrano quando l'opzione e' spuntata qui
             if (c.opzioni && !c.opzioni.some((o) => opzTest.includes(o))) continue;
+            // opzioniNon (05/08): la regola vale solo SENZA quelle opzioni —
+            // spuntando il chip nel pannello il campo sparisce, come in vendita
+            if (c.opzioniNon && c.opzioniNon.some((o) => opzTest.includes(o))) continue;
             const daOpzione = !!c.opzioni;
             const propria = !!(c.offerta && c.offerta.includes(offNome));
             for (const cmp of (r.campi || [])) {

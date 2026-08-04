@@ -34,6 +34,8 @@ interface Regola {
     offertaContiene?: string[];
     offertaNon?: string[];
     opzioni?: string[];
+    /** regola valida solo se NESSUNA di queste opzioni è attiva (05/08) */
+    opzioniNon?: string[];
     campi: CampoVendita[];
 }
 

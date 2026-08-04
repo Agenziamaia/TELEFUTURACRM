@@ -22,6 +22,8 @@ export interface RegolaDb {
          *  hanno ordine piu' basso e i loro campi "prenotano" il nome */
         offerta?: string[];
         offertaContiene?: string[]; offertaNon?: string[]; opzioni?: string[];
+        /** la regola scatta solo se NESSUNA di queste opzioni è attiva (05/08) */
+        opzioniNon?: string[];
     };
     campi: CampoDb[];
     ordine?: number;
@@ -40,7 +42,7 @@ function regoleAttive(): RegolaDb[] {
     return CAMPI_REGOLE.map((r) => ({
         condizioni: {
             brand: r.brand, tipo: r.tipo, categoria: r.categoria, prodotto: r.prodotto,
-            offertaContiene: r.offertaContiene, offertaNon: r.offertaNon, opzioni: r.opzioni,
+            offertaContiene: r.offertaContiene, offertaNon: r.offertaNon, opzioni: r.opzioni, opzioniNon: r.opzioniNon,
         },
         campi: r.campi,
     }));
@@ -68,6 +70,9 @@ export function risolviCampi(
         if (c.opzioni) {
             if (!c.opzioni.some((o) => opzNomi.indexOf(o) !== -1)) return;
         }
+        // opzioniNon (Luca 05/08, caso "Numero Fisso senza GNP"): la regola
+        // scatta SOLO se nessuna delle opzioni elencate è selezionata
+        if (c.opzioniNon && c.opzioniNon.some((o) => opzNomi.indexOf(o) !== -1)) return;
         (r.campi || []).forEach((cmp) => {
             if (visti[cmp.nome]) return;
             // il nome si PRENOTA anche da nascosto (03/08): cosi' la regola
