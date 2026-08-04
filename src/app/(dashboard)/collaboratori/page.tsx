@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { FERIE_SECTION, CAP_FERIE_GESTIONE, capAllowed } from "@/lib/capabilities";
+import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { useVisibleStores } from "@/lib/visibleStores";
 
 // Il tab BADGE e' stato SPOSTATO nell'hub Call Center (/caller?tab=badge, Luca 28/07):
@@ -449,20 +450,18 @@ function FerieSection({ isAdminLike }: { isAdminLike: boolean }) {
                         {isAdminLike && (
                             <button onClick={() => {
                                 // giorni EFFETTIVI (03/08): domeniche e festivi non contano
+                                // GLB-03: da CSV a vero .xlsx \u2014 giorni come cella numerica,
+                                // via i replaceAll(';') che aggiravano il separatore CSV
                                 const giorni = giorniEffettivi;
-                                const righe = [["Collaboratore", "Negozio", "Dal", "Al", "Giorni", "Mezza giornata", "Stato", "Motivazione", "Nota amministrazione"].join(";")];
-                                richiesteVisibili.forEach(r => righe.push([
+                                const intestazioni = ["Collaboratore", "Negozio", "Dal", "Al", "Giorni", "Mezza giornata", "Stato", "Motivazione", "Nota amministrazione"];
+                                const righe: CellaXlsx[][] = richiesteVisibili.map(r => [
                                     r.employee_name, r.store, formatDate(r.date_from), formatDate(r.date_to),
-                                    String(giorni(r)).replace(".", ","),
+                                    giorni(r),
                                     r.half_day ? (r.half_day === "mattina" ? "Mattina" : "Pomeriggio") : "",
                                     r.status === "approved" ? "Approvata" : r.status === "rejected" ? "Rifiutata" : "In attesa",
-                                    (r.reason || "").replaceAll(";", ","), (r.admin_note || "").replaceAll(";", ","),
-                                ].join(";")));
-                                const blob = new Blob(["\uFEFF" + righe.join("\n")], { type: "text/csv;charset=utf-8" });
-                                const url = URL.createObjectURL(blob);
-                                const el = document.createElement("a");
-                                el.href = url; el.download = `ferie_${fDa || "inizio"}_${fA || "oggi"}.csv`; el.click();
-                                URL.revokeObjectURL(url);
+                                    r.reason || "", r.admin_note || "",
+                                ]);
+                                void scaricaXlsx(`ferie_${fDa || "inizio"}_${fA || "oggi"}`, intestazioni, righe, "Ferie");
                             }} disabled={richiesteVisibili.length === 0}
                                 className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
                                 ⬇️ Excel

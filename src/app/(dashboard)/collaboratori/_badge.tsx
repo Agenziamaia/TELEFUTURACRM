@@ -16,6 +16,7 @@ import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, capAllowed } from "@/lib/capabilities";
 import { useVisibleStores } from "@/lib/visibleStores";
+import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { SelectOpzioni } from "@/components/SelectPersona";
 
 type EventoTurno = { t: string; tipo: "inizio" | "pausa" | "ripresa" | "fine" | "correzione"; note?: string };
@@ -352,6 +353,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
     // Segnalazione 83: esporta le ore di TUTTI i collaboratori in un file che si
     // apre con Excel. Prende tutti i turni chiusi (non solo gli ultimi 50 a
     // schermo) e aggiunge in fondo il totale per collaboratore.
+    // GLB-03: era un CSV "travestito"; ora è un vero .xlsx (celle numeriche).
     const [exporting, setExporting] = useState(false);
     const esportaOre = async () => {
         setExporting(true);
@@ -371,28 +373,21 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                 const pausa = (s.total_pause_minutes || 0) * 60000;
                 return Math.max(0, (fine - ini - pausa)) / 3600000;
             };
-            const dec = (n: number) => n.toFixed(2).replace(".", ",");   // Excel italiano
-            const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+            const dec = (n: number) => Number(n.toFixed(2));   // cella numerica, 2 decimali
             const intestazioni = ["Collaboratore", "Negozio", "Data", "Entrata", "Uscita", "Pausa (min)", "Ore lavorate"];
-            const corpo = righe.map((s) => [
+            const corpo: CellaXlsx[][] = righe.map((s) => [
                 s.employee_name, s.store,
                 new Date(s.started_at).toLocaleDateString("it-IT"),
                 formatTime(s.started_at), formatTime(s.ended_at),
-                String(s.total_pause_minutes || 0), dec(oreDi(s)),
-            ].map(q).join(";"));
+                s.total_pause_minutes || 0, dec(oreDi(s)),
+            ]);
             const totali = new Map<string, number>();
             righe.forEach((s) => totali.set(s.employee_name, (totali.get(s.employee_name) || 0) + oreDi(s)));
-            const riepilogo = ["", q("TOTALE ORE PER COLLABORATORE"),
+            const riepilogo: CellaXlsx[][] = [[], ["TOTALE ORE PER COLLABORATORE"],
                 ...[...totali.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-                    .map(([nome, ore]) => [nome, "", "", "", "", "", dec(ore)].map(q).join(";"))];
-            const csv = [intestazioni.map(q).join(";"), ...corpo, ...riepilogo].join("\r\n");
-            const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `ore-collaboratori-${new Date().toISOString().slice(0, 10)}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
+                    .map(([nome, ore]): CellaXlsx[] => [nome, "", "", "", "", "", dec(ore)])];
+            await scaricaXlsx(`ore-collaboratori-${new Date().toISOString().slice(0, 10)}`,
+                intestazioni, [...corpo, ...riepilogo], "Ore");
         } finally { setExporting(false); }
     };
 
@@ -747,23 +742,19 @@ function PresenzeAdmin() {
     const mediaGiorno = giorniPresenza ? oreTot / giorniPresenza : 0;
     const pauseTot = filtered.reduce((acc, x) => acc + (x.total_pause_minutes || 0), 0);
 
-    const exportCsv = () => {
-        const righe = [["Data", "Persona", "Negozio", "Entrata", "Uscita", "Pausa (min)", "Ore nette"].join(";")];
-        filtered.forEach((x) => righe.push([
+    // GLB-03: da CSV a vero .xlsx \u2014 pausa e ore nette come celle numeriche.
+    const esportaExcel = async () => {
+        const intestazioni = ["Data", "Persona", "Negozio", "Entrata", "Uscita", "Pausa (min)", "Ore nette"];
+        const righe: CellaXlsx[][] = filtered.map((x) => [
             new Date(x.started_at).toLocaleDateString("it-IT"),
             x.employee_name, x.store || "",
             new Date(x.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }),
             x.ended_at ? new Date(x.ended_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "",
-            String(Math.round(x.total_pause_minutes || 0)),
-            oreNette(x).toFixed(2).replace(".", ","),
-        ].join(";")));
-        const blob = new Blob(["\uFEFF" + righe.join("\n")], { type: "text/csv;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
-        const el = document.createElement("a");
-        el.href = url;
-        el.download = `presenze_${da}_${a}${personeSel.length ? "_" + personeSel.map((x) => x.replaceAll(" ", "_")).join("+") : ""}.csv`;
-        el.click();
-        URL.revokeObjectURL(url);
+            Math.round(x.total_pause_minutes || 0),
+            Number(oreNette(x).toFixed(2)),
+        ]);
+        await scaricaXlsx(`presenze_${da}_${a}${personeSel.length ? "_" + personeSel.map((x) => x.replaceAll(" ", "_")).join("+") : ""}`,
+            intestazioni, righe, "Presenze");
     };
 
     return (
@@ -799,9 +790,9 @@ function PresenzeAdmin() {
                     <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Negozio</label>
                     <SelectOpzioni value={negozio} onChange={setNegozio} opzioni={negozi} placeholder="Tutti — scrivi per filtrare" className="glass-input text-xs py-1.5" />
                 </div>
-                <button onClick={exportCsv} disabled={filtered.length === 0}
+                <button onClick={esportaExcel} disabled={filtered.length === 0}
                     className="h-8 px-4 rounded-lg text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
-                    ⬇️ Esporta CSV
+                    ⬇️ Esporta Excel
                 </button>
             </div>
 

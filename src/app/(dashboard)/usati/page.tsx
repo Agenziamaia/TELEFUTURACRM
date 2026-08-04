@@ -11,6 +11,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { designatiIncarico } from "@/lib/incarichi";
 import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
 import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
+import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { brandsDispositivi, modelliDispositivi, BRAND_COMUNI, type CategoriaDispositivo } from "@/lib/dispositivi";
 import { caricaRegoleUsato, sincronizzaMalusUsato, scadenzaCorrente, REGOLE_USATO_DEFAULT, type RegoleUsato, type EpisodioUsato } from "@/lib/usatiMalus";
 import { UsatoRegoleView } from "@/components/UsatoRegole";
@@ -2363,25 +2364,22 @@ function GestioneUsatiInner() {
         const fatti = filtrati.filter(d => conStato(d) === "fatto");
         const mostrati = bonVista === "da_fare" ? daFare : bonVista === "fatti" ? fatti : [...daFare, ...fatti];
         const filtriAttivi = !!(bonNome || bonEmail || bonIban || bonNegozio || bonDa || bonA);
-        // EXPORT CSV sui filtrati (stesso formato leggibile dei report presenze)
+        // EXPORT sui filtrati (stesso formato leggibile dei report presenze)
+        // GLB-03: da CSV a vero .xlsx — importo come cella numerica
         const esporta = (lista: Device[], nome: string) => {
-          const righe = [["Data acquisto", "Modello", "IMEI", "Negozio", "Cliente", "Email", "IBAN", "Importo", "Tipo", "Stato", "Eseguito il", "Eseguito da"].join(";")];
-          lista.forEach((d) => {
+          const intestazioni = ["Data acquisto", "Modello", "IMEI", "Negozio", "Cliente", "Email", "IBAN", "Importo", "Tipo", "Stato", "Eseguito il", "Eseguito da"];
+          const righe: CellaXlsx[][] = lista.map((d) => {
             const cli = cliDi(d);
-            righe.push([
+            return [
               fmtDate(d.purchase_date), d.model, d.imei, d.store, cli.nome, cli.email,
-              d.pagamento.iban || "", String(d.purchase_price).replace(".", ","),
+              d.pagamento.iban || "", d.purchase_price,
               d.pagamento.bonifico_tipo === "istantaneo" ? "istantaneo" : "ordinario",
               conStato(d),
               d.pagamento.bonifico_date ? fmtDate(d.pagamento.bonifico_date) : "",
               d.pagamento.bonifico_operatore || "",
-            ].map(v => String(v).replaceAll(";", ",")).join(";"));
+            ];
           });
-          const blob = new Blob(["﻿" + righe.join("\n")], { type: "text/csv;charset=utf-8" });
-          const url = URL.createObjectURL(blob);
-          const el = document.createElement("a");
-          el.href = url; el.download = `bonifici_${nome}_${new Date().toISOString().slice(0, 10)}.csv`; el.click();
-          URL.revokeObjectURL(url);
+          void scaricaXlsx(`bonifici_${nome}_${new Date().toISOString().slice(0, 10)}`, intestazioni, righe, "Bonifici");
         };
         const setStatoBon = async (d: Device, stato: "stampato" | "fatto") => {
           const pag = { ...d.pagamento, bonifico_stato: stato, bonifico_effettuato: stato === "fatto", bonifico_operatore: stato === "fatto" ? (user?.name || "—") : d.pagamento.bonifico_operatore, bonifico_date: stato === "fatto" ? new Date() : d.pagamento.bonifico_date };
@@ -2464,7 +2462,7 @@ function GestioneUsatiInner() {
                   </div>
                   <button onClick={() => esporta(mostrati, bonVista)} disabled={!mostrati.length}
                     className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
-                    ⬇️ Esporta CSV ({mostrati.length})
+                    ⬇️ Esporta Excel ({mostrati.length})
                   </button>
                 </div>
                 {mostrati.length === 0 && (

@@ -13,6 +13,7 @@ import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets"
 import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
 import { codiciPerBrand } from "@/lib/codiciInserimento";
+import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 
 interface ContrattoRow {
     id: string;
@@ -617,22 +618,15 @@ export default function RicercaContratto() {
     // La ricerca vera è nei filtri in alto, che interrogano il database.
     const visibleData = contractList;
 
-    const handleExportCsv = () => {
+    // GLB-03: da CSV a vero .xlsx \u2014 via il quoting manuale, celle passate cos\u00ec come sono
+    const handleExportExcel = () => {
         if (visibleData.length === 0) return;
         // Segnalazione 76: anche nell'esport il Codice ins. e il nome corretto della colonna
         const headers = ["Venditore", "Brand", "Categoria", "Prodotto", "Offerta", "Cliente", "Negozio", "Codice ins.", "Codice contratto", "Data Registrazione", "Data Attivazione", "Stato"];
-        const rows = visibleData.map(r => [
+        const rows: CellaXlsx[][] = visibleData.map(r => [
             r.venditore, r.brand, ((r.raw?.dettagli as Record<string, unknown>)?.categoria_catalogo as string) || (r.raw?.categoria as string) || "", r.prodotto, (r.raw?.offerta as string) || ((r.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "", r.cliente, r.negozio, codInsDi(r), r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato
-        ].map(val => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","));
-        const csvContent = [headers.join(","), ...rows].join("\n");
-        const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `contratti_${new Date().toISOString().split('T')[0]}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        ]);
+        void scaricaXlsx(`contratti_${new Date().toISOString().split('T')[0]}`, headers, rows, "Contratti");
     };
 
     // NB: tutti gli hook devono stare PRIMA dei return anticipati di loading/errore.
@@ -1293,8 +1287,8 @@ export default function RicercaContratto() {
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
                     <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterCategoria(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); setMargTipo(""); setMargArticoli([]); setMargPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
-                    <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportCsv}>
-                        Scarica CSV
+                    <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportExcel}>
+                        Scarica Excel
                     </button>
                 </div>
             </div>
