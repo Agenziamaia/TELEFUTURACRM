@@ -76,6 +76,24 @@ export const CANONICA_BY_ID: Record<CategoriaId, string> = {
     multi_servizi: "Multi-Servizi", pos: "POS", digitale: "Multi-Servizi", extra: "Marginalità",
 };
 
+// Categoria FINE del catalogo (catalog_categorie.nome) -> macro condivisa.
+// RIC-03: quando il modale di Ricerca Vendite riclassifica una vendita sulla
+// categoria di catalogo, da qui si derivano contracts.categoria (etichetta
+// canonica via CANONICA_BY_ID) e categoria_macro — i campi che Tracking,
+// filtri e target leggono davvero.
+export const MACRO_BY_CATALOGO: Record<string, CategoriaId> = {
+    "Mobile Wallet": "mobile",
+    "Mobile Ric. Auto": "mobile",
+    "Telefono a Rate": "mobile",
+    "Sostituzione SIM": "mobile",
+    "Fisso": "fisso",
+    "Energia": "energia",
+    "TV": "tv",
+    "Multi-Servizi": "multi_servizi",
+    "POS": "pos",
+    "Customer Base": "cb",
+};
+
 // Lista ufficiale dei brand vendibili (asse 1 del flusso): le tendine brand
 // usano QUESTA, non i distinct dello storico (un brand senza vendite sparirebbe).
 export const BRAND_CANONICI: string[] = [

@@ -7,7 +7,8 @@ import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, categoriaDef, categoriaDi, vaInTracking } from "@/lib/tassonomia";
+import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
+import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
 import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
 import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
@@ -67,6 +68,9 @@ const CONTRACT_FIELDS: EditField[] = [
     { key: "brand", label: "Brand" },
     { key: "categoria", label: "Categoria" },
     { key: "prodotto", label: "Prodotto" },
+    // RIC-03: l'offerta di catalogo era l'unica colonna né visibile né
+    // modificabile dal dettaglio; tendina dalle offerte del prodotto scelto.
+    { key: "offerta", label: "Offerta" },
     { key: "venditore", label: "Venditore" },
     { key: "negozio", label: "Negozio" },
     // Segnalazione 76: si chiama Codice contratto (anche in Modifica, non solo in colonna)
@@ -113,6 +117,16 @@ function fmtVal(v: unknown): string {
     if (typeof v === "boolean") return v ? "Si" : "No";
     if (typeof v === "object") return JSON.stringify(v);
     return String(v);
+}
+
+// RIC-03: opzioni della vendita (jsonb [{nome, quantita}]) in forma leggibile.
+// quantita null = 1 (cosi' le scrive il Registra), quindi si mostra solo se >1.
+function fmtOpzioni(v: unknown): string {
+    if (!Array.isArray(v) || v.length === 0) return "—";
+    return v.map((o: { nome?: unknown; quantita?: unknown }) => {
+        const q = Number(o?.quantita ?? 1);
+        return String(o?.nome ?? "—") + (q > 1 ? ` ×${q}` : "");
+    }).join(" · ");
 }
 
 // I valori di `dettagli` arrivano tipizzati (bool/numero/stringa): li rimettiamo
@@ -162,10 +176,9 @@ export default function RicercaContratto() {
     // interroga dettagli->>categoria_catalogo (scritto dal registra e
     // backfillato sullo storico); le vendite mobile vecchie SENZA il dato
     // stanno nella voce dedicata "Mobile (storico)".
-    type CatFiltro = { slug: string; prodNames: string[]; offByProd: Record<string, string[]>; offNames: string[]; catNames: string[]; prodsByCat: Record<string, string[]>; offsByCat: Record<string, string[]>; opzByOff: Record<string, string[]> };
+    // RIC-03: struttura e loader (con cache) vivono in src/lib/catalogoFiltri,
+    // condivisi tra questi filtri e il modale di modifica contratto.
     const [catalogoBrand, setCatalogoBrand] = useState<CatFiltro | null>(null);
-    const _catFiltroCache = useRef<Record<string, CatFiltro>>({});
-    const _catNomi = useRef<{ id: string; nome: string }[] | null>(null);
     // MARGINALITÀ a DUE LAYER (Luca 28/07): prima il TIPO (prodotti/servizi,
     // da marg_categories.kind — Kasko/Servizi sono servizi; SIM/ESIM/Telefono
     // Cash/Prodotti sono prodotti), poi gli ARTICOLI del listino di quel tipo.
@@ -173,8 +186,7 @@ export default function RicercaContratto() {
     const [margTipo, setMargTipo] = useState<"" | "prodotti" | "servizi">("");
     const [margArticoli, setMargArticoli] = useState<string[]>([]);
     const [margPick, setMargPick] = useState("");
-    const [margListino, setMargListino] = useState<{ name: string; kind: string }[] | null>(null);
-    const _margCache = useRef<{ name: string; kind: string }[] | null>(null);
+    const [margListino, setMargListino] = useState<MargArticolo[] | null>(null);
     const [filterNegozio, setFilterNegozio] = useState("");
     const [filterCodiceAttivazione, setFilterCodiceAttivazione] = useState("");
     const [filterCliente, setFilterCliente] = useState("");
@@ -260,7 +272,8 @@ export default function RicercaContratto() {
     const [brandCounts, setBrandCounts] = useState<{ brand: string; n: number }[]>([]);
     const [prodByBrand, setProdByBrand] = useState<Record<string, string[]>>({});
     const [codeByBrand, setCodeByBrand] = useState<Record<string, string[]>>({});
-    const [uniqueProdotti, setUniqueProdotti] = useState<string[]>([]);
+    // uniqueProdotti (distinct dello storico) rimosso con RIC-03: la tendina
+    // Prodotto del modale ora attinge al catalogo del brand, non allo storico.
     const [uniqueNegozi, setUniqueNegozi] = useState<string[]>([]);
 
     // RBAC: Store-Based Visibility Logic
@@ -318,7 +331,7 @@ export default function RicercaContratto() {
     // (richiesta Luca 28/07); il click mantiene la selezione positiva di sempre.
     const [selBrands, setSelBrands] = useState<Set<string>>(new Set());
     const _isExtraBrand = (b: string) => ["extra", "marginalità", "marginalita"].includes(String(b || "").toLowerCase());
-    const LABEL_SLUG: Record<string, string> = { "WindTre": "windtre", "Vodafone": "vodafone", "Fastweb": "fastweb", "Iliad": "iliad", "Sky": "sky", "TIM": "tim", "Tim": "tim", "S4": "s4", "Dojo": "dojo", "Very Mobile": "very", "Very": "very", "Ho. Mobile": "ho", "Ho Mobile": "ho", "Kena Mobile": "kena", "Kena": "kena" };
+    // LABEL_SLUG (etichetta brand -> slug catalogo) ora vive in catalogoFiltri.
     // un solo brand attivo dalle tessere (o unico brand presente) = si puo' filtrare per prodotto/offerta
     const soloBrandLabel = selBrands.size === 1 ? Array.from(selBrands)[0] : (selBrands.size === 0 && brandCounts.length === 1 ? brandCounts[0].brand : null);
     const soloSlug = soloBrandLabel ? (LABEL_SLUG[soloBrandLabel] || null) : null;
@@ -328,13 +341,7 @@ export default function RicercaContratto() {
     // completato con la regola pagamento: EasyPay/IBAN → Ric. Auto, niente → Wallet).
     const [catNomiAll, setCatNomiAll] = useState<string[]>([]);
     useEffect(() => {
-        (async () => {
-            if (!_catNomi.current) {
-                const rc = await supabase.from("catalog_categorie").select("id, nome");
-                _catNomi.current = (rc.data ?? []) as { id: string; nome: string }[];
-            }
-            setCatNomiAll((_catNomi.current || []).map((c) => c.nome));
-        })();
+        (async () => { setCatNomiAll((await loadCatalogoCategorie()).map((c) => c.nome)); })();
     }, []);
     useEffect(() => {
         if (_prevSlug.current !== soloSlug) {
@@ -344,50 +351,8 @@ export default function RicercaContratto() {
             setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); setFilterCategoria("");
         }
         if (!soloSlug) { setCatalogoBrand(null); return; }
-        const hit = _catFiltroCache.current[soloSlug];
-        if (hit) { setCatalogoBrand(hit); return; }
         let alive = true;
-        (async () => {
-            if (!_catNomi.current) {
-                const rc = await supabase.from("catalog_categorie").select("id, nome");
-                _catNomi.current = (rc.data ?? []) as { id: string; nome: string }[];
-            }
-            const rp = await supabase.from("catalog_prodotti").select("id, nome, categoria_id").eq("brand_id", soloSlug);
-            const prods = rp.data ?? [];
-            let offs: { id: string; prodotto_id: string; nome: string }[] = [];
-            let opzs: { offerta_id: string; nome: string }[] = [];
-            if (prods.length) {
-                const ro = await supabase.from("catalog_offerte").select("id, prodotto_id, nome").in("prodotto_id", prods.map((x: { id: string }) => x.id));
-                offs = (ro.data ?? []) as { id: string; prodotto_id: string; nome: string }[];
-                if (offs.length) {
-                    const rz = await supabase.from("catalog_opzioni").select("offerta_id, nome").in("offerta_id", offs.map((o) => o.id));
-                    opzs = (rz.data ?? []) as { offerta_id: string; nome: string }[];
-                }
-            }
-            // opzioni per NOME offerta (la stessa offerta può vivere in più categorie)
-            const offNomeById: Record<string, string> = {}; offs.forEach((o) => { offNomeById[o.id] = o.nome; });
-            const opzByOff: Record<string, string[]> = {};
-            opzs.forEach((z) => { const on = offNomeById[z.offerta_id]; if (!on) return; (opzByOff[on] = opzByOff[on] || []).push(z.nome); });
-            Object.keys(opzByOff).forEach((k) => { opzByOff[k] = Array.from(new Set(opzByOff[k])).sort(); });
-            const nomeById: Record<string, string> = {}; prods.forEach((x: { id: string; nome: string }) => { nomeById[x.id] = x.nome; });
-            const offByProd: Record<string, string[]> = {};
-            offs.forEach((o) => { const pn = nomeById[o.prodotto_id]; if (!pn) return; (offByProd[pn] = offByProd[pn] || []).push(o.nome); });
-            Object.keys(offByProd).forEach((k) => { offByProd[k] = Array.from(new Set(offByProd[k])).sort(); });
-            // categorie REALI del brand in ordine di catalogo + offerte per categoria
-            // (via id prodotto: la stessa offerta può stare in più categorie)
-            const catNames: string[] = []; const prodsByCat: Record<string, string[]> = {}; const offsByCat: Record<string, string[]> = {};
-            (_catNomi.current || []).forEach((c) => {
-                const suoiProds = prods.filter((p: { categoria_id: string }) => p.categoria_id === c.id);
-                if (!suoiProds.length) return;
-                catNames.push(c.nome);
-                prodsByCat[c.nome] = Array.from(new Set(suoiProds.map((p: { nome: string }) => p.nome))).sort();
-                const ids = new Set(suoiProds.map((p: { id: string }) => p.id));
-                offsByCat[c.nome] = Array.from(new Set(offs.filter((o) => ids.has(o.prodotto_id)).map((o) => o.nome))).sort();
-            });
-            const t: CatFiltro = { slug: soloSlug, prodNames: Array.from(new Set(prods.map((x: { nome: string }) => x.nome))).sort() as string[], offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat, offsByCat, opzByOff };
-            _catFiltroCache.current[soloSlug] = t;
-            if (alive) setCatalogoBrand(t);
-        })();
+        loadCatalogoBrand(soloSlug).then((t) => { if (alive) setCatalogoBrand(t); });
         return () => { alive = false; };
     }, [soloSlug]); // eslint-disable-line react-hooks/exhaustive-deps
     // CONSEGUENZIALITÀ (Luca 28/07): le offerte seguono i prodotti scelti; senza
@@ -418,24 +383,8 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (!soloMarg) { setMargTipo(""); setMargArticoli([]); setMargPick(""); return; }
         setFilterCategoria("");   // la categoria nascosta non deve restare a filtrare
-        if (_margCache.current) { setMargListino(_margCache.current); return; }
         let alive = true;
-        (async () => {
-            const [rc, ri] = await Promise.all([
-                supabase.from("marg_categories").select("id, kind"),
-                // anche gli articoli spenti: lo storico li contiene
-                supabase.from("marg_items").select("name, category_id"),
-            ]);
-            const kindById: Record<string, string> = {};
-            (rc.data ?? []).forEach((c: { id: string; kind: string }) => { kindById[c.id] = c.kind; });
-            const list = (ri.data ?? []).map((i: { name: string; category_id: string }) => ({ name: i.name, kind: kindById[i.category_id] || "prodotti" }));
-            // voce AUTO del Registra (telefono a rate/listino): non sta nel
-            // listino marg_items ma nelle vendite c'è, ed è un prodotto.
-            list.push({ name: "Telefono TNP (listino)", kind: "prodotti" });
-            const uniq = Array.from(new Map(list.map(x => [x.name, x])).values()).sort((a, b) => a.name.localeCompare(b.name));
-            _margCache.current = uniq;
-            if (alive) setMargListino(uniq);
-        })();
+        loadMargListino().then((l) => { if (alive) setMargListino(l); });
         return () => { alive = false; };
     }, [soloMarg]);
     const margArticoliDisponibili = useMemo(
@@ -472,7 +421,6 @@ export default function RicercaContratto() {
             const { data } = await q;
             if (data) {
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
-                setUniqueProdotti(Array.from(new Set(data.map((r: any) => r.prodotto).filter(Boolean))).sort() as string[]);
                 setUniqueNegozi(Array.from(new Set(data.map((r: any) => r.negozio).filter(Boolean))).sort() as string[]);
                 // prodotti e codici di inserimento raggruppati per brand
                 const pb: Record<string, Set<string>> = {}, cb: Record<string, Set<string>> = {};
@@ -740,6 +688,9 @@ export default function RicercaContratto() {
         const scope = key.slice(0, i), field = key.slice(i + 2);
         if (scope === "contract") return CONTRACT_FIELDS.find(f => f.key === field)?.label || field;
         if (scope === "client") return (CLIENT_FIELDS.find(f => f.key === field)?.label || field) + " (cliente)";
+        // RIC-03: la categoria fine viaggia come chiave dei dettagli ma nel
+        // modale si presenta "Categoria": stessa voce anche nelle richieste.
+        if (field === "categoria_catalogo") return "Categoria (catalogo)";
         return field;
     };
 
@@ -772,6 +723,28 @@ export default function RicercaContratto() {
             setContractReqs(data || []);
         })();
     }, [selectedContract, saving]);
+
+    // ── RIC-03: catalogo del brand del contratto APERTO nel modale ────────────
+    // Indipendente dal catalogo dei filtri (catalogoBrand segue le tessere, il
+    // modale può aprirsi su qualunque riga). Segue il brand in EDITING: se lo
+    // si cambia, le tendine categoria/prodotto/offerta cambiano con lui.
+    const editBrand = selectedContract ? (editValues["contract::brand"] || selectedContract.brand) : "";
+    const [catalogoModale, setCatalogoModale] = useState<CatFiltro | null>(null);
+    const [margModale, setMargModale] = useState<MargArticolo[] | null>(null);
+    useEffect(() => {
+        setCatalogoModale(null);
+        if (!selectedContract || !editBrand) return;
+        let alive = true;
+        if (_isExtraBrand(editBrand)) {
+            // per la Marginalità i "prodotti" sono gli articoli del listino
+            loadMargListino().then((l) => { if (alive) setMargModale(l); });
+            return () => { alive = false; };
+        }
+        const slug = LABEL_SLUG[editBrand] || null;
+        if (!slug) return;
+        loadCatalogoBrand(slug).then((t) => { if (alive) setCatalogoModale(t); });
+        return () => { alive = false; };
+    }, [selectedContract, editBrand]);
 
     const submitChangeRequest = async () => {
         if (!selectedContract || Object.keys(pendingChanges).length === 0) return;
@@ -825,6 +798,26 @@ export default function RicercaContratto() {
                         campo: v.label || field, da: fmtVal(v.da), a: fmtVal(v.a),
                     });
                 });
+                // ── RIC-03: SYNC DEI DERIVATI (decisione Luca 04/08: la
+                // riclassificazione approvata ha effetto completo ovunque).
+                // Tracking, filtri e target leggono categoria_macro/controlli,
+                // non la chiave nei dettagli: senza questo blocco la modifica
+                // approvata "non si vedrebbe" da nessuna parte.
+                const chiavi = Object.keys(req.changes || {});
+                if (chiavi.includes("dettagli::categoria_catalogo")) {
+                    // la categoria FINE porta con sé etichetta canonica e macro
+                    const macro = MACRO_BY_CATALOGO[String(det.categoria_catalogo || "")];
+                    if (macro) {
+                        contractPatch.categoria = CANONICA_BY_ID[macro];
+                        contractPatch.categoria_macro = macro;
+                    }
+                }
+                // MNP / Tipo TNP / Tipo CB cambiati -> controlli (mnp,
+                // finanziamento, rata) ricalcolati dai dettagli aggiornati,
+                // come fa il Registra alla nascita della pratica.
+                if (chiavi.some((k) => /^dettagli::(MNP|mnp|Tipo TNP|Tipo CB|tnpTipo|cbTnpTipo)$/.test(k))) {
+                    contractPatch.controlli = controlliDi(det);
+                }
                 if (detTouched) contractPatch.dettagli = det;
                 contractPatch.storia = storia;
                 // Gli errori qui non venivano letti: se l'update falliva, la
@@ -1433,8 +1426,13 @@ export default function RicercaContratto() {
                     if (d["Cod.Ins."] !== undefined) return "Cod.Ins.";
                     return Object.keys(d).find(k => /^cod\.?\s?ins/i.test(k)) ?? "Cod.Ins.";
                 })();
-                // esclusa dai "Dettagli" per non averla due volte
-                const detEditable = det.filter(([k, v]) => k !== codInsKey && (v === null || typeof v !== "object"));
+                // riga a marginalità: fuori dal catalogo, tendine dedicate
+                const isMarg = _isExtraBrand(editBrand || row.brand);
+                // esclusi dai "Dettagli" per non averli due volte: il codice
+                // inserimento (sta nel box Dati contratto) e la categoria di
+                // catalogo (RIC-03: governata dalla tendina Categoria, mai piu'
+                // testo libero — un refuso rompeva il filtro della pagina).
+                const detEditable = det.filter(([k, v]) => k !== codInsKey && k !== "categoria_catalogo" && (v === null || typeof v !== "object"));
                 const detReadonly = det.filter(([, v]) => v !== null && typeof v === "object");
                 // SOLO le richieste di QUESTO contratto (prima contava tutte le pendenti)
                 const pendingForThis = contractReqs.filter(r => r.status === "pending" && r.contract_id === row.id);
@@ -1452,8 +1450,26 @@ export default function RicercaContratto() {
                     if (k === "contract::venditore") return [...venditoriTeam, ...venditoriAltri];
                     if (k === "contract::negozio") return uniqueNegozi;
                     if (k === "contract::brand") return BRAND_CANONICI;  // lista ufficiale: un brand senza vendite (es. TIM) deve comunque esserci
-                    if (k === "contract::prodotto") return uniqueProdotti;
-                    if (k === "contract::categoria") return CATEGORIE_CANONICHE;  // solo categorie ufficiali, mai valori grezzi tipo "SKY FIBRA"
+                    // RIC-03: la catena categoria→prodotto→offerta arriva dal
+                    // CATALOGO del brand della riga (come i filtri in alto), non
+                    // piu' dai distinct dello storico ne' dalle 8 macro.
+                    if (k === "dettagli::categoria_catalogo") return catalogoModale?.catNames ?? [];
+                    if (k === "contract::prodotto") {
+                        if (isMarg) return (margModale ?? []).map((x) => x.name);  // articoli del listino marginalità
+                        if (!catalogoModale) return [];
+                        const cat = editValues["dettagli::categoria_catalogo"] || "";
+                        return cat ? (catalogoModale.prodsByCat[cat] || []) : catalogoModale.prodNames;
+                    }
+                    if (k === "contract::offerta") {
+                        // assegnabile anche alle vendite pre-catalogo (Luca 04/08):
+                        // offerte del prodotto scelto, incluse le disattivate.
+                        if (isMarg || !catalogoModale) return [];
+                        const prod = editValues["contract::prodotto"] || "";
+                        if (prod) return catalogoModale.offByProd[prod] || [];
+                        const cat = editValues["dettagli::categoria_catalogo"] || "";
+                        return cat ? (catalogoModale.offsByCat[cat] || []) : catalogoModale.offNames;
+                    }
+                    if (k === "contract::categoria") return CATEGORIE_CANONICHE;  // resta solo per le righe Marginalità (fuori catalogo)
                     // Segnalazione 71/68: il codice di inserimento va a tendina con i
                     // codici VERI del brand (elenco unico condiviso con Registra
                     // Contratto). Prima si ricavavano dai contratti gia' salvati,
@@ -1463,6 +1479,23 @@ export default function RicercaContratto() {
                         return codiciPerBrand(row.brand, uniqueNegozi);
                     }
                     return null;
+                };
+                // RIC-03: conseguenzialità del catalogo anche nel modale, come nei
+                // filtri in alto — cambiare categoria azzera prodotto e offerta;
+                // cambiare prodotto mantiene l'offerta solo se gli appartiene ancora.
+                const aggiornaCampo = (k: string, v: string) => {
+                    setEditValues(prev => {
+                        const next = { ...prev, [k]: v };
+                        if (k === "dettagli::categoria_catalogo" && !isMarg) {
+                            next["contract::prodotto"] = "";
+                            next["contract::offerta"] = "";
+                        }
+                        if (k === "contract::prodotto" && !isMarg && catalogoModale) {
+                            const offs = catalogoModale.offByProd[v] || [];
+                            if (next["contract::offerta"] && !offs.includes(next["contract::offerta"])) next["contract::offerta"] = "";
+                        }
+                        return next;
+                    });
                 };
                 const renderField = (k: string, label: string, kind?: string) => {
                     const orig = originalOf(row, k);
@@ -1493,15 +1526,18 @@ export default function RicercaContratto() {
                         <div key={k}>
                             <label className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1">{label}</label>
                             {kind === "stato" ? (
-                                <select className={cls} value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))}>
-                                    <option value="">—</option>
-                                    {Array.from(new Set([...STATI, val].filter(Boolean))).map(o => <option key={o} value={o}>{o}</option>)}
-                                </select>
+                                /* regola di progetto: tendine = SelectOpzioni, mai <select> nudi */
+                                <SelectOpzioni className={cls} value={val}
+                                    onChange={v => setEditValues(prev => ({ ...prev, [k]: v }))}
+                                    opzioni={Array.from(new Set([...STATI, val].filter(Boolean)))}
+                                    placeholder="— scrivi o scegli" />
                             ) : opts ? (
-                                <select className={cls} value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))}>
-                                    <option value="">—</option>
-                                    {Array.from(new Set([...opts, val].filter(Boolean))).map(o => <option key={o} value={o}>{o}</option>)}
-                                </select>
+                                /* il valore corrente resta selezionabile anche se fuori
+                                   lista ([...opts, val]): lo storico pre-catalogo non si perde */
+                                <SelectOpzioni className={cls} value={val}
+                                    onChange={v => aggiornaCampo(k, v)}
+                                    opzioni={Array.from(new Set([...opts, val].filter(Boolean)))}
+                                    placeholder="— scrivi o scegli" />
                             ) : kind === "textarea" ? (
                                 <textarea rows={2} className={cls} autoComplete="off" value={val} onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))} />
                             ) : (
@@ -1604,10 +1640,25 @@ export default function RicercaContratto() {
                                 )}
 
                                 {Section("Dati contratto", <>
-                                    {CONTRACT_FIELDS.map(f => renderField("contract::" + f.key, f.label, f.kind))}
+                                    {CONTRACT_FIELDS.map(f => (
+                                        // RIC-03: per le righe a catalogo la Categoria mostrata e
+                                        // modificata e' quella FINE (dettagli.categoria_catalogo),
+                                        // la stessa su cui filtra la pagina; canonica e macro si
+                                        // derivano all'approvazione. La Marginalità resta sulla
+                                        // canonica (fuori catalogo).
+                                        f.key === "categoria" && !isMarg
+                                            ? renderField("dettagli::categoria_catalogo", "Categoria")
+                                            : renderField("contract::" + f.key, f.label, f.kind)
+                                    ))}
                                     {/* Segnalazione 67/71: il codice inserimento sta nel box Dati
                                         contratto ed e' modificabile come gli altri campi (tendina). */}
                                     {renderField("dettagli::" + codInsKey, "Codice inserimento")}
+                                    {/* RIC-03: opzioni della vendita (jsonb dal catalogo) in sola
+                                        lettura — prima non comparivano da nessuna parte. */}
+                                    <div>
+                                        <span className="text-[11px] uppercase tracking-wider text-slate-500">Opzioni</span>
+                                        <p className="text-white text-sm break-words">{fmtOpzioni(row.raw?.opzioni)}</p>
+                                    </div>
                                 </>)}
 
                                 {Section("Anagrafica cliente", <>
