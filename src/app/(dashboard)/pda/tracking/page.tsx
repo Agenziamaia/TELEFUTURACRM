@@ -5,7 +5,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
-import { categoriaDi, controlliDi, righeTracking } from "@/lib/tassonomia";
+import { categoriaDi, controlliDi, righeTracking, vaInTracking } from "@/lib/tassonomia";
+import { trkBrandKey, TRK_BRAND_COLORS, TRK_LOGO_SCALE, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 import { statoContrattoDa } from "./trackingHelpers";
 import {
   CATEGORIE,
@@ -192,21 +193,8 @@ function CatBadge({ id }: { id: string }) {
 }
 
 // ─── KpiBar ───────────────────────────────────────────────────────────────────
-// Chiave brand NORMALIZZATA (minuscole, niente spazi/punti): a DB convivono
-// "Very Mobile", "TIM", "WindTre"... — il lookup esatto perdeva pezzi.
-const trkBrandKey = (b: string) => String(b).toLowerCase().replace(/[^a-z0-9]/g, "");
-const TRK_BRAND_COLORS: Record<string, string> = {
-  vodafone: "var(--tf-e60000)", fastweb: "var(--tf-eab308)", windtre: "var(--tf-f97316)", wind3: "var(--tf-f97316)",
-  iliad: "var(--tf-c00028)", tim: "var(--tf-0050ff)", s4: "var(--tf-22c55e)", energy: "var(--tf-22c55e)",
-  sky: "var(--tf-0072c6)", dojo: "var(--tf-14b8a6)", verymobile: "var(--tf-84cc16)", homobile: "var(--tf-9b26b6)",
-  kenamobile: "var(--tf-e4002b)", kena: "var(--tf-e4002b)",
-};
-// I file 900x900 (WindTre, Vodafone) hanno il marchio annegato nel canvas
-// trasparente: scala OTTICA per pareggiarli, il box resta identico.
-const TRK_LOGO_SCALE: Record<string, number> = {
-  windtre: 1.5, vodafone: 1.75, fastweb: 1.55, sky: 1.15, iliad: 1.2,
-  tim: 1.2, dojo: 1.15, homobile: 1.2, kenamobile: 1.2,
-};
+// Chiave brand normalizzata, colori, scala ottica e loghi vivono in
+// src/lib/brandAssets (RIC-01): condivisi con le tessere di Ricerca Vendite.
 // Ordine voluto da Luca (03/08): W3, Sky, VF, S4, FW; gli altri a seguire.
 const TRK_BRAND_PRIORITA = ["windtre", "sky", "vodafone", "s4", "energy", "fastweb"];
 const ordinaBrandTracking = (arr: string[]) => [...arr].sort((a, b) => {
@@ -215,14 +203,6 @@ const ordinaBrandTracking = (arr: string[]) => [...arr].sort((a, b) => {
   if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   return a.localeCompare(b);
 });
-// stessi loghi di Registra Vendita (public/)
-const TRK_BRAND_LOGOS: Record<string, string> = {
-  vodafone: "/vodaphone - Copy.png", fastweb: "/fastweb.png", windtre: "/windtre.png",
-  wind3: "/windtre.png", iliad: "/iliad.png", tim: "/tim-logo-v2.png",
-  s4: "/energy - Copy.png", energy: "/energy - Copy.png", sky: "/sky.png",
-  dojo: "/dojo-round.png", verymobile: "/very-mobile.png", homobile: "/ho-mobile.png",
-  kenamobile: "/kena-mobile-v2.png", kena: "/kena-mobile-v2.png",
-};
 
 function KpiBar({
   data,
@@ -373,6 +353,7 @@ function statoPraticaDi(row: TrackingRow): string {
 
 // ─── FilterBar ───────────────────────────────────────────────────────────────
 function FilterBar({
+  categorie,
   catSel,
   setCatSel,
   search,
@@ -395,6 +376,9 @@ function FilterBar({
   setNegozioSel,
   negozi,
 }: {
+  // PDA-01: i chip Categoria arrivano dal chiamante, gia' ristretti alle
+  // categorie con pratiche visibili (via i 5 chip morti mobile/tv/digitale/...).
+  categorie: { id: string; label: string; color: string }[];
   catSel: string[];
   setCatSel: (v: string[]) => void;
   search: string;
@@ -436,8 +420,10 @@ function FilterBar({
 
   let pools: { id: string; label: string; color: string }[] = [];
   if (catSel.length === 0) {
+    // Solo gli esiti delle categorie realmente presenti: entrano gli stati Sky
+    // (prima assenti), escono quelli delle categorie morte (PDA-01).
     pools = [
-      ...CATEGORIE.flatMap((cat) => getStatiNegozioPerCategoria(cat.id)),
+      ...categorie.flatMap((cat) => getStatiNegozioPerCategoria(cat.id)),
     ];
   } else {
     pools = catSel.flatMap((cid) => getStatiNegozioPerCategoria(cid));
@@ -456,7 +442,7 @@ function FilterBar({
     <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4 mb-4">
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <span className="text-xs text-slate-400 font-semibold mr-1">CATEGORIA</span>
-        {CATEGORIE.map((cat) => {
+        {categorie.map((cat) => {
           const sel = catSel.includes(cat.id);
           return (
             <button
@@ -1511,8 +1497,11 @@ export default function TrackingPdaPage() {
     setLoadError(null);
     try {
       // Left join clients so contracts without a matching client still appear (avoids 0 rows).
+      // RIC-02: `prodotto` serve al predicato condiviso vaInTracking (esclusione
+      // sostituzioni) e allo split 3P Sky piu' sotto: senza, entrambi erano
+      // codice morto perche' r.prodotto era sempre undefined.
       const selectCols =
-        "id, brand, categoria, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, categoria_macro, controlli, tipo_cliente, tracking_nascosto, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
+        "id, brand, categoria, prodotto, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, categoria_macro, controlli, tipo_cliente, tracking_nascosto, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
       const { data: baseData, error: baseErr } = await supabase
         .from("contracts")
         .select(selectCols)
@@ -1550,36 +1539,13 @@ export default function TrackingPdaPage() {
           delegated_by: (row as RawRow).delegated_by ?? null,
         };
       });
-      // Optional: use client's 41 sample data from Supabase (run migration 024_tracking_pda_sample_data.sql)
-      // Segnalazione 43: i prodotti venduti a marginalita' (brand "Extra") non
-      // sono pratiche da lavorare — niente attivazione, niente stato, niente
-      // malus — e sporcavano solo l'elenco. Fuori dal Tracking.
-      // Fuori dal Tracking anche le Sostituzioni SIM: come gli Extra non sono
-      // pratiche da lavorare (nessuna attivazione da seguire) e sporcavano
-      // l'elenco. Richiesta di Francesco insieme alla visibilita' del Tecnico.
-      const lavorabili = (list as RawRow[]).filter((r: Record<string, unknown>) => {
-        const b = String(r.brand || "").trim().toLowerCase();
-        const p = String(r.prodotto || "").trim().toLowerCase();
-        if (b === "extra" || b.startsWith("marginal") || /sost/.test(p)) return false;
-        // Very Mobile fuori dal Tracking (Luca 03/08): non si lavora qui.
-        if (b.startsWith("very")) return false;
-        // Segnalazione 91: una pratica MOBILE senza finanziamento e senza MNP non
-        // e' da lavorare -> fuori dal Tracking (e in Ricerca risulta gia' Attivo).
-        const macro = String(r.categoria_macro || "").toLowerCase()
-          || categoriaDi(r.brand as string, r.categoria as string, r.prodotto as string);
-        const ctrl = (Array.isArray(r.controlli) && r.controlli.length)
-          ? (r.controlli as string[])
-          : controlliDi((r.dettagli as Record<string, unknown>) || {});
-        // PERIMETRO (Luca 29/07): nel Tracking entrano SOLO le categorie
-        // monitorate dalle regole — SIM/MNP e finanziamenti (mobile), fissi di
-        // ogni operatore (Sky fibra inclusa → Fisso), contratti P.IVA (mobile
-        // business), energia di ogni operatore, Sky TV. FUORI: Customer Base,
-        // Multi-Servizi, POS (oltre a marginalità e sostituzioni qui sopra).
-        if (["cb", "multi_servizi", "pos", "extra", "digitale"].includes(macro)) return false;
-        const business = String(r.tipo_cliente || "").toLowerCase() === "business";
-        if (macro === "mobile" && !business && !ctrl.includes("mnp") && !ctrl.includes("finanziamento")) return false;
-        return true;
-      });
+      // Perimetro "lavorabili" = vaInTracking (tassonomia, RIC-02): predicato
+      // UNICO condiviso con Ricerca Vendite, che con le stesse regole decide se
+      // mostrare il bottone "Apri in Tracking PDA". Le regole storiche (Extra/
+      // marginalita' e sostituzioni SIM — segnalazione 43 e Francesco —, Very
+      // Mobile — Luca 03/08 —, macro fuori perimetro — Luca 29/07 —, mobile
+      // consumer senza MNP ne' finanziamento — segnalazione 91) vivono la'.
+      const lavorabili = (list as RawRow[]).filter((r) => vaInTracking(r));
       const scoped = seesAll ? lavorabili : lavorabili.filter((r: Record<string, unknown>) => {
         if (seesWhole) return visibleStores.some((st) => sameStore(r.negozio as string, st));
         return (!!r.venditore && !!user?.name && r.venditore === user.name)
@@ -1744,16 +1710,75 @@ export default function TrackingPdaPage() {
     if (hit) { setSelected(hit); deepOpened.current = true; }
   }, [data]);
 
+  const statiCompletatiNegozio = ["attivato", "liquidato", "completo_sky", "attivo_sky"];
+
+  // PDA-01: platea per le OPZIONI dei filtri Negozio/Utente/Categoria — le
+  // "pratiche da monitorare in questo momento". Replica i soli filtri DI
+  // MODALITA' di `filtered` (cestino, completate/da lavorare, deleghe), NON
+  // quelli di contenuto: brand e KPI restano fuori apposta (decisione Luca,
+  // hanno gia' i loro contatori a vista).
+  const baseVisibile = useMemo(() => data.filter((row) => {
+    if (row.tracking_nascosto) return false;
+    if (soloDaLavorare) {
+      if (!statiCompletatiNegozio.includes(row.statoNegozio)) return false;
+      if (["confermato", "pagato", "stornato", "non_conforme"].includes(row.statoAdmin)) return false;
+    } else if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
+    if (onlyMine && row.delegated_to !== user?.id) return false;
+    if (onlyDelegate && row.delegated_by !== user?.id) return false;
+    return true;
+  }), [data, mostraCompletate, soloDaLavorare, onlyMine, onlyDelegate, user?.id]);
+
+  // Opzioni con dipendenza UNIDIREZIONALE (niente prune a cascata):
+  // NEGOZIO ← base; UTENTE ← base+negozio; CATEGORIA ← base+negozio+utente.
+  const negoziAttivi = useMemo(
+    () => (seesAll ? Array.from(new Set(baseVisibile.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort() : []),
+    [baseVisibile, seesAll]
+  );
+  const venditoriAttivi = useMemo(
+    () => (seesWhole && !seesAll ? Array.from(new Set(baseVisibile.map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []),
+    [baseVisibile, seesWhole, seesAll]
+  );
+  const utentiAttivi = useMemo(
+    () => (seesAll ? Array.from(new Set(baseVisibile.filter((r) => !negozioSel || r.negozio === negozioSel).map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []),
+    [baseVisibile, seesAll, negozioSel]
+  );
+  const catAttive = useMemo(() => new Set(
+    baseVisibile
+      .filter((r) => (!negozioSel || r.negozio === negozioSel) && (utentiSel.length === 0 || utentiSel.includes(r.venditore)))
+      .map((r) => r.categoria)
+  ), [baseVisibile, negozioSel, utentiSel]);
+  const categorieAttive = useMemo(() => CATEGORIE.filter((c) => catAttive.has(c.id)), [catAttive]);
+
+  // Negozio selezionato sparito dalla platea (es. attivando "Da lavorare"):
+  // si deseleziona da solo, niente chip-fantasma che svuota la tabella.
+  useEffect(() => {
+    if (negozioSel && !negoziAttivi.includes(negozioSel)) setNegozioSel("");
+  }, [negoziAttivi, negozioSel]);
+
   // Cambio negozio ⇒ via dalla selezione gli utenti che li' non hanno pratiche
   // (altrimenti resta un filtro-fantasma che svuota la tabella).
   useEffect(() => {
     setUtentiSel((prev) => {
-      const next = prev.filter((n) => data.some((r) => r.venditore === n && (!negozioSel || r.negozio === negozioSel)));
+      const next = prev.filter((n) => baseVisibile.some((r) => r.venditore === n && (!negozioSel || r.negozio === negozioSel)));
       return next.length === prev.length ? prev : next;
     });
-  }, [negozioSel, data]);
+  }, [negozioSel, baseVisibile]);
 
-  const statiCompletatiNegozio = ["attivato", "liquidato", "completo_sky", "attivo_sky"];
+  // Categoria selezionata rimasta senza pratiche ⇒ fuori dalla selezione; gli
+  // esiti scelti si intersecano con quelli delle categorie rimaste (stessa
+  // pulizia del toggleCat manuale), altrimenti un esito-fantasma continuerebbe
+  // a svuotare la tabella senza nessun controllo visibile.
+  useEffect(() => {
+    const next = catSel.filter((c) => catAttive.has(c));
+    if (next.length === catSel.length) return;
+    setCatSel(next);
+    if (next.length === 0) { setStatoSel([]); return; }
+    const validi = new Set(next.flatMap((cid) => getStatiNegozioPerCategoria(cid).map((s) => s.id)));
+    setStatoSel((prev) => {
+      const sNext = prev.filter((id) => validi.has(id));
+      return sNext.length === prev.length ? prev : sNext;
+    });
+  }, [catAttive, catSel]);
 
   const filtered = useMemo(() => {
     return data.filter((row) => {
@@ -2084,6 +2109,7 @@ export default function TrackingPdaPage() {
               setBrandSel={setBrandSel}
             />
             <FilterBar
+              categorie={categorieAttive}
               catSel={catSel}
               setCatSel={setCatSel}
               search={search}
@@ -2103,11 +2129,13 @@ export default function TrackingPdaPage() {
               // e' spesso il match_name ("Eloisa Nucci") mentre full_name e'
               // "Eloisa Nucci Gonzalez", quindi il chip preso da full_name non
               // corrispondeva a nulla e le pratiche sparivano (segn. Lorenzo 03/08).
-              venditori={seesWhole && !seesAll ? Array.from(new Set(data.map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []}
+              // PDA-01: le opzioni pescano da baseVisibile (pratiche monitorabili
+              // in questo momento), non piu' da tutta `data`.
+              venditori={venditoriAttivi}
               negozioSel={negozioSel}
               setNegozioSel={setNegozioSel}
-              negozi={seesAll ? Array.from(new Set(data.map((r) => r.negozio).filter((n) => n && n !== "—"))).sort() : []}
-              utenti={seesAll ? Array.from(new Set(data.filter((r) => !r.tracking_nascosto && (!negozioSel || r.negozio === negozioSel)).map((r) => r.venditore).filter((n) => n && n !== "—"))).sort() : []}
+              negozi={negoziAttivi}
+              utenti={utentiAttivi}
               utentiSel={utentiSel}
               setUtentiSel={setUtentiSel}
             />

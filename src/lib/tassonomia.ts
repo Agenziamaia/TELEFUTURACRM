@@ -180,6 +180,37 @@ export function controlliDi(dettagli: Record<string, unknown> | null | undefined
 }
 
 /**
+ * Perimetro del Tracking PDA — predicato UNICO (RIC-02), usato sia dal filtro
+ * "lavorabili" del Tracking sia da Ricerca Vendite per mostrare/nascondere il
+ * bottone "Apri in Tracking PDA": prima le due pagine avevano regole diverse e
+ * il bottone portava su una lista vuota senza spiegazioni.
+ *
+ * Fuori dal Tracking:
+ *  - brand Marginalità/Extra e sostituzioni SIM (non sono pratiche da lavorare);
+ *  - Very Mobile (Luca 03/08: non si lavora qui);
+ *  - macro Customer Base, Multi-Servizi, POS, extra, digitale (perimetro Luca 29/07);
+ *  - mobile consumer senza MNP né finanziamento (segnalazione 91: già Attivo).
+ */
+export function vaInTracking(r: {
+    brand?: unknown; prodotto?: unknown; categoria?: unknown; categoria_macro?: unknown;
+    controlli?: unknown; tipo_cliente?: unknown; dettagli?: unknown;
+}): boolean {
+    const b = String(r.brand || "").trim().toLowerCase();
+    const p = String(r.prodotto || "").trim().toLowerCase();
+    if (b === "extra" || b.startsWith("marginal") || /sost/.test(p)) return false;
+    if (b.startsWith("very")) return false;
+    const macro = String(r.categoria_macro || "").toLowerCase()
+        || categoriaDi(r.brand as string, r.categoria as string, r.prodotto as string);
+    if (["cb", "multi_servizi", "pos", "extra", "digitale"].includes(macro)) return false;
+    const ctrl = (Array.isArray(r.controlli) && r.controlli.length)
+        ? (r.controlli as string[])
+        : controlliDi((r.dettagli as Record<string, unknown>) || {});
+    const business = String(r.tipo_cliente || "").toLowerCase() === "business";
+    if (macro === "mobile" && !business && !ctrl.includes("mnp") && !ctrl.includes("finanziamento")) return false;
+    return true;
+}
+
+/**
  * Righe da mostrare nel Tracking PDA per una pratica.
  *
  * Combinazioni dettate da Francesco:

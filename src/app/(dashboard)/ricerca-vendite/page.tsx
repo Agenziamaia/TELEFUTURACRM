@@ -7,7 +7,8 @@ import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
-import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, categoriaDef, categoriaDi } from "@/lib/tassonomia";
+import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, categoriaDef, categoriaDi, vaInTracking } from "@/lib/tassonomia";
+import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
 import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
 import { codiciPerBrand } from "@/lib/codiciInserimento";
@@ -102,12 +103,8 @@ const READONLY_META: EditField[] = [
 ];
 
 // Segnalazione 57: logo per ogni brand nelle tessere di riepilogo.
-const BRAND_LOGO: Record<string, string> = {
-    "WindTre": "/windtre.png", "Vodafone": "/vodaphone - Copy.png", "Fastweb": "/fastweb.png",
-    "Iliad": "/iliad.png", "Sky": "/sky.png", "Very Mobile": "/very-mobile.png", "Very": "/very-mobile.png",
-    "Ho. Mobile": "/ho-mobile.png", "Ho": "/ho-mobile.png", "Kena Mobile": "/kena-mobile-v2.png", "Kena": "/kena-mobile-v2.png",
-    "Tim": "/tim-logo-v2.png", "TIM": "/tim-logo-v2.png", "S4": "/energy - Copy.png", "Dojo": "/dojo - Copy.png",
-};
+// RIC-01: mappa loghi/scala condivisa col Tracking (src/lib/brandAssets),
+// lookup per chiave normalizzata trkBrandKey — via la copia locale divergente.
 
 const STATI = ["Attivo", "In lavorazione", "Attivato", "Sospeso", "Annullato"];
 
@@ -926,7 +923,10 @@ export default function RicercaContratto() {
                     {brandCounts.map(({ brand, n }) => {
                         const isExtra = _isExtraBrand(brand);
                         const active = selBrands.size === 0 ? !isExtra : selBrands.has(brand);
-                        const logo = BRAND_LOGO[brand];
+                        const logo = TRK_BRAND_LOGOS[trkBrandKey(brand)];
+                        // Qui non c'e' filtro KPI: il badge resta neutro, come
+                        // il Tracking a riposo.
+                        const colBadge = "var(--tf-94a3b8)";
                         return (
                             <button key={brand}
                                 onClick={() => {
@@ -942,16 +942,24 @@ export default function RicercaContratto() {
                                     setPage(1);
                                 }}
                                 title={selBrands.size === 0 ? `Filtra solo ${brand}` : active ? `${brand} nel filtro — clicca per toglierlo` : `Aggiungi ${brand} al filtro`}
-                                className={cn("flex-1 min-w-0 flex flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-4 transition-all",
+                                className={cn("relative flex-1 min-w-0 flex items-center justify-center rounded-2xl border px-3 py-2 transition-all",
                                     active
                                         ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
                                         : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]")}>
-                                <span className="h-12 flex items-center justify-center" title={brand}>
+                                {/* RIC-01: box logo alla misura del Tracking (72px, logo 56
+                                    + scala ottica per brand): loghi grandi uguali ovunque. */}
+                                <span className="h-[72px] w-full flex items-center justify-center" title={brand}>
                                     {isExtra ? <span className="text-4xl">💰</span>
-                                        : logo ? <img src={logo} alt={brand} className="h-12 w-auto max-w-full object-contain" />
+                                        : logo ? <img src={logo} alt={brand} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(brand)] || 1})` }} />
                                             : <span className="text-base font-bold text-slate-200 truncate max-w-full">{brand}</span>}
                                 </span>
-                                <span className="text-[11px] text-slate-400 tabular-nums leading-none">{n} {isExtra ? "vendite" : "contratti"}</span>
+                                {/* numeretto A FIANCO del logo, identico al Tracking: assoluto
+                                    (il bottone e' relative) cosi' il logo resta centrato; fondo
+                                    SOLIDO perche' i loghi scalati via transform sbordano dal box. */}
+                                <span className="absolute text-[10px] font-black leading-none px-1.5 py-[3px] rounded-full"
+                                    style={{ right: 7, top: "50%", transform: "translateY(-50%)", zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
+                                    {n}
+                                </span>
                             </button>
                         );
                     })}
@@ -1352,9 +1360,12 @@ export default function RicercaContratto() {
                                                 <button onClick={() => openContract(row, "view")} className="p-1.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors" title="Dettaglio contratto"><Eye className="w-4 h-4" /></button>
                                                 {/* Segnalazione 46: scorciatoia verso Tracking PDA.
                                                     Segnalazione 64: va vista da tutti, non solo dallo
-                                                    store manager, e non ha senso sulle vendite Extra,
-                                                    che nel Tracking non compaiono. */}
-                                                {!["extra", "marginalità", "marginalita"].includes(String(row.brand || "").trim().toLowerCase()) && <button
+                                                    store manager. RIC-02: compare SOLO sulle pratiche
+                                                    che il Tracking mostra davvero — stesso predicato
+                                                    vaInTracking del suo filtro "lavorabili" — e mai su
+                                                    quelle cestinate dal Tracking (tracking_nascosto):
+                                                    prima portava su una lista vuota senza spiegazioni. */}
+                                                {vaInTracking(row.raw) && !row.raw.tracking_nascosto && <button
                                                     onClick={() => {
                                                         const q = encodeURIComponent(row.cliente || "");
                                                         window.location.href = `/pda/tracking?q=${q}&id=${encodeURIComponent(row.id)}`;

@@ -11,6 +11,10 @@ export const CATEGORIE = [
   { id: "fisso", label: "Fisso / Fibra", desc: "Linee fisse, fibra e FWA", color: "var(--tf-0ea5e9)" },
   { id: "energia", label: "Energia", desc: "Luce e gas", color: "var(--tf-10b981)" },
   { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "var(--tf-ef4444)" },
+  // Nel Tracking le pratiche TV viaggiano come "sky" (rimappate in `data`):
+  // senza questa voce le Sky non erano filtrabili e il badge cadeva sul
+  // fallback grigio di getCat (PDA-01).
+  { id: "sky", label: "Sky / TV", desc: "Sky TV (regole Sky)", color: "var(--tf-ef4444)" },
   { id: "digitale", label: "Soluzioni Digitali", desc: "Servizi digitali", color: "var(--tf-22d3ee)" },
   { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni e pacchetti", color: "var(--tf-ec4899)" },
   { id: "pos", label: "POS", desc: "Terminali di pagamento", color: "var(--tf-f59e0b)" },
