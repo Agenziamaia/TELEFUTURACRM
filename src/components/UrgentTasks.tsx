@@ -73,8 +73,20 @@ export function UrgentTasks() {
             setTasks(list);
         };
         load();
+        // Luca 04/08: "il pallino si toglie dopo due minuti" — il solo polling
+        // a 60s rendeva il fulmine lento. Ora: REALTIME sulle tabelle task
+        // (mig. 177 le aggiunge alla publication) + refresh al ritorno sul tab;
+        // il polling resta come rete di sicurezza.
         const t = setInterval(load, 60000);
-        return () => { vivo = false; clearInterval(t); };
+        let deb: ReturnType<typeof setTimeout> | null = null;
+        const ricarica = () => { if (deb) clearTimeout(deb); deb = setTimeout(load, 400); };
+        const ch = supabase.channel("urgent-tasks-" + user?.id)
+            .on("postgres_changes", { event: "*", schema: "public", table: "admin_tasks" }, ricarica)
+            .on("postgres_changes", { event: "*", schema: "public", table: "richieste_disdette" }, ricarica)
+            .subscribe();
+        const onVis = () => { if (document.visibilityState === "visible") ricarica(); };
+        document.addEventListener("visibilitychange", onVis);
+        return () => { vivo = false; clearInterval(t); if (deb) clearTimeout(deb); supabase.removeChannel(ch); document.removeEventListener("visibilitychange", onVis); };
     }, [user?.id, user?.name, isDirezione, isAdmin]);
 
     useEffect(() => {
