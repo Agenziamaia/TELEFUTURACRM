@@ -4606,7 +4606,12 @@ function CRM() {
   const mancanzeVendita = () => {
     const m = [];
     if (!attachments.some(a => a.type === "documento")) m.push("🪪 documento del cliente (step Allegati)");
-    if (!attachments.some(a => a.type === "contratti")) m.push("📄 contratto firmato (step Allegati)");
+    // ECCEZIONE SKY (Luca 04/08): Sky non rilascia il contratto — su vendite
+    // di SOLO Sky l'unico obbligo è il documento; se nel carrello c'è anche
+    // un altro brand, il contratto resta obbligatorio (serve per quello).
+    const _brands = [...cart.map(g => g.brandId), ...(brand && colItems().length ? [brand] : [])];
+    const _soloSky = _brands.length > 0 && _brands.every(b => b === "sky");
+    if (!_soloSky && !attachments.some(a => a.type === "contratti")) m.push("📄 contratto firmato (step Allegati)");
     if (!selVend || !selNeg || !dataVendita) m.push("🏪 attribuzione: venditore, negozio e data");
     if (!stepVisti.note) m.push("📝 passaggio dallo step Note");
     return m;
