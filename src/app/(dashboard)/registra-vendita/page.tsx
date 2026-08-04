@@ -4599,6 +4599,18 @@ function CRM() {
   // sceglie se spostarlo qui o cambiarlo — stessa logica della sezione Clienti.
   const [dupCellCliente, setDupCellCliente] = useState<{ id: string; label: string } | null>(null);
   const spostaCellRef = useRef(false);
+  // GATE DI COMPLETEZZA (Luca 04/08): la vendita BRAND si registra SOLO con
+  // tutti e 5 gli step superati — sono state salvate vendite SENZA documento
+  // del cliente e senza contratto, saltando Allegati/Attribuzione dal
+  // riepilogo. Documento + contratto sono OBBLIGATORI.
+  const mancanzeVendita = () => {
+    const m = [];
+    if (!attachments.some(a => a.type === "documento")) m.push("🪪 documento del cliente (step Allegati)");
+    if (!attachments.some(a => a.type === "contratti")) m.push("📄 contratto firmato (step Allegati)");
+    if (!selVend || !selNeg || !dataVendita) m.push("🏪 attribuzione: venditore, negozio e data");
+    if (!stepVisti.note) m.push("📝 passaggio dallo step Note");
+    return m;
+  };
   const finalSubmit = async () => {
     if (submitLock.current) return;
     // auto-marginalità anche per il brand corrente non ancora "aggiunto al carrello"
@@ -4614,6 +4626,16 @@ function CRM() {
   };
   const _finalSubmitInner = async (margList = margItems) => {
     if(blockSaveAll){sT("⚠ Completa tutti i prodotti (Incompleto) prima di salvare");return;}
+    {
+      // il gate vale per il ramo BRAND (la marginalità pura passa da saveMargOnly)
+      const _manca = mancanzeVendita();
+      if (_manca.length) {
+        setShowCart(false);
+        setVistaStep(_manca.some((x) => x.includes("Allegati") || x.includes("attribuzione")) ? "allegati" : "note");
+        sT("⚠️ Per salvare la vendita completa prima: " + _manca.join(" · "));
+        return;
+      }
+    }
     const _mm2 = margPriceMissing(margList);
     if(_mm2.length){setShowCart(true);sT("⚠️ Inserisci il prezzo di vendita per: "+_mm2.map(m=>m.product).join(", "));return;}
     const cur = colItems();
@@ -5294,7 +5316,9 @@ function CRM() {
           <button onClick={()=>setConfirmReset(true)} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
           {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
           {onlyMarg&&<button onClick={()=>setShowMargSave(true)} style={{padding:"12px 36px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
-          {!onlyMarg&&<button onClick={finalSubmit} disabled={tp===0||submitting} style={{padding:"12px 36px",borderRadius:10,border:"none",background:(tp>0&&!submitting)?"linear-gradient(135deg,#28a745,#20c997)":"var(--tf-w100)",color:"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":`💾 Salva contratto (${tp})`}</button>}
+          {!onlyMarg&&(()=>{const _m=mancanzeVendita();const _ok=tp>0&&!submitting&&_m.length===0;return <button onClick={finalSubmit} disabled={!_ok}
+            title={_m.length?"Per salvare completa: "+_m.join(" · "):""}
+            style={{padding:"12px 36px",borderRadius:10,border:"none",background:_ok?"linear-gradient(135deg,#28a745,#20c997)":"var(--tf-w100)",color:"#fff",fontSize:14,fontWeight:800,cursor:_ok?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?"🔒 Completa gli step per salvare":`💾 Salva contratto (${tp})`}</button>;})()}
         </div>
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
@@ -5483,7 +5507,7 @@ select.rvIn{cursor:pointer}
           )}
         </div>
         <div style={{padding:14,borderTop:"1px solid var(--tf-w60)"}}>
-          <button onClick={()=>setShowCart(true)} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:bG,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>Apri carrello →</button>
+          <button onClick={()=>setShowCart(true)} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:bG,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>🛒 Riepilogo carrello →</button>
         </div>
       </div>
       {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"var(--tf-ffd800)",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
@@ -5965,8 +5989,11 @@ select.rvIn{cursor:pointer}
           <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          {brand&&<button onClick={()=>{addCart();setVistaStep("brand");}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>💾 Salva vendita</button>}
-          <button onClick={()=>setShowCart(true)} style={{padding:"11px 26px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1e293b,#0f3460)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>🛒 Riepilogo carrello{tCI>0&&<span style={{background:"var(--tf-ffd800)",color:"var(--tf-f8fafc)",borderRadius:10,padding:"1px 8px",fontSize:12,fontWeight:800}}>{tCI}</span>}</button>
+          {/* Luca 04/08: NIENTE scorciatoia al riepilogo da qui (si saltavano
+              Allegati/Note e partivano vendite senza documenti) — l'utente
+              avanza con "Avanti"; "Salva vendita" compare SOLO allo step 5
+              (Note), il riepilogo si apre dal pannello/🛒 laterale. */}
+          {brand&&vistaStep==="note"&&<button onClick={()=>{addCart();setVistaStep("brand");}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>💾 Salva vendita</button>}
         </div>
       </div>}
 
