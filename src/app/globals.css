@@ -651,3 +651,7 @@ html.light header{background-color:#ffffff !important;border-bottom:1px solid rg
 html.light{--tf-f1f5f9:#1f2a3d;--tf-e2e8f0:#2a3646;}
 /* LOGIN: fondo chiaro pulito cosi' la card bianca risalta (era bianco su bianco) */
 html.light #login-root{background:linear-gradient(155deg,#eef2f8 0%,#e2e7f1 100%) !important;}
+
+/* Clienti: header+contenuto in UN pannello coeso (non piu' barra bianca isolata) */
+html.light #clienti-shell{background:#ffffff !important;border:1px solid rgba(15,23,42,.10);border-radius:16px;box-shadow:0 1px 3px rgba(15,23,42,.05),0 10px 28px rgba(15,23,42,.06);}
+html.light #clienti-shell > header{background:#ffffff !important;box-shadow:none !important;border-bottom:1px solid rgba(15,23,42,.07) !important;border-radius:16px 16px 0 0;}

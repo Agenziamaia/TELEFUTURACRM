@@ -1221,7 +1221,7 @@ export default function ClientiPage() {
     }, [filteredData, currentPage, itemsPerPage]);
 
     return (
-        <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        <div id="clienti-shell" className="flex-1 flex flex-col h-screen overflow-hidden">
             {/* HEADER */}
             <header className="flex-none flex items-center justify-between px-8 py-6 border-b border-white/5 bg-[#0f111a]/50 backdrop-blur-xl">
                 <div className="flex items-center gap-3">
