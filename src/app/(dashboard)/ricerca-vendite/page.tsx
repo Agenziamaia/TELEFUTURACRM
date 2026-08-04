@@ -16,7 +16,7 @@ import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStore
 import { codiciPerBrand } from "@/lib/codiciInserimento";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { capChoice, capKey, CAP_RICERCA_MODIFICA } from "@/lib/capabilities";
+import { capChoice, CAP_RICERCA_MODIFICA } from "@/lib/capabilities";
 
 interface ContrattoRow {
     id: string;
@@ -299,27 +299,18 @@ export default function RicercaContratto() {
     // amministrativo in su diretta, il resto con autorizzazione.
     const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
     const modRicerca = capChoice(user?.role, CAP_RICERCA_MODIFICA, capPerms);
-    const rotellinaImpostata = CAP_RICERCA_MODIFICA.caps.some(c => !!capPerms?.has(capKey(CAP_RICERCA_MODIFICA.section, c.id)));
-    // "diretta" = il salvataggio del modale applica subito, senza richiesta
+    // LA ROTELLINA COMANDA SEMPRE (Luca 04/08 sera): niente perimetri storici
+    // "a rotellina vergine" — il caso store specialist ha mostrato il paradosso:
+    // l'opzione predefinita ("con autorizzazione") risultava selezionata nel
+    // pannello ma la pagina applicava la vecchia lista ruoli e la matita non
+    // compariva. Ora: default = amministrazione diretta, tutti gli altri con
+    // autorizzazione; chi non deve proprio modificare si mette su "Sola
+    // consultazione" dalla rotellina (per ruolo o per grado).
     const modificaDiretta = modRicerca === "diretta";
-    // Matita: con la rotellina impostata comanda lei ("nessuna" = solo vista);
-    // da vergine resta la lista storica (store manager in su — richiesta Luca #5).
-    const canEditContract = rotellinaImpostata
-        ? modRicerca !== "nessuna"
-        : ["store_manager", "admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
-    // Approvazione delle richieste pendenti: chi ha la modifica diretta.
-    // Sostituisce la vecchia lista cablata di 4 ruoli, che il default della
-    // capacità riproduce esattamente a rotellina vergine.
+    const canEditContract = modRicerca !== "nessuna";
     const canApprove = modificaDiretta;
-    // Cestino: "diretta" elimina con conferma, "richiesta" invia la richiesta,
-    // "nessuna" niente bottone. Da vergine valgono le vecchie liste (regola
-    // Luca 25/07: diretta per amministrazione/direzioni, richiesta per lo SM).
-    const canDeleteDirect = rotellinaImpostata
-        ? modificaDiretta
-        : ["amministrativo", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
-    const canDeleteButton = rotellinaImpostata
-        ? modRicerca !== "nessuna"
-        : (canDeleteDirect || user?.role === "store_manager");
+    const canDeleteDirect = modificaDiretta;
+    const canDeleteButton = modRicerca !== "nessuna";
     const [delTarget, setDelTarget] = useState<any>(null);
     const [delMotivo, setDelMotivo] = useState("");
     const [delBusy, setDelBusy] = useState(false);
