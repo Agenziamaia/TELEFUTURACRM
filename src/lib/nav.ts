@@ -103,6 +103,11 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: EVERYONE },
             // CHIUSURA LINEA (Luca 01/08): ticketing disdette operatori
             { name: "Chiusura Linea", href: "/chiusura-linea", icon: Scissors, roles: EVERYONE },
+            // REGISTRO CHIAMATE Aircall del negozio (AIR-01, Luca 04/08): il
+            // registro lo vede tutto il negozio, l'AUDIO delle registrazioni è
+            // gestito a parte per ruolo (store manager in su, gate in pagina e
+            // sul proxy). La voce resta amministrabile dal pannello Permessi.
+            { name: "Registro Chiamate", href: "/chiamate", icon: Phone, roles: EVERYONE },
             { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
         ],
     },

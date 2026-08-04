@@ -21,6 +21,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, CAP_CLIENTI_INTEGRA_DOC, capChoice, capAllowed } from "@/lib/capabilities";
 import { chiamaAircall } from "@/lib/dialer";
 import { numeroNazionale } from "@/lib/telefono";
+import { puoAscoltareRegistrazioni } from "@/lib/aircall";
 
 interface Cliente {
     id: string;
@@ -536,7 +537,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     );
 }
 
-function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | null; onClose: () => void; onSave: () => void }) {
+// cellularePrecompilato (AIR-01e): dal Registro Chiamate si arriva qui con
+// /clienti?nuovo=<numero> e il campo Cellulare è già compilato (senza +39).
+function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: { cliente?: Cliente | null; cellularePrecompilato?: string | null; onClose: () => void; onSave: () => void }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -551,7 +554,7 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
     const [ragioneSociale, setRagioneSociale] = useState(cliente?.ragioneSociale ?? "");
     // CF del referente (mig. 139): qui e' compilabile ma non bloccante
     const [cfRef, setCfRef] = useState(cliente?.cfRef ?? "");
-    const [cellulare, setCellulare] = useState(cliente?.cellulare ?? "");
+    const [cellulare, setCellulare] = useState(cliente?.cellulare ?? (cellularePrecompilato || ""));
     // recapito FISSO facoltativo, solo business (mig. 124)
     const [fisso, setFisso] = useState(cliente?.telefonoFisso ?? "");
     const [email, setEmail] = useState(cliente?.email ?? "");
@@ -652,6 +655,17 @@ function ClienteFormModal({ cliente, onClose, onSave }: { cliente?: Cliente | nu
                 const insertPayload = { id: `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`, ...basePayload, acquisito_da: acquisito || null, is_demo: false };
                 const { error: err } = await supabase.from("clients").insert([insertPayload]);
                 if (err) throw err;
+                // RETRO-AGGANCIO (AIR-01e): le chiamate del Registro ancora senza
+                // cliente con questo numero si agganciano alla nuova anagrafica
+                // (coda di 9 cifre, cifre intervallate da % per gli spazi).
+                // Best-effort: un errore qui non blocca il salvataggio.
+                const codaCell = String(basePayload.cellulare || "").replace(/\D/g, "").slice(-9);
+                if (codaCell.length >= 6) {
+                    await supabase.from("call_events")
+                        .update({ client_id: insertPayload.id })
+                        .is("client_id", null)
+                        .ilike("cliente_num", "%" + codaCell.split("").join("%") + "%");
+                }
             }
             onSave();
             onClose();
@@ -1122,6 +1136,19 @@ export default function ClientiPage() {
         const hit = clientList.find((c: any) => String(c.id) === id);
         if (hit) { setSelectedCliente(hit); deepLinked.current = true; }
     }, [clientList]);
+
+    // ANAGRAFIZZAZIONE dal Registro Chiamate (AIR-01e): /clienti?nuovo=<numero>
+    // apre SUBITO il form nuovo cliente col cellulare precompilato (senza +39,
+    // regola archivio 31/07). Stesso idioma del deep link ?id= qui sopra
+    // (window.location, non useSearchParams: niente wrapper Suspense).
+    const [numeroPrecompilato, setNumeroPrecompilato] = useState<string | null>(null);
+    useEffect(() => {
+        const nuovo = new URLSearchParams(window.location.search).get("nuovo");
+        if (!nuovo) return;
+        setNumeroPrecompilato(numeroNazionale(nuovo) || nuovo);
+        setClientToEdit(null);
+        setIsFormOpen(true);
+    }, []);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -1748,9 +1775,13 @@ export default function ClientiPage() {
             {isFormOpen && (
                 <ClienteFormModal
                     cliente={clientToEdit}
+                    cellularePrecompilato={numeroPrecompilato}
                     onClose={() => {
                         setIsFormOpen(false);
                         setClientToEdit(null);
+                        // il numero arrivato dal Registro vale per QUESTA apertura:
+                        // un "Nuovo Cliente" successivo riparte pulito
+                        setNumeroPrecompilato(null);
                     }}
                     onSave={fetchClientList}
                 />
@@ -1768,6 +1799,11 @@ export default function ClientiPage() {
    - calls = le pratiche del call center (esiti: NR, appuntamenti, ecc.),
      agganciate per CF/P.IVA o per numero. */
 function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; cellulare?: string | null; cf_piva?: string | null; nome?: string | null; cognome?: string | null; ragioneSociale?: string | null; tipo?: string | null }; onClose: () => void }) {
+    // AUDIO registrazioni SOLO da store manager in su (decisione Luca 04/08):
+    // il gate vero sta sul proxy /api/aircall/recording (?u= verificato a DB),
+    // qui si evita di mostrare un player che risponderebbe 403.
+    const { user: uStorico } = useAuth();
+    const puoAudio = puoAscoltareRegistrazioni(uStorico?.role);
     const [eventi, setEventi] = useState<Record<string, unknown>[]>([]);
     const [pratiche, setPratiche] = useState<Record<string, unknown>[]>([]);
     const [caricoStorico, setCaricoStorico] = useState(true);
@@ -1829,13 +1865,14 @@ function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; c
                                                     : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">risposta · {durata(e.duration_sec)}</span>}
                                                 <span className="ml-auto text-xs text-slate-500 font-mono">{numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || "")}</span>
                                             </div>
-                                            {!!e.recording_url && (
+                                            {!!e.recording_url && puoAudio && (
                                                 <div className="mt-2 flex items-center gap-3">
                                                     {/* il recording_url salvato SCADE in ~1h (firma S3): si passa dal
-                                                        proxy che chiede ad Aircall un URL fresco a ogni ascolto */}
+                                                        proxy che chiede ad Aircall un URL fresco a ogni ascolto — con
+                                                        ?u= per il gate di ruolo (Luca 04/08) */}
                                                     {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                                                    <audio controls preload="none" src={e.aircall_call_id ? `/api/aircall/recording?call=${e.aircall_call_id}` : String(e.recording_url)} className="h-8 flex-1 min-w-0" />
-                                                    <a href={e.aircall_call_id ? `/api/aircall/recording?call=${e.aircall_call_id}` : String(e.recording_url)} target="_blank" rel="noreferrer" download
+                                                    <audio controls preload="none" src={e.aircall_call_id ? `/api/aircall/recording?call=${e.aircall_call_id}&u=${uStorico?.id || ""}` : String(e.recording_url)} className="h-8 flex-1 min-w-0" />
+                                                    <a href={e.aircall_call_id ? `/api/aircall/recording?call=${e.aircall_call_id}&u=${uStorico?.id || ""}` : String(e.recording_url)} target="_blank" rel="noreferrer" download
                                                         className="text-xs font-bold text-sky-300 hover:text-white shrink-0">⬇ Scarica</a>
                                                 </div>
                                             )}

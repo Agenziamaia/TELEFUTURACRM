@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { codaNumero, soloCifre } from "@/lib/aircall";
+import { codaNumero, soloCifre, eventoAnyTime, trovaClientePerNumero } from "@/lib/aircall";
 import { numeroNazionale } from "@/lib/telefono";
 import { areaOf } from "@/lib/roles";
 
@@ -48,22 +48,36 @@ export async function POST(request: Request) {
         const answeredBool = !!d.answered_at;
         const missed = direction === "inbound" && !d.answered_at && (event === "call.hungup" || event === "call.ended");
 
-        // negozio dal numero Aircall (se mappato in stores.aircall_number_id)
-        let negozio: string | null = null;
-        if (numberId) {
-            const { data: st } = await supabase.from("stores").select("name").eq("aircall_number_id", numberId).maybeSingle();
-            negozio = st?.name ?? null;
+        // ANYTIME FITNESS (Luca 04/08): stesso account Aircall, altra azienda —
+        // il webhook è account-wide e riversava anche le loro chiamate qui.
+        // Fuori dal registro Telefutura, senza insert.
+        if (eventoAnyTime(aircallUserId, numberId)) {
+            return NextResponse.json({ ok: true, ignored: "anytime-fitness" });
         }
 
-        // cliente dal numero (ultime 9 cifre)
+        // negozio: PRIMA dall'UTENZA che ha gestito la chiamata (stores.
+        // aircall_user_id, mig. 04/08) — sul numero unico 06 5528 0153 il
+        // number_id è identico per tutti i punti vendita e solo l'utenza dice
+        // chi ha risposto; il number_id resta come fallback per i numeri
+        // diretti (Collatina/Merulana). limit(1)+order: deterministico anche
+        // se un id venisse mappato su due negozi gemelli.
+        let negozio: string | null = null;
+        if (aircallUserId) {
+            const { data: st } = await supabase.from("stores").select("name")
+                .eq("aircall_user_id", aircallUserId).order("name").limit(1);
+            negozio = st?.[0]?.name ?? null;
+        }
+        if (!negozio && numberId) {
+            const { data: st } = await supabase.from("stores").select("name")
+                .eq("aircall_number_id", numberId).order("name").limit(1);
+            negozio = st?.[0]?.name ?? null;
+        }
+
+        // cliente dal numero: match condiviso (cellulare > client_numeri >
+        // telefono fisso, coda di 9 cifre esatta, ambigui loggati)
         let clientId: string | null = null;
         if (clienteNum) {
-            const coda = codaNumero(clienteNum);
-            if (coda.length >= 6) {
-                const { data: cli } = await supabase
-                    .from("clients").select("id, cellulare").ilike("cellulare", `%${coda}%`).limit(1);
-                if (cli && cli[0]) clientId = cli[0].id;
-            }
+            clientId = (await trovaClientePerNumero(clienteNum)).clientId;
         }
 
         const row: Record<string, unknown> = {
