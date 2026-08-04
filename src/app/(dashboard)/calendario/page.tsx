@@ -578,17 +578,15 @@ export default function Calendario() {
     // la direzione del call center vede tutti quelli presi dal call center.
     const ccStaff = useCallers();
     const isDirezioneCc = ["direttore_cc", "back_office_caller"].includes(user?.role || "");
-    const visibleAppointments = appointments.filter(a => {
-        // filtro categorie (pallini): vale per tutti i ruoli
+    // FILTRI negozio/consulente ANCHE per chi ha più negozi in visibilità
+    // (Luca 05/08): prima erano solo di admin/direzione — uno store manager
+    // multi-negozio non poteva restringere il calendario.
+    const puoFiltrareCal = isCallCenter || mieiNegozi.length > 1;
+    // visibilità PURA (senza i filtri): serve anche a costruire le opzioni
+    // delle tendine, che altrimenti si auto-svuoterebbero filtrando
+    const visibileBase = (a: (typeof appointments)[number]) => {
         if (!catOn(a.type)) return false;
-        if (isCallCenter) {
-            if (filterStores.length > 0 && !filterStores.includes(a.store || "")) return false;
-            if (filterAgent && filterAgent !== "Tutti" && a.agente !== filterAgent) return false;
-            if (filterCreatedBy && filterCreatedBy !== "Tutti" && (a.createdBy || "") !== filterCreatedBy) return false;
-            if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
-            return true;
-        }
-        if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
+        if (isCallCenter) return true;
         // Chi l'ha creato lo vede (il caller vede i SUOI appuntamenti fissati).
         if (a.createdBy && a.createdBy === user?.name) return true;
         // La direzione CC vede tutti gli appuntamenti presi dal call center.
@@ -598,7 +596,23 @@ export default function Calendario() {
         // Appuntamenti inbound di QUALSIASI negozio visibile (non solo il principale).
         if (a.type === "incoming" && a.store && mieiNegozi.some((m) => sameStore(a.store, m))) return true;
         return false;
+    };
+    const visibleAppointments = appointments.filter(a => {
+        if (!visibileBase(a)) return false;
+        if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
+        if (puoFiltrareCal) {
+            // sameStore: i gemelli ("Magliana" storica vs "Magliana W3") contano
+            if (filterStores.length > 0 && !filterStores.some((s) => sameStore(a.store || "", s))) return false;
+            if (filterAgent && filterAgent !== "Tutti" && a.agente !== filterAgent) return false;
+            if (isCallCenter && filterCreatedBy && filterCreatedBy !== "Tutti" && (a.createdBy || "") !== filterCreatedBy) return false;
+        }
+        return true;
     });
+    // opzioni consulente per i NON-direzione: le persone degli appuntamenti visibili
+    const agentiMiei = useMemo(() =>
+        Array.from(new Set(appointments.filter(visibileBase).map((a) => a.agente).filter(Boolean))).sort() as string[],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [appointments, catFilter, mieiNegozi.join("|"), user?.name]);
 
     // ORARIO → MINUTI ("9:30"→570). Il vecchio ordinamento era ALFABETICO
     // sulle stringhe: "7:00" finiva dopo "15:00" (Luca 29/07). Senza orario
@@ -1081,8 +1095,8 @@ export default function Calendario() {
                 </div>
             </div>
 
-            {/* Admin Grid Filter Bar */}
-            {isCallCenter && (
+            {/* Filtri negozio/consulente: direzione E chi ha più negozi (Luca 05/08) */}
+            {puoFiltrareCal && (
                 <div className="mb-6 flex flex-col md:flex-row gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5">
                     <div className="flex-1">
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Punto Vendita</label>
@@ -1090,7 +1104,7 @@ export default function Calendario() {
                             className="glass-input w-full text-sm"
                             values={filterStores}
                             onChange={setFilterStores}
-                            opzioni={storeNames}
+                            opzioni={isCallCenter ? storeNames : mieiNegozi}
                             maxVoci={100}
                             placeholder="Tutti i punti vendita — scrivi per filtrare"
                         />
@@ -1101,11 +1115,11 @@ export default function Calendario() {
                             className="glass-input w-full text-sm"
                             value={filterAgent === "Tutti" ? "" : filterAgent}
                             onChange={(v) => setFilterAgent(v || "Tutti")}
-                            opzioni={agents}
+                            opzioni={isCallCenter ? agents : agentiMiei}
                             placeholder="Tutti — scrivi per filtrare"
                         />
                     </div>
-                    <div className="flex-1">
+                    {isCallCenter && <div className="flex-1">
                         {/* chi ha PRENOTATO l'appuntamento, non l'incaricato */}
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Fissato da</label>
                         <SelectPersona
@@ -1115,7 +1129,7 @@ export default function Calendario() {
                             opzioni={Array.from(new Set(appointments.map((a) => a.createdBy).filter(Boolean))).sort() as string[]}
                             placeholder="Chiunque — scrivi per filtrare"
                         />
-                    </div>
+                    </div>}
                 </div>
             )}
 
