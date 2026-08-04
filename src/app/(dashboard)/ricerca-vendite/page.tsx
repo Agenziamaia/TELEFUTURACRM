@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
 import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
 import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
+import { caricaTutte } from "@/lib/fetchTutte";
 import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
 import { codiciPerBrand } from "@/lib/codiciInserimento";
@@ -413,13 +414,17 @@ export default function RicercaContratto() {
             // e la ricerca tornava vuota (sembrava rotta). Ora applico lo stesso RBAC
             // di fetchData. Segnalazione 53: i "codici" del filtro sono i codici di
             // inserimento (dettagli['Cod.Ins.']), non piu' i codici contratto.
-            let q = supabase.from("contracts").select("venditore, brand, prodotto, negozio, dettagli");
-            if (!isGlobalView) {
-                if (lockedStores) q = q.in("negozio", lockedStores);
-                if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
-            }
-            if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
-            const { data } = await q;
+            // caricaTutte: senza, il tetto server 1000 tagliava le pratiche piu'
+            // recenti e i filtri non offrivano i loro brand/prodotti/codici.
+            const { data } = await caricaTutte<Record<string, unknown>>((from, to) => {
+                let q = supabase.from("contracts").select("venditore, brand, prodotto, negozio, dettagli");
+                if (!isGlobalView) {
+                    if (lockedStores) q = q.in("negozio", lockedStores);
+                    if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
+                }
+                if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
+                return q.order("id").range(from, to);
+            });
             if (data) {
                 setUniqueBrands(Array.from(new Set(data.map((r: any) => r.brand).filter(Boolean))).sort() as string[]);
                 setUniqueNegozi(Array.from(new Set(data.map((r: any) => r.negozio).filter(Boolean))).sort() as string[]);

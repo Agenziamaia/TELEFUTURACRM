@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { sameStore } from "@/lib/visibleStores";
+import { caricaTutte } from "@/lib/fetchTutte";
 import { dbError } from "./toast";
 
 interface Gara { id: string; name: string; active: boolean; start_date: string | null; end_date: string | null }
@@ -91,12 +92,14 @@ export function AvanzamentoView() {
     // contratti del periodo
     const loadContracts = useCallback(async () => {
         setLoading(true);
-        const { data, error } = await supabase
+        // caricaTutte: col tetto server 1000 i conteggi target perdevano le
+        // vendite oltre quota nel periodo (04/08).
+        const { data, error } = await caricaTutte<Contract>((from, to) => supabase
             .from("contracts")
             .select("brand,categoria,categoria_macro,prodotto,venditore,negozio,stato")
             .gte("data_registrazione", da).lte("data_registrazione", a)
-            .eq("is_demo", false).limit(10000);
-        if (error) dbError("contratti", error);
+            .eq("is_demo", false).order("id").range(from, to));
+        if (error) dbError("contratti", error as never);
         setContracts(((data ?? []) as Contract[]).filter((c) => !/annull/i.test(c.stato || "")));
         setLoading(false);
     }, [da, a]);

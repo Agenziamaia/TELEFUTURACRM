@@ -27,6 +27,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { CAP_CLIENTI, capChoice } from "@/lib/capabilities";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { caricaTutte } from "@/lib/fetchTutte";
 
 export interface ClientiVisibili {
     /** true = c'è un perimetro: i clienti fuori si mostrano oscurati/nascosti */
@@ -88,17 +89,20 @@ export function useClientiVisibili(): ClientiVisibili {
                     const { data } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
                     nomi = [data?.full_name, data?.match_name, user.name].filter(Boolean) as string[];
                 }
-                const { data: cs } = await supabase.from("contracts").select("client_id")
-                    .in("venditore", nomi.length ? nomi : ["—"]).limit(10000);
+                // caricaTutte: il tetto server 1000 tagliava le pratiche recenti
+                const { data: cs } = await caricaTutte<{ client_id: string | null }>((from, to) =>
+                    supabase.from("contracts").select("client_id")
+                        .in("venditore", nomi.length ? nomi : ["—"]).order("id").range(from, to));
                 if (!vivo) return;
-                setMieiClienti(new Set(((cs ?? []) as { client_id: string | null }[]).map((c) => c.client_id).filter(Boolean) as string[]));
+                setMieiClienti(new Set(cs.map((c) => c.client_id).filter(Boolean) as string[]));
                 await ricaricaAccessi();
             }
             if (soloAppuntamenti) {
                 const { data: me } = await supabase.from("app_users").select("full_name,match_name").eq("id", user.id).maybeSingle();
                 const nomi = [me?.full_name, me?.match_name, user.name].filter(Boolean) as string[];
-                const { data: apps } = await supabase.from("appointments").select("cf_piva,customer_phone")
-                    .in("created_by", nomi.length ? nomi : ["—"]).limit(5000);
+                const { data: apps } = await caricaTutte<{ cf_piva: string | null; customer_phone: string | null }>((from, to) =>
+                    supabase.from("appointments").select("cf_piva,customer_phone")
+                        .in("created_by", nomi.length ? nomi : ["—"]).order("id").range(from, to));
                 const cfSet = new Set<string>(); const telSet = new Set<string>();
                 ((apps ?? []) as { cf_piva: string | null; customer_phone: string | null }[]).forEach((a) => {
                     const cf = String(a.cf_piva || "").toUpperCase().trim();
@@ -110,8 +114,11 @@ export function useClientiVisibili(): ClientiVisibili {
                 // ha CREATO lui chiamando — pure senza appuntamento (caso
                 // Barbieri: mai risposto, ma il cliente e' suo). Fallback senza
                 // la colonna finche' la migrazione non e' applicata.
-                const tentativo = await supabase.from("clients").select("id,cf_piva,cellulare,creato_da").limit(5000);
-                const cls = tentativo.data ?? (await supabase.from("clients").select("id,cf_piva,cellulare").limit(5000)).data;
+                const tentativo = await caricaTutte<{ id: string; cf_piva: string | null; cellulare: string | null; creato_da?: string | null }>((from, to) =>
+                    supabase.from("clients").select("id,cf_piva,cellulare,creato_da").order("id").range(from, to));
+                const cls = !tentativo.error ? tentativo.data
+                    : (await caricaTutte<{ id: string; cf_piva: string | null; cellulare: string | null }>((from, to) =>
+                        supabase.from("clients").select("id,cf_piva,cellulare").order("id").range(from, to))).data;
                 if (!vivo) return;
                 const nomiNorm = new Set(nomi.map((n) => n.trim().toLowerCase()));
                 const set = new Set<string>();
@@ -126,16 +133,20 @@ export function useClientiVisibili(): ClientiVisibili {
             }
             if (isStoreScoped) {
                 const miei = visStores.length ? visStores : (user.negozio ? [user.negozio] : []);
-                // gestiti: almeno una vendita in uno dei negozi visibili
-                const { data: cs } = await supabase.from("contracts").select("client_id,negozio").limit(10000);
+                // gestiti: almeno una vendita in uno dei negozi visibili.
+                // caricaTutte: col tetto 1000 le pratiche recenti sparivano e
+                // il creatore non vedeva piu' il SUO cliente (caso Schmidinger).
+                const { data: cs } = await caricaTutte<{ client_id: string | null; negozio: string | null }>((from, to) =>
+                    supabase.from("contracts").select("client_id,negozio").order("id").range(from, to));
                 const set = new Set<string>();
-                ((cs ?? []) as { client_id: string | null; negozio: string | null }[]).forEach((c) => {
+                cs.forEach((c) => {
                     if (c.client_id && miei.some((m) => sameStore(c.negozio, m))) set.add(c.client_id);
                 });
                 // acquisiti: anagrafiche nate in uno dei negozi visibili
-                const { data: acq } = await supabase.from("clients").select("id,acquisito_da").limit(5000);
+                const { data: acq } = await caricaTutte<{ id: string; acquisito_da: string | null }>((from, to) =>
+                    supabase.from("clients").select("id,acquisito_da").order("id").range(from, to));
                 if (!vivo) return;
-                ((acq ?? []) as { id: string; acquisito_da: string | null }[]).forEach((c) => {
+                acq.forEach((c) => {
                     if (c.acquisito_da && miei.some((m) => sameStore(c.acquisito_da, m))) set.add(c.id);
                 });
                 setMieiClienti(set);

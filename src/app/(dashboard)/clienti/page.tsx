@@ -15,6 +15,7 @@ import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useStores } from "@/lib/org";
 import { SelectMulti } from "@/components/SelectPersona";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
+import { caricaTutte } from "@/lib/fetchTutte";
 import { NumeriCliente } from "@/components/NumeriCliente";
 import { dataNascitaDaCF, etaDa } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -1028,11 +1029,15 @@ export default function ClientiPage() {
         if (contrattiGest !== null) return;
         if (!vedeGestitoDa && !(canApproveAccess && (filterGestitoDa.length || filterNegozioGestito.length))) return;
         (async () => {
-            const { data: cs } = await supabase.from("contracts").select("client_id, venditore, negozio").limit(10000);
+            const { data: cs } = await caricaTutte<{ client_id: string | null; venditore: string | null; negozio: string | null }>((from, to) =>
+                supabase.from("contracts").select("client_id, venditore, negozio").order("id").range(from, to));
             // creato_da (mig. 108): il caller che ha creato l'anagrafica conta
             // come gestore; fallback senza colonna finche' non e' applicata
-            const tentativo = await supabase.from("clients").select("id, acquisito_da, creato_da").limit(5000);
-            const acq = tentativo.data ?? (await supabase.from("clients").select("id, acquisito_da").limit(5000)).data;
+            const tentativo = await caricaTutte<{ id: string; acquisito_da: string | null; creato_da?: string | null }>((from, to) =>
+                supabase.from("clients").select("id, acquisito_da, creato_da").order("id").range(from, to));
+            const acq = !tentativo.error ? tentativo.data
+                : (await caricaTutte<{ id: string; acquisito_da: string | null }>((from, to) =>
+                    supabase.from("clients").select("id, acquisito_da").order("id").range(from, to))).data;
             setContrattiGest((cs ?? []) as never);
             setAcquisitiGest((acq ?? []) as never);
         })();
@@ -1155,12 +1160,15 @@ export default function ClientiPage() {
     const fetchClientList = async () => {
         setLoadError(null);
         setLoading(true);
-        const { data, error } = await supabase.from("clients").select("*").order("id");
+        // caricaTutte: oltre i 1000 clienti il tetto server troncava la lista
+        // e le anagrafiche recenti sparivano A TUTTI (admin compreso).
+        const { data, error } = await caricaTutte<Record<string, unknown>>((from, to) =>
+            supabase.from("clients").select("*").order("id").range(from, to));
         if (error) {
-            setLoadError(error.message);
+            setLoadError(error.message || "errore di caricamento");
             setClientList([]);
         } else {
-            setClientList((data ?? []).map(mapRowToCliente));
+            setClientList(data.map(mapRowToCliente));
         }
         setLoading(false);
     };

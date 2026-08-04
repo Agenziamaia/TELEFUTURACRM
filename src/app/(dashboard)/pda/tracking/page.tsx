@@ -7,6 +7,7 @@ import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { categoriaDi, controlliDi, righeTracking, vaInTracking } from "@/lib/tassonomia";
 import { trkBrandKey, TRK_BRAND_COLORS, TRK_LOGO_SCALE, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
+import { caricaTutte } from "@/lib/fetchTutte";
 import { statoContrattoDa } from "./trackingHelpers";
 import {
   CATEGORIE,
@@ -1502,21 +1503,20 @@ export default function TrackingPdaPage() {
       // codice morto perche' r.prodotto era sempre undefined.
       const selectCols =
         "id, brand, categoria, prodotto, stato, venditore, negozio, codice_attivazione, data_registrazione, data, created_at, dettagli, delegated_to, delegated_by, stati_categoria, categoria_macro, controlli, tipo_cliente, tracking_nascosto, clients(nome, cognome, ragione_sociale, cellulare, email, cf_piva, indirizzo, citta)";
-      const { data: baseData, error: baseErr } = await supabase
-        .from("contracts")
-        .select(selectCols)
-        .order("created_at", { ascending: false })
-        .limit(5000);   // #tracking: con .limit(500) i contratti oltre i 500 piu' recenti sparivano dal Tracking (pratiche piu' vecchie non trovabili)
+      // caricaTutte (04/08): il tetto server 1000 ignorava il .limit(5000) e
+      // 300+ pratiche vecchie sparivano dal Tracking (e lo SPAZZINO della sync
+      // malus le avrebbe congelate come uscite).
+      const { data: baseData, error: baseErr } = await caricaTutte<Record<string, unknown>>((from, to) =>
+        supabase.from("contracts").select(selectCols)
+          .order("created_at", { ascending: false }).order("id").range(from, to));
 
       if (baseErr) throw baseErr;
 
       // Optional: fetch tracking columns (requires migration 022). If it fails, we still show contracts with defaults.
       let trackingMap = new Map<string, { stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string> }>();
-      const { data: trackingData, error: trackingErr } = await supabase
-        .from("contracts")
-        .select("id, stato_negozio, stato_admin, storia, stati_categoria")
-        .order("created_at", { ascending: false })
-        .limit(5000);   // #tracking: con .limit(500) i contratti oltre i 500 piu' recenti sparivano dal Tracking (pratiche piu' vecchie non trovabili)
+      const { data: trackingData, error: trackingErr } = await caricaTutte<{ id: string; stato_negozio?: string; stato_admin?: string; storia?: StoriaEvent[]; stati_categoria?: Record<string, string> }>((from, to) =>
+        supabase.from("contracts").select("id, stato_negozio, stato_admin, storia, stati_categoria")
+          .order("created_at", { ascending: false }).order("id").range(from, to));
 
       if (!trackingErr && trackingData?.length) {
         trackingMap = new Map(

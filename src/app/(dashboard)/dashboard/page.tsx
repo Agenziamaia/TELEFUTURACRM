@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, seesWholeStore, BRAND_COLORS } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
+import { caricaTutte } from "@/lib/fetchTutte";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import {
   FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
@@ -147,7 +148,10 @@ export default function Dashboard() {
         return supabase.from("comunicazioni").select("id, title, type, content, target_roles, created_at, date_display").order("created_at", { ascending: false }).limit(30);
       };
       const [{ data: cs }, { data: cm }, { data: tg }, { data: tk }, { data: me }] = await Promise.all([
-        supabase.from("contracts").select("id, brand, categoria, prodotto, stato, negozio, venditore, client_id, data_registrazione").order("data_registrazione", { ascending: false }).limit(3000),
+        // caricaTutte: il tetto server 1000 ignorava il .limit(3000) — con
+        // l'archivio oltre quota le statistiche perdevano le vendite in coda.
+        caricaTutte<Record<string, unknown>>((from, to) =>
+          supabase.from("contracts").select("id, brand, categoria, prodotto, stato, negozio, venditore, client_id, data_registrazione").order("data_registrazione", { ascending: false }).order("id").range(from, to)),
         caricaComms(),
         supabase.from("dashboard_targets").select("*"),
         supabase.from("calendar_tasks").select("id, date, status").or(`assigned_user_id.eq.${user.id},created_by_user_id.eq.${user.id}`).limit(500),
