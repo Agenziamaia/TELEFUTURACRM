@@ -6004,7 +6004,10 @@ select.rvIn{cursor:pointer}
               Allegati/Note e partivano vendite senza documenti) — l'utente
               avanza con "Avanti"; "Salva vendita" compare SOLO allo step 5
               (Note), il riepilogo si apre dal pannello/🛒 laterale. */}
-          {brand&&vistaStep==="note"&&<button onClick={()=>{addCart();setVistaStep("brand");}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>💾 Salva vendita</button>}
+          {/* dopo "Salva vendita" si APRE IL RIEPILOGO (caso Damiano 04/08:
+              col ritorno alla griglia brand il toast sembrava "fatto" e la
+              registrazione finale non partiva mai — carrello perso) */}
+          {brand&&vistaStep==="note"&&<button onClick={()=>{addCart();setVistaStep("brand");setShowCart(true);}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>💾 Salva vendita</button>}
         </div>
       </div>}
 
