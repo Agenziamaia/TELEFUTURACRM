@@ -189,6 +189,13 @@ export function controlliDi(dettagli: Record<string, unknown> | null | undefined
     const out: ControlloId[] = [];
 
     if (SI.includes(testo(d.MNP ?? d.mnp))) out.push("mnp");
+    // FORMATO LEGACY pre-catalogo (caso Kashfa 05/08): il vecchio menu MOBILE
+    // scriveva "N. MNP"/"Op. MNP" invece del flag MNP="Sì" — quelle pratiche
+    // sparivano dal Tracking perché il controllo mnp non veniva riconosciuto.
+    if (!out.includes("mnp")) {
+        const legacy = ["N. MNP", "Op. MNP", "N.MNP", "Numero MNP"].some((k) => testo(d[k]).length > 0);
+        if (legacy) out.push("mnp");
+    }
 
     const tipi = ["Tipo TNP", "Tipo CB", "tnpTipo", "cbTnpTipo"].map((k) => testo(d[k]));
     if (tipi.some((t) => t.startsWith("finanziamento"))) out.push("finanziamento");
@@ -224,7 +231,10 @@ export function vaInTracking(r: {
         ? (r.controlli as string[])
         : controlliDi((r.dettagli as Record<string, unknown>) || {});
     const business = String(r.tipo_cliente || "").toLowerCase() === "business";
-    if (macro === "mobile" && !business && !ctrl.includes("mnp") && !ctrl.includes("finanziamento")) return false;
+    // cintura: il NOME prodotto ("Mobile MNP", "Finanziato CB") è un segnale
+    // autoritativo anche quando dettagli e controlli tacciono (righe legacy)
+    const dalProdotto = /mnp/.test(p) || /finanz/.test(p);
+    if (macro === "mobile" && !business && !ctrl.includes("mnp") && !ctrl.includes("finanziamento") && !dalProdotto) return false;
     return true;
 }
 
