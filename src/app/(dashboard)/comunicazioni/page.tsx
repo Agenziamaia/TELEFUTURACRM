@@ -1159,15 +1159,13 @@ function ComunicazioniInner() {
                                 ) : anteprimaDestinatari.length === 0 ? (
                                     <p className="text-xs text-amber-300 mt-1.5">⚠️ Con questa selezione nessuno la riceverebbe: controlla ruoli/negozi/persone.</p>
                                 ) : (
-                                    <div className="flex gap-1.5 mt-2 flex-wrap">
-                                        {anteprimaDestinatari.slice(0, 40).map((u) => (
+                                    // TUTTI i nomi, sempre (Luca 04/08): la lista scorre, mai troncata
+                                    <div className="flex gap-1.5 mt-2 flex-wrap max-h-44 overflow-y-auto pr-1">
+                                        {anteprimaDestinatari.map((u) => (
                                             <span key={u.id} className="px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[11px] text-slate-300">
                                                 {u.nome}{u.id === user?.id ? " (tu)" : ""}
                                             </span>
                                         ))}
-                                        {anteprimaDestinatari.length > 40 && (
-                                            <span className="px-2.5 py-1 rounded-full text-[11px] text-slate-500">… e altri {anteprimaDestinatari.length - 40}</span>
-                                        )}
                                     </div>
                                 )}
                             </div>

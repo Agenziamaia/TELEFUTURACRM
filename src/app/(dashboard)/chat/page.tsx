@@ -97,6 +97,14 @@ function ChatPageInner() {
     "💯","🔥","⭐","✨","🎉","🎊","🏆","🥇","⚡","💡","✅","❌","⚠️","❓","❗","💰",
     "📱","💻","📞","📧","📎","📌","🗓️","⏰","🛒","📦","🚚","🔧","🧩","🏪","☕","🍕",
   ];
+  // EMOJI RECENTI (Luca 04/08, stile WhatsApp): per dispositivo, max 16
+  const [recentiEmoji, setRecentiEmoji] = useState<string[]>([]);
+  useEffect(() => { try { setRecentiEmoji(JSON.parse(localStorage.getItem("tf_emoji_recenti") || "[]")); } catch { /* localStorage negato */ } }, []);
+  const registraEmojiRecente = (e: string) => setRecentiEmoji((p) => {
+    const n = [e, ...p.filter((x) => x !== e)].slice(0, 16);
+    try { localStorage.setItem("tf_emoji_recenti", JSON.stringify(n)); } catch { /* pieno/negato */ }
+    return n;
+  });
   const [reactFor, setReactFor] = useState<string | null>(null);   // msg col menu reazioni aperto
   const [reactPickerFor, setReactPickerFor] = useState<string | null>(null);   // msg col picker COMPLETO aperto
   const [showEmoji, setShowEmoji] = useState(false);               // picker nel compositore
@@ -480,11 +488,15 @@ function ChatPageInner() {
     const m = {}; parts.forEach((p) => (m[p.user_id] = p.full_name)); return m;
   }, [parts]);
 
+  // Filtro "Non letti" (Luca 04/08, stile WhatsApp): pillola sotto la ricerca
+  const [soloNonLetti, setSoloNonLetti] = useState(false);
   const filteredInbox = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return inbox;
-    return inbox.filter((c) => (c.title || c.other_name || "").toLowerCase().includes(s));
-  }, [inbox, q]);
+    let out = inbox;
+    if (soloNonLetti) out = out.filter((c: any) => (c.unread || 0) > 0);
+    if (!s) return out;
+    return out.filter((c) => (c.title || c.other_name || "").toLowerCase().includes(s));
+  }, [inbox, q, soloNonLetti]);
 
   // La FileList e' "live": e.target.value="" la svuota prima che React esegua
   // l'updater. Va copiata SUBITO in un array, altrimenti gli allegati spariscono.
@@ -642,6 +654,19 @@ function ChatPageInner() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca conversazioni…" className="glass-input w-full pl-9 h-9 text-sm" />
+            </div>
+          )}
+          {/* pillole filtro stile WhatsApp (Luca 04/08) */}
+          {!searchMode && (
+            <div className="flex gap-1.5 mt-2">
+              <button type="button" onClick={() => setSoloNonLetti(false)}
+                className={cn("px-3 py-1 rounded-full border text-[11px] font-bold transition-colors",
+                  !soloNonLetti ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>Tutte</button>
+              <button type="button" onClick={() => setSoloNonLetti(true)}
+                className={cn("px-3 py-1 rounded-full border text-[11px] font-bold transition-colors",
+                  soloNonLetti ? "border-indigo-400/60 bg-indigo-500/15 text-indigo-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>
+                Non lette{chatUnread > 0 && <span className="ml-1.5 px-1.5 py-[1px] rounded-full bg-indigo-500 text-white text-[10px]">{chatUnread > 99 ? "99+" : chatUnread}</span>}
+              </button>
             </div>
           )}
         </div>
@@ -849,9 +874,15 @@ function ChatPageInner() {
                     )}
                     {reactFor === m.id && reactPickerFor === m.id && (
                       <div className={`fixed sm:absolute left-3 right-3 bottom-20 sm:bottom-full mb-1 z-30 w-auto sm:w-64 max-h-48 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl ${mine ? "sm:left-auto sm:right-0" : "sm:right-auto sm:left-0"}`}>
+                        {recentiEmoji.length > 0 && <div className="grid grid-cols-8 gap-0.5 mb-1 pb-1 border-b border-white/10">
+                          {recentiEmoji.map((e) => (
+                            <button key={"r" + e} type="button" onClick={() => { setReactPickerFor(null); onReact(m.id, e); registraEmojiRecente(e); }}
+                              className="text-lg leading-none p-1 rounded-lg hover:bg-white/10">{e}</button>
+                          ))}
+                        </div>}
                         <div className="grid grid-cols-8 gap-0.5">
                           {EMOJI_SET.map((e) => (
-                            <button key={e} type="button" onClick={() => { setReactPickerFor(null); onReact(m.id, e); }}
+                            <button key={e} type="button" onClick={() => { setReactPickerFor(null); onReact(m.id, e); registraEmojiRecente(e); }}
                               className="text-lg leading-none p-1 rounded-lg hover:bg-white/10">{e}</button>
                           ))}
                         </div>
@@ -1092,9 +1123,19 @@ function ChatPageInner() {
                     // CHT-01: sotto sm il picker si sgancia dall'ancora (fixed, tutta
                     // larghezza), altrimenti sborda dal viewport
                     <div className="fixed sm:absolute left-3 right-3 bottom-20 sm:left-0 sm:right-auto sm:bottom-full mb-2 z-40 w-auto sm:w-72 max-h-56 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl">
+                      {/* recenti in testa, come WhatsApp (Luca 04/08) */}
+                      {recentiEmoji.length > 0 && <>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1 pb-1">🕐 Recenti</p>
+                        <div className="grid grid-cols-8 gap-0.5 mb-1.5 pb-1.5 border-b border-white/10">
+                          {recentiEmoji.map((e) => (
+                            <button key={"r" + e} type="button" onClick={() => { setText((t) => t + e); registraEmojiRecente(e); }}
+                              className="text-xl leading-none p-1.5 rounded-lg hover:bg-white/10">{e}</button>
+                          ))}
+                        </div>
+                      </>}
                       <div className="grid grid-cols-8 gap-0.5">
                         {EMOJI_SET.map((e) => (
-                          <button key={e} type="button" onClick={() => setText((t) => t + e)}
+                          <button key={e} type="button" onClick={() => { setText((t) => t + e); registraEmojiRecente(e); }}
                             className="text-xl leading-none p-1.5 rounded-lg hover:bg-white/10">{e}</button>
                         ))}
                       </div>

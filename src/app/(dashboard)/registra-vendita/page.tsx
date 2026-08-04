@@ -5316,9 +5316,13 @@ function CRM() {
           <button onClick={()=>setConfirmReset(true)} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
           {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
           {onlyMarg&&<button onClick={()=>setShowMargSave(true)} style={{padding:"12px 36px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
-          {!onlyMarg&&(()=>{const _m=mancanzeVendita();const _ok=tp>0&&!submitting&&_m.length===0;return <button onClick={finalSubmit} disabled={!_ok}
-            title={_m.length?"Per salvare completa: "+_m.join(" · "):""}
-            style={{padding:"12px 36px",borderRadius:10,border:"none",background:_ok?"linear-gradient(135deg,#28a745,#20c997)":"var(--tf-w100)",color:"#fff",fontSize:14,fontWeight:800,cursor:_ok?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?"🔒 Completa gli step per salvare":`💾 Salva contratto (${tp})`}</button>;})()}
+          {!onlyMarg&&(()=>{const _m=mancanzeVendita();const _ok=tp>0&&!submitting&&_m.length===0;
+            // col gate non superato il bottone RESTA cliccabile (Luca 04/08):
+            // il click chiude il riepilogo e porta dritto allo step mancante
+            // (lo fa la guardia dentro finalSubmit, col toast di cosa manca)
+            return <button onClick={finalSubmit} disabled={tp===0||submitting}
+            title={_m.length?"Portami allo step mancante — completa: "+_m.join(" · "):""}
+            style={{padding:"12px 36px",borderRadius:10,border:_m.length&&tp>0?"1.5px solid rgba(245,158,11,0.7)":"none",background:_ok?"linear-gradient(135deg,#28a745,#20c997)":(_m.length&&tp>0?"rgba(245,158,11,0.15)":"var(--tf-w100)"),color:_m.length&&tp>0?"var(--tf-fbbf24)":"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?"🔒 Completa gli step per salvare →":`💾 Salva contratto (${tp})`}</button>;})()}
         </div>
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
@@ -5985,10 +5989,11 @@ select.rvIn{cursor:pointer}
       {["prodotti","allegati","note"].includes(vistaStep)&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <button onClick={()=>{const PREV={prodotti:(margFlow&&!brand)?"brand":"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
-          {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} style={{padding:"11px 22px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"var(--tf-c7d2fe)",fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
           <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          {/* Avanti sta a DESTRA (Luca 04/08): convenzione dei wizard */}
+          {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} style={{padding:"11px 30px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"var(--tf-c7d2fe)",fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
           {/* Luca 04/08: NIENTE scorciatoia al riepilogo da qui (si saltavano
               Allegati/Note e partivano vendite senza documenti) — l'utente
               avanza con "Avanti"; "Salva vendita" compare SOLO allo step 5
