@@ -1047,7 +1047,7 @@ const chiaveListino = (s) => String(s || "").toUpperCase()
 const caricaListini = () => {
   if (_listiniTutti) return Promise.resolve(_listiniTutti);
   if (!_listiniAttesa) _listiniAttesa = supabase.from("listini_terminali")
-    .select("brand,modello,prezzo,rate,margine_pct").limit(3000)
+    .select("brand,modello,prezzo,rate,margine_pct,lista").limit(3000)
     .then(({ data }) => { _listiniTutti = data || []; return _listiniTutti; })
     .catch(() => { _listiniTutti = []; return _listiniTutti; });
   return _listiniAttesa;
@@ -1092,10 +1092,23 @@ const cercaListino = async (term) => {
  *  prezzo e falserebbe la marginalita'. Se il listino non copre un prodotto
  *  resta la voce "Altro", che chiude la vendita SENZA importo ne' margine. */
 const cercaTerminali = async (term) => {
-  const listino = await cercaListino(term);
-  if (!listino.length) return [];
-  const b = (await caricaListini()).find(r => _compBrand(r.brand) === _brandListino(_brandVendita));
-  return [{ gruppo: "💰 Listino " + (b ? b.brand : "ufficiale") + (_senzaMargine() ? (_compBrand(_brandVendita) === "FASTWEB" ? " (per Fastweb, senza margine)" : " (senza margine)") : ""), voci: listino }];
+  const tutti = await caricaListini();
+  const bb = _brandListino(_brandVendita);
+  const delBrand = bb ? tutti.filter(r => _compBrand(r.brand) === bb) : [];
+  const t = String(term || "").trim().toLowerCase();
+  const paro = t.split(/\s+/).filter(Boolean);
+  const match = (r) => !t || paro.every(w => String(r.modello).toLowerCase().includes(w));
+  // DUE LISTE (Luca 05/08): ordinabili in testa, poi il magazzino W3 (telefoni
+  // non più ordinabili ma rateizzabili se ancora a stock) in un gruppo suo
+  const ordinabili = delBrand.filter(r => (r.lista || "ordinabili") !== "magazzino" && match(r)).slice(0, t ? 60 : 300).map(r => r.modello);
+  const magazzino = delBrand.filter(r => r.lista === "magazzino" && match(r)).slice(0, t ? 60 : 300).map(r => r.modello);
+  if (!ordinabili.length && !magazzino.length) return [];
+  const b = delBrand[0];
+  const suff = _senzaMargine() ? (_compBrand(_brandVendita) === "FASTWEB" ? " (per Fastweb, senza margine)" : " (senza margine)") : "";
+  const out = [];
+  if (ordinabili.length) out.push({ gruppo: "💰 Listino " + (b ? b.brand : "ufficiale") + suff, voci: ordinabili });
+  if (magazzino.length) out.push({ gruppo: "🏬 Magazzino — non ordinabili, a rate" + suff, voci: magazzino });
+  return out;
 };
 
 const cercaModelliCatalogo = async (term) => {
@@ -1346,7 +1359,8 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
             const marg=_senzaMargine()?(_compBrand(_brandVendita)==="FASTWEB"?" · senza marginalità (Fastweb)":" · senza marginalità (business)"):(mp>0?` · margine ${mp}% = € ${(pz*mp/100).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"");
             // SOLO street price + marginalità (Luca 03/08): le rate mostrate
             // dal listino erano sbagliate — via tutto il resto
-            return `💰 Listino ${li.brand}: € ${pz.toLocaleString("it-IT",{minimumFractionDigits:2})}${marg}`;
+            const daMag=li.lista==="magazzino"?" · 🏬 da magazzino (non più ordinabile)":"";
+            return `💰 Listino ${li.brand}: € ${pz.toLocaleString("it-IT",{minimumFractionDigits:2})}${marg}${daMag}`;
           }).join("  ·  ")}
         </div>
       )}

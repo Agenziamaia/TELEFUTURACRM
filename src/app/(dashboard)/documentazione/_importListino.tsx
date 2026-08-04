@@ -12,6 +12,7 @@
 import { useMemo, useRef, useState } from "react";
 import { X, FileSpreadsheet, Loader2, Check } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { cn } from "@/utils";
 
 type RigaGrezza = (string | number | null | undefined)[];
 type VoceListino = { modello: string; prezzo: number | null; rate: { mesi: number; rata: number; anticipo?: number }[]; margine?: number | null };
@@ -164,6 +165,10 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
     const [forzaColonne, setForzaColonne] = useState(false);
     // margine sul prezzo al pubblico (Luca: "sul prezzo calcoliamo il 4%")
     const [margine, setMargine] = useState("4");
+    // DUE LISTINI (Luca 05/08): "ordinabili" = telefoni in vigore acquistabili;
+    // "magazzino" = non più ordinabili ma rateizzabili se ancora a stock.
+    // L'unicità è per (brand, modello, lista): un caricamento non tocca l'altro.
+    const [lista, setLista] = useState<"ordinabili" | "magazzino">("ordinabili");
     const [fatto, setFatto] = useState<null | { voci: number; conRate: number }>(null);
 
     const leggiFile = async (f: File) => {
@@ -239,14 +244,14 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
         try {
             const mrg = Math.max(0, parseFloat(String(margine).replace(",", ".")) || 0);
             const rows = voci.map(v => ({
-                brand: brandName, modello: v.modello, prezzo: v.prezzo,
+                brand: brandName, modello: v.modello, prezzo: v.prezzo, lista,
                 rate: v.rate, margine_pct: v.margine != null && v.margine > 0 ? v.margine : mrg,
                 fonte: file?.name || "", aggiornato_da: gestore,
                 aggiornato_il: new Date().toISOString(),
             }));
             for (let i = 0; i < rows.length; i += 500) {
                 const { error } = await supabase.from("listini_terminali")
-                    .upsert(rows.slice(i, i + 500), { onConflict: "brand,modello" });
+                    .upsert(rows.slice(i, i + 500), { onConflict: "brand,modello,lista" });
                 if (error) throw new Error(error.message);
             }
             // archivio dell'originale nel bucket (per ritrovare la fonte)
@@ -289,6 +294,17 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                         </div>
                     ) : (
                         <>
+                            {/* quale dei DUE listini si sta caricando (Luca 05/08) */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Quale listino?</span>
+                                {([["ordinabili", "📦 Ordinabili (in vigore)"], ["magazzino", "🏬 Magazzino — non ordinabili, rateizzabili"]] as const).map(([id, lab]) => (
+                                    <button key={id} type="button" onClick={() => setLista(id)}
+                                        className={cn("px-3 py-1.5 rounded-full border text-xs font-bold transition-all",
+                                            lista === id ? "border-emerald-500 bg-emerald-500/10 text-emerald-300" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                        {lab}
+                                    </button>
+                                ))}
+                            </div>
                             <div className="flex items-center gap-3 flex-wrap">
                                 <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv" className="hidden"
                                     onChange={e => { const f = e.target.files?.[0]; if (f) leggiFile(f); }} />
