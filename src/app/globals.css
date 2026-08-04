@@ -634,3 +634,14 @@ html.light [class~="bg-white/10"],html.light [class*="bg-white/[0.08]"]{backgrou
 html.light [class~="border-white/10"],html.light [class~="border-white/5"],html.light [class*="border-white/[0.08]"]{border-color:rgba(15,23,42,.12) !important;}
 /* header sotto la barra: fondo pulito coerente col nuovo sfondo */
 html.light header{background-color:#ffffff !important;}
+
+/* ═══ LIGHT MODE — dropdown custom Registra Vendita (.rv*) + header definito ═══ */
+html.light .rvMenu{background:#ffffff !important;border-color:rgba(15,23,42,.12) !important;box-shadow:0 14px 36px rgba(15,23,42,.16) !important;}
+html.light .rvOpt{color:#1e2952 !important;}
+html.light .rvOpt:hover{background:rgba(99,102,241,.10) !important;}
+html.light .rvGrp{color:#5a6b84 !important;background:#f1f4f9 !important;}
+html.light .rvIn{background:#ffffff !important;border-color:rgba(15,23,42,.16) !important;color:#0f172a !important;}
+html.light .rvIn::placeholder{color:#94a3b8 !important;}
+html.light .rvLab{color:#64748b !important;}
+/* header di pagina: bianco, con bordo/ombra netti — non piu' una barra "sospesa" */
+html.light header{background-color:#ffffff !important;border-bottom:1px solid rgba(15,23,42,.09) !important;box-shadow:0 1px 3px rgba(15,23,42,.05),0 6px 18px rgba(15,23,42,.05) !important;}
