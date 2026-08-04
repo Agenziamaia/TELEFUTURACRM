@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { inviaEmail } from "@/lib/email";
+import { inviaEmail, appendSuSent } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Invia una email. Risposta: { conversationId, text, userId }. Nuova email:
-// { accountId, to, subject, text, userId }. Registra il messaggio in uscita.
+// { accountId, to, subject, text, userId }. Registra il messaggio in uscita e
+// APPENDE la copia sulla cartella Sent IMAP (EML-01): l'inviata dal CRM compare
+// anche in webmail. L'append e' best-effort: se fallisce l'invio resta valido.
 export async function POST(request: Request) {
     try {
         const { conversationId, accountId, to, subject, text, userId } = await request.json();
@@ -38,15 +40,19 @@ export async function POST(request: Request) {
         }
 
         let mid = "";
+        let raw: Buffer | null = null;
         try {
             const r = await inviaEmail(acc as any, { to: dest, subject: subj, text: text.trim(), html: text.trim().replace(/\n/g, "<br>"), inReplyTo });
-            mid = r.messageId;
+            mid = r.messageId; raw = r.raw;
         } catch (e) {
             await supabase.from("email_messages").insert({ conversation_id: convId, account_id: accId, direction: "out", subject: subj, body_text: text.trim(), status: "failed", sent_by_user_id: userId || null, from_addr: acc.email_address, to_addrs: dest, email_date: new Date().toISOString() });
             return NextResponse.json({ error: e instanceof Error ? e.message : "invio fallito" }, { status: 502 });
         }
         await supabase.from("email_messages").insert({ conversation_id: convId, account_id: accId, direction: "out", message_id: mid || null, subject: subj, body_text: text.trim(), status: "sent", sent_by_user_id: userId || null, from_addr: acc.email_address, to_addrs: dest, email_date: new Date().toISOString() });
         await supabase.from("email_conversations").update({ last_message_at: new Date().toISOString(), last_preview: text.trim().slice(0, 140), subject: subj }).eq("id", convId);
+        // copia su "Posta inviata" IMAP: stesso Message-ID della spedita, quindi il
+        // sync della Sent la ritrovera' e la scartera' come duplicato (upsert).
+        try { if (raw) await appendSuSent(acc as any, raw); } catch { /* best-effort: casella senza Sent o IMAP momentaneamente giu' */ }
         return NextResponse.json({ ok: true, conversationId: convId, message_id: mid });
     } catch (err) {
         return NextResponse.json({ error: err instanceof Error ? err.message : "Internal Server Error" }, { status: 500 });

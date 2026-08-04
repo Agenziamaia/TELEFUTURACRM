@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/utils";
 
-type Account = { id: string; email_address: string; display_name: string | null; negozio: string | null; owner_user_id: string | null; status: string; last_error?: string | null };
+type Account = { id: string; email_address: string; display_name: string | null; negozio: string | null; owner_user_id: string | null; status: string; last_error?: string | null; backfill_enabled?: boolean; backfill_done?: boolean };
 type Conv = { id: string; account_id: string; customer_email: string; customer_name: string | null; client_id: string | null; subject: string | null; last_preview: string | null; last_message_at: string | null; unread: number; starred?: boolean; spam?: boolean; trashed?: boolean; archived?: boolean };
 type Msg = { id: string; direction: string; from_addr: string | null; from_name: string | null; to_addrs: string | null; subject: string | null; body_text: string | null; body_html: string | null; attachments: any[]; status: string | null; email_date: string | null; created_at: string };
 type Draft = { id: string; account_id: string; to_addr: string | null; subject: string | null; body: string | null; updated_at: string };
@@ -113,7 +113,12 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
 
 
     const loadAccounts = async () => {
-        const { data } = await supabase.from("email_accounts").select("id, email_address, display_name, negozio, owner_user_id, status, last_error").order("created_at");
+        // backfill_enabled/backfill_done arrivano con la mig. 20260804120000: se
+        // non fosse ancora applicata la select fallirebbe, quindi si ripiega
+        // sulla lista di colonne storica (l'indicatore "storico" resta muto).
+        const full = await supabase.from("email_accounts").select("id, email_address, display_name, negozio, owner_user_id, status, last_error, backfill_enabled, backfill_done").order("created_at");
+        let data: any[] | null = full.data;
+        if (!data) ({ data } = await supabase.from("email_accounts").select("id, email_address, display_name, negozio, owner_user_id, status, last_error").order("created_at"));
         setAccounts((data ?? []) as Account[]);
     };
     useEffect(() => { loadAccounts(); const t = setInterval(loadAccounts, 8000); return () => clearInterval(t); }, []);
@@ -337,6 +342,12 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
                         <span className="text-[11px] text-slate-500">{folder === "drafts" ? draftsShown.length : shown.length}</span>
                     </div>
                     {selAccObj?.status !== "attiva" && <div className="p-3 text-xs text-rose-300 border-b border-rose-500/20 bg-rose-500/5 shrink-0">Casella in errore — {selAccObj?.last_error || "ricollega dalle impostazioni"}.</div>}
+                    {/* backfill storico in corso (EML-01): indicatore discreto, sparisce da solo a backfill_done */}
+                    {selAccObj?.backfill_enabled && !selAccObj?.backfill_done && (
+                        <div className="px-4 py-1.5 text-[11px] text-sky-300/80 border-b border-sky-500/15 bg-sky-500/5 shrink-0 flex items-center gap-1.5">
+                            <Loader2 className="w-3 h-3 animate-spin shrink-0" /> Storico in importazione: le email più vecchie compaiono man mano.
+                        </div>
+                    )}
 
                     <div className="flex-1 overflow-y-auto">
                         {folder === "drafts" ? (

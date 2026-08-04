@@ -85,6 +85,9 @@ export function ChatToaster() {
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "email_messages" }, async (payload) => {
                 const m: any = payload.new; // eslint-disable-line @typescript-eslint/no-explicit-any
                 if (!m || m.direction !== "in") return;
+                // Il backfill dello storico inserisce mail VECCHIE: niente toast
+                // (e niente query owner) per messaggi più vecchi di 24 ore.
+                if (m.email_date && Date.now() - new Date(m.email_date).getTime() > 24 * 3600 * 1000) return;
                 const { data: acc } = await supabase.from("email_accounts").select("owner_user_id").eq("id", m.account_id).maybeSingle();
                 if (acc?.owner_user_id && acc.owner_user_id !== user.id) return;
                 if (inChat()) return;
