@@ -7,8 +7,9 @@
 // Chi puo' creare e verso quali ruoli si amministra da Permessi
 // (cap:/comunicazioni:*). Le letture ora stanno a DB (comunicazioni_ricevute):
 // il localStorage resta solo come eredita' del vecchio "letto" locale.
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Bell, Info, AlertTriangle, CheckCircle2, Plus, Eye, X, Trash2 , Rocket } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { Bell, Info, AlertTriangle, CheckCircle2, Plus, Eye, X, Trash2 , Rocket, Bomb } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
@@ -16,7 +17,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
-import { Confetti, SfondoComunicazione, fondoComunicazione } from "@/components/ComunicazioniPopup";
+import { Confetti, EsplosioneBomba, SfondoComunicazione, fondoComunicazione, stileTaglia } from "@/components/ComunicazioniPopup";
 import { EditorRicco, sanificaHtml } from "@/components/EditorRicco";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
@@ -43,7 +44,7 @@ export type Comunicazione = {
     created_at?: string | null;   // per il filtro periodo
     meeting_id?: number | null;   // invito riunione (mig. 122)
     allegati?: { url: string; name: string }[] | null;   // mig. 147
-    size?: string | null;                                  // 'normale' | 'grande' (mig. 147)
+    size?: string | null;                                  // 'piccola' | 'normale' | 'grande' (mig. 158)
 };
 
 type Ricevuta = {
@@ -72,6 +73,8 @@ const getTypeStyles = (type: string) => {
         case "success": return { icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/20" };
         // UPDATE (03/08): novita' del CRM/azienda, razzo violetto
         case "update": return { icon: Rocket, color: "text-violet-400", bg: "bg-violet-500/10", border: "border-violet-500/30" };
+        // NOVITA' (04/08, mig. 159): la bomba 💣 arancio che esplode alla prima apertura
+        case "novita": return { icon: Bomb, color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/40" };
         default: return { icon: Info, color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/20" };
     }
 };
@@ -84,7 +87,7 @@ function dataDisplayOggi(): string {
         ", " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 }
 
-export default function Comunicazioni() {
+function ComunicazioniInner() {
     const { user } = useAuth();
     const role = user?.role || "";
     const { perms } = useRolePermissions(role, user?.grade);
@@ -109,6 +112,7 @@ export default function Comunicazioni() {
     // bastava un click a vuoto sulla card e "letta" scattava senza leggere.
     const [aperte, setAperte] = useState<Set<number>>(new Set());
     const [festa, setFesta] = useState<number | null>(null);   // coriandoli sulle buone notizie
+    const [bomba, setBomba] = useState<number | null>(null);   // 💣 esplosione sulle novita' (one-shot)
     // filtro del dettaglio ricevute (03/08): chips cliccabili sui contatori
     const [dettFiltro, setDettFiltro] = useState<"tutti" | "apparse" | "confermate" | "rinviate" | "mai">("tutti");
 
@@ -220,6 +224,31 @@ export default function Comunicazioni() {
         setLocalRead((p) => new Set(p).add(comId));
     }, [user?.id, user?.name, mieRicevute, list]);
 
+    // DEEP-LINK dalla home (BAC-01): /comunicazioni?apri=<id> apre la card,
+    // la porta in vista e scrive la lettura SOLO se sono destinatario vero
+    // (comunicazionePerMe) — l'admin che sbircia non "legge" per sbaglio.
+    const searchParams = useSearchParams();
+    const apriId = Number(searchParams.get("apri")) || null;
+    const cardRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+    const apriAperto = useRef(false);       // apertura+scroll: una volta sola
+    const apriLetto = useRef(false);        // lettura: riprova finche' negozi/brand non sono caricati
+    useEffect(() => {
+        if (!apriId || loading) return;
+        const com = list.find((c) => c.id === apriId);
+        if (!com) return;
+        if (!apriAperto.current) {
+            apriAperto.current = true;
+            setAperte((p) => new Set(p).add(apriId));
+            setTimeout(() => cardRefs.current.get(apriId)?.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+        }
+        if (apriLetto.current) return;
+        const perMe = comunicazionePerMe(com, { userId: user?.id, role, negozio: user?.negozio, negozi: mieiAssegnati, brandsNegozio });
+        if (perMe && com.created_by !== user?.id && !isLetta(apriId)) {
+            apriLetto.current = true;
+            scriviRicevuta(apriId, false);   // APRIRE = leggere, come il click in bacheca
+        }
+    }, [apriId, loading, list, user?.id, user?.negozio, role, mieiAssegnati, brandsNegozio, isLetta, scriviRicevuta]);
+
     // le PROPRIE comunicazioni non sono mai "da leggere" (Luca 31/07: l'invito
     // riunione che spediva risultava una notifica per lui stesso)
     const handleMarkAllRead = async () => {
@@ -231,9 +260,9 @@ export default function Comunicazioni() {
     const [formOpen, setFormOpen] = useState(false);
     const [fTitle, setFTitle] = useState("");
     const [fContent, setFContent] = useState("");
-    const [fType, setFType] = useState<"info" | "warning" | "success" | "update">("info");
-    // EDITOR (03/08, mig. 147): dimensione, allegati, emoji rapide
-    const [fSize, setFSize] = useState<"normale" | "grande">("normale");
+    const [fType, setFType] = useState<"info" | "novita" | "warning" | "success" | "update">("info");
+    // EDITOR (03/08, mig. 147; taglie v2 mig. 158): dimensione, allegati, emoji rapide
+    const [fSize, setFSize] = useState<"piccola" | "normale" | "grande">("piccola");
     const [fAllegati, setFAllegati] = useState<{ url: string; name: string }[]>([]);
     const [fCaricando, setFCaricando] = useState(false);
     // EDITOR RICCO (Luca 03/08): l'HTML formattato viaggia in content_html,
@@ -315,7 +344,10 @@ export default function Comunicazioni() {
     // via anche le ricevute collegate
     const eliminaComunicazione = async (com: Comunicazione) => {
         if (!window.confirm(`Eliminare la comunicazione "${com.title}"?\nSparisce per tutti, insieme alle sue ricevute.`)) return;
-        await supabase.from("comunicazioni_ricevute").delete().eq("comunicazione_id", com.id);
+        // prima le ricevute (nessuna FK a DB): se il delete fallisce ci si
+        // ferma, altrimenti resterebbero righe orfane senza comunicazione
+        const { error: eRic } = await supabase.from("comunicazioni_ricevute").delete().eq("comunicazione_id", com.id);
+        if (eRic) { alert("Eliminazione non riuscita (ricevute): " + eRic.message); return; }
         const { error } = await supabase.from("comunicazioni").delete().eq("id", com.id);
         if (error) { alert("Eliminazione non riuscita: " + error.message); return; }
         fetchAll();
@@ -389,7 +421,7 @@ export default function Comunicazioni() {
         }
         setError(null);
         setFormOpen(false);
-        setFTitle(""); setFContent(""); setFContentHtml(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget(); setFEsiti([]); setFEsitoNuovo(""); setFSize("normale"); setFAllegati([]);
+        setFTitle(""); setFContent(""); setFContentHtml(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget(); setFEsiti([]); setFEsitoNuovo(""); setFSize("piccola"); setFAllegati([]);
         fetchAll();
     };
 
@@ -538,6 +570,7 @@ export default function Comunicazioni() {
                         const read = isLetta(com.id) || mia;   // la propria non e' mai "Nuovo"
                         const styles = getTypeStyles(com.type);
                         const Icon = styles.icon;
+                        const taglia = stileTaglia(com.size);   // taglie v2 (mig. 158): card normale, testi che crescono
                         const isPopup = com.kind === "popup";
                         // bacheca: chiusa finche' non la si apre (i popup restano estesi:
                         // la loro lettura passa gia' dal pop-up con conferma)
@@ -553,6 +586,7 @@ export default function Comunicazioni() {
                         return (
                             <div
                                 key={com.id}
+                                ref={(el) => { if (el) cardRefs.current.set(com.id, el); else cardRefs.current.delete(com.id); }}
                                 role="button"
                                 tabIndex={0}
                                 onClick={() => {
@@ -561,6 +595,14 @@ export default function Comunicazioni() {
                                     setAperte((p) => { const n = new Set(p); if (apre) n.add(com.id); else n.delete(com.id); return n; });
                                     // BUONA NOTIZIA (03/08): coriandoli anche aprendo dalla bacheca
                                     if (apre && com.type === "success") { setFesta(com.id); setTimeout(() => setFesta(null), 3600); }
+                                    // 💣 NOVITA' (04/08): esplosione one-shot per utente+comunicazione,
+                                    // stesso guard localStorage del popup
+                                    if (apre && com.type === "novita" && user?.id) {
+                                        const k = `bomba_vista_${user.id}_${com.id}`;
+                                        let vista = false;
+                                        try { vista = !!localStorage.getItem(k); if (!vista) localStorage.setItem(k, new Date().toISOString()); } catch { /* one-shot solo di sessione */ }
+                                        if (!vista) { setBomba(com.id); setTimeout(() => setBomba(null), 3000); }
+                                    }
                                     if (apre && !read) scriviRicevuta(com.id, false);   // APRIRE = leggere
                                 }}
                                 onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !isPopup && !aperte.has(com.id)) { setAperte((p) => new Set(p).add(com.id)); if (!read) scriviRicevuta(com.id, false); } }}
@@ -570,6 +612,7 @@ export default function Comunicazioni() {
                                     com.type === "warning" && "border border-rose-500/30 bg-gradient-to-br from-rose-500/[0.08] to-transparent",
                                     com.type === "success" && "bg-gradient-to-br from-emerald-500/[0.08] via-transparent to-fuchsia-500/[0.07]",
                                     com.type === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent",
+                                    com.type === "novita" && "bg-gradient-to-br from-orange-500/[0.10] via-transparent to-red-500/[0.07]",
                                     !collassata && com.type === "warning" && "anim-bordo-rosso"
                                 )}
                             >
@@ -580,8 +623,13 @@ export default function Comunicazioni() {
                                 {com.type === "success" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.08] rotate-12 pointer-events-none select-none">🎉</span>}
                                 {com.type === "update" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.07] rotate-12 pointer-events-none select-none">🚀</span>}
                                 {com.type === "warning" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.07] rotate-12 pointer-events-none select-none">🚨</span>}
+                                {com.type === "novita" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.08] rotate-12 pointer-events-none select-none">💣</span>}
                                 {festa === com.id && <Confetti />}
-                                <div className="absolute top-6 right-6 flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                                {bomba === com.id && <EsplosioneBomba />}
+                                {/* z-10 (COM-04): il wrapper `relative` del contenuto qui sotto
+                                    viene dopo nel DOM e copriva cestino e badge — i click sul
+                                    Trash2 finivano sulla card che si apriva/chiudeva */}
+                                <div className="absolute top-6 right-6 z-10 flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
                                     {!read && (
                                         <span className="flex items-center gap-2">
                                             <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
@@ -602,8 +650,8 @@ export default function Comunicazioni() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="mb-1">
-                                            <h3 className={cn(com.size === "grande" ? "text-2xl font-black" : "text-lg font-semibold", !read ? "text-white" : "text-slate-200")}>
-                                                {com.size === "grande" && "📢 "}{com.title}
+                                            <h3 className={cn(taglia.titoloCard, !read ? "text-white" : "text-slate-200")}>
+                                                {taglia.prefisso}{com.title}
                                             </h3>
                                             <p className="text-sm text-slate-500">
                                                 {com.date_display}
@@ -616,6 +664,9 @@ export default function Comunicazioni() {
                                             )}
                                             {com.type === "update" && (
                                                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/40">🚀 Update</span>
+                                            )}
+                                            {com.type === "novita" && (
+                                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/40">💣 Novità</span>
                                             )}
                                             {com.type === "success" && (
                                                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">🎉 Buona notizia</span>
@@ -640,10 +691,10 @@ export default function Comunicazioni() {
                                             <p className="text-xs text-slate-500 mt-2 italic select-none">▾ Clicca per leggere il contenuto{com.esiti?.length ? " e rispondere" : ""}</p>
                                         ) : (
                                             com.content_html ? (
-                                                <div className={cn("testo-ricco mt-3 leading-relaxed", com.size === "grande" ? "text-base text-slate-100" : "text-slate-300")}
+                                                <div className={cn("testo-ricco mt-3 leading-relaxed", taglia.corpoCard)}
                                                     dangerouslySetInnerHTML={{ __html: sanificaHtml(com.content_html) }} />
                                             ) : (
-                                            <p className={cn("mt-3 leading-relaxed whitespace-pre-wrap", com.size === "grande" ? "text-base text-slate-100" : "text-slate-300")}>
+                                            <p className={cn("mt-3 leading-relaxed whitespace-pre-wrap", taglia.corpoCard)}>
                                                 {com.content}
                                             </p>
                                             )
@@ -839,7 +890,7 @@ export default function Comunicazioni() {
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aspetto</label>
                                 <div className="flex gap-2 mt-2">
-                                    {([["info", "ℹ️ Info"], ["update", "🚀 Update"], ["warning", "🚨 Urgente"], ["success", "🎉 Buone notizie"]] as const).map(([t, l]) => (
+                                    {([["info", "ℹ️ Info"], ["novita", "💣 Novità"], ["update", "🚀 Update"], ["warning", "🚨 Urgente"], ["success", "🎉 Buone notizie"]] as const).map(([t, l]) => (
                                         <button key={t} type="button" onClick={() => setFType(t)}
                                             className={cn("px-3.5 py-1.5 rounded-full border text-sm transition-all",
                                                 fType === t ? "border-violet-500 bg-violet-500/10 text-white" : "border-white/10 text-slate-400 hover:border-white/25")}>
@@ -851,7 +902,7 @@ export default function Comunicazioni() {
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dimensione</label>
                                 <div className="flex gap-2 mt-2">
-                                    {([["normale", "Normale"], ["grande", "📢 Grande — per le comunicazioni importanti"]] as const).map(([sz, l]) => (
+                                    {([["piccola", "Piccola"], ["normale", "Normale"], ["grande", "📢 Grande — quasi tutto lo schermo"]] as const).map(([sz, l]) => (
                                         <button key={sz} type="button" onClick={() => setFSize(sz)}
                                             className={cn("px-3.5 py-1.5 rounded-full border text-sm transition-all",
                                                 fSize === sz ? "border-violet-500 bg-violet-500/10 text-white" : "border-white/10 text-slate-400 hover:border-white/25")}>
@@ -911,7 +962,10 @@ export default function Comunicazioni() {
                                                 ? { color: "var(--tf-34d399)", bg: "rgba(52,211,153,.12)", border: "rgba(52,211,153,.35)", Icona: CheckCircle2 }
                                                 : fType === "update"
                                                     ? { color: "var(--tf-a78bfa)", bg: "rgba(139,92,246,.12)", border: "rgba(139,92,246,.40)", Icona: Rocket }
-                                                    : { color: "var(--tf-60a5fa)", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
+                                                    : fType === "novita"
+                                                        ? { color: "var(--tf-fb923c)", bg: "rgba(251,146,60,.12)", border: "rgba(249,115,22,.40)", Icona: Bomb }
+                                                        : { color: "var(--tf-60a5fa)", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
+                                        const tg = stileTaglia(fSize);
                                         const titolo = fTitle.trim() || "Titolo della comunicazione";
                                         const testoPuro = fContent.trim() || "Il testo che scrivi sopra comparirà qui.";
                                         const testo = fContent.trim() && fContentHtml.trim()
@@ -919,7 +973,9 @@ export default function Comunicazioni() {
                                             : testoPuro;
                                         const firma = `${dataDisplayOggi()} — ${user?.name || ""}`;
                                         if (fKind === "popup") return (
-                                            <div className={`relative rounded-2xl border shadow-2xl overflow-hidden mx-auto max-w-[520px]${fType === "warning" ? " anim-bordo-rosso" : ""}`} style={{ background: fondoComunicazione(fType), borderColor: st.border }}>
+                                            // taglia GRANDE (mig. 158): qui riempie il riquadro anteprima
+                                            // (il popup vero occupa quasi tutto lo schermo)
+                                            <div className={`relative rounded-2xl border shadow-2xl overflow-hidden mx-auto ${tg.s === "grande" ? "w-full min-h-[420px] flex flex-col" : "max-w-[520px]"}${fType === "warning" ? " anim-bordo-rosso" : ""}`} style={{ background: fondoComunicazione(fType), borderColor: st.border }}>
                                                 {/* stessa VIVACITA' del popup vero (Luca 03/08) */}
                                                 <SfondoComunicazione genere={fType} />
                                                 <div className="relative flex items-start gap-3.5 p-5 pb-3.5">
@@ -928,11 +984,12 @@ export default function Comunicazioni() {
                                                     </div>
                                                     <div className="min-w-0">
                                                         <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: st.color }}>Comunicazione da confermare</div>
-                                                        <h3 className={fSize === "grande" ? "text-2xl font-black text-white leading-tight" : "text-lg font-bold text-white leading-tight"}>{fSize === "grande" ? "📢 " : ""}{titolo}</h3>
+                                                        <h3 className={tg.titoloPopup}>{tg.prefisso}{titolo}</h3>
                                                         <p className="text-xs text-slate-500 mt-1">{firma}</p>
                                                     </div>
                                                 </div>
-                                                <div className={fSize === "grande" ? "relative px-5 pb-4 text-lg font-medium text-slate-100 leading-relaxed whitespace-pre-wrap max-h-[30vh] overflow-hidden" : "relative px-5 pb-4 text-sm text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[30vh] overflow-hidden"}>{testo}</div>
+                                                <div className={cn("relative px-5 pb-4 leading-relaxed whitespace-pre-wrap max-h-[30vh] overflow-hidden",
+                                                    tg.s === "grande" ? "flex-1 text-xl font-medium text-slate-100" : tg.s === "normale" ? "text-lg font-medium text-slate-100" : "text-sm text-slate-200")}>{testo}</div>
                                                 {fAllegati.length > 0 && (
                                                     <div className="relative px-5 pb-3.5 flex flex-wrap gap-2">
                                                         {fAllegati.map((a) => (
@@ -954,10 +1011,12 @@ export default function Comunicazioni() {
                                             <div className={cn("glass-card p-5 relative overflow-hidden border-l-4 border-l-primary",
                                                 fType === "warning" && "border border-rose-500/30 bg-gradient-to-br from-rose-500/[0.08] to-transparent anim-bordo-rosso",
                                                 fType === "success" && "bg-gradient-to-br from-emerald-500/[0.08] via-transparent to-fuchsia-500/[0.07]",
-                                                fType === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent")}>
+                                                fType === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent",
+                                                fType === "novita" && "bg-gradient-to-br from-orange-500/[0.10] via-transparent to-red-500/[0.07]")}>
                                                 {fType === "success" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.08] rotate-12 select-none">🎉</span>}
                                                 {fType === "update" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.07] rotate-12 select-none">🚀</span>}
                                                 {fType === "warning" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.07] rotate-12 select-none">🚨</span>}
+                                                {fType === "novita" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.08] rotate-12 select-none">💣</span>}
                                                 <SfondoComunicazione genere={fType} />
                                                 <div className="absolute top-5 right-5 flex items-center gap-2">
                                                     <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
@@ -968,7 +1027,7 @@ export default function Comunicazioni() {
                                                         <st.Icona className="w-6 h-6" />
                                                     </div>
                                                     <div className="flex-1 min-w-0">
-                                                        <h3 className="text-lg font-semibold text-white">{titolo}</h3>
+                                                        <h3 className={cn(tg.titoloCard, "text-white")}>{tg.prefisso}{titolo}</h3>
                                                         <p className="text-sm text-slate-500">{firma}</p>
                                                         {fEsiti.length > 0 && (
                                                             <div className="flex items-center gap-2 flex-wrap mt-2">
@@ -977,7 +1036,7 @@ export default function Comunicazioni() {
                                                                 ))}
                                                             </div>
                                                         )}
-                                                        <p className="text-sm text-slate-300 mt-2.5 leading-relaxed whitespace-pre-wrap">{testo}</p>
+                                                        <p className={cn("mt-2.5 leading-relaxed whitespace-pre-wrap", tg.s === "piccola" ? "text-sm text-slate-300" : tg.corpoCard)}>{testo}</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1074,5 +1133,14 @@ export default function Comunicazioni() {
                 </div>
             )}
         </div>
+    );
+}
+
+/* useSearchParams (deep-link ?apri=) richiede Suspense in fase di build (lezione 502). */
+export default function Comunicazioni() {
+    return (
+        <Suspense fallback={<div className="py-12 text-center text-slate-400">Caricamento...</div>}>
+            <ComunicazioniInner />
+        </Suspense>
     );
 }

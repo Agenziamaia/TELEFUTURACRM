@@ -8,7 +8,7 @@
 // la sessione ma ricompaiono al prossimo accesso. La visualizzazione scrive la
 // LETTURA in comunicazioni_ricevute, la conferma scrive confermato_il.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Info, AlertTriangle, CheckCircle2, Rocket } from "lucide-react";
+import { Info, AlertTriangle, CheckCircle2, Rocket, Bomb } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
@@ -29,7 +29,7 @@ type ComPopup = {
     esiti?: string[] | null;   // risposte cliccabili (mig. 116); null = solo conferma
     meeting_id?: number | null;   // invito riunione (mig. 122): la risposta si riflette sul calendario
     allegati?: { url: string; name: string }[] | null;   // mig. 147: apribili PRIMA di confermare
-    size?: string | null;                                 // mig. 147: 'grande' = testo in evidenza
+    size?: string | null;                                 // 'piccola' | 'normale' | 'grande' (mig. 158)
     content_html?: string | null;                         // mig. 155: testo RICCO dell'editor
     kind: string | null;
 };
@@ -47,18 +47,21 @@ const CSS_SFONDI = `@keyframes hazardScorri{0%{transform:translateX(0)}100%{tran
 @keyframes bordoRosso{0%,100%{box-shadow:0 0 0 0 rgba(244,63,94,.55)}50%{box-shadow:0 0 28px 6px rgba(244,63,94,.30)}}
 .anim-bordo-rosso{animation:bordoRosso 1.5s ease-in-out infinite}
 @keyframes scossaIcona{0%,86%,100%{transform:rotate(0)}88%{transform:rotate(-9deg)}90%{transform:rotate(8deg)}92%{transform:rotate(-6deg)}94%{transform:rotate(5deg)}96%{transform:rotate(-2deg)}}
-.anim-scossa{animation:scossaIcona 2.8s ease-in-out infinite}`;
+.anim-scossa{animation:scossaIcona 2.8s ease-in-out infinite}
+@keyframes bombaScossa{0%{transform:translate(0,0) rotate(0)}10%{transform:translate(-9px,6px) rotate(-.6deg)}20%{transform:translate(8px,-7px) rotate(.5deg)}30%{transform:translate(-7px,5px) rotate(-.4deg)}40%{transform:translate(6px,-4px) rotate(.35deg)}50%{transform:translate(-5px,3px) rotate(-.25deg)}60%{transform:translate(4px,-3px) rotate(.2deg)}70%{transform:translate(-3px,2px) rotate(-.12deg)}80%{transform:translate(2px,-1px) rotate(.08deg)}90%{transform:translate(-1px,1px) rotate(0)}100%{transform:translate(0,0) rotate(0)}}
+@keyframes bombaFlash{0%{opacity:0}6%{opacity:1}30%{opacity:.55}100%{opacity:0}}`;
 
 export function fondoComunicazione(genere?: string | null): string {
     return genere === "success" ? "linear-gradient(160deg,#0d1f13 0%,#12141f 55%,#0f2417 100%)"
         : genere === "warning" ? "linear-gradient(160deg,#220d13 0%,#12141f 55%,#2a0f16 100%)"
             : genere === "update" ? "linear-gradient(160deg,#170f2b 0%,#12141f 55%,#1a1233 100%)"
-                : "linear-gradient(160deg,#0f1522 0%,#12141f 60%,#101a2c 100%)";
+                : genere === "novita" ? "linear-gradient(160deg,#2b1206 0%,#12141f 55%,#331107 100%)"
+                    : "linear-gradient(160deg,#0f1522 0%,#12141f 60%,#101a2c 100%)";
 }
 
 export function SfondoComunicazione({ genere }: { genere?: string | null }) {
     const ref = useRef<HTMLCanvasElement | null>(null);
-    const animato = genere === "success" || genere === "update";
+    const animato = genere === "success" || genere === "update" || genere === "novita";
     useEffect(() => {
         if (!animato) return;
         const cv = ref.current; if (!cv) return;
@@ -77,12 +80,19 @@ export function SfondoComunicazione({ genere }: { genere?: string | null }) {
         type Scia = { x: number; y: number; vx: number; vy: number; vita: number; max: number; c: string };
         const coriandoli: Cor[] = []; const scie: Scia[] = [];
         const stelle: { x: number; y: number; v: number; r: number; tw: number }[] = [];
+        // 💣 novita: BRACI — scintille di fuoco che salgono + mini-esplosioni
+        const fuoco = ["#fb923c", "#f97316", "#fbbf24", "#ef4444", "#fde047"];
+        const braci: { x: number; y: number; v: number; r: number; tw: number; c: string }[] = [];
         if (genere === "success") for (let i = 0; i < 34; i++) coriandoli.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - .5) * .5, vy: .55 + Math.random() * .9, rot: Math.random() * Math.PI, vr: (Math.random() - .5) * .12, w: 5 + Math.random() * 5, h: 3 + Math.random() * 4, c: colori[(Math.random() * colori.length) | 0] });
         if (genere === "update") for (let i = 0; i < 42; i++) stelle.push({ x: Math.random() * W, y: Math.random() * H, v: .18 + Math.random() * .5, r: .6 + Math.random() * 1.5, tw: Math.random() * Math.PI * 2 });
+        if (genere === "novita") for (let i = 0; i < 38; i++) braci.push({ x: Math.random() * W, y: Math.random() * H, v: .3 + Math.random() * .75, r: .7 + Math.random() * 1.7, tw: Math.random() * Math.PI * 2, c: fuoco[(Math.random() * fuoco.length) | 0] });
         let ultimoBotto = 0;
-        const botto = () => {
-            const cx = 40 + Math.random() * Math.max(40, W - 80), cy = 26 + Math.random() * (H * .45), c = colori[(Math.random() * colori.length) | 0];
+        const botto = (pal: string[] = colori) => {
+            const cx = 40 + Math.random() * Math.max(40, W - 80), cy = 26 + Math.random() * (H * .45), c = pal[(Math.random() * pal.length) | 0];
             for (let i = 0; i < 16; i++) { const a = (Math.PI * 2 * i) / 16 + Math.random() * .2; const sp = 1.4 + Math.random() * 1.6; scie.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vita: 0, max: 46 + Math.random() * 22, c }); }
+        };
+        const disegnaScie = () => {
+            for (let i = scie.length - 1; i >= 0; i--) { const sc = scie[i]; sc.vita++; sc.x += sc.vx; sc.y += sc.vy; sc.vy += .028; const a = 1 - sc.vita / sc.max; if (a <= 0) { scie.splice(i, 1); continue; } ctx.globalAlpha = a * .9; ctx.fillStyle = sc.c; ctx.beginPath(); ctx.arc(sc.x, sc.y, 1.8, 0, Math.PI * 2); ctx.fill(); }
         };
         const tick = (t: number) => {
             if (!vivo) return;
@@ -94,7 +104,17 @@ export function SfondoComunicazione({ genere }: { genere?: string | null }) {
                     if (pt.y > H + 8) { pt.y = -8; pt.x = Math.random() * W; }
                     ctx.save(); ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot); ctx.globalAlpha = .8; ctx.fillStyle = pt.c; ctx.fillRect(-pt.w / 2, -pt.h / 2, pt.w, pt.h); ctx.restore();
                 });
-                for (let i = scie.length - 1; i >= 0; i--) { const sc = scie[i]; sc.vita++; sc.x += sc.vx; sc.y += sc.vy; sc.vy += .028; const a = 1 - sc.vita / sc.max; if (a <= 0) { scie.splice(i, 1); continue; } ctx.globalAlpha = a * .9; ctx.fillStyle = sc.c; ctx.beginPath(); ctx.arc(sc.x, sc.y, 1.8, 0, Math.PI * 2); ctx.fill(); }
+                disegnaScie();
+                ctx.globalAlpha = 1;
+            } else if (genere === "novita") {
+                // braci che salgono con sfarfallio + mini-esplosioni periodiche
+                if (t - ultimoBotto > 1900) { ultimoBotto = t; botto(fuoco); }
+                braci.forEach(b => {
+                    b.y -= b.v; b.x += Math.sin((b.y + t * .03) * .04) * .35; b.tw += .07;
+                    if (b.y < -4) { b.y = H + 4; b.x = Math.random() * W; }
+                    ctx.globalAlpha = .3 + Math.abs(Math.sin(b.tw)) * .55; ctx.fillStyle = b.c; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+                });
+                disegnaScie();
                 ctx.globalAlpha = 1;
             } else {
                 stelle.forEach(st => { st.y -= st.v; st.tw += .05; if (st.y < -4) { st.y = H + 4; st.x = Math.random() * W; } ctx.globalAlpha = .35 + Math.abs(Math.sin(st.tw)) * .5; ctx.fillStyle = "#c4b5fd"; ctx.beginPath(); ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2); ctx.fill(); });
@@ -126,9 +146,29 @@ export function SfondoComunicazione({ genere }: { genere?: string | null }) {
     );
 }
 
-const cnBody = (size?: string | null) => size === "grande"
-    ? "px-6 pb-5 text-slate-100 text-lg font-medium leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto"
-    : "px-6 pb-5 text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto";
+/* TAGLIE v2 (Luca 04/08, mig. 158): piccola = ex normale, normale = ex grande,
+   GRANDE = popup quasi-fullscreen; in bacheca la card resta di dimensioni
+   normali con testi extra-large. Fallback null/valori legacy → piccola.
+   UNICA fonte di verita' per popup, card di bacheca e anteprima del form. */
+export const stileTaglia = (size?: string | null) => {
+    const s = size === "grande" || size === "normale" ? size : "piccola";
+    return {
+        s,
+        // il megafono resta sulle taglie in evidenza
+        prefisso: s === "piccola" ? "" : "📢 ",
+        // contenitore del POPUP (grande = quasi tutto lo schermo)
+        popup: s === "grande" ? "w-[min(1200px,96vw)] min-h-[80vh] flex flex-col" : "w-full max-w-[560px]",
+        titoloPopup: s === "grande" ? "text-3xl sm:text-4xl font-black text-white leading-tight"
+            : s === "normale" ? "text-2xl font-black text-white leading-tight"
+                : "text-xl font-bold text-white leading-tight",
+        corpoPopup: s === "grande" ? "px-6 pb-5 flex-1 text-slate-100 text-xl sm:text-2xl font-medium leading-relaxed whitespace-pre-wrap max-h-[60vh] overflow-y-auto"
+            : s === "normale" ? "px-6 pb-5 text-slate-100 text-lg font-medium leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto"
+                : "px-6 pb-5 text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[45vh] overflow-y-auto",
+        // card di BACHECA: stessa card, testi che crescono
+        titoloCard: s === "grande" ? "text-3xl font-black" : s === "normale" ? "text-2xl font-black" : "text-lg font-semibold",
+        corpoCard: s === "grande" ? "text-xl text-slate-100" : s === "normale" ? "text-base text-slate-100" : "text-slate-300",
+    };
+};
 
 export function ComunicazioniPopup() {
     const { user } = useAuth();
@@ -241,6 +281,20 @@ export function ComunicazioniPopup() {
         }], { onConflict: "comunicazione_id,user_id", ignoreDuplicates: true }).then(() => { });
     }, [attuale, user?.id, user?.name]);
 
+    // 💣 BOMBA one-shot (Luca 04/08): l'esplosione si vede UNA volta per
+    // utente+comunicazione (guard localStorage) — chi preme "Più tardi" non
+    // se la ribecca a ogni ricomparsa. Stesso pattern dei rinvii qui sopra.
+    const [bombaId, setBombaId] = useState<number | null>(null);
+    useEffect(() => {
+        if (!attuale || !user?.id || attuale.type !== "novita") return;
+        const k = `bomba_vista_${user.id}_${attuale.id}`;
+        try {
+            if (localStorage.getItem(k)) return;
+            localStorage.setItem(k, new Date().toISOString());
+        } catch { /* senza localStorage resta comunque one-shot per mount */ }
+        setBombaId(attuale.id);
+    }, [attuale, user?.id]);
+
     const conferma = async (esito?: string) => {
         if (!attuale || !user?.id) return;
         setSalvando(true);
@@ -275,14 +329,19 @@ export function ComunicazioniPopup() {
             ? { Icon: CheckCircle2, color: "#34d399", bg: "rgba(52,211,153,.12)", border: "rgba(52,211,153,.35)" }
             : attuale.type === "update"
                 ? { Icon: Rocket, color: "#a78bfa", bg: "rgba(139,92,246,.12)", border: "rgba(139,92,246,.40)" }
-                : { Icon: Info, color: "#60a5fa", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)" };
+                : attuale.type === "novita"
+                    ? { Icon: Bomb, color: "#fb923c", bg: "rgba(251,146,60,.12)", border: "rgba(249,115,22,.45)" }
+                    : { Icon: Info, color: "#60a5fa", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)" };
     const { Icon } = stile;
+    const taglia = stileTaglia(attuale.size);
 
     return (
         <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
             {/* buone notizie (type success): esplosione di coriandoli all'apertura */}
             {attuale.type === "success" && <Confetti key={attuale.id} />}
-            <div className={`relative w-full max-w-[560px] rounded-2xl border shadow-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200${attuale.type === "warning" ? " anim-bordo-rosso" : ""}`}
+            {/* 💣 novita: la bomba esplode SOLO alla prima apertura (guard sopra) */}
+            {attuale.type === "novita" && bombaId === attuale.id && <EsplosioneBomba key={attuale.id} />}
+            <div className={`relative ${taglia.popup} rounded-2xl border shadow-2xl overflow-hidden animate-in zoom-in-95 fade-in duration-200${attuale.type === "warning" ? " anim-bordo-rosso" : ""}`}
                 style={{ background: fondoComunicazione(attuale.type), borderColor: stile.border }}>
                 <SfondoComunicazione genere={attuale.type} />
                 <div className="relative flex items-start gap-4 p-6 pb-4">
@@ -294,15 +353,15 @@ export function ComunicazioniPopup() {
                         <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: stile.color }}>
                             Comunicazione da confermare
                         </div>
-                        <h3 className={attuale.size === "grande" ? "text-2xl font-black text-white leading-tight" : "text-xl font-bold text-white leading-tight"}>
-                            {attuale.size === "grande" ? "📢 " : ""}{attuale.title}
+                        <h3 className={taglia.titoloPopup}>
+                            {taglia.prefisso}{attuale.title}
                         </h3>
                         <p className="text-xs text-slate-500 mt-1">
                             {attuale.date_display}{attuale.created_by_name ? ` — ${attuale.created_by_name}` : ""}
                         </p>
                     </div>
                 </div>
-                <div className={"relative " + cnBody(attuale.size)}>
+                <div className={"relative " + taglia.corpoPopup}>
                     {attuale.content_html
                         ? <div className="testo-ricco" dangerouslySetInnerHTML={{ __html: sanificaHtml(attuale.content_html) }} />
                         : attuale.content}
@@ -413,4 +472,96 @@ export function Confetti() {   // esportato (03/08): festa anche aprendo le buon
         return () => { cancelAnimationFrame(raf); clearTimeout(t2); window.removeEventListener("resize", setup); };
     }, []);
     return <canvas ref={ref} aria-hidden style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none", zIndex: 6000 }} />;
+}
+
+// 💣 ESPLOSIONE BOMBA (Luca 04/08, genere 'novita'): "esplode tutto il
+// computer" alla PRIMA apertura — flash bianco/arancio fullscreen, onda
+// d'urto, detriti/fiamme su canvas e scossa dello schermo (keyframe
+// bombaScossa sul body, smorzata). One-shot ~2.5s, canvas autonomo con
+// pointer-events none come Confetti. Il guard "una volta per utente e
+// comunicazione" sta nel chiamante (localStorage bomba_vista_*).
+// Rispetta prefers-reduced-motion: in quel caso non parte proprio.
+export function EsplosioneBomba() {
+    const ref = useRef<HTMLCanvasElement | null>(null);
+    const flashRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+        // SCOSSA dello schermo: keyframe applicato al body, poi ripulito;
+        // il FLASH parte da qui (via ref) così con reduced-motion resta spento
+        if (flashRef.current) flashRef.current.style.animation = "bombaFlash 2.2s ease-out forwards";
+        const prima = document.body.style.animation;
+        document.body.style.animation = "bombaScossa .9s cubic-bezier(.36,.07,.19,.97) both";
+        const tScossa = setTimeout(() => { document.body.style.animation = prima; }, 950);
+        return () => { clearTimeout(tScossa); document.body.style.animation = prima; };
+    }, []);
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
+        const canvas = ref.current; if (!canvas) return;
+        const ctx = canvas.getContext("2d"); if (!ctx) return;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        let W = window.innerWidth, H = window.innerHeight;
+        const setup = () => { W = window.innerWidth; H = window.innerHeight; canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
+        setup();
+        const cx = W * 0.5, cy = H * 0.45;
+        const fuoco = ["#fb923c", "#f97316", "#fbbf24", "#ef4444", "#fde047", "#fca5a5", "#78716c"];
+        type P = { x: number; y: number; vx: number; vy: number; size: number; color: string; rot: number; vr: number; shape: number };
+        const parts: P[] = [];
+        // DETRITI e fiamme: due raffiche dal centro, più violente dei coriandoli
+        const raffica = (n: number, power: number) => {
+            for (let i = 0; i < n; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const s = power * (0.3 + Math.random() * 1.0);
+                parts.push({ x: cx, y: cy, vx: Math.cos(a) * s, vy: Math.sin(a) * s - power * 0.25, size: 4 + Math.random() * 8, color: fuoco[(Math.random() * fuoco.length) | 0], rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.5, shape: (Math.random() * 3) | 0 });
+            }
+        };
+        raffica(170, 15);
+        const t2 = setTimeout(() => raffica(90, 10), 160);
+        const start = Date.now();
+        let raf = 0;
+        const tick = () => {
+            const t = Date.now() - start;
+            ctx.clearRect(0, 0, W, H);
+            // ONDA D'URTO: anello che si espande e sfuma nei primi ~700ms
+            if (t < 700) {
+                const p = t / 700;
+                const r = 30 + p * Math.max(W, H) * 0.75;
+                ctx.globalAlpha = (1 - p) * 0.8;
+                ctx.lineWidth = 14 * (1 - p) + 2;
+                ctx.strokeStyle = "#fdba74";
+                ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+                ctx.globalAlpha = (1 - p) * 0.35;
+                ctx.lineWidth = 30 * (1 - p) + 4;
+                ctx.strokeStyle = "#f97316";
+                ctx.beginPath(); ctx.arc(cx, cy, r * 0.82, 0, Math.PI * 2); ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+            let vivo = false;
+            for (const p of parts) {
+                p.vy += 0.3; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+                const vita = Math.max(0, 1 - t / 2400);
+                if (vita <= 0 || p.y > H + 30) continue;
+                vivo = true;
+                ctx.save(); ctx.globalAlpha = vita; ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.color;
+                if (p.shape === 0) ctx.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6);
+                else if (p.shape === 1) { ctx.beginPath(); ctx.arc(0, 0, p.size * 0.45, 0, Math.PI * 2); ctx.fill(); }
+                else { ctx.beginPath(); ctx.moveTo(0, -p.size * 0.5); ctx.lineTo(p.size * 0.5, p.size * 0.4); ctx.lineTo(-p.size * 0.5, p.size * 0.4); ctx.closePath(); ctx.fill(); }
+                ctx.restore();
+            }
+            if ((vivo || t < 700) && t < 2600) raf = requestAnimationFrame(tick);
+            else ctx.clearRect(0, 0, W, H);
+        };
+        raf = requestAnimationFrame(tick);
+        window.addEventListener("resize", setup);
+        return () => { cancelAnimationFrame(raf); clearTimeout(t2); window.removeEventListener("resize", setup); };
+    }, []);
+    return (
+        <>
+            <style>{CSS_SFONDI}</style>
+            {/* FLASH bianco/arancio a tutto schermo: parte dall'effect, sfuma da solo */}
+            <div ref={flashRef} aria-hidden style={{ position: "fixed", inset: 0, zIndex: 6001, pointerEvents: "none", background: "radial-gradient(circle at 50% 45%, rgba(255,247,237,.95) 0%, rgba(251,146,60,.75) 30%, rgba(239,68,68,.35) 55%, transparent 78%)", opacity: 0 }} />
+            <canvas ref={ref} aria-hidden style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none", zIndex: 6000 }} />
+        </>
+    );
 }

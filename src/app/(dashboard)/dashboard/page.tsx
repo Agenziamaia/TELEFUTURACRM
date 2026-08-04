@@ -14,6 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { roleLabel, seesWholeStore, BRAND_COLORS } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
+import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import {
   FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
@@ -34,7 +35,18 @@ const STATO_COLOR = (s = "") => {
 };
 const brandColor = (b) => BRAND_COLORS[b]?.color || "var(--tf-6366f1)";
 const daysAgoISO = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
-const CLOSED_TASK = ["completato", "fatto", "done", "chiuso", "annullato", "completo"];
+// stati REALI di calendar_tasks (04/08): prima le chiavi non esistevano a DB
+// e il contatore "impegni in scadenza" includeva anche le attivita' chiuse
+const CLOSED_TASK = ["fatta", "abbandonata"];
+// badge del widget bacheca sui type REALI delle comunicazioni (il vecchio
+// test /urgent/i non matchava mai 'warning': tutto usciva col badge verde)
+const COM_BADGE = {
+  info: { label: "ℹ️ Info", color: "var(--tf-60a5fa)", bg: "rgba(96,165,250,.15)" },
+  warning: { label: "🚨 Urgente", color: "var(--tf-f87171)", bg: "rgba(239,68,68,.15)" },
+  success: { label: "🎉 Buona notizia", color: "var(--tf-34d399)", bg: "rgba(16,185,129,.15)" },
+  update: { label: "🚀 Update", color: "var(--tf-a78bfa)", bg: "rgba(139,92,246,.15)" },
+  novita: { label: "💣 Novità", color: "var(--tf-fb923c)", bg: "rgba(251,146,60,.15)" },
+};
 
 // ── UI di base ──────────────────────────────────────────────────────────────
 function Kpi({ icon: Icon, label, value, sub, color }) {
@@ -127,9 +139,16 @@ export default function Dashboard() {
     let alive = true;
     (async () => {
       setLoading(true);
+      // comunicazioni: select ESTESA (mig. 112, per comunicazionePerMe) con
+      // fallback legacy se le colonne target non sono ancora migrate
+      const caricaComms = async () => {
+        const est = await supabase.from("comunicazioni").select("id, title, type, content, target_roles, target_stores, target_users, target_brands, created_by, created_at, date_display").order("created_at", { ascending: false }).limit(30);
+        if (!est.error) return est;
+        return supabase.from("comunicazioni").select("id, title, type, content, target_roles, created_at, date_display").order("created_at", { ascending: false }).limit(30);
+      };
       const [{ data: cs }, { data: cm }, { data: tg }, { data: tk }, { data: me }] = await Promise.all([
         supabase.from("contracts").select("id, brand, categoria, prodotto, stato, negozio, venditore, client_id, data_registrazione").order("data_registrazione", { ascending: false }).limit(3000),
-        supabase.from("comunicazioni").select("id, title, type, content, target_roles, created_at, date_display").order("created_at", { ascending: false }).limit(8),
+        caricaComms(),
         supabase.from("dashboard_targets").select("*"),
         supabase.from("calendar_tasks").select("id, date, status").or(`assigned_user_id.eq.${user.id},created_by_user_id.eq.${user.id}`).limit(500),
         supabase.from("app_users").select("dashboard_layout").eq("id", user.id).maybeSingle(),
@@ -221,12 +240,18 @@ export default function Dashboard() {
   }, [all, period, filtro]);
 
   const isVenditore = level === "own";
-  const commsVisibili = useMemo(() => comms.filter((c) => {
-    const tr = c.target_roles;
-    if (!tr || (Array.isArray(tr) && tr.length === 0)) return true;
-    if (Array.isArray(tr)) return tr.includes(user?.role);
-    return true;
-  }).slice(0, 4), [comms, user?.role]);
+  // BACHECA IN HOME (BAC-01): stessa regola comunicazionePerMe di popup e
+  // sidebar (ruolo+negozio+persona+brand) — prima filtrava solo target_roles
+  // e le comunicazioni mirate a persona/negozio/brand sparivano (o comparivano
+  // a chi non doveva vederle). L'autore continua a vedere le proprie.
+  const [negoziAss, setNegoziAss] = useState([]);
+  const [brandsNeg, setBrandsNeg] = useState([]);
+  useEffect(() => { negoziAssegnati(user?.id).then(setNegoziAss); }, [user?.id]);
+  useEffect(() => { brandDelNegozio(user?.negozio).then(setBrandsNeg); }, [user?.negozio]);
+  const commsVisibili = useMemo(() => comms.filter((c) =>
+    comunicazionePerMe(c, { userId: user?.id, role: user?.role, negozio: user?.negozio, negozi: negoziAss, brandsNegozio: brandsNeg })
+    || (c.created_by && c.created_by === user?.id)
+  ).slice(0, 4), [comms, user?.id, user?.role, user?.negozio, negoziAss, brandsNeg]);
 
   // ── layout: salva l'ordine per utente ──
   const saveOrder = async (o) => {
@@ -324,16 +349,21 @@ export default function Dashboard() {
           action={!isVenditore ? <Link href="/comunicazioni" className="text-[10px] font-bold text-sky-300 bg-sky-500/10 px-2 py-1 rounded-md hover:bg-sky-500/20 flex items-center gap-1"><Plus className="w-3 h-3" /> Nuovo</Link> : null}>
           <div className="p-4 space-y-3 overflow-y-auto max-h-[220px]">
             {commsVisibili.length === 0 ? <p className="text-xs text-slate-500 text-center py-4">Nessun annuncio.</p> :
-              commsVisibili.map((c) => (
-                <div key={c.id} className="border-b border-white/5 last:border-0 pb-2.5 last:pb-0">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ color: /urgent/i.test(c.type || "") ? "var(--tf-f87171)" : "var(--tf-34d399)", background: /urgent/i.test(c.type || "") ? "rgba(239,68,68,.15)" : "rgba(16,185,129,.15)" }}>{c.type || "Info"}</span>
-                    <span className="text-[10px] text-slate-600">{c.date_display || ""}</span>
-                  </div>
-                  <div className="text-xs font-semibold text-slate-100">{c.title}</div>
-                  {c.content && <div className="text-[11px] text-slate-400 line-clamp-2">{c.content}</div>}
-                </div>
-              ))}
+              commsVisibili.map((c) => {
+                const badge = COM_BADGE[c.type] || COM_BADGE.info;
+                return (
+                  // card CLICCABILE (BAC-01): porta alla comunicazione aperta in bacheca
+                  <Link key={c.id} href={`/comunicazioni?apri=${c.id}`}
+                    className="block border-b border-white/5 last:border-0 pb-2.5 last:pb-0 -mx-1.5 px-1.5 rounded-lg hover:bg-white/[0.04] transition-colors cursor-pointer group">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
+                      <span className="text-[10px] text-slate-600">{c.date_display || ""}</span>
+                    </div>
+                    <div className="text-xs font-semibold text-slate-100 group-hover:text-white">{c.title}</div>
+                    {c.content && <div className="text-[11px] text-slate-400 line-clamp-2">{c.content}</div>}
+                  </Link>
+                );
+              })}
           </div>
         </WidgetShell>
       </div>

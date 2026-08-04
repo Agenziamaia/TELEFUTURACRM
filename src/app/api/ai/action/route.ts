@@ -60,8 +60,13 @@ export async function POST(req: Request) {
       if (!isAdminOrAbove(scope.role) && scope.role !== "dev") {
         return NextResponse.json({ error: "Solo amministrazione/direzione può creare comunicazioni." }, { status: 403 });
       }
+      // il CHECK a DB (mig. 154/159) ammette solo questi generi: il vecchio
+      // "informativo" violava il vincolo e l'insert falliva sempre
+      const TIPI_OK = ["info", "warning", "success", "update", "novita"];
       const { error } = await supabase.from("comunicazioni").insert({
-        title: args.title, content: args.content, type: args.type || "informativo",
+        title: args.title, content: args.content,
+        type: TIPI_OK.includes(args.type) ? args.type : "info",
+        size: "piccola",   // esplicita: non dipende dal DEFAULT della colonna (mig. 158)
         date_display: new Date().toLocaleDateString("it-IT"),
       });
       if (error) throw new Error(error.message);
