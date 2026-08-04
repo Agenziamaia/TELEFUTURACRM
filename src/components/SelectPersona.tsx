@@ -28,6 +28,7 @@ export function SelectOpzioni(props: {
     className?: string;
     disabled?: boolean;
     maxVoci?: number;
+    preferite?: readonly string[];
 }) {
     return <SelectPersona maxVoci={100} {...props} vuotoMsg="Nessuna voce corrispondente" />;
 }
@@ -38,6 +39,10 @@ export function SelectPersona({
     // 12 va bene per le PERSONE (si scrive per filtrare); le liste di opzioni
     // passano un tetto alto perche' devono vedersi tutte (03/08)
     maxVoci = 12,
+    // voci "PIU' COMUNI" in testa (Luca 04/08, tendina brand usati): a tendina
+    // aperta SENZA testo digitato compaiono in una sezione dedicata sopra il
+    // resto in ordine alfabetico; digitando, filtro unico su tutte le opzioni
+    preferite,
 }: {
     value: string;
     onChange: (v: string) => void;
@@ -47,6 +52,7 @@ export function SelectPersona({
     disabled?: boolean;
     vuotoMsg?: string;
     maxVoci?: number;
+    preferite?: readonly string[];
 }) {
     const [testo, setTesto] = useState(value);
     const [aperta, setAperta] = useState(false);
@@ -83,8 +89,9 @@ export function SelectPersona({
     }, [aperta]);
 
     const q = testo.trim().toLowerCase();
+    const senzaTesto = !q || q === value.trim().toLowerCase();      // focus senza digitare
     const tutte = !aperta ? [] : opzioni.filter((n) => {
-        if (!q || q === value.trim().toLowerCase()) return true;   // focus senza digitare: tutte
+        if (senzaTesto) return true;   // focus senza digitare: tutte
         const nome = n.toLowerCase();
         // match per inclusione O per iniziali delle parole (es. "ma ro" → Mario Rossi)
         if (nome.includes(q)) return true;
@@ -92,26 +99,45 @@ export function SelectPersona({
         const termini = q.split(/\s+/);
         return termini.every((t) => parole.some((p) => p.startsWith(t)));
     });
-    const filtrate = tutte.slice(0, maxVoci);
+    // sezione "Piu' comuni" (04/08): solo senza testo digitato, e solo per le
+    // preferite davvero presenti tra le opzioni; il resto scorre sotto A–Z
+    const comuni = aperta && senzaTesto && preferite?.length
+        ? preferite.filter((p) => opzioni.includes(p))
+        : [];
+    const resto = comuni.length ? tutte.filter((n) => !comuni.includes(n)) : tutte;
+    const filtrate = resto.slice(0, maxVoci);
     // quante voci restano FUORI dal tetto: prima il taglio era muto e su liste
     // lunghe (brand/modelli usati) sembrava che la tendina "si fermasse" (03/08)
-    const oltre = tutte.length - filtrate.length;
+    const oltre = resto.length - filtrate.length;
 
     const scegli = (n: string) => { onChange(n); setTesto(n); setAperta(false); };
 
-    const menuBody = pos && (filtrate.length > 0 || q) ? (
+    const menuBody = pos && (filtrate.length > 0 || comuni.length > 0 || q) ? (
         <div ref={menu}
             className="select-persona-menu fixed z-[4000] max-h-72 overflow-y-auto rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 divide-y divide-white/5"
             style={{ top: pos.top, left: pos.left, width: pos.width }}>
+            {comuni.length > 0 && (
+                <>
+                    <div className="px-3.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Più comuni</div>
+                    {comuni.map((n) => (
+                        <button key={"pref-" + n} type="button"
+                            onMouseDown={(e) => { e.preventDefault(); scegli(n); }}
+                            className={`block w-full text-left px-3.5 py-2.5 text-sm transition-colors hover:bg-indigo-500/20 ${n === value ? "text-indigo-300 font-bold" : "text-slate-100"}`}>
+                            {n}
+                        </button>
+                    ))}
+                    <div className="px-3.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">Tutti (A–Z)</div>
+                </>
+            )}
             {filtrate.length > 0 ? filtrate.map((n) => (
                 <button key={n} type="button"
                     onMouseDown={(e) => { e.preventDefault(); scegli(n); }}
                     className={`block w-full text-left px-3.5 py-2.5 text-sm transition-colors hover:bg-indigo-500/20 ${n === value ? "text-indigo-300 font-bold" : "text-slate-100"}`}>
                     {n}
                 </button>
-            )) : (
+            )) : comuni.length === 0 ? (
                 <div className="px-3.5 py-2.5 text-sm text-slate-500">{vuotoMsg}</div>
-            )}
+            ) : null}
             {oltre > 0 && (
                 <div className="px-3.5 py-2 text-[11px] font-semibold text-amber-300/90 bg-amber-500/[0.06]">
                     … e altre {oltre} voci — scrivi per filtrare
@@ -128,7 +154,8 @@ export function SelectPersona({
                     onChange={(e) => { setTesto(e.target.value); setAperta(true); if (e.target.value.trim() === "") onChange(""); }}
                     onFocus={() => setAperta(true)}
                     onKeyDown={(e) => {
-                        if (e.key === "Enter") { e.preventDefault(); if (filtrate[0]) scegli(filtrate[0]); }
+                        // Enter = prima voce VISIBILE (le "piu' comuni" stanno in testa)
+                        if (e.key === "Enter") { e.preventDefault(); const primo = comuni[0] ?? filtrate[0]; if (primo) scegli(primo); }
                         if (e.key === "Escape") { setAperta(false); setTesto(value); }
                     }}
                     placeholder={placeholder}

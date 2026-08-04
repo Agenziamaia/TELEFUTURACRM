@@ -11,7 +11,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { designatiIncarico } from "@/lib/incarichi";
 import { capAllowed, CAP_USATO, CAP_USATO_LAVORA, CAP_USATO_MALUS, CAP_USATO_COSTI } from "@/lib/capabilities";
 import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
-import { brandsDispositivi, modelliDispositivi, type CategoriaDispositivo } from "@/lib/dispositivi";
+import { brandsDispositivi, modelliDispositivi, BRAND_COMUNI, type CategoriaDispositivo } from "@/lib/dispositivi";
 import { caricaRegoleUsato, sincronizzaMalusUsato, scadenzaCorrente, REGOLE_USATO_DEFAULT, type RegoleUsato, type EpisodioUsato } from "@/lib/usatiMalus";
 import { UsatoRegoleView } from "@/components/UsatoRegole";
 import {
@@ -346,6 +346,11 @@ function MultiSelect({ label, options, selected, onChange, renderOpt }: {
   const [cerca, setCerca] = useState("");
   const allSel = selected.length === options.length;
   const visibili = cerca.trim() ? options.filter(o => o.toLowerCase().includes(cerca.trim().toLowerCase())) : options;
+  // CAP di render (04/08): col catalogo pieno il filtro Brand ha ~3.760 voci —
+  // montarle tutte a ogni apertura inchioda la pagina; la ricerca resta
+  // sull'intero set, si scrive per vedere le voci oltre il tetto
+  const mostrate = visibili.slice(0, 200);
+  const nascoste = visibili.length - mostrate.length;
   const toggle = (o: string) => onChange(selected.includes(o) ? selected.filter(x => x !== o) : [...selected, o]);
   return (
     <div className="relative">
@@ -371,7 +376,7 @@ function MultiSelect({ label, options, selected, onChange, renderOpt }: {
             {allSel ? "Deseleziona Tutti" : "Seleziona Tutti"}
           </div>
           {visibili.length === 0 && <div className="px-3 py-2.5 text-xs text-slate-500">Nessuna voce corrispondente</div>}
-          {visibili.map(o => (
+          {mostrate.map(o => (
             <div key={o} onClick={() => toggle(o)}
               className={cn("flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-white/5 transition-colors",
                 selected.includes(o) ? "bg-purple-500/10 text-purple-300" : "text-slate-300")}>
@@ -382,6 +387,11 @@ function MultiSelect({ label, options, selected, onChange, renderOpt }: {
               {renderOpt ? renderOpt(o) : o}
             </div>
           ))}
+          {nascoste > 0 && (
+            <div className="px-3 py-2 text-[11px] font-semibold text-amber-300/90 bg-amber-500/[0.06] border-t border-white/5">
+              … scrivi per vedere gli altri {nascoste}
+            </div>
+          )}
         </div>
       </>}
     </div>
@@ -1346,7 +1356,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
         {tipoProdotto && <>
           <div className="grid grid-cols-2 gap-4">
             <div><label className={lbl}>Brand *</label>
-              <SelectOpzioni value={brand} onChange={(v) => { setBrand(v); setModel(""); }} opzioni={brandOptions} maxVoci={1000} placeholder="Scrivi per filtrare i brand…" className={inp} />
+              <SelectOpzioni value={brand} onChange={(v) => { setBrand(v); setModel(""); }} opzioni={brandOptions} maxVoci={1000} preferite={BRAND_COMUNI} placeholder="Scrivi per filtrare i brand…" className={inp} />
             </div>
             <div><label className={lbl}>Modello *</label>
               <SelectOpzioni value={model} onChange={setModel} disabled={!brand} opzioni={brand ? modelOptions : []} maxVoci={1000} placeholder="Scrivi per filtrare i modelli…" className={inp} />
@@ -1643,9 +1653,17 @@ function GestioneUsatiInner() {
   // FILTRI PER TUTTI (Luca 31/07): brand, modello/IMEI e fascia di prezzo —
   // prima esistevano solo la ricerca generica riservata alla direzione
   const [brandFilter, setBrandFilter] = useState<string[]>([]);
-  // brand del filtro dal catalogo universale (ripiego alle liste cablate)
+  // brand del filtro dal catalogo universale (ripiego alle liste cablate);
+  // dopo il fix della fonte (04/08) le voci sono ~3.760: i brand COMUNI vanno
+  // in testa, il resto segue gia' in ordine alfabetico
   const [brandFiltroOptions, setBrandFiltroOptions] = useState<string[]>([]);
-  useEffect(() => { brandsDispositivi("smartphone", []).then(b => { if (b.length) setBrandFiltroOptions(b); }); }, []);
+  useEffect(() => {
+    brandsDispositivi("smartphone", []).then(b => {
+      if (!b.length) return;
+      const comuni: string[] = BRAND_COMUNI.filter(c => b.includes(c));
+      setBrandFiltroOptions([...comuni, ...b.filter(x => !comuni.includes(x))]);
+    });
+  }, []);
   const [prezzoDa, setPrezzoDa] = useState("");
   const [prezzoA, setPrezzoA] = useState("");
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);

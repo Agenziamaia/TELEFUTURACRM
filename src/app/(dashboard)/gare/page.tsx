@@ -28,7 +28,7 @@ const GARE_BRANDS = [
     { id: "sky", label: "Sky", desc: "Soglie e commissioning Sky.", color: "var(--tf-0072c6)", logo: "/sky.png" },
     { id: "s4", label: "S4", desc: "Soglie e commissioning energia S4.", color: "var(--tf-28a745)", logo: "/energy - Copy.png" },
     { id: "tim", label: "TIM", desc: "Soglie e commissioning Tim.", color: "var(--tf-0050ff)", logo: "/tim-logo-v2.png" },
-    { id: "dojo", label: "Dojo", desc: "Soglie e commissioning POS Dojo.", color: "var(--tf-14b8a6)", logo: "/dojo - Copy.png" },
+    { id: "dojo", label: "Dojo", desc: "Soglie e commissioning POS Dojo.", color: "var(--tf-14b8a6)", logo: "/dojo-round.png" },
 ] as const;
 
 // le sezioni di GESTIONE traslocate dall'Amministrazione (Luca 03/08)
@@ -110,15 +110,22 @@ function GareInner() {
                             <button
                                 key={b.id}
                                 onClick={() => go(b.id)}
+                                title={b.label}
                                 className="p-4 rounded-xl border-2 border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] transition-colors text-center"
                             >
-                                <div className="flex items-center justify-center h-14 mb-3">
-                                    <Image src={b.logo} alt={b.label} width={180} height={56} className="h-14 w-auto max-w-[85%] object-contain" />
+                                {/* SOLO il logo, grande (pattern Registra Vendita, Luca 04/08):
+                                    il nome del brand e' gia' nel logo; label e desc restano
+                                    nell'array per l'header interno */}
+                                <div className="flex items-center justify-center h-[88px]">
+                                    <Image src={b.logo} alt={b.label} width={260} height={88} className="h-[84px] w-auto max-w-[92%] object-contain" />
                                 </div>
-                                <p className="font-extrabold text-[15px]" style={{ color: b.color }}>
-                                    {b.label}
-                                </p>
-                                <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">{b.desc}</p>
+                                {/* le due Vodafone condividono il logo: mini-badge discreto
+                                    SOLO per loro, altrimenti tessere indistinguibili (Luca 04/08) */}
+                                {(b.id === "vs" || b.id === "vnd") && (
+                                    <p className="mt-1.5 text-[10px] font-bold tracking-[0.2em] text-slate-500">
+                                        {b.id === "vs" ? "STORE" : "VND"}
+                                    </p>
+                                )}
                             </button>
                         ))}
                     </div>

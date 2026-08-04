@@ -396,6 +396,9 @@ html.light img[src="/dojo-round.png"] {
   border-radius: 10px;
   padding: 3px;
 }
+/* il Dojo TONDO (Gare/RV): chip circolare, il quadrato smussato dietro il
+   cerchio grande stonava (04/08) */
+html.light img[src="/dojo-round.png"] { border-radius: 50%; }
 html.light #crm-sidebar img[src="/logo-crm.png"] { background: transparent; padding: 0; }
 
 /* ── 8. Campi e tendine ──────────────────────────────────────────────── */

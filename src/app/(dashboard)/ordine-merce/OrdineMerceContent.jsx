@@ -7,7 +7,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 const CART_STORAGE_KEY = "ordine-merce-cart-v1";
 import { supabase } from "@/lib/supabaseClient";
 import { designatiIncarico } from "@/lib/incarichi";
-import { brandsDispositivi, modelliDispositivi } from "@/lib/dispositivi";
+import { brandsDispositivi, modelliDispositivi, BRAND_COMUNI } from "@/lib/dispositivi";
 import { useStores } from "@/lib/org";
 import { useAuth } from "@/context/AuthContext";
 import { sameStore } from "@/lib/visibleStores";
@@ -502,7 +502,12 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
     brandsDispositivi("smartphone", []).then(brands => {
       if (!vivo || !brands.length) return;
       const noti = new Map(PHONE_BRANDS.map(pb => [pb.name.toLowerCase(), pb.color]));
-      setCoverBrandsDb(brands.slice(0, 30).map(b => ({ id: "db:" + b, name: b, color: noti.get(b.toLowerCase()) || "var(--tf-64748b)" })));
+      // lista curata dei brand COMUNI (Luca 04/08) al posto del "top 30" per
+      // conteggio: il catalogo pieno metterebbe davanti ZTE/TCT/Vivo/Hisense;
+      // se a catalogo non c'e' nessun comune, si torna al vecchio taglio
+      const comuni = BRAND_COMUNI.filter(b => brands.includes(b));
+      const lista = comuni.length ? comuni : brands.slice(0, 30);
+      setCoverBrandsDb(lista.map(b => ({ id: "db:" + b, name: b, color: noti.get(b.toLowerCase()) || "var(--tf-64748b)" })));
     }).catch(() => { /* ripiego cablato */ });
     return () => { vivo = false; };
   }, []);
