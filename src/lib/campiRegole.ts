@@ -80,3 +80,46 @@ export function risolviCampi(
     });
     return out;
 }
+
+/** CAT-02 (04/08): il WIDGET REALE che Registra Vendita usa per un campo.
+ *  RV decide prima per NOME (override cablate: Codice Inserimento, GNP,
+ *  Operatore GNP, Modello Terminale) e solo dopo per tipo, quindi il tipo
+ *  grezzo salvato a DB puo' non corrispondere alla casella che il venditore
+ *  vede. Il pannello Catalogo usa questa funzione per il badge del tipo
+ *  (etichetta + title esplicativo) e non mentire piu' sui campi. */
+export function tipoEffettivo(
+    nome: string, tipo: string, valori?: string[],
+): { label: string; title: string } {
+    const n = (nome || "").trim();
+    if (n === "Codice Inserimento") return {
+        label: "codice negozio",
+        title: "Widget deciso da Registra Vendita per questo nome: tendina dei codici negozio del brand, precompilata dal codice di sessione. Il tipo dichiarato qui non viene usato.",
+    };
+    if (/^gnp$/i.test(n)) return {
+        label: "scelta Sì/No",
+        title: "Widget deciso da Registra Vendita per questo nome: tendina Sì/No; con valore diverso da Sì il campo \"Operatore GNP\" viene azzerato e nascosto.",
+    };
+    if (/^operatore gnp$/i.test(n)) return {
+        label: "tendina operatori",
+        title: "Widget deciso da Registra Vendita per questo nome: tendina degli operatori GNP; se nella stessa selezione c'è anche il campo GNP, compare solo con GNP = Sì.",
+    };
+    if (n === "Modello Terminale") return {
+        label: "tendina terminali",
+        title: "Widget deciso da Registra Vendita per questo nome: tendina con ricerca sul listino terminali del brand (mostra prezzo/margine).",
+    };
+    if (tipo === "scelta") {
+        if (valori && valori.length) return {
+            label: "tendina custom",
+            title: "Tendina con i valori dichiarati sul campo: " + valori.join(", "),
+        };
+        if (n === "Operatore di Provenienza") return {
+            label: "tendina operatori",
+            title: "Widget deciso da Registra Vendita per questo nome: tendina degli operatori di provenienza (fornitori energia o brand mobili a seconda della categoria).",
+        };
+        return {
+            label: "scelta — senza valori",
+            title: "ATTENZIONE: campo \"scelta\" senza valori dichiarati e senza override per nome: in Registra Vendita la tendina risulterebbe VUOTA e, se obbligatoria, bloccherebbe la vendita. Aggiungi i valori (uno per riga) dall'editor.",
+        };
+    }
+    return { label: tipo, title: "" };
+}

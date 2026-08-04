@@ -7,6 +7,9 @@
  * condizioni valgono; i campi si sommano senza duplicati.
  * NON è un settimo livello del catalogo: è la replica dei campi del CRM.
  * NON MODIFICARE A MANO le regole: si rigenerano dall'artifatto.
+ * ECCEZIONE (04/08): assetto GNP/numeri fissi allineato a mano alle mig.
+ * 158-159 (Fisso senza numeri, regole GNP per brand, Codice Contratto Sky)
+ * — se si rigenera dall'artifatto, riportare anche queste regole.
  */
 
 export interface CampoVendita {
@@ -17,6 +20,10 @@ export interface CampoVendita {
     /** true = il campo NON blocca il completamento (Luca 02/08: ICCID
      *  facoltativo su FWA W3 Business); si imposta dalle regole a DB */
     facoltativo?: boolean;
+    /** valori della tendina per i campi tipo "scelta" (CAT-02 04/08):
+     *  dichiarati dal pannello Catalogo; senza, Registra Vendita conosce
+     *  i valori solo per i nomi cablati (Operatore GNP, GNP, ...) */
+    valori?: string[];
 }
 
 interface Regola {
@@ -169,16 +176,36 @@ export const CAMPI_REGOLE: Regola[] = [
     ]
   },
   {
+    "brand": [
+      "sky"
+    ],
     "categoria": [
       "Fisso"
     ],
     "campi": [
       {
-        "nome": "Numero Fisso Provvisorio",
+        "nome": "Codice Contratto",
         "tipo": "testo",
         "nota": "",
         "conferma": false
-      },
+      }
+    ]
+  },
+  {
+    "brand": [
+      "fastweb",
+      "iliad",
+      "tim",
+      "s4",
+      "dojo",
+      "ho",
+      "very",
+      "kena"
+    ],
+    "categoria": [
+      "Fisso"
+    ],
+    "campi": [
       {
         "nome": "Numero Fisso Definitivo",
         "tipo": "testo",
@@ -231,6 +258,108 @@ export const CAMPI_REGOLE: Regola[] = [
     ]
   },
   {
+    "tipo": [
+      "Consumer"
+    ],
+    "brand": [
+      "windtre",
+      "vodafone"
+    ],
+    "categoria": [
+      "Fisso",
+      "FWA"
+    ],
+    "opzioni": [
+      "GNP"
+    ],
+    "campi": [
+      {
+        "nome": "Numero Fisso Provvisorio",
+        "tipo": "testo",
+        "nota": "",
+        "conferma": false
+      },
+      {
+        "nome": "Numero Fisso Definitivo",
+        "tipo": "testo",
+        "nota": "il numero che si porta",
+        "conferma": false
+      }
+    ]
+  },
+  {
+    "tipo": [
+      "Business"
+    ],
+    "brand": [
+      "windtre"
+    ],
+    "categoria": [
+      "Fisso",
+      "FWA"
+    ],
+    "opzioni": [
+      "GNP"
+    ],
+    "campi": [
+      {
+        "nome": "Numero Fisso Provvisorio",
+        "tipo": "testo",
+        "nota": "",
+        "conferma": false
+      },
+      {
+        "nome": "Numero Fisso Definitivo",
+        "tipo": "testo",
+        "nota": "il numero che si porta",
+        "conferma": false
+      }
+    ]
+  },
+  {
+    "tipo": [
+      "Business"
+    ],
+    "brand": [
+      "vodafone"
+    ],
+    "categoria": [
+      "Fisso",
+      "FWA"
+    ],
+    "opzioni": [
+      "GNP"
+    ],
+    "campi": [
+      {
+        "nome": "Numero Fisso Definitivo",
+        "tipo": "testo",
+        "nota": "il numero che si porta",
+        "conferma": false
+      }
+    ]
+  },
+  {
+    "brand": [
+      "sky"
+    ],
+    "categoria": [
+      "Fisso",
+      "FWA"
+    ],
+    "opzioni": [
+      "GNP"
+    ],
+    "campi": [
+      {
+        "nome": "Numero Fisso Definitivo",
+        "tipo": "testo",
+        "nota": "il numero che si porta",
+        "conferma": false
+      }
+    ]
+  },
+  {
     "opzioni": [
       "GNP"
     ],
@@ -238,12 +367,6 @@ export const CAMPI_REGOLE: Regola[] = [
       {
         "nome": "Operatore GNP",
         "tipo": "scelta",
-        "nota": "",
-        "conferma": false
-      },
-      {
-        "nome": "Numero Fisso da Portare",
-        "tipo": "testo",
         "nota": "",
         "conferma": false
       }

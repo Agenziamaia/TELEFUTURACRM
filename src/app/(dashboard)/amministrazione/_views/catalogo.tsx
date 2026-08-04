@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { tipoEffettivo } from "@/lib/campiRegole";
 import { cn } from "@/utils";
 import { Loader2, Plus, Trash2, Pencil, ChevronUp, ChevronDown, Power, Layers, Check, X, Settings2 } from "lucide-react";
 import { notify, dbError } from "./toast";
@@ -24,7 +25,7 @@ interface Brand { id: string; nome: string; colore1: string; colore2: string; or
 interface Prod { id: string; brand_id: string; tipo_cliente: string; categoria_id: string; nome: string; ordine: number; attivo: boolean }
 interface Off { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean }
 interface Opz { id: string; offerta_id: string; nome: string; tipo: string | null; gruppo_singolo: string | null; ordine: number; attivo: boolean }
-interface CampoRegola { nome: string; tipo: string; nota: string; conferma: boolean; attivo?: boolean; facoltativo?: boolean }
+interface CampoRegola { nome: string; tipo: string; nota: string; conferma: boolean; attivo?: boolean; facoltativo?: boolean; valori?: string[] }
 /* riga della QUINTA tabella (03/08): campo risolto per l'offerta selezionata,
    con la provenienza — "offerta" = regola dedicata, "generale" = regole comuni */
 interface CampoOffRow extends CampoRegola { fonte: "offerta" | "generale" | "nuovo" | "opzione" }
@@ -333,7 +334,11 @@ export function CatalogoView() {
     };
     const salvaCampiOfferta = async () => {
         if (!campiOff || !offCur || !prodCur) return;
-        const campi = campiOff.filter((c) => c.nome.trim()).map(({ fonte: _f, ...c }) => c);
+        // valori tendina (CAT-02): righe pulite; senza valori la chiave si toglie
+        const campi = campiOff.filter((c) => c.nome.trim()).map(({ fonte: _f, valori, ...c }) => {
+            const puliti = (valori || []).map((v) => v.trim()).filter(Boolean);
+            return puliti.length && c.tipo === "scelta" ? { ...c, valori: puliti } : c;
+        });
         if (!campi.length) { notify("Serve almeno un campo — oppure Annulla"); return; }
         const opzione = opzSel.size === 1 ? [...opzSel][0] : undefined;
         const esistente = regolaOffertaEsistente(offCur.nome, prodCur.nome, opzione);
@@ -407,7 +412,11 @@ export function CatalogoView() {
                             <div key={i} className={cn("flex items-center gap-3 flex-wrap px-4 py-3 bg-white/[0.02]", c.attivo === false && "opacity-50")}>
                                 <span className="text-base" title={c.fonte === "opzione" ? "Campo che compare con un'opzione attiva" : c.fonte === "offerta" ? "Campo della regola dedicata a questa offerta" : "Campo ereditato dalle regole generali"}>{c.fonte === "opzione" ? "🧩" : c.fonte === "offerta" ? "🎯" : "📐"}</span>
                                 <span className={cn("text-sm font-semibold", c.attivo === false ? "text-slate-500 line-through" : "text-white")}>{c.nome}</span>
-                                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400">{c.tipo}</span>
+                                {/* badge del TIPO: non il tipo grezzo a DB ma il widget REALE
+                                    che Registra Vendita rende per questo nome (CAT-02 04/08) */}
+                                {(() => { const te = tipoEffettivo(c.nome, c.tipo, c.valori); return (
+                                    <span title={te.title || undefined} className={cn("text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400", te.title && "cursor-help")}>{te.label}</span>
+                                ); })()}
                                 {c.facoltativo
                                     ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/10 text-slate-400">facoltativo</span>
                                     : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">obbligatorio</span>}
@@ -431,6 +440,11 @@ export function CatalogoView() {
                                         <select value={c.tipo} onChange={(e) => upCampoOff(i, { tipo: e.target.value })} className="glass-input text-sm rounded-lg py-2.5 px-3">
                                             {TIPI_CAMPO.map((t) => <option key={t} value={t}>{t}</option>)}
                                         </select>
+                                        {/* se per questo NOME Registra Vendita usa un widget suo,
+                                            il tipo dichiarato non conta: si avvisa qui (CAT-02) */}
+                                        {(() => { const te = tipoEffettivo(c.nome, c.tipo, c.valori); return te.label !== c.tipo ? (
+                                            <p title={te.title} className="text-[9px] text-slate-500 mt-1 cursor-help">in vendita: <b className="text-slate-400 uppercase">{te.label}</b></p>
+                                        ) : null; })()}
                                     </div>
                                     <div className="flex-1 min-w-[220px]">
                                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nota per il venditore</p>
@@ -453,6 +467,15 @@ export function CatalogoView() {
                                         )}
                                     </div>
                                 </div>
+                                {/* VALORI della tendina (CAT-02 04/08): per i campi "scelta" il
+                                    catalogo puo' dichiarare le voci; senza, RV ha i valori solo
+                                    per i nomi cablati e la tendina resterebbe vuota */}
+                                {c.tipo === "scelta" && (
+                                    <div className="mt-2.5">
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Valori della tendina <span className="normal-case tracking-normal font-normal text-slate-600">(uno per riga; vuoto = valori decisi da Registra Vendita, solo per i nomi noti)</span></p>
+                                        <textarea value={(c.valori || []).join("\n")} onChange={(e) => upCampoOff(i, { valori: e.target.value.split("\n") })} rows={3} placeholder={"Es.\nSì\nNo"} className="glass-input text-xs rounded-lg py-2 px-3 w-full" />
+                                    </div>
+                                )}
                             </div>
                         ))}
                         <button onClick={() => setCampiOff((p) => [...(p || []), { nome: "", tipo: "testo", nota: "", conferma: false, attivo: true, fonte: "nuovo" }])}
