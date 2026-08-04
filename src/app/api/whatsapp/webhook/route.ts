@@ -88,6 +88,20 @@ async function upsertConversazione(instanceId: string, numero: string, nome: str
     return created?.id as string;
 }
 
+// CHT-02: se il messaggio toccato (modifica/cancellazione) era l'ULTIMO della
+// conversazione, l'anteprima in elenco va riallineata — altrimenti la lista
+// chat mostrerebbe un testo che su WhatsApp non esiste piu'.
+async function aggiornaAnteprimaSeUltimo(conversationId: string, messageId: string, anteprima: string) {
+    const { data: ultimo } = await supabase.from("wa_messages")
+        .select("id").eq("conversation_id", conversationId)
+        .order("wa_timestamp", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(1).maybeSingle();
+    if (ultimo?.id === messageId) {
+        await supabase.from("wa_conversations").update({ last_preview: anteprima.slice(0, 120) }).eq("id", conversationId);
+    }
+}
+
 export async function POST(request: Request) {
     try {
         const url = new URL(request.url);
@@ -130,6 +144,10 @@ export async function POST(request: Request) {
                 // #wa: gli sticker (emoji animate / GIF) arrivano come stickerMessage
                 // (image/webp): senza mime non venivano scaricati e comparivano vuoti.
                 const mime = msg.imageMessage?.mimetype || msg.documentMessage?.mimetype || msg.audioMessage?.mimetype || msg.videoMessage?.mimetype || msg.stickerMessage?.mimetype || (msg.stickerMessage ? "image/webp" : null);
+                // CHT-02: un protocolMessage senza contenuto (revoca/modifica fatta
+                // dal telefono) non e' un messaggio da mostrare — lo gestiscono gli
+                // eventi messages.edited / messages.delete, niente righe fantasma.
+                if (msg.protocolMessage && !body && !mime) continue;
                 const ts = toIsoMs(m?.messageTimestamp);
                 // media in ARRIVO (o inviato da un altro dispositivo): scaricalo e
                 // salvalo subito, ora che il file cifrato e' ancora sul CDN.
@@ -170,6 +188,49 @@ export async function POST(request: Request) {
                 const map: Record<string, string> = { "2": "sent", "3": "delivered", "4": "read", DELIVERY_ACK: "delivered", READ: "read", PLAYED: "read" };
                 const nuovo = map[String(st)] || null;
                 if (nuovo) await supabase.from("wa_messages").update({ status: nuovo }).eq("wa_message_id", id);
+            }
+            return NextResponse.json({ ok: true, event });
+        }
+
+        // ── CHT-02: messaggio MODIFICATO (dal telefono o da altro dispositivo).
+        //    Il testo nuovo puo' arrivare in forme diverse a seconda della build:
+        //    si prova in ordine, e se non si trova si marca comunque edited_at. ──
+        if (event.includes("messages.edited") && data) {
+            const edits = Array.isArray(data) ? data : [data];
+            for (const u of edits) {
+                const id = u?.key?.id || u?.keyId || u?.id;
+                if (!id) continue;
+                const em = u?.message || u?.editedMessage || {};
+                const nuovo = em?.conversation || em?.extendedTextMessage?.text
+                    || em?.editedMessage?.conversation || em?.editedMessage?.extendedTextMessage?.text
+                    || u?.text || null;
+                const { data: riga } = await supabase.from("wa_messages")
+                    .select("id, conversation_id, body, body_prev").eq("wa_message_id", id).maybeSingle();
+                if (!riga) continue;
+                const patch: Record<string, unknown> = { edited_at: new Date().toISOString() };
+                if (nuovo) {
+                    patch.body = nuovo;
+                    // body_prev conserva la versione ORIGINALE (audit): non si sovrascrive
+                    if (!riga.body_prev) patch.body_prev = riga.body;
+                }
+                await supabase.from("wa_messages").update(patch).eq("id", riga.id);
+                if (nuovo) await aggiornaAnteprimaSeUltimo(riga.conversation_id, riga.id, nuovo);
+            }
+            return NextResponse.json({ ok: true, event });
+        }
+
+        // ── CHT-02: messaggio ELIMINATO PER TUTTI (dal telefono). La riga resta
+        //    a DB con deleted_at: la UI mostra il segnaposto, mai il testo. ──
+        if (event.includes("messages.delete") && data) {
+            const dels = Array.isArray(data) ? data : [data];
+            for (const u of dels) {
+                const id = u?.key?.id || u?.keyId || u?.id;
+                if (!id) continue;
+                const { data: riga } = await supabase.from("wa_messages")
+                    .select("id, conversation_id").eq("wa_message_id", id).maybeSingle();
+                if (!riga) continue;
+                await supabase.from("wa_messages").update({ deleted_at: new Date().toISOString() }).eq("id", riga.id);
+                await aggiornaAnteprimaSeUltimo(riga.conversation_id, riga.id, "Messaggio eliminato");
             }
             return NextResponse.json({ ok: true, event });
         }

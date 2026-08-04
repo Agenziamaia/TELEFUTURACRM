@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoMessaggi, scaricaMedia } from "@/lib/evolution";
+import { creaIstanza, statoConnessione, statoIstanza, eliminaIstanza, logoutIstanza, elencoChat, elencoMessaggi, scaricaMedia, aggiornaWebhook } from "@/lib/evolution";
 import { salvaMediaBase64 } from "@/lib/whatsappMedia";
 
 export const dynamic = "force-dynamic";
@@ -216,6 +216,21 @@ export async function POST(request: Request) {
             if (nuovi.length) await supabase.from("wa_messages").insert(nuovi);
             for (const u of mediaUpdate) await supabase.from("wa_messages").update({ media_url: u.url }).eq("wa_message_id", u.id);
             return NextResponse.json({ ok: true, importati: nuovi.length, media: mediaScaricati });
+        }
+
+        if (action === "webhook-refresh") {
+            // CHT-02: riallinea il webhook di TUTTE le istanze registrate alla
+            // lista eventi corrente (Evolution congela la config alla creazione:
+            // senza questo refresh MESSAGES_EDITED/MESSAGES_DELETE non arrivano
+            // mai sulle istanze gia' collegate). Da lanciare una-tantum post-deploy.
+            const { data: insts } = await supabase.from("wa_instances").select("instance_name");
+            const aggiornate: string[] = [];
+            const errori: { instance: string; error: string }[] = [];
+            for (const i of insts ?? []) {
+                try { await aggiornaWebhook(i.instance_name); aggiornate.push(i.instance_name); }
+                catch (e) { errori.push({ instance: i.instance_name, error: e instanceof Error ? e.message : String(e) }); }
+            }
+            return NextResponse.json({ ok: true, aggiornate, errori });
         }
 
         if (action === "logout") {

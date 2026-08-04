@@ -34,6 +34,15 @@ export function webhookUrl(): string {
     return `${base}/api/whatsapp/webhook?t=${encodeURIComponent(t)}`;
 }
 
+/** Eventi webhook che il CRM vuole ricevere. UNICA lista: la usano sia la
+ *  creazione istanza sia il refresh sulle istanze esistenti (aggiornaWebhook),
+ *  cosi' non possono divergere. MESSAGES_EDITED/MESSAGES_DELETE portano al CRM
+ *  le modifiche/cancellazioni fatte anche dal telefono (CHT-02). */
+export const WEBHOOK_EVENTS = [
+    "MESSAGES_UPSERT", "MESSAGES_UPDATE", "MESSAGES_EDITED", "MESSAGES_DELETE",
+    "CONNECTION_UPDATE", "QRCODE_UPDATED", "SEND_MESSAGE",
+];
+
 /** Crea (o riusa) un'istanza e imposta il webhook sugli eventi che ci servono. */
 export async function creaIstanza(instanceName: string): Promise<any> {
     const body = {
@@ -44,10 +53,20 @@ export async function creaIstanza(instanceName: string): Promise<any> {
             url: webhookUrl(),
             byEvents: false,
             base64: true,
-            events: ["MESSAGES_UPSERT", "MESSAGES_UPDATE", "CONNECTION_UPDATE", "QRCODE_UPDATED", "SEND_MESSAGE"],
+            events: WEBHOOK_EVENTS,
         },
     };
     return call("POST", "/instance/create", body);
+}
+
+/** Riallinea la config webhook di un'istanza ESISTENTE alla lista eventi
+ *  corrente. Serve perche' Evolution scrive la config solo alla creazione:
+ *  senza questo refresh le istanze gia' collegate non ricevono mai gli eventi
+ *  aggiunti dopo (es. MESSAGES_EDITED/MESSAGES_DELETE). */
+export async function aggiornaWebhook(instanceName: string): Promise<any> {
+    return call("POST", `/webhook/set/${encodeURIComponent(instanceName)}`, {
+        webhook: { enabled: true, url: webhookUrl(), byEvents: false, base64: true, events: WEBHOOK_EVENTS },
+    });
 }
 
 /** Stato/QR per collegare il numero (scan). Ritorna il base64 del QR se in attesa. */
@@ -102,6 +121,26 @@ export async function inviaTesto(instanceName: string, destinatario: string, tes
     return call("POST", `/message/sendText/${encodeURIComponent(instanceName)}`, {
         number,
         text: testo,
+    });
+}
+
+/** Modifica il testo di un messaggio GIA' inviato (CHT-02). Vincoli WhatsApp:
+ *  solo messaggi PROPRI di testo, entro ~15 minuti — le guardie stanno nella
+ *  route /api/whatsapp/message, qui solo la chiamata. Contratto doc Evolution v2
+ *  (rotta presente sulla 2.3.7 del VPS, verificata a probe). */
+export async function modificaTesto(instanceName: string, remoteJid: string, waMessageId: string, testo: string): Promise<any> {
+    return call("POST", `/chat/updateMessage/${encodeURIComponent(instanceName)}`, {
+        number: remoteJid,
+        text: testo,
+        key: { remoteJid, fromMe: true, id: waMessageId },
+    });
+}
+
+/** "Elimina per tutti" un messaggio inviato (CHT-02). Finestra WhatsApp ~2,5
+ *  giorni; sui messaggi vecchi l'esito e' best-effort, come sull'app. */
+export async function cancellaMessaggio(instanceName: string, remoteJid: string, waMessageId: string): Promise<any> {
+    return call("DELETE", `/chat/deleteMessageForEveryone/${encodeURIComponent(instanceName)}`, {
+        id: waMessageId, remoteJid, fromMe: true,
     });
 }
 

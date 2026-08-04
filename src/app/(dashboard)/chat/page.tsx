@@ -252,6 +252,9 @@ function ChatPageInner() {
   // /chat?mail=<indirizzo> apre la webmail già in composizione (Luca 28/07).
   const searchParams = useSearchParams();
   const waParam = searchParams.get("wa");
+  // CAL-01: /chat?wa=<numero>&testo=<messaggio> precompila il composer WhatsApp
+  // (il testo arriva dal modello scelto nella sezione caller)
+  const testoParam = searchParams.get("testo");
   const mailParam = searchParams.get("mail");
   const [mode, setMode] = useState<"chat" | "whatsapp" | "email">(() => {
     if (typeof window === "undefined") return "chat";
@@ -518,7 +521,7 @@ function ChatPageInner() {
       </div>
 
       {mode === "whatsapp" ? (
-        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={waParam} /></div>
+        <div className="flex-1 min-h-0 overflow-hidden"><WhatsAppInbox embedded apriNumero={waParam} testoIniziale={testoParam} /></div>
       ) : mode === "email" ? (
         <div className="flex-1 min-h-0 overflow-hidden"><EmailInbox embedded componiA={mailParam} /></div>
       ) : (

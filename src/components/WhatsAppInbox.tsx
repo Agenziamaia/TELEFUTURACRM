@@ -9,16 +9,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
-import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut, Trash2, ChevronLeft } from "lucide-react";
+import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut, Trash2, ChevronLeft, Pencil, Ban } from "lucide-react";
 import { cn } from "@/utils";
 
 type Instance = { id: string; instance_name: string; display_name: string | null; wa_number: string | null; status: string; owner_user_id: string | null; negozio: string | null };
 type Conv = { id: string; instance_id: string; customer_number: string; customer_name: string | null; client_id: string | null; last_preview: string | null; last_message_at: string | null; unread: number; is_group?: boolean; chat_jid?: string | null };
-type Msg = { id: string; direction: string; body: string | null; status: string | null; sender_name: string | null; wa_timestamp: string | null; created_at: string; media_url?: string | null; media_mime?: string | null };
+type Msg = { id: string; direction: string; body: string | null; status: string | null; sender_name: string | null; wa_timestamp: string | null; created_at: string; media_url?: string | null; media_mime?: string | null; wa_message_id?: string | null; sent_by_user_id?: string | null; edited_at?: string | null; deleted_at?: string | null };
 
 const api = (body: unknown) => fetch("/api/whatsapp/instance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json());
 
-export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedded?: boolean; apriNumero?: string | null }) {
+// CHT-02: finestre imposte da WhatsApp (stesse guardie server in
+// /api/whatsapp/message): modifica entro 14 min (buffer sotto i 15 dell'app),
+// elimina-per-tutti entro 48h. Fuori finestra i bottoni non compaiono.
+const FIN_MODIFICA_WA_MS = 14 * 60 * 1000;
+const FIN_CANCELLA_WA_MS = 48 * 60 * 60 * 1000;
+
+export function WhatsAppInbox({ embedded = false, apriNumero = null, testoIniziale = null }: { embedded?: boolean; apriNumero?: string | null; testoIniziale?: string | null }) {
     const { user } = useAuth();
     const [instances, setInstances] = useState<Instance[]>([]);
     const [selInst, setSelInst] = useState<string | null>(null);
@@ -27,6 +33,8 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
     const [msgs, setMsgs] = useState<Msg[]>([]);
     const [text, setText] = useState("");
     const [sending, setSending] = useState(false);
+    // CHT-02: messaggio in MODIFICA nel composer (pattern della chat interna)
+    const [editMsg, setEditMsg] = useState<Msg | null>(null);
     const [linkModal, setLinkModal] = useState(false);
     const [relinkName, setRelinkName] = useState<string | null>(null);   // ri-scansione di un numero disconnesso
     const [syncing, setSyncing] = useState(false);
@@ -158,6 +166,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
 
     // messaggi della conversazione (polling)
     useEffect(() => {
+        setEditMsg(null);   // cambiando chat una modifica a meta' si annulla
         if (!selConv) { setMsgs([]); return; }
         let alive = true;
         // backfill dello storico recente la prima volta che si apre la conversazione
@@ -183,6 +192,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
     //    per coda di cifre, come il ponte Aircall); se non esiste la CREA
     //    sull'istanza selezionata (o la prima visibile).
     const _apriFatto = useRef<string | null>(null);
+    const _testoFatto = useRef(false);   // CAL-01: prefill applicato una volta sola
     useEffect(() => {
         const dig = String(apriNumero || "").replace(/\D/g, "");
         if (!dig || dig.length < 6 || _apriFatto.current === dig) return;
@@ -207,6 +217,9 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
             }
             setSelInst(conv.instance_id);
             setSelConv(conv);
+            // CAL-01: ?testo= del deep-link precompila il composer (UNA volta
+            // sola: l'operatore rilegge, ritocca e conferma con l'invio)
+            if (testoIniziale && !_testoFatto.current) { _testoFatto.current = true; setText(testoIniziale); }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [apriNumero, visibleInstances.map(i => i.id).join("|")]);
@@ -214,16 +227,48 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
     const invia = async () => {
         if (!selConv || !text.trim() || sending) return;
         setSending(true);
+        // CHT-02: composer in modalita' MODIFICA -> aggiorna il messaggio, non ne invia uno nuovo
+        if (editMsg) {
+            const res = await fetch("/api/whatsapp/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "edit", messageId: editMsg.id, userId: user?.id, text: text.trim() }) }).then(r => r.json());
+            if (res?.error) alert("Modifica non riuscita: " + res.error);
+            else {
+                // aggiornamento ottimista: il polling (2,5s) poi conferma dal DB
+                const nuovo = text.trim();
+                setMsgs(p => p.map(m => m.id === editMsg.id ? { ...m, body: nuovo, edited_at: new Date().toISOString() } : m));
+                setEditMsg(null); setText("");
+            }
+            setSending(false);
+            return;
+        }
         const res = await fetch("/api/whatsapp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: selConv.id, text: text.trim(), userId: user?.id }) }).then(r => r.json());
         if (res?.error) alert("Invio non riuscito: " + res.error);
         else setText("");
         setSending(false);
     };
 
+    // CHT-02: chi puo' agire sulla bolla — l'autore o la vista completa (waScope
+    // "all", solo Luca); per i messaggi senza autore (mandati dal telefono o
+    // dalle automazioni) decide il proprietario del numero. Stesse regole server.
+    const puoAgire = (m: Msg) => {
+        if (waScope === "all") return true;
+        if (m.sent_by_user_id) return m.sent_by_user_id === user?.id;
+        const inst = instances.find(i => i.id === selConv?.instance_id);
+        return !!inst?.owner_user_id && inst.owner_user_id === user?.id;
+    };
+
+    // CHT-02: elimina PER TUTTI, come su WhatsApp (nessun "rimuovi solo dal
+    // CRM" — deciso da Luca). La bolla resta come segnaposto "Messaggio eliminato".
+    const eliminaMessaggio = async (m: Msg) => {
+        if (!window.confirm("Eliminare questo messaggio per tutti?\nSparira' anche dal telefono del cliente (entro la finestra WhatsApp, best-effort come sull'app).")) return;
+        const res = await fetch("/api/whatsapp/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", messageId: m.id, userId: user?.id }) }).then(r => r.json());
+        if (res?.error) alert("Eliminazione non riuscita: " + res.error);
+        else setMsgs(p => p.map(x => x.id === m.id ? { ...x, deleted_at: new Date().toISOString() } : x));
+    };
+
     // invia un allegato: carica nel bucket pubblico, poi Evolution lo spedisce
     // dall'URL. Il testo eventuale diventa la didascalia.
     const inviaFile = async (f: File) => {
-        if (!selConv || sending) return;
+        if (!selConv || sending || editMsg) return;   // niente allegati mentre si modifica
         setSending(true);
         try {
             const safe = f.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
@@ -419,12 +464,41 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                                 <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-2">
                                     {msgs.map(m => {
                                         const mine = m.direction === "out";
+                                        // CHT-02: matita/cestino sulla bolla in uscita — solo entro le
+                                        // finestre WhatsApp e se il messaggio e' indirizzabile
+                                        // (wa_message_id presente, non failed, non gia' eliminato)
+                                        const eta = Date.now() - new Date(m.wa_timestamp || m.created_at).getTime();
+                                        const agibile = mine && !m.deleted_at && !!m.wa_message_id && m.status !== "failed" && puoAgire(m);
+                                        const puoModificare = agibile && !m.media_url && !!m.body && eta < FIN_MODIFICA_WA_MS;
+                                        const puoCancellare = agibile && eta < FIN_CANCELLA_WA_MS;
                                         return (
-                                            <div key={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
+                                            <div key={m.id} className={cn("group flex items-center gap-1", mine ? "justify-end" : "justify-start")}>
+                                                {mine && (puoModificare || puoCancellare) && (
+                                                    <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+                                                        {puoModificare && (
+                                                            <button type="button" title="Modifica (entro 14 minuti)" onClick={() => { setEditMsg(m); setText(m.body || ""); }}
+                                                                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-white/10">
+                                                                <Pencil className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        {puoCancellare && (
+                                                            <button type="button" title="Elimina per tutti (entro 48 ore)" onClick={() => eliminaMessaggio(m)}
+                                                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-300 hover:bg-white/10">
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                    </span>
+                                                )}
                                                 <div className={cn("max-w-[75%] rounded-2xl px-3.5 py-2 text-sm", mine ? "bg-emerald-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5")}>
                                                     {selConv.is_group && !mine && m.sender_name && (
                                                         <p className="text-[11px] font-bold text-sky-300 mb-0.5">{m.sender_name}</p>
                                                     )}
+                                                    {/* CHT-02: eliminato -> solo segnaposto in corsivo, mai body/media */}
+                                                    {m.deleted_at ? (
+                                                        <p className={cn("italic flex items-center gap-1.5", mine ? "text-emerald-100/80" : "text-slate-400")}>
+                                                            <Ban className="w-3.5 h-3.5 shrink-0" /> Messaggio eliminato
+                                                        </p>
+                                                    ) : (<>
                                                     {m.media_url && (
                                                         m.media_mime?.startsWith("image/") ? (
                                                             <button type="button" onClick={() => window.open(m.media_url as string, "_blank")} className="block mb-1">
@@ -443,18 +517,29 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                                                     {m.body && !(m.media_url && /^\[(Immagine|Documento|Audio|Video|Sticker)\]$/.test(m.body)) && (
                                                         <p className="whitespace-pre-wrap break-words">{m.body}</p>
                                                     )}
+                                                    </>)}
                                                     <p className={cn("text-[10px] mt-0.5 flex items-center gap-1 justify-end", mine ? "text-emerald-100/70" : "text-slate-500")}>
+                                                        {m.edited_at && !m.deleted_at && <span className="italic opacity-70">(modificato)</span>}
                                                         {fmtOra(m.wa_timestamp || m.created_at)}
-                                                        {mine && (m.status === "read" ? <CheckCheck className="w-3.5 h-3.5 text-sky-200" /> : m.status === "delivered" ? <CheckCheck className="w-3.5 h-3.5" /> : m.status === "failed" ? <span className="text-rose-200">✕</span> : <Check className="w-3.5 h-3.5" />)}
+                                                        {mine && !m.deleted_at && (m.status === "read" ? <CheckCheck className="w-3.5 h-3.5 text-sky-200" /> : m.status === "delivered" ? <CheckCheck className="w-3.5 h-3.5" /> : m.status === "failed" ? <span className="text-rose-200">✕</span> : <Check className="w-3.5 h-3.5" />)}
                                                     </p>
                                                 </div>
                                             </div>
                                         );
                                     })}
                                 </div>
-                                <div className="p-3 border-t border-white/10 flex items-center gap-2">
+                                {/* CHT-02: barra "stai modificando" sopra il composer (pattern chat interna) */}
+                                {editMsg && (
+                                    <div className="px-3 pt-2 flex items-center gap-2 text-xs text-amber-300 border-t border-white/10">
+                                        <Pencil className="w-3.5 h-3.5 shrink-0" />
+                                        <span className="flex-1 truncate">Stai modificando: {editMsg.body}</span>
+                                        <button onClick={() => { setEditMsg(null); setText(""); }} title="Annulla la modifica"
+                                            className="p-1 rounded-md hover:bg-white/10"><X className="w-3.5 h-3.5" /></button>
+                                    </div>
+                                )}
+                                <div className={cn("p-3 flex items-center gap-2", !editMsg && "border-t border-white/10")}>
                                     <input ref={fileRef} type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) inviaFile(f); e.target.value = ""; }} />
-                                    <button onClick={() => fileRef.current?.click()} disabled={sending} title="Allega un file"
+                                    <button onClick={() => fileRef.current?.click()} disabled={sending || !!editMsg} title="Allega un file"
                                         className="p-2.5 rounded-xl text-slate-400 hover:text-emerald-300 hover:bg-white/5 disabled:opacity-40">
                                         <Paperclip className="w-5 h-5" />
                                     </button>
