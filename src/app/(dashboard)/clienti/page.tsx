@@ -221,7 +221,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // Voce della timeline: "semplice" (documenti/disdette), con `contratti`
     // (giorno+negozio espandibile inline) o con `apreStorico` (chiamate → click
     // sullo storico chiamate della scheda).
-    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean };
+    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number };
+    const isMarg = (b?: string | null) => /marginal|extra/i.test(b || "");
 
     // CONTRATTI raggruppati per giorno+negozio: "è andato in negozio e ha
     // attivato N contratti" — il dettaglio (brand, tipologia, venditore) esplode
@@ -231,16 +232,32 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         const k = `${c.data}|${(c.negozio || "").trim()}`;
         gruppiContratti.set(k, [...(gruppiContratti.get(k) || []), c]);
     });
+    // DOCUMENTI dello stesso giorno di una visita: fanno parte dell'esperienza
+    // in negozio (Luca 04/08) — si CONTANO dentro la voce della visita invece
+    // di comparire come evento a sé; restano voci autonome solo i caricamenti
+    // nei giorni SENZA vendite (es. integrazione documenti a distanza).
+    const giorniVisita = new Set([...gruppiContratti.keys()].map((k) => k.split("|")[0]));
+    const docsPerGiorno = new Map<string, number>();
+    docs.forEach((d) => {
+        const g = String(d.created_at || "").slice(0, 10);
+        if (g && giorniVisita.has(g)) docsPerGiorno.set(g, (docsPerGiorno.get(g) || 0) + 1);
+    });
+    const giorniDocAssegnati = new Set<string>();
     const vociContratti: VoceTimeline[] = [...gruppiContratti.entries()].map(([k, cs]) => {
+        const giorno = k.split("|")[0];
         const negozio = (cs[0].negozio || "").trim();
         const brands = [...new Set(cs.map((c) => c.brand).filter(Boolean))];
         // Presentazione voluta da Luca (04/08): NOME DEL NEGOZIO in evidenza,
         // sotto in piccolo il numero di contratti; il resto solo espandendo.
+        // Solo marginalità = sacchetto 💰 come in Ricerca Vendite.
+        const soloMarg = cs.every((c) => isMarg(c.brand));
+        let docsN = 0;
+        if (!giorniDocAssegnati.has(giorno)) { docsN = docsPerGiorno.get(giorno) || 0; if (docsN) giorniDocAssegnati.add(giorno); }
         return {
-            key: "g" + k, when: cs[0].data, color: "var(--tf-38bdf8)", icon: "🏬",
+            key: "g" + k, when: cs[0].data, color: soloMarg ? "var(--tf-f59e0b)" : "var(--tf-38bdf8)", icon: soloMarg ? "💰" : "🏬",
             title: negozio || "In negozio",
-            desc: `${cs.length === 1 ? "1 contratto attivato" : `${cs.length} contratti attivati`}${brands.length ? " · " + brands.join(" · ") : ""}`,
-            stato: null, contratti: cs,
+            desc: `${cs.length === 1 ? "1 contratto attivato" : `${cs.length} contratti attivati`}${brands.length ? " · " + brands.join(" · ") : ""}${docsN ? ` · 📎 ${docsN}` : ""}`,
+            stato: null, contratti: cs, docsN,
         };
     });
 
@@ -271,7 +288,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const timeline: VoceTimeline[] = [
         ...vociContratti,
         ...vociChiamate,
-        ...docs.filter((d) => d.created_at).map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "var(--tf-f59e0b)", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
+        // solo i caricamenti nei giorni SENZA visita: gli altri vivono dentro
+        // la voce del negozio (esperienza unica del cliente, Luca 04/08)
+        ...docs.filter((d) => d.created_at && !giorniVisita.has(String(d.created_at).slice(0, 10)))
+            .map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "var(--tf-f59e0b)", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
         ...eventiDisdette.filter((e) => e.when),
     ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
 
@@ -457,7 +477,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                                 className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 text-left transition-all group">
                                                                 {logo
                                                                     ? <img src={logo} alt={c.brand} className="w-5 h-5 object-contain shrink-0" />
-                                                                    : <span className="w-5 h-5 rounded bg-white/10 border border-white/10 flex items-center justify-center text-[9px] font-bold text-slate-300 shrink-0">{(c.brand || "?").charAt(0).toUpperCase()}</span>}
+                                                                    : isMarg(c.brand)
+                                                                        ? <span className="w-5 h-5 flex items-center justify-center text-sm shrink-0">💰</span>
+                                                                        : <span className="w-5 h-5 rounded bg-white/10 border border-white/10 flex items-center justify-center text-[9px] font-bold text-slate-300 shrink-0">{(c.brand || "?").charAt(0).toUpperCase()}</span>}
                                                                 <span className="flex-1 min-w-0">
                                                                     <span className="block text-xs font-semibold text-slate-100 truncate">{c.brand} · {c.categoria}</span>
                                                                     <span className="block text-[10px] text-slate-500 truncate">{[c.prodotto || c.offerta, c.venditore].filter(Boolean).join(" — ") || "—"}</span>
@@ -467,6 +489,17 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                             </button>
                                                         );
                                                     })}
+                                                    {/* documenti caricati durante la visita: parte della stessa
+                                                        esperienza (Luca 04/08) — click = tab Documenti */}
+                                                    {(ev.docsN || 0) > 0 && (
+                                                        <button onClick={() => vedeAllegati && setTab("documenti")} disabled={!vedeAllegati}
+                                                            title={vedeAllegati ? "Apri i documenti del cliente" : undefined}
+                                                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5 text-left transition-all ${vedeAllegati ? "hover:bg-white/[0.05] hover:border-amber-500/30" : "cursor-default"}`}>
+                                                            <span className="w-5 h-5 flex items-center justify-center text-sm shrink-0">📎</span>
+                                                            <span className="flex-1 text-xs font-semibold text-slate-300">{ev.docsN === 1 ? "1 documento caricato" : `${ev.docsN} documenti caricati`} durante la visita</span>
+                                                            {vedeAllegati && <ExternalLink className="w-3 h-3 text-slate-600 shrink-0" />}
+                                                        </button>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
