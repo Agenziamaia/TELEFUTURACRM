@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { LockKeyhole, Wifi, Radio, Tv, Zap, Leaf, ArrowLeft, RotateCcw, Eye, EyeOff, Copy, Key, ShieldCheck, Info, Loader2 } from "lucide-react";
+import { LockKeyhole, Wifi, Radio, Tv, Zap, Leaf, ArrowLeft, RotateCcw, Eye, EyeOff, Copy, Key, ShieldCheck, Info, Loader2, History } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { routeBases, effectiveAllowed, groupKey, groupByLabel } from "@/lib/nav";
-import { capAllowed, CAP_PASSWORD, CAP_PASSWORD_MODIFICA } from "@/lib/capabilities";
+import { capAllowed, CAP_PASSWORD, CAP_PASSWORD_MODIFICA, CAP_PASSWORD_STORICO } from "@/lib/capabilities";
 import { useStoreRecords } from "@/lib/org";
 import { supabase } from "@/lib/supabaseClient";
 import { Plus, Pencil, Trash2, Save } from "lucide-react";
@@ -112,6 +112,10 @@ export default function PasswordV2Page() {
     // decide per ruolo dalla capability "modifica" — default store manager in
     // su; gli altri con accesso restano in sola consultazione.
     const canManage = !!user && capAllowed(user.role, CAP_PASSWORD.section, CAP_PASSWORD_MODIFICA, perms);
+    // SEC-02 (Luca 04/08): lo STORICO MODIFICHE nell'ultimo step e' gated
+    // dalla capability "storico" — default store manager in su, amministrabile
+    // dalla stessa rotellina.
+    const canSeeHistory = !!user && capAllowed(user.role, CAP_PASSWORD.section, CAP_PASSWORD_STORICO, perms);
 
     // Categorie dal DB (password_categories), gestibili quando canManage.
     const [dbCats, setDbCats] = useState<{ id: number; brand_id: string; cat_key: string; name: string; sort: number }[]>([]);
@@ -158,35 +162,104 @@ export default function PasswordV2Page() {
         if (!credForm.accessType.trim() || !credForm.username.trim() || (credForm.id === null && !credForm.password)) return;
         setSavingCred(true);
         try {
+            // SEC-02: userId nel body per lo storico (pattern email/send).
             if (credForm.id === null) {
                 await fetch(`/api/passwords/credentials`, {
                     method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ brandId: brand, categoryId: category, storeId: store, accessType: credForm.accessType, username: credForm.username, password: credForm.password }),
+                    body: JSON.stringify({ brandId: brand, categoryId: category, storeId: store, accessType: credForm.accessType, username: credForm.username, password: credForm.password, userId: user?.id }),
                 });
             } else {
                 await fetch(`/api/passwords/credentials/${credForm.id}`, {
                     method: "PATCH", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ accessType: credForm.accessType, username: credForm.username, password: credForm.password }),
+                    body: JSON.stringify({ accessType: credForm.accessType, username: credForm.username, password: credForm.password, userId: user?.id }),
                 });
             }
             setCredForm(null);
             fetchCredentials();
+            if (canSeeHistory) fetchHistory();
         } finally { setSavingCred(false); }
     };
     const deleteCred = async (id: number) => {
         if (!window.confirm("Eliminare questa credenziale?")) return;
-        await fetch(`/api/passwords/credentials/${id}`, { method: "DELETE" });
+        // SEC-02: userId nel body per lo storico (pattern email/send).
+        await fetch(`/api/passwords/credentials/${id}`, {
+            method: "DELETE", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: user?.id }),
+        });
         fetchCredentials();
+        if (canSeeHistory) fetchHistory();
     };
+
+    // ── SEC-02: storico modifiche della combinazione brand+categoria ────────
+    // Righe di password_access_log con action != reveal; il filtro passa da
+    // details (brand/category) così restano visibili anche le credenziali
+    // eliminate. Lettura via supabase client come già per password_categories.
+    type AuditRow = {
+        id: number; credential_id: number | null; user_id: string | null;
+        action: string; accessed_at: string;
+        details: { brand?: string; category?: string; store?: string; access_type?: string; username?: string; modifiche?: Record<string, { da?: string; a?: string } | string> } | null;
+    };
+    const [history, setHistory] = useState<AuditRow[]>([]);
+    const [historyNames, setHistoryNames] = useState<Record<string, string>>({});
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const fetchHistory = async () => {
+        if (!brand || !category) return;
+        setHistoryLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from("password_access_log")
+                .select("id, credential_id, user_id, action, accessed_at, details")
+                .neq("action", "reveal")
+                .eq("details->>brand", brand)
+                .eq("details->>category", category)
+                .order("accessed_at", { ascending: false })
+                .limit(50);
+            // Colonna details non ancora migrata o errore: pannello vuoto, mai un crash.
+            if (error || !data) { setHistory([]); return; }
+            setHistory(data as AuditRow[]);
+            // Nomi degli autori: niente FK log→app_users, quindi seconda query mirata.
+            const ids = [...new Set((data as AuditRow[]).map((r) => r.user_id).filter((v): v is string => !!v))];
+            if (ids.length) {
+                const { data: users } = await supabase.from("app_users").select("id, full_name").in("id", ids);
+                if (users) setHistoryNames(Object.fromEntries((users as { id: string; full_name: string }[]).map((u) => [u.id, u.full_name])));
+            }
+        } finally { setHistoryLoading(false); }
+    };
+    // Descrizione leggibile di una riga di storico (mai valori di password).
+    const AUDIT_LABELS: Record<string, string> = { access_type: "tipo di accesso", username: "username", category: "categoria", store: "negozio" };
+    const describeAudit = (r: AuditRow): string => {
+        const d = r.details || {};
+        const cred = d.username ? `${d.username}${d.access_type ? ` (${d.access_type})` : ""}` : `credenziale #${r.credential_id ?? "?"}`;
+        if (r.action === "create") return `ha creato la credenziale ${cred}`;
+        if (r.action === "delete") return `ha eliminato la credenziale ${cred}`;
+        if (r.action === "update") {
+            const m = d.modifiche || {};
+            const parts: string[] = [];
+            if (m.password) parts.push("password cambiata");
+            for (const k of ["access_type", "username", "category", "store"]) {
+                const diff = m[k];
+                if (diff && typeof diff === "object") {
+                    const nome = (v?: string) => k === "category" ? (catsFor(brand).find((c) => c.id === v)?.name || v) : k === "store" ? (STORES.find((s) => s.id === v)?.name || v) : v;
+                    parts.push(`${AUDIT_LABELS[k]} "${nome(diff.da)}" → "${nome(diff.a)}"`);
+                }
+            }
+            return `ha modificato ${cred}: ${parts.join(", ") || "aggiornamento"}`;
+        }
+        return `${r.action} su ${cred}`;
+    };
+    const fmtAuditDate = (iso: string) =>
+        new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
     useEffect(() => {
         if (brand && category && store) {
             fetchCredentials();
+            if (canSeeHistory) fetchHistory();
         } else {
             setCredentials([]);
             setRevealedIds({});
+            setHistory([]);
         }
-    }, [brand, category, store]);
+    }, [brand, category, store, canSeeHistory]);
 
     const fetchCredentials = async () => {
         setLoading(true);
@@ -215,7 +288,11 @@ export default function PasswordV2Page() {
 
         setRevealingId(id);
         try {
-            const res = await fetch(`/api/passwords/credentials/${id}/reveal`, { method: "POST" });
+            // SEC-02: userId nel body — il log reveal ora registra CHI ha rivelato.
+            const res = await fetch(`/api/passwords/credentials/${id}/reveal`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId: user?.id }),
+            });
             const data = await res.json();
             if (data.password) {
                 setRevealedIds(prev => ({ ...prev, [id]: data.password }));
@@ -612,6 +689,49 @@ export default function PasswordV2Page() {
                                 </tbody>
                             </table>
                         </div>
+                        {/* SEC-02: Storico modifiche — capability "storico" (rotellina Permessi, default store manager in su) */}
+                        {canSeeHistory && (
+                            <div className="glass-card p-6 space-y-4">
+                                <div className="flex items-center justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-2">
+                                            <History className="w-3.5 h-3.5" /> Storico modifiche
+                                        </p>
+                                        <p className="text-sm text-slate-300">
+                                            Creazioni, modifiche ed eliminazioni per {currentBrand?.name} • {currentCategory?.name} — della password si registra solo <span className="font-semibold text-slate-100">che</span> è cambiata, mai il valore.
+                                        </p>
+                                    </div>
+                                    <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold text-slate-300">
+                                        {history.length} eventi
+                                    </span>
+                                </div>
+                                {historyLoading ? (
+                                    <div className="flex items-center gap-2 text-slate-400 text-xs py-3">
+                                        <Loader2 className="w-4 h-4 animate-spin" /> Caricamento storico...
+                                    </div>
+                                ) : history.length === 0 ? (
+                                    <p className="text-slate-500 text-sm py-1">Nessuna modifica registrata per questa combinazione.</p>
+                                ) : (
+                                    <ul className="divide-y divide-white/5">
+                                        {history.map((r) => (
+                                            <li key={r.id} className="py-2.5 flex items-start gap-3">
+                                                <span className={cn(
+                                                    "mt-1.5 w-2 h-2 rounded-full flex-shrink-0",
+                                                    r.action === "create" ? "bg-emerald-400" : r.action === "delete" ? "bg-rose-400" : "bg-indigo-400"
+                                                )} />
+                                                <div className="min-w-0">
+                                                    <p className="text-sm text-slate-200">
+                                                        <span className="font-semibold text-white">{(r.user_id && historyNames[r.user_id]) || "Utente non registrato"}</span>{" "}
+                                                        {describeAudit(r)}
+                                                    </p>
+                                                    <p className="text-[11px] text-slate-500 mt-0.5">{fmtAuditDate(r.accessed_at)}</p>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

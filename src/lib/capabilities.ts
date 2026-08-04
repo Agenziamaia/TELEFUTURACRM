@@ -294,11 +294,20 @@ export const CAP_PASSWORD_MODIFICA: CapDef = {
     desc: "Può creare, modificare ed eliminare credenziali e categorie. Spenta: la sezione resta in sola consultazione. Default (Luca 03/08): dallo Store Manager in su.",
     default: (r) => ["store_manager", "direttore_commerciale", "amministrativo", "direttore_generale", "admin", "dev"].includes(r),
 };
+// SEC-02 (Luca 04/08): lo storico modifiche nell'ultimo passo della sezione.
+// Della password si registra SOLO che è cambiata (mai il valore, nemmeno
+// mascherato); i campi non segreti mostrano vecchio → nuovo.
+export const CAP_PASSWORD_STORICO: CapDef = {
+    id: "storico",
+    label: "Vede lo storico modifiche",
+    desc: "Nell'ultimo passo (dopo brand e categoria) vede chi ha creato, modificato o eliminato credenziali e quando. Della password appare solo che è cambiata, mai il valore. Default (Luca 04/08): dallo Store Manager in su.",
+    default: (r) => ["store_manager", "direttore_commerciale", "amministrativo", "direttore_generale", "admin", "dev"].includes(r),
+};
 export const CAP_PASSWORD: CapGroupFlags = {
     mode: "flags",
     section: "/password-v2",
     sectionLabel: "Password",
-    caps: [CAP_PASSWORD_MODIFICA],
+    caps: [CAP_PASSWORD_MODIFICA, CAP_PASSWORD_STORICO],
 };
 
 /** Catalogo completo: la pagina Permessi lo rende amministrabile da solo.

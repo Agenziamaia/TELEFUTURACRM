@@ -3,6 +3,20 @@ import { supabase } from "@/lib/supabaseClient";
 
 export const dynamic = "force-dynamic";
 
+// SEC-02: identita' dell'agente dichiarata dal client nel body (stesso pattern
+// di email/send: sent_by_user_id dal body). Attendibile solo quanto il client,
+// finche' non esiste una sessione server (SEC-01b); uuid valido o niente.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const asUserId = (v: unknown): string | null => (typeof v === "string" && UUID_RE.test(v) ? v : null);
+
+// SEC-02: riga di audit su password_access_log. Se la colonna `details` non
+// esiste ancora (migrazione 20260804130000 non applicata) si ritenta senza,
+// per non perdere il log; l'audit non deve MAI far fallire l'operazione.
+async function logAudit(credentialId: number | null, userId: string | null, action: string, details: Record<string, unknown>) {
+    const { error } = await supabase.from("password_access_log").insert({ credential_id: credentialId, user_id: userId, action, details });
+    if (error) await supabase.from("password_access_log").insert({ credential_id: credentialId, user_id: userId, action });
+}
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
@@ -48,6 +62,7 @@ export async function POST(request: Request) {
         if (!brandId || !categoryId || !storeId || !accessType || !username || password == null || password === "") {
             return NextResponse.json({ error: "Campi obbligatori mancanti" }, { status: 400 });
         }
+        const userId = asUserId(body?.userId);
         const { data, error } = await supabase
             .from("password_credentials")
             .insert({
@@ -57,10 +72,19 @@ export async function POST(request: Request) {
                 access_type: String(accessType),
                 username: String(username),
                 password_encrypted: String(password),
+                created_by: userId, // colonna verificata a DB il 04/08
             })
             .select("id")
             .single();
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        // SEC-02: storico — solo campi NON segreti, mai il valore della password.
+        await logAudit(data.id, userId, "create", {
+            brand: String(brandId),
+            category: String(categoryId),
+            store: String(storeId),
+            access_type: String(accessType),
+            username: String(username),
+        });
         return NextResponse.json({ id: data.id });
     } catch (err) {
         const message = err instanceof Error ? err.message : "Internal Server Error";
