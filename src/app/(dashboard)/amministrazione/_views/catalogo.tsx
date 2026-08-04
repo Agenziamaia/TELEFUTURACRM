@@ -418,13 +418,24 @@ export function CatalogoView() {
                     <div className="flex items-center gap-1.5 flex-wrap mb-3">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Opzioni:</span>
                         {opzOf(offSel).map((k) => (
-                            <button key={k.id} disabled={inEdit}
-                                onClick={() => setOpzSel((p) => { const n = new Set(p); if (n.has(k.nome)) n.delete(k.nome); else n.add(k.nome); return n; })}
-                                className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors disabled:opacity-50",
+                            <button key={k.id}
+                                title={inEdit ? "Sei in modifica: cliccando chiudo l'editor (senza salvare) e cambio l'opzione" : undefined}
+                                onClick={() => {
+                                    // Luca 05/08: i chip erano DISABILITATI durante la
+                                    // modifica e sembrava che "non si facessero selezionare"
+                                    // — ora il click chiede conferma, chiude l'editor e
+                                    // commuta l'opzione, senza vicoli ciechi
+                                    if (inEdit && !window.confirm("Stai modificando i campi: chiudo l'editor SENZA salvare e cambio l'opzione?")) return;
+                                    if (inEdit) setCampiOff(null);
+                                    setOpzSel((p) => { const n = new Set(p); if (n.has(k.nome)) n.delete(k.nome); else n.add(k.nome); return n; });
+                                }}
+                                className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors",
+                                    inEdit && "opacity-60",
                                     opzSel.has(k.nome) ? "border-violet-400/70 bg-violet-500/20 text-violet-100" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25")}>
                                 {opzSel.has(k.nome) ? "🧩 " : ""}{k.nome}
                             </button>
                         ))}
+                        {inEdit && <span className="text-[10px] text-slate-500">✏️ in modifica: un click su un'opzione chiude l&apos;editor e la commuta</span>}
                         {opzSel.size > 1 && <span className="text-[10px] text-amber-400">con più opzioni spuntate la vista è cumulativa: per PERSONALIZZARE i campi di un'opzione lasciane spuntata una sola</span>}
                     </div>
                 )}

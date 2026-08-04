@@ -186,8 +186,9 @@ const SEZIONI: Sezione[] = [
     { id: "orari", label: "Orari & Chiusure", icon: Clock3, desc: "Orari di apertura dei punti vendita e chiusure straordinarie (base della sezione Turni)." },
     { id: "condivisi", label: "Costi condivisi", icon: Building2, gruppo: "costi", desc: "Catalogo per categorie, con le Risorse prese dall'anagrafica." },
     { id: "altri", label: "Altri costi", icon: Tag, gruppo: "costi", desc: "Costi solo admin: non ripartiti e non visibili ai negozi." },
-    { id: "marginalita", label: "Marginalità", icon: Package, desc: "Catalogo prodotti e servizi: IVA, costi e margini, valore visibile per le gare, legami coi brand." },
-    { id: "catalogo", label: "Catalogo", icon: Layers, desc: "Catalogo operatori a 6 livelli: brand, tipo cliente, categorie, prodotti, offerte e opzioni — la base del Registra Vendita." },
+    // "marginalita" tolta dall'elenco (Luca 05/08): vive nel Catalogo come
+    // pseudo-brand 💰; la sez resta risolvibile per i vecchi deep-link.
+    { id: "catalogo", label: "Catalogo", icon: Layers, desc: "Catalogo operatori a 6 livelli: brand, tipo cliente, categorie, prodotti, offerte e opzioni (+ Marginalità 💰) — la base del Registra Vendita." },
     { id: "callcenter", label: "Call Center", icon: Phone, desc: "Opzioni della sezione Caller: esiti/stati, provenienze, tipologie e obiettivi — aggiungi, rinomina, riordina, spegni." },
     { id: "ordinemerce", label: "Ordine Merce", icon: Package, desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
     { id: "calendario", label: "Calendario", icon: CalendarClock, desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
@@ -543,6 +544,8 @@ function AmministrazioneInner() {
             ) : sez === "orari" ? (
                 <OrariChiusureView />
             ) : sez === "marginalita" ? (
+                // la voce di menù è stata tolta (vive nel Catalogo, Luca 05/08):
+                // il vecchio deep-link resta servito per i preferiti salvati
                 <MarginalitaView />
             ) : sez === "catalogo" ? (
                 <CatalogoView />

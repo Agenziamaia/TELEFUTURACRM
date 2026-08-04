@@ -4581,7 +4581,7 @@ function CRM() {
     // TNP dal listino (Luca 05/08): la voce auto entrava nel carrello VUOTA
     // ("Telefono TNP (listino)" e basta) — ora porta modello, prezzo di
     // listino e margine %, e il prezzo popola il valore del carrello.
-    const _tnpDaListino=(det)=>{
+    const _tnpDaListino=(det)=>{try{
       const mod=String(det["Modello Terminale"]||"").trim()
         ||String(det["TNP CB Dispositivi"]||"").replace(/^TNP[^-]*-\s*/i,"").replace(/\s*\([^)]*\)\s*$/,"").trim();
       if(!mod||/^altro/i.test(mod))return null;
@@ -4594,7 +4594,7 @@ function CRM() {
       const pct=_senzaMargine()?0:Number(r.margine_pct??4);
       const mg=pz*pct/100;
       return {model:mod,price:pz,importo:pz,margin:mg,totalMargin:mg,priceLocked:true,priceRequired:false};
-    };
+    }catch(e){console.error("[TNP-LISTINO]",e);return null;}};   // mai far sparire la voce per un dato storto
     for(const it of (items||[])){
       const macro=String(it.macro||"").toUpperCase();const sub=String(it.sub||"");
       if(/sostituzione\s*sim/i.test(sub)){if(AUTO_SOST[brandId])push(AUTO_SOST[brandId]);}

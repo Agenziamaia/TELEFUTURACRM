@@ -183,7 +183,7 @@ export const NAVIGATION: NavEntry[] = [
             // Orari & Chiusure: la sezione esisteva in pagina ma NON qui — e il
             // menu a tendina nasce da QUESTO file (errore già fatto, Luca 03/08)
             { name: "Orari & Chiusure", sez: "orari", icon: Clock3, roles: ["admin", "dev"] },
-            { name: "Marginalità", sez: "marginalita", icon: Package, roles: ["admin", "dev"] },
+            // "Marginalità" vive DENTRO Catalogo come pseudo-brand 💰 (Luca 05/08)
             { name: "Catalogo", sez: "catalogo", icon: Layers, roles: ["admin", "dev"] },
             { name: "Call Center", sez: "callcenter", icon: Phone, roles: ["admin", "dev"] },
             // articoli ordinabili di Ordine Merce (Luca 01/08): amministrativo in su
