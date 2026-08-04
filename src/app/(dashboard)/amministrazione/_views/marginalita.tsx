@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, type ReactNode, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
 import { Loader2, Plus, Trash2, Package, Wrench, AlertTriangle, Link2 } from "lucide-react";
@@ -15,12 +16,63 @@ import { MoneyInput } from "./money";
 const BRAND_OPTIONS = ["WindTre", "Vodafone", "Fastweb", "Iliad", "Sky", "S4", "TIM", "Very Mobile", "Ho. Mobile", "Kena Mobile", "Dojo"];
 const VAT_OPTIONS = [22, 10, 4, 0];
 
+/* CAT-03: set curato di emoji per le icone di voci e categorie (le storiche di
+   Registra Vendita + generiche); in piu' campo libero per qualsiasi emoji. */
+const EMOJI_SET = [
+    "🎧", "📱", "📲", "📶", "🔄", "♻️", "📦", "💳", "🔲", "💾",
+    "⌚", "🔋", "🪫", "🔧", "🔨", "💿", "📀", "✂️", "📞", "☎️",
+    "🧭", "🧾", "🛡️", "🏷️", "🔖", "💰", "💶", "⚡", "🔌", "🖨️",
+    "🖥️", "💻", "🖱️", "🎮", "📡", "🔒", "🧰", "🎁", "🛒", "⭐",
+];
+
+/* Bottone-icona con popover (portal su body: i glass-panel hanno overflow-hidden
+   e taglierebbero un popover assoluto). value NULL = fallback. */
+function IconPicker({ value, onPick, fallback, title }: { value: string | null; onPick: (v: string | null) => void; fallback: ReactNode; title?: string }) {
+    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+    const [free, setFree] = useState("");
+    const toggle = (e: ReactMouseEvent<HTMLButtonElement>) => {
+        if (open) { setOpen(false); return; }
+        const r = e.currentTarget.getBoundingClientRect();
+        setPos({ top: Math.min(r.bottom + 6, Math.max(8, window.innerHeight - 260)), left: Math.max(8, Math.min(r.left, window.innerWidth - 310)) });
+        setFree("");
+        setOpen(true);
+    };
+    const pick = (v: string | null) => { onPick(v); setOpen(false); };
+    return (
+        <>
+            <button type="button" onClick={toggle} title={title} className="w-8 h-8 shrink-0 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center text-base leading-none">
+                {value ? <span>{value}</span> : fallback}
+            </button>
+            {open && pos && createPortal(
+                <>
+                    <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
+                    <div className="fixed z-[91] w-72 p-2.5 rounded-xl glass-panel shadow-2xl" style={{ top: pos.top, left: pos.left }}>
+                        <div className="grid grid-cols-8 gap-1">
+                            {EMOJI_SET.map((e) => (
+                                <button key={e} type="button" onClick={() => pick(e)} className={cn("h-8 rounded-md hover:bg-white/10 text-base leading-none", value === e && "bg-violet-500/25 ring-1 ring-violet-400/50")}>{e}</button>
+                            ))}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-2">
+                            <input value={free} onChange={(e) => setFree(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && free.trim()) pick(free.trim()); }} placeholder="emoji libera…" className="glass-input flex-1 py-1 text-sm" />
+                            <button type="button" onClick={() => { if (free.trim()) pick(free.trim()); }} className="primary-btn text-xs px-2.5 py-1.5">OK</button>
+                            <button type="button" onClick={() => pick(null)} title="Torna all'icona di default" className="text-[11px] text-slate-500 hover:text-rose-400 whitespace-nowrap px-1">nessuna</button>
+                        </div>
+                    </div>
+                </>,
+                document.body
+            )}
+        </>
+    );
+}
+
 interface MargCat {
     id: string;
     name: string;
     kind: string;
     sort_order: number;
     active: boolean;
+    icon: string | null;
 }
 interface MargItem {
     id: string;
@@ -36,6 +88,7 @@ interface MargItem {
     auto_link: boolean;
     active: boolean;
     sort_order: number;
+    icon: string | null;
 }
 
 export function MarginalitaView() {
@@ -50,7 +103,7 @@ export function MarginalitaView() {
     const load = useCallback(async () => {
         setLoading(true);
         const [c, i] = await Promise.all([
-            supabase.from("marg_categories").select("id,name,kind,sort_order,active").order("sort_order"),
+            supabase.from("marg_categories").select("*").order("sort_order"),
             supabase.from("marg_items").select("*").order("sort_order").order("created_at"),
         ]);
         if (c.error) {
@@ -81,6 +134,11 @@ export function MarginalitaView() {
             notify(`Categoria «${c.name}» eliminata (con le sue voci)`, "ok");
             load();
         }
+    };
+    // CAT-03: icona di categoria (in Registra Vendita appare nel tab, al reload)
+    const setCatIcon = async (c: MargCat, icon: string | null) => {
+        const { error } = await supabase.from("marg_categories").update({ icon }).eq("id", c.id);
+        if (!dbError("Icona categoria", error)) load();
     };
 
     const totali = useMemo(() => {
@@ -127,8 +185,9 @@ export function MarginalitaView() {
                 return (
                     <div key={c.id} className="glass-panel overflow-hidden">
                         <div className={cn("flex items-center gap-2.5 p-3.5", open && "border-b border-white/5")}>
+                            <IconPicker value={c.icon} onPick={(v) => setCatIcon(c, v)} title="Icona categoria — appare nel tab di Prodotti & Marginalità (Registra Vendita, al reload)"
+                                fallback={c.kind === "servizi" ? <Wrench className="w-4 h-4 text-teal-400" /> : <Package className="w-4 h-4 text-violet-400" />} />
                             <button onClick={() => setOpenCat(open ? null : c.id)} className="flex items-center gap-2.5 flex-1 min-w-0 text-left">
-                                {c.kind === "servizi" ? <Wrench className="w-4 h-4 text-teal-400 shrink-0" /> : <Package className="w-4 h-4 text-violet-400 shrink-0" />}
                                 <span className="text-[15px] font-bold text-white">{c.name}</span>
                                 <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-full border", c.kind === "servizi" ? "text-teal-300 border-teal-500/25 bg-teal-500/10" : "text-violet-300 border-violet-500/25 bg-violet-500/10")}>
                                     {c.kind === "servizi" ? "SERVIZI" : "PRODOTTI"}
@@ -170,6 +229,7 @@ function CatItems({ catId, items, onChange }: { catId: string; items: MargItem[]
         <div className="p-3.5 space-y-1.5">
             {/* intestazione colonne */}
             <div className="hidden xl:flex items-center gap-2 px-2 text-[9px] uppercase tracking-wider text-slate-600">
+                <span className="w-8 text-center">Icona</span>
                 <span className="flex-1">Voce</span>
                 <span className="w-32">Brand</span>
                 <span className="w-16 text-center">IVA</span>
@@ -203,7 +263,7 @@ function ItemRow({ r, onChange }: { r: MargItem; onChange: () => void }) {
             name: x.name, brand: x.brand, vat_rate: x.vat_rate, cost_mode: x.cost_mode,
             company_cost: x.company_cost, margin_percent: x.margin_percent,
             default_price: x.default_price, visible_value: x.visible_value,
-            auto_link: x.auto_link, active: x.active,
+            auto_link: x.auto_link, active: x.active, icon: x.icon,
         }).eq("id", r.id);
         if (!dbError("Salvataggio voce", error)) onChange();
     };
@@ -214,6 +274,9 @@ function ItemRow({ r, onChange }: { r: MargItem; onChange: () => void }) {
 
     return (
         <div className={cn("glass-card p-2 rounded-lg flex flex-wrap xl:flex-nowrap items-center gap-2", !f.active && "opacity-50")}>
+            <IconPicker value={f.icon} onPick={(v) => { setF({ ...f, icon: v }); save({ icon: v }); }}
+                title={f.brand ? "Icona voce — nei quadratoni di Registra Vendita prevale il logo del brand collegato" : "Icona voce (emoji nei quadratoni di Registra Vendita, al reload)"}
+                fallback={<span className="text-slate-600 text-[11px]">—</span>} />
             <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} onBlur={() => save()} className="glass-input flex-1 min-w-[130px] py-1 text-sm" />
             <select value={f.brand ?? ""} onChange={(e) => { const v = e.target.value || null; setF({ ...f, brand: v }); save({ brand: v }); }} className="glass-input w-32 py-1 text-[11px]" title="Brand collegato">
                 <option value="">— nessun brand —</option>

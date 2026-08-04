@@ -137,7 +137,7 @@ const caricaMargCatalogo = () => {
   _margCatAttesa = (async () => {
     try {
       const [rc, ri] = await Promise.all([
-        supabase.from("marg_categories").select("id,name,kind,sort_order,active").order("sort_order"),
+        supabase.from("marg_categories").select("*").order("sort_order"),
         supabase.from("marg_items").select("*").eq("active", true).order("sort_order"),
       ]);
       const cats = (rc.data || []).filter(c => c.active !== false);
@@ -159,7 +159,7 @@ const caricaMargCatalogo = () => {
             id: legacy.id || "mi_" + i.id,
             name: i.name,
             price: i.default_price != null ? Number(i.default_price) : (legacy.price !== undefined ? legacy.price : null),
-            icon: legacy.icon || (c.kind === "servizi" ? "🔧" : "📦"),
+            icon: i.icon || legacy.icon || (c.kind === "servizi" ? "🔧" : "📦"),
             brand: i.brand ? (_MARG_BRAND_MAP[_margNorm(i.brand)] || _margNorm(i.brand).toLowerCase()) : legacy.brand,
             linked: !!(i.auto_link || legacy.linked || i.brand),
             hasQty: legacy.hasQty, needsModel: legacy.needsModel, needsImei: legacy.needsImei,
@@ -168,7 +168,7 @@ const caricaMargCatalogo = () => {
             ...margine,
           };
         });
-        if (voci.length) gruppi.push({ cat: (_MARG_CAT_EMOJI[_margNorm(c.name)] || "🏷️") + " " + c.name, grouped: _margNorm(c.name) === "SIM" || _margNorm(c.name) === "ESIM", items: voci });
+        if (voci.length) gruppi.push({ cat: (c.icon || _MARG_CAT_EMOJI[_margNorm(c.name)] || "🏷️") + " " + c.name, grouped: _margNorm(c.name) === "SIM" || _margNorm(c.name) === "ESIM", items: voci });
       });
       if (gruppi.length) MARG_PRODUCTS = gruppi;
     } catch { /* pannello irraggiungibile: resta il catalogo storico */ }
@@ -334,7 +334,7 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
   const unitMissing=!!(selProd&&selProd.needsImei)&&!usatoUnits.some(u=>u.usatoId);
   return(<div style={inline?{width:"100%"}:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
     {!inline&&<style>{`@keyframes margSlideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>}
-    <div style={inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:640,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
+    <div style={inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:760,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
       <div style={{padding:"16px 20px",borderBottom:"2px solid var(--tf-w30)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div><div style={{fontSize:16,fontWeight:800,color:"var(--tf-f8fafc)"}}>📦 Registra Prodotto</div><div style={{fontSize:11,color:"var(--tf-64748b)"}}>{venditore||"—"} • {negozio||"—"} • {new Date().toLocaleDateString("it-IT")}</div></div>
         {!inline&&<button onClick={onClose} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕</button>}
@@ -346,29 +346,38 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
       </div>
       <div style={{flex:1,overflow:"auto",padding:16}}>
         {!selProd?(qMarg.trim()?(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
             {MARG_PRODUCTS.flatMap((c)=>c.items.map(pr=>({pr,catNome:c.cat}))).filter(x=>x.pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).slice(0,60).map(({pr,catNome})=>(
               <button key={catNome+"_"+pr.id} onClick={()=>{setSelProd(pr);if(pr.price!==null)setPrice(String(pr.price));setQMarg("");}}
-                style={{padding:"14px 8px",borderRadius:12,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                <span style={{fontSize:22}}>{pr.icon||"📦"}</span>
-                <span style={{fontSize:10,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{pr.name}</span>
-                <span style={{fontSize:9,color:"var(--tf-8892b0)"}}>{catNome}</span>
+                style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                {/* RVUI-01: stesso lookup logo dell'header dettaglio — condizione STRETTA su
+                    SIM_BRANDS (brand non mappati, es. s4/dojo, cadono sull'emoji) */}
+                {pr.brand&&SIM_BRANDS[pr.brand]?<img src={SIM_BRANDS[pr.brand].logo} alt="" style={{height:56,width:"auto",maxWidth:"88%",objectFit:"contain"}}/>:<span style={{fontSize:30}}>{pr.icon||"📦"}</span>}
+                <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{pr.name}</span>
+                <span style={{fontSize:11,color:"var(--tf-8892b0)"}}>{catNome}</span>
               </button>))}
             {MARG_PRODUCTS.flatMap((c)=>c.items).filter(pr=>pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:20,color:"var(--tf-64748b)",fontSize:12}}>Nessun prodotto per “{qMarg}”</div>}
           </div>
         ):MARG_PRODUCTS[selCat].grouped?(
           // #102: SIM/ESIM affiancate e ordinate per brand (senza titolo), logo grande del brand
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
             {SIM_BRAND_ORDER.flatMap(bk=>MARG_PRODUCTS[selCat].items.filter(p=>p.brand===bk)).map(p=>{const info=SIM_BRANDS[p.brand]||{color:"var(--tf-64748b)",logo:"/logo-crm.png"};return (
-              <button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"14px 8px",borderRadius:12,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-                <img src={info.logo} alt="" style={{height:40,width:"auto",maxWidth:"88%",objectFit:"contain"}}/>
-                <span style={{fontSize:10,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
+              <button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                <img src={info.logo} alt="" style={{height:56,width:"auto",maxWidth:"88%",objectFit:"contain"}}/>
+                <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
               </button>);})}
+            {/* RVUI-01: in coda le voci con brand assente o fuori da SIM_BRAND_ORDER
+                (es. create dal pannello, o s4/dojo): ramo emoji, cosi' non spariscono */}
+            {MARG_PRODUCTS[selCat].items.filter(p=>!SIM_BRAND_ORDER.includes(p.brand)).map(p=>(
+              <button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                <span style={{fontSize:30}}>{p.icon||"📦"}</span>
+                <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
+              </button>))}
           </div>
-        ):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
-          {MARG_PRODUCTS[selCat].items.map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"14px 8px",borderRadius:12,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-            <span style={{fontSize:22}}>{p.icon}</span>
-            <span style={{fontSize:10,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
+        ):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:10}}>
+          {MARG_PRODUCTS[selCat].items.map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"20px 12px",borderRadius:14,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+            <span style={{fontSize:30}}>{p.icon}</span>
+            <span style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
           </button>))}
         </div>)):(<div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
@@ -1055,12 +1064,17 @@ const listinoPerModello = async (modello) => {
 // il listino ufficiale di QUEL brand (Luca 02/08). Il form di vendita e' uno
 // solo per volta, quindi basta un riferimento di modulo aggiornato dal render.
 let _brandVendita = null;
+// RV-03: tipo cliente della vendita in corso ("privato"/"business"), settato al
+// render come _brandVendita — serve a _senzaMargine per il telefono a rate business
+let _tipoVendita = null;
 let _numeriMobiliVendita = [];
 const _compBrand = (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 // FASTWEB usa il listino VODAFONE in vigore (Luca 03/08): stesso street
 // price, ma SENZA marginalita' sul prodotto — il margine non si mostra.
 const _brandListino = (b) => { const x = _compBrand(b); return x === "FASTWEB" ? "VODAFONE" : x; };
-const _senzaMargine = () => _compBrand(_brandVendita) === "FASTWEB";
+// RV-03: il telefono a rate BUSINESS ha marginalita' solo su WindTre — per
+// Vodafone business street price visibile ma margine nascosto (come Fastweb).
+const _senzaMargine = () => _compBrand(_brandVendita) === "FASTWEB" || (_compBrand(_brandVendita) === "VODAFONE" && String(_tipoVendita || "").toLowerCase() === "business");
 const cercaListino = async (term) => {
   const tutti = await caricaListini();
   const b = _brandListino(_brandVendita);
@@ -1081,7 +1095,7 @@ const cercaTerminali = async (term) => {
   const listino = await cercaListino(term);
   if (!listino.length) return [];
   const b = (await caricaListini()).find(r => _compBrand(r.brand) === _brandListino(_brandVendita));
-  return [{ gruppo: "💰 Listino " + (b ? b.brand : "ufficiale") + (_senzaMargine() ? " (per Fastweb, senza margine)" : ""), voci: listino }];
+  return [{ gruppo: "💰 Listino " + (b ? b.brand : "ufficiale") + (_senzaMargine() ? (_compBrand(_brandVendita) === "FASTWEB" ? " (per Fastweb, senza margine)" : " (senza margine)") : ""), voci: listino }];
 };
 
 const cercaModelliCatalogo = async (term) => {
@@ -1329,7 +1343,7 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
         <div style={{marginTop:3,fontSize:11,color:"var(--tf-34d399)",fontWeight:600,lineHeight:1.5}}>
           {listini.map(li=>{
             const pz=Number(li.prezzo||0), mp=Number(li.margine_pct??0);
-            const marg=_senzaMargine()?" · senza marginalità (Fastweb)":(mp>0?` · margine ${mp}% = € ${(pz*mp/100).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"");
+            const marg=_senzaMargine()?(_compBrand(_brandVendita)==="FASTWEB"?" · senza marginalità (Fastweb)":" · senza marginalità (business)"):(mp>0?` · margine ${mp}% = € ${(pz*mp/100).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"");
             // SOLO street price + marginalità (Luca 03/08): le rate mostrate
             // dal listino erano sbagliate — via tutto il resto
             return `💰 Listino ${li.brand}: € ${pz.toLocaleString("it-IT",{minimumFractionDigits:2})}${marg}`;
@@ -3184,6 +3198,10 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
       next[o.nome]=o.tipo==="numero"?1:true;}
     setF("__opzioni",next);};
   const campi=risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,off,attive);
+  // RV-05: la tendina "Operatore GNP" si lega a f["GNP"] SOLO se tra i campi c'e'
+  // davvero il campo GNP Si'/No (fisso VFB, mig. 152); quando arriva dall'OPZIONE
+  // GNP del catalogo (W3/VF/FW/Sky) deve comparire sempre ed essere obbligatoria.
+  const hasCampoGnp=campi.some(c=>/^gnp$/i.test(c.nome));
   const pageBrand=sub.catBrand==="s4"?"energy":sub.catBrand;
   const codici=_codiciDi(pageBrand);
   return (<div>
@@ -3230,8 +3248,9 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
           {campi.map(cmp=>{
             if(cmp.nome==="Codice Inserimento")return <SCd key={cmp.nome} session={sc} codici={codici} val={f[cmp.nome]||""} onCh={v=>setF(cmp.nome,v)}/>;
             if(/^gnp$/i.test(cmp.nome))return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);if(v!=="Sì")setF("Operatore GNP","");}} vals={["Sì","No"]} nt={cmp.nota||undefined}/>;
-            if(/^operatore gnp$/i.test(cmp.nome)&&(f["GNP"]||"")!=="Sì")return null;
-            if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
+            if(/^operatore gnp$/i.test(cmp.nome)&&hasCampoGnp&&(f["GNP"]||"")!=="Sì")return null;
+            // CAT-02: se la regola porta i suoi valori (jsonb valori:[…]) vincono quelli, altrimenti il lookup storico
+            if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={Array.isArray(cmp.valori)&&cmp.valori.length?cmp.valori:_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
             if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"var(--tf-dc3545)"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box",background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>{cmp.nota&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{cmp.nota}</div>}</div>);
             if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={SOLO_ALTRO} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
             if(/mobile di convergenza/i.test(cmp.nome))return (
@@ -3275,7 +3294,12 @@ const subComplete=(sub,d)=>{
     const _campi=risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,f["Offerta"]||"",_att);
     for(const cmp of _campi){
       if(cmp.nome==="Codice Inserimento"){if(!_NE(f[cmp.nome])&&!_NE(_sesRef.v))return false;}
-      else if(/^operatore gnp$/i.test(cmp.nome)){if((f["GNP"]||"")==="Sì"&&!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;}
+      else if(/^operatore gnp$/i.test(cmp.nome)){
+        // RV-05 (speculare al render): senza campo GNP la tendina e' sempre
+        // dovuta; col campo GNP resta legata a f["GNP"]==="Sì"
+        const _hasG=_campi.some(c=>/^gnp$/i.test(c.nome));
+        if((!_hasG||(f["GNP"]||"")==="Sì")&&!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;
+      }
       else if(!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;
     }
     return true;
@@ -4348,6 +4372,7 @@ function CRM() {
   const bObj=brand?BRANDS.find(b=>b.id===brand):null;
   // le tendine del terminale leggono il listino di QUESTO brand
   _brandVendita = brand || null;
+  _tipoVendita = tipoCliente || null;
   // NUMERI MOBILI della vendita in corso (03/08): per l'aggancio della
   // CONVERGENZA — si scandaglia tutto (vendita corrente + carrello) e ogni
   // numero che sembra un cellulare diventa proponibile con un click
@@ -4545,7 +4570,10 @@ function CRM() {
       else if(macro.includes("MOBILE")&&!/\bcb\b/i.test(sub)&&AUTO_SIM[brandId])push(AUTO_SIM[brandId]);
       const det=it.details||{};
       const tnp=[det["Tipo TNP"],det.tnpTipo,det.cbTnpTipo].map(v=>String(v||"").trim().toLowerCase());
-      if(tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))push("Telefono TNP (listino)",true);
+      // RV-03: telefono a rate BUSINESS a marginalita' SOLO su WindTre — per gli
+      // altri brand niente voce auto. Le voci legacy (senza .catalogo) invariate.
+      const skipTnpMarg=it.catalogo?.tipo==="Business"&&brandId!=="windtre";
+      if(!skipTnpMarg&&tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))push("Telefono TNP (listino)",true);
     }
     const kept=prev.filter(m=>!(m.auto&&m.autoFrom===brandLabel));
     // preserva i prezzi già digitati sugli auto identici
