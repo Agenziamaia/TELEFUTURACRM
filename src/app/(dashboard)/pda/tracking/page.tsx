@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { categoriaDi, controlliDi, righeTracking, vaInTracking } from "@/lib/tassonomia";
-import { trkBrandKey, TRK_BRAND_COLORS, TRK_LOGO_SCALE, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
+import { trkBrandKey, TRK_BRAND_COLORS, TRK_LOGO_SCALE, TRK_BRAND_LOGOS, TRK_BADGE_OFFSET, TRK_BADGE_OFFSET_DEFAULT } from "@/lib/brandAssets";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { statoContrattoDa } from "./trackingHelpers";
 import {
@@ -326,12 +326,12 @@ function KpiBar({
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "var(--tf-586174)" }}>{b}</span>
                 )}
-                {/* numeretto in ALTO A DESTRA, vicino al logo (Luca 04/08:
-                    al centro-destra si confondeva col marchio); assoluto così
-                    il logo resta centrato; fondo solido perché i loghi
-                    scalati (transform) sbordano dal box di layout. */}
+                {/* numeretto ADIACENTE alla spalla destra del logo, in alto —
+                    "come parte del logo ma staccato" (Luca 04/08): ancorato al
+                    CENTRO + offset per-brand (le larghezze visive dei marchi
+                    variano); fondo solido perché i loghi scalati sbordano. */}
                 <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
-                  style={{ right: 6, top: 5, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: nBrand === 0 ? .5 : 1 }}>
+                  style={{ left: `calc(50% + ${TRK_BADGE_OFFSET[trkBrandKey(b)] ?? TRK_BADGE_OFFSET_DEFAULT}px)`, top: 8, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: nBrand === 0 ? .5 : 1 }}>
                   {nBrand}
                 </span>
               </button>

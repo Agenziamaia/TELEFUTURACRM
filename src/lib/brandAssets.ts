@@ -21,6 +21,16 @@ export const TRK_LOGO_SCALE: Record<string, number> = {
   tim: 1.35, dojo: 1.3, homobile: 1.35, kenamobile: 1.35, verymobile: 1.15,
 };
 
+// BADGE dei conteggi "attaccato al logo" (Luca 04/08): offset orizzontale dal
+// CENTRO della tessera alla spalla destra del logo (px) — i marchi hanno
+// larghezze visive diverse (wordmark vs tondi), quindi la distanza e' per
+// brand. Il badge va a left: calc(50% + offset), in alto.
+export const TRK_BADGE_OFFSET: Record<string, number> = {
+  windtre: 44, vodafone: 30, fastweb: 46, sky: 38, iliad: 28, tim: 34,
+  s4: 40, energy: 40, dojo: 36, verymobile: 46, homobile: 32, kenamobile: 40,
+};
+export const TRK_BADGE_OFFSET_DEFAULT = 36;
+
 // stessi loghi di Registra Vendita (public/)
 export const TRK_BRAND_LOGOS: Record<string, string> = {
   vodafone: "/vodaphone - Copy.png", fastweb: "/fastweb.png", windtre: "/windtre.png",

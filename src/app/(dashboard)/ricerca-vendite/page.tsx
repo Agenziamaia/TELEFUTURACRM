@@ -9,12 +9,14 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
 import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
-import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
+import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE, TRK_BADGE_OFFSET, TRK_BADGE_OFFSET_DEFAULT } from "@/lib/brandAssets";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
 import { codiciPerBrand } from "@/lib/codiciInserimento";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capChoice, capKey, CAP_RICERCA_MODIFICA } from "@/lib/capabilities";
 
 interface ContrattoRow {
     id: string;
@@ -286,16 +288,38 @@ export default function RicercaContratto() {
     // non basta piu' il ruolo (l'admin puo' restringergli i negozi visibili).
     const { seesAll: isGlobalView, stores: visStores, loaded: visLoaded } = useVisibleStores();
     const wholeStore = seesWholeStore(user?.role);
-    // Modifica contratto riservata allo Store Manager (+ superuser) — richiesta Luca #5.
-    const canEditContract = ["store_manager", "admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
-    // Approvazione modifiche = amministrazione (Sandra, Claudia, Marta, Franca, Luca).
-    const canApprove = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
-    // Cestino contratto (regola Luca 25/07): bottone dallo store manager in su.
-    // Eliminano DIRETTAMENTE amministrazione, admin e direzione commerciale
-    // (+ direzione generale); lo store manager invia la richiesta e serve
-    // l'approvazione dell'amministrazione, come per le modifiche.
-    const canDeleteDirect = ["amministrativo", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
-    const canDeleteButton = canDeleteDirect || user?.role === "store_manager";
+    // ── RIC-04: la ROTELLINA decide come si modificano le vendite ─────────────
+    // Modalità dalla capacità CAP_RICERCA_MODIFICA (diretta / richiesta /
+    // nessuna), amministrata da Amministrazione → Utenti → Permessi. Il
+    // pannello, quando la si usa, scrive TUTTE le opzioni del gruppo come righe
+    // esplicite: quindi "rotellina impostata" = almeno una riga presente.
+    // A rotellina VERGINE il perimetro dei bottoni resta quello storico per
+    // ruolo (nulla cambia per nessuno); la modalità di SALVATAGGIO segue
+    // comunque la capacità, il cui default fotografa la regola di Luca 04/08:
+    // amministrativo in su diretta, il resto con autorizzazione.
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const modRicerca = capChoice(user?.role, CAP_RICERCA_MODIFICA, capPerms);
+    const rotellinaImpostata = CAP_RICERCA_MODIFICA.caps.some(c => !!capPerms?.has(capKey(CAP_RICERCA_MODIFICA.section, c.id)));
+    // "diretta" = il salvataggio del modale applica subito, senza richiesta
+    const modificaDiretta = modRicerca === "diretta";
+    // Matita: con la rotellina impostata comanda lei ("nessuna" = solo vista);
+    // da vergine resta la lista storica (store manager in su — richiesta Luca #5).
+    const canEditContract = rotellinaImpostata
+        ? modRicerca !== "nessuna"
+        : ["store_manager", "admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
+    // Approvazione delle richieste pendenti: chi ha la modifica diretta.
+    // Sostituisce la vecchia lista cablata di 4 ruoli, che il default della
+    // capacità riproduce esattamente a rotellina vergine.
+    const canApprove = modificaDiretta;
+    // Cestino: "diretta" elimina con conferma, "richiesta" invia la richiesta,
+    // "nessuna" niente bottone. Da vergine valgono le vecchie liste (regola
+    // Luca 25/07: diretta per amministrazione/direzioni, richiesta per lo SM).
+    const canDeleteDirect = rotellinaImpostata
+        ? modificaDiretta
+        : ["amministrativo", "admin", "dev", "direttore_generale", "direttore_commerciale"].includes(user?.role || "");
+    const canDeleteButton = rotellinaImpostata
+        ? modRicerca !== "nessuna"
+        : (canDeleteDirect || user?.role === "store_manager");
     const [delTarget, setDelTarget] = useState<any>(null);
     const [delMotivo, setDelMotivo] = useState("");
     const [delBusy, setDelBusy] = useState(false);
@@ -745,6 +769,80 @@ export default function RicercaContratto() {
         return () => { alive = false; };
     }, [selectedContract, editBrand]);
 
+    // ── RIC-04: APPLICAZIONE dei cambiamenti al contratto ─────────────────────
+    // Percorso UNICO condiviso tra l'approvazione di una richiesta e il
+    // salvataggio diretto (rotellina "diretta"): patch del contratto, sync dei
+    // derivati (categoria/macro/controlli), patch del cliente e righe di storia.
+    // `changes` è nel formato delle richieste ({ "scope::campo": {da,a,label} });
+    // `firmaStoria` è chi compare nelle righe di storia. Ritorna null se tutto
+    // ok, altrimenti il messaggio d'errore da mostrare (niente resta "a metà"
+    // senza che si veda — segnalazione 32).
+    const applicaCambiamenti = async (contractId: string, changes: Record<string, any>, firmaStoria: string): Promise<string | null> => {
+        const { data: c } = await supabase.from("contracts").select("*").eq("id", contractId).single();
+        if (!c) return "Contratto " + contractId + " non trovato.";
+        const contractPatch: Record<string, unknown> = {};
+        const clientPatch: Record<string, unknown> = {};
+        const det: Record<string, unknown> = { ...((c.dettagli as Record<string, unknown>) || {}) };
+        let detTouched = false;
+        const storia: any[] = Array.isArray(c.storia) ? [...c.storia] : [];
+        const stamp = new Date().toISOString();
+        Object.entries(changes || {}).forEach(([k, raw]) => {
+            if (k.startsWith("__")) return;   // "__meta" = motivazione, non un campo
+            const v = raw as { da: any; a: any; label?: string };
+            const i = k.indexOf("::");
+            const scope = k.slice(0, i), field = k.slice(i + 2);
+            if (scope === "contract") contractPatch[field] = v.a === "" ? null : v.a;
+            else if (scope === "client") clientPatch[field] = v.a === "" ? null : v.a;
+            else if (scope === "dettagli") { det[field] = coerceLike(det[field], String(v.a)); detTouched = true; }
+            storia.push({
+                at: stamp, user: firmaStoria,
+                campo: v.label || field, da: fmtVal(v.da), a: fmtVal(v.a),
+            });
+        });
+        // ── RIC-03: SYNC DEI DERIVATI (decisione Luca 04/08: la
+        // riclassificazione ha effetto completo ovunque). Tracking, filtri e
+        // target leggono categoria_macro/controlli, non la chiave nei dettagli:
+        // senza questo blocco la modifica "non si vedrebbe" da nessuna parte.
+        const chiavi = Object.keys(changes || {});
+        if (chiavi.includes("dettagli::categoria_catalogo")) {
+            // la categoria FINE porta con sé etichetta canonica e macro
+            const macro = MACRO_BY_CATALOGO[String(det.categoria_catalogo || "")];
+            if (macro) {
+                contractPatch.categoria = CANONICA_BY_ID[macro];
+                contractPatch.categoria_macro = macro;
+            }
+        }
+        // MNP / Tipo TNP / Tipo CB cambiati -> controlli (mnp, finanziamento,
+        // rata) ricalcolati dai dettagli aggiornati, come fa il Registra alla
+        // nascita della pratica.
+        if (chiavi.some((k) => /^dettagli::(MNP|mnp|Tipo TNP|Tipo CB|tnpTipo|cbTnpTipo)$/.test(k))) {
+            contractPatch.controlli = controlliDi(det);
+        }
+        if (detTouched) contractPatch.dettagli = det;
+        contractPatch.storia = storia;
+        const { error: cErr } = await supabase.from("contracts").update(contractPatch).eq("id", contractId);
+        if (cErr) return "Modifica NON applicata al contratto: " + cErr.message;
+        if (Object.keys(clientPatch).length > 0 && c.client_id) {
+            const { error: clErr } = await supabase.from("clients").update(clientPatch).eq("id", c.client_id);
+            if (clErr) return "Modifica NON applicata al cliente: " + clErr.message;
+        }
+        return null;
+    };
+
+    // Il dettaglio aperto mostrerebbe ancora i valori vecchi e sembrerebbe che
+    // il salvataggio/approvazione non abbia fatto nulla: si ricarica dal DB.
+    const ricaricaAperto = async (contractId: string) => {
+        if (!selectedContract || selectedContract.id !== contractId) return;
+        const { data: fresh } = await supabase
+            .from("contracts")
+            .select("*, clients(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
+            .eq("id", contractId).single();
+        if (fresh) {
+            const cl = (fresh as any).clients || null;
+            setSelectedContract(mapContractToRow(fresh as any, cl));
+        }
+    };
+
     const submitChangeRequest = async () => {
         if (!selectedContract || Object.keys(pendingChanges).length === 0) return;
         // Regola Luca 25/07: OGNI richiesta che prevede autorizzazione DEVE avere
@@ -766,6 +864,38 @@ export default function RicercaContratto() {
         if (!error) setDetailMode("view");
     };
 
+    // RIC-04: salvataggio DIRETTO (rotellina "diretta") — applica subito con lo
+    // stesso percorso dell'approvazione e lascia in contract_change_requests
+    // una riga già approvata con review_note "modifica diretta": lo Storico
+    // Approvazioni resta completo anche senza passaggio dall'amministrazione.
+    const salvaDiretto = async () => {
+        if (!selectedContract || Object.keys(pendingChanges).length === 0 || saving) return;
+        setSaving(true);
+        const esito = await applicaCambiamenti(selectedContract.id, pendingChanges,
+            `${user?.name || "—"} (modifica diretta)`);
+        if (esito) { setSaving(false); setReqMsg(esito); return; }
+        const payload: Record<string, unknown> = { ...pendingChanges };
+        if (reqNote.trim()) payload.__meta = { note: reqNote.trim() };
+        const { error: tErr } = await supabase.from("contract_change_requests").insert({
+            contract_id: selectedContract.id,
+            requested_by: user?.id || null,
+            requested_by_name: user?.name || "—",
+            changes: payload,
+            status: "approved",
+            reviewed_by: user?.id || null,
+            reviewed_by_name: user?.name || "—",
+            reviewed_at: new Date().toISOString(),
+            review_note: "modifica diretta",
+        });
+        setSaving(false);
+        setReqMsg(tErr
+            ? "Modifiche applicate al contratto, ma la traccia nello storico approvazioni non è stata salvata: " + tErr.message
+            : "Modifiche applicate al contratto.");
+        setDetailMode("view");
+        await fetchData();
+        await ricaricaAperto(selectedContract.id);
+    };
+
     const decideRequest = async (req: any, approve: boolean, note?: string) => {
         setReqBusy(req.id);
         // Richiesta di CANCELLAZIONE (changes.__delete): approvare = eliminare la
@@ -775,64 +905,12 @@ export default function RicercaContratto() {
             if (dErr) { setReqBusy(null); alert("Contratto NON eliminato: " + dErr.message); return; }
             await supabase.from("contract_change_requests").update({ status: "rejected", review_note: "Contratto eliminato", reviewed_by_name: user?.name || "—", reviewed_at: new Date().toISOString() }).eq("contract_id", req.contract_id).eq("status", "pending").neq("id", req.id);
         } else if (approve) {
-            const { data: c } = await supabase.from("contracts").select("*").eq("id", req.contract_id).single();
-            if (c) {
-                const contractPatch: Record<string, unknown> = {};
-                const clientPatch: Record<string, unknown> = {};
-                const det: Record<string, unknown> = { ...((c.dettagli as Record<string, unknown>) || {}) };
-                let detTouched = false;
-                const storia: any[] = Array.isArray(c.storia) ? [...c.storia] : [];
-                const stamp = new Date().toISOString();
-                Object.entries(req.changes || {}).forEach(([k, raw]) => {
-                    if (k.startsWith("__")) return;   // "__meta" = motivazione, non un campo
-                    const v = raw as { da: any; a: any; label?: string };
-                    const i = k.indexOf("::");
-                    const scope = k.slice(0, i), field = k.slice(i + 2);
-                    if (scope === "contract") contractPatch[field] = v.a === "" ? null : v.a;
-                    else if (scope === "client") clientPatch[field] = v.a === "" ? null : v.a;
-                    else if (scope === "dettagli") { det[field] = coerceLike(det[field], String(v.a)); detTouched = true; }
-                    storia.push({
-                        at: stamp,
-                        user: `${req.requested_by_name || "—"} → approvata da ${user?.name || "—"}`,
-                        campo: v.label || field, da: fmtVal(v.da), a: fmtVal(v.a),
-                    });
-                });
-                // ── RIC-03: SYNC DEI DERIVATI (decisione Luca 04/08: la
-                // riclassificazione approvata ha effetto completo ovunque).
-                // Tracking, filtri e target leggono categoria_macro/controlli,
-                // non la chiave nei dettagli: senza questo blocco la modifica
-                // approvata "non si vedrebbe" da nessuna parte.
-                const chiavi = Object.keys(req.changes || {});
-                if (chiavi.includes("dettagli::categoria_catalogo")) {
-                    // la categoria FINE porta con sé etichetta canonica e macro
-                    const macro = MACRO_BY_CATALOGO[String(det.categoria_catalogo || "")];
-                    if (macro) {
-                        contractPatch.categoria = CANONICA_BY_ID[macro];
-                        contractPatch.categoria_macro = macro;
-                    }
-                }
-                // MNP / Tipo TNP / Tipo CB cambiati -> controlli (mnp,
-                // finanziamento, rata) ricalcolati dai dettagli aggiornati,
-                // come fa il Registra alla nascita della pratica.
-                if (chiavi.some((k) => /^dettagli::(MNP|mnp|Tipo TNP|Tipo CB|tnpTipo|cbTnpTipo)$/.test(k))) {
-                    contractPatch.controlli = controlliDi(det);
-                }
-                if (detTouched) contractPatch.dettagli = det;
-                contractPatch.storia = storia;
-                // Gli errori qui non venivano letti: se l'update falliva, la
-                // richiesta risultava comunque "approvata" e il contratto restava
-                // com'era, senza che nessuno se ne accorgesse (segnalazione 32).
-                const { error: cErr } = await supabase.from("contracts").update(contractPatch).eq("id", req.contract_id);
-                if (cErr) { setReqBusy(null); alert("Modifica NON applicata al contratto: " + cErr.message); return; }
-                if (Object.keys(clientPatch).length > 0 && c.client_id) {
-                    const { error: clErr } = await supabase.from("clients").update(clientPatch).eq("id", c.client_id);
-                    if (clErr) { setReqBusy(null); alert("Modifica NON applicata al cliente: " + clErr.message); return; }
-                }
-            } else {
-                setReqBusy(null);
-                alert("Contratto " + req.contract_id + " non trovato: richiesta lasciata in attesa.");
-                return;
-            }
+            // RIC-04: stessa applicazione del salvataggio diretto (funzione
+            // unica applicaCambiamenti). Se qualcosa va storto la richiesta
+            // resta in attesa (gli errori non venivano letti — segnalazione 32).
+            const esito = await applicaCambiamenti(req.contract_id, req.changes || {},
+                `${req.requested_by_name || "—"} → approvata da ${user?.name || "—"}`);
+            if (esito) { setReqBusy(null); alert(esito); return; }
         }
         const { error: rErr } = await supabase.from("contract_change_requests").update({
             status: approve ? "approved" : "rejected",
@@ -847,16 +925,7 @@ export default function RicercaContratto() {
         await fetchData();
         // Il dettaglio aperto mostrava ancora i valori vecchi e sembrava che
         // l'approvazione non avesse fatto nulla: ricarico il contratto a schermo.
-        if (selectedContract && selectedContract.id === req.contract_id) {
-            const { data: fresh } = await supabase
-                .from("contracts")
-                .select("*, clients(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)")
-                .eq("id", req.contract_id).single();
-            if (fresh) {
-                const cl = (fresh as any).clients || null;
-                setSelectedContract(mapContractToRow(fresh as any, cl));
-            }
-        }
+        await ricaricaAperto(req.contract_id);
         setReqMsg(approve ? "Modifica approvata e applicata al contratto." : "Richiesta rifiutata.");
     };
 
@@ -945,12 +1014,11 @@ export default function RicercaContratto() {
                                         : logo ? <img src={logo} alt={brand} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(brand)] || 1})` }} />
                                             : <span className="text-base font-bold text-slate-200 truncate max-w-full">{brand}</span>}
                                 </span>
-                                {/* numeretto in ALTO A DESTRA vicino al logo, identico al
-                                    Tracking (Luca 04/08): assoluto (il bottone e' relative)
-                                    cosi' il logo resta centrato; fondo SOLIDO perche' i loghi
-                                    scalati via transform sbordano dal box. */}
+                                {/* numeretto ADIACENTE alla spalla destra del logo, in alto,
+                                    identico al Tracking (Luca 04/08): centro + offset
+                                    per-brand; fondo SOLIDO perche' i loghi sbordano. */}
                                 <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
-                                    style={{ right: 6, top: 5, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
+                                    style={{ left: `calc(50% + ${isExtra ? 26 : (TRK_BADGE_OFFSET[trkBrandKey(brand)] ?? TRK_BADGE_OFFSET_DEFAULT)}px)`, top: 8, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
                                     {n}
                                 </span>
                             </button>
@@ -1368,7 +1436,7 @@ export default function RicercaContratto() {
                                                     <Navigation className="w-4 h-4" />
                                                 </button>}
                                                 {canEditContract && (
-                                                    <button onClick={() => openContract(row, "edit")} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title="Modifica (richiede approvazione amministrazione)"><Edit className="w-4 h-4" /></button>
+                                                    <button onClick={() => openContract(row, "edit")} className="p-1.5 rounded bg-indigo-500/20 text-indigo-400 hover:bg-indigo-500/30 transition-colors" title={modificaDiretta ? "Modifica contratto (si applica subito)" : "Modifica (richiede approvazione amministrazione)"}><Edit className="w-4 h-4" /></button>
                                                 )}
                                                 {canDeleteButton && (
                                                     <button onClick={() => { setDelTarget(row); setDelMotivo(""); setDelMsg(""); }}
@@ -1622,7 +1690,9 @@ export default function RicercaContratto() {
                                 )}
                                 {detailMode === "edit" && (
                                     <div className="rounded-xl border border-indigo-400/30 bg-indigo-400/10 px-4 py-3 text-xs text-indigo-200">
-                                        Le modifiche non sono immediate: vengono inviate come richiesta di approvazione all&apos;amministrazione.
+                                        {modificaDiretta
+                                            ? "Hai la modifica diretta: il salvataggio applica subito i cambiamenti al contratto (restano tracciati nello Storico Approvazioni)."
+                                            : "Le modifiche non sono immediate: vengono inviate come richiesta di approvazione all'amministrazione."}
                                     </div>
                                 )}
 
@@ -1677,7 +1747,11 @@ export default function RicercaContratto() {
                                 {detailMode === "edit" && (
                                     <div className="pt-4 border-t border-white/10 space-y-3">
                                         <div>
-                                            <label className="block text-xs font-semibold text-slate-400 mb-1">Motivo della modifica <span className="text-rose-400">* obbligatorio</span></label>
+                                            {/* RIC-04: col salvataggio diretto il motivo non blocca (resta
+                                                comunque nella traccia dello storico approvazioni) */}
+                                            <label className="block text-xs font-semibold text-slate-400 mb-1">Motivo della modifica {modificaDiretta
+                                                ? <span className="text-slate-500 font-normal">(facoltativo: resta nello storico)</span>
+                                                : <span className="text-rose-400">* obbligatorio</span>}</label>
                                             <textarea rows={2} className="glass-input w-full text-sm" value={reqNote} onChange={e => setReqNote(e.target.value)}
                                                 placeholder="Es. correzione ICCID comunicata dal cliente" />
                                         </div>
@@ -1693,10 +1767,12 @@ export default function RicercaContratto() {
                                         )}
                                         <button
                                             disabled={saving || nChanges === 0}
-                                            onClick={submitChangeRequest}
+                                            onClick={modificaDiretta ? salvaDiretto : submitChangeRequest}
                                             className="w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-500 hover:bg-indigo-600 text-white disabled:opacity-40 disabled:cursor-not-allowed"
                                         >
-                                            {saving ? "Invio..." : nChanges === 0 ? "Nessuna modifica" : "Invia richiesta di approvazione"}
+                                            {saving ? (modificaDiretta ? "Salvataggio..." : "Invio...")
+                                                : nChanges === 0 ? "Nessuna modifica"
+                                                : modificaDiretta ? "Salva le modifiche" : "Invia richiesta di approvazione"}
                                         </button>
                                     </div>
                                 )}
