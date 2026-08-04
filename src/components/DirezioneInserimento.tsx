@@ -9,19 +9,19 @@ import { Compass, Plus, Trash2, Loader2, Check, Save } from "lucide-react";
 import { cn } from "@/utils";
 
 export const DIR_BRANDS = [
-  { id: "windtre", label: "WindTre", color: "#FF6B00" },
-  { id: "vodafone", label: "Vodafone", color: "#E60000" },
-  { id: "fastweb", label: "Fastweb", color: "#CC9900" },
-  { id: "tim", label: "TIM", color: "#0050FF" },
-  { id: "iliad", label: "Iliad", color: "#C00028" },
-  { id: "sky", label: "Sky", color: "#0072C6" },
-  { id: "very", label: "Very Mobile", color: "#1FA300" },
-  { id: "ho", label: "Ho. Mobile", color: "#E6007E" },
-  { id: "kena", label: "Kena Mobile", color: "#F5A623" },
-  { id: "s4", label: "S4 Energia", color: "#28a745" },
-  { id: "dojo", label: "Dojo", color: "#14b8a6" },
+  { id: "windtre", label: "WindTre", color: "var(--tf-ff6b00)" },
+  { id: "vodafone", label: "Vodafone", color: "var(--tf-e60000)" },
+  { id: "fastweb", label: "Fastweb", color: "var(--tf-cc9900)" },
+  { id: "tim", label: "TIM", color: "var(--tf-0050ff)" },
+  { id: "iliad", label: "Iliad", color: "var(--tf-c00028)" },
+  { id: "sky", label: "Sky", color: "var(--tf-0072c6)" },
+  { id: "very", label: "Very Mobile", color: "var(--tf-1fa300)" },
+  { id: "ho", label: "Ho. Mobile", color: "var(--tf-e6007e)" },
+  { id: "kena", label: "Kena Mobile", color: "var(--tf-f5a623)" },
+  { id: "s4", label: "S4 Energia", color: "var(--tf-28a745)" },
+  { id: "dojo", label: "Dojo", color: "var(--tf-14b8a6)" },
 ];
-const brandOf = (id: string) => DIR_BRANDS.find((b) => b.id === id) || { id, label: id, color: "#818cf8" };
+const brandOf = (id: string) => DIR_BRANDS.find((b) => b.id === id) || { id, label: id, color: "var(--tf-818cf8)" };
 
 type Row = { id?: string; brand: string; categoria: string; codice: string | null; attivo: boolean; ordine?: number };
 
@@ -173,7 +173,7 @@ export function BussolaWidget({ negozio }: { negozio?: string | null }) {
       <div className="flex overflow-x-auto border-b border-white/5 px-2">
         {brandsPresenti.map((b) => (
           <button key={b.id} onClick={() => setTab(b.id)} className="shrink-0 px-3 py-2.5 text-[11px] font-bold transition-colors border-b-2"
-            style={{ color: tab === b.id ? b.color : "#64748b", borderBottomColor: tab === b.id ? b.color : "transparent" }}>
+            style={{ color: tab === b.id ? b.color : "var(--tf-64748b)", borderBottomColor: tab === b.id ? b.color : "transparent" }}>
             {b.label}
           </button>
         ))}

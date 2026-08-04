@@ -20,26 +20,26 @@ import { sameStore } from "@/lib/visibleStores";
 const C = {
   bg: "transparent",
   card: "rgba(26, 29, 41, 0.85)",
-  border: "rgba(255,255,255,0.08)",
-  borderBright: "rgba(255,255,255,0.15)",
-  primary: "#6366f1",
-  primaryHover: "#818cf8",
+  border: "var(--tf-w80)",
+  borderBright: "var(--tf-w150)",
+  primary: "var(--tf-6366f1)",
+  primaryHover: "var(--tf-818cf8)",
   primaryLight: "rgba(99, 102, 241, 0.2)",
-  success: "#22c55e",
+  success: "var(--tf-22c55e)",
   successBg: "rgba(34, 197, 94, 0.15)",
-  warning: "#eab308",
+  warning: "var(--tf-eab308)",
   warningBg: "rgba(234, 179, 8, 0.15)",
-  danger: "#ef4444",
+  danger: "var(--tf-ef4444)",
   dangerBg: "rgba(239, 68, 68, 0.15)",
-  info: "#8b5cf6",
+  info: "var(--tf-8b5cf6)",
   infoBg: "rgba(139, 92, 246, 0.15)",
-  orange: "#f97316",
+  orange: "var(--tf-f97316)",
   orangeBg: "rgba(249, 115, 22, 0.15)",
-  gray: "#64748b",
-  grayLight: "#94a3b8",
-  grayBg: "rgba(255,255,255,0.06)",
-  text: "#f8fafc",
-  textSec: "#94a3b8",
+  gray: "var(--tf-64748b)",
+  grayLight: "var(--tf-94a3b8)",
+  grayBg: "var(--tf-w60)",
+  text: "var(--tf-f8fafc)",
+  textSec: "var(--tf-94a3b8)",
 };
 
 /* ─── Stati ordine ─── */
@@ -81,13 +81,13 @@ const computeOrderStatus = (items, currentStatus) => {
 
 /* ─── Brands ─── */
 const BRANDS = [
-  { id: "vodafone", name: "Vodafone", color: "#e60000" },
-  { id: "fastweb", name: "Fastweb", color: "#ffd800" },
-  { id: "wind3", name: "WindTre", color: "#ff6600" },
-  { id: "sky", name: "Sky", color: "#0072ce" },
-  { id: "iliad", name: "Iliad", color: "#d31118" },
+  { id: "vodafone", name: "Vodafone", color: "var(--tf-e60000)" },
+  { id: "fastweb", name: "Fastweb", color: "var(--tf-ffd800)" },
+  { id: "wind3", name: "WindTre", color: "var(--tf-ff6600)" },
+  { id: "sky", name: "Sky", color: "var(--tf-0072ce)" },
+  { id: "iliad", name: "Iliad", color: "var(--tf-d31118)" },
   { id: "homobile", name: "Ho Mobile", color: "#000000" },
-  { id: "tim", name: "Tim", color: "#003d7a" },
+  { id: "tim", name: "Tim", color: "var(--tf-003d7a)" },
 ];
 
 /* ─── Brand → sotto-categoria → items ─── */
@@ -148,16 +148,16 @@ const BRAND_SUB = {
 
 /* ─── Phone Catalog: phoneBrand → models → capacities/colors ─── */
 const PHONE_BRANDS = [
-  { id: "apple", name: "Apple", color: "#555555" },
-  { id: "samsung", name: "Samsung", color: "#1428a0" },
-  { id: "xiaomi", name: "Xiaomi", color: "#ff6900" },
-  { id: "oppo", name: "OPPO", color: "#1a6e37" },
-  { id: "google", name: "Google", color: "#4285f4" },
-  { id: "motorola", name: "Motorola", color: "#5c2d91" },
-  { id: "zte", name: "ZTE", color: "#0068b7" },
-  { id: "realme", name: "Realme", color: "#f5c518" },
-  { id: "honor", name: "Honor", color: "#0ab4e6" },
-  { id: "tcl", name: "TCL", color: "#e4002b" },
+  { id: "apple", name: "Apple", color: "var(--tf-555555)" },
+  { id: "samsung", name: "Samsung", color: "var(--tf-1428a0)" },
+  { id: "xiaomi", name: "Xiaomi", color: "var(--tf-ff6900)" },
+  { id: "oppo", name: "OPPO", color: "var(--tf-1a6e37)" },
+  { id: "google", name: "Google", color: "var(--tf-4285f4)" },
+  { id: "motorola", name: "Motorola", color: "var(--tf-5c2d91)" },
+  { id: "zte", name: "ZTE", color: "var(--tf-0068b7)" },
+  { id: "realme", name: "Realme", color: "var(--tf-f5c518)" },
+  { id: "honor", name: "Honor", color: "var(--tf-0ab4e6)" },
+  { id: "tcl", name: "TCL", color: "var(--tf-e4002b)" },
 ];
 
 const PHONE_CATALOG = {
@@ -347,10 +347,10 @@ const USATI_FASCE = {
 const storeName = id => id || "";
 
 const CATEGORIES = {
-  brand: { label: "Brand", color: "#818cf8", bg: "rgba(99, 102, 241, 0.2)", icon: "📡" },
-  prodotti: { label: "Prodotti", color: "#fbbf24", bg: "rgba(251, 191, 36, 0.15)", icon: "📱" },
-  extra: { label: "Extra", color: "#a78bfa", bg: "rgba(139, 92, 246, 0.15)", icon: "🧴" },
-  usati: { label: "Usati", color: "#34d399", bg: "rgba(52, 211, 153, 0.15)", icon: "♻️" },
+  brand: { label: "Brand", color: "var(--tf-818cf8)", bg: "rgba(99, 102, 241, 0.2)", icon: "📡" },
+  prodotti: { label: "Prodotti", color: "var(--tf-fbbf24)", bg: "rgba(251, 191, 36, 0.15)", icon: "📱" },
+  extra: { label: "Extra", color: "var(--tf-a78bfa)", bg: "rgba(139, 92, 246, 0.15)", icon: "🧴" },
+  usati: { label: "Usati", color: "var(--tf-34d399)", bg: "rgba(52, 211, 153, 0.15)", icon: "♻️" },
 };
 
 /* ─── Mock orders (multi-category) ─── */
@@ -502,7 +502,7 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
     brandsDispositivi("smartphone", []).then(brands => {
       if (!vivo || !brands.length) return;
       const noti = new Map(PHONE_BRANDS.map(pb => [pb.name.toLowerCase(), pb.color]));
-      setCoverBrandsDb(brands.slice(0, 30).map(b => ({ id: "db:" + b, name: b, color: noti.get(b.toLowerCase()) || "#64748b" })));
+      setCoverBrandsDb(brands.slice(0, 30).map(b => ({ id: "db:" + b, name: b, color: noti.get(b.toLowerCase()) || "var(--tf-64748b)" })));
     }).catch(() => { /* ripiego cablato */ });
     return () => { vivo = false; };
   }, []);

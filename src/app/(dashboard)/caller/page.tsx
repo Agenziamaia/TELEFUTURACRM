@@ -2335,7 +2335,7 @@ function CallerPageInner() {
                                                         onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
                                                     <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
-                                                        className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
+                                                        className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "var(--tf-25d366)" }}>
                                                         <MessageSquare className="w-4 h-4" />
                                                     </Link>
                                                 </>)}
@@ -2349,7 +2349,7 @@ function CallerPageInner() {
                                                         onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
                                                     <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
-                                                        className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
+                                                        className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "var(--tf-25d366)" }}>
                                                         <MessageSquare className="w-4 h-4" />
                                                     </Link>
                                                 </>)}
@@ -2583,7 +2583,7 @@ function CallerPageInner() {
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
                                                                 className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
                                                             <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
-                                                                className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
+                                                                className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "var(--tf-25d366)" }}>
                                                                 <MessageSquare className="w-4 h-4" />
                                                             </Link>
                                                         </>)}
@@ -2598,7 +2598,7 @@ function CallerPageInner() {
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
                                                                 className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
                                                             <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
-                                                                className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "#25D366" }}>
+                                                                className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "var(--tf-25d366)" }}>
                                                                 <MessageSquare className="w-4 h-4" />
                                                             </Link>
                                                         </>)}

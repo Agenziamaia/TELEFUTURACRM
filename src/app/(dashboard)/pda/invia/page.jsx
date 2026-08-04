@@ -24,8 +24,8 @@ const ALL_BRANDS = [
     id: "w3",
     label: "WindTre",
     badge: "W3",
-    color: "#2E75B6",
-    bg: "#EBF3FB",
+    color: "var(--tf-2e75b6)",
+    bg: "var(--tf-ebf3fb)",
     desc: "Mobile · Fisso · Luce&Gas · Multi-Servizi",
     onlyBusiness: false,
     logo: "/windtre.png",
@@ -34,8 +34,8 @@ const ALL_BRANDS = [
     id: "sky",
     label: "Sky",
     badge: "SKY",
-    color: "#0072CE",
-    bg: "#E6F2FB",
+    color: "var(--tf-0072ce)",
+    bg: "var(--tf-e6f2fb)",
     desc: "Fisso · Abbonamenti TV",
     onlyBusiness: false,
     logo: "/sky.png",
@@ -44,8 +44,8 @@ const ALL_BRANDS = [
     id: "fastweb",
     label: "Fastweb",
     badge: "FW",
-    color: "#00A651",
-    bg: "#E6F7EE",
+    color: "var(--tf-00a651)",
+    bg: "var(--tf-e6f7ee)",
     desc: "Mobile · Fisso · Luce&Gas",
     onlyBusiness: false,
     logo: "/fastweb.png",
@@ -54,8 +54,8 @@ const ALL_BRANDS = [
     id: "energy",
     label: "S4",
     badge: "NRG",
-    color: "#fd7e14",
-    bg: "#FFF3E6",
+    color: "var(--tf-fd7e14)",
+    bg: "var(--tf-fff3e6)",
     desc: "Luce e Gas",
     onlyBusiness: false,
     logo: "/energy - Copy.png",
@@ -64,8 +64,8 @@ const ALL_BRANDS = [
     id: "dojo",
     label: "Dojo",
     badge: "DJ",
-    color: "#6f42c1",
-    bg: "#F3EEFB",
+    color: "var(--tf-6f42c1)",
+    bg: "var(--tf-f3eefb)",
     desc: "POS · Terminali di pagamento",
     onlyBusiness: true,
     logo: "/dojo - Copy.png",
@@ -176,7 +176,7 @@ const SKY_PACCHETTI = ["Netflix", "Cinema", "Calcio", "Sport", "Multivision", "4
 const SKY_TECNOLOGIA = ["Parabola", "Fibra"];
 
 const CAT_ICONS = { "Mobile": "📱", "Fisso": "🏠", "Luce & Gas": "⚡", "Multi-servizi": "🛡️", "Abbonamenti SKY": "📺", "POS": "💳" };
-const CAT_COLORS = { "Mobile": "#2E75B6", "Fisso": "#28a745", "Luce & Gas": "#fd7e14", "Multi-servizi": "#6f42c1", "Abbonamenti SKY": "#0072CE", "POS": "#6f42c1" };
+const CAT_COLORS = { "Mobile": "var(--tf-2e75b6)", "Fisso": "var(--tf-28a745)", "Luce & Gas": "var(--tf-fd7e14)", "Multi-servizi": "var(--tf-6f42c1)", "Abbonamenti SKY": "var(--tf-0072ce)", "POS": "var(--tf-6f42c1)" };
 
 const DONOR_MOBILE = ["", "TIM", "Vodafone", "WindTre", "Iliad", "Fastweb Mobile", "PosteMobile", "ho. Mobile", "Kena Mobile", "Very Mobile", "CoopVoce", "Spusu", "Lyca Mobile", "1Mobile", "Tiscali Mobile", "Digi Mobil", "Noitel", "Optima Mobile", "Feder Mobile", "Rabona Mobile", "Elimobile", "BT Italia", "Segnoverde Mobile", "Uno Mobile", "Saily", "Visitel", "Ops! Mobile"];
 // Fixed-line origin operators (Send PDA → Fixed Line → Origin Operator). Shown only when WindTre/Fastweb + Fisso + Portabilità = Sì.
@@ -634,7 +634,7 @@ export default function InviaPda() {
   // ── Render campi MENU A COMPARSA ─────────────────────────────────────────────
   const renderCatFields = (categoria, catKey, si, sale) => {
     if (!sale.product) return null;
-    const color = CAT_COLORS[categoria] || "#2E75B6";
+    const color = CAT_COLORS[categoria] || "var(--tf-2e75b6)";
 
     // Luce & Gas Special rendering
     if (categoria === "Luce & Gas") {
@@ -766,7 +766,7 @@ export default function InviaPda() {
 
     // Dojo POS — custom fields, nothing in CAT_FIELDS
     if (brand === "dojo" && categoria === "POS") {
-      const dc = "#6f42c1";
+      const dc = "var(--tf-6f42c1)";
       const addr = sale.fields?.dojoAddr || "";
       const cost = parseFloat(sale.fields?.dojoCost || "5.00");
       const comm = parseFloat(sale.fields?.dojoComm || "0.50");
@@ -822,7 +822,7 @@ export default function InviaPda() {
 
     // ── FASTWEB BUSINESS FISSO SME — multi-line flow ────────────────
     if (brand === "fastweb" && tipoCliente === "business" && sale.product === "Fisso SME") {
-      const smeColor = "#00A651";
+      const smeColor = "var(--tf-00a651)";
       const ibanAnaS = anBusiness.iban;
       const numLinee = parseInt(sale.fields?.smeLinee || "2", 10);
       const numPort = parseInt(sale.fields?.smePort || "0", 10);
@@ -983,7 +983,7 @@ export default function InviaPda() {
       const cambioVal = sale.fields?.cbCambioVal || "";
       const addons = sale.fields?.cbAddons || {};
 
-      const MiniBtn = ({ val, active, onClick, color = "#2E75B6" }) => (
+      const MiniBtn = ({ val, active, onClick, color = "var(--tf-2e75b6)" }) => (
         <button onClick={onClick}
           className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${active ? "text-white shadow-lg" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"
             }`}
@@ -1068,7 +1068,7 @@ export default function InviaPda() {
                         onClick={() => { const cur = sale.fields?.security || ""; setField(catKey, si, "security", cur === s ? "" : s); }}
                         className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${sale.fields?.security === s ? "text-white shadow-lg" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"
                           }`}
-                        style={sale.fields?.security === s ? { background: "#fd7e14" } : {}}>
+                        style={sale.fields?.security === s ? { background: "var(--tf-fd7e14)" } : {}}>
                         {s}
                       </button>
                     ))}
@@ -1245,7 +1245,7 @@ export default function InviaPda() {
           );
           return (
             <div className="pb-6 border-b border-white/5">
-              <Label text="Metodo di pagamento" required color="#28a745" />
+              <Label text="Metodo di pagamento" required color="var(--tf-28a745)" />
               <div className="flex gap-3 mt-3">
                 {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
                   const sel = payMeth === val;
@@ -1288,7 +1288,7 @@ export default function InviaPda() {
           );
           return (
             <div className="pb-6 border-b border-white/5">
-              <Label text="Metodo di pagamento" required color="#0072CE" />
+              <Label text="Metodo di pagamento" required color="var(--tf-0072ce)" />
               <div className="flex gap-3 mt-3">
                 {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
                   const sel = payMeth === val;
@@ -1331,7 +1331,7 @@ export default function InviaPda() {
           );
           return (
             <div className="pb-6 border-b border-white/5">
-              <Label text="Metodo di pagamento" required color="#00A651" note="Richiesto da Fastweb" />
+              <Label text="Metodo di pagamento" required color="var(--tf-00a651)" note="Richiesto da Fastweb" />
               <div className="flex gap-3 mt-3">
                 {[["🏦 IBAN", "IBAN"], ["💳 Carta di Credito", "CC"]].map(([lbl, val]) => {
                   const sel = payMeth === val;
@@ -1395,7 +1395,7 @@ export default function InviaPda() {
   // ── Render pacchetti Sky ──────────────────────────────────────────────────────
   const renderSkyTvFields = (catKey, si, sale) => {
     if (!sale.product || !SKY_TV_PRODUCTS.includes(sale.product)) return null;
-    const color = "#0072CE";
+    const color = "var(--tf-0072ce)";
     const pkt = sale.skyPkt || [];
     const tech = sale.skyTech || "";
     const hasMult = pkt.includes("Multivision");
@@ -1462,7 +1462,7 @@ export default function InviaPda() {
 
   // ── Render categoria prodotti (uguale per tutti i brand) ──────────────────────
   const renderCategoria = (categoria, prodotti) => {
-    const catColor = CAT_COLORS[categoria] || "#2E75B6";
+    const catColor = CAT_COLORS[categoria] || "var(--tf-2e75b6)";
     const catIcon = CAT_ICONS[categoria] || "📦";
     const catKey = brand + "_" + categoria;
     const sales = getSales(catKey);
@@ -1512,7 +1512,7 @@ export default function InviaPda() {
 
               {/* ─── MOBILE: blocco toggle pre-campi ────────────────── */}
               {sale.product && categoria === "Mobile" && (() => {
-                const gc = "#2E75B6";
+                const gc = "var(--tf-2e75b6)";
                 const ibanAnaM = tipoCliente === "business" ? anBusiness.iban : anConsumer.iban;
                 const ibanMob = sale.fields?.ibanMob || "";
                 const port = sale.fields?.portMob || "";
@@ -1663,7 +1663,7 @@ export default function InviaPda() {
 
               {/* ─── FISSO: blocco toggle pre-campi ─────────────────── */}
               {sale.product && categoria === "Fisso" && (() => {
-                const gc = "#28a745";
+                const gc = "var(--tf-28a745)";
 
                 // Chip pill: mostra risposta collassata, click → espandi
                 const Chip = ({ tkKey, label, answer, extra }) => (
@@ -1805,7 +1805,7 @@ export default function InviaPda() {
     <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-6 text-slate-300">
       {/* TOAST */}
       {toast && (
-        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "#28a745", color: "#fff", padding: "12px 28px", borderRadius: 10, fontSize: 14, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,0,0,.2)", zIndex: 9999 }}>
+        <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "var(--tf-28a745)", color: "#fff", padding: "12px 28px", borderRadius: 10, fontSize: 14, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,0,0,.2)", zIndex: 9999 }}>
           {toast}
         </div>
       )}
@@ -1983,7 +1983,7 @@ export default function InviaPda() {
 
             {/* ══ STEP 1 ══ */}
             {step === 1 && (
-              <StepCard title="Step 1 — Venditore" color="#e83e8c" icon="👤">
+              <StepCard title="Step 1 — Venditore" color="var(--tf-e83e8c)" icon="👤">
                 <div style={{ maxWidth: 360 }}>
                   <Label text="Seleziona il tuo nome" required note="Pre-compilato dal login" />
                   <SearchableSelect
@@ -2000,7 +2000,7 @@ export default function InviaPda() {
 
             {/* ══ STEP 2 ══ */}
             {step === 2 && (
-              <StepCard title="Step 2 — Tipo Cliente e Anagrafica" color="#6f42c1" icon="🧑‍💼">
+              <StepCard title="Step 2 — Tipo Cliente e Anagrafica" color="var(--tf-6f42c1)" icon="🧑‍💼">
                 <div className="grid grid-cols-2 gap-4 mb-8">
                   {[{ id: "privato", icon: "👤", label: "Consumer", desc: "Persona fisica" }, { id: "business", icon: "🏢", label: "Business", desc: "Azienda / P.IVA" }].map(o => (
                     <button key={o.id}
@@ -2035,7 +2035,7 @@ export default function InviaPda() {
 
                 {tipoCliente && lookupDone && (
                   <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    <SectionTitle>📝 Dati Anagrafici <Tag c="#6f42c1" bg="#F3EEFB">{tipoCliente === "privato" ? "Consumer" : "Business"}</Tag></SectionTitle>
+                    <SectionTitle>📝 Dati Anagrafici <Tag c="var(--tf-6f42c1)" bg="var(--tf-f3eefb)">{tipoCliente === "privato" ? "Consumer" : "Business"}</Tag></SectionTitle>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {tipoCliente === "privato" ? (
                         <>
@@ -2084,7 +2084,7 @@ export default function InviaPda() {
 
             {/* ══ STEP 3 ══ */}
             {step === 3 && (
-              <StepCard title="Step 3 — Seleziona Brand" color="#2E75B6" icon="🏷️">
+              <StepCard title="Step 3 — Seleziona Brand" color="var(--tf-2e75b6)" icon="🏷️">
                 {tipoCliente === "business" && (
                   <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-3 text-sm text-violet-400 mb-6 flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest">
                     <Info className="w-4 h-4" /> Modalità Business — tutti i brand inclusi
@@ -2108,8 +2108,8 @@ export default function InviaPda() {
                           <p className="text-sm font-semibold" style={{color:b.color}}>{b.desc}</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {b.onlyBusiness && <Tag c="#a78bfa" bg="#a78bfa10">Solo Business</Tag>}
-                          {brand === b.id && <Tag c="#10b981" bg="#10b98110">Selezionato</Tag>}
+                          {b.onlyBusiness && <Tag c="var(--tf-a78bfa)" bg="#a78bfa10">Solo Business</Tag>}
+                          {brand === b.id && <Tag c="var(--tf-10b981)" bg="#10b98110">Selezionato</Tag>}
                         </div>
                       </div>
                     </div>
@@ -2121,7 +2121,7 @@ export default function InviaPda() {
 
             {/* ══ STEP 4 ══ */}
             {step === 4 && (
-              <StepCard title="Step 4 — Prodotti" color={currentBrand?.color || "#2E75B6"} icon="📂"
+              <StepCard title="Step 4 — Prodotti" color={currentBrand?.color || "var(--tf-2e75b6)"} icon="📂"
                 badge={`${currentBrand?.label} · ${tipoCliente === "business" ? "Business" : "Consumer"}`}>
                 {Object.keys(brandProdotti).length > 0
                   ? <div className="space-y-6">

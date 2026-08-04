@@ -1438,17 +1438,17 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
     if (step === 5) return (
       <div className="space-y-5">
         {qrBox && createPortal(<div onClick={closeQr} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#11141d", border: "1px solid rgba(255,255,255,.08)", borderRadius: 16, width: "100%", maxWidth: 360, padding: 24, margin: "0 16px", textAlign: "center" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "var(--tf-11141d)", border: "1px solid var(--tf-w80)", borderRadius: 16, width: "100%", maxWidth: 360, padding: 24, margin: "0 16px", textAlign: "center" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <div style={{ fontWeight: 800, fontSize: 16, color: "#f8fafc" }}>📱 Carica dal telefono</div>
-              <button onClick={closeQr} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 18, cursor: "pointer" }}>✕</button>
+              <div style={{ fontWeight: 800, fontSize: 16, color: "var(--tf-f8fafc)" }}>📱 Carica dal telefono</div>
+              <button onClick={closeQr} style={{ background: "none", border: "none", color: "var(--tf-94a3b8)", fontSize: 18, cursor: "pointer" }}>✕</button>
             </div>
             {qrRecv ? (
-              <div style={{ padding: "22px 0" }}><div style={{ fontSize: 48, marginBottom: 8 }}>✅</div><div style={{ fontSize: 16, fontWeight: 800, color: "#34d399" }}>Ricevuto!</div><div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>File agganciato alla casella.</div></div>
+              <div style={{ padding: "22px 0" }}><div style={{ fontSize: 48, marginBottom: 8 }}>✅</div><div style={{ fontSize: 16, fontWeight: 800, color: "var(--tf-34d399)" }}>Ricevuto!</div><div style={{ fontSize: 12, color: "var(--tf-94a3b8)", marginTop: 6 }}>File agganciato alla casella.</div></div>
             ) : (<>
-              <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 14 }}>Inquadra il QR con la fotocamera del telefono e carica {qrBox === "doc" ? "il documento d'identità" : "la dichiarazione firmata"} — foto o scansione: più pagine vengono unite in un unico PDF.</div>
-              {qrImg ? <img src={qrImg} alt="QR" style={{ width: 216, height: 216, borderRadius: 12, background: "#fff", padding: 8, boxSizing: "border-box", display: "block", margin: "0 auto" }} /> : <div style={{ width: 216, height: 216, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", color: "#64748b" }}>Genero…</div>}
-              <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: "#f59e0b", display: "inline-block" }} />In attesa della scansione…</div>
+              <div style={{ fontSize: 12, color: "var(--tf-94a3b8)", marginBottom: 14 }}>Inquadra il QR con la fotocamera del telefono e carica {qrBox === "doc" ? "il documento d'identità" : "la dichiarazione firmata"} — foto o scansione: più pagine vengono unite in un unico PDF.</div>
+              {qrImg ? <img src={qrImg} alt="QR" style={{ width: 216, height: 216, borderRadius: 12, background: "#fff", padding: 8, boxSizing: "border-box", display: "block", margin: "0 auto" }} /> : <div style={{ width: 216, height: 216, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--tf-64748b)" }}>Genero…</div>}
+              <div style={{ fontSize: 11, color: "var(--tf-f59e0b)", marginTop: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: 4, background: "var(--tf-f59e0b)", display: "inline-block" }} />In attesa della scansione…</div>
             </>)}
           </div>
         </div>, document.body)}

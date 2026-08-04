@@ -360,7 +360,7 @@ export default function PasswordV2Page() {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                             {BRANDS.map((b) => {
-                                const colorHex = b.id === "windtre" ? "#f97316" : b.id === "vodafone" ? "#e60000" : b.id === "tim" ? "#003da5" : b.id === "sky" ? "#0072CE" : b.id === "fastweb" ? "#7c3aed" : b.id === "iliad" ? "#e2001a" : b.id === "kena" ? "#f5a623" : b.id === "ho" ? "#8e24aa" : "#10b981";
+                                const colorHex = b.id === "windtre" ? "var(--tf-f97316)" : b.id === "vodafone" ? "var(--tf-e60000)" : b.id === "tim" ? "var(--tf-003da5)" : b.id === "sky" ? "var(--tf-0072ce)" : b.id === "fastweb" ? "var(--tf-7c3aed)" : b.id === "iliad" ? "var(--tf-e2001a)" : b.id === "kena" ? "var(--tf-f5a623)" : b.id === "ho" ? "var(--tf-8e24aa)" : "var(--tf-10b981)";
                                 return (
                                     <div
                                         key={b.id}

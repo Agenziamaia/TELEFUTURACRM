@@ -22,7 +22,7 @@ import { NAVIGATION, effectiveAllowed, OUTBOUND_HIDDEN_GROUPS, hubChildKey, hubS
 import { CAPABILITIES, capKey, capAllowed, capChoice, type CapGroup, type CapGroupChoice } from "@/lib/capabilities";
 import { notify, dbError } from "./toast";
 
-const AREA_CHIP_COLORS: Record<string, string> = { pv: "#6366f1", cc: "#0ea5e9", ob: "#f59e0b", sede: "#a855f7" };
+const AREA_CHIP_COLORS: Record<string, string> = { pv: "var(--tf-6366f1)", cc: "var(--tf-0ea5e9)", ob: "var(--tf-f59e0b)", sede: "var(--tf-a855f7)" };
 
 interface Riga { href: string; nome: string; gruppo?: string; defaultRoles: string[]; livello?: number; padre?: string }
 
@@ -188,7 +188,7 @@ export function PermessiView() {
                                         className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
                                         style={on
                                             ? { color: AREA_CHIP_COLORS[a.id], borderColor: AREA_CHIP_COLORS[a.id], background: AREA_CHIP_COLORS[a.id] + "22" }
-                                            : { color: "#94a3b8", borderColor: "rgba(255,255,255,0.1)" }}>
+                                            : { color: "var(--tf-94a3b8)", borderColor: "var(--tf-w100)" }}>
                                         {r.label}{on && " ✓"}
                                     </button>
                                 );
@@ -204,8 +204,8 @@ export function PermessiView() {
                             <button onClick={() => setGrado("")}
                                 className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
                                 style={!grado
-                                    ? { color: "#fbbf24", borderColor: "#f59e0b", background: "rgba(245,158,11,0.14)" }
-                                    : { color: "#94a3b8", borderColor: "rgba(255,255,255,0.1)" }}>
+                                    ? { color: "var(--tf-fbbf24)", borderColor: "var(--tf-f59e0b)", background: "rgba(245,158,11,0.14)" }
+                                    : { color: "var(--tf-94a3b8)", borderColor: "var(--tf-w100)" }}>
                                 Tutti i gradi{!grado && " ✓"}
                             </button>
                             {gradesFor(ruolo).map((g) => {
@@ -215,8 +215,8 @@ export function PermessiView() {
                                     <button key={g.id} onClick={() => setGrado(on ? "" : g.id)}
                                         className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
                                         style={on
-                                            ? { color: "#fbbf24", borderColor: "#f59e0b", background: "rgba(245,158,11,0.14)" }
-                                            : { color: "#94a3b8", borderColor: "rgba(255,255,255,0.1)" }}>
+                                            ? { color: "var(--tf-fbbf24)", borderColor: "var(--tf-f59e0b)", background: "rgba(245,158,11,0.14)" }
+                                            : { color: "var(--tf-94a3b8)", borderColor: "var(--tf-w100)" }}>
                                         {g.label}{on && " ✓"}{nEcc > 0 && <span className="ml-1.5 text-[10px] font-black text-amber-400">·{nEcc}</span>}
                                     </button>
                                 );

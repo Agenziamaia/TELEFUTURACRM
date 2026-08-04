@@ -12,12 +12,12 @@ import { supabase } from "@/lib/supabaseClient";
 import { impostaRegoleTracking, REGOLE_TRACKING_DEFAULT, type RegolaTracking } from "./trackingHelpers";
 
 const CATEGORIE_UI: { id: string; label: string; color: string }[] = [
-    { id: "mnp", label: "MNP", color: "#38bdf8" },
-    { id: "fisso", label: "Fisso", color: "#818cf8" },
-    { id: "finanziamento", label: "Finanziamento", color: "#f59e0b" },
-    { id: "piva", label: "P.IVA", color: "#a78bfa" },
-    { id: "energia", label: "Energia", color: "#22c55e" },
-    { id: "sky", label: "Sky", color: "#6366f1" },
+    { id: "mnp", label: "MNP", color: "var(--tf-38bdf8)" },
+    { id: "fisso", label: "Fisso", color: "var(--tf-818cf8)" },
+    { id: "finanziamento", label: "Finanziamento", color: "var(--tf-f59e0b)" },
+    { id: "piva", label: "P.IVA", color: "var(--tf-a78bfa)" },
+    { id: "energia", label: "Energia", color: "var(--tf-22c55e)" },
+    { id: "sky", label: "Sky", color: "var(--tf-6366f1)" },
 ];
 const VARIABILI: { prefisso: "senza" | "succ" | "compl"; label: string; desc: string }[] = [
     { prefisso: "senza", label: "Mai aggiornata", desc: "giorni dall'inserimento, pratica senza NESSUN aggiornamento" },
@@ -25,9 +25,9 @@ const VARIABILI: { prefisso: "senza" | "succ" | "compl"; label: string; desc: st
     { prefisso: "compl", label: "Non completata", desc: "giorni dall'inserimento finché la pratica non è completata" },
 ];
 const FASCE: { suffisso: "lavorare" | "warning" | "malus"; icona: string; colore: string }[] = [
-    { suffisso: "lavorare", icona: "⚡", colore: "#eab308" },
-    { suffisso: "warning", icona: "⚠️", colore: "#f97316" },
-    { suffisso: "malus", icona: "🔴", colore: "#ef4444" },
+    { suffisso: "lavorare", icona: "⚡", colore: "var(--tf-eab308)" },
+    { suffisso: "warning", icona: "⚠️", colore: "var(--tf-f97316)" },
+    { suffisso: "malus", icona: "🔴", colore: "var(--tf-ef4444)" },
 ];
 
 export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate: () => void }) {
@@ -108,7 +108,7 @@ export function RegoleTracking({ admin, onSalvate }: { admin: boolean; onSalvate
                                                                 inputMode="numeric" placeholder="—"
                                                                 className="w-11 text-center rounded-md bg-white/[0.05] border border-white/10 py-1 text-[13px] font-bold text-slate-100 focus:border-indigo-500 outline-none" />
                                                         ) : (
-                                                            <span className="w-11 text-center py-1 text-[13px] font-bold" style={{ color: campo(c.id, chiave) ? f.colore : "#475569" }}>{campo(c.id, chiave) || "—"}</span>
+                                                            <span className="w-11 text-center py-1 text-[13px] font-bold" style={{ color: campo(c.id, chiave) ? f.colore : "var(--tf-475569)" }}>{campo(c.id, chiave) || "—"}</span>
                                                         )}
                                                     </label>
                                                 );

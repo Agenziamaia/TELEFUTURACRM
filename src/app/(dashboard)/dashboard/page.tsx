@@ -26,13 +26,13 @@ const norm = (s) => (s || "").trim().toLowerCase();
 const sameStore = (a, b) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
 const STATO_COLOR = (s = "") => {
   const k = s.toLowerCase();
-  if (k.includes("attiv")) return "#22c55e";
-  if (k.includes("lavorazione") || k.includes("nuovo")) return "#f59e0b";
-  if (k.includes("annull")) return "#ef4444";
-  if (k.includes("sospes")) return "#f97316";
-  return "#64748b";
+  if (k.includes("attiv")) return "var(--tf-22c55e)";
+  if (k.includes("lavorazione") || k.includes("nuovo")) return "var(--tf-f59e0b)";
+  if (k.includes("annull")) return "var(--tf-ef4444)";
+  if (k.includes("sospes")) return "var(--tf-f97316)";
+  return "var(--tf-64748b)";
 };
-const brandColor = (b) => BRAND_COLORS[b]?.color || "#6366f1";
+const brandColor = (b) => BRAND_COLORS[b]?.color || "var(--tf-6366f1)";
 const daysAgoISO = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
 const CLOSED_TASK = ["completato", "fatto", "done", "chiuso", "annullato", "completo"];
 
@@ -84,7 +84,7 @@ function BarChart({ icon: Icon, title, rows, total, colorFor, accent }) {
   );
 }
 
-function WidgetShell({ icon: Icon, title, accent = "#818cf8", action, children }) {
+function WidgetShell({ icon: Icon, title, accent = "var(--tf-818cf8)", action, children }) {
   return (
     <div className="glass-card overflow-hidden flex flex-col">
       <div className="px-5 py-3.5 border-b border-white/5 flex items-center justify-between">
@@ -181,8 +181,8 @@ export default function Dashboard() {
   const byStato = useMemo(() => groupBy(mine, "stato"), [mine]);
   const terzo = useMemo(() => {
     if (level === "own") return null;
-    if (multiStore) return { title: level === "global" ? "Top negozi rete" : "Top negozi area", icon: StoreIcon, rows: groupBy(mine, "negozio").slice(0, 12), color: "#a855f7" };
-    return { title: "Top venditori negozio", icon: Users, rows: groupBy(mine, "venditore").slice(0, 12), color: "#38bdf8" };
+    if (multiStore) return { title: level === "global" ? "Top negozi rete" : "Top negozi area", icon: StoreIcon, rows: groupBy(mine, "negozio").slice(0, 12), color: "var(--tf-a855f7)" };
+    return { title: "Top venditori negozio", icon: Users, rows: groupBy(mine, "venditore").slice(0, 12), color: "var(--tf-38bdf8)" };
   }, [mine, level, multiStore]);
 
   const attivi = mine.filter((c) => /attiv/i.test(c.stato || "")).length;
@@ -246,36 +246,36 @@ export default function Dashboard() {
   const SECTIONS = {
     kpi: (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi icon={FileText} label="Contratti" value={mine.length} color="#6366f1" sub={period === "month" ? "registrati questo mese" : period === "custom" && filtro ? `registrati a ${MESI[filtro.m].toLowerCase()} ${filtro.y}` : "totali a sistema"} />
-        <Kpi icon={CheckCircle2} label="Attivi" value={attivi} color="#22c55e" sub={mine.length ? `${Math.round((attivi / mine.length) * 100)}% del periodo` : "—"} />
-        <Kpi icon={Clock} label="In lavorazione" value={lavorazione} color="#f59e0b" sub="da completare" />
-        <Kpi icon={Users} label="Clienti" value={clienti} color="#a855f7" sub="serviti nel periodo" />
+        <Kpi icon={FileText} label="Contratti" value={mine.length} color="var(--tf-6366f1)" sub={period === "month" ? "registrati questo mese" : period === "custom" && filtro ? `registrati a ${MESI[filtro.m].toLowerCase()} ${filtro.y}` : "totali a sistema"} />
+        <Kpi icon={CheckCircle2} label="Attivi" value={attivi} color="var(--tf-22c55e)" sub={mine.length ? `${Math.round((attivi / mine.length) * 100)}% del periodo` : "—"} />
+        <Kpi icon={Clock} label="In lavorazione" value={lavorazione} color="var(--tf-f59e0b)" sub="da completare" />
+        <Kpi icon={Users} label="Clienti" value={clienti} color="var(--tf-a855f7)" sub="serviti nel periodo" />
       </div>
     ),
     charts: (
       <div className={`grid gap-4 ${terzo ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
-        <BarChart icon={TrendingUp} title="Per brand" rows={byBrand} total={mine.length} colorFor={brandColor} accent="#818cf8" />
-        <BarChart icon={AlertTriangle} title="Per stato" rows={byStato} total={mine.length} colorFor={STATO_COLOR} accent="#f59e0b" />
+        <BarChart icon={TrendingUp} title="Per brand" rows={byBrand} total={mine.length} colorFor={brandColor} accent="var(--tf-818cf8)" />
+        <BarChart icon={AlertTriangle} title="Per stato" rows={byStato} total={mine.length} colorFor={STATO_COLOR} accent="var(--tf-f59e0b)" />
         {terzo && <BarChart icon={terzo.icon} title={terzo.title} rows={terzo.rows} total={mine.length} colorFor={() => terzo.color} accent={terzo.color} />}
       </div>
     ),
     widgets: (
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {/* Direzione Inserimento (bussola, sola lettura) */}
-        <WidgetShell icon={Compass} title="Direzione inserimento" accent="#38bdf8"
+        <WidgetShell icon={Compass} title="Direzione inserimento" accent="var(--tf-38bdf8)"
           action={!seesAll && myStores[0] ? <span className="text-[10px] text-slate-500">{myStores[0]}</span> : null}>
           <BussolaWidget negozio={seesAll ? (myStores[0] || user.negozio) : (user.negozio || myStores[0])} />
         </WidgetShell>
 
         {/* Obiettivo (reale dai target Home) */}
-        <WidgetShell icon={TargetIcon} title={targetTitle} accent="#818cf8" action={<span className="text-[10px] text-slate-500">{period === "month" ? "Mese corrente" : period === "custom" && filtro ? `${MESI[filtro.m]} ${filtro.y}` : "Totale"}</span>}>
+        <WidgetShell icon={TargetIcon} title={targetTitle} accent="var(--tf-818cf8)" action={<span className="text-[10px] text-slate-500">{period === "month" ? "Mese corrente" : period === "custom" && filtro ? `${MESI[filtro.m]} ${filtro.y}` : "Totale"}</span>}>
           <div className="p-5">
             <div className="flex items-end justify-between mb-2">
               <div>
                 <div className="text-[11px] text-slate-500 mb-1">{targetSub}</div>
                 <div className="text-3xl font-black text-white leading-none">{mine.length}{targetVal > 0 && <span className="text-base text-slate-500 font-bold"> / {targetVal}</span>}</div>
               </div>
-              {targetVal > 0 && <div className="text-xl font-black" style={{ color: perc >= 100 ? "#22c55e" : "#818cf8" }}>{perc}%</div>}
+              {targetVal > 0 && <div className="text-xl font-black" style={{ color: perc >= 100 ? "var(--tf-22c55e)" : "var(--tf-818cf8)" }}>{perc}%</div>}
             </div>
             {targetVal > 0 ? (
               <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
@@ -288,7 +288,7 @@ export default function Dashboard() {
         </WidgetShell>
 
         {/* Azioni e To-Do (reminder dinamici) */}
-        <WidgetShell icon={Zap} title="Azioni e to-do" accent="#818cf8">
+        <WidgetShell icon={Zap} title="Azioni e to-do" accent="var(--tf-818cf8)">
           <div className="p-4 grid grid-cols-2 gap-2 border-b border-white/5">
             <Link href="/registra-vendita" className="flex items-center justify-center gap-1.5 rounded-lg bg-indigo-500/12 border border-indigo-500/25 text-indigo-300 text-[11px] font-bold py-2 hover:bg-indigo-500/20"><Plus className="w-3.5 h-3.5" /> Nuova Vendita</Link>
             <Link href="/clienti" className="flex items-center justify-center gap-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-300 text-[11px] font-bold py-2 hover:bg-white/10"><Search className="w-3.5 h-3.5" /> Trova Cliente</Link>
@@ -320,14 +320,14 @@ export default function Dashboard() {
         </WidgetShell>
 
         {/* Bacheca Aziendale */}
-        <WidgetShell icon={Megaphone} title="Bacheca aziendale" accent="#38bdf8"
+        <WidgetShell icon={Megaphone} title="Bacheca aziendale" accent="var(--tf-38bdf8)"
           action={!isVenditore ? <Link href="/comunicazioni" className="text-[10px] font-bold text-sky-300 bg-sky-500/10 px-2 py-1 rounded-md hover:bg-sky-500/20 flex items-center gap-1"><Plus className="w-3 h-3" /> Nuovo</Link> : null}>
           <div className="p-4 space-y-3 overflow-y-auto max-h-[220px]">
             {commsVisibili.length === 0 ? <p className="text-xs text-slate-500 text-center py-4">Nessun annuncio.</p> :
               commsVisibili.map((c) => (
                 <div key={c.id} className="border-b border-white/5 last:border-0 pb-2.5 last:pb-0">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ color: /urgent/i.test(c.type || "") ? "#f87171" : "#34d399", background: /urgent/i.test(c.type || "") ? "rgba(239,68,68,.15)" : "rgba(16,185,129,.15)" }}>{c.type || "Info"}</span>
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ color: /urgent/i.test(c.type || "") ? "var(--tf-f87171)" : "var(--tf-34d399)", background: /urgent/i.test(c.type || "") ? "rgba(239,68,68,.15)" : "rgba(16,185,129,.15)" }}>{c.type || "Info"}</span>
                     <span className="text-[10px] text-slate-600">{c.date_display || ""}</span>
                   </div>
                   <div className="text-xs font-semibold text-slate-100">{c.title}</div>
@@ -362,7 +362,7 @@ export default function Dashboard() {
                 return (
                   <tr key={v.nome} className="border-t border-white/[0.03]" style={isMe ? { background: "rgba(99,102,241,0.08)" } : undefined}>
                     <td className="py-3 px-5 text-center">{v.rank === 1 ? "🥇" : v.rank === 2 ? "🥈" : v.rank === 3 ? "🥉" : <span className="text-slate-500 font-bold">{v.rank}</span>}</td>
-                    <td className="py-3 px-5"><span className="font-bold" style={{ color: isMe ? "#a5b4fc" : "#f1f5f9" }}>{v.nome}{isMe && <span className="ml-2 text-[9px] font-bold text-indigo-300 bg-indigo-500/15 px-1.5 py-0.5 rounded">TU</span>}</span></td>
+                    <td className="py-3 px-5"><span className="font-bold" style={{ color: isMe ? "var(--tf-a5b4fc)" : "#f1f5f9" }}>{v.nome}{isMe && <span className="ml-2 text-[9px] font-bold text-indigo-300 bg-indigo-500/15 px-1.5 py-0.5 rounded">TU</span>}</span></td>
                     <td className="py-3 px-5 text-slate-400">{v.negozio || "—"}</td>
                     <td className="py-3 px-5 text-right font-black text-slate-200">{v.n}</td>
                   </tr>

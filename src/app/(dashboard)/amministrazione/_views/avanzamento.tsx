@@ -248,7 +248,7 @@ export function AvanzamentoView() {
                                             </div>
                                             {tgt != null && (
                                                 <div className="h-1.5 mt-2 rounded-full bg-white/5 overflow-hidden">
-                                                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: (pct ?? 0) >= 100 ? "#22c55e" : (pct ?? 0) >= 60 ? "#f59e0b" : "#6366f1" }} />
+                                                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: (pct ?? 0) >= 100 ? "var(--tf-22c55e)" : (pct ?? 0) >= 60 ? "var(--tf-f59e0b)" : "var(--tf-6366f1)" }} />
                                                 </div>
                                             )}
                                         </div>

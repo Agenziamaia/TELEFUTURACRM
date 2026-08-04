@@ -82,7 +82,7 @@ export function NotificationCenter() {
                 <div
                     key={n.id}
                     className="pointer-events-auto flex items-start gap-3 bg-[#1e2235] border border-white/10 p-4 rounded-xl shadow-2xl animate-in slide-in-from-right-full duration-300 w-80"
-                    style={{ borderLeft: `4px solid ${n.type === "success" ? "#22c55e" : "#6366f1"}` }}
+                    style={{ borderLeft: `4px solid ${n.type === "success" ? "var(--tf-22c55e)" : "var(--tf-6366f1)"}` }}
                 >
                     <div className="p-2 rounded-lg bg-white/5">
                         {n.type === "success" ? (

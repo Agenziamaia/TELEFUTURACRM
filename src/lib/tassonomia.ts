@@ -49,16 +49,16 @@ export interface CategoriaDef {
 }
 
 export const CATEGORIE: CategoriaDef[] = [
-    { id: "mobile", label: "Mobile", desc: "SIM e offerte mobili", color: "#3b82f6", icon: "📱" },
-    { id: "fisso", label: "Fisso / Fibra", desc: "Linee fisse, fibra e FWA", color: "#0ea5e9", icon: "🏠" },
-    { id: "energia", label: "Energia", desc: "Luce e gas", color: "#10b981", icon: "⚡" },
-    { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "#ef4444", icon: "📺" },
-    { id: "cb", label: "Customer Base", desc: "Lavorazioni sulla base clienti: cambi offerta, telefono incluso, add-on", color: "#8b5cf6", icon: "🔁" },
+    { id: "mobile", label: "Mobile", desc: "SIM e offerte mobili", color: "var(--tf-3b82f6)", icon: "📱" },
+    { id: "fisso", label: "Fisso / Fibra", desc: "Linee fisse, fibra e FWA", color: "var(--tf-0ea5e9)", icon: "🏠" },
+    { id: "energia", label: "Energia", desc: "Luce e gas", color: "var(--tf-10b981)", icon: "⚡" },
+    { id: "tv", label: "TV", desc: "Pay TV e intrattenimento", color: "var(--tf-ef4444)", icon: "📺" },
+    { id: "cb", label: "Customer Base", desc: "Lavorazioni sulla base clienti: cambi offerta, telefono incluso, add-on", color: "var(--tf-8b5cf6)", icon: "🔁" },
     // "Soluzioni Digitali" NON e' una categoria (decisione Luca 25/07): i servizi
     // digitali rientrano in Multi-Servizi e si distinguono a livello di PRODOTTO.
-    { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni, servizi digitali e pacchetti multi-servizio", color: "#ec4899", icon: "🛡️" },
-    { id: "pos", label: "POS", desc: "Terminali di pagamento", color: "#f59e0b", icon: "🏧" },
-    { id: "extra", label: "Marginalità", desc: "Prodotti e servizi a marginalita' (ex Extra)", color: "#94a3b8", icon: "💰" },
+    { id: "multi_servizi", label: "Multi-Servizi", desc: "Assicurazioni, servizi digitali e pacchetti multi-servizio", color: "var(--tf-ec4899)", icon: "🛡️" },
+    { id: "pos", label: "POS", desc: "Terminali di pagamento", color: "var(--tf-f59e0b)", icon: "🏧" },
+    { id: "extra", label: "Marginalità", desc: "Prodotti e servizi a marginalita' (ex Extra)", color: "var(--tf-94a3b8)", icon: "💰" },
 ];
 
 // Etichette canoniche per compilare/modificare la categoria di una vendita
@@ -88,7 +88,7 @@ export function categoriaDef(id: string | null | undefined): CategoriaDef {
         id: "extra" as CategoriaId,
         label: String(id || "—"),
         desc: "Categoria non riconosciuta",
-        color: "#94a3b8",
+        color: "var(--tf-94a3b8)",
         icon: "•",
     };
 }
@@ -100,9 +100,9 @@ export function categoriaDef(id: string | null | undefined): CategoriaDef {
 export type ControlloId = "mnp" | "finanziamento" | "rata";
 
 export const CONTROLLI: { id: ControlloId; label: string; color: string }[] = [
-    { id: "mnp", label: "MNP", color: "#6366f1" },
-    { id: "finanziamento", label: "Finanziamento", color: "#f59e0b" },
-    { id: "rata", label: "Rata", color: "#64748b" },
+    { id: "mnp", label: "MNP", color: "var(--tf-6366f1)" },
+    { id: "finanziamento", label: "Finanziamento", color: "var(--tf-f59e0b)" },
+    { id: "rata", label: "Rata", color: "var(--tf-64748b)" },
 ];
 
 // ─── Mappatura: da cosa scrive il brand alla categoria condivisa ─────────────

@@ -196,10 +196,10 @@ function CatBadge({ id }: { id: string }) {
 // "Very Mobile", "TIM", "WindTre"... — il lookup esatto perdeva pezzi.
 const trkBrandKey = (b: string) => String(b).toLowerCase().replace(/[^a-z0-9]/g, "");
 const TRK_BRAND_COLORS: Record<string, string> = {
-  vodafone: "#E60000", fastweb: "#eab308", windtre: "#f97316", wind3: "#f97316",
-  iliad: "#C00028", tim: "#0050FF", s4: "#22c55e", energy: "#22c55e",
-  sky: "#0072C6", dojo: "#14b8a6", verymobile: "#84cc16", homobile: "#9b26b6",
-  kenamobile: "#e4002b", kena: "#e4002b",
+  vodafone: "var(--tf-e60000)", fastweb: "var(--tf-eab308)", windtre: "var(--tf-f97316)", wind3: "var(--tf-f97316)",
+  iliad: "var(--tf-c00028)", tim: "var(--tf-0050ff)", s4: "var(--tf-22c55e)", energy: "var(--tf-22c55e)",
+  sky: "var(--tf-0072c6)", dojo: "var(--tf-14b8a6)", verymobile: "var(--tf-84cc16)", homobile: "var(--tf-9b26b6)",
+  kenamobile: "var(--tf-e4002b)", kena: "var(--tf-e4002b)",
 };
 // I file 900x900 (WindTre, Vodafone) hanno il marchio annegato nel canvas
 // trasparente: scala OTTICA per pareggiarli, il box resta identico.
@@ -254,12 +254,12 @@ function KpiBar({
   const malusTotale = data.reduce((acc, r) => acc + calcolaMalus(r), 0);
 
   const cards = [
-    { label: "Totale Monitorati", emoji: "📡", val: totale, color: "#94a3b8", filter: null as string | null },
-    { label: "Nuovi", emoji: "🆕", val: nuovi, color: "#60a5fa", filter: "nuovo" },
-    { label: "Da Lavorare", emoji: "⚡", val: daLavorare, color: "#eab308", filter: "__da_lavorare__" },
-    { label: "Warning", emoji: "⚠️", val: problema, color: "#f97316", filter: "__attenzione__" },
-    { label: "Malus", emoji: "🔴", val: malusCount, color: "#ef4444", filter: "__malus__" },
-    { label: "Non Conforme", emoji: "🚫", val: nonConformi, color: "#a78bfa", filter: "__non_conforme__" },
+    { label: "Totale Monitorati", emoji: "📡", val: totale, color: "var(--tf-94a3b8)", filter: null as string | null },
+    { label: "Nuovi", emoji: "🆕", val: nuovi, color: "var(--tf-60a5fa)", filter: "nuovo" },
+    { label: "Da Lavorare", emoji: "⚡", val: daLavorare, color: "var(--tf-eab308)", filter: "__da_lavorare__" },
+    { label: "Warning", emoji: "⚠️", val: problema, color: "var(--tf-f97316)", filter: "__attenzione__" },
+    { label: "Malus", emoji: "🔴", val: malusCount, color: "var(--tf-ef4444)", filter: "__malus__" },
+    { label: "Non Conforme", emoji: "🚫", val: nonConformi, color: "var(--tf-a78bfa)", filter: "__non_conforme__" },
   ];
 
   return (
@@ -276,8 +276,8 @@ function KpiBar({
               onKeyDown={(e) => e.key === "Enter" && onFilter(isActive ? null : c.filter)}
               className="rounded-xl border p-3.5 text-center cursor-pointer select-none transition-all"
               style={{
-                background: isActive ? c.color + "1f" : "rgba(255,255,255,0.03)",
-                borderColor: isActive ? c.color : "rgba(255,255,255,0.08)",
+                background: isActive ? c.color + "1f" : "var(--tf-w30)",
+                borderColor: isActive ? c.color : "var(--tf-w80)",
                 boxShadow: isActive ? `0 0 0 3px ${c.color}22` : "none",
               }}
             >
@@ -286,8 +286,8 @@ function KpiBar({
                 <span className="text-2xl font-black" style={{ color: c.color }}>{c.val}</span>
                 {/* maturati + storico A DESTRA del numero (Luca 03/08): card bassa come le altre */}
                 {c.filter === "__malus__" && (
-                  <span className="ml-1.5 pl-2 text-left" style={{ borderLeft: "1px solid rgba(255,255,255,0.10)" }}>
-                    {malusTotale > 0 && <span className="block text-[10px] font-bold leading-tight" style={{ color: isActive ? "#fca5a5" : "#94a3b8" }}>€ {malusTotale.toFixed(0)} maturati</span>}
+                  <span className="ml-1.5 pl-2 text-left" style={{ borderLeft: "1px solid var(--tf-w100)" }}>
+                    {malusTotale > 0 && <span className="block text-[10px] font-bold leading-tight" style={{ color: isActive ? "var(--tf-fca5a5)" : "var(--tf-94a3b8)" }}>€ {malusTotale.toFixed(0)} maturati</span>}
                     <span
                       role="button" tabIndex={0}
                       onClick={(e) => { e.stopPropagation(); onApriStorico(); }}
@@ -298,7 +298,7 @@ function KpiBar({
                   </span>
                 )}
               </div>
-              <div className="text-[11px] mt-1 font-bold uppercase tracking-wider" style={{ color: isActive ? c.color : "#94a3b8" }}>
+              <div className="text-[11px] mt-1 font-bold uppercase tracking-wider" style={{ color: isActive ? c.color : "var(--tf-94a3b8)" }}>
                 {c.label}
               </div>
             </div>
@@ -311,7 +311,7 @@ function KpiBar({
       {brands.length > 0 && (
         <div className="grid gap-2.5 mb-2.5" style={{ gridTemplateColumns: `repeat(${brands.length}, minmax(0, 1fr))` }}>
           {brands.map((b) => {
-            const color = TRK_BRAND_COLORS[trkBrandKey(b)] || "#94a3b8";
+            const color = TRK_BRAND_COLORS[trkBrandKey(b)] || "var(--tf-94a3b8)";
             const logo = TRK_BRAND_LOGOS[trkBrandKey(b)];
             const esclusivo = brandSel.length === 1 && brandSel[0] === b;
             const on = brandSel.length === 0 || brandSel.includes(b);
@@ -325,7 +325,7 @@ function KpiBar({
               return r.statoNegozio === activeFilter;
             };
             const nBrand = dataBrand.filter((r) => r.brand === b && contaKpi(r)).length;
-            const colBadge = activeFilter ? (cards.find((c) => c.filter === activeFilter)?.color || "#94a3b8") : "#94a3b8";
+            const colBadge = activeFilter ? (cards.find((c) => c.filter === activeFilter)?.color || "var(--tf-94a3b8)") : "var(--tf-94a3b8)";
             return (
               <button key={b} type="button"
                 onClick={() => setBrandSel(esclusivo ? [] : [b])}
@@ -334,8 +334,8 @@ function KpiBar({
                 className="relative rounded-xl border flex items-center justify-center transition-all cursor-pointer"
                 style={{
                   height: 72,
-                  borderColor: esclusivo ? color : "rgba(255,255,255,0.10)",
-                  background: esclusivo ? color + "18" : "rgba(255,255,255,0.03)",
+                  borderColor: esclusivo ? color : "var(--tf-w100)",
+                  background: esclusivo ? color + "18" : "var(--tf-w30)",
                   boxShadow: esclusivo ? `0 0 0 3px ${color}22` : "none",
                   opacity: on ? 1 : .35,
                   filter: on ? "none" : "grayscale(1)",
@@ -343,14 +343,14 @@ function KpiBar({
                 {logo ? (
                   <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(b)] || 1})` }} />
                 ) : (
-                  <span className="text-xs font-bold" style={{ color: on ? color : "#586174" }}>{b}</span>
+                  <span className="text-xs font-bold" style={{ color: on ? color : "var(--tf-586174)" }}>{b}</span>
                 )}
                 {/* numeretto A FIANCO del logo (Luca): assoluto così il logo
                     resta perfettamente centrato, distanza dal bordo IDENTICA
                     per tutti i brand; fondo solido perché i loghi scalati
                     (transform) sbordano dal box di layout. */}
                 <span className="absolute text-[10px] font-black leading-none px-1.5 py-[3px] rounded-full"
-                  style={{ right: 7, top: "50%", transform: "translateY(-50%)", zIndex: 1, color: colBadge, background: "#0d1424", border: `1px solid ${colBadge}66`, opacity: nBrand === 0 ? .5 : 1 }}>
+                  style={{ right: 7, top: "50%", transform: "translateY(-50%)", zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: nBrand === 0 ? .5 : 1 }}>
                   {nBrand}
                 </span>
               </button>
@@ -465,9 +465,9 @@ function FilterBar({
               onClick={() => toggleCat(cat.id)}
               className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
               style={{
-                borderColor: sel ? cat.color : "rgba(255,255,255,0.10)",
+                borderColor: sel ? cat.color : "var(--tf-w100)",
                 background: sel ? cat.color + "33" : "transparent",
-                color: sel ? cat.color : "#94a3b8",
+                color: sel ? cat.color : "var(--tf-94a3b8)",
               }}
             >
               {cat.label}
@@ -495,9 +495,9 @@ function FilterBar({
             onClick={() => setNegozioSel("")}
             className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
             style={{
-              borderColor: negozioSel === "" ? "#6366f1" : "rgba(255,255,255,0.10)",
+              borderColor: negozioSel === "" ? "var(--tf-6366f1)" : "var(--tf-w100)",
               background: negozioSel === "" ? "#6366f133" : "transparent",
-              color: negozioSel === "" ? "#818cf8" : "#94a3b8",
+              color: negozioSel === "" ? "var(--tf-818cf8)" : "var(--tf-94a3b8)",
             }}
           >
             Tutti
@@ -511,9 +511,9 @@ function FilterBar({
                 onClick={() => setNegozioSel(sel ? "" : n)}
                 className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
                 style={{
-                  borderColor: sel ? "#6366f1" : "rgba(255,255,255,0.10)",
+                  borderColor: sel ? "var(--tf-6366f1)" : "var(--tf-w100)",
                   background: sel ? "#6366f133" : "transparent",
-                  color: sel ? "#818cf8" : "#94a3b8",
+                  color: sel ? "var(--tf-818cf8)" : "var(--tf-94a3b8)",
                 }}
               >
                 {n}
@@ -533,9 +533,9 @@ function FilterBar({
             onClick={() => setVenditoreSel("")}
             className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
             style={{
-              borderColor: venditoreSel === "" ? "#6366f1" : "rgba(255,255,255,0.10)",
+              borderColor: venditoreSel === "" ? "var(--tf-6366f1)" : "var(--tf-w100)",
               background: venditoreSel === "" ? "#6366f133" : "transparent",
-              color: venditoreSel === "" ? "#818cf8" : "#94a3b8",
+              color: venditoreSel === "" ? "var(--tf-818cf8)" : "var(--tf-94a3b8)",
             }}
           >
             Tutti
@@ -549,9 +549,9 @@ function FilterBar({
                 onClick={() => setVenditoreSel(sel ? "" : n)}
                 className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
                 style={{
-                  borderColor: sel ? "#6366f1" : "rgba(255,255,255,0.10)",
+                  borderColor: sel ? "var(--tf-6366f1)" : "var(--tf-w100)",
                   background: sel ? "#6366f133" : "transparent",
-                  color: sel ? "#818cf8" : "#94a3b8",
+                  color: sel ? "var(--tf-818cf8)" : "var(--tf-94a3b8)",
                 }}
               >
                 {n}
@@ -623,7 +623,7 @@ function FilterBar({
                   >
                     <div
                       className="w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0"
-                      style={{ borderColor: sel ? s.color : "#475569", background: sel ? s.color : "transparent" }}
+                      style={{ borderColor: sel ? s.color : "var(--tf-475569)", background: sel ? s.color : "transparent" }}
                     >
                       {sel && <span className="text-black text-[9px] font-black">✓</span>}
                     </div>
@@ -697,11 +697,11 @@ function FilterBar({
                     >
                       <div
                         className="w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0"
-                        style={{ borderColor: sel ? "#818cf8" : "#475569", background: sel ? "#818cf8" : "transparent" }}
+                        style={{ borderColor: sel ? "var(--tf-818cf8)" : "var(--tf-475569)", background: sel ? "var(--tf-818cf8)" : "transparent" }}
                       >
                         {sel && <span className="text-black text-[9px] font-black">✓</span>}
                       </div>
-                      <span className="text-[13px]" style={{ color: sel ? "#c7d2fe" : "#cbd5e1" }}>{n}</span>
+                      <span className="text-[13px]" style={{ color: sel ? "var(--tf-c7d2fe)" : "var(--tf-cbd5e1)" }}>{n}</span>
                     </div>
                   );
                 })}
@@ -814,10 +814,10 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
               // gradiente che sfuma da sinistra + barretta colore — via il
               // monocolore da foglio Excel
               const fase = isMalusRow(row) ? "malus" : isAttenzioneRow(row) ? "warning" : isDaLavorareRow(row) ? "lavorare" : "";
-              const cFase = fase === "malus" ? "#ef4444" : fase === "warning" ? "#f97316" : fase === "lavorare" ? "#eab308" : "";
+              const cFase = fase === "malus" ? "var(--tf-ef4444)" : fase === "warning" ? "var(--tf-f97316)" : fase === "lavorare" ? "var(--tf-eab308)" : "";
               const bg = fase
                 ? `linear-gradient(90deg, ${cFase}24, ${cFase}08 45%, transparent 75%)`
-                : i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)";
+                : i % 2 === 0 ? "transparent" : "var(--tf-w20)";
               return (
                 <tr
                   key={row.rowKey || row.id}
@@ -1034,10 +1034,10 @@ function Drawer({
     "bg-white/[0.03] border border-white/10 rounded-xl p-4 mb-3.5";
 
   const tipoColor = (tipo: string) => {
-    if (tipo === "stato_admin" || tipo === "nota_admin") return "#a78bfa";
-    if (tipo === "stato_negozio") return "#6366f1";
-    if (tipo === "nota_negozio") return "#f59e0b";
-    return "#22c55e";
+    if (tipo === "stato_admin" || tipo === "nota_admin") return "var(--tf-a78bfa)";
+    if (tipo === "stato_negozio") return "var(--tf-6366f1)";
+    if (tipo === "nota_negozio") return "var(--tf-f59e0b)";
+    return "var(--tf-22c55e)";
   };
   const tipoLabel = (tipo: string) => {
     if (tipo === "stato_admin") return "Admin";
@@ -1052,7 +1052,7 @@ function Drawer({
   return (
     <div
       className="fixed top-0 right-0 bottom-0 w-full max-w-[520px] flex flex-col z-[1000] border-l border-slate-700"
-      style={{ background: "#0f172a", boxShadow: "-8px 0 32px rgba(0,0,0,.5)" }}
+      style={{ background: "var(--tf-0f172a)", boxShadow: "-8px 0 32px rgba(0,0,0,.5)" }}
     >
       <div className="pt-5 px-6 pb-0 border-b border-white/5 flex-shrink-0">
         <div className="flex items-start justify-between mb-3.5">
@@ -1105,8 +1105,8 @@ function Drawer({
                 onClick={() => setActiveTab(tab)}
                 className="py-2 px-4 bg-transparent border-none border-b-2 cursor-pointer transition-all text-[13px] font-normal"
                 style={{
-                  borderBottomColor: active ? "#6366f1" : "transparent",
-                  color: active ? "#f1f5f9" : "#475569",
+                  borderBottomColor: active ? "var(--tf-6366f1)" : "transparent",
+                  color: active ? "#f1f5f9" : "var(--tf-475569)",
                   fontWeight: active ? 700 : 400,
                 }}
               >
@@ -1244,9 +1244,9 @@ function Drawer({
                       onClick={() => setEditStatoN(s.id)}
                       className="rounded-full py-1.5 px-3.5 text-xs font-semibold cursor-pointer border transition-all"
                       style={{
-                        borderColor: sel ? s.color : "rgba(255,255,255,0.10)",
+                        borderColor: sel ? s.color : "var(--tf-w100)",
                         background: sel ? s.color + "33" : "transparent",
-                        color: sel ? s.color : "#64748b",
+                        color: sel ? s.color : "var(--tf-64748b)",
                       }}
                     >
                       {s.label}
@@ -1309,9 +1309,9 @@ function Drawer({
                       onClick={() => setEditStatoA(s.id)}
                       className="rounded-full py-1.5 px-3.5 text-xs font-semibold cursor-pointer border transition-all"
                       style={{
-                        borderColor: sel ? s.color : "rgba(255,255,255,0.10)",
+                        borderColor: sel ? s.color : "var(--tf-w100)",
                         background: sel ? s.color + "33" : "transparent",
-                        color: sel ? s.color : "#64748b",
+                        color: sel ? s.color : "var(--tf-64748b)",
                       }}
                     >
                       {s.label}
@@ -1410,8 +1410,8 @@ function Drawer({
                       <div
                         className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-1 uppercase tracking-wider"
                         style={{
-                          color: isAdmin ? "#a78bfa" : "#6366f1",
-                          background: isAdmin ? "#2e1065" : "#1e1b4b",
+                          color: isAdmin ? "var(--tf-a78bfa)" : "var(--tf-6366f1)",
+                          background: isAdmin ? "var(--tf-2e1065)" : "var(--tf-1e1b4b)",
                         }}
                       >
                         {tipoLabel(ev.tipo)}
@@ -2123,7 +2123,7 @@ export default function TrackingPdaPage() {
           >
             <div
               className="w-full max-w-md rounded-2xl border border-white/10 p-6"
-              style={{ background: "#0e1526", boxShadow: "0 18px 50px rgba(0,0,0,.55)" }}
+              style={{ background: "var(--tf-0e1526)", boxShadow: "0 18px 50px rgba(0,0,0,.55)" }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-lg font-extrabold text-slate-100 mb-1">🗑️ Elimina pratica</div>

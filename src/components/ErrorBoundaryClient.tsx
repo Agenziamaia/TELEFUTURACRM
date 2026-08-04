@@ -32,14 +32,14 @@ export class ErrorBoundaryClient extends React.Component<Props, State> {
             <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
                 <div style={{ maxWidth: 620, width: "100%", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 16, padding: "26px 28px" }}>
                     <div style={{ fontSize: 34, marginBottom: 8 }}>⚠️</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "#f8fafc", marginBottom: 6 }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "var(--tf-f8fafc)", marginBottom: 6 }}>
                         Qualcosa è andato storto in “{this.props.nome}”
                     </div>
-                    <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 14, lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 13, color: "var(--tf-94a3b8)", marginBottom: 14, lineHeight: 1.5 }}>
                         La pagina ha avuto un errore ma il resto del CRM funziona. Riprova a ricaricare;
                         se continua, manda questo messaggio all&apos;assistenza:
                     </div>
-                    <pre style={{ fontSize: 12, color: "#fca5a5", background: "rgba(0,0,0,0.35)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 14px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflow: "auto", margin: 0 }}>
+                    <pre style={{ fontSize: 12, color: "var(--tf-fca5a5)", background: "rgba(0,0,0,0.35)", border: "1px solid var(--tf-w80)", borderRadius: 10, padding: "12px 14px", whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 200, overflow: "auto", margin: 0 }}>
                         {String(errore?.message || errore)}
                     </pre>
                     <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
@@ -48,7 +48,7 @@ export class ErrorBoundaryClient extends React.Component<Props, State> {
                             ↻ Ricarica la pagina
                         </button>
                         <button type="button" onClick={() => this.setState({ errore: null })}
-                            style={{ padding: "11px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.04)", color: "#cbd5e1", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                            style={{ padding: "11px 20px", borderRadius: 10, border: "1px solid var(--tf-w150)", background: "var(--tf-w40)", color: "var(--tf-cbd5e1)", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                             Riprova
                         </button>
                     </div>

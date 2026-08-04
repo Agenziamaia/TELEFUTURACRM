@@ -45,16 +45,16 @@ const vCF=(v)=>{if(!v)return null;const u=v.toUpperCase().replace(/\s/g,"");if(!
 // picker "Registra Prodotto". SimL e Subentro/Reale Util. = logo Telefutura
 // (sono prodotti nostri, non di un operatore).
 const SIM_BRANDS={
-  windtre:   {logo:"/windtre.png",         label:"WindTre",     color:"#FF6B00"},
-  vodafone:  {logo:"/vodaphone - Copy.png", label:"Vodafone",    color:"#E60000"},
-  fastweb:   {logo:"/fastweb.png",          label:"Fastweb",     color:"#CC9900"},
-  tim:       {logo:"/tim-logo-v2.png",      label:"TIM",         color:"#0050FF"},
-  iliad:     {logo:"/iliad.png",            label:"Iliad",       color:"#C00028"},
-  sky:       {logo:"/sky.png",              label:"Sky",         color:"#0072C6"},
-  ho:        {logo:"/ho-mobile.png",        label:"Ho. Mobile",  color:"#E6007E"},
-  very:      {logo:"/very-mobile.png",      label:"Very Mobile", color:"#1FA300"},
-  kena:      {logo:"/kena-mobile-v2.png",   label:"Kena Mobile", color:"#F5A623"},
-  telefutura:{logo:"/logo-crm.png",         label:"Telefutura",  color:"#6f42c1"},
+  windtre:   {logo:"/windtre.png",         label:"WindTre",     color:"var(--tf-ff6b00)"},
+  vodafone:  {logo:"/vodaphone - Copy.png", label:"Vodafone",    color:"var(--tf-e60000)"},
+  fastweb:   {logo:"/fastweb.png",          label:"Fastweb",     color:"var(--tf-cc9900)"},
+  tim:       {logo:"/tim-logo-v2.png",      label:"TIM",         color:"var(--tf-0050ff)"},
+  iliad:     {logo:"/iliad.png",            label:"Iliad",       color:"var(--tf-c00028)"},
+  sky:       {logo:"/sky.png",              label:"Sky",         color:"var(--tf-0072c6)"},
+  ho:        {logo:"/ho-mobile.png",        label:"Ho. Mobile",  color:"var(--tf-e6007e)"},
+  very:      {logo:"/very-mobile.png",      label:"Very Mobile", color:"var(--tf-1fa300)"},
+  kena:      {logo:"/kena-mobile-v2.png",   label:"Kena Mobile", color:"var(--tf-f5a623)"},
+  telefutura:{logo:"/logo-crm.png",         label:"Telefutura",  color:"var(--tf-6f42c1)"},
 };
 const SIM_BRAND_ORDER=["windtre","vodafone","fastweb","tim","iliad","sky","ho","very","kena","telefutura"];
 const MARG_PRODUCTS_LEGACY=[
@@ -334,65 +334,65 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
   const unitMissing=!!(selProd&&selProd.needsImei)&&!usatoUnits.some(u=>u.usatoId);
   return(<div style={inline?{width:"100%"}:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
     {!inline&&<style>{`@keyframes margSlideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>}
-    <div style={inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"rgba(255,255,255,0.02)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:640,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
-      <div style={{padding:"16px 20px",borderBottom:"2px solid rgba(255,255,255,0.03)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><div style={{fontSize:16,fontWeight:800,color:"#f8fafc"}}>📦 Registra Prodotto</div><div style={{fontSize:11,color:"#64748b"}}>{venditore||"—"} • {negozio||"—"} • {new Date().toLocaleDateString("it-IT")}</div></div>
-        {!inline&&<button onClick={onClose} style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕</button>}
+    <div style={inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:640,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
+      <div style={{padding:"16px 20px",borderBottom:"2px solid var(--tf-w30)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{fontSize:16,fontWeight:800,color:"var(--tf-f8fafc)"}}>📦 Registra Prodotto</div><div style={{fontSize:11,color:"var(--tf-64748b)"}}>{venditore||"—"} • {negozio||"—"} • {new Date().toLocaleDateString("it-IT")}</div></div>
+        {!inline&&<button onClick={onClose} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕</button>}
       </div>
-      <div style={{display:"flex",gap:4,padding:"10px 16px",overflowX:"auto",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+      <div style={{display:"flex",gap:4,padding:"10px 16px",overflowX:"auto",borderBottom:"1px solid var(--tf-w30)"}}>
         <input value={qMarg} onChange={e=>{setQMarg(e.target.value);setSelProd(null);}} placeholder="🔍 Cerca in tutto il catalogo…"
-          style={{minWidth:190,flex:"0 1 220px",padding:"7px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.05)",color:"#f8fafc",fontSize:12,outline:"none"}}/>
-        {MARG_PRODUCTS.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null);setQMarg("")}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:selCat===ci?"rgba(111,66,193,0.12)":"rgba(255,255,255,0.04)",color:selCat===ci?"#6f42c1":"#8892b0"}}>{cat.cat}</button>))}
+          style={{minWidth:190,flex:"0 1 220px",padding:"7px 12px",borderRadius:8,border:"1px solid var(--tf-w120)",background:"var(--tf-w50)",color:"var(--tf-f8fafc)",fontSize:12,outline:"none"}}/>
+        {MARG_PRODUCTS.map((cat,ci)=>(<button key={ci} onClick={()=>{setSelCat(ci);setSelProd(null);setQMarg("")}} style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",border:selCat===ci?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:selCat===ci?"rgba(111,66,193,0.12)":"var(--tf-w40)",color:selCat===ci?"var(--tf-6f42c1)":"var(--tf-8892b0)"}}>{cat.cat}</button>))}
       </div>
       <div style={{flex:1,overflow:"auto",padding:16}}>
         {!selProd?(qMarg.trim()?(
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8}}>
             {MARG_PRODUCTS.flatMap((c)=>c.items.map(pr=>({pr,catNome:c.cat}))).filter(x=>x.pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).slice(0,60).map(({pr,catNome})=>(
               <button key={catNome+"_"+pr.id} onClick={()=>{setSelProd(pr);if(pr.price!==null)setPrice(String(pr.price));setQMarg("");}}
-                style={{padding:"14px 8px",borderRadius:12,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                style={{padding:"14px 8px",borderRadius:12,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
                 <span style={{fontSize:22}}>{pr.icon||"📦"}</span>
-                <span style={{fontSize:10,fontWeight:600,color:"#f8fafc",lineHeight:1.2}}>{pr.name}</span>
-                <span style={{fontSize:9,color:"#8892b0"}}>{catNome}</span>
+                <span style={{fontSize:10,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{pr.name}</span>
+                <span style={{fontSize:9,color:"var(--tf-8892b0)"}}>{catNome}</span>
               </button>))}
-            {MARG_PRODUCTS.flatMap((c)=>c.items).filter(pr=>pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:20,color:"#64748b",fontSize:12}}>Nessun prodotto per “{qMarg}”</div>}
+            {MARG_PRODUCTS.flatMap((c)=>c.items).filter(pr=>pr.name.toLowerCase().includes(qMarg.trim().toLowerCase())).length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:20,color:"var(--tf-64748b)",fontSize:12}}>Nessun prodotto per “{qMarg}”</div>}
           </div>
         ):MARG_PRODUCTS[selCat].grouped?(
           // #102: SIM/ESIM affiancate e ordinate per brand (senza titolo), logo grande del brand
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
-            {SIM_BRAND_ORDER.flatMap(bk=>MARG_PRODUCTS[selCat].items.filter(p=>p.brand===bk)).map(p=>{const info=SIM_BRANDS[p.brand]||{color:"#64748b",logo:"/logo-crm.png"};return (
+            {SIM_BRAND_ORDER.flatMap(bk=>MARG_PRODUCTS[selCat].items.filter(p=>p.brand===bk)).map(p=>{const info=SIM_BRANDS[p.brand]||{color:"var(--tf-64748b)",logo:"/logo-crm.png"};return (
               <button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"14px 8px",borderRadius:12,border:`1px solid ${info.color}33`,background:`${info.color}14`,cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
                 <img src={info.logo} alt="" style={{height:40,width:"auto",maxWidth:"88%",objectFit:"contain"}}/>
-                <span style={{fontSize:10,fontWeight:600,color:"#f8fafc",lineHeight:1.2}}>{p.name}</span>
+                <span style={{fontSize:10,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
               </button>);})}
           </div>
         ):(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))",gap:8}}>
-          {MARG_PRODUCTS[selCat].items.map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"14px 8px",borderRadius:12,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+          {MARG_PRODUCTS[selCat].items.map(p=>(<button key={p.id} onClick={()=>{setSelProd(p);if(p.price!==null)setPrice(String(p.price))}} style={{padding:"14px 8px",borderRadius:12,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)",cursor:"pointer",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
             <span style={{fontSize:22}}>{p.icon}</span>
-            <span style={{fontSize:10,fontWeight:600,color:"#f8fafc",lineHeight:1.2}}>{p.name}</span>
+            <span style={{fontSize:10,fontWeight:600,color:"var(--tf-f8fafc)",lineHeight:1.2}}>{p.name}</span>
           </button>))}
         </div>)):(<div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-            <button onClick={()=>setSelProd(null)} style={{background:"none",border:"none",color:"#6f42c1",fontSize:13,cursor:"pointer",fontWeight:600}}>← Indietro</button>
+            <button onClick={()=>setSelProd(null)} style={{background:"none",border:"none",color:"var(--tf-6f42c1)",fontSize:13,cursor:"pointer",fontWeight:600}}>← Indietro</button>
             {selProd.brand&&SIM_BRANDS[selProd.brand]?<img src={SIM_BRANDS[selProd.brand].logo} alt="" style={{height:24,width:"auto",maxWidth:90,objectFit:"contain"}}/>:<span style={{fontSize:22}}>{selProd.icon}</span>}
-            <span style={{fontSize:16,fontWeight:800,color:"#f8fafc"}}>{selProd.name}</span>
+            <span style={{fontSize:16,fontWeight:800,color:"var(--tf-f8fafc)"}}>{selProd.name}</span>
           </div>
-          <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Quantità</div>
-            <input value={qty} onChange={e=>setQty(e.target.value)} type="number" min="1" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/></div>
-          {selProd.needsModel&&!selProd.needsImei&&<div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Modello</div><input value={model} onChange={e=>setModel(e.target.value)} placeholder="es. iPhone 15..." style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>}
+          <div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Quantità</div>
+            <input value={qty} onChange={e=>setQty(e.target.value)} type="number" min="1" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid var(--tf-w100)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/></div>
+          {selProd.needsModel&&!selProd.needsImei&&<div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Modello</div><input value={model} onChange={e=>setModel(e.target.value)} placeholder="es. iPhone 15..." style={{width:"100%",padding:"10px 14px",borderRadius:10,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>}
           {/* TELEFONO CASH: modello dalla lista condivisa + IMEI libero (nessun collegamento
               al magazzino usato) + importo di vendita (base del 4%). */}
           {selProd.isTelCash&&<div style={{marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:6,textTransform:"uppercase"}}>IMEI Dispositivo</div>
-            <div style={{padding:10,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:6,textTransform:"uppercase"}}>IMEI Dispositivo</div>
+            <div style={{padding:10,borderRadius:10,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)"}}>
               <div style={{marginBottom:8}}><DD l="Modello" r v={model} o={v=>setModel(v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/></div>
-              <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>IMEI</div>
+              <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>IMEI</div>
               <input value={imei} onChange={e=>setImei(e.target.value.replace(/\D/g,"").slice(0,15))} placeholder="IMEI (15 cifre)"
-                style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(imei).length===15?"2px solid #28a745":"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/>
+                style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(imei).length===15?"2px solid #28a745":"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/>
             </div>
           </div>}
           {selProd.needsImei&&<div style={{marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:6,textTransform:"uppercase"}}>Dispositivi usati ({usatoUnits.length}) — magazzino di {negozio||"—"}</div>
-            {magUsati.length===0&&<div style={{fontSize:11,color:"#fd7e14",fontWeight:600,marginBottom:8}}>⚠ Nessun telefono In Vendita nel magazzino di {negozio||"questo negozio"}: per venderlo, l'usato deve prima essere In Vendita su Gestione Usati.</div>}
+            <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:6,textTransform:"uppercase"}}>Dispositivi usati ({usatoUnits.length}) — magazzino di {negozio||"—"}</div>
+            {magUsati.length===0&&<div style={{fontSize:11,color:"var(--tf-fd7e14)",fontWeight:600,marginBottom:8}}>⚠ Nessun telefono In Vendita nel magazzino di {negozio||"questo negozio"}: per venderlo, l'usato deve prima essere In Vendita su Gestione Usati.</div>}
             {usatoUnits.map((u,i)=>{
               const _di=String(u.imei||"").replace(/\D/g,"");const done=_di.length===15;
               const dup=done&&usatoUnits.some((x,j)=>j!==i&&String(x.imei||"").replace(/\D/g,"")===_di);
@@ -401,51 +401,51 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
               const presi=usatoUnits.map((x,j)=>j!==i?x.usatoId:null).filter(Boolean);
               const hits=q.length>=2?magUsati.filter(m=>!presi.includes(m.id)&&(m.model.toLowerCase().includes(q)||(qd.length>=4&&m.imei.replace(/\D/g,"").includes(qd)))).slice(0,8):[];
               return (
-              <div key={i} style={{marginBottom:8,padding:10,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.03)"}}>
-                <div style={{fontSize:10,fontWeight:800,color:"#6f42c1",marginBottom:5}}>Unità #{i+1}</div>
+              <div key={i} style={{marginBottom:8,padding:10,borderRadius:10,border:"1px solid var(--tf-w60)",background:"var(--tf-w30)"}}>
+                <div style={{fontSize:10,fontWeight:800,color:"var(--tf-6f42c1)",marginBottom:5}}>Unità #{i+1}</div>
                 {u.usatoId?(
                   <div style={{padding:10,borderRadius:8,border:"2px solid #28a745",background:"rgba(40,167,69,0.10)"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
                       <div>
-                        <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0"}}>✓ {u.model||"—"}</div>
-                        <div style={{fontSize:11,color:"#8892b0",fontFamily:"monospace"}}>IMEI {u.imei}</div>
-                        <div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:2}}>Dal magazzino usati — verrà scaricato alla registrazione</div>
+                        <div style={{fontSize:13,fontWeight:800,color:"var(--tf-e2e8f0)"}}>✓ {u.model||"—"}</div>
+                        <div style={{fontSize:11,color:"var(--tf-8892b0)",fontFamily:"monospace"}}>IMEI {u.imei}</div>
+                        <div style={{fontSize:10,color:"var(--tf-28a745)",fontWeight:700,marginTop:2}}>Dal magazzino usati — verrà scaricato alla registrazione</div>
                       </div>
-                      <button onClick={()=>clearUnit(i)} style={{padding:"5px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.04)",color:"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✕ cambia</button>
+                      <button onClick={()=>clearUnit(i)} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✕ cambia</button>
                     </div>
                     <div style={{marginTop:8}}>
-                      <div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:3}}>Prezzo di VENDITA €</div>
+                      <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Prezzo di VENDITA €</div>
                       <input value={u.prezzo??""} onChange={e=>setUnit(i,"prezzo",e.target.value)} type="number" min="0" step="0.01" placeholder="es. 199"
-                        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(u.prezzo??"").trim()===""?"2px solid #fd7e14":"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
+                        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(u.prezzo??"").trim()===""?"2px solid #fd7e14":"1px solid var(--tf-w100)",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
                     </div>
                   </div>
                 ):(
                   <>
                     <input value={u.cerca||""} onChange={e=>setUnit(i,"cerca",e.target.value)} placeholder={`Cerca per modello o IMEI nel magazzino di ${negozio||"—"}…`}
-                      style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/>
-                    {hits.length>0&&<div style={{marginTop:6,borderRadius:8,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden"}}>
+                      style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/>
+                    {hits.length>0&&<div style={{marginTop:6,borderRadius:8,border:"1px solid var(--tf-w80)",overflow:"hidden"}}>
                       {hits.map(m=>(
                         <button key={m.id} onClick={()=>{setUsatoUnits(prev=>{const a=[...prev];a[i]={imei:m.imei,model:m.model,usatoId:m.id,prezzo:m.prezzo>0?String(m.prezzo):""};return a;});}}
-                          style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.05)",background:"rgba(255,255,255,0.02)",cursor:"pointer"}}>
-                          <span style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>📱 {m.model}</span>
-                          <span style={{fontSize:11,color:"#8892b0",fontFamily:"monospace",marginLeft:8}}>IMEI {m.imei}</span>
-                          {m.prezzo>0&&<span style={{fontSize:12,fontWeight:800,color:"#28a745",marginLeft:8}}>€ {m.prezzo}</span>}
+                          style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",border:"none",borderBottom:"1px solid var(--tf-w50)",background:"var(--tf-w20)",cursor:"pointer"}}>
+                          <span style={{fontSize:13,fontWeight:700,color:"var(--tf-e2e8f0)"}}>📱 {m.model}</span>
+                          <span style={{fontSize:11,color:"var(--tf-8892b0)",fontFamily:"monospace",marginLeft:8}}>IMEI {m.imei}</span>
+                          {m.prezzo>0&&<span style={{fontSize:12,fontWeight:800,color:"var(--tf-28a745)",marginLeft:8}}>€ {m.prezzo}</span>}
                         </button>
                       ))}
                     </div>}
-                    {q.length>=2&&hits.length===0&&<div style={{fontSize:10,color:"#fd7e14",fontWeight:700,marginTop:4}}>Nessun telefono In Vendita corrisponde nel magazzino di {negozio||"—"}: si vendono solo usati presenti a magazzino.</div>}
+                    {q.length>=2&&hits.length===0&&<div style={{fontSize:10,color:"var(--tf-fd7e14)",fontWeight:700,marginTop:4}}>Nessun telefono In Vendita corrisponde nel magazzino di {negozio||"—"}: si vendono solo usati presenti a magazzino.</div>}
                   </>
                 )}
               </div>
             );})}
           </div>}
-          {!selProd.needsImei&&<div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{selProd.isTelCash?"Importo di vendita €":"Importo €"}{needImporto&&<span style={{color:"#dc3545"}}> *</span>}</div>
-            <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:importoMissing?"2px solid #dc3545":"1px solid rgba(255,255,255,0.1)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
-            {selProd.isTelCash&&<div style={{fontSize:10,color:"#28a745",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>}
-          {hasDupImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Sono presenti IMEI duplicati: correggili per registrare</div>}
-          {unitMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(253,126,20,0.12)",border:"1px solid #fdd3ad",color:"#fd7e14",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Seleziona il telefono dal magazzino usati: si vendono solo dispositivi presenti a magazzino</div>}
-          {importoMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"#dc3545",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
-          <button onClick={handleAdd} disabled={hasDupImei||importoMissing} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:(hasDupImei||importoMissing)?"#cfcfcf":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:(hasDupImei||importoMissing)?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
+          {!selProd.needsImei&&<div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{selProd.isTelCash?"Importo di vendita €":"Importo €"}{needImporto&&<span style={{color:"var(--tf-dc3545)"}}> *</span>}</div>
+            <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:importoMissing?"2px solid #dc3545":"1px solid var(--tf-w100)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
+            {selProd.isTelCash&&<div style={{fontSize:10,color:"var(--tf-28a745)",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>}
+          {hasDupImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Sono presenti IMEI duplicati: correggili per registrare</div>}
+          {unitMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(253,126,20,0.12)",border:"1px solid #fdd3ad",color:"var(--tf-fd7e14)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Seleziona il telefono dal magazzino usati: si vendono solo dispositivi presenti a magazzino</div>}
+          {importoMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
+          <button onClick={handleAdd} disabled={hasDupImei||importoMissing} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:(hasDupImei||importoMissing)?"var(--tf-cfcfcf)":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:(hasDupImei||importoMissing)?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
         </div>)}
       </div>
     </div>
@@ -456,22 +456,22 @@ const MargList=memo(({items,onRemove,show,onClose})=>{
   if(!show)return null;
   const total=items.reduce((s,i)=>s+i.totalMargin,0);
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
-    <div style={{background:"rgba(255,255,255,0.02)",borderRadius:16,width:"100%",maxWidth:500,maxHeight:"80vh",overflow:"auto",padding:20,boxShadow:"0 8px 30px rgba(0,0,0,.2)"}}>
+    <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:500,maxHeight:"80vh",overflow:"auto",padding:20,boxShadow:"0 8px 30px rgba(0,0,0,.2)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <span style={{fontSize:16,fontWeight:800,color:"#f8fafc"}}>📦 Prodotti ({items.length})</span>
-        <button onClick={onClose} style={{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:16}}>✕</button>
+        <span style={{fontSize:16,fontWeight:800,color:"var(--tf-f8fafc)"}}>📦 Prodotti ({items.length})</span>
+        <button onClick={onClose} style={{background:"none",border:"none",color:"var(--tf-64748b)",cursor:"pointer",fontSize:16}}>✕</button>
       </div>
-      {items.length===0?<div style={{textAlign:"center",padding:20,color:"#64748b"}}>Nessun prodotto</div>:items.map((it,i)=>(
-        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
-          <div><div style={{fontSize:12,fontWeight:600,color:"#f8fafc"}}>{it.product} ×{it.qty||1}</div><div style={{fontSize:10,color:"#64748b"}}>{it.model||""}{it.importo!=null?` — €${Number(it.importo).toFixed(2)}`:""}</div></div>
+      {items.length===0?<div style={{textAlign:"center",padding:20,color:"var(--tf-64748b)"}}>Nessun prodotto</div>:items.map((it,i)=>(
+        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--tf-w30)"}}>
+          <div><div style={{fontSize:12,fontWeight:600,color:"var(--tf-f8fafc)"}}>{it.product} ×{it.qty||1}</div><div style={{fontSize:10,color:"var(--tf-64748b)"}}>{it.model||""}{it.importo!=null?` — €${Number(it.importo).toFixed(2)}`:""}</div></div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <button onClick={()=>onRemove(i)} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:11}}>✕</button>
+            <button onClick={()=>onRemove(i)} style={{background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:11}}>✕</button>
           </div>
         </div>
       ))}
       {items.length>0&&<div style={{marginTop:12,padding:12,background:"rgba(0,114,198,0.10)",borderRadius:10,display:"flex",justifyContent:"space-between"}}>
         <span style={{fontWeight:700}}>Totale prodotti</span>
-        <span style={{fontWeight:900,fontSize:18,color:"#6f42c1"}}>{items.length}</span>
+        <span style={{fontWeight:900,fontSize:18,color:"var(--tf-6f42c1)"}}>{items.length}</span>
       </div>}
     </div>
   </div>);
@@ -479,17 +479,17 @@ const MargList=memo(({items,onRemove,show,onClose})=>{
 
 
 const BRANDS = [
-  { id: "windtre", logo: "/windtre.png", label: "WindTre", short: "W3", color: "#FF6B00", gradient: "linear-gradient(135deg, #C24A00 0%, #FF6B00 100%)", icon: "📶", desc: "Mobile, Fisso, Luce & Gas, Assicurazioni, Protecta", ready: true },
-  { id: "sky", logo: "/sky.png", label: "Sky", short: "SKY", color: "#0072C6", gradient: "linear-gradient(135deg, #003366 0%, #0072C6 100%)", icon: "📺", desc: "TV, Fibra, Mobile, Glass, Pacchetti combinati", ready: true },
-  { id: "vodafone", logo: "/vodaphone - Copy.png", label: "Vodafone", short: "VF", color: "#E60000", gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)", icon: "📱", desc: "Mobile, Fisso, Multi-Servizi, Verisure", ready: true },
-  { id: "fastweb", logo: "/fastweb.png", label: "Fastweb", short: "FW", color: "#CC9900", gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)", icon: "⚡", desc: "Mobile, Fisso, Energy", ready: true },
-  { id: "iliad", logo: "/iliad.png", label: "Iliad", short: "IL", color: "#C00028", gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)", icon: "📡", desc: "Mobile e Fisso (Fibra)", ready: true },
-  { id: "energy", logo: "/energy - Copy.png", label: "S4", short: "S4", color: "#28a745", gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)", icon: "🔋", desc: "Forniture Luce e Gas", ready: true },
-  { id: "dojo", logo: "/dojo-round.png", label: "Dojo", short: "DOJO", color: "#14b8a6", gradient: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", icon: "🏧", desc: "POS e pagamenti", ready: true },
-  { id: "tim", logo: "/tim-logo-v2.png", label: "TIM", short: "TIM", color: "#0050FF", gradient: "linear-gradient(135deg, #0033A0 0%, #0050FF 100%)", icon: "☎️", desc: "Mobile, Fisso, Multi-Servizi", ready: true },
-  { id: "very", logo: "/very-mobile.png", label: "Very Mobile", short: "VERY", color: "#1FA300", gradient: "linear-gradient(135deg, #137A00 0%, #1FA300 100%)", icon: "🟢", desc: "Mobile", ready: true },
-  { id: "ho", logo: "/ho-mobile.png", label: "Ho. Mobile", short: "HO", color: "#E6007E", gradient: "linear-gradient(135deg, #B0005F 0%, #E6007E 100%)", icon: "💗", desc: "Mobile", ready: true },
-  { id: "kena", logo: "/kena-mobile-v2.png", label: "Kena Mobile", short: "KENA", color: "#F5A623", gradient: "linear-gradient(135deg, #C77F00 0%, #F5A623 100%)", icon: "🟠", desc: "Mobile", ready: true },
+  { id: "windtre", logo: "/windtre.png", label: "WindTre", short: "W3", color: "var(--tf-ff6b00)", gradient: "linear-gradient(135deg, #C24A00 0%, #FF6B00 100%)", icon: "📶", desc: "Mobile, Fisso, Luce & Gas, Assicurazioni, Protecta", ready: true },
+  { id: "sky", logo: "/sky.png", label: "Sky", short: "SKY", color: "var(--tf-0072c6)", gradient: "linear-gradient(135deg, #003366 0%, #0072C6 100%)", icon: "📺", desc: "TV, Fibra, Mobile, Glass, Pacchetti combinati", ready: true },
+  { id: "vodafone", logo: "/vodaphone - Copy.png", label: "Vodafone", short: "VF", color: "var(--tf-e60000)", gradient: "linear-gradient(135deg, #990000 0%, #E60000 100%)", icon: "📱", desc: "Mobile, Fisso, Multi-Servizi, Verisure", ready: true },
+  { id: "fastweb", logo: "/fastweb.png", label: "Fastweb", short: "FW", color: "var(--tf-cc9900)", gradient: "linear-gradient(135deg, #CC9900 0%, #FFD800 100%)", icon: "⚡", desc: "Mobile, Fisso, Energy", ready: true },
+  { id: "iliad", logo: "/iliad.png", label: "Iliad", short: "IL", color: "var(--tf-c00028)", gradient: "linear-gradient(135deg, #800018 0%, #C00028 100%)", icon: "📡", desc: "Mobile e Fisso (Fibra)", ready: true },
+  { id: "energy", logo: "/energy - Copy.png", label: "S4", short: "S4", color: "var(--tf-28a745)", gradient: "linear-gradient(135deg, #1a6b2d 0%, #28a745 100%)", icon: "🔋", desc: "Forniture Luce e Gas", ready: true },
+  { id: "dojo", logo: "/dojo-round.png", label: "Dojo", short: "DOJO", color: "var(--tf-14b8a6)", gradient: "linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)", icon: "🏧", desc: "POS e pagamenti", ready: true },
+  { id: "tim", logo: "/tim-logo-v2.png", label: "TIM", short: "TIM", color: "var(--tf-0050ff)", gradient: "linear-gradient(135deg, #0033A0 0%, #0050FF 100%)", icon: "☎️", desc: "Mobile, Fisso, Multi-Servizi", ready: true },
+  { id: "very", logo: "/very-mobile.png", label: "Very Mobile", short: "VERY", color: "var(--tf-1fa300)", gradient: "linear-gradient(135deg, #137A00 0%, #1FA300 100%)", icon: "🟢", desc: "Mobile", ready: true },
+  { id: "ho", logo: "/ho-mobile.png", label: "Ho. Mobile", short: "HO", color: "var(--tf-e6007e)", gradient: "linear-gradient(135deg, #B0005F 0%, #E6007E 100%)", icon: "💗", desc: "Mobile", ready: true },
+  { id: "kena", logo: "/kena-mobile-v2.png", label: "Kena Mobile", short: "KENA", color: "var(--tf-f5a623)", gradient: "linear-gradient(135deg, #C77F00 0%, #F5A623 100%)", icon: "🟠", desc: "Mobile", ready: true },
 ];
 // Codici inserimento WindTre. "Garbatella" mancava (richiesta dell'ufficio):
 // era gia' presente nelle liste di Vodafone, Fastweb, Iliad, Sky e Very.
@@ -1099,7 +1099,7 @@ const cercaModelliCatalogo = async (term) => {
 const getW3 = (tc) => {
   const biz = tc === "business";
   return [
-    { id:"mobile", title:"MOBILE", icon:"📱", color:"#2E75B6", radio:true, subs:[
+    { id:"mobile", title:"MOBILE", icon:"📱", color:"var(--tf-2e75b6)", radio:true, subs:[
       { id:"ga", title:"MOBILE", hasContract:true, ct:"ga",
         isMobile: !biz,
         isMobileBiz: biz,
@@ -1125,18 +1125,18 @@ const getW3 = (tc) => {
           fields:[]}]:[]),
       { id:"sost_sim", title:"Sostituzione Sim", isW3SostSim:true, hasContract:true, ct:"multi", fields:[]},
     ]},
-    { id:"fisso", title:"FISSO", icon:"🏠", color:"#28a745", radio:true, subs:[
+    { id:"fisso", title:"FISSO", icon:"🏠", color:"var(--tf-28a745)", radio:true, subs:[
       { id:"fisso_std", title:"FISSO", hasContract:true, ct:"fisso", isFisso:true, hasGnpQ:true, has2LQ:biz, hasAddons:true, addonList:biz?["Più Sicuri Ufficio","FTTH","DNS DINAMICO","FritzBox"]:["Netflix","Home Protect","FTTH","Chiamate Illimitate","CYC HOME"], fields:[]},
       { id:"fisso_cb", title:"FISSO CB", hasContract:true, ct:"fisso", isFisso:true, hasGnpQ:true, has2LQ:biz, hasVoceCasaQ:!biz, hasAddons:true, addonList:biz?["Più Sicuri Ufficio","FTTH","DNS DINAMICO","FritzBox"]:["Netflix","Home Protect","FTTH","Chiamate Illimitate","CYC HOME"], fields:[]},
       { id:"fwa_indoor", title:"FWA INDOOR 2P", hasContract:true, ct:"fisso", isFisso:true, hasGnpQ:true, has2LQ:biz, hasAddons:true, hasFwaImei:true, domLocked:true, addonList:biz?["Più Sicuri Ufficio","FTTH","DNS DINAMICO","FritzBox"]:["Netflix","Home Protect","FTTH","Chiamate Illimitate","CYC HOME"], fields:[]},
       { id:"fwa_outdoor", title:"FWA OUTDOOR", hasContract:true, ct:"fisso", isFisso:true, hasGnpQ:true, has2LQ:biz, hasAddons:true, domLocked:true, addonList:biz?["Più Sicuri Ufficio","FTTH","DNS DINAMICO","FritzBox"]:["Netflix","Home Protect","FTTH","Chiamate Illimitate","CYC HOME"], fields:[]},
       ...(!biz?[{ id:"voce_casa", title:"VOCE CASA", hasContract:true, ct:"fisso", isFisso:true, isVoceCasa:true, hasGnpQ:true, has2LQ:false, fields:[]}]:[]),
     ]},
-    { id:"luce_gas", title:"LUCE E GAS", icon:"💡", color:"#fd7e14", radio:true, subs:[
+    { id:"luce_gas", title:"LUCE E GAS", icon:"💡", color:"var(--tf-fd7e14)", radio:true, subs:[
       { id:"luce", title:"Luce", hasContract:true, ct:"lg", hasDom:true, hasConvLG:true, fields:[]},
       { id:"gas", title:"Gas", hasContract:true, ct:"lg", hasDom:true, hasConvLG:true, fields:[]},
     ]},
-    { id:"multi", title:"MULTI-SERVIZI", icon:"🛡️", color:"#6f42c1", radio:true, subs:[
+    { id:"multi", title:"MULTI-SERVIZI", icon:"🛡️", color:"var(--tf-6f42c1)", radio:true, subs:[
       ...(!biz?[{id:"assicurazioni",title:"Assicurazioni",hasAddons:true,hasContract:true,ct:"multi",addonList:["Casa Start","Casa Plus","Casa Full","Sport","Micio e Fido","Viaggi","Sport Famiglia","Elettrodomestici"],fields:[]}]:[]),
       ...(biz?[{id:"assicurazioni",title:"Assicurazioni",isAssicBiz:true,hasContract:true,ct:"multi",fields:[]}]:[]),
       { id:"protecta", title:"Protecta", isProtecta:true, isBizProtecta:biz, hasContract:true, ct:"multi", fields:[]},
@@ -1147,7 +1147,7 @@ const getW3 = (tc) => {
 const getVF = (tc) => {
   const biz = tc === "business";
   return [
-    { id:"mobile", title:"MOBILE", icon:"📱", color:"#E60000", radio:true, subs:[
+    { id:"mobile", title:"MOBILE", icon:"📱", color:"var(--tf-e60000)", radio:true, subs:[
       { id:"ga", title:biz?"MOBILE":"MOBILE GA", hasContract:true, ct:"ga",
         isVFMobile: !biz,
         isVFBizMobile: biz,
@@ -1160,7 +1160,7 @@ const getVF = (tc) => {
       ...(biz?[{ id:"cb", title:"CB", isCBVFBiz:true, fields:[]}]:[]),
       { id:"sost_sim", title:"Sostituzione Sim", isVFSostSim:true, hasContract:true, ct:"multi", fields:[]},
     ]},
-    { id:"fisso", title:"FISSO", icon:"🏠", color:"#28a745", radio:true, subs:[
+    { id:"fisso", title:"FISSO", icon:"🏠", color:"var(--tf-28a745)", radio:true, subs:[
       ...(!biz?[
         { id:"casa_fwa", title:"CASA FWA", hasContract:true, ct:"fisso", isVFFisso:true, fields:[]},
         { id:"casa_fwa_pro", title:"CASA FWA PRO", hasContract:true, ct:"fisso", isVFFisso:true, fields:[]},
@@ -1180,14 +1180,14 @@ const getVF = (tc) => {
         { id:"fissa_wireless_5g_mob", title:"FISSA WIRELESS 5G + MOBILE COMFORT", hasContract:true, ct:"fisso", isVFFissoBiz:true, isCombinatoFissoBiz:true, fields:[]},
       ]:[]),
     ]},
-    ...(biz?[{ id:"sol_dig", title:"SOLUZIONI DIGITALI", icon:"💼", color:"#6f42c1", radio:false, subs:[
+    ...(biz?[{ id:"sol_dig", title:"SOLUZIONI DIGITALI", icon:"💼", color:"var(--tf-6f42c1)", radio:false, subs:[
       { id:"backup_facile", title:"BACKUP FACILE", isVFSolDig:true, hasContract:true, ct:"multi", fields:[]},
       { id:"worry_free", title:"WORRY FREE ADVANCED", isVFSolDig:true, hasContract:true, ct:"multi", fields:[]},
       { id:"secure_drive", title:"SECURE DRIVE", isVFSolDig:true, hasContract:true, ct:"multi", fields:[]},
       { id:"fastweb_ai_ess", title:"FASTWEB AI WORK ESSENTIAL", isVFSolDig:true, hasContract:true, ct:"multi", fields:[]},
       { id:"fastweb_ai_std", title:"FASTWEB AI WORK STANDARD", isVFSolDig:true, hasContract:true, ct:"multi", fields:[]},
     ]}]:[]),
-    { id:"multi", title:"MULTI-SERVIZI", icon:"🛡️", color:"#6f42c1", radio:true, subs:[
+    { id:"multi", title:"MULTI-SERVIZI", icon:"🛡️", color:"var(--tf-6f42c1)", radio:true, subs:[
       { id:"verisure", title:"Verisure", isVerisure:true, hasContract:true, ct:"multi", fields:[]},
       { id:"kasko_facile", title:"Kasko Facile", isKaskoFacile:true, hasContract:true, ct:"multi", fields:[]},
       { id:"vf_care", title:"Vodafone Care", isVFCare:true, hasContract:true, ct:"multi", fields:[]},
@@ -1199,11 +1199,11 @@ const getVF = (tc) => {
 // ── Small components (no return keyword needed with arrow implicit) ──────
 
 const YN = ({val,onCh,label}) => (
-  <div style={{marginTop:8,padding:10,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)"}}>
-    <div style={{fontSize:12,fontWeight:700,color:"#f8fafc",marginBottom:6}}>{label}</div>
+  <div style={{marginTop:8,padding:10,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w100)"}}>
+    <div style={{fontSize:12,fontWeight:700,color:"var(--tf-f8fafc)",marginBottom:6}}>{label}</div>
     <div style={{display:"flex",gap:8}}>
-      <button onClick={()=>onCh(true)} style={{padding:"6px 20px",borderRadius:6,border:val===true?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:val===true?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:val===true?"#28a745":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
-      <button onClick={()=>onCh(false)} style={{padding:"6px 20px",borderRadius:6,border:val===false?"2px solid #dc3545":"2px solid rgba(255,255,255,0.1)",background:val===false?"rgba(220,53,69,0.12)":"rgba(255,255,255,0.04)",color:val===false?"#f87171":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>No</button>
+      <button onClick={()=>onCh(true)} style={{padding:"6px 20px",borderRadius:6,border:val===true?"2px solid #28a745":"2px solid var(--tf-w100)",background:val===true?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:val===true?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
+      <button onClick={()=>onCh(false)} style={{padding:"6px 20px",borderRadius:6,border:val===false?"2px solid #dc3545":"2px solid var(--tf-w100)",background:val===false?"rgba(220,53,69,0.12)":"var(--tf-w40)",color:val===false?"var(--tf-f87171)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>No</button>
     </div>
   </div>
 );
@@ -1236,13 +1236,13 @@ const TF = ({l,r,v,o,p,pf,dis,nt,err}) => {
   const bad=!!vErr;
   const content = (
   <div>
-    <div className="rvLab">{l} {r&&<span style={{color:"#f87171"}}>*</span>}</div>
+    <div className="rvLab">{l} {r&&<span style={{color:"var(--tf-f87171)"}}>*</span>}</div>
     <input value={v||""} onChange={e=>onCh(e.target.value)} placeholder={p} disabled={dis} readOnly={dis}
       className="rvIn"
       style={bad?{border:"1.5px solid #ef4444",background:"rgba(239,68,68,0.10)"}
-        :dis?{border:"1.5px solid rgba(34,211,238,0.45)",background:"rgba(23,162,184,0.10)",color:"#7dd3fc",fontStyle:"italic"}
+        :dis?{border:"1.5px solid rgba(34,211,238,0.45)",background:"rgba(23,162,184,0.10)",color:"var(--tf-7dd3fc)",fontStyle:"italic"}
         :pf?{border:"1.5px solid rgba(52,211,153,0.55)",background:"rgba(40,167,69,0.10)"}:undefined} />
-    {bad?<div style={{fontSize:11,color:"#f87171",marginTop:3,fontWeight:700}}>⚠ {vErr}</div>:(nt&&<div style={{fontSize:11,color:dis?"#67e8f9":"#64748b",marginTop:3}}>{nt}</div>)}
+    {bad?<div style={{fontSize:11,color:"var(--tf-f87171)",marginTop:3,fontWeight:700}}>⚠ {vErr}</div>:(nt&&<div style={{fontSize:11,color:dis?"var(--tf-67e8f9)":"var(--tf-64748b)",marginTop:3}}>{nt}</div>)}
   </div>
   );
   return content;
@@ -1254,7 +1254,7 @@ const TFVia = ({v,o,pf,onPick}) => (
   <div>
     <div className="rvLab">Via</div>
     <IndirizzoAutocomplete value={v||""} onChange={o} onPick={onPick} placeholder="Via Roma 12"
-      inputStyle={{width:"100%",padding:"10px 12px",borderRadius:10,border:pf?"1.5px solid rgba(52,211,153,0.55)":"1px solid rgba(255,255,255,0.12)",fontSize:13,boxSizing:"border-box",background:pf?"rgba(40,167,69,0.10)":"rgba(255,255,255,0.04)",color:"#f8fafc",outline:"none"}} />
+      inputStyle={{width:"100%",padding:"10px 12px",borderRadius:10,border:pf?"1.5px solid rgba(52,211,153,0.55)":"1px solid var(--tf-w120)",fontSize:13,boxSizing:"border-box",background:pf?"rgba(40,167,69,0.10)":"var(--tf-w40)",color:"var(--tf-f8fafc)",outline:"none"}} />
   </div>
 );
 
@@ -1296,7 +1296,7 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
   filtered.forEach(x=>{const k=x.g||"";if(!byGroup[k])byGroup[k]=[];byGroup[k].push(x.it);});
   const content = (
     <div style={{position:"relative"}}>
-      <div className="rvLab">{l} {r&&<span style={{color:"#f87171"}}>*</span>}</div>
+      <div className="rvLab">{l} {r&&<span style={{color:"var(--tf-f87171)"}}>*</span>}</div>
       <input value={open?q:(v||"")} placeholder={v?v:"Scrivi per filtrare o scegli…"}
         onFocus={()=>{setOpen(true);setQ("");}}
         onChange={e=>{setQ(e.target.value);setOpen(true);}}
@@ -1305,8 +1305,8 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
         style={v?{border:"1.5px solid rgba(52,211,153,0.55)",background:open?undefined:"rgba(40,167,69,0.10)"}:undefined}/>
       {open&&(
         <div className="rvMenu">
-          {v&&<div onMouseDown={()=>{o&&o("");setOpen(false);}} style={{padding:"8px 12px",fontSize:12,color:"#f87171",cursor:"pointer",borderBottom:"1px solid rgba(255,255,255,0.06)",fontWeight:700}}>✕ Deseleziona</div>}
-          {filtered.length===0&&!extra.some(g=>g.voci&&g.voci.length)&&<div style={{padding:"12px",fontSize:13,color:"#64748b"}}>Nessun risultato — scrivi per cercare</div>}
+          {v&&<div onMouseDown={()=>{o&&o("");setOpen(false);}} style={{padding:"8px 12px",fontSize:12,color:"var(--tf-f87171)",cursor:"pointer",borderBottom:"1px solid var(--tf-w60)",fontWeight:700}}>✕ Deseleziona</div>}
+          {filtered.length===0&&!extra.some(g=>g.voci&&g.voci.length)&&<div style={{padding:"12px",fontSize:13,color:"var(--tf-64748b)"}}>Nessun risultato — scrivi per cercare</div>}
           {Object.keys(byGroup).map(gk=>(
             <div key={gk||"_"}>
               {gk&&<div className="rvGrp">{gk}</div>}
@@ -1320,13 +1320,13 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
             const oro=String(g.gruppo||"").includes("Listino");
             return (
             <div key={g.gruppo}>
-              <div className="rvGrp" style={{color:oro?"#6ee7b7":"#a5b4fc"}}>{g.gruppo}</div>
+              <div className="rvGrp" style={{color:oro?"var(--tf-6ee7b7)":"var(--tf-a5b4fc)"}}>{g.gruppo}</div>
               {ex.map(it=><div key={g.gruppo+"_"+it} onMouseDown={()=>{o&&o(it);setOpen(false);setQ("");}} className="rvOpt" style={v===it?{background:"rgba(40,167,69,0.16)",fontWeight:700}:undefined}>{it}</div>)}
             </div>);});})()}
         </div>
       )}
       {listini.length>0&&(
-        <div style={{marginTop:3,fontSize:11,color:"#34d399",fontWeight:600,lineHeight:1.5}}>
+        <div style={{marginTop:3,fontSize:11,color:"var(--tf-34d399)",fontWeight:600,lineHeight:1.5}}>
           {listini.map(li=>{
             const pz=Number(li.prezzo||0), mp=Number(li.margine_pct??0);
             const marg=_senzaMargine()?" · senza marginalità (Fastweb)":(mp>0?` · margine ${mp}% = € ${(pz*mp/100).toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}`:"");
@@ -1336,7 +1336,7 @@ const DD = ({l,r,v,o,vals,nt,cerca}) => {
           }).join("  ·  ")}
         </div>
       )}
-      {nt&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{nt}</div>}
+      {nt&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{nt}</div>}
       {/* Se e' selezionato "Altro", compare un campo per inserire il modello non in lista.
           Il valore viene salvato come "Altro: <modello>" cosi' il campo resta visibile. */}
       {typeof v==="string"&&(v==="Altro"||v.startsWith("Altro:"))&&(
@@ -1359,14 +1359,14 @@ const SCd = ({session,codici,val,onCh}) => {
   const isOv=val&&val!==session;
   const content = (
     <div>
-      <div className="rvLab">Codice <span style={{color:"#f87171"}}>*</span></div>
+      <div className="rvLab">Codice <span style={{color:"var(--tf-f87171)"}}>*</span></div>
       <select value={actual} onChange={e=>onCh(e.target.value)} className="rvIn"
         style={actual?{border:"1.5px solid rgba(52,211,153,0.55)",background:isOv?undefined:"rgba(40,167,69,0.10)"}:undefined}>
         <option value="">— Seleziona —</option>
         {codici.map(c=><option key={c} value={c}>{c}</option>)}
       </select>
-      {actual&&!isOv&&<div style={{fontSize:11,color:"#34d399",marginTop:3}}>✓ Da codice inserimento</div>}
-      {isOv&&<div style={{fontSize:11,color:"#fb923c",marginTop:3}}>⚠ Modificato</div>}
+      {actual&&!isOv&&<div style={{fontSize:11,color:"var(--tf-34d399)",marginTop:3}}>✓ Da codice inserimento</div>}
+      {isOv&&<div style={{fontSize:11,color:"var(--tf-fb923c)",marginTop:3}}>⚠ Modificato</div>}
     </div>
   );
   return content;
@@ -1375,7 +1375,7 @@ const SCd = ({session,codici,val,onCh}) => {
 // ACCENTO DEL BRAND ATTIVO (Luca 03/08): i componenti di modulo (RB, header
 // "Dati Contratto"…) leggono da qui il colore del brand in corso — prima i
 // dettagli restavano BLU (o rosso Vodafone) dentro qualsiasi operatore.
-let _brandAccento = "#6366f1";
+let _brandAccento = "var(--tf-6366f1)";
 
 const CartItem = ({it,ii,gi,total,expI,setExpI}) => {
   const exp = expI[gi+"_"+ii];
@@ -1383,19 +1383,19 @@ const CartItem = ({it,ii,gi,total,expI,setExpI}) => {
   // DETTAGLIO MODERNO (Luca 03/08): chip di categoria, schedine dettagli,
   // via il look bootstrap blu del vecchio carrello
   const content = (
-    <div style={{borderBottom:ii<total-1?"1px solid rgba(255,255,255,0.05)":"none"}}>
+    <div style={{borderBottom:ii<total-1?"1px solid var(--tf-w50)":"none"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 0",flexWrap:"wrap"}}>
         <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:999,background:it.macroColor+"1f",border:"1px solid "+it.macroColor+"55",fontSize:11,fontWeight:800,color:it.macroColor}}>{it.macroIcon} {it.macro}</span>
-        <span style={{fontSize:13.5,fontWeight:700,color:"#f8fafc"}}>{it.sub}</span>
+        <span style={{fontSize:13.5,fontWeight:700,color:"var(--tf-f8fafc)"}}>{it.sub}</span>
         {it.details&&it.details.hasContract&&<span style={{fontSize:9,fontWeight:800,color:"#fff",background:it.macroColor,padding:"2px 8px",borderRadius:5,letterSpacing:.5}}>CONTRATTO</span>}
         <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:10,fontWeight:700,color:"#64748b",background:"rgba(255,255,255,0.05)",borderRadius:999,padding:"2px 9px"}}>V.{it.saleNum}</span>
-          <button onClick={()=>setExpI(p=>({...p,[gi+"_"+ii]:!p[gi+"_"+ii]}))} style={{background:exp?"rgba(99,102,241,0.18)":"rgba(255,255,255,0.04)",border:exp?"1px solid rgba(129,140,248,0.6)":"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:"5px 13px",fontSize:11,fontWeight:800,cursor:"pointer",color:exp?"#c7d2fe":"#94a3b8",transition:"all .15s"}}>{exp?"▲ Nascondi":"👁 Dettagli"}</button>
+          <span style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)",background:"var(--tf-w50)",borderRadius:999,padding:"2px 9px"}}>V.{it.saleNum}</span>
+          <button onClick={()=>setExpI(p=>({...p,[gi+"_"+ii]:!p[gi+"_"+ii]}))} style={{background:exp?"rgba(99,102,241,0.18)":"var(--tf-w40)",border:exp?"1px solid rgba(129,140,248,0.6)":"1px solid var(--tf-w120)",borderRadius:8,padding:"5px 13px",fontSize:11,fontWeight:800,cursor:"pointer",color:exp?"var(--tf-c7d2fe)":"var(--tf-94a3b8)",transition:"all .15s"}}>{exp?"▲ Nascondi":"👁 Dettagli"}</button>
         </div>
       </div>
-      {exp&&<div style={{padding:"0 0 12px 6px"}}><div style={{background:"rgba(255,255,255,0.03)",borderRadius:12,padding:14,border:"1px solid rgba(255,255,255,0.08)",borderLeft:"3px solid "+it.macroColor}}>
-        {dets.length>0?<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:8}}>{dets.map(([k,v])=><div key={k} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:9,padding:"7px 11px"}}><div style={{fontSize:9,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:.6}}>{k}</div><div style={{fontSize:12.5,fontWeight:600,color:"#f8fafc",marginTop:2,wordBreak:"break-word"}}>{String(v)}</div></div>)}</div>
-        :<div style={{fontSize:12,color:"#64748b"}}>Nessun dettaglio — premi ✏️ Modifica</div>}
+      {exp&&<div style={{padding:"0 0 12px 6px"}}><div style={{background:"var(--tf-w30)",borderRadius:12,padding:14,border:"1px solid var(--tf-w80)",borderLeft:"3px solid "+it.macroColor}}>
+        {dets.length>0?<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:8}}>{dets.map(([k,v])=><div key={k} style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:9,padding:"7px 11px"}}><div style={{fontSize:9,fontWeight:800,color:"var(--tf-64748b)",textTransform:"uppercase",letterSpacing:.6}}>{k}</div><div style={{fontSize:12.5,fontWeight:600,color:"var(--tf-f8fafc)",marginTop:2,wordBreak:"break-word"}}>{String(v)}</div></div>)}</div>
+        :<div style={{fontSize:12,color:"var(--tf-64748b)"}}>Nessun dettaglio — premi ✏️ Modifica</div>}
       </div></div>}
     </div>
   );
@@ -1404,7 +1404,7 @@ const CartItem = ({it,ii,gi,total,expI,setExpI}) => {
 
 // ── VF Mobile GA component ────────────────────────────────────────────────
 
-const VF_C="#E60000";
+const VF_C="var(--tf-e60000)";
 const VF_LIGHT="rgba(220,53,69,0.12)";
 const VF_BORDER="rgba(230,0,0,0.30)";
 const VF_BRANDS=["TIM","Vodafone","WindTre","Iliad","Fastweb","Sky","Sky Mobile","Very Mobile","Ho Mobile","Postemobile","Coop Voce","Tiscali","Lyca Mobile","Altro"];
@@ -1412,7 +1412,7 @@ const VF_SMARTPHONES = VF_SMARTPHONES_GROUPED;
 const GNP_FISSO_BRANDS=["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi","Enel Fibra","EniPlenitude Fibra","Iliad","Poste","Altro"];
 const VF_GNP_BRANDS=["TIM","Vodafone","WindTre","Fastweb","Tiscali","Sky Wifi","Enel Fibra","EniPlenitude Fibra","Iliad","Poste","Altro"];
 const VF_CODICI_NEGOZIO=["Acilia","Baleniere","Castani","Merulana","Donna","Magliana","Collatina","Garbatella"];
-const FW_C = "#CC9900";
+const FW_C = "var(--tf-cc9900)";
 
 const FW_MOBILE_OFFERS = [
   "Start","Start MNP","Start Tied","Start MNP Tied",
@@ -1437,10 +1437,10 @@ const getFW = (tc) => {
       // Segnalazione 34: mancava la sostituzione SIM, presente su WindTre e Vodafone.
       { id:"sost_sim", title:"Sostituzione Sim", isFWSostSim:true, hasContract:true, ct:"multi", fields:[] },
     ]},
-    { id:"fisso", title:"FISSO", icon:"🏠", color:"#28a745", radio:true, subs:
+    { id:"fisso", title:"FISSO", icon:"🏠", color:"var(--tf-28a745)", radio:true, subs:
       (biz?FW_FISSO_BIZ_OFFERS:FW_FISSO_OFFERS).map(o=>({ id:o.toLowerCase().replace(/ /g,"_"), title:o, isFWFisso:true, fwBiz:biz, hasContract:true, ct:"fisso", fields:[] }))
     },
-    { id:"energia", title:"ENERGIA", icon:"🔋", color:"#28a745", radio:false, subs:
+    { id:"energia", title:"ENERGIA", icon:"🔋", color:"var(--tf-28a745)", radio:false, subs:
       FW_ENERGIA_OFFERS.filter(o=>biz?o!=="Energy Core":true).map(o=>({ id:o.toLowerCase().replace(/ /g,"_"), title:o, isFWEnergia:true, hasContract:true, ct:"multi", fields:[] }))
     },
   ];
@@ -1455,13 +1455,13 @@ const FWMobile = ({sd, uP, sc, biz}) => {
       {/* DATI e SMART HOME (richieste Francesco): selezionata l'offerta si va
           dritti al box "Dati Contratto" — niente MNP, domiciliazione,
           convergenza, TNP o Security, che per una SIM dati non hanno senso. */}
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {offerList.map(offer=>{
           const isActive=sd.fwOffer===offer;
           return (
             <button key={offer} onClick={()=>{const nw=isActive?null:offer;upv("fwOffer",nw);if(nw&&!biz){const nowMnp=nw.indexOf("MNP")>=0;if(nowMnp&&!sd.fwNumProv&&sd.fwNumDef)upv("fwNumProv",sd.fwNumDef);if(!nowMnp&&!sd.fwNumDef&&sd.fwNumProv)upv("fwNumDef",sd.fwNumProv);}}}
-              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+FW_C:"2px solid rgba(255,255,255,0.1)",background:isActive?FW_C:"rgba(255,255,255,0.04)",color:isActive?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+FW_C:"2px solid var(--tf-w100)",background:isActive?FW_C:"var(--tf-w40)",color:isActive?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
               {offer}
             </button>
           );
@@ -1473,8 +1473,8 @@ const FWMobile = ({sd, uP, sc, biz}) => {
       {sd.fwOffer&&(!biz||sd.fwMnp)&&(
         <div>
           {hasMNP&&(
-            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase"}}>Portabilità (MNP)</div>
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase"}}>Portabilità (MNP)</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.fwMnpBrand||""} o={v=>upv("fwMnpBrand",v)} vals={FW_BRANDS_MNP}/>
                 <TF l="Numero Portabilità" r v={sd.fwMnpNum||""} o={v=>upv("fwMnpNum",v)} p="3XXXXXXXXX"/>
@@ -1482,7 +1482,7 @@ const FWMobile = ({sd, uP, sc, biz}) => {
             </div>
           )}
 
-          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
             <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
               <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwCodIns||""} onCh={v=>upv("fwCodIns",v)}/>
@@ -1512,7 +1512,7 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
     <div>
       <RB label="GNP?" val={sd.fwFGnp} opts={["Sì","No"]} onCh={v=>{upv("fwFGnp",v);if(v==="No"){upv("fwFGnpBrand","");upv("fwFGnpNum","");upv("fwFSecLineCount",0);upv("fwFSecLines",[]);}}}/>
       {sd.fwFGnp==="Sì"&&(
-        <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+        <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w100)",borderRadius:8,padding:12,marginBottom:12}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
             <DD l="Operatore GNP" r v={sd.fwFGnpBrand||""} o={v=>upv("fwFGnpBrand",v)} vals={FW_GNP_BRANDS}/>
             {/* Segnalazione 78: il numero fisso GNP E' il numero definitivo, quindi
@@ -1521,11 +1521,11 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
             <TF l="Numero Fisso GNP" r v={sd.fwFGnpNum||""} o={v=>{upv("fwFGnpNum",v);upv("fwFNumDef",v);}} p="06XXXXXXXX"/>
           </div>
           {hasSecLines&&(
-            <div style={{marginTop:12,borderTop:"1px solid rgba(255,255,255,0.1)",paddingTop:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:6,textTransform:"uppercase"}}>Seconde linee da migrare</div>
+            <div style={{marginTop:12,borderTop:"1px solid var(--tf-w100)",paddingTop:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:6,textTransform:"uppercase"}}>Seconde linee da migrare</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
                 {[0,1,2,3,4,5].map(n=>(
-                  <button key={n} onClick={()=>setSecCount(n)} style={{width:36,height:34,borderRadius:8,border:secCount===n?"2px solid "+FW_C:"2px solid rgba(255,255,255,0.1)",background:secCount===n?FW_C:"rgba(255,255,255,0.04)",color:secCount===n?"#fff":"#8892b0",fontSize:13,fontWeight:700,cursor:"pointer"}}>{n}</button>
+                  <button key={n} onClick={()=>setSecCount(n)} style={{width:36,height:34,borderRadius:8,border:secCount===n?"2px solid "+FW_C:"2px solid var(--tf-w100)",background:secCount===n?FW_C:"var(--tf-w40)",color:secCount===n?"#fff":"var(--tf-8892b0)",fontSize:13,fontWeight:700,cursor:"pointer"}}>{n}</button>
                 ))}
               </div>
               {secCount>0&&[...Array(secCount)].map((_,i)=>(
@@ -1538,7 +1538,7 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
         </div>
       )}
       {sd.fwFGnp&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwFCodIns||""} onCh={v=>upv("fwFCodIns",v)}/>
@@ -1551,9 +1551,9 @@ const FWFisso = ({sd, uP, sc, biz, offer}) => {
                 non si chiede di nuovo. Lo mostriamo solo in lettura per conferma. */}
             {sd.fwFGnp==="Sì"&&sd.fwFGnpNum&&(
               <div>
-                <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>N. Fisso Definitivo</div>
-                <div style={{padding:"7px 10px",borderRadius:6,fontSize:12,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",color:"#f8fafc"}}>
-                  {sd.fwFGnpNum} <span style={{color:"#64748b",fontSize:11}}>— da Numero Fisso GNP</span>
+                <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>N. Fisso Definitivo</div>
+                <div style={{padding:"7px 10px",borderRadius:6,fontSize:12,background:"var(--tf-w40)",border:"1px solid var(--tf-w100)",color:"var(--tf-f8fafc)"}}>
+                  {sd.fwFGnpNum} <span style={{color:"var(--tf-64748b)",fontSize:11}}>— da Numero Fisso GNP</span>
                 </div>
               </div>
             )}
@@ -1569,7 +1569,7 @@ const FWEnergia = ({sd, uP, sc, subTitle, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
   const isGas = subTitle === "GAS";
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <SCd session={sc} codici={FW_CODICI_NEGOZIO} val={sd.fwEnCodIns||""} onCh={v=>upv("fwEnCodIns",v)}/>
@@ -1593,13 +1593,13 @@ const emTnpSlot=()=>({tipo:null,tnpCount:null,tnpItems:[],compassTipo:null,compa
 const MiniC = ({label,val,opts,onCh,locked,lockVal}) => {
   const content = (
     <div style={{marginBottom:10}}>
-      <div style={{fontSize:10,fontWeight:700,color:"#64748b",marginBottom:4,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
+      <div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)",marginBottom:4,textTransform:"uppercase",letterSpacing:.4}}>{label}</div>
       <div style={{display:"flex",gap:6}}>
         {opts.map(o=>{
           const isActive=locked?(o===(lockVal===true?"Sì":lockVal===false?"No":lockVal)):val===o||val===(o==="Sì"?true:o==="No"?false:o);
           return (
             <button key={o} onClick={()=>!locked&&onCh(val===o?null:o)} disabled={locked}
-              style={{padding:"5px 16px",borderRadius:6,border:isActive?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:isActive?"#2E75B6":"rgba(255,255,255,0.04)",color:isActive?"#fff":"#8892b0",fontSize:11,fontWeight:700,cursor:locked?"not-allowed":"pointer",opacity:locked?0.8:1}}>
+              style={{padding:"5px 16px",borderRadius:6,border:isActive?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:isActive?"var(--tf-2e75b6)":"var(--tf-w40)",color:isActive?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:locked?"not-allowed":"pointer",opacity:locked?0.8:1}}>
               {o}
             </button>
           );
@@ -1617,7 +1617,7 @@ const RB = ({label,val,opts,onCh}) => {
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         {opts.map(o=>(
           <button key={o} onClick={()=>onCh(val===o?null:o)}
-            style={{padding:"9px 22px",borderRadius:999,border:val===o?"1.5px solid "+_brandAccento:"1px solid rgba(255,255,255,0.12)",background:val===o?_brandAccento:"rgba(255,255,255,0.04)",color:val===o?"#fff":"#8892b0",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all .15s",boxShadow:val===o?"0 4px 14px "+_brandAccento+"55":"none"}}>
+            style={{padding:"9px 22px",borderRadius:999,border:val===o?"1.5px solid "+_brandAccento:"1px solid var(--tf-w120)",background:val===o?_brandAccento:"var(--tf-w40)",color:val===o?"#fff":"var(--tf-8892b0)",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all .15s",boxShadow:val===o?"0 4px 14px "+_brandAccento+"55":"none"}}>
             {val===o?"✓ ":""}{o}
           </button>
         ))}
@@ -1631,12 +1631,12 @@ const BUNDLE_VALORI = ["39.9","54.9","69.9","99.99"];
 
 const RigaBundleAccessorio = ({riga, onUpd, modoRiga}) => {
   const content = (
-    <div style={{marginBottom:10,padding:10,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(220,53,69,0.12)"}}>
+    <div style={{marginBottom:10,padding:10,background:"var(--tf-w30)",borderRadius:8,border:"1px solid rgba(220,53,69,0.12)"}}>
       {modoRiga==="Entrambi"&&(
         <div style={{display:"flex",gap:6,marginBottom:8}}>
           {["Bundle","Accessorio"].map(t=>(
             <button key={t} onClick={()=>onUpd("tipo",riga.tipo===t?null:t)}
-              style={{padding:"4px 14px",borderRadius:6,border:riga.tipo===t?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:riga.tipo===t?VF_C:"rgba(255,255,255,0.04)",color:riga.tipo===t?"#fff":"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+              style={{padding:"4px 14px",borderRadius:6,border:riga.tipo===t?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:riga.tipo===t?VF_C:"var(--tf-w40)",color:riga.tipo===t?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>
               {t}
             </button>
           ))}
@@ -1645,14 +1645,14 @@ const RigaBundleAccessorio = ({riga, onUpd, modoRiga}) => {
       {(modoRiga==="Bundle"||(modoRiga==="Entrambi"&&riga.tipo==="Bundle"))&&(
         <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
           <div style={{flex:2}}>
-            <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:2}}>Codice Bundle</div>
+            <div style={{fontSize:10,fontWeight:600,color:"var(--tf-64748b)",marginBottom:2}}>Codice Bundle</div>
             <input value={riga.codice||""} onChange={e=>onUpd("codice",e.target.value)} placeholder="Codice..."
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/>
+              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/>
           </div>
           <div style={{flex:1}}>
-            <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:2}}>Tipologia €</div>
+            <div style={{fontSize:10,fontWeight:600,color:"var(--tf-64748b)",marginBottom:2}}>Tipologia €</div>
             <select value={riga.tipoBundleVal||""} onChange={e=>onUpd("tipoBundleVal",e.target.value)}
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.02)"}}>
+              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box",background:"var(--tf-w20)"}}>
               <option value="">--</option>
               {BUNDLE_VALORI.map(v=><option key={v} value={v}>{v} €</option>)}
             </select>
@@ -1662,19 +1662,19 @@ const RigaBundleAccessorio = ({riga, onUpd, modoRiga}) => {
       {(modoRiga==="Accessorio"||(modoRiga==="Entrambi"&&riga.tipo==="Accessorio"))&&(
         <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
           <div style={{flex:2}}>
-            <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:2}}>IMEI Accessorio</div>
+            <div style={{fontSize:10,fontWeight:600,color:"var(--tf-64748b)",marginBottom:2}}>IMEI Accessorio</div>
             <input value={riga.imei2||""} onChange={e=>onUpd("imei2",e.target.value)} placeholder="IMEI..."
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",fontFamily:"monospace"}}/>
+              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box",fontFamily:"monospace"}}/>
           </div>
           <div style={{flex:1}}>
-            <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:2}}>Valore €</div>
+            <div style={{fontSize:10,fontWeight:600,color:"var(--tf-64748b)",marginBottom:2}}>Valore €</div>
             <input value={riga.valore||""} onChange={e=>onUpd("valore",e.target.value)} placeholder="0.00"
-              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/>
+              style={{width:"100%",padding:"6px 8px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/>
           </div>
         </div>
       )}
       {modoRiga==="Entrambi"&&!riga.tipo&&(
-        <div style={{fontSize:11,color:"#64748b",fontStyle:"italic"}}>Seleziona Bundle o Accessorio</div>
+        <div style={{fontSize:11,color:"var(--tf-64748b)",fontStyle:"italic"}}>Seleziona Bundle o Accessorio</div>
       )}
     </div>
   );
@@ -1722,7 +1722,7 @@ const CompassDatiTNP = ({sd, upv}) => {
   };
 
   const content = (
-    <div style={{marginTop:12,background:"rgba(255,255,255,0.02)",border:"1px solid "+VF_BORDER,borderRadius:8,padding:12}}>
+    <div style={{marginTop:12,background:"var(--tf-w20)",border:"1px solid "+VF_BORDER,borderRadius:8,padding:12}}>
       <div style={{fontSize:11,fontWeight:800,color:VF_C,marginBottom:10,textTransform:"uppercase"}}>Dati TNP</div>
       {items.map((item,i)=>{
         const bundleOn=item.bundleOn||false;
@@ -1730,7 +1730,7 @@ const CompassDatiTNP = ({sd, upv}) => {
         const modoRiga=bundleOn&&accessorioOn?"Entrambi":bundleOn?"Bundle":accessorioOn?"Accessorio":null;
         return (
           <div key={i} style={{marginBottom:i<items.length-1?16:0}}>
-            {items.length>1&&<div style={{fontSize:10,fontWeight:700,color:"#64748b",marginBottom:6}}>Compass #{i+1}</div>}
+            {items.length>1&&<div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)",marginBottom:6}}>Compass #{i+1}</div>}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8}}>
               <DD l="Modello terminale" v={item.modello||""} o={v=>updItem(i,"modello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
               <TF l="IMEI" v={item.imei||""} o={v=>updItem(i,"imei",v)} p="15 cifre" nt="Barcode 📷"/>
@@ -1742,13 +1742,13 @@ const CompassDatiTNP = ({sd, upv}) => {
             {/* Bundle / Accessori toggle */}
             <div style={{borderTop:"1px solid rgba(220,53,69,0.12)",paddingTop:10,marginBottom:8}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>Bundle / Accessori</div>
+                <div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)",textTransform:"uppercase"}}>Bundle / Accessori</div>
                 <div style={{display:"flex",gap:6}}>
                   {["Bundle","Accessorio"].map(t=>{
                     const isOn=t==="Bundle"?bundleOn:accessorioOn;
                     return (
                       <button key={t} onClick={()=>toggleMode(i,t)}
-                        style={{padding:"4px 14px",borderRadius:6,border:isOn?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:isOn?VF_C:"rgba(255,255,255,0.04)",color:isOn?"#fff":"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                        style={{padding:"4px 14px",borderRadius:6,border:isOn?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:isOn?VF_C:"var(--tf-w40)",color:isOn?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>
                         {t}
                       </button>
                     );
@@ -1764,7 +1764,7 @@ const CompassDatiTNP = ({sd, upv}) => {
                         <RigaBundleAccessorio riga={riga} onUpd={(k,v)=>updRiga(i,ri,k,v)} modoRiga={modoRiga}/>
                       </div>
                       {(item.righe||[]).length>1&&(
-                        <button onClick={()=>removeRiga(i,ri)} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:13,padding:"14px 2px"}}>✕</button>
+                        <button onClick={()=>removeRiga(i,ri)} style={{background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:13,padding:"14px 2px"}}>✕</button>
                       )}
                     </div>
                   ))}
@@ -1781,7 +1781,7 @@ const CompassDatiTNP = ({sd, upv}) => {
             {/* Kasko */}
             <div style={{borderTop:"1px solid rgba(220,53,69,0.12)",paddingTop:8}}>
               <button onClick={()=>updItem(i,"kasko",!item.kasko)}
-                style={{padding:"5px 16px",borderRadius:7,border:item.kasko?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:item.kasko?"rgba(111,66,193,0.12)":"rgba(255,255,255,0.04)",color:item.kasko?"#6f42c1":"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                style={{padding:"5px 16px",borderRadius:7,border:item.kasko?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:item.kasko?"rgba(111,66,193,0.12)":"var(--tf-w40)",color:item.kasko?"var(--tf-6f42c1)":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>
                 🛡️ Kasko{item.kasko?" ✓":""}
               </button>
               {item.kasko&&(
@@ -1815,17 +1815,17 @@ const TnpSlot = ({slot, idx, total, isWallet, upSlot, onAddSlot, onRemoveSlot}) 
       {total>1&&(
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div style={{fontSize:11,fontWeight:800,color:VF_C,textTransform:"uppercase"}}>TNP #{idx+1}</div>
-          <button onClick={()=>onRemoveSlot(idx)} style={{background:"none",border:"1px solid #dc3545",borderRadius:6,padding:"2px 10px",color:"#dc3545",fontSize:10,cursor:"pointer",fontWeight:600}}>✕ Rimuovi</button>
+          <button onClick={()=>onRemoveSlot(idx)} style={{background:"none",border:"1px solid #dc3545",borderRadius:6,padding:"2px 10px",color:"var(--tf-dc3545)",fontSize:10,cursor:"pointer",fontWeight:600}}>✕ Rimuovi</button>
         </div>
       )}
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase"}}>Tipologia dispositivo</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase"}}>Tipologia dispositivo</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
         {allOpts.map(t=>{
           const isOn=slot.tipo===t;
           const initCompass=(COMPASS_OPTS.includes(t)||t==="Forward")?[emCompassItem()]:[];
           return (
             <button key={t} onClick={()=>set("__replace__",isOn?emTnpSlot():{...emTnpSlot(),tipo:t,compassItems:initCompass})}
-              style={{padding:"7px 14px",borderRadius:8,border:isOn?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:isOn?VF_C:"rgba(255,255,255,0.04)",color:isOn?"#fff":"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+              style={{padding:"7px 14px",borderRadius:8,border:isOn?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:isOn?VF_C:"var(--tf-w40)",color:isOn?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>
               {t}
             </button>
           );
@@ -1833,8 +1833,8 @@ const TnpSlot = ({slot, idx, total, isWallet, upSlot, onAddSlot, onRemoveSlot}) 
       </div>
 
       {isTnpTaglia&&(
-        <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid "+VF_BORDER,borderRadius:8,padding:12,marginBottom:8}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase"}}>Dati TNP</div>
+        <div style={{background:"var(--tf-w20)",border:"1px solid "+VF_BORDER,borderRadius:8,padding:12,marginBottom:8}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase"}}>Dati TNP</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
             <DD l="Modello terminale" r v={slot.modello||""} o={v=>set("modello",v)} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
             <TF l="IMEI" r v={slot.imei||""} o={v=>set("imei",v)} p="15 cifre" nt="Barcode 📷"/>
@@ -1850,15 +1850,15 @@ const TnpSlot = ({slot, idx, total, isWallet, upSlot, onAddSlot, onRemoveSlot}) 
         <div style={{marginTop:12,borderTop:"1px solid "+VF_BORDER,paddingTop:10}}>
           {total<3&&idx===total-1?(
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#8892b0"}}>Aggiungi altra TNP?</div>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)"}}>Aggiungi altra TNP?</div>
               <button onClick={onAddSlot}
-                style={{padding:"5px 16px",borderRadius:7,border:"2px solid "+VF_C,background:"rgba(255,255,255,0.02)",color:VF_C,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                style={{padding:"5px 16px",borderRadius:7,border:"2px solid "+VF_C,background:"var(--tf-w20)",color:VF_C,fontSize:11,fontWeight:700,cursor:"pointer"}}>
                 + Sì
               </button>
             </div>
           ):(
             idx===total-1&&total>=3&&(
-              <div style={{fontSize:11,color:"#64748b",fontStyle:"italic"}}>Massimo 3 TNP per vendita</div>
+              <div style={{fontSize:11,color:"var(--tf-64748b)",fontStyle:"italic"}}>Massimo 3 TNP per vendita</div>
             )
           )}
         </div>
@@ -1884,7 +1884,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
   };
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {VF_MOBILE_OFFERS.map(offer=>{
           const isActive=sd.vfOffer===offer;
@@ -1897,7 +1897,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
                 uP("__resetVFOfferTo__",{offer,isDV:isBecomesDV});
               }
             }}
-              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:isActive?VF_C:"rgba(255,255,255,0.04)",color:isActive?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:isActive?VF_C:"var(--tf-w40)",color:isActive?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
               {offer}
             </button>
           );
@@ -1907,14 +1907,14 @@ const VFMobileGA = ({sd,uP,sc}) => {
         <div>
           {/* MNP — bloccato a No per DV/DV+ */}
           {isDati?null:isDV?(
-            <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(245,158,11,0.14)",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"#f59e0b"}}>
+            <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(245,158,11,0.14)",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"var(--tf-f59e0b)"}}>
               MNP: <strong>No</strong> — non disponibile per {sd.vfOffer}
             </div>
           ):(
             <RB label="MNP?" val={sd.vfMnp} opts={["Sì","No"]} onCh={v=>{upv("vfMnp",v);if(v==="No"){upv("vfMnpBrand","");upv("vfMnpNum","")}}}/>
           )}
           {!isDV&&!isDati&&sd.vfMnp==="Sì"&&(
-            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.vfMnpBrand||""} o={v=>upv("vfMnpBrand",v)} vals={VF_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.vfMnpNum||""} o={v=>upv("vfMnpNum",v)} p="3XXXXXXXXX"/>
@@ -1925,7 +1925,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
             <div>
               {/* Domiciliata — solo Wallet per DV/DV+ */}
               {isDati?null:isDV?(
-                <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(245,158,11,0.14)",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"#f59e0b"}}>
+                <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(245,158,11,0.14)",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"var(--tf-f59e0b)"}}>
                   Domiciliata: <strong>Wallet</strong> — unica opzione per {sd.vfOffer}
                 </div>
               ):(
@@ -1937,7 +1937,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
                     <div>
                       <RB label="Convergenza?" val={sd.vfConvergenza} opts={["Sì","No"]} onCh={v=>upv("vfConvergenza",v)}/>
                       {sd.vfConvergenza==="Sì"&&(
-                        <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
+                        <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
                           <TF l="Numero Fisso Convergenza" v={sd.vfNumFisso||""} o={v=>upv("vfNumFisso",v)} p="06XXXXXXXX"/>
                         </div>
                       )}
@@ -1946,7 +1946,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
                   {(sd.vfConvergenza||isDV||isDati)&&(
                     <div>
                       {isDati?null:isDV?(
-                        <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(245,158,11,0.14)",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"#f59e0b"}}>
+                        <div style={{marginBottom:12,padding:"8px 12px",background:"rgba(245,158,11,0.14)",border:"1px solid #ffc107",borderRadius:8,fontSize:11,color:"var(--tf-f59e0b)"}}>
                           TNP: <strong>non disponibile</strong> per {sd.vfOffer}
                         </div>
                       ):(
@@ -1966,11 +1966,11 @@ const VFMobileGA = ({sd,uP,sc}) => {
                       {/* Security */}
                       {sd.vfTnp&&!isDV&&!isDati&&sd.vfOffer!=="MOBILE START UNDER 18"&&(
                         <div style={{marginTop:12,background:VF_LIGHT,border:"1px solid "+VF_BORDER,borderRadius:8,padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:6,textTransform:"uppercase"}}>Security</div>
+                          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:6,textTransform:"uppercase"}}>Security</div>
                           <div style={{display:"flex",gap:8}}>
                             {["Sì","No"].map(o=>(
                               <button key={o} onClick={()=>upv("vfSecurity",sd.vfSecurity===o?null:o)}
-                                style={{padding:"7px 22px",borderRadius:8,border:sd.vfSecurity===o?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:sd.vfSecurity===o?VF_C:"rgba(255,255,255,0.04)",color:sd.vfSecurity===o?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                                style={{padding:"7px 22px",borderRadius:8,border:sd.vfSecurity===o?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:sd.vfSecurity===o?VF_C:"var(--tf-w40)",color:sd.vfSecurity===o?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                                 {o}
                               </button>
                             ))}
@@ -1979,7 +1979,7 @@ const VFMobileGA = ({sd,uP,sc}) => {
                       )}
                       {/* Dati Contratto */}
                       {(sd.vfTnp||isDV||isDati)&&(
-                        <div style={{marginTop:12,background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+                        <div style={{marginTop:12,background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
                           <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                             {sd.vfMnp==="Sì"?(
@@ -1991,11 +1991,11 @@ const VFMobileGA = ({sd,uP,sc}) => {
                             <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.dcCodIns||""} onCh={v=>upv("dcCodIns",v)}/>
                             {sd.vfDomicilio==="Smart"&&(
                               <div>
-                                <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Ricarica Automatica <span style={{color:"#dc3545"}}>*</span></div>
+                                <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Ricarica Automatica <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
                                 <div style={{display:"flex",gap:8}}>
                                   {["Sì","No"].map(o=>(
                                     <button key={o} onClick={()=>upv("dcRicaricaAuto",sd.dcRicaricaAuto===o?null:o)}
-                                      style={{padding:"6px 18px",borderRadius:8,border:sd.dcRicaricaAuto===o?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:sd.dcRicaricaAuto===o?VF_C:"rgba(255,255,255,0.04)",color:sd.dcRicaricaAuto===o?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                                      style={{padding:"6px 18px",borderRadius:8,border:sd.dcRicaricaAuto===o?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:sd.dcRicaricaAuto===o?VF_C:"var(--tf-w40)",color:sd.dcRicaricaAuto===o?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                                       {o}
                                     </button>
                                   ))}
@@ -2042,14 +2042,14 @@ const VFMobileGAFisso = ({sd,uP,sc}) => {
               {/* Add-on Fisso — appare dopo GNP */}
               {sd.vfFGnp&&(
                 <div>
-                  <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12,marginBottom:12}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:8,textTransform:"uppercase"}}>Add-on Fisso</div>
+                  <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:12,marginBottom:12}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:8,textTransform:"uppercase"}}>Add-on Fisso</div>
                     <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                       {VF_ADDON_FISSO.map(a=>{
                         const on=(sd.vfFAddons||{})[a];
                         return (
                           <button key={a} onClick={()=>toggleAddon(a)}
-                            style={{padding:"5px 14px",borderRadius:6,border:on?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:on?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:on?"#28a745":"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                            style={{padding:"5px 14px",borderRadius:6,border:on?"2px solid #28a745":"2px solid var(--tf-w100)",background:on?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:on?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                             <span>{on?"☑":"☐"}</span>{a}
                           </button>
                         );
@@ -2058,7 +2058,7 @@ const VFMobileGAFisso = ({sd,uP,sc}) => {
                   </div>
 
                   {/* Dati Contratto */}
-                  <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+                  <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
                     <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                       <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfFCodIns||""} onCh={v=>upv("vfFCodIns",v)}/>
@@ -2113,13 +2113,13 @@ const VFCB = ({sd, uP, sc, dupCheck}) => {
       {/* ── Toggle orizzontali ── */}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
         <button onClick={()=>{upv("cbTnp",!sd.cbTnp);if(!sd.cbTnp)upv("cbTnpList",[emTnpSlot()]);else upv("cbTnpList",[]);}}
-          style={{padding:"8px 20px",borderRadius:8,border:sd.cbTnp?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:sd.cbTnp?VF_C:"rgba(255,255,255,0.04)",color:sd.cbTnp?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>TNP CB</button>
+          style={{padding:"8px 20px",borderRadius:8,border:sd.cbTnp?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:sd.cbTnp?VF_C:"var(--tf-w40)",color:sd.cbTnp?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>TNP CB</button>
         <button onClick={()=>upv("cbCambio2",!sd.cbCambio2)}
-          style={{padding:"8px 20px",borderRadius:8,border:sd.cbCambio2?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:sd.cbCambio2?VF_C:"rgba(255,255,255,0.04)",color:sd.cbCambio2?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Cambio Offerta</button>
+          style={{padding:"8px 20px",borderRadius:8,border:sd.cbCambio2?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:sd.cbCambio2?VF_C:"var(--tf-w40)",color:sd.cbCambio2?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Cambio Offerta</button>
         <button onClick={()=>upv("cbTraslochi",!sd.cbTraslochi)}
-          style={{padding:"8px 20px",borderRadius:8,border:sd.cbTraslochi?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:sd.cbTraslochi?VF_C:"rgba(255,255,255,0.04)",color:sd.cbTraslochi?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Traslochi</button>
+          style={{padding:"8px 20px",borderRadius:8,border:sd.cbTraslochi?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:sd.cbTraslochi?VF_C:"var(--tf-w40)",color:sd.cbTraslochi?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Traslochi</button>
         <button onClick={()=>upv("cbSecurity",!sd.cbSecurity)}
-          style={{padding:"8px 20px",borderRadius:8,border:sd.cbSecurity?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:sd.cbSecurity?VF_C:"rgba(255,255,255,0.04)",color:sd.cbSecurity?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Rete Sicura</button>
+          style={{padding:"8px 20px",borderRadius:8,border:sd.cbSecurity?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:sd.cbSecurity?VF_C:"var(--tf-w40)",color:sd.cbSecurity?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Rete Sicura</button>
       </div>
       {sd.cbTnp&&(
         <div style={{marginBottom:12}}>
@@ -2146,7 +2146,7 @@ const VFCB = ({sd, uP, sc, dupCheck}) => {
             <TF l="Numero di Cellulare" r v={sd.cbCambioNumMod||""} o={v=>upv("cbCambioNumMod",v)} p="3XXXXXXXXX"/>
           </div>
           <div style={{marginBottom:10}}>
-            <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Offerta <span style={{color:"#dc3545"}}>*</span></div>
+            <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Offerta <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
             <div style={{padding:"10px 14px",borderRadius:8,border:"2px solid "+VF_C,background:"rgba(220,53,69,0.12)",color:VF_C,fontWeight:700,fontSize:13}}>MM4M</div>
           </div>
           <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.cbCambioCodIns2||""} onCh={v=>upv("cbCambioCodIns2",v)}/>
@@ -2162,7 +2162,7 @@ const VFCB = ({sd, uP, sc, dupCheck}) => {
       )}
       {sd.cbSecurity&&(
         <div style={{background:VF_LIGHT,border:"1px solid "+VF_BORDER,borderRadius:8,padding:14,marginTop:0}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:10,textTransform:"uppercase"}}>Dati Rete Sicura CB</div>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:10,textTransform:"uppercase"}}>Dati Rete Sicura CB</div>
           <TF l="Numero di cellulare" r v={sd.cbSecurityCell||""} o={v=>upv("cbSecurityCell",v)} p="3XXXXXXXXX"/>
           <div style={{marginTop:10}}>
             <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.cbSecurityCodIns||""} onCh={v=>upv("cbSecurityCodIns",v)}/>
@@ -2185,13 +2185,13 @@ const VFBizMobile = ({sd,uP,sc}) => {
   const deviceList=isTablet?[...VFB_SMARTPHONES_GROUPED,{group:"Tablet",items:VFB_MOBILE_TABLETS}]:VFB_SMARTPHONES_GROUPED;
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {offers.map(offer=>{
           const isActive=sd.vfbOffer===offer;
           return (
             <button key={offer} onClick={()=>{upv("vfbOffer",isActive?null:offer);if(!isActive){upv("vfbMnp",null);upv("vfbTnp",null);upv("vfbModello","");upv("vfbImei","");upv("vfbEasyRent",null);upv("vfbRataPiva",null);upv("vfbCodIns","");}}}
-              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:isActive?VF_C:"rgba(255,255,255,0.04)",color:isActive?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:isActive?VF_C:"var(--tf-w40)",color:isActive?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
               {offer}
             </button>
           );
@@ -2201,7 +2201,7 @@ const VFBizMobile = ({sd,uP,sc}) => {
         <div>
           <RB label="MNP?" val={sd.vfbMnp} opts={["Sì","No"]} onCh={v=>{upv("vfbMnp",v);if(v==="No"){upv("vfbMnpBrand","");upv("vfbMnpNum","")}}}/>
           {sd.vfbMnp==="Sì"&&(
-            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.vfbMnpBrand||""} o={v=>upv("vfbMnpBrand",v)} vals={VF_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.vfbMnpNum||""} o={v=>upv("vfbMnpNum",v)} p="3XXXXXXXXX"/>
@@ -2222,7 +2222,7 @@ const VFBizMobile = ({sd,uP,sc}) => {
                       const isOn=sd.vfbRataPiva===opt;
                       return (
                         <button key={opt} onClick={()=>{upv("vfbRataPiva",isOn?null:opt);if(opt!=="Easy Rent"||isOn)upv("vfbKaskoSel",{});}}
-                          style={{padding:"7px 18px",borderRadius:8,border:isOn?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:isOn?VF_C:"rgba(255,255,255,0.04)",color:isOn?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                          style={{padding:"7px 18px",borderRadius:8,border:isOn?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:isOn?VF_C:"var(--tf-w40)",color:isOn?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
                           {opt}
                         </button>
                       );
@@ -2234,7 +2234,7 @@ const VFBizMobile = ({sd,uP,sc}) => {
                         const sel=(sd.vfbKaskoSel||{})[k];
                         return (
                           <button key={k} onClick={()=>{const cur={...(sd.vfbKaskoSel||{})};if(cur[k])delete cur[k];else cur[k]=true;upv("vfbKaskoSel",cur);}}
-                            style={{padding:"6px 14px",borderRadius:7,border:sel?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:sel?"rgba(111,66,193,0.12)":"rgba(255,255,255,0.04)",color:sel?VF_C:"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+                            style={{padding:"6px 14px",borderRadius:7,border:sel?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:sel?"rgba(111,66,193,0.12)":"var(--tf-w40)",color:sel?VF_C:"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
                             <span>{sel?"☑":"☐"}</span>{k}
                           </button>
                         );
@@ -2243,7 +2243,7 @@ const VFBizMobile = ({sd,uP,sc}) => {
                   )}
                 </div>
               )}
-              <div style={{marginTop:8,background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+              <div style={{marginTop:8,background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
                 <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                   <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfbCodIns||""} onCh={v=>upv("vfbCodIns",v)}/>
@@ -2266,12 +2266,12 @@ const VFBizMobileCB = ({sd,uP,sc}) => {
     <div>
       <div style={{marginBottom:10}}>
         <button onClick={()=>upv("vfbCbOn",!sd.vfbCbOn)}
-          style={{padding:"8px 20px",borderRadius:8,border:sd.vfbCbOn?"2px solid "+VF_C:"2px solid rgba(255,255,255,0.1)",background:sd.vfbCbOn?VF_C:"rgba(255,255,255,0.04)",color:sd.vfbCbOn?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+          style={{padding:"8px 20px",borderRadius:8,border:sd.vfbCbOn?"2px solid "+VF_C:"2px solid var(--tf-w100)",background:sd.vfbCbOn?VF_C:"var(--tf-w40)",color:sd.vfbCbOn?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
           CB
         </button>
       </div>
       {sd.vfbCbOn&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{marginBottom:10}}>
             <TF l="Numero di cellulare" r v={sd.vfbCbCell||""} o={v=>upv("vfbCbCell",v)} p="3XXXXXXXXX"/>
@@ -2292,7 +2292,7 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
         <div>
           <RB label="MNP?" val={sd.vfbFMnp} opts={["Sì","No"]} onCh={v=>{upv("vfbFMnp",v);if(v==="No"){upv("vfbFMnpBrand","");upv("vfbFMnpNum","");}}}/>
           {sd.vfbFMnp==="Sì"&&(
-            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.vfbFMnpBrand||""} o={v=>upv("vfbFMnpBrand",v)} vals={VF_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.vfbFMnpNum||""} o={v=>upv("vfbFMnpNum",v)} p="3XXXXXXXXX"/>
@@ -2303,7 +2303,7 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
       )}
       <RB label="GNP?" val={sd.vfbFGnp} opts={["Sì","No"]} onCh={v=>{upv("vfbFGnp",v);if(v==="No"){upv("vfbFGnpBrand","");upv("vfbFGnpNum","");}}}/>
       {sd.vfbFGnp==="Sì"&&(
-        <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+        <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w100)",borderRadius:8,padding:12,marginBottom:12}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
             <DD l="Operatore GNP" r v={sd.vfbFGnpBrand||""} o={v=>upv("vfbFGnpBrand",v)} vals={VF_GNP_BRANDS}/>
             {/* Segnalazione 78: il numero fisso GNP e' anche il definitivo, quindi lo
@@ -2314,7 +2314,7 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
       )}
       {sd.vfbFGnp&&(
         <div>
-          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+          <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
             <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:12,textTransform:"uppercase"}}>📋 Dati Contratto</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
               <SCd session={sc} codici={VF_CODICI_NEGOZIO} val={sd.vfbFCodIns||""} onCh={v=>upv("vfbFCodIns",v)}/>
@@ -2339,7 +2339,7 @@ const VFBizFisso = ({sd,uP,isCombo,sc}) => {
   return content;
 };
 
-const IL_C = "#C00028";
+const IL_C = "var(--tf-c00028)";
 const IL_MOBILE_OFFERS = ["Iliad Voce","Iliad 120GB","Iliad 180GB","Iliad 250GB","Iliad Dati 350"];
 const IL_FISSO_OFFERS = ["Fisso Base","Fisso Plus"];
 const IL_GNP_BRANDS = ["TIM","Vodafone","WindTre","Fastweb","Iliad","Sky Mobile","Tiscali","Altro"];
@@ -2358,7 +2358,7 @@ const getIL = (tc) => {
     { id:"mobile", title:"MOBILE", icon:"📱", color:IL_C, radio:true, subs:[
       { id:"ga", title:"MOBILE", isILMobile:true, hasContract:true, ct:"ga", fields:[] },
     ]},
-    { id:"fisso", title:"FISSO", icon:"🏠", color:"#28a745", radio:true, subs:
+    { id:"fisso", title:"FISSO", icon:"🏠", color:"var(--tf-28a745)", radio:true, subs:
       IL_FISSO_OFFERS.map(o=>({ id:o.toLowerCase().replace(/ /g,"_"), title:o, isILFisso:true, hasContract:true, ct:"fisso", fields:[] }))
       .concat([{ id:"fwa", title:"FWA", isILFwa:true, hasContract:true, ct:"fisso", fields:[] }])
     },
@@ -2369,13 +2369,13 @@ const ILMobile = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {IL_MOBILE_OFFERS.map(offer=>{
           const isActive=sd.ilOffer===offer;
           return (
             <button key={offer} onClick={()=>{upv("ilOffer",isActive?null:offer);upv("ilMnp",null);upv("ilDom",null);upv("ilMnpBrand","");upv("ilMnpNum","");upv("ilCodIns","");upv("ilNumProv","");upv("ilNumDef","");upv("ilIccid","");}}
-              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+IL_C:"2px solid rgba(255,255,255,0.1)",background:isActive?IL_C:"rgba(255,255,255,0.04)",color:isActive?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+IL_C:"2px solid var(--tf-w100)",background:isActive?IL_C:"var(--tf-w40)",color:isActive?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
               {offer}
             </button>
           );
@@ -2385,7 +2385,7 @@ const ILMobile = ({sd, uP, sc}) => {
         <div>
           <RB label="MNP?" val={sd.ilMnp} opts={["Sì","No"]} onCh={v=>{upv("ilMnp",v);if(v==="No"){upv("ilMnpBrand","");upv("ilMnpNum","");}}}/>
           {sd.ilMnp==="Sì"&&(
-            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.ilMnpBrand||""} o={v=>upv("ilMnpBrand",v)} vals={IL_GNP_BRANDS}/>
                 <TF l="Numero Portabilità" r v={sd.ilMnpNum||""} o={v=>upv("ilMnpNum",v)} p="3XXXXXXXXX"/>
@@ -2394,7 +2394,7 @@ const ILMobile = ({sd, uP, sc}) => {
           )}
           {sd.ilMnp&&<RB label="Domiciliata?" val={sd.ilDom} opts={["Sì","No"]} onCh={v=>upv("ilDom",v)}/>}
           {sd.ilDom&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
               <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilCodIns||""} onCh={v=>upv("ilCodIns",v)}/>
@@ -2420,7 +2420,7 @@ const ILFisso = ({sd, uP, sc}) => {
     <div>
       <RB label="GNP?" val={sd.ilFGnp} opts={["Sì","No"]} onCh={v=>{upv("ilFGnp",v);if(v==="No"){upv("ilFGnpBrand","");upv("ilFGnpNum","");}}}/>
       {sd.ilFGnp&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilFCodIns||""} onCh={v=>upv("ilFCodIns",v)}/>
@@ -2443,7 +2443,7 @@ const ILFisso = ({sd, uP, sc}) => {
 const ILFwa = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilFwaCodIns||""} onCh={v=>upv("ilFwaCodIns",v)}/>
@@ -2455,7 +2455,7 @@ const ILFwa = ({sd, uP, sc}) => {
 };
 
 // ── ENERGY ──────────────────────────────────────────────────────
-const EN_C = "#28a745";
+const EN_C = "var(--tf-28a745)";
 const EN_CODICI_NEGOZIO = negozi;
 
 const getEN = (tc) => {
@@ -2742,16 +2742,16 @@ const TIM_SMARTPHONES_GROUPED = [
     "XIAOMI Redmi 15 5G 8+256GB"
   ]}
 ];
-const TIM_C = "#0050FF";
+const TIM_C = "var(--tf-0050ff)";
 const TIM_MOBILE_OFFERS = ["Tim Mobile","Tim Power Supreme Orange","Tim Power Supreme Red"];
 const TIM_FISSO_OFFERS = ["Fibra","Fwa"];
 const TIM_VISION_TAGLIE = ["Tim Vision S","Tim Vision M","Tim Vision L"];
 const TIM_CODICI_NEGOZIO = ["Collatina"];
-const VERY_C = "#1FA300";
-const HO_C = "#E6007E";
+const VERY_C = "var(--tf-1fa300)";
+const HO_C = "var(--tf-e6007e)";
 const VERY_CODICI_NEGOZIO = ["Donna","Promontori","Garbatella"];
 const HO_CODICI_NEGOZIO = ["Collatina","Donna","Magliana","Promontori"];
-const KENA_C = "#F5A623";
+const KENA_C = "var(--tf-f5a623)";
 // Segnalazione 68: per Kena l'unico codice che deve comparire e' Collatina.
 // Preso dall'elenco unico condiviso con Ricerca Contratto, cosi' non possono
 // piu' divergere.
@@ -2765,10 +2765,10 @@ const getTIM = (tc) => {
     { id:"mobile", title:"MOBILE", icon:"📱", color:TIM_C, radio:true, subs:[
       { id:"ga", title:"MOBILE", isTimMobile:true, hasContract:true, ct:"ga", fields:[] },
     ]},
-    { id:"fisso", title:"FISSO", icon:"🏠", color:"#28a745", radio:true, subs:[
+    { id:"fisso", title:"FISSO", icon:"🏠", color:"var(--tf-28a745)", radio:true, subs:[
       { id:"ga", title:"FISSO", isTimFisso:true, hasContract:true, ct:"fisso", fields:[] },
     ]},
-    { id:"multi", title:"MULTI-SERVIZI", icon:"🧩", color:"#6f42c1", radio:false, subs:[
+    { id:"multi", title:"MULTI-SERVIZI", icon:"🧩", color:"var(--tf-6f42c1)", radio:false, subs:[
       { id:"telepass", title:"Telepass", isTimTelepass:true, hasContract:true, ct:"multi", fields:[] },
     ]},
   ];
@@ -2778,13 +2778,13 @@ const TIMMobile = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {TIM_MOBILE_OFFERS.map(offer=>{
           const isActive=sd.timOffer===offer;
           return (
             <button key={offer} onClick={()=>{upv("timOffer",isActive?null:offer);if(isActive){upv("timMnp",null);upv("timMnpBrand","");upv("timMnpNum","");upv("timTnp",null);upv("timModello","");upv("timSpedizione",null);upv("timFinanziato",null);upv("timCodPratica","");upv("timVisionBox",null);upv("timVisionTaglia",null);upv("timVisionNumContr","");upv("timImei","");upv("timNumProv","");upv("timNum","");upv("timIccid","");upv("timCodIns","");}}}
-              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+TIM_C:"2px solid rgba(255,255,255,0.1)",background:isActive?TIM_C:"rgba(255,255,255,0.04)",color:isActive?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{offer}</button>
+              style={{padding:"8px 14px",borderRadius:10,border:isActive?"2px solid "+TIM_C:"2px solid var(--tf-w100)",background:isActive?TIM_C:"var(--tf-w40)",color:isActive?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{offer}</button>
           );
         })}
       </div>
@@ -2792,7 +2792,7 @@ const TIMMobile = ({sd, uP, sc}) => {
         <div>
           <RB label="MNP?" val={sd.timMnp} opts={["Sì","No"]} onCh={v=>{upv("timMnp",v);if(v==="No"){upv("timMnpBrand","");upv("timMnpNum","");}}}/>
           {sd.timMnp==="Sì"&&(
-            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.timMnpBrand||""} o={v=>upv("timMnpBrand",v)} vals={brandMNP}/>
                 <TF l="Numero Portabilità" r v={sd.timMnpNum||""} o={v=>upv("timMnpNum",v)} p="3XXXXXXXXX"/>
@@ -2817,9 +2817,9 @@ const TIMMobile = ({sd, uP, sc}) => {
           {sd.timTnp&&<RB label="Box TIM Vision?" val={sd.timVisionBox} opts={["Sì","No"]} onCh={v=>{upv("timVisionBox",v);if(v==="No"){upv("timVisionTaglia",null);upv("timVisionNumContr","");}}}/>}
           {sd.timVisionBox==="Sì"&&(
             <div style={{background:"rgba(111,66,193,0.12)",border:"1px solid rgba(111,66,193,0.3)",borderRadius:8,padding:14,marginBottom:12}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:8,textTransform:"uppercase"}}>TIM Vision <span style={{color:"#dc3545"}}>*</span></div>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:8,textTransform:"uppercase"}}>TIM Vision <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
-                {TIM_VISION_TAGLIE.map(t=>{const on=sd.timVisionTaglia===t;return <button key={t} onClick={()=>upv("timVisionTaglia",on?null:t)} style={{padding:"7px 16px",borderRadius:8,border:on?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:on?"#6f42c1":"rgba(255,255,255,0.04)",color:on?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{t}</button>;})}
+                {TIM_VISION_TAGLIE.map(t=>{const on=sd.timVisionTaglia===t;return <button key={t} onClick={()=>upv("timVisionTaglia",on?null:t)} style={{padding:"7px 16px",borderRadius:8,border:on?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:on?"var(--tf-6f42c1)":"var(--tf-w40)",color:on?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{t}</button>;})}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <TF l="Numero Contratto" r v={sd.timVisionNumContr||""} o={v=>upv("timVisionNumContr",v)} p="N. contratto Vision"/>
@@ -2827,7 +2827,7 @@ const TIMMobile = ({sd, uP, sc}) => {
             </div>
           )}
           {sd.timTnp&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
               <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <SCd session={sc} codici={TIM_CODICI_NEGOZIO} val={sd.timCodIns||""} onCh={v=>upv("timCodIns",v)}/>
@@ -2852,18 +2852,18 @@ const TIMFisso = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Prodotto Fisso</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Prodotto Fisso</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {TIM_FISSO_OFFERS.map(offer=>{const isActive=sd.timFOffer===offer;return (
           <button key={offer} onClick={()=>{upv("timFOffer",isActive?null:offer);if(isActive){upv("timFGnp",null);upv("timFGnpBrand","");upv("timFGnpNum","");upv("timFNumProv","");upv("timFCodIns","");upv("timFVision",null);upv("timFVisionTaglia",null);upv("timFVisionNumContr","");}}}
-            style={{padding:"8px 18px",borderRadius:10,border:isActive?"2px solid "+TIM_C:"2px solid rgba(255,255,255,0.1)",background:isActive?TIM_C:"rgba(255,255,255,0.04)",color:isActive?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{offer}</button>
+            style={{padding:"8px 18px",borderRadius:10,border:isActive?"2px solid "+TIM_C:"2px solid var(--tf-w100)",background:isActive?TIM_C:"var(--tf-w40)",color:isActive?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{offer}</button>
         );})}
       </div>
       {sd.timFOffer&&(
         <div>
           <RB label="GNP?" val={sd.timFGnp} opts={["Sì","No"]} onCh={v=>{upv("timFGnp",v);if(v==="No"){upv("timFGnpBrand","");upv("timFGnpNum","");}}}/>
           {sd.timFGnp==="Sì"&&(
-            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w100)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore GNP" r v={sd.timFGnpBrand||""} o={v=>upv("timFGnpBrand",v)} vals={GNP_FISSO_BRANDS}/>
                 <TF l="Numero Fisso Portabilità" r v={sd.timFGnpNum||""} o={v=>upv("timFGnpNum",v)} p="06XXXXXXXX"/>
@@ -2871,7 +2871,7 @@ const TIMFisso = ({sd, uP, sc}) => {
             </div>
           )}
           {sd.timFGnp&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14,marginBottom:12}}>
+            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14,marginBottom:12}}>
               <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <TF l="Numero Fisso Provvisorio" r v={sd.timFNumProv||""} o={v=>upv("timFNumProv",v)} p="06XXXXXXXX"/>
@@ -2882,9 +2882,9 @@ const TIMFisso = ({sd, uP, sc}) => {
           {sd.timFGnp&&<RB label="TIM Vision?" val={sd.timFVision} opts={["Sì","No"]} onCh={v=>{upv("timFVision",v);if(v==="No"){upv("timFVisionTaglia",null);upv("timFVisionNumContr","");}}}/>}
           {sd.timFVision==="Sì"&&(
             <div style={{background:"rgba(111,66,193,0.12)",border:"1px solid rgba(111,66,193,0.3)",borderRadius:8,padding:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:8,textTransform:"uppercase"}}>TIM Vision <span style={{color:"#dc3545"}}>*</span></div>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:8,textTransform:"uppercase"}}>TIM Vision <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
-                {TIM_VISION_TAGLIE.map(t=>{const on=sd.timFVisionTaglia===t;return <button key={t} onClick={()=>upv("timFVisionTaglia",on?null:t)} style={{padding:"7px 16px",borderRadius:8,border:on?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:on?"#6f42c1":"rgba(255,255,255,0.04)",color:on?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{t}</button>;})}
+                {TIM_VISION_TAGLIE.map(t=>{const on=sd.timFVisionTaglia===t;return <button key={t} onClick={()=>upv("timFVisionTaglia",on?null:t)} style={{padding:"7px 16px",borderRadius:8,border:on?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:on?"var(--tf-6f42c1)":"var(--tf-w40)",color:on?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{t}</button>;})}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <TF l="Numero Contratto" r v={sd.timFVisionNumContr||""} o={v=>upv("timFVisionNumContr",v)} p="N. contratto Vision"/>
@@ -2904,7 +2904,7 @@ const TIMTelepass = ({sd, uP, sc}) => {
     <div>
       <RB label="Twin?" val={sd.timTpTwin} opts={["Sì","No"]} onCh={v=>upv("timTpTwin",v)}/>
       {sd.timTpTwin&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
           <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="Seriale Telepass" r v={sd.timTpSeriale||""} o={v=>upv("timTpSeriale",v)} p="Seriale"/>
@@ -2932,7 +2932,7 @@ const getHO = (tc) => (tc==="business")?[]:[
 // Dojo: brand POS — consumer e business, prodotti della categoria POS
 const DOJO_CODICI_NEGOZIO=[];
 const getDOJO = () => [
-  { id:"pos", title:"POS", icon:"🏧", color:"#14b8a6", radio:false, subs:[
+  { id:"pos", title:"POS", icon:"🏧", color:"var(--tf-14b8a6)", radio:false, subs:[
     { id:"pos_dojo", title:"POS Dojo", hasContract:true, ct:"multi", fields:[]},
   ]},
 ];
@@ -2949,16 +2949,16 @@ const SimpleMobile = ({sd, uP, pfx, accent, codici, sc}) => {
   const offSel=sd[K("Offer")];
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Tipologia offerta</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Tipologia offerta</div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         <button onClick={()=>{const on=offSel==="MOBILE";upv(K("Offer"),on?null:"MOBILE");if(on){upv(K("Mnp"),null);upv(K("MnpBrand"),"");upv(K("MnpNum"),"");upv(K("RicaricaAuto"),null);upv(K("Fascia"),null);upv(K("CodIns"),"");upv(K("NumProv"),"");upv(K("Num"),"");upv(K("Iccid"),"");}}}
-          style={{padding:"8px 22px",borderRadius:10,border:offSel==="MOBILE"?"2px solid "+accent:"2px solid rgba(255,255,255,0.1)",background:offSel==="MOBILE"?accent:"rgba(255,255,255,0.04)",color:offSel==="MOBILE"?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>MOBILE</button>
+          style={{padding:"8px 22px",borderRadius:10,border:offSel==="MOBILE"?"2px solid "+accent:"2px solid var(--tf-w100)",background:offSel==="MOBILE"?accent:"var(--tf-w40)",color:offSel==="MOBILE"?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>MOBILE</button>
       </div>
       {offSel&&(
         <div>
           <RB label="MNP?" val={sd[K("Mnp")]} opts={["Sì","No"]} onCh={v=>{upv(K("Mnp"),v);if(v==="No"){upv(K("MnpBrand"),"");upv(K("MnpNum"),"");}}}/>
           {sd[K("Mnp")]==="Sì"&&(
-            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd[K("MnpBrand")]||""} o={v=>upv(K("MnpBrand"),v)} vals={brandMNP}/>
                 <TF l="Numero Portabilità" r v={sd[K("MnpNum")]||""} o={v=>upv(K("MnpNum"),v)} p="3XXXXXXXXX"/>
@@ -2972,7 +2972,7 @@ const SimpleMobile = ({sd, uP, pfx, accent, codici, sc}) => {
             </div>
           )}
           {sd[K("RicaricaAuto")]&&(
-            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+            <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
               <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                 <SCd session={sc} codici={codici} val={sd[K("CodIns")]||""} onCh={v=>upv(K("CodIns"),v)}/>
@@ -2997,13 +2997,13 @@ const ILBizMobile = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
     <div>
-      <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-64748b)",marginBottom:8,textTransform:"uppercase",letterSpacing:.4}}>Offerta Mobile</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
         {IL_BIZ_MOBILE_OFFERS.map(offer=>{
           const isActive=sd.ilBizOffer===offer;
           return (
             <button key={offer} onClick={()=>{upv("ilBizOffer",isActive?null:offer);upv("ilBizMnp",null);upv("ilBizMnpBrand","");upv("ilBizDom",null);upv("ilBizNum","");upv("ilBizIccid","");upv("ilBizNumDef","");upv("ilBizCodIns","");}}
-              style={{padding:"8px 18px",borderRadius:10,border:isActive?"2px solid "+IL_C:"2px solid rgba(255,255,255,0.1)",background:isActive?IL_C:"rgba(255,255,255,0.04)",color:isActive?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              style={{padding:"8px 18px",borderRadius:10,border:isActive?"2px solid "+IL_C:"2px solid var(--tf-w100)",background:isActive?IL_C:"var(--tf-w40)",color:isActive?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
               {offer}
             </button>
           );
@@ -3013,7 +3013,7 @@ const ILBizMobile = ({sd, uP, sc}) => {
         <div>
           <RB label="MNP?" val={sd.ilBizMnp} opts={["Sì","No"]} onCh={v=>{upv("ilBizMnp",v);if(v==="No"){upv("ilBizMnpBrand","");}}}/>
           {sd.ilBizMnp==="Sì"&&(
-            <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,padding:12,marginBottom:12}}>
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:8,padding:12,marginBottom:12}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px"}}>
                 <DD l="Operatore provenienza" r v={sd.ilBizMnpBrand||""} o={v=>upv("ilBizMnpBrand",v)} vals={IL_GNP_BRANDS}/>
                 <TF l="Numero Definitivo" r v={sd.ilBizNumDef||""} o={v=>upv("ilBizNumDef",v)} p="3XXXXXXXXX"/>
@@ -3024,7 +3024,7 @@ const ILBizMobile = ({sd, uP, sc}) => {
             <div>
               <RB label="Domiciliata?" val={sd.ilBizDom} opts={["Sì","No"]} onCh={v=>upv("ilBizDom",v)}/>
               {sd.ilBizDom&&(
-                <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14,marginTop:8}}>
+                <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14,marginTop:8}}>
                   <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
                     <SCd session={sc} codici={IL_CODICI_NEGOZIO} val={sd.ilBizCodIns||""} onCh={v=>upv("ilBizCodIns",v)}/>
@@ -3045,7 +3045,7 @@ const ILBizMobile = ({sd, uP, sc}) => {
 const W3SostSim = ({sd, uP, sc, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <TF l="Numero" r v={sd.w3SostCell||""} o={v=>upv("w3SostCell",v)} p="3XXXXXXXXX"/>
@@ -3063,7 +3063,7 @@ const FWSostSim = ({sd, uP, sc, dupCheck}) => {
   const upv=(k,v)=>uP(k,v);
   return (
     <div style={{background:"rgba(204,153,0,0.10)",border:"1px solid rgba(204,153,0,0.25)",borderRadius:8,padding:14}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#CC9900",marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-cc9900)",marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <TF l="Numero" r v={sd.fwSostCell||""} o={v=>upv("fwSostCell",v)} p="3XXXXXXXXX"/>
         <TF l="ICCID" r v={sd.fwSostIccid||""} o={v=>upv("fwSostIccid",v)} p="8939..." nt="Barcode 📷"/>
@@ -3076,7 +3076,7 @@ const FWSostSim = ({sd, uP, sc, dupCheck}) => {
 const VFSostSim = ({sd, uP, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>🔄 Sostituzione SIM — Dati Contratto</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <TF l="Numero" r v={sd.vfSostCell||""} o={v=>upv("vfSostCell",v)} p="3XXXXXXXXX"/>
@@ -3091,7 +3091,7 @@ const ENLuceGas = ({sd, uP, sub, dupCheck, sc}) => {
   const upv=(k,v)=>uP(k,v);
   const isLuce = sub.enProd==="Luce"||sub.enProd==="LuceRID";
   const content = (
-    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:14}}>
+    <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:14}}>
       <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — {sub.enBrand} {sub.title}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
         <SCd session={sc} codici={EN_CODICI_NEGOZIO} val={sd.enCodIns||""} onCh={v=>upv("enCodIns",v)}/>
@@ -3191,32 +3191,32 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
       offerte.length>10
         ? <div style={{marginTop:6,maxWidth:420}}><DD l="Offerta" r v={off} o={pickOff} vals={offerte.map(o=>o.nome)}/></div>
         : <div style={{marginTop:6}}>
-            <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:4}}>Offerta <span style={{color:"#dc3545"}}>*</span></div>
+            <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Offerta <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-              {offerte.map(o=><button key={o.nome} onClick={()=>pickOff(off===o.nome?"":o.nome)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",border:off===o.nome?"2px solid "+color:"2px solid rgba(255,255,255,0.1)",background:off===o.nome?color:"rgba(255,255,255,0.04)",color:off===o.nome?"#fff":"#8892b0",fontSize:12,fontWeight:600}}>{o.nome}</button>)}
+              {offerte.map(o=><button key={o.nome} onClick={()=>pickOff(off===o.nome?"":o.nome)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",border:off===o.nome?"2px solid "+color:"2px solid var(--tf-w100)",background:off===o.nome?color:"var(--tf-w40)",color:off===o.nome?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:600}}>{o.nome}</button>)}
             </div>
           </div>
     )}
     {offSel&&offSel.opzioni.length>0&&(
       <div style={{marginTop:10}}>
-        <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:4}}>Opzioni <span style={{fontWeight:400,color:"#64748b"}}>(facoltative{offSel.opzioni.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span></div>
+        <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Opzioni <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{offSel.opzioni.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span></div>
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
           {offSel.opzioni.map(o=>{const on=!!opz[o.nome];return(
             <span key={o.nome} style={{display:"inline-flex",alignItems:"center",gap:6}}>
-              <button onClick={()=>togOpz(o)} style={{padding:"6px 12px",borderRadius:999,cursor:"pointer",border:on?"2px solid "+color:"1px solid rgba(255,255,255,0.15)",background:on?color+"26":"rgba(255,255,255,0.03)",color:on?"#fff":"#8892b0",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
-              {on&&o.tipo==="numero"&&<input type="number" min="1" value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{const q=Math.max(1,parseInt(e.target.value||"1",10)||1);setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",fontSize:12,background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>}
+              <button onClick={()=>togOpz(o)} style={{padding:"6px 12px",borderRadius:999,cursor:"pointer",border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
+              {on&&o.tipo==="numero"&&<input type="number" min="1" value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{const q=Math.max(1,parseInt(e.target.value||"1",10)||1);setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",fontSize:12,background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>}
             </span>);})}
         </div>
       </div>
     )}
     {sub.catCategoria==="Telefono a Rate"&&!/\bCB\b/i.test(sub.catProdotto)&&(mobili||[]).length>0&&(!_NE(f["Codice Contratto"])||!_NE(f["Numero di Cellulare"]))&&(
       <div style={{marginTop:10,padding:"10px 12px",background:"rgba(111,66,193,0.08)",borderRadius:8,border:"1px dashed rgba(111,66,193,0.55)"}}>
-        <div style={{fontSize:12,fontWeight:700,color:"#a78bfa",marginBottom:6}}>📎 Nuova attivazione: vuoi agganciarlo al mobile che stai registrando?</div>
-        <div style={{fontSize:10,color:"#8892b0",marginBottom:8}}>Codice contratto e numero si compilano da soli — restano da inserire solo IMEI, modello, rata e pratica di finanziamento.</div>
+        <div style={{fontSize:12,fontWeight:700,color:"var(--tf-a78bfa)",marginBottom:6}}>📎 Nuova attivazione: vuoi agganciarlo al mobile che stai registrando?</div>
+        <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:8}}>Codice contratto e numero si compilano da soli — restano da inserire solo IMEI, modello, rata e pratica di finanziamento.</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
           {(mobili||[]).map((m,mi)=>(
             <button key={mi} onClick={()=>{if(m.codice)setF("Codice Contratto",m.codice);if(m.numero)setF("Numero di Cellulare",m.numero);}}
-              style={{padding:"7px 14px",borderRadius:8,border:"2px solid rgba(111,66,193,0.7)",background:"rgba(111,66,193,0.18)",color:"#c4b5fd",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              style={{padding:"7px 14px",borderRadius:8,border:"2px solid rgba(111,66,193,0.7)",background:"rgba(111,66,193,0.18)",color:"var(--tf-c4b5fd)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
               ✓ Aggancia a {m.etichetta}
             </button>
           ))}
@@ -3224,7 +3224,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
       </div>
     )}
     {(offerte.length===0||off)&&campi.length>0&&(
-      <div style={{marginTop:10,padding:10,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)"}}>
+      <div style={{marginTop:10,padding:10,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w100)"}}>
         <div style={{fontSize:11,fontWeight:700,color,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px"}}>
           {campi.map(cmp=>{
@@ -3232,7 +3232,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
             if(/^gnp$/i.test(cmp.nome))return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>{setF(cmp.nome,v);if(v!=="Sì")setF("Operatore GNP","");}} vals={["Sì","No"]} nt={cmp.nota||undefined}/>;
             if(/^operatore gnp$/i.test(cmp.nome)&&(f["GNP"]||"")!=="Sì")return null;
             if(cmp.tipo==="scelta")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={_sceltaVals(cmp.nome,sub.catCategoria)} nt={cmp.nota||undefined}/>;
-            if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"#dc3545"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>{cmp.nota&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{cmp.nota}</div>}</div>);
+            if(cmp.tipo==="data")return (<div key={cmp.nome}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{cmp.nome} {!cmp.facoltativo&&<span style={{color:"var(--tf-dc3545)"}}>*</span>}</div><input type="date" value={f[cmp.nome]||""} onChange={e=>setF(cmp.nome,e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box",background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>{cmp.nota&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{cmp.nota}</div>}</div>);
             if(cmp.nome==="Modello Terminale")return <DD key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} vals={SOLO_ALTRO} cerca={cercaTerminali} nt={cmp.nota||undefined}/>;
             if(/mobile di convergenza/i.test(cmp.nome))return (
               <div key={cmp.nome}>
@@ -3244,7 +3244,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
                     {_numeriMobiliVendita.filter(n=>n!==(f[cmp.nome]||"")).slice(0,4).map(n=>(
                       <button key={n} type="button" onClick={()=>setF(cmp.nome,n)}
                         title="Numero mobile trovato in questa vendita: clicca per agganciarlo alla convergenza"
-                        style={{padding:"4px 10px",borderRadius:999,border:"1px solid rgba(52,211,153,0.5)",background:"rgba(52,211,153,0.10)",color:"#34d399",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                        style={{padding:"4px 10px",borderRadius:999,border:"1px solid rgba(52,211,153,0.5)",background:"rgba(52,211,153,0.10)",color:"var(--tf-34d399)",fontSize:11,fontWeight:700,cursor:"pointer"}}>
                         📱 Aggancia {n}
                       </button>
                     ))}
@@ -3409,9 +3409,9 @@ const subBadge=(d,dupFn,sub,missing)=>{
   const hasData=n>0||_truthy(d.contract)||_truthy(d.fields)||(sub&&sub.isVerisure);
   let invalid=_subHasInvalid(d);
   if(!invalid&&dupFn){if(dupFn("POD",d.fwPod)||dupFn("POD",d.enPod)||(d.contract&&dupFn("POD",d.contract.pod))||dupFn("PDR",d.fwPdr)||dupFn("PDR",d.enPdr)||(d.contract&&dupFn("PDR",d.contract.pdr))||dupFn("CODCONTR",d.cbCodContratto)||dupFn("CODCONTR",d.cbTnpCC)||dupFn("CODCONTR",d.cbCambioCC)||dupFn("CODCONTR",d.w3SostCodContr)||(d.contract&&dupFn("CODCONTR",d.contract.codice_contratto)))invalid=true;}
-  if(!hasData)return {st:"empty",label:"● Da compilare",bg:"#e9ecef",fg:"#64748b"};
-  if(invalid||missing||(sub&&!subComplete(sub,d)))return {st:"warn",label:"⚠ Incompleto",bg:"rgba(245,158,11,0.14)",fg:"#f59e0b"};
-  return {st:"ok",label:"✓ Completo",bg:"rgba(40,167,69,0.12)",fg:"#28a745"};
+  if(!hasData)return {st:"empty",label:"● Da compilare",bg:"var(--tf-e9ecef)",fg:"var(--tf-64748b)"};
+  if(invalid||missing||(sub&&!subComplete(sub,d)))return {st:"warn",label:"⚠ Incompleto",bg:"rgba(245,158,11,0.14)",fg:"var(--tf-f59e0b)"};
+  return {st:"ok",label:"✓ Completo",bg:"rgba(40,167,69,0.12)",fg:"var(--tf-28a745)"};
 };
 
 const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,onOpenVFModal,dupCheck,mobiliRate}) => {
@@ -3458,7 +3458,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
   const _subKey=group.id+"-"+si+"-"+sub.id;
   const _bd = subBadge(sd, dupCheck, sub, _reqApiSub?_reqApiSub.reqMissing(_subKey):false);
   const _inner = (
-    <div style={{marginBottom:10,padding:10,background:"rgba(255,255,255,0.02)",borderRadius:8,border:"1px solid "+group.color+"30"}}>
+    <div style={{marginBottom:10,padding:10,background:"var(--tf-w20)",borderRadius:8,border:"1px solid "+group.color+"30"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
         <div style={{fontSize:11,fontWeight:700,color:group.color}}>{sub.title}</div>
         {_bd&&<span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999,background:_bd.bg,color:_bd.fg,whiteSpace:"nowrap"}}>{_bd.label}</span>}
@@ -3485,11 +3485,11 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
           )}
           {/* Security when Easy Pay = No (after Offerta Mobile) */}
           {mobDone&&(sd.easyPay==="No"||sd.easyPay===false)&&(
-            <div style={{marginTop:8,padding:8,background:"rgba(255,255,255,0.03)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:6}}>Security</div>
+            <div style={{marginTop:8,padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security</div>
               <div style={{display:"flex",gap:6}}>
                 {["Security","Security PRO"].map(s=>
-                  <button key={s} onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel[s]?{}:{[s]:true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel[s]?"2px solid #fd7e14":"2px solid rgba(255,255,255,0.1)",background:sd.securitySel[s]?"rgba(245,158,11,0.14)":"rgba(255,255,255,0.04)",color:sd.securitySel[s]?"#e8590c":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                  <button key={s} onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel[s]?{}:{[s]:true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel[s]?"2px solid #fd7e14":"2px solid var(--tf-w100)",background:sd.securitySel[s]?"rgba(245,158,11,0.14)":"var(--tf-w40)",color:sd.securitySel[s]?"var(--tf-e8590c)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                     <span>{sd.securitySel[s]?"◉":"○"}</span>{s}
                   </button>
                 )}
@@ -3501,11 +3501,11 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             <div style={{marginTop:8}}>
               <MiniC label="TNP GA" val={sd.tnpGa} onCh={v=>{uP(group.id,si,sub.id,"tnpGa",v);if(v==="No"||v===false){uP(group.id,si,sub.id,"tnpTipo","");uP(group.id,si,sub.id,"tnpModello","");uP(group.id,si,sub.id,"tnpImei","");uP(group.id,si,sub.id,"tnpGaReload",null);uP(group.id,si,sub.id,"tnpGaReloadSel",{})}}} opts={["Sì","No"]}/>
               {(sd.tnpGa==="Sì"||sd.tnpGa===true)&&(
-                <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginTop:4}}>
-                  <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>Dati TNP GA</div>
+                <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginTop:4}}>
+                  <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>Dati TNP GA</div>
                   <div style={{display:"flex",gap:6,marginBottom:sd.tnpTipo?8:0}}>
                     {["Rata 5G","Finanziamento > 600€","Finanziamento < 600€"].map(opt=>
-                      <button key={opt} onClick={()=>uP(group.id,si,sub.id,"tnpTipo",opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.tnpTipo===opt?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.tnpTipo===opt?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.tnpTipo===opt?"#fff":"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
+                      <button key={opt} onClick={()=>uP(group.id,si,sub.id,"tnpTipo",opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.tnpTipo===opt?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:sd.tnpTipo===opt?"var(--tf-2e75b6)":"var(--tf-w40)",color:sd.tnpTipo===opt?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
                     )}
                   </div>
                   {sd.tnpTipo&&(
@@ -3517,7 +3517,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                   {/* Quanti TNP finanziati — solo per Finanziamento */}
                   {sd.tnpTipo&&sd.tnpTipo.startsWith("Finanziamento")&&(
                     <div style={{marginTop:8}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"#2E75B6",marginBottom:6}}>Quanti TNP hai finanziato?</div>
+                      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:6}}>Quanti TNP hai finanziato?</div>
                       <div style={{display:"flex",gap:6,marginBottom:8}}>
                         {[1,2,3].map(n=>
                           <button key={n} onClick={()=>{const nuovo=sd.tnpCount===n?null:n;uP(group.id,si,sub.id,"tnpCount",nuovo);
@@ -3525,18 +3525,18 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                                altrimenti restano nascosti e finiscono nel contratto */
                             const lim=nuovo||0;
                             uP(group.id,si,sub.id,"tnpModelli",(sd.tnpModelli||[]).slice(0,lim));
-                            uP(group.id,si,sub.id,"tnpImeis",(sd.tnpImeis||[]).slice(0,lim));}} style={{width:40,height:40,borderRadius:8,border:sd.tnpCount===n?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.tnpCount===n?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.tnpCount===n?"#fff":"#8892b0",fontSize:14,fontWeight:700,cursor:"pointer"}}>{n}</button>
+                            uP(group.id,si,sub.id,"tnpImeis",(sd.tnpImeis||[]).slice(0,lim));}} style={{width:40,height:40,borderRadius:8,border:sd.tnpCount===n?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:sd.tnpCount===n?"var(--tf-2e75b6)":"var(--tf-w40)",color:sd.tnpCount===n?"#fff":"var(--tf-8892b0)",fontSize:14,fontWeight:700,cursor:"pointer"}}>{n}</button>
                         )}
                       </div>
                       {sd.tnpCount&&[...Array(sd.tnpCount)].map((_,idx)=>(
-                        <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8,padding:8,background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
-                          <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:2}}>Terminale {sd.tnpCount>1?idx+1:""}</div>
+                        <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                          <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:2}}>Terminale {sd.tnpCount>1?idx+1:""}</div>
                           <DD l="Modello Terminale" r v={(sd.tnpModelli&&sd.tnpModelli[idx])||""} o={v=>{const m=[...(sd.tnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"tnpModelli",m)}} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
                           <TF l="IMEI" r v={(sd.tnpImeis&&sd.tnpImeis[idx])||""} o={v=>{const im=[...(sd.tnpImeis||[])];im[idx]=v;uP(group.id,si,sub.id,"tnpImeis",im)}} p="15 cifre" nt="Barcode 📷"/>
                         </div>
                       ))}
                       {sd.tnpCount&&(
-                        <div style={{marginTop:4,padding:8,background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
+                        <div style={{marginTop:4,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                             <YN val={sd.packAccessori} onCh={v=>uP(group.id,si,sub.id,"packAccessori",v)} label="Pack Accessori?"/>
                             {(sd.packAccessori===true)&&(
@@ -3545,13 +3545,13 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                           </div>
                           {(sd.packAccessori===true)&&(
                             <div style={{marginTop:10}}>
-                              <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:6}}>Importo Pack Accessori <span style={{color:"#2E75B6",fontWeight:700}}>€{sd.packAccessoriVal||29}</span></div>
+                              <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:6}}>Importo Pack Accessori <span style={{color:"var(--tf-2e75b6)",fontWeight:700}}>€{sd.packAccessoriVal||29}</span></div>
                               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                                <input type="range" min={29} max={240} value={sd.packAccessoriVal||29} onChange={e=>uP(group.id,si,sub.id,"packAccessoriVal",parseInt(e.target.value))} style={{flex:1,accentColor:"#2E75B6"}}/>
-                                <input type="number" min={29} max={240} value={sd.packAccessoriVal||""} onChange={e=>uP(group.id,si,sub.id,"packAccessoriVal",e.target.value===""?"":parseInt(e.target.value))} onBlur={e=>{const raw=parseInt(e.target.value);if(!isNaN(raw))uP(group.id,si,sub.id,"packAccessoriVal",Math.min(240,Math.max(29,raw)));else uP(group.id,si,sub.id,"packAccessoriVal",29)}} style={{width:72,padding:"5px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",fontSize:12,fontWeight:600,textAlign:"center"}} placeholder="29-240"/>
-                                <span style={{fontSize:11,color:"#64748b"}}>€</span>
+                                <input type="range" min={29} max={240} value={sd.packAccessoriVal||29} onChange={e=>uP(group.id,si,sub.id,"packAccessoriVal",parseInt(e.target.value))} style={{flex:1,accentColor:"var(--tf-2e75b6)"}}/>
+                                <input type="number" min={29} max={240} value={sd.packAccessoriVal||""} onChange={e=>uP(group.id,si,sub.id,"packAccessoriVal",e.target.value===""?"":parseInt(e.target.value))} onBlur={e=>{const raw=parseInt(e.target.value);if(!isNaN(raw))uP(group.id,si,sub.id,"packAccessoriVal",Math.min(240,Math.max(29,raw)));else uP(group.id,si,sub.id,"packAccessoriVal",29)}} style={{width:72,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w120)",fontSize:12,fontWeight:600,textAlign:"center"}} placeholder="29-240"/>
+                                <span style={{fontSize:11,color:"var(--tf-64748b)"}}>€</span>
                               </div>
-                              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#64748b",marginTop:2}}><span>€29</span><span>€240</span></div>
+                              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--tf-64748b)",marginTop:2}}><span>€29</span><span>€240</span></div>
                             </div>
                           )}
                         </div>
@@ -3560,12 +3560,12 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                   )}
                   {/* Reload inside TNP GA */}
                   {sd.tnpTipo&&(
-                    <div style={{marginTop:10,padding:8,background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
+                    <div style={{marginTop:10,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
                       <YN val={sd.tnpGaReload} onCh={v=>{uP(group.id,si,sub.id,"tnpGaReload",v);if(!v)uP(group.id,si,sub.id,"tnpGaReloadSel",{})}} label="Reload?"/>
                       {(sd.tnpGaReload===true)&&(
                         <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:6}}>
                           {["Reload","Reload Plus","Reload Exchange"].map(rl=>
-                            <button key={rl} onClick={()=>uP(group.id,si,sub.id,"tnpGaReloadSel",sd.tnpGaReloadSel[rl]?{}:{[rl]:true})} style={{padding:"5px 12px",borderRadius:6,border:sd.tnpGaReloadSel[rl]?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.tnpGaReloadSel[rl]?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.tnpGaReloadSel[rl]?"#28a745":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                            <button key={rl} onClick={()=>uP(group.id,si,sub.id,"tnpGaReloadSel",sd.tnpGaReloadSel[rl]?{}:{[rl]:true})} style={{padding:"5px 12px",borderRadius:6,border:sd.tnpGaReloadSel[rl]?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.tnpGaReloadSel[rl]?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.tnpGaReloadSel[rl]?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                               <span>{sd.tnpGaReloadSel[rl]?"◉":"○"}</span>{rl}
                             </button>
                           )}
@@ -3577,11 +3577,11 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
               )}
               {/* Security for TNP GA = Sì: OUTSIDE blue box, before dati contratto */}
               {(sd.tnpGa==="Sì"||sd.tnpGa===true)&&sd.tnpTipo&&(
-                <div style={{marginTop:8,padding:8,background:"rgba(255,255,255,0.03)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:6}}>Security</div>
+                <div style={{marginTop:8,padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security</div>
                   <div style={{display:"flex",gap:6}}>
                     {["Security","Security PRO"].map(s=>
-                      <button key={s} onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel[s]?{}:{[s]:true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel[s]?"2px solid #fd7e14":"2px solid rgba(255,255,255,0.1)",background:sd.securitySel[s]?"rgba(245,158,11,0.14)":"rgba(255,255,255,0.04)",color:sd.securitySel[s]?"#e8590c":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                      <button key={s} onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel[s]?{}:{[s]:true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel[s]?"2px solid #fd7e14":"2px solid var(--tf-w100)",background:sd.securitySel[s]?"rgba(245,158,11,0.14)":"var(--tf-w40)",color:sd.securitySel[s]?"var(--tf-e8590c)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                         <span>{sd.securitySel[s]?"◉":"○"}</span>{s}
                       </button>
                     )}
@@ -3595,11 +3595,11 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             <div style={{marginTop:6}}>
               <YN val={sd.reloadForever} onCh={v=>uP(group.id,si,sub.id,"reloadForever",v)} label="Reload Forever?"/>
               {/* Security when TNP GA = No (after Reload Forever) */}
-              <div style={{marginTop:8,padding:8,background:"rgba(255,255,255,0.03)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
-                <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:6}}>Security</div>
+              <div style={{marginTop:8,padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security</div>
                 <div style={{display:"flex",gap:6}}>
                   {["Security","Security PRO"].map(s=>
-                    <button key={s} onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel[s]?{}:{[s]:true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel[s]?"2px solid #fd7e14":"2px solid rgba(255,255,255,0.1)",background:sd.securitySel[s]?"rgba(245,158,11,0.14)":"rgba(255,255,255,0.04)",color:sd.securitySel[s]?"#e8590c":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                    <button key={s} onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel[s]?{}:{[s]:true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel[s]?"2px solid #fd7e14":"2px solid var(--tf-w100)",background:sd.securitySel[s]?"rgba(245,158,11,0.14)":"var(--tf-w40)",color:sd.securitySel[s]?"var(--tf-e8590c)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                       <span>{sd.securitySel[s]?"◉":"○"}</span>{s}
                     </button>
                   )}
@@ -3660,22 +3660,22 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
               <MiniC label="TNP GA" val={sd.tnpGa} onCh={v=>{uP(group.id,si,sub.id,"tnpGa",v);if(v==="No"||v===false){uP(group.id,si,sub.id,"tnpTipo","");uP(group.id,si,sub.id,"tnpModello","");uP(group.id,si,sub.id,"tnpImei","");uP(group.id,si,sub.id,"tnpGaReload",null);uP(group.id,si,sub.id,"tnpGaReloadSel",{})}}} opts={["Sì","No"]}/>
               {(sd.tnpGa==="Sì"||sd.tnpGa===true)&&(
                 <div style={{marginTop:8}}>
-                  <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginBottom:8}}>
-                    <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>Tipologia TNP GA</div>
+                  <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginBottom:8}}>
+                    <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>Tipologia TNP GA</div>
                     <div style={{display:"flex",gap:6}}>
                       {["Rata P.IVA","Rata P.IVA 5G"].map(opt=>
-                        <button key={opt} onClick={()=>uP(group.id,si,sub.id,"tnpTipo",sd.tnpTipo===opt?"":opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.tnpTipo===opt?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.tnpTipo===opt?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.tnpTipo===opt?"#fff":"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
+                        <button key={opt} onClick={()=>uP(group.id,si,sub.id,"tnpTipo",sd.tnpTipo===opt?"":opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.tnpTipo===opt?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:sd.tnpTipo===opt?"var(--tf-2e75b6)":"var(--tf-w40)",color:sd.tnpTipo===opt?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
                       )}
                     </div>
                   </div>
-                  <div style={{padding:8,background:"rgba(255,255,255,0.03)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:6}}>Security / Reload</div>
+                  <div style={{padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security / Reload</div>
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      <button onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel["Security"]?{}:{"Security":true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel["Security"]?"2px solid #fd7e14":"2px solid rgba(255,255,255,0.1)",background:sd.securitySel["Security"]?"rgba(245,158,11,0.14)":"rgba(255,255,255,0.04)",color:sd.securitySel["Security"]?"#e8590c":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                      <button onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel["Security"]?{}:{"Security":true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel["Security"]?"2px solid #fd7e14":"2px solid var(--tf-w100)",background:sd.securitySel["Security"]?"rgba(245,158,11,0.14)":"var(--tf-w40)",color:sd.securitySel["Security"]?"var(--tf-e8590c)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                         <span>{sd.securitySel["Security"]?"☑":"☐"}</span>Security
                       </button>
                       {["Reload","Reload EU"].map(rl=>
-                        <button key={rl} onClick={()=>uP(group.id,si,sub.id,"tnpGaReloadSel",sd.tnpGaReloadSel[rl]?{}:{[rl]:true})} style={{padding:"5px 14px",borderRadius:6,border:sd.tnpGaReloadSel[rl]?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.tnpGaReloadSel[rl]?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.tnpGaReloadSel[rl]?"#28a745":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                        <button key={rl} onClick={()=>uP(group.id,si,sub.id,"tnpGaReloadSel",sd.tnpGaReloadSel[rl]?{}:{[rl]:true})} style={{padding:"5px 14px",borderRadius:6,border:sd.tnpGaReloadSel[rl]?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.tnpGaReloadSel[rl]?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.tnpGaReloadSel[rl]?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                           <span>{sd.tnpGaReloadSel[rl]?"◉":"○"}</span>{rl}
                         </button>
                       )}
@@ -3684,13 +3684,13 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                 </div>
               )}
               {(sd.tnpGa==="No"||sd.tnpGa===false)&&(
-                <div style={{marginTop:8,padding:8,background:"rgba(255,255,255,0.03)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#8892b0",marginBottom:6}}>Security / Reload</div>
+                <div style={{marginTop:8,padding:8,background:"var(--tf-w30)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:6}}>Security / Reload</div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                    <button onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel["Security"]?{}:{"Security":true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel["Security"]?"2px solid #fd7e14":"2px solid rgba(255,255,255,0.1)",background:sd.securitySel["Security"]?"rgba(245,158,11,0.14)":"rgba(255,255,255,0.04)",color:sd.securitySel["Security"]?"#e8590c":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                    <button onClick={()=>uP(group.id,si,sub.id,"securitySel",sd.securitySel["Security"]?{}:{"Security":true})} style={{padding:"5px 14px",borderRadius:6,border:sd.securitySel["Security"]?"2px solid #fd7e14":"2px solid var(--tf-w100)",background:sd.securitySel["Security"]?"rgba(245,158,11,0.14)":"var(--tf-w40)",color:sd.securitySel["Security"]?"var(--tf-e8590c)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                       <span>{sd.securitySel["Security"]?"◉":"○"}</span>Security
                     </button>
-                    <button onClick={()=>uP(group.id,si,sub.id,"tnpGaReloadSel",sd.tnpGaReloadSel["Reload Open"]?{}:{"Reload Open":true})} style={{padding:"5px 14px",borderRadius:6,border:sd.tnpGaReloadSel["Reload Open"]?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.tnpGaReloadSel["Reload Open"]?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.tnpGaReloadSel["Reload Open"]?"#28a745":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                    <button onClick={()=>uP(group.id,si,sub.id,"tnpGaReloadSel",sd.tnpGaReloadSel["Reload Open"]?{}:{"Reload Open":true})} style={{padding:"5px 14px",borderRadius:6,border:sd.tnpGaReloadSel["Reload Open"]?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.tnpGaReloadSel["Reload Open"]?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.tnpGaReloadSel["Reload Open"]?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                       <span>{sd.tnpGaReloadSel["Reload Open"]?"◉":"○"}</span>Reload Open
                     </button>
                   </div>
@@ -3707,13 +3707,13 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
           ? <div style={{padding:"10px 14px",borderRadius:8,background:"rgba(111,66,193,0.12)",border:"2px solid #6f42c1"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
                 <span style={{fontSize:16}}>✅</span>
-                <span style={{fontSize:13,fontWeight:700,color:"#6f42c1"}}>Protecta PRO attivato</span>
+                <span style={{fontSize:13,fontWeight:700,color:"var(--tf-6f42c1)"}}>Protecta PRO attivato</span>
               </div>
               <div style={{maxWidth:260}}><SCd session={sessionCode} codici={codiciW3} val={sd.protectaCodIns||""} onCh={v=>uP(group.id,si,sub.id,"protectaCodIns",v)}/></div>
             </div>
           : <div style={{display:"flex",gap:8}}>
               {["Kit Base","Kit Plus"].map(k=>
-                <button key={k} onClick={()=>uF(group.id,si,sub.id,"protectaKit",f.protectaKit===k?"":k)} style={{padding:"8px 18px",borderRadius:8,border:f.protectaKit===k?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:f.protectaKit===k?"#6f42c1":"rgba(255,255,255,0.04)",color:f.protectaKit===k?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{k}</button>
+                <button key={k} onClick={()=>uF(group.id,si,sub.id,"protectaKit",f.protectaKit===k?"":k)} style={{padding:"8px 18px",borderRadius:8,border:f.protectaKit===k?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:f.protectaKit===k?"var(--tf-6f42c1)":"var(--tf-w40)",color:f.protectaKit===k?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{k}</button>
               )}
             </div>
       )}
@@ -3723,8 +3723,8 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
         <div style={{padding:"12px 16px",borderRadius:8,background:"rgba(111,66,193,0.12)",border:"2px solid #6f42c1"}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
             <span style={{fontSize:20}}>🛡️</span>
-            <span style={{fontSize:13,fontWeight:700,color:"#6f42c1"}}>Verisure</span>
-            <span style={{marginLeft:"auto",fontSize:12,fontWeight:800,color:"#6f42c1",background:"rgba(111,66,193,0.18)",borderRadius:6,padding:"3px 12px"}}>✅ CONTATTO INSERITO - In attesa di approvazione</span>
+            <span style={{fontSize:13,fontWeight:700,color:"var(--tf-6f42c1)"}}>Verisure</span>
+            <span style={{marginLeft:"auto",fontSize:12,fontWeight:800,color:"var(--tf-6f42c1)",background:"rgba(111,66,193,0.18)",borderRadius:6,padding:"3px 12px"}}>✅ CONTATTO INSERITO - In attesa di approvazione</span>
           </div>
           <SCd session={sessionCode} codici={VF_CODICI_NEGOZIO} val={sd.verisureCodIns||""} onCh={v=>uP(group.id,si,sub.id,"verisureCodIns",v)}/>
         </div>
@@ -3734,7 +3734,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {sub.isVFFisso&&<VFMobileGAFisso sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} sc={sessionCode}/>}
       {sub.isVFFissoBiz&&<VFBizFisso sd={sd} uP={(k,v)=>uP(group.id,si,sub.id,k,v)} isCombo={!!sub.isCombinatoFissoBiz} sc={sessionCode}/>}
       {sub.isVFSolDig&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:12}}>
           <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto</div>
           <SCd session={sessionCode} codici={VF_CODICI_NEGOZIO} val={sd.vfSolDigCodIns||""} onCh={v=>uP(group.id,si,sub.id,"vfSolDigCodIns",v)}/>
         </div>
@@ -3742,15 +3742,15 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Kasko Facile */}
       {sub.isKaskoFacile&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:12}}>
           <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Kasko Facile</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="IMEI" r v={f.kfImei||""} o={v=>uF(group.id,si,sub.id,"kfImei",v)} p="15 cifre" nt="Barcode 📷"/>
             <TF l="Numero di telefono" r v={f.kfTelefono||""} o={v=>uF(group.id,si,sub.id,"kfTelefono",v)} p="3XXXXXXXXX"/>
             <TF l="Seriale Kasko" r v={f.kfSeriale||""} o={v=>uF(group.id,si,sub.id,"kfSeriale",v)} p="es. KF-000123"/>
             <div>
-              <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Tipologia Kasko <span style={{color:"#dc3545"}}>*</span></div>
-              <select value={f.kfTipologia||""} onChange={e=>uF(group.id,si,sub.id,"kfTipologia",e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box",background:"rgba(255,255,255,0.02)"}}>
+              <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Tipologia Kasko <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+              <select value={f.kfTipologia||""} onChange={e=>uF(group.id,si,sub.id,"kfTipologia",e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box",background:"var(--tf-w20)"}}>
                 <option value="">— Seleziona —</option>
                 {["29,90","39,90","59,90","89,90","109,99","129,99","149,99","179,99","189,99","219,99"].map(v=><option key={v} value={v}>{v} €</option>)}
               </select>
@@ -3762,7 +3762,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Vodafone Care */}
       {sub.isVFCare&&(
-        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:8,padding:12}}>
+        <div style={{background:"rgba(0,114,198,0.10)",border:"1px solid var(--tf-w120)",borderRadius:8,padding:12}}>
           <div style={{fontSize:11,fontWeight:700,color:_brandAccento,marginBottom:10,textTransform:"uppercase"}}>📋 Dati Contratto — Vodafone Care</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
             <TF l="Numero di telefono" r v={f.vcTelefono||""} o={v=>uF(group.id,si,sub.id,"vcTelefono",v)} p="3XXXXXXXXX"/>
@@ -3775,7 +3775,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {sub.isAssicBiz&&(
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {["Protezione PRO Negozi - Affittuario","Protezione PRO Negozi - Proprietario"].map(opt=>
-            <button key={opt} onClick={()=>uF(group.id,si,sub.id,"assicBizSel",f.assicBizSel===opt?"":opt)} style={{padding:"8px 16px",borderRadius:8,border:f.assicBizSel===opt?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:f.assicBizSel===opt?"#6f42c1":"rgba(255,255,255,0.04)",color:f.assicBizSel===opt?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+            <button key={opt} onClick={()=>uF(group.id,si,sub.id,"assicBizSel",f.assicBizSel===opt?"":opt)} style={{padding:"8px 16px",borderRadius:8,border:f.assicBizSel===opt?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:f.assicBizSel===opt?"var(--tf-6f42c1)":"var(--tf-w40)",color:f.assicBizSel===opt?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:14}}>{f.assicBizSel===opt?"◉":"○"}</span>{opt}
             </button>
           )}
@@ -3787,16 +3787,16 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
         <div>
           {/* Three toggleable sub-options */}
           <div style={{display:"flex",gap:8,marginBottom:10}}>
-            <button onClick={()=>{const on=!sd.cbTnp;uP(group.id,si,sub.id,"cbTnp",on);if(on){if(!sd.cbTnpCell){const pre=sd.cbCambioCell||anaCel||"";if(pre)uP(group.id,si,sub.id,"cbTnpCell",pre)};if(!sd.cbTnpCC){const pre=sd.cbCambioCC||(c.codice_contratto||"");if(pre)uP(group.id,si,sub.id,"cbTnpCC",pre)}}}} style={{padding:"8px 16px",borderRadius:8,border:sd.cbTnp?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.cbTnp?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.cbTnp?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>TNP CB</button>
-            <button onClick={()=>{const on=!sd.cbCambio;uP(group.id,si,sub.id,"cbCambio",on);if(on){if(!sd.cbCambioCell){const pre=sd.cbTnpCell||anaCel||"";if(pre)uP(group.id,si,sub.id,"cbCambioCell",pre)};if(!sd.cbCambioCC){const pre=sd.cbTnpCC||(c.codice_contratto||"");if(pre)uP(group.id,si,sub.id,"cbCambioCC",pre)}}}} style={{padding:"8px 16px",borderRadius:8,border:sd.cbCambio?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:sd.cbCambio?"#6f42c1":"rgba(255,255,255,0.04)",color:sd.cbCambio?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Cambio Offerta</button>
-            {!sub.isCBBiz&&<button onClick={()=>uP(group.id,si,sub.id,"cbRf",!sd.cbRf)} style={{padding:"8px 16px",borderRadius:8,border:sd.cbRf?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.cbRf?"#28a745":"rgba(255,255,255,0.04)",color:sd.cbRf?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Reload Forever</button>}
-            {sub.cbAddonVals&&<button onClick={()=>uP(group.id,si,sub.id,"cbAddon",!sd.cbAddon)} style={{padding:"8px 16px",borderRadius:8,border:sd.cbAddon?"2px solid #17a589":"2px solid rgba(255,255,255,0.1)",background:sd.cbAddon?"#17a589":"rgba(255,255,255,0.04)",color:sd.cbAddon?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{sub.isCBBiz?"Add-on / Security":"Add-on"}</button>}
+            <button onClick={()=>{const on=!sd.cbTnp;uP(group.id,si,sub.id,"cbTnp",on);if(on){if(!sd.cbTnpCell){const pre=sd.cbCambioCell||anaCel||"";if(pre)uP(group.id,si,sub.id,"cbTnpCell",pre)};if(!sd.cbTnpCC){const pre=sd.cbCambioCC||(c.codice_contratto||"");if(pre)uP(group.id,si,sub.id,"cbTnpCC",pre)}}}} style={{padding:"8px 16px",borderRadius:8,border:sd.cbTnp?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:sd.cbTnp?"var(--tf-2e75b6)":"var(--tf-w40)",color:sd.cbTnp?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>TNP CB</button>
+            <button onClick={()=>{const on=!sd.cbCambio;uP(group.id,si,sub.id,"cbCambio",on);if(on){if(!sd.cbCambioCell){const pre=sd.cbTnpCell||anaCel||"";if(pre)uP(group.id,si,sub.id,"cbCambioCell",pre)};if(!sd.cbCambioCC){const pre=sd.cbTnpCC||(c.codice_contratto||"");if(pre)uP(group.id,si,sub.id,"cbCambioCC",pre)}}}} style={{padding:"8px 16px",borderRadius:8,border:sd.cbCambio?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:sd.cbCambio?"var(--tf-6f42c1)":"var(--tf-w40)",color:sd.cbCambio?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Cambio Offerta</button>
+            {!sub.isCBBiz&&<button onClick={()=>uP(group.id,si,sub.id,"cbRf",!sd.cbRf)} style={{padding:"8px 16px",borderRadius:8,border:sd.cbRf?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.cbRf?"var(--tf-28a745)":"var(--tf-w40)",color:sd.cbRf?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Reload Forever</button>}
+            {sub.cbAddonVals&&<button onClick={()=>uP(group.id,si,sub.id,"cbAddon",!sd.cbAddon)} style={{padding:"8px 16px",borderRadius:8,border:sd.cbAddon?"2px solid #17a589":"2px solid var(--tf-w100)",background:sd.cbAddon?"var(--tf-17a589)":"var(--tf-w40)",color:sd.cbAddon?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{sub.isCBBiz?"Add-on / Security":"Add-on"}</button>}
           </div>
 
           {/* TNP CB section */}
           {sd.cbTnp&&(
-            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>Dati TNP CB</div>
+            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>Dati TNP CB</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px 14px",marginBottom:8}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbTnpCodIns||""} onCh={v=>uP(group.id,si,sub.id,"cbTnpCodIns",v)}/>
                 <TF l="Cellulare" r v={sd.cbTnpCell||""} o={v=>{uP(group.id,si,sub.id,"cbTnpCell",v);if(sd.cbCambio)uP(group.id,si,sub.id,"cbCambioCell",v)}} p="3XXXXXXXXX" nt={sd.cbTnpCell===anaCel&&anaCel?"Da anagrafica":""}/>
@@ -3810,7 +3810,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
               )}
               <div style={{display:"flex",gap:6,marginBottom:sd.cbTnpTipo?8:0}}>
                 {!sub.isCBBiz&&sub.cbTnpVals.map(opt=>
-                  <button key={opt} onClick={()=>uP(group.id,si,sub.id,"cbTnpTipo",opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.cbTnpTipo===opt?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.cbTnpTipo===opt?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.cbTnpTipo===opt?"#fff":"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
+                  <button key={opt} onClick={()=>uP(group.id,si,sub.id,"cbTnpTipo",opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.cbTnpTipo===opt?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:sd.cbTnpTipo===opt?"var(--tf-2e75b6)":"var(--tf-w40)",color:sd.cbTnpTipo===opt?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
                 )}
               </div>
               {!sub.isCBBiz&&sd.cbTnpTipo&&(
@@ -3821,24 +3821,24 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                   </div>
                   {sd.cbTnpTipo.startsWith("Finanziamento")&&(
                     <div style={{marginTop:8}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"#2E75B6",marginBottom:6}}>Quanti TNP hai finanziato?</div>
+                      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:6}}>Quanti TNP hai finanziato?</div>
                       <div style={{display:"flex",gap:6,marginBottom:8}}>
                         {[1,2,3].map(n=>
                           <button key={n} onClick={()=>{const nuovo=sd.cbTnpCount===n?null:n;uP(group.id,si,sub.id,"cbTnpCount",nuovo);
                             const lim=nuovo||0;
                             uP(group.id,si,sub.id,"cbTnpModelli",(sd.cbTnpModelli||[]).slice(0,lim));
-                            uP(group.id,si,sub.id,"cbTnpImeis",(sd.cbTnpImeis||[]).slice(0,lim));}} style={{width:40,height:40,borderRadius:8,border:sd.cbTnpCount===n?"2px solid #2E75B6":"2px solid rgba(255,255,255,0.1)",background:sd.cbTnpCount===n?"#2E75B6":"rgba(255,255,255,0.04)",color:sd.cbTnpCount===n?"#fff":"#8892b0",fontSize:14,fontWeight:700,cursor:"pointer"}}>{n}</button>
+                            uP(group.id,si,sub.id,"cbTnpImeis",(sd.cbTnpImeis||[]).slice(0,lim));}} style={{width:40,height:40,borderRadius:8,border:sd.cbTnpCount===n?"2px solid #2E75B6":"2px solid var(--tf-w100)",background:sd.cbTnpCount===n?"var(--tf-2e75b6)":"var(--tf-w40)",color:sd.cbTnpCount===n?"#fff":"var(--tf-8892b0)",fontSize:14,fontWeight:700,cursor:"pointer"}}>{n}</button>
                         )}
                       </div>
                       {sd.cbTnpCount&&[...Array(sd.cbTnpCount)].map((_,idx)=>(
-                        <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8,padding:8,background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
-                          <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:2}}>Terminale {sd.cbTnpCount>1?idx+1:""}</div>
+                        <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginBottom:8,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
+                          <div style={{gridColumn:"1/-1",fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:2}}>Terminale {sd.cbTnpCount>1?idx+1:""}</div>
                           <DD l="Modello Terminale" r v={(sd.cbTnpModelli&&sd.cbTnpModelli[idx])||""} o={v=>{const m=[...(sd.cbTnpModelli||[])];m[idx]=v;uP(group.id,si,sub.id,"cbTnpModelli",m)}} vals={SOLO_ALTRO} cerca={cercaTerminali}/>
                           <TF l="IMEI" r v={(sd.cbTnpImeis&&sd.cbTnpImeis[idx])||""} o={v=>{const im=[...(sd.cbTnpImeis||[])];im[idx]=v;uP(group.id,si,sub.id,"cbTnpImeis",im)}} p="15 cifre" nt="Barcode 📷"/>
                         </div>
                       ))}
                       {sd.cbTnpCount&&(
-                        <div style={{marginTop:4,padding:8,background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
+                        <div style={{marginTop:4,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
                           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                             <YN val={sd.cbPackAccessori} onCh={v=>uP(group.id,si,sub.id,"cbPackAccessori",v)} label="Pack Accessori?"/>
                             {(sd.cbPackAccessori===true)&&(
@@ -3847,13 +3847,13 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                           </div>
                           {(sd.cbPackAccessori===true)&&(
                             <div style={{marginTop:10}}>
-                              <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:6}}>Importo Pack Accessori <span style={{color:"#2E75B6",fontWeight:700}}>€{sd.cbPackAccessoriVal||29}</span></div>
+                              <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:6}}>Importo Pack Accessori <span style={{color:"var(--tf-2e75b6)",fontWeight:700}}>€{sd.cbPackAccessoriVal||29}</span></div>
                               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                                <input type="range" min={29} max={240} value={sd.cbPackAccessoriVal||29} onChange={e=>uP(group.id,si,sub.id,"cbPackAccessoriVal",parseInt(e.target.value))} style={{flex:1,accentColor:"#2E75B6"}}/>
-                                <input type="number" min={29} max={240} value={sd.cbPackAccessoriVal||""} onChange={e=>uP(group.id,si,sub.id,"cbPackAccessoriVal",e.target.value===""?"":parseInt(e.target.value))} onBlur={e=>{const raw=parseInt(e.target.value);if(!isNaN(raw))uP(group.id,si,sub.id,"cbPackAccessoriVal",Math.min(240,Math.max(29,raw)));else uP(group.id,si,sub.id,"cbPackAccessoriVal",29)}} style={{width:72,padding:"5px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.12)",fontSize:12,fontWeight:600,textAlign:"center"}} placeholder="29-240"/>
-                                <span style={{fontSize:11,color:"#64748b"}}>€</span>
+                                <input type="range" min={29} max={240} value={sd.cbPackAccessoriVal||29} onChange={e=>uP(group.id,si,sub.id,"cbPackAccessoriVal",parseInt(e.target.value))} style={{flex:1,accentColor:"var(--tf-2e75b6)"}}/>
+                                <input type="number" min={29} max={240} value={sd.cbPackAccessoriVal||""} onChange={e=>uP(group.id,si,sub.id,"cbPackAccessoriVal",e.target.value===""?"":parseInt(e.target.value))} onBlur={e=>{const raw=parseInt(e.target.value);if(!isNaN(raw))uP(group.id,si,sub.id,"cbPackAccessoriVal",Math.min(240,Math.max(29,raw)));else uP(group.id,si,sub.id,"cbPackAccessoriVal",29)}} style={{width:72,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w120)",fontSize:12,fontWeight:600,textAlign:"center"}} placeholder="29-240"/>
+                                <span style={{fontSize:11,color:"var(--tf-64748b)"}}>€</span>
                               </div>
-                              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#64748b",marginTop:2}}><span>€29</span><span>€240</span></div>
+                              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--tf-64748b)",marginTop:2}}><span>€29</span><span>€240</span></div>
                             </div>
                           )}
                         </div>
@@ -3863,12 +3863,12 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
                 </div>
               )}
               {/* Reload inside TNP CB */}
-              <div style={{marginTop:8,padding:8,background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)"}}>
+              <div style={{marginTop:8,padding:8,background:"var(--tf-w20)",borderRadius:6,border:"1px solid var(--tf-w100)"}}>
                 <YN val={sd.cbTnpReload} onCh={v=>{uP(group.id,si,sub.id,"cbTnpReload",v);if(!v)uP(group.id,si,sub.id,"cbTnpReloadSel",{})}} label="Reload?"/>
                 {(sd.cbTnpReload===true)&&(
                   <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:6}}>
                     {(sub.isCBBiz?["Reload","Reload EU"]:["Reload","Reload Plus","Reload Exchange"]).map(rl=>
-                      <button key={rl} onClick={()=>uP(group.id,si,sub.id,"cbTnpReloadSel",sd.cbTnpReloadSel[rl]?{}:{[rl]:true})} style={{padding:"5px 12px",borderRadius:6,border:sd.cbTnpReloadSel[rl]?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.cbTnpReloadSel[rl]?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.cbTnpReloadSel[rl]?"#28a745":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                      <button key={rl} onClick={()=>uP(group.id,si,sub.id,"cbTnpReloadSel",sd.cbTnpReloadSel[rl]?{}:{[rl]:true})} style={{padding:"5px 12px",borderRadius:6,border:sd.cbTnpReloadSel[rl]?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.cbTnpReloadSel[rl]?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.cbTnpReloadSel[rl]?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                         <span>{sd.cbTnpReloadSel[rl]?"◉":"○"}</span>{rl}
                       </button>
                     )}
@@ -3881,13 +3881,13 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
           {/* Cambio Offerta section */}
           {sd.cbCambio&&(
             <div style={{padding:10,background:"rgba(111,66,193,0.10)",borderRadius:8,border:"1px solid rgba(111,66,193,0.3)",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,color:"#6f42c1",marginBottom:8,textTransform:"uppercase"}}>Cambio Offerta</div>
+              <div style={{fontSize:10,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:8,textTransform:"uppercase"}}>Cambio Offerta</div>
               <div style={{marginBottom:8,maxWidth:250}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbCambioCodIns||""} onCh={v=>uP(group.id,si,sub.id,"cbCambioCodIns",v)}/>
               </div>
               <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
                 {sub.cbCambioVals.map(opt=>
-                  <button key={opt} onClick={()=>uP(group.id,si,sub.id,"cbCambioVal",sd.cbCambioVal===opt?"":opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.cbCambioVal===opt?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.1)",background:sd.cbCambioVal===opt?"#6f42c1":"rgba(255,255,255,0.04)",color:sd.cbCambioVal===opt?"#fff":"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
+                  <button key={opt} onClick={()=>uP(group.id,si,sub.id,"cbCambioVal",sd.cbCambioVal===opt?"":opt)} style={{padding:"6px 14px",borderRadius:6,border:sd.cbCambioVal===opt?"2px solid #6f42c1":"2px solid var(--tf-w100)",background:sd.cbCambioVal===opt?"var(--tf-6f42c1)":"var(--tf-w40)",color:sd.cbCambioVal===opt?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>{opt}</button>
                 )}
               </div>
               {sd.cbCambioVal&&(
@@ -3904,18 +3904,18 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
           {/* Add-on section inside CB */}
           {sub.cbAddonVals&&sd.cbAddon&&(
             <div style={{padding:10,background:"rgba(40,167,69,0.10)",borderRadius:8,border:"1px solid rgba(40,167,69,0.3)",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,color:"#28a745",marginBottom:8,textTransform:"uppercase"}}>{sub.isCBBiz?"Add-on / Security":"Add-on"}</div>
+              <div style={{fontSize:10,fontWeight:700,color:"var(--tf-28a745)",marginBottom:8,textTransform:"uppercase"}}>{sub.isCBBiz?"Add-on / Security":"Add-on"}</div>
               <div style={{marginBottom:8,maxWidth:250}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbAddonCodIns||(sd.cbTnpCodIns||sd.cbCambioCodIns||"")} onCh={v=>uP(group.id,si,sub.id,"cbAddonCodIns",v)}/>
               </div>
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {sub.cbAddonVals.map(opt=>
-                  <button key={opt} onClick={()=>{const cur=sd.cbAddonSel[opt];uP(group.id,si,sub.id,"cbAddonSel",{...sd.cbAddonSel,[opt]:!cur});if(!cur&&opt==="Security"&&!sd.cbAddonSecCell&&anaCel)uP(group.id,si,sub.id,"cbAddonSecCell",anaCel)}} style={{padding:"6px 14px",borderRadius:6,border:sd.cbAddonSel[opt]?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.cbAddonSel[opt]?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.cbAddonSel[opt]?"#28a745":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                  <button key={opt} onClick={()=>{const cur=sd.cbAddonSel[opt];uP(group.id,si,sub.id,"cbAddonSel",{...sd.cbAddonSel,[opt]:!cur});if(!cur&&opt==="Security"&&!sd.cbAddonSecCell&&anaCel)uP(group.id,si,sub.id,"cbAddonSecCell",anaCel)}} style={{padding:"6px 14px",borderRadius:6,border:sd.cbAddonSel[opt]?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.cbAddonSel[opt]?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.cbAddonSel[opt]?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                     <span>{sd.cbAddonSel[opt]?"☑":"☐"}</span>{opt}
                   </button>
                 )}
                 {sub.isCBBiz&&(!sd.cbTnp||(sd.cbTnp&&sd.cbCambio&&(sd.cbTnpReload===false||sd.cbTnpReload===null)))&&(
-                  <button onClick={()=>{const cur=sd.cbAddonSel["Reload Open"];uP(group.id,si,sub.id,"cbAddonSel",{...sd.cbAddonSel,"Reload Open":!cur});if(!cur&&!sd.cbAddonRoCell&&anaCel)uP(group.id,si,sub.id,"cbAddonRoCell",anaCel)}} style={{padding:"6px 14px",borderRadius:6,border:sd.cbAddonSel["Reload Open"]?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.cbAddonSel["Reload Open"]?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.cbAddonSel["Reload Open"]?"#28a745":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+                  <button onClick={()=>{const cur=sd.cbAddonSel["Reload Open"];uP(group.id,si,sub.id,"cbAddonSel",{...sd.cbAddonSel,"Reload Open":!cur});if(!cur&&!sd.cbAddonRoCell&&anaCel)uP(group.id,si,sub.id,"cbAddonRoCell",anaCel)}} style={{padding:"6px 14px",borderRadius:6,border:sd.cbAddonSel["Reload Open"]?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.cbAddonSel["Reload Open"]?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.cbAddonSel["Reload Open"]?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                     <span>{sd.cbAddonSel["Reload Open"]?"☑":"☐"}</span>Reload Open
                   </button>
                 )}
@@ -3934,8 +3934,8 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
             </div>
           )}
           {!sub.isCBBiz&&sd.cbRf&&(
-            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>Dati Reload Forever</div>
+            <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>Dati Reload Forever</div>
               <div style={{marginBottom:8,maxWidth:250}}>
                 <SCd session={sessionCode} codici={codiciW3} val={sd.cbRfCodIns||(sd.cbTnpCodIns||sd.cbCambioCodIns||"")} onCh={v=>uP(group.id,si,sub.id,"cbRfCodIns",v)}/>
               </div>
@@ -3963,17 +3963,17 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {/* Fisso: DOMICILIATO + CONVERGENTE */}
       {sub.isFisso&&(
         <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,fontWeight:700,color:(isVCMode||bizDomLocked)?"#64748b":"#f8fafc",marginBottom:6}}>Domiciliato?</div><div style={{display:"flex",gap:8}}>
+          <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,fontWeight:700,color:(isVCMode||bizDomLocked)?"var(--tf-64748b)":"var(--tf-f8fafc)",marginBottom:6}}>Domiciliato?</div><div style={{display:"flex",gap:8}}>
             {(isVCMode||bizDomLocked)?(
-              <div style={{display:"flex",alignItems:"center",gap:6}}><button disabled style={{padding:"6px 20px",borderRadius:6,border:"2px solid #28a745",background:"rgba(40,167,69,0.12)",color:"#28a745",fontSize:12,fontWeight:700,cursor:"not-allowed"}}>Sì</button><span style={{fontSize:10,color:"#64748b",fontStyle:"italic"}}>{isVCMode||sub.domLocked?"Obbligatorio":"Business"}</span></div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}><button disabled style={{padding:"6px 20px",borderRadius:6,border:"2px solid #28a745",background:"rgba(40,167,69,0.12)",color:"var(--tf-28a745)",fontSize:12,fontWeight:700,cursor:"not-allowed"}}>Sì</button><span style={{fontSize:10,color:"var(--tf-64748b)",fontStyle:"italic"}}>{isVCMode||sub.domLocked?"Obbligatorio":"Business"}</span></div>
             ):(<>
-              <button onClick={()=>uP(group.id,si,sub.id,"domiciliato",true)} style={{padding:"6px 20px",borderRadius:6,border:sd.domiciliato===true?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.domiciliato===true?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.domiciliato===true?"#28a745":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
-              <button onClick={()=>uP(group.id,si,sub.id,"domiciliato",false)} style={{padding:"6px 20px",borderRadius:6,border:sd.domiciliato===false?"2px solid #dc3545":"2px solid rgba(255,255,255,0.1)",background:sd.domiciliato===false?"rgba(220,53,69,0.12)":"rgba(255,255,255,0.04)",color:sd.domiciliato===false?"#f87171":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>No</button>
+              <button onClick={()=>uP(group.id,si,sub.id,"domiciliato",true)} style={{padding:"6px 20px",borderRadius:6,border:sd.domiciliato===true?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.domiciliato===true?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.domiciliato===true?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
+              <button onClick={()=>uP(group.id,si,sub.id,"domiciliato",false)} style={{padding:"6px 20px",borderRadius:6,border:sd.domiciliato===false?"2px solid #dc3545":"2px solid var(--tf-w100)",background:sd.domiciliato===false?"rgba(220,53,69,0.12)":"var(--tf-w40)",color:sd.domiciliato===false?"var(--tf-f87171)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>No</button>
             </>)}
           </div></div>
-          <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,fontWeight:700,color:"#f8fafc",marginBottom:6}}>Convergente?</div><div style={{display:"flex",gap:8}}>
-            <button onClick={()=>uP(group.id,si,sub.id,"convergente",true)} style={{padding:"6px 20px",borderRadius:6,border:sd.convergente===true?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.convergente===true?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.convergente===true?"#28a745":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
-            <button onClick={()=>uP(group.id,si,sub.id,"convergente",false)} style={{padding:"6px 20px",borderRadius:6,border:sd.convergente===false?"2px solid #dc3545":"2px solid rgba(255,255,255,0.1)",background:sd.convergente===false?"rgba(220,53,69,0.12)":"rgba(255,255,255,0.04)",color:sd.convergente===false?"#f87171":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>No</button>
+          <div style={{flex:1,minWidth:140}}><div style={{fontSize:12,fontWeight:700,color:"var(--tf-f8fafc)",marginBottom:6}}>Convergente?</div><div style={{display:"flex",gap:8}}>
+            <button onClick={()=>uP(group.id,si,sub.id,"convergente",true)} style={{padding:"6px 20px",borderRadius:6,border:sd.convergente===true?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.convergente===true?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.convergente===true?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
+            <button onClick={()=>uP(group.id,si,sub.id,"convergente",false)} style={{padding:"6px 20px",borderRadius:6,border:sd.convergente===false?"2px solid #dc3545":"2px solid var(--tf-w100)",background:sd.convergente===false?"rgba(220,53,69,0.12)":"var(--tf-w40)",color:sd.convergente===false?"var(--tf-f87171)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>No</button>
           </div></div>
         </div>
       )}
@@ -3987,8 +3987,8 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {sub.has2LQ&&<YN val={sd.secondaLinea} onCh={v=>uP(group.id,si,sub.id,"secondaLinea",v)} label="C'è una seconda linea?"/>}
       {sub.has2LQ&&(sd.secondaLinea===true||sd.secondaLinea==="Sì")&&(
-        <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid rgba(255,255,255,0.12)",marginTop:4}}>
-          <div style={{fontSize:10,fontWeight:700,color:"#2E75B6",marginBottom:8,textTransform:"uppercase"}}>2° Linea</div>
+        <div style={{padding:10,background:"rgba(0,114,198,0.10)",borderRadius:8,border:"1px solid var(--tf-w120)",marginTop:4}}>
+          <div style={{fontSize:10,fontWeight:700,color:"var(--tf-2e75b6)",marginBottom:8,textTransform:"uppercase"}}>2° Linea</div>
           <MiniC label="GNP 2° Linea" val={sd.gnp2L} onCh={v=>{uP(group.id,si,sub.id,"gnp2L",v);if(v==="No"||v===false){uP(group.id,si,sub.id,"gnp2LBrand","");uP(group.id,si,sub.id,"gnp2LNum","")}}} opts={["Sì","No"]}/>
           {(sd.gnp2L==="Sì"||sd.gnp2L===true)&&(
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 14px",marginTop:6}}>
@@ -4001,11 +4001,11 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* Addon/Checklist checkboxes (hidden for Voce Casa) */}
       {sub.hasAddons&&sub.addonList&&!isVCMode&&(
-        <div style={{marginTop:10,padding:10,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#f8fafc",marginBottom:8}}>{sub.isFisso?"Add-on Fisso":"Seleziona prodotti"}</div>
+        <div style={{marginTop:10,padding:10,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w100)"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-f8fafc)",marginBottom:8}}>{sub.isFisso?"Add-on Fisso":"Seleziona prodotti"}</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
             {sub.addonList.map(ad=>
-              <button key={ad} onClick={()=>toggleAddon(ad)} style={{padding:"6px 14px",borderRadius:6,border:sd.addons[ad]?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.addons[ad]?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.addons[ad]?"#28a745":"#8892b0",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
+              <button key={ad} onClick={()=>toggleAddon(ad)} style={{padding:"6px 14px",borderRadius:6,border:sd.addons[ad]?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.addons[ad]?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.addons[ad]?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:11,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:4}}>
                 <span style={{fontSize:14}}>{sd.addons[ad]?"☑":"☐"}</span>{ad}
               </button>
             )}
@@ -4017,12 +4017,12 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 
       {/* LG Convergente */}
       {sub.hasConvLG&&(
-        <div style={{marginTop:8,padding:10,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)"}}>
-          <div style={{fontSize:12,fontWeight:700,color:lgConvLocked?"#64748b":"#f8fafc",marginBottom:6}}>Convergente?</div>
-          {lgConvLocked?<div style={{display:"flex",alignItems:"center",gap:8}}><button disabled style={{padding:"6px 20px",borderRadius:6,border:"2px solid #dc3545",background:"rgba(220,53,69,0.12)",color:"#f87171",fontSize:12,fontWeight:700,cursor:"not-allowed",opacity:.7}}>No</button><span style={{fontSize:10,color:"#64748b",fontStyle:"italic"}}>Già selezionato altrove</span></div>
+        <div style={{marginTop:8,padding:10,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w100)"}}>
+          <div style={{fontSize:12,fontWeight:700,color:lgConvLocked?"var(--tf-64748b)":"var(--tf-f8fafc)",marginBottom:6}}>Convergente?</div>
+          {lgConvLocked?<div style={{display:"flex",alignItems:"center",gap:8}}><button disabled style={{padding:"6px 20px",borderRadius:6,border:"2px solid #dc3545",background:"rgba(220,53,69,0.12)",color:"var(--tf-f87171)",fontSize:12,fontWeight:700,cursor:"not-allowed",opacity:.7}}>No</button><span style={{fontSize:10,color:"var(--tf-64748b)",fontStyle:"italic"}}>Già selezionato altrove</span></div>
           :<div style={{display:"flex",gap:8}}>
-            <button onClick={()=>uP(group.id,si,sub.id,"convergente",true)} style={{padding:"6px 20px",borderRadius:6,border:sd.convergente===true?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:sd.convergente===true?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:sd.convergente===true?"#28a745":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
-            <button onClick={()=>uP(group.id,si,sub.id,"convergente",false)} style={{padding:"6px 20px",borderRadius:6,border:sd.convergente===false?"2px solid #dc3545":"2px solid rgba(255,255,255,0.1)",background:sd.convergente===false?"rgba(220,53,69,0.12)":"rgba(255,255,255,0.04)",color:sd.convergente===false?"#f87171":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>No</button>
+            <button onClick={()=>uP(group.id,si,sub.id,"convergente",true)} style={{padding:"6px 20px",borderRadius:6,border:sd.convergente===true?"2px solid #28a745":"2px solid var(--tf-w100)",background:sd.convergente===true?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:sd.convergente===true?"var(--tf-28a745)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Sì</button>
+            <button onClick={()=>uP(group.id,si,sub.id,"convergente",false)} style={{padding:"6px 20px",borderRadius:6,border:sd.convergente===false?"2px solid #dc3545":"2px solid var(--tf-w100)",background:sd.convergente===false?"rgba(220,53,69,0.12)":"var(--tf-w40)",color:sd.convergente===false?"var(--tf-f87171)":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>No</button>
           </div>}
         </div>
       )}
@@ -4030,7 +4030,7 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
       {/* Contract data */}
       {sub.hasContract&&!sub.isVFMobile&&!sub.isCBVF&&!sub.isVFFisso&&!sub.isVerisure&&!sub.isKaskoFacile&&!sub.isVFCare&&!sub.isVFBizMobile&&!sub.isCBVFBiz&&!sub.isVFFissoBiz&&!sub.isVFSolDig&&!sub.isFWMobile&&!sub.isFWFisso&&!sub.isFWEnergia&&!sub.isILMobile&&!sub.isILBizMobile&&!sub.isILFisso&&!sub.isILFwa&&!sub.isENLuceGas&&!sub.isTimMobile&&!sub.isTimFisso&&!sub.isTimTelepass&&!sub.isVeryMobile&&!sub.isHoMobile&&!sub.isKenaMobile&&!sub.isW3SostSim&&!sub.isVFSostSim&&!sub.isFWSostSim&&!sub.isBizProtecta&&(
         <div style={{borderTop:"1px solid "+group.color+"20",paddingTop:8,marginTop:8}}>
-          <div style={{fontSize:10,fontWeight:600,color:"#64748b",marginBottom:6,textTransform:"uppercase"}}>Dati contratto</div>
+          <div style={{fontSize:10,fontWeight:600,color:"var(--tf-64748b)",marginBottom:6,textTransform:"uppercase"}}>Dati contratto</div>
           <div style={{marginBottom:8,maxWidth:250}}><SCd session={sessionCode} codici={codiciW3} val={sd.codiceOverride||""} onCh={v=>uP(group.id,si,sub.id,"codiceOverride",v)}/></div>
           {sub.ct==="ga"&&<div style={{display:"grid",gridTemplateColumns:showMnpF&&!sub.isMobileBiz?"1fr 1fr 1fr":"1fr 1fr",gap:"8px 14px"}}>
             <TF l="Codice Contratto" r v={c.codice_contratto||""} o={v=>uC(group.id,si,sub.id,"codice_contratto",v)} p="es. 167942" err={dupCheck&&dupCheck("CODCONTR",c.codice_contratto)?"Codice contratto già usato in un altro prodotto":""}/>
@@ -4089,22 +4089,22 @@ const NoteStep = ({store,show,setShow,nota,setNota,pData,setPData,pOra,setPOra,p
   const negozioPro=pNeg, setNegozioPro=setPNeg;
   useEffect(()=>{if(store)setNegozioPro(p=>p||store);},[store]);
   const content = (
-    <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #e83e8c"}}>
-      <div style={{fontSize:11,fontWeight:700,color:"#e83e8c",marginBottom:14,textTransform:"uppercase"}}>📝 Step 7 — Note / Promemoria</div>
+    <div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #e83e8c"}}>
+      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e83e8c)",marginBottom:14,textTransform:"uppercase"}}>📝 Step 7 — Note / Promemoria</div>
       <div style={{textAlign:"center",marginBottom:show?16:0}}>
-        <div style={{fontSize:13,fontWeight:600,color:"#f8fafc",marginBottom:10}}>Nota o promemoria?</div>
+        <div style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",marginBottom:10}}>Nota o promemoria?</div>
         <div style={{display:"flex",gap:10,justifyContent:"center"}}>
-          <button onClick={()=>setShow(true)} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:show?"2px solid #28a745":"2px solid rgba(255,255,255,0.1)",background:show?"rgba(40,167,69,0.12)":"rgba(255,255,255,0.04)",color:show?"#28a745":"#8892b0"}}>Sì</button>
-          <button onClick={()=>setShow(false)} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:!show?"2px solid #dc3545":"2px solid rgba(255,255,255,0.1)",background:!show?"rgba(220,53,69,0.12)":"rgba(255,255,255,0.04)",color:!show?"#f87171":"#8892b0"}}>No</button>
+          <button onClick={()=>setShow(true)} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:show?"2px solid #28a745":"2px solid var(--tf-w100)",background:show?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:show?"var(--tf-28a745)":"var(--tf-8892b0)"}}>Sì</button>
+          <button onClick={()=>setShow(false)} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:!show?"2px solid #dc3545":"2px solid var(--tf-w100)",background:!show?"rgba(220,53,69,0.12)":"var(--tf-w40)",color:!show?"var(--tf-f87171)":"var(--tf-8892b0)"}}>No</button>
         </div>
       </div>
       {show&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-        <div style={{border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} value={nota} onChange={e=>setNota(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
-        <div style={{border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,padding:14,background:"rgba(255,255,255,0.03)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Promemoria</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data</div><input type="date" value={pData} onChange={e=>setPData(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div><div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Ora</div><input type="time" value={pOra} onChange={e=>setPOra(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div></div>
+        <div style={{border:"1px solid var(--tf-w100)",borderRadius:10,padding:14,background:"var(--tf-w30)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} value={nota} onChange={e=>setNota(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+        <div style={{border:"1px solid var(--tf-w100)",borderRadius:10,padding:14,background:"var(--tf-w30)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📅 Promemoria</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}><div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Data</div><input type="date" value={pData} onChange={e=>setPData(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div><div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Ora</div><input type="time" value={pOra} onChange={e=>setPOra(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div></div>
           {/* Negozio: si auto-compila dal login ma resta modificabile a mano. */}
           <div style={{marginTop:8}}><DD l="Negozio" v={negozioPro} o={v=>setNegozioPro(v)} vals={negozi} nt="Dal login — modificabile"/></div>
-          <div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Descrizione</div><textarea placeholder="Dettagli…" rows={2} value={pDesc} onChange={e=>setPDesc(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+          <div style={{marginTop:8}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Descrizione</div><textarea placeholder="Dettagli…" rows={2} value={pDesc} onChange={e=>setPDesc(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
         </div>
       </div>}
     </div>
@@ -4414,7 +4414,7 @@ function CRM() {
   const skyTv=(s)=>!s||!s.tvSel?{sel:false}:{sel:true,ok:!!s.tvCC&&!!(s.tvCodIns||sesCode)};
   const skyFib=(s)=>{if(!s||!s.fibraSel)return{sel:false};let ok=!!s.fibraCC&&s.fibraGnp!=null&&!!(s.fibraCodIns||sesCode);if(s.fibraGnp==="Sì"&&(!s.fibraGnpBrand||!s.fibraGnpNum))ok=false;return{sel:true,ok};};
   const skyMob=(s)=>{if(!s||!s.mobileSel)return{sel:false};let ok=s.mobMnp!=null&&s.mobTied!=null&&!!(s.mobCodIns||sesCode);if(s.mobMnp==="Sì"){if(!s.mobBrandMnp||!s.mobNumProv||!s.mobNumDef||!s.mobIccid)ok=false;if(_bNum(s.mobNumProv)||_bNum(s.mobNumDef)||_bIc(s.mobIccid))ok=false;}if(s.mobMnp==="No"){if(!s.mobNum||!s.mobIccidNo)ok=false;if(_bNum(s.mobNum)||_bIc(s.mobIccidNo))ok=false;}return{sel:true,ok};};
-  const skyBadge=(r)=>!r.sel?null:(r.ok?{l:"✓ Completo",bg:"rgba(40,167,69,0.12)",fg:"#28a745"}:{l:"⚠ Incompleto",bg:"rgba(245,158,11,0.14)",fg:"#f59e0b"});
+  const skyBadge=(r)=>!r.sel?null:(r.ok?{l:"✓ Completo",bg:"rgba(40,167,69,0.12)",fg:"var(--tf-28a745)"}:{l:"⚠ Incompleto",bg:"rgba(245,158,11,0.14)",fg:"var(--tf-f59e0b)"});
   const skyReset=(si)=>setSkyS(p=>{const n=[...p];const s={...n[si]};s.tvCC="";s.fibraCC="";s.fibraGnp=null;s.fibraGnpBrand="";s.fibraGnpNum="";s.mobMnp=null;s.mobNumProv="";s.mobNumDef="";s.mobBrandMnp="";s.mobIccid="";s.mobNum="";s.mobIccidNo="";s.mobTied=null;n[si]=s;return n;});
   const openVFModal=({catId,si,subId,offer})=>{const cur=((sales[catId]||[{}])[si]||{})[subId];const existQty=cur&&cur.vfOffers&&cur.vfOffers[offer]?cur.vfOffers[offer]:1;setVfQtyModal({catId,si,subId,offer,tempQty:existQty});};
   const confirmVFQty=()=>{if(!vfQtyModal)return;const{catId,si,subId,offer,tempQty}=vfQtyModal;const cur=((sales[catId]||[{}])[si]||{})[subId];const baseO=(cur&&cur.vfOffers)||{};const newVfOffers={...baseO};if(tempQty>0)newVfOffers[offer]=tempQty;else delete newVfOffers[offer];const existC=(cur&&cur.vfContratti&&cur.vfContratti[offer])||[];const newC=Array.from({length:tempQty},(_,i)=>existC[i]||{codIns:"",codContratto:"",numProv:"",iccid:""});const newVfC={...((cur&&cur.vfContratti)||{}),[offer]:newC};uP(catId,si,subId,"vfOffers",newVfOffers);uP(catId,si,subId,"vfContratti",newVfC);setVfQtyModal(null);};
@@ -5102,7 +5102,7 @@ function CRM() {
   const tCI=cart.reduce((s,g)=>s+g.items.length,0)+colItems().length+margItems.length;
   // SENZA brand niente grigio topo (Luca 03/08): il colore di piattaforma
   // e' l'indigo del CRM — il grigio compariva su stepper, riepilogo e carrello
-  const bC=bObj?bObj.color:"#6366f1";
+  const bC=bObj?bObj.color:"var(--tf-6366f1)";
   _brandAccento=bC;   // i dettagli dei flussi seguono il brand (Luca 03/08)
   const bG=bObj?bObj.gradient:"linear-gradient(135deg,#4f46e5,#6366f1)";
   // CF/P.IVA SEMPRE OBBLIGATORIO su qualsiasi brand (Luca 02/08): senza,
@@ -5160,12 +5160,12 @@ function CRM() {
   // fa un return anticipato, quindi il modal inline nel form non lo raggiunge).
   const confirmResetModal = confirmReset && (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirmReset(false)}}>
-      <div style={{background:"#0e1526",border:"1px solid rgba(255,255,255,0.12)",borderRadius:16,padding:"28px 30px",width:"min(420px,92vw)",boxShadow:"0 18px 50px rgba(0,0,0,.55)",textAlign:"center"}}>
+      <div style={{background:"var(--tf-0e1526)",border:"1px solid var(--tf-w120)",borderRadius:16,padding:"28px 30px",width:"min(420px,92vw)",boxShadow:"0 18px 50px rgba(0,0,0,.55)",textAlign:"center"}}>
         <div style={{fontSize:40,marginBottom:10}}>⚠️</div>
-        <div style={{fontSize:17,fontWeight:800,color:"#f8fafc",marginBottom:6}}>Reset del form</div>
-        <div style={{fontSize:14,color:"#8892b0",marginBottom:22,lineHeight:1.5}}>Sei sicuro di voler procedere?<br/>Tutti i dati non salvati andranno persi.</div>
+        <div style={{fontSize:17,fontWeight:800,color:"var(--tf-f8fafc)",marginBottom:6}}>Reset del form</div>
+        <div style={{fontSize:14,color:"var(--tf-8892b0)",marginBottom:22,lineHeight:1.5}}>Sei sicuro di voler procedere?<br/>Tutti i dati non salvati andranno persi.</div>
         <div style={{display:"flex",gap:10,justifyContent:"center"}}>
-          <button onClick={()=>setConfirmReset(false)} style={{padding:"11px 28px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:14,fontWeight:700,cursor:"pointer"}}>No</button>
+          <button onClick={()=>setConfirmReset(false)} style={{padding:"11px 28px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:700,cursor:"pointer"}}>No</button>
           <button onClick={fullReset} style={{padding:"11px 28px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#dc3545,#b02a37)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>Sì, resetta</button>
         </div>
       </div>
@@ -5180,30 +5180,30 @@ function CRM() {
     const onlyMarg=allG.length===0&&margItems.length>0;
     const cartContent = (
       <div style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:16,maxWidth:1100,margin:"0 auto"}}>
-        {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#28a745",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
+        {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"var(--tf-28a745)",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
         <div style={{background:"linear-gradient(135deg,#1e293b,#16213e,#0f3460)",borderRadius:16,padding:"24px 28px",marginBottom:20}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div><div style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"rgba(255,255,255,.6)",fontSize:13}}>{onlyMarg?"Riepilogo vendite 💰":((tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale)+" - Riepilogo vendite 💰")}</div>
+            <div><div style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"var(--tf-w600)",fontSize:13}}>{onlyMarg?"Riepilogo vendite 💰":((tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale)+" - Riepilogo vendite 💰")}</div>
               {!onlyMarg&&(ana.cf||ana.cellulare||ana.email||ana.iban)&&<div style={{marginTop:4,display:"flex",gap:12,flexWrap:"wrap"}}>
-                {ana.cf&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)",fontFamily:"monospace"}}>🪪 {ana.cf}</span>}
-                {ana.cellulare&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)"}}>📱 {ana.cellulare}</span>}
-                {ana.email&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)"}}>✉️ {ana.email}</span>}
-                {ana.iban&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)",fontFamily:"monospace"}}>🏦 {ana.iban}</span>}
+                {ana.cf&&<span style={{fontSize:11,color:"var(--tf-w750)",fontFamily:"monospace"}}>🪪 {ana.cf}</span>}
+                {ana.cellulare&&<span style={{fontSize:11,color:"var(--tf-w750)"}}>📱 {ana.cellulare}</span>}
+                {ana.email&&<span style={{fontSize:11,color:"var(--tf-w750)"}}>✉️ {ana.email}</span>}
+                {ana.iban&&<span style={{fontSize:11,color:"var(--tf-w750)",fontFamily:"monospace"}}>🏦 {ana.iban}</span>}
               </div>}
             </div>
             <div style={{display:"flex",gap:8}}>
-              <div style={{background:"rgba(255,255,255,.15)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:22}}>{allG.length}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>BRAND</div></div>
-              <div style={{background:"rgba(255,255,255,.15)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:22}}>{tp}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:10}}>PRODOTTI</div></div>
+              <div style={{background:"var(--tf-w150)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:22}}>{allG.length}</div><div style={{color:"var(--tf-w600)",fontSize:10}}>BRAND</div></div>
+              <div style={{background:"var(--tf-w150)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:22}}>{tp}</div><div style={{color:"var(--tf-w600)",fontSize:10}}>PRODOTTI</div></div>
             </div>
           </div>
         </div>
-        {!onlyMarg&&(allG.length===0?<div style={{background:"rgba(255,255,255,0.02)",borderRadius:12,padding:40,textAlign:"center",color:"#64748b"}}><div style={{fontSize:40}}>🛒</div><div style={{fontSize:15,fontWeight:600,marginTop:10}}>Vuoto</div></div>:
+        {!onlyMarg&&(allG.length===0?<div style={{background:"var(--tf-w20)",borderRadius:12,padding:40,textAlign:"center",color:"var(--tf-64748b)"}}><div style={{fontSize:40}}>🛒</div><div style={{fontSize:15,fontWeight:600,marginTop:10}}>Vuoto</div></div>:
           allG.map((g,gi)=>(
-            <div key={gi} style={{background:"rgba(255,255,255,0.02)",borderRadius:12,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
+            <div key={gi} style={{background:"var(--tf-w20)",borderRadius:12,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
               <div style={{background:g.brandColor,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={190} height={46} style={{height:40,width:"auto",maxWidth:180,objectFit:"contain",filter:"brightness(0) invert(1)"}}/>:<span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandIcon} {g.brandLabel}</span>;})()}<span style={{background:"rgba(255,255,255,.25)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"#FFD800",borderRadius:12,padding:"2px 10px",color:"#f8fafc",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={190} height={46} style={{height:40,width:"auto",maxWidth:180,objectFit:"contain",filter:"brightness(0) invert(1)"}}/>:<span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandIcon} {g.brandLabel}</span>;})()}<span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"var(--tf-ffd800)",borderRadius:12,padding:"2px 10px",color:"var(--tf-f8fafc)",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
                 <div style={{display:"flex",gap:6}}>
-                  <button onClick={()=>g.isCurrent?setShowCart(false):editCG(gi)} style={{background:"rgba(255,255,255,.25)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>✏️ Modifica</button>
+                  <button onClick={()=>g.isCurrent?setShowCart(false):editCG(gi)} style={{background:"var(--tf-w250)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>✏️ Modifica</button>
                   {!g.isCurrent&&<button onClick={()=>rmCG(gi)} style={{background:"rgba(255,0,0,.25)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:600}}>✕ Rimuovi</button>}
                 </div>
               </div>
@@ -5212,143 +5212,143 @@ function CRM() {
             </div>
           ))
         )}
-        {margItems.length>0&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:12,padding:16,marginBottom:12,marginTop:12,boxShadow:"0 2px 8px rgba(0,0,0,.06)",overflow:"hidden"}}>
+        {margItems.length>0&&<div style={{background:"var(--tf-w20)",borderRadius:12,padding:16,marginBottom:12,marginTop:12,boxShadow:"0 2px 8px rgba(0,0,0,.06)",overflow:"hidden"}}>
           <div style={{background:"linear-gradient(135deg,#6f42c1,#9b59b6)",padding:"10px 16px",borderRadius:"8px 8px 0 0",margin:"-16px -16px 14px -16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>📦</span><span style={{color:"#fff",fontWeight:700,fontSize:14}}>Prodotti & Marginalità</span><span style={{background:"rgba(255,255,255,.25)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{margItems.length}</span>{(()=>{const ph=margItems.filter(i=>i.countsPhone).reduce((s,i)=>s+(i.qty||1),0);return ph>0?<span style={{background:"rgba(255,255,255,.25)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:700}}>📱 {ph} telefon{ph===1?"o":"i"} vendut{ph===1?"o":"i"}</span>:null;})()}</div>
-            <button onClick={()=>{setMargEditItem(null);setShowMargPOS(true)}} style={{background:"rgba(255,255,255,.2)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>+ Aggiungi</button>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:18}}>📦</span><span style={{color:"#fff",fontWeight:700,fontSize:14}}>Prodotti & Marginalità</span><span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{margItems.length}</span>{(()=>{const ph=margItems.filter(i=>i.countsPhone).reduce((s,i)=>s+(i.qty||1),0);return ph>0?<span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:700}}>📱 {ph} telefon{ph===1?"o":"i"} vendut{ph===1?"o":"i"}</span>:null;})()}</div>
+            <button onClick={()=>{setMargEditItem(null);setShowMargPOS(true)}} style={{background:"var(--tf-w200)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>+ Aggiungi</button>
           </div>
           {margItems.map((item,idx)=>(
-            <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+            <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid var(--tf-w30)"}}>
               <div>
                 <span style={{fontWeight:700,fontSize:13}}>{item.product}</span>
-                {item.model&&<span style={{fontSize:11,color:"#64748b",marginLeft:6}}>{item.model}</span>}
-                <span style={{fontSize:11,color:"#6f42c1",marginLeft:8}}>x{item.qty||1}</span>
-                {item.auto&&<span style={{fontSize:9,fontWeight:800,color:"#6f42c1",border:"1px solid rgba(111,66,193,.4)",borderRadius:5,padding:"1px 6px",marginLeft:8}}>AUTO · {item.autoFrom}</span>}
-                {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"#17a2b8",marginLeft:8}}>prezzo di listino</span>:(item.auto||item.priceRequired||item.linked)?null:(item.importo!=null&&<span style={{fontSize:11,color:"#28a745",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
+                {item.model&&<span style={{fontSize:11,color:"var(--tf-64748b)",marginLeft:6}}>{item.model}</span>}
+                <span style={{fontSize:11,color:"var(--tf-6f42c1)",marginLeft:8}}>x{item.qty||1}</span>
+                {item.auto&&<span style={{fontSize:9,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:5,padding:"1px 6px",marginLeft:8}}>AUTO · {item.autoFrom}</span>}
+                {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"var(--tf-17a2b8)",marginLeft:8}}>prezzo di listino</span>:(item.auto||item.priceRequired||item.linked)?null:(item.importo!=null&&<span style={{fontSize:11,color:"var(--tf-28a745)",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 {(item.auto||item.priceRequired||item.linked)&&!item.priceLocked&&<span style={{display:"flex",alignItems:"center",gap:4}}>
                   <input type="number" step="0.01" min="0" value={item.importo??""} placeholder="prezzo *"
                     onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((m,i)=>i===idx?{...m,importo:v}:m))}}
-                    style={{width:92,padding:"6px 8px",borderRadius:7,fontSize:12,textAlign:"right",border:(item.importo==null||item.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"rgba(255,255,255,0.04)",color:"#f8fafc"}}/>
-                  <span style={{fontSize:11,color:"#8892b0"}}>€</span>
+                    style={{width:92,padding:"6px 8px",borderRadius:7,fontSize:12,textAlign:"right",border:(item.importo==null||item.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>
+                  <span style={{fontSize:11,color:"var(--tf-8892b0)"}}>€</span>
                 </span>}
-                {item.auto?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"#dc3545",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
-                :<button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button>}
+                {item.auto?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
+                :<button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button>}
               </div>
             </div>
           ))}
         </div>}
-        {!onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:"12px 16px",marginTop:12,marginBottom:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-          <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>📎 {attachments.length} allegat{attachments.length===1?"o":"i"}</span>
-          <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>🏪 {selVend||"—"} · {selNeg||"—"} · {dataVendita?dataVendita.split("-").reverse().join("/"):"—"}</span>
-          <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>📝 {notaOn&&nota.trim()?"nota inserita":"nessuna nota"}</span>
-          <button onClick={()=>setShowCart(false)} style={{marginLeft:"auto",padding:"7px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.04)",color:"#cbd5e1",fontSize:11,fontWeight:800,cursor:"pointer"}}>✏️ Modifica in pagina</button>
+        {!onlyMarg&&<div style={{background:"var(--tf-w20)",border:"1px solid var(--tf-w60)",borderRadius:10,padding:"12px 16px",marginTop:12,marginBottom:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>📎 {attachments.length} allegat{attachments.length===1?"o":"i"}</span>
+          <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>🏪 {selVend||"—"} · {selNeg||"—"} · {dataVendita?dataVendita.split("-").reverse().join("/"):"—"}</span>
+          <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>📝 {notaOn&&nota.trim()?"nota inserita":"nessuna nota"}</span>
+          <button onClick={()=>setShowCart(false)} style={{marginLeft:"auto",padding:"7px 14px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-cbd5e1)",fontSize:11,fontWeight:800,cursor:"pointer"}}>✏️ Modifica in pagina</button>
         </div>}
-        {onlyMarg&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745",marginTop:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
+        {onlyMarg&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745",marginTop:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-28a745)",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/>
             <DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
-            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Giorno <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
+            <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Giorno <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
         {dupCellCliente&&<div style={{marginTop:14,padding:"12px 16px",borderRadius:10,background:"rgba(245,158,11,0.10)",border:"1px solid rgba(245,158,11,0.45)"}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#fbbf24",marginBottom:8}}>📱 Questo cellulare è già associato a “{dupCellCliente.label}”, un&apos;anagrafica dello STESSO tipo — lo stesso numero può stare solo su una consumer e una business insieme.</div>
+          <div style={{fontSize:13,fontWeight:700,color:"var(--tf-fbbf24)",marginBottom:8}}>📱 Questo cellulare è già associato a “{dupCellCliente.label}”, un&apos;anagrafica dello STESSO tipo — lo stesso numero può stare solo su una consumer e una business insieme.</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>{spostaCellRef.current=true;setDupCellCliente(null);finalSubmit();}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(245,158,11,0.6)",background:"rgba(245,158,11,0.18)",color:"#fbbf24",fontSize:12,fontWeight:800,cursor:"pointer"}}>Sposta il numero su questo cliente</button>
-            <button onClick={()=>setDupCellCliente(null)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.05)",color:"#cbd5e1",fontSize:12,fontWeight:700,cursor:"pointer"}}>Inserisco un altro numero</button>
+            <button onClick={()=>{spostaCellRef.current=true;setDupCellCliente(null);finalSubmit();}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(245,158,11,0.6)",background:"rgba(245,158,11,0.18)",color:"var(--tf-fbbf24)",fontSize:12,fontWeight:800,cursor:"pointer"}}>Sposta il numero su questo cliente</button>
+            <button onClick={()=>setDupCellCliente(null)} style={{padding:"8px 14px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w50)",color:"var(--tf-cbd5e1)",fontSize:12,fontWeight:700,cursor:"pointer"}}>Inserisco un altro numero</button>
           </div>
         </div>}
         <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
-          <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
+          <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
           {/* #124: reset TOTALE del form disponibile anche nel carrello */}
-          <button onClick={()=>setConfirmReset(true)} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
-          {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
+          <button onClick={()=>setConfirmReset(true)} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
+          {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
           {onlyMarg&&<button onClick={()=>setShowMargSave(true)} style={{padding:"12px 36px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
-          {!onlyMarg&&<button onClick={finalSubmit} disabled={tp===0||submitting} style={{padding:"12px 36px",borderRadius:10,border:"none",background:(tp>0&&!submitting)?"linear-gradient(135deg,#28a745,#20c997)":"rgba(255,255,255,0.1)",color:"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":`💾 Salva contratto (${tp})`}</button>}
+          {!onlyMarg&&<button onClick={finalSubmit} disabled={tp===0||submitting} style={{padding:"12px 36px",borderRadius:10,border:"none",background:(tp>0&&!submitting)?"linear-gradient(135deg,#28a745,#20c997)":"var(--tf-w100)",color:"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":`💾 Salva contratto (${tp})`}</button>}
         </div>
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
-          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
-            <div style={{fontWeight:800,fontSize:17,color:"#f8fafc",marginBottom:4}}>💾 Salva Vendita Prodotti</div>
-            <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>Riepilogo: {margItems.length} prodott{margItems.length===1?"o":"i"} registrat{margItems.length===1?"o":"i"}</div>
+          <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
+            <div style={{fontWeight:800,fontSize:17,color:"var(--tf-f8fafc)",marginBottom:4}}>💾 Salva Vendita Prodotti</div>
+            <div style={{fontSize:12,color:"var(--tf-64748b)",marginBottom:16}}>Riepilogo: {margItems.length} prodott{margItems.length===1?"o":"i"} registrat{margItems.length===1?"o":"i"}</div>
             <div style={{background:"rgba(111,66,193,0.12)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
               {margItems.map((item,idx)=>(
                 <div key={idx} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(111,66,193,0.12)"}}>
                   <span style={{fontWeight:600}}>{item.product} x{item.qty||1}{item.importo!=null?` — €${Number(item.importo).toFixed(2)}`:""}</span>
-                  {item.model&&<span style={{color:"#64748b"}}>{item.model}</span>}
+                  {item.model&&<span style={{color:"var(--tf-64748b)"}}>{item.model}</span>}
                 </div>
               ))}
             </div>
             <label style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,cursor:"pointer",background:"rgba(0,114,198,0.10)",borderRadius:8,padding:"10px 14px"}}>
               <input type="checkbox" checked={margSaveForm.anonimo} onChange={e=>setMargSaveForm(p=>({...p,anonimo:e.target.checked}))} style={{width:18,height:18,cursor:"pointer"}}/>
-              <div><div style={{fontWeight:700,fontSize:13,color:"#f8fafc"}}>Vendi senza dati cliente</div><div style={{fontSize:11,color:"#64748b"}}>Salta nome, cognome e telefono</div></div>
+              <div><div style={{fontWeight:700,fontSize:13,color:"var(--tf-f8fafc)"}}>Vendi senza dati cliente</div><div style={{fontSize:11,color:"var(--tf-64748b)"}}>Salta nome, cognome e telefono</div></div>
             </label>
             {!margSaveForm.anonimo&&(margCliSel?(
               <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"2px solid #28a745",background:"rgba(40,167,69,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
                 <div>
-                  <div style={{fontSize:13,fontWeight:800,color:"#e2e8f0"}}>✓ {margCliLabel(margCliSel)}</div>
-                  <div style={{fontSize:11,color:"#8892b0"}}>{[margCliSel.cf_piva,margCliSel.cellulare].filter(Boolean).join(" • ")||"anagrafica esistente"}</div>
+                  <div style={{fontSize:13,fontWeight:800,color:"var(--tf-e2e8f0)"}}>✓ {margCliLabel(margCliSel)}</div>
+                  <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>{[margCliSel.cf_piva,margCliSel.cellulare].filter(Boolean).join(" • ")||"anagrafica esistente"}</div>
                 </div>
-                <button onClick={()=>setMargCliSel(null)} style={{padding:"5px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.04)",color:"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✕ cambia</button>
+                <button onClick={()=>setMargCliSel(null)} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✕ cambia</button>
               </div>
             ):(
               <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
                 <div>
-                  <div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Cerca cliente (cognome, nome, cellulare o CF)</div>
-                  <input value={margCliCerca} onChange={e=>setMargCliCerca(e.target.value)} placeholder="Es. Rossi Mario, 339…, RSSMRA…" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/>
-                  {margCliHits.length>0&&<div style={{marginTop:6,borderRadius:8,border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden"}}>
+                  <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Cerca cliente (cognome, nome, cellulare o CF)</div>
+                  <input value={margCliCerca} onChange={e=>setMargCliCerca(e.target.value)} placeholder="Es. Rossi Mario, 339…, RSSMRA…" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/>
+                  {margCliHits.length>0&&<div style={{marginTop:6,borderRadius:8,border:"1px solid var(--tf-w80)",overflow:"hidden"}}>
                     {margCliHits.map(c=>(
-                      <button key={c.id} onClick={()=>{setMargCliSel(c);setMargCliHits([]);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",border:"none",borderBottom:"1px solid rgba(255,255,255,0.05)",background:"rgba(255,255,255,0.02)",cursor:"pointer"}}>
-                        <span style={{fontSize:13,fontWeight:700,color:"#e2e8f0"}}>{margCliLabel(c)}</span>
-                        <span style={{fontSize:11,color:"#8892b0",marginLeft:8}}>{[c.cf_piva,c.cellulare].filter(Boolean).join(" • ")}</span>
+                      <button key={c.id} onClick={()=>{setMargCliSel(c);setMargCliHits([]);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",border:"none",borderBottom:"1px solid var(--tf-w50)",background:"var(--tf-w20)",cursor:"pointer"}}>
+                        <span style={{fontSize:13,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{margCliLabel(c)}</span>
+                        <span style={{fontSize:11,color:"var(--tf-8892b0)",marginLeft:8}}>{[c.cf_piva,c.cellulare].filter(Boolean).join(" • ")}</span>
                       </button>
                     ))}
                   </div>}
-                  {margCliCerca.trim().length>=3&&margCliHits.length===0&&<div style={{fontSize:10,color:"#fd7e14",fontWeight:700,marginTop:4}}>Nessuna anagrafica trovata: compila i campi sotto per crearla.</div>}
+                  {margCliCerca.trim().length>=3&&margCliHits.length===0&&<div style={{fontSize:10,color:"var(--tf-fd7e14)",fontWeight:700,marginTop:4}}>Nessuna anagrafica trovata: compila i campi sotto per crearla.</div>}
                 </div>
-                <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase"}}>Oppure crea una nuova anagrafica</div>
+                <div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)",textTransform:"uppercase"}}>Oppure crea una nuova anagrafica</div>
                 <div style={{display:"flex",gap:8}}>
                   {[["privato","👤 Privato"],["business","🏢 Business"]].map(([k,l])=>(
-                    <button key={k} onClick={()=>setMargSaveForm(p=>({...p,tipo:k}))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",border:margSaveForm.tipo===k?"2px solid #6f42c1":"1px solid rgba(255,255,255,0.1)",background:margSaveForm.tipo===k?"rgba(111,66,193,0.15)":"rgba(255,255,255,0.03)",color:margSaveForm.tipo===k?"#a78bfa":"#8892b0"}}>{l}</button>
+                    <button key={k} onClick={()=>setMargSaveForm(p=>({...p,tipo:k}))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",border:margSaveForm.tipo===k?"2px solid #6f42c1":"1px solid var(--tf-w100)",background:margSaveForm.tipo===k?"rgba(111,66,193,0.15)":"var(--tf-w30)",color:margSaveForm.tipo===k?"var(--tf-a78bfa)":"var(--tf-8892b0)"}}>{l}</button>
                   ))}
                 </div>
                 {margSaveForm.tipo==="business"?(
                   <>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Ragione Sociale <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.ragioneSociale} onChange={e=>setMargSaveForm(p=>({...p,ragioneSociale:e.target.value}))} placeholder="Es. Rossi S.r.l." style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>P.IVA / CF</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. 01234567890" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
+                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Ragione Sociale <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.ragioneSociale} onChange={e=>setMargSaveForm(p=>({...p,ragioneSociale:e.target.value}))} placeholder="Es. Rossi S.r.l." style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
+                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>P.IVA / CF</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. 01234567890" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
                     <div style={{display:"flex",gap:10}}>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Nome Referente <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.nomeRef} onChange={e=>setMargSaveForm(p=>({...p,nomeRef:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Cognome Referente <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.cognomeRef} onChange={e=>setMargSaveForm(p=>({...p,cognomeRef:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Nome Referente <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.nomeRef} onChange={e=>setMargSaveForm(p=>({...p,nomeRef:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
+                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Cognome Referente <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.cognomeRef} onChange={e=>setMargSaveForm(p=>({...p,cognomeRef:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
                     </div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>CF Referente <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.cfRef} onChange={e=>setMargSaveForm(p=>({...p,cfRef:e.target.value.toUpperCase().replace(/\s+/g,"")}))} maxLength={16} placeholder="Es. RSSMRA80A01H501B" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Telefono Fisso</div><input value={margSaveForm.fisso} onChange={e=>setMargSaveForm(p=>({...p,fisso:e.target.value.replace(/\D/g,"").slice(0,11)}))} placeholder="Es. 061234567 (facoltativo)" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>CF Referente <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.cfRef} onChange={e=>setMargSaveForm(p=>({...p,cfRef:e.target.value.toUpperCase().replace(/\s+/g,"")}))} maxLength={16} placeholder="Es. RSSMRA80A01H501B" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
+                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Telefono Fisso</div><input value={margSaveForm.fisso} onChange={e=>setMargSaveForm(p=>({...p,fisso:e.target.value.replace(/\D/g,"").slice(0,11)}))} placeholder="Es. 061234567 (facoltativo)" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
                   </>
                 ):(
                   <>
                     <div style={{display:"flex",gap:10}}>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Nome <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.nome} onChange={e=>setMargSaveForm(p=>({...p,nome:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Cognome <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.cognome} onChange={e=>setMargSaveForm(p=>({...p,cognome:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Nome <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.nome} onChange={e=>setMargSaveForm(p=>({...p,nome:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
+                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Cognome <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.cognome} onChange={e=>setMargSaveForm(p=>({...p,cognome:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
                     </div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Codice Fiscale</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. RSSMRA80A01H501U" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
+                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Codice Fiscale</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. RSSMRA80A01H501U" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
                   </>
                 )}
                 <div style={{display:"flex",gap:10}}>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Telefono <span style={{color:"#dc3545"}}>*</span></div><input value={margSaveForm.tel} onChange={e=>setMargSaveForm(p=>({...p,tel:e.target.value}))} placeholder="Es. 3391234567" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Email</div><input value={margSaveForm.email} onChange={e=>setMargSaveForm(p=>({...p,email:e.target.value}))} placeholder="Es. mario@mail.it" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Telefono <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.tel} onChange={e=>setMargSaveForm(p=>({...p,tel:e.target.value}))} placeholder="Es. 3391234567" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
+                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Email</div><input value={margSaveForm.email} onChange={e=>setMargSaveForm(p=>({...p,email:e.target.value}))} placeholder="Es. mario@mail.it" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
                 </div>
-                <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>{margSaveForm.tipo==="business"?"Indirizzo sede":"Indirizzo di residenza"}</div>
+                <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{margSaveForm.tipo==="business"?"Indirizzo sede":"Indirizzo di residenza"}</div>
                   <IndirizzoAutocomplete value={margSaveForm.via} onChange={v=>setMargSaveForm(p=>({...p,via:v}))}
                     onPick={s=>setMargSaveForm(p=>({...p,via:s.indirizzo,cap:s.cap||p.cap,citta:s.citta||p.citta}))}
                     placeholder="Via e civico: scegli dalla lista" className="glass-input rounded-lg py-2 w-full"/></div>
                 <div style={{display:"flex",gap:10}}>
-                  <div style={{width:110}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>CAP</div><input value={margSaveForm.cap} onChange={e=>setMargSaveForm(p=>({...p,cap:e.target.value.replace(/\D/g,"").slice(0,5)}))} placeholder="00100" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Città</div><input value={margSaveForm.citta} onChange={e=>setMargSaveForm(p=>({...p,citta:e.target.value}))} placeholder="Es. Roma" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.1)",fontSize:13,boxSizing:"border-box"}}/></div>
+                  <div style={{width:110}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>CAP</div><input value={margSaveForm.cap} onChange={e=>setMargSaveForm(p=>({...p,cap:e.target.value.replace(/\D/g,"").slice(0,5)}))} placeholder="00100" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
+                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Città</div><input value={margSaveForm.citta} onChange={e=>setMargSaveForm(p=>({...p,citta:e.target.value}))} placeholder="Es. Roma" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
                 </div>
               </div>
             ))}
             <div style={{display:"flex",gap:10,marginTop:4}}>
-              <button onClick={chiudiMargSave} style={{flex:1,padding:"11px 0",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:13,fontWeight:700,cursor:"pointer"}}>← Annulla</button>
+              <button onClick={chiudiMargSave} style={{flex:1,padding:"11px 0",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:13,fontWeight:700,cursor:"pointer"}}>← Annulla</button>
               <button onClick={saveMargOnly} disabled={margSaving} style={{flex:1,padding:"11px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#218838)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>{margSaving?"Salvataggio...":"✅ Salva vendita"}</button>
             </div>
           </div>
@@ -5375,11 +5375,11 @@ function CRM() {
       ═══════════════════════════════════════════════════════════════════ */}
       <style>{`@media(min-width:1100px){.crmSidebar{display:flex!important;width:clamp(320px,24vw,480px)!important}.crmShell{margin-right:calc(clamp(320px,24vw,480px) + 26px)!important}}
 .rvLab{font-size:11.5px;font-weight:800;color:#8892b0;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
-.rvIn{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.12);color:#f8fafc;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
+.rvIn{width:100%;padding:11px 13px;border-radius:10px;font-size:14.5px;box-sizing:border-box;background:var(--tf-w40);border:1px solid var(--tf-w120);color:#f8fafc;outline:none;transition:border-color .15s,box-shadow .15s,background .15s}
 .rvIn:focus{border-color:rgba(129,140,248,.75);box-shadow:0 0 0 3px rgba(99,102,241,.15);background:rgba(99,102,241,.06)}
 .rvIn::placeholder{color:#586174}
 select.rvIn{cursor:pointer}
-.rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:#161a2c;border:1px solid rgba(255,255,255,0.15);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.65);max-height:280px;overflow-y:auto}
+.rvMenu{position:absolute;z-index:200;left:0;right:0;top:100%;margin-top:4px;background:#161a2c;border:1px solid var(--tf-w150);border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.65);max-height:280px;overflow-y:auto}
 .rvOpt{padding:10px 14px;font-size:14px;cursor:pointer;color:#f8fafc}
 .rvOpt:hover{background:rgba(99,102,241,.18)}
 .rvGrp{padding:6px 12px;font-size:11px;font-weight:800;letter-spacing:.6px;color:#94a3b8;background:#1b2030;text-transform:uppercase;position:sticky;top:0}
@@ -5389,64 +5389,64 @@ select.rvIn{cursor:pointer}
       {drawerCarrello&&<div onClick={()=>setDrawerCarrello(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",backdropFilter:"blur(2px)",zIndex:4400}}/>}
       {/* stessa pelle delle card del CRM (glass-panel): niente piu' grigio
           fuori tema, e sul tema chiaro diventa bianca come tutto il resto */}
-      <div className="crmSidebar glass-panel" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:96,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":undefined,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 112px)",overflowY:"auto",overscrollBehavior:"contain",flexDirection:"column",background:drawerCarrello?"#12141f":undefined,borderRadius:drawerCarrello?0:undefined,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30}}>
+      <div className="crmSidebar glass-panel" style={{display:drawerCarrello?"flex":"none",position:"fixed",top:drawerCarrello?0:96,right:drawerCarrello?0:16,width:drawerCarrello?"min(380px,94vw)":undefined,height:drawerCarrello?"100vh":undefined,maxHeight:drawerCarrello?"100vh":"calc(100vh - 112px)",overflowY:"auto",overscrollBehavior:"contain",flexDirection:"column",background:drawerCarrello?"var(--tf-12141f)":undefined,borderRadius:drawerCarrello?0:undefined,boxShadow:"0 8px 30px rgba(0,0,0,.35)",zIndex:drawerCarrello?4500:30}}>
         <div style={{background:bG,borderRadius:drawerCarrello?0:"15px 15px 0 0",padding:"16px 18px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div style={{color:"#fff",fontWeight:800,fontSize:16}}>🛒 Riepilogo vendite</div>
-            {drawerCarrello&&<button onClick={()=>setDrawerCarrello(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:800,padding:"4px 10px",cursor:"pointer"}}>✕</button>}
+            {drawerCarrello&&<button onClick={()=>setDrawerCarrello(false)} style={{background:"var(--tf-w150)",border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:800,padding:"4px 10px",cursor:"pointer"}}>✕</button>}
           </div>
-          <div style={{color:"rgba(255,255,255,.6)",fontSize:11,marginTop:2}}>{(tipoCliente==="privato"?(ana.nome+" "+ana.cognome).trim():ana.ragioneSociale)||"In compilazione"}</div>
+          <div style={{color:"var(--tf-w600)",fontSize:11,marginTop:2}}>{(tipoCliente==="privato"?(ana.nome+" "+ana.cognome).trim():ana.ragioneSociale)||"In compilazione"}</div>
           {/* dati chiave del cliente SOTTO il nome (Luca 03/08): solo se compilati nello Step 3 */}
           {(ana.cf||ana.cellulare||ana.email||ana.iban)&&<div style={{marginTop:7,display:"flex",flexDirection:"column",gap:3}}>
-            {ana.cf&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)",fontFamily:"monospace",letterSpacing:.5}}>🪪 {ana.cf}</div>}
-            {ana.cellulare&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)"}}>📱 {ana.cellulare}</div>}
-            {ana.email&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)"}}>✉️ {ana.email}</div>}
-            {ana.iban&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.8)",fontFamily:"monospace",letterSpacing:.5}}>🏦 {ana.iban}</div>}
+            {ana.cf&&<div style={{fontSize:10.5,color:"var(--tf-w800)",fontFamily:"monospace",letterSpacing:.5}}>🪪 {ana.cf}</div>}
+            {ana.cellulare&&<div style={{fontSize:10.5,color:"var(--tf-w800)"}}>📱 {ana.cellulare}</div>}
+            {ana.email&&<div style={{fontSize:10.5,color:"var(--tf-w800)"}}>✉️ {ana.email}</div>}
+            {ana.iban&&<div style={{fontSize:10.5,color:"var(--tf-w800)",fontFamily:"monospace",letterSpacing:.5}}>🏦 {ana.iban}</div>}
           </div>}
           <div style={{display:"flex",gap:8,marginTop:12}}>
-            <div style={{flex:1,background:"rgba(255,255,255,.12)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{cart.length+(colItems().length>0?1:0)}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:9}}>BRAND</div></div>
-            <div style={{flex:1,background:"rgba(255,255,255,.12)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{tCI}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:9}}>PRODOTTI</div></div>
-            <div style={{flex:1,background:"rgba(255,255,255,.12)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{margItems.length}</div><div style={{color:"rgba(255,255,255,.6)",fontSize:9}}>P&M</div></div>
+            <div style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{cart.length+(colItems().length>0?1:0)}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>BRAND</div></div>
+            <div style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{tCI}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>PRODOTTI</div></div>
+            <div style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:18}}>{margItems.length}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>P&M</div></div>
           </div>
           {/* il contatore piu' bello: i SOLDONI del carrello (Luca 03/08) */}
           {(()=>{const val=margItems.reduce((t,m)=>t+(Number(m.importo)||0)*(Number(m.qty)||1),0);return (
-            <div style={{marginTop:8,background:"rgba(255,255,255,.16)",border:"1px solid rgba(255,255,255,.25)",borderRadius:10,padding:"9px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <span style={{color:"rgba(255,255,255,.75)",fontSize:11,fontWeight:800,letterSpacing:.6}}>💰 VALORE CARRELLO</span>
+            <div style={{marginTop:8,background:"var(--tf-w160)",border:"1px solid var(--tf-w250)",borderRadius:10,padding:"9px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <span style={{color:"var(--tf-w750)",fontSize:11,fontWeight:800,letterSpacing:.6}}>💰 VALORE CARRELLO</span>
               <span style={{color:"#fff",fontWeight:900,fontSize:21}}>€ {val.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
             </div>);})()}
         </div>
         <div style={{padding:14,flex:1}}>
           {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].length===0&&margItems.length===0?(
-            <div style={{textAlign:"center",color:"#64748b",padding:"30px 10px"}}><div style={{fontSize:34}}>📭</div><div style={{fontSize:12,marginTop:6}}>Nessuna vendita</div></div>
+            <div style={{textAlign:"center",color:"var(--tf-64748b)",padding:"30px 10px"}}><div style={{fontSize:34}}>📭</div><div style={{fontSize:12,marginTop:6}}>Nessuna vendita</div></div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {[...cart,...(colItems().length>0&&bObj?[{brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items:colItems(),isCurrent:true}]:[])].map((g,gi)=>(
-                <div key={gi} onClick={()=>setExpR(p=>({...p,["g"+gi]:!p["g"+gi]}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid "+(g.brandColor||"#64748b"),borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:6}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={130} height={32} style={{height:27,width:"auto",maxWidth:125,objectFit:"contain"}}/>:<span style={{fontSize:12,fontWeight:800,color:"#f8fafc"}}>{g.brandIcon} {g.brandLabel}</span>;})()}{g.isCurrent?<span style={{color:"#FFD800",fontWeight:900}}>•</span>:null}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"#64748b"}}>{g.items.length} {expR["g"+gi]?"▾":"▸"}</div></div>
-                  {!expR["g"+gi]&&<div style={{fontSize:10,color:"#64748b",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>}
+                <div key={gi} onClick={()=>setExpR(p=>({...p,["g"+gi]:!p["g"+gi]}))} style={{border:"1px solid var(--tf-w60)",borderLeft:"4px solid "+(g.brandColor||"var(--tf-64748b)"),borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}><div style={{display:"flex",alignItems:"center",gap:6}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={130} height={32} style={{height:27,width:"auto",maxWidth:125,objectFit:"contain"}}/>:<span style={{fontSize:12,fontWeight:800,color:"var(--tf-f8fafc)"}}>{g.brandIcon} {g.brandLabel}</span>;})()}{g.isCurrent?<span style={{color:"var(--tf-ffd800)",fontWeight:900}}>•</span>:null}</div><div style={{fontSize:11,fontWeight:700,color:g.brandColor||"var(--tf-64748b)"}}>{g.items.length} {expR["g"+gi]?"▾":"▸"}</div></div>
+                  {!expR["g"+gi]&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>}
                   {expR["g"+gi]&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                     {g.items.map((it,ii)=>{const det=it.details||{};const off=det["Offerta Mobile"]||det.offerta||det["Offerta"]||"";return (
-                      <div key={ii} style={{background:"rgba(255,255,255,0.03)",borderRadius:6,padding:"5px 8px"}}>
-                        <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0"}}>{it.macroIcon} {it.sub}<span style={{color:"#64748b",fontWeight:600}}> · vendita {it.saleNum}</span></div>
-                        {off&&<div style={{fontSize:10,color:"#8892b0",marginTop:1}}>{String(off)}</div>}
+                      <div key={ii} style={{background:"var(--tf-w30)",borderRadius:6,padding:"5px 8px"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{it.macroIcon} {it.sub}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> · vendita {it.saleNum}</span></div>
+                        {off&&<div style={{fontSize:10,color:"var(--tf-8892b0)",marginTop:1}}>{String(off)}</div>}
                       </div>);})}
                   </div>}
                 </div>
               ))}
-              {margItems.length>0&&<div onClick={()=>setExpR(p=>({...p,marg:(p.marg??true)?false:true}))} style={{border:"1px solid rgba(255,255,255,0.06)",borderLeft:"4px solid #6f42c1",borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
-                <div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"#6f42c1"}}>📦 Prodotti & Marginalità</div><div style={{fontSize:11,fontWeight:700,color:"#6f42c1"}}>{margItems.length} {(expR.marg??true)?"▾":"▸"}</div></div>
+              {margItems.length>0&&<div onClick={()=>setExpR(p=>({...p,marg:(p.marg??true)?false:true}))} style={{border:"1px solid var(--tf-w60)",borderLeft:"4px solid #6f42c1",borderRadius:8,padding:"8px 10px",cursor:"pointer"}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontSize:12,fontWeight:800,color:"var(--tf-6f42c1)"}}>📦 Prodotti & Marginalità</div><div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)"}}>{margItems.length} {(expR.marg??true)?"▾":"▸"}</div></div>
                 {(expR.marg??true)&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                   {margItems.map((m,mi)=>(
-                    <div key={mi} style={{background:"rgba(255,255,255,0.03)",borderRadius:6,padding:"5px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"#e2e8f0"}}>{m.product}<span style={{color:"#64748b",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"#6f42c1",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
-                      {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"#17a2b8"}}>listino</div>
+                    <div key={mi} style={{background:"var(--tf-w30)",borderRadius:6,padding:"5px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{m.product}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
+                      {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"var(--tf-17a2b8)"}}>listino</div>
                       :(m.auto||m.priceRequired||m.linked)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
                         <input type="number" step="0.01" min="0" value={m.importo??""} placeholder="prezzo *"
                           onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((x,i)=>i===mi?{...x,importo:v}:x))}}
-                          style={{width:74,padding:"4px 6px",borderRadius:6,fontSize:11,textAlign:"right",border:(m.importo==null||m.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"rgba(255,255,255,0.05)",color:"#f8fafc"}}/>
-                        <span style={{fontSize:10,color:"#8892b0"}}>€</span>
+                          style={{width:74,padding:"4px 6px",borderRadius:6,fontSize:11,textAlign:"right",border:(m.importo==null||m.importo==="")?"2px solid #dc3545":"2px solid #28a745",background:"var(--tf-w50)",color:"var(--tf-f8fafc)"}}/>
+                        <span style={{fontSize:10,color:"var(--tf-8892b0)"}}>€</span>
                       </span>
-                      :<div style={{fontSize:10,fontWeight:700,color:m.importo!=null?"#28a745":"#dc3545"}}>{m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire"}</div>}
+                      :<div style={{fontSize:10,fontWeight:700,color:m.importo!=null?"var(--tf-28a745)":"var(--tf-dc3545)"}}>{m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire"}</div>}
                     </div>
                   ))}
                 </div>}
@@ -5454,15 +5454,15 @@ select.rvIn{cursor:pointer}
             </div>
           )}
         </div>
-        <div style={{padding:14,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+        <div style={{padding:14,borderTop:"1px solid var(--tf-w60)"}}>
           <button onClick={()=>setShowCart(true)} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:bG,color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>Apri carrello →</button>
         </div>
       </div>
-      {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"#FFD800",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
-      {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"#28a745",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
+      {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"var(--tf-ffd800)",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
+      {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"var(--tf-28a745)",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
       {/* titolo in alto a sinistra + contenuto a tutta pagina, come Ricerca Vendite (Luca 03/08) */}
       <div style={{marginBottom:18}}>
-        <h1 style={{fontSize:28,fontWeight:800,color:"#f8fafc",margin:0,letterSpacing:-0.3}}>Registra Vendita</h1>
+        <h1 style={{fontSize:28,fontWeight:800,color:"var(--tf-f8fafc)",margin:0,letterSpacing:-0.3}}>Registra Vendita</h1>
       </div>
 
       {/* BARRA STEP RICCA (Luca 03/08 sera): piu' alta, logo del brand scelto,
@@ -5472,7 +5472,7 @@ select.rvIn{cursor:pointer}
       {(()=>{
         const anagOk=tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim());
         const percCliente=!tipoCliente?0:(anagOk?100:50);
-        const cAtt=bObj?bC:"#6366f1";
+        const cAtt=bObj?bC:"var(--tf-6366f1)";
         const STEPS=[
           {id:"brand",label:margFlow&&!brand?"Marginalità":"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{margFlow&&!brand?"📦":(bObj?bObj.icon:"⚡")}</span>,perc:(brand||margFlow)?100:0,abil:true},
           {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
@@ -5490,14 +5490,14 @@ select.rvIn{cursor:pointer}
                   onClick={()=>{if(st.abil)setVistaStep(st.id);}}
                   title={!st.abil?"Completa prima gli step precedenti":attivo?"Sei qui":"Vai a "+st.label}
                   style={{flex:"1 1 130px",minWidth:130,display:"flex",alignItems:"center",gap:11,padding:"11px 14px",borderRadius:13,cursor:st.abil?"pointer":"default",textAlign:"left",
-                    background:attivo?"rgba(99,102,241,0.14)":fatto?"rgba(40,167,69,0.07)":"rgba(255,255,255,0.03)",
-                    border:attivo?"1.5px solid "+cAtt:fatto?"1px solid rgba(40,167,69,0.40)":"1px solid rgba(255,255,255,0.08)",
+                    background:attivo?"rgba(99,102,241,0.14)":fatto?"rgba(40,167,69,0.07)":"var(--tf-w30)",
+                    border:attivo?"1.5px solid "+cAtt:fatto?"1px solid rgba(40,167,69,0.40)":"1px solid var(--tf-w80)",
                     opacity:st.abil?1:.45,transition:"all .15s"}}>
-                  <span style={{width:42,height:42,borderRadius:11,background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{st.icona}</span>
+                  <span style={{width:42,height:42,borderRadius:11,background:"var(--tf-w60)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{st.icona}</span>
                   <span style={{minWidth:0,flex:1}}>
-                    <span style={{display:"block",fontSize:14.5,fontWeight:800,color:attivo?"#fff":fatto?"#4ade80":"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fatto?"✓ ":""}{st.label}{st.opz&&!fatto?<span style={{fontWeight:600,color:"#64748b"}}> · opz.</span>:null}</span>
-                    <span style={{display:"block",height:4,borderRadius:2,background:"rgba(255,255,255,0.08)",marginTop:6}}>
-                      <span style={{display:"block",height:4,borderRadius:2,width:st.perc+"%",background:fatto?"#28a745":cAtt,transition:"width .25s"}}/>
+                    <span style={{display:"block",fontSize:14.5,fontWeight:800,color:attivo?"#fff":fatto?"var(--tf-4ade80)":"var(--tf-94a3b8)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fatto?"✓ ":""}{st.label}{st.opz&&!fatto?<span style={{fontWeight:600,color:"var(--tf-64748b)"}}> · opz.</span>:null}</span>
+                    <span style={{display:"block",height:4,borderRadius:2,background:"var(--tf-w80)",marginTop:6}}>
+                      <span style={{display:"block",height:4,borderRadius:2,width:st.perc+"%",background:fatto?"var(--tf-28a745)":cAtt,transition:"width .25s"}}/>
                     </span>
                   </span>
                 </button>
@@ -5508,11 +5508,11 @@ select.rvIn{cursor:pointer}
 
 
 
-      {vistaStep==="brand"&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:20,marginBottom:12}}>
-        <div style={{fontSize:12.5,fontWeight:700,color:"#8892b0",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
+      {vistaStep==="brand"&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:20,marginBottom:12}}>
+        <div style={{fontSize:12.5,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
-          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid rgba(255,255,255,0.06)",background:b.id===brand?b.color+"14":"rgba(255,255,255,0.02)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="rgba(255,255,255,0.05)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.background="rgba(255,255,255,0.02)";}}}>
-            {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>Manutenzione</div></div>}
+          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?b.color+"14":"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
+            {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)"}}>Manutenzione</div></div>}
             {(()=>{const nBr=(cart.find(g=>g.brandId===b.id)?.items.length)||0;return nBr>0?<span style={{position:"absolute",top:8,right:8,background:b.color,color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800,zIndex:3}}>{nBr}</span>:null;})()}
             {/* SOLO il logo, grande (Luca 03/08): il nome del brand e' gia' nel logo */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:84,width:"auto",maxWidth:"92%",objectFit:"contain"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>
@@ -5529,31 +5529,31 @@ select.rvIn{cursor:pointer}
             setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);
             setMargFlow(true);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));
           }} title="Prodotti & Marginalità" style={{padding:"26px 16px",borderRadius:14,border:margFlow?"2px solid #6f42c1":"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:margFlow?"0 0 0 3px rgba(111,66,193,0.25)":"none"}}>
-            {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"#6f42c1",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
+            {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"var(--tf-6f42c1)",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}><span style={{fontSize:52}}>📦</span></div>
-            <div style={{fontWeight:800,fontSize:14,color:"#6f42c1",marginTop:6}}>Prodotti & Marginalità</div>
+            <div style={{fontWeight:800,fontSize:14,color:"var(--tf-6f42c1)",marginTop:6}}>Prodotti & Marginalità</div>
           </button>
         </div>
       </div>}
 
 
-      {vistaStep==="cliente"&&brand&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:12,textTransform:"uppercase"}}>👥 Cliente — tipo e ricerca</div>
+      {vistaStep==="cliente"&&brand&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:12,textTransform:"uppercase"}}>👥 Cliente — tipo e ricerca</div>
         <div style={{display:"flex",gap:12,marginBottom:tipoCliente?16:0}}>
-          {(brand==="very"||brand==="ho"||brand==="kena"?["privato"]:["privato","business"]).map(t=><button key={t} onClick={()=>{setTipoCliente(t);setShowAna(false);setClienteFound(false);setLookupValue("");setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setShowStep4(false)}} style={{flex:1,padding:12,borderRadius:10,border:tipoCliente===t?"2px solid #6f42c1":"2px solid rgba(255,255,255,0.06)",background:tipoCliente===t?"rgba(111,66,193,0.12)":"rgba(255,255,255,0.04)",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22,marginBottom:2}}>{t==="privato"?"👤":"🏢"}</div><div style={{fontWeight:700,fontSize:14,color:tipoCliente===t?"#6f42c1":"#f8fafc"}}>{t==="privato"?"Privato":"Business"}</div></button>)}
+          {(brand==="very"||brand==="ho"||brand==="kena"?["privato"]:["privato","business"]).map(t=><button key={t} onClick={()=>{setTipoCliente(t);setShowAna(false);setClienteFound(false);setLookupValue("");setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setShowStep4(false)}} style={{flex:1,padding:12,borderRadius:10,border:tipoCliente===t?"2px solid #6f42c1":"2px solid var(--tf-w60)",background:tipoCliente===t?"rgba(111,66,193,0.12)":"var(--tf-w40)",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22,marginBottom:2}}>{t==="privato"?"👤":"🏢"}</div><div style={{fontWeight:700,fontSize:14,color:tipoCliente===t?"var(--tf-6f42c1)":"var(--tf-f8fafc)"}}>{t==="privato"?"Privato":"Business"}</div></button>)}
         </div>
-        {tipoCliente&&<div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:14,position:"relative"}}>
-          <div style={{fontSize:12,fontWeight:600,color:"#8892b0",marginBottom:8}}>{tipoCliente==="privato"?"Codice Fiscale":"Partita IVA"}</div>
+        {tipoCliente&&<div style={{background:"var(--tf-w30)",borderRadius:8,padding:14,position:"relative"}}>
+          <div style={{fontSize:12,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:8}}>{tipoCliente==="privato"?"Codice Fiscale":"Partita IVA"}</div>
           <div style={{display:"flex",gap:8}}>
-            <input placeholder={tipoCliente==="privato"?"RSSMRA80A01H501Z — o nome":"12345678901 — o ragione sociale"} value={lookupValue} onChange={e=>setLookupValue(e.target.value.toUpperCase())} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();doLookup();}}} style={{flex:1,minWidth:220,padding:"10px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",fontSize:14,fontFamily:"monospace",letterSpacing:1.2}}/>
-            <button onClick={doLookup} style={{padding:"10px 18px",borderRadius:8,border:"none",background:"#6f42c1",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔍 Cerca</button>
-            <button onClick={skipLookup} title="Apri l'anagrafica e compila a mano — il Codice Fiscale resta comunque obbligatorio" style={{padding:"10px 16px",borderRadius:8,border:"1px solid rgba(255,255,255,0.18)",background:"rgba(255,255,255,0.04)",color:"#cbd5e1",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Compila</button>
+            <input placeholder={tipoCliente==="privato"?"RSSMRA80A01H501Z — o nome":"12345678901 — o ragione sociale"} value={lookupValue} onChange={e=>setLookupValue(e.target.value.toUpperCase())} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();doLookup();}}} style={{flex:1,minWidth:220,padding:"10px 12px",borderRadius:8,border:"1px solid var(--tf-w100)",fontSize:14,fontFamily:"monospace",letterSpacing:1.2}}/>
+            <button onClick={doLookup} style={{padding:"10px 18px",borderRadius:8,border:"none",background:"var(--tf-6f42c1)",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>🔍 Cerca</button>
+            <button onClick={skipLookup} title="Apri l'anagrafica e compila a mano — il Codice Fiscale resta comunque obbligatorio" style={{padding:"10px 16px",borderRadius:8,border:"1px solid var(--tf-w180)",background:"var(--tf-w40)",color:"var(--tf-cbd5e1)",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Compila</button>
             {tipoCliente==="privato"&&(
               /* TURISTA qui, accanto a Compila (03/08): cliente di passaggio senza
                  CF italiano — attiva il flag e apre l'anagrafica; ricliccando si spegne */
               <button onClick={()=>{if(turista){setTurista(false);}else{setTurista(true);if(!showAna)skipLookup();}}}
                 title="Cliente turista senza Codice Fiscale italiano: CF non richiesto, vendita limitata a WindTre privato (Mobile Wallet e CB) o Marginalità"
-                style={{padding:"10px 16px",borderRadius:8,border:turista?"1px solid rgba(245,158,11,0.7)":"1px solid rgba(255,255,255,0.18)",background:turista?"rgba(245,158,11,0.15)":"rgba(255,255,255,0.04)",color:turista?"#fbbf24":"#cbd5e1",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                style={{padding:"10px 16px",borderRadius:8,border:turista?"1px solid rgba(245,158,11,0.7)":"1px solid var(--tf-w180)",background:turista?"rgba(245,158,11,0.15)":"var(--tf-w40)",color:turista?"var(--tf-fbbf24)":"var(--tf-cbd5e1)",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
                 🌍 Turista{turista?" ✓":""}
               </button>
             )}
@@ -5561,35 +5561,35 @@ select.rvIn{cursor:pointer}
           {(()=>{
             // CONTROLLO P.IVA (Luca 03/08): 11 cifre e basta — oltre, lo dico subito
             const num=(lookupValue||"").replace(/\s+/g,"");
-            if(/^\d{12,}$/.test(num))return <div style={{marginTop:8,background:"rgba(220,38,38,0.12)",border:"1px solid rgba(220,38,38,0.35)",borderRadius:6,padding:"7px 12px",fontSize:12,color:"#fca5a5",fontWeight:700}}>⚠️ Una Partita IVA italiana ha 11 cifre — ne hai scritte {num.length}</div>;
-            if(/^\d{11}$/.test(num))return <div style={{marginTop:8,background:"rgba(40,167,69,0.10)",borderRadius:6,padding:"6px 12px",fontSize:11,color:"#28a745",fontWeight:600}}>✓ P.IVA — 11 cifre</div>;
+            if(/^\d{12,}$/.test(num))return <div style={{marginTop:8,background:"rgba(220,38,38,0.12)",border:"1px solid rgba(220,38,38,0.35)",borderRadius:6,padding:"7px 12px",fontSize:12,color:"var(--tf-fca5a5)",fontWeight:700}}>⚠️ Una Partita IVA italiana ha 11 cifre — ne hai scritte {num.length}</div>;
+            if(/^\d{11}$/.test(num))return <div style={{marginTop:8,background:"rgba(40,167,69,0.10)",borderRadius:6,padding:"6px 12px",fontSize:11,color:"var(--tf-28a745)",fontWeight:600}}>✓ P.IVA — 11 cifre</div>;
             return null;
           })()}
           {sugg.length>0&&(
-            <div style={{marginTop:8,borderRadius:8,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(15,17,26,0.98)",overflow:"hidden"}}>
-              <div style={{padding:"6px 12px",fontSize:10,fontWeight:700,color:"#8892b0",textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>Clienti in visibilità</div>
+            <div style={{marginTop:8,borderRadius:8,border:"1px solid var(--tf-w100)",background:"rgba(15,17,26,0.98)",overflow:"hidden"}}>
+              <div style={{padding:"6px 12px",fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid var(--tf-w60)"}}>Clienti in visibilità</div>
               {sugg.map(r=>(
-                <button key={r.id} onClick={()=>scegliSugg(r)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"9px 12px",background:"transparent",border:"none",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",color:"#f8fafc"}}
+                <button key={r.id} onClick={()=>scegliSugg(r)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"9px 12px",background:"transparent",border:"none",borderBottom:"1px solid var(--tf-w40)",cursor:"pointer",color:"var(--tf-f8fafc)"}}
                   onMouseEnter={e=>{e.currentTarget.style.background="rgba(111,66,193,0.14)";}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
                   <span style={{fontSize:15}}>{r.tipo==="business"?"🏢":"👤"}</span>
                   <span style={{fontSize:13,fontWeight:700}}>{r.tipo==="business"?(r.ragione_sociale||"—"):`${r.nome||""} ${r.cognome||""}`.trim()||"—"}</span>
-                  <span style={{fontSize:11,color:r.cf_piva?"#8892b0":"#f59e0b",fontFamily:"monospace",fontWeight:r.cf_piva?400:700}}>{r.cf_piva||"senza CF — da inserire"}</span>
-                  {r.cellulare&&<span style={{fontSize:11,color:"#64748b"}}>· {r.cellulare}</span>}
-                  <span style={{marginLeft:"auto",fontSize:11,color:"#6f42c1",fontWeight:700}}>Usa →</span>
+                  <span style={{fontSize:11,color:r.cf_piva?"var(--tf-8892b0)":"var(--tf-f59e0b)",fontFamily:"monospace",fontWeight:r.cf_piva?400:700}}>{r.cf_piva||"senza CF — da inserire"}</span>
+                  {r.cellulare&&<span style={{fontSize:11,color:"var(--tf-64748b)"}}>· {r.cellulare}</span>}
+                  <span style={{marginLeft:"auto",fontSize:11,color:"var(--tf-6f42c1)",fontWeight:700}}>Usa →</span>
                 </button>
               ))}
             </div>
           )}
-          {lookupDone&&(clienteFound?<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#28a745"}}>✅ Cliente trovato in anagrafica</div>:<div style={{marginTop:10,background:"rgba(245,158,11,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"#f59e0b"}}>⚠ Cliente non presente in anagrafica — compila i dati a mano (bastano nome, cognome e cellulare)</div>)}
+          {lookupDone&&(clienteFound?<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-28a745)"}}>✅ Cliente trovato in anagrafica</div>:<div style={{marginTop:10,background:"rgba(245,158,11,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-f59e0b)"}}>⚠ Cliente non presente in anagrafica — compila i dati a mano (bastano nome, cognome e cellulare)</div>)}
         </div>}
       </div>}
 
 
 
-      {vistaStep==="cliente"&&showAna&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #1B3A5C"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#8fb4dd",marginBottom:14,textTransform:"uppercase"}}>📝 Anagrafica</div>
-        {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/>{!turista&&<TF l="Codice Fiscale" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501Z" pf={clienteFound&&!!ana.cf}/>}<TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div>{turista&&<p style={{marginTop:10,fontSize:12,fontWeight:700,color:"#f59e0b"}}>🌍 Cliente TURISTA — CF non richiesto (consentiti solo WindTre privato: Mobile Wallet e CB, oppure Marginalità)</p>}<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
-        <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"#8892b0"}}>
+      {vistaStep==="cliente"&&showAna&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #1B3A5C"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"var(--tf-8fb4dd)",marginBottom:14,textTransform:"uppercase"}}>📝 Anagrafica</div>
+        {tipoCliente==="privato"?<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Nome" r v={ana.nome} o={v=>uA("nome",v)} p="Mario" pf={clienteFound}/><TF l="Cognome" r v={ana.cognome} o={v=>uA("cognome",v)} p="Rossi" pf={clienteFound}/>{!turista&&<TF l="Codice Fiscale" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501Z" pf={clienteFound&&!!ana.cf}/>}<TF l="Cellulare" r v={ana.cellulare} o={v=>uA("cellulare",v)} p="333..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="email" pf={clienteFound}/></div>{turista&&<p style={{marginTop:10,fontSize:12,fontWeight:700,color:"var(--tf-f59e0b)"}}>🌍 Cliente TURISTA — CF non richiesto (consentiti solo WindTre privato: Mobile Wallet e CB, oppure Marginalità)</p>}<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--tf-w60)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
+        <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"var(--tf-8892b0)"}}>
           <input type="checkbox" checked={!!ana.intDiverso} onChange={e=>uA("intDiverso",e.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
           Diverso intestatario
         </label>
@@ -5598,8 +5598,8 @@ select.rvIn{cursor:pointer}
           <TF l="Cognome intestatario" r v={ana.intCognome} o={v=>uA("intCognome",v)} p="Rossi"/>
           <TF l="Codice Fiscale intestatario" r v={ana.intCf} o={v=>uA("intCf",v.toUpperCase())} p="RSSMRA80A01H501Z"/>
         </div>}</>
-        :<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Ragione Sociale" r v={ana.ragioneSociale} o={v=>uA("ragioneSociale",v)} p="Rossi Srl" pf={clienteFound}/><TF l="Partita IVA" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="12345678901" pf={clienteFound&&!!ana.cf}/><TF l="Nome Ref." r v={ana.nomeRef} o={v=>uA("nomeRef",v)} p="Mario" pf={clienteFound}/><TF l="Cognome Ref." r v={ana.cognomeRef} o={v=>uA("cognomeRef",v)} p="Rossi" pf={clienteFound}/><TF l="CF Ref." r v={ana.cfRef} o={v=>uA("cfRef",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501B" pf={clienteFound&&!!ana.cfRef}/><TF l="Recapito" r v={ana.recapito} o={v=>uA("recapito",v)} p="333..." pf={clienteFound}/><TF l="Telefono Fisso" v={ana.fisso} o={v=>uA("fisso",v)} p="06..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="info@" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
-        <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"#8892b0"}}>
+        :<><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 16px"}}><TF l="Ragione Sociale" r v={ana.ragioneSociale} o={v=>uA("ragioneSociale",v)} p="Rossi Srl" pf={clienteFound}/><TF l="Partita IVA" r v={ana.cf} o={v=>uA("cf",v.toUpperCase().replace(/\s+/g,""))} p="12345678901" pf={clienteFound&&!!ana.cf}/><TF l="Nome Ref." r v={ana.nomeRef} o={v=>uA("nomeRef",v)} p="Mario" pf={clienteFound}/><TF l="Cognome Ref." r v={ana.cognomeRef} o={v=>uA("cognomeRef",v)} p="Rossi" pf={clienteFound}/><TF l="CF Ref." r v={ana.cfRef} o={v=>uA("cfRef",v.toUpperCase().replace(/\s+/g,""))} p="RSSMRA80A01H501B" pf={clienteFound&&!!ana.cfRef}/><TF l="Recapito" r v={ana.recapito} o={v=>uA("recapito",v)} p="333..." pf={clienteFound}/><TF l="Telefono Fisso" v={ana.fisso} o={v=>uA("fisso",v)} p="06..." pf={clienteFound}/><TF l="Email" v={ana.email} o={v=>uA("email",v)} p="info@" pf={clienteFound}/></div><div style={{marginTop:10,paddingTop:10,borderTop:"1px solid var(--tf-w60)",display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:"10px 16px"}}><TFVia v={ana.via} o={v=>uA("via",v)} pf={clienteFound} onPick={s=>{uA("via",s.indirizzo);if(s.cap)uA("cap",s.cap);if(s.citta)uA("citta",s.citta);}}/><TF l="CAP" v={ana.cap} o={v=>uA("cap",v)} p="00100" pf={clienteFound}/><TF l="Città" v={ana.citta} o={v=>uA("citta",v)} p="Roma" pf={clienteFound}/></div><div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr",gap:"10px 16px"}}><TF l="IBAN" v={ana.iban} o={v=>uA("iban",v.toUpperCase())} p="IT60 X054 2811 1010 0000 0123 456" pf={clienteFound}/></div>
+        <label style={{display:"flex",alignItems:"center",gap:8,marginTop:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"var(--tf-8892b0)"}}>
           <input type="checkbox" checked={!!ana.intDiverso} onChange={e=>uA("intDiverso",e.target.checked)} style={{width:16,height:16,cursor:"pointer"}}/>
           Diverso intestatario
         </label>
@@ -5608,28 +5608,28 @@ select.rvIn{cursor:pointer}
           <TF l="Cognome intestatario" r v={ana.intCognome} o={v=>uA("intCognome",v)} p="Rossi"/>
           <TF l="Codice Fiscale intestatario" r v={ana.intCf} o={v=>uA("intCf",v.toUpperCase())} p="RSSMRA80A01H501Z"/>
         </div>}</>}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.06)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,paddingTop:12,borderTop:"1px solid var(--tf-w60)"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>{setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});setLookupValue("");setClienteFound(false);setShowStep4(false)}} style={{padding:"9px 18px",borderRadius:8,border:"1px solid rgba(255,255,255,0.14)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>↺ Reset anagrafica</button>
+            <button onClick={()=>{setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});setLookupValue("");setClienteFound(false);setShowStep4(false)}} style={{padding:"9px 18px",borderRadius:8,border:"1px solid var(--tf-w140)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>↺ Reset anagrafica</button>
             {/* #124: reset TOTALE del form disponibile anche allo step 3 (prima solo dallo step 4) */}
-            <button onClick={()=>setConfirmReset(true)} style={{padding:"9px 18px",borderRadius:8,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
+            <button onClick={()=>setConfirmReset(true)} style={{padding:"9px 18px",borderRadius:8,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"#f59e0b"}}>Obbligatori: {anaMissing.join(", ")}</span>}
-            <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"rgba(255,255,255,0.08)":"linear-gradient(135deg,#2E75B6,#1B3A5C)",color:anaMissing.length>0?"#64748b":"#fff",fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
+            {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Obbligatori: {anaMissing.join(", ")}</span>}
+            <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"var(--tf-w80)":"linear-gradient(135deg,#2E75B6,#1B3A5C)",color:anaMissing.length>0?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
           </div>
         </div>
       </div>}
 
-      {vistaStep==="prodotti"&&margFlow&&!brand&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#6f42c1",marginBottom:14,textTransform:"uppercase"}}>📦 Prodotti & Marginalità</div>
+      {vistaStep==="prodotti"&&margFlow&&!brand&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:14,textTransform:"uppercase"}}>📦 Prodotti & Marginalità</div>
         <MargPOS inline show onClose={()=>{}} venditore={selVend} negozio={selNeg} onAdd={(item)=>{addMargItem(item);setMargEditItem(null)}} editItem={margEditItem}/>
       </div>}
 
-      {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+bC}}>
+      {vistaStep==="prodotti"&&showAna&&showStep4&&(brand==="windtre"||brand==="vodafone"||brand==="fastweb"||brand==="iliad"||brand==="energy"||brand==="tim"||brand==="very"||brand==="ho"||brand==="kena"||brand==="dojo"||brand==="sky")&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+bC}}>
         <div style={{fontSize:12.5,fontWeight:700,color:bC,marginBottom:14,textTransform:"uppercase"}}>📂 Prodotti e Contratto</div>
-        <div style={{background:"rgba(0,114,198,0.10)",borderRadius:10,padding:"14px 12px",marginBottom:14,display:"flex",flexDirection:"column",alignItems:"center",gap:10,border:"1px solid rgba(255,255,255,0.12)"}}>
-          <span style={{fontSize:12,fontWeight:800,color:"#8892b0",textTransform:"uppercase",letterSpacing:.8}}>Codice inserimento</span>
+        <div style={{background:"rgba(0,114,198,0.10)",borderRadius:10,padding:"14px 12px",marginBottom:14,display:"flex",flexDirection:"column",alignItems:"center",gap:10,border:"1px solid var(--tf-w120)"}}>
+          <span style={{fontSize:12,fontWeight:800,color:"var(--tf-8892b0)",textTransform:"uppercase",letterSpacing:.8}}>Codice inserimento</span>
           {/* RIQUADRI negozio a selezione SINGOLA (Luca 03/08): via la tendina
               nativa — un click sceglie, ricliccando lo stesso si toglie */}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
@@ -5638,9 +5638,9 @@ select.rvIn{cursor:pointer}
               return <button key={c} type="button" onClick={()=>setSesCode(on?"":c)}
                 title={on?"Selezionato — clicca per togliere":"Usa il codice di "+c}
                 style={{padding:"10px 20px",borderRadius:10,cursor:"pointer",fontSize:14,fontWeight:800,transition:"all .15s",
-                  border:on?"1.5px solid "+bC:"1px solid rgba(255,255,255,0.12)",
-                  background:on?bC:"rgba(255,255,255,0.04)",
-                  color:on?"#fff":(sesCode?"#586174":"#cbd5e1"),
+                  border:on?"1.5px solid "+bC:"1px solid var(--tf-w120)",
+                  background:on?bC:"var(--tf-w40)",
+                  color:on?"#fff":(sesCode?"var(--tf-586174)":"var(--tf-cbd5e1)"),
                   opacity:sesCode&&!on?0.5:1,
                   boxShadow:on?"0 4px 14px "+bC+"55":"none"}}>
                 {on?"✓ ":""}{c}
@@ -5653,32 +5653,32 @@ select.rvIn{cursor:pointer}
              compilazione nel MODALE — la griglia resta ferma, niente piu'
              fisarmonica. Stato e validazioni del flusso classico INTATTI. */
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
-            {cats.map(group=>{const cc=catCounts(group.id,group.subs);const righe=gS(group.id);return <div key={group.id} style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:14,padding:16,display:"flex",flexDirection:"column"}}>
+            {cats.map(group=>{const cc=catCounts(group.id,group.subs);const righe=gS(group.id);return <div key={group.id} style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w100)",borderRadius:14,padding:16,display:"flex",flexDirection:"column"}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:12,textAlign:"center"}}>
                 <span style={{fontSize:23}}>{iconW3Cat(group)}</span>
                 <span style={{fontSize:14.5,fontWeight:800,color:group.color,textTransform:"uppercase",letterSpacing:.4}}>{group.title}</span>
-                {cc.tot>0&&<span style={{fontSize:10,fontWeight:800,color:"#8892b0",whiteSpace:"nowrap"}}>{cc.ok>0&&<span style={{color:"#28a745"}}>✓{cc.ok} </span>}{cc.warn>0&&<span style={{color:"#f59e0b"}}>⚠{cc.warn} </span>}{cc.empty>0&&<span>●{cc.empty}</span>}</span>}
+                {cc.tot>0&&<span style={{fontSize:10,fontWeight:800,color:"var(--tf-8892b0)",whiteSpace:"nowrap"}}>{cc.ok>0&&<span style={{color:"var(--tf-28a745)"}}>✓{cc.ok} </span>}{cc.warn>0&&<span style={{color:"var(--tf-f59e0b)"}}>⚠{cc.warn} </span>}{cc.empty>0&&<span>●{cc.empty}</span>}</span>}
               </div>
-              {righe.map((sale,si)=><div key={si} style={{marginBottom:8,paddingBottom:si<righe.length-1?10:0,borderBottom:si<righe.length-1?"1px dashed rgba(255,255,255,0.09)":"none"}}>
+              {righe.map((sale,si)=><div key={si} style={{marginBottom:8,paddingBottom:si<righe.length-1?10:0,borderBottom:si<righe.length-1?"1px dashed var(--tf-w90)":"none"}}>
                 {righe.length>1&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
                   <span style={{fontSize:10,fontWeight:800,color:group.color}}>Vendita #{si+1}</span>
                   <div style={{display:"flex",gap:5}}>
-                    <button onClick={()=>resetSale(group.id,si)} title="Reset questa vendita" style={{padding:"2px 8px",borderRadius:6,border:"1px solid rgba(255,255,255,0.15)",background:"transparent",color:"#8892b0",fontSize:11,fontWeight:700,cursor:"pointer"}}>↺</button>
-                    {si>0&&<button onClick={()=>rmSl(group.id,si)} style={{padding:"2px 8px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"transparent",color:"#dc3545",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕</button>}
+                    <button onClick={()=>resetSale(group.id,si)} title="Reset questa vendita" style={{padding:"2px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",background:"transparent",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer"}}>↺</button>
+                    {si>0&&<button onClick={()=>rmSl(group.id,si)} style={{padding:"2px 8px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"transparent",color:"var(--tf-dc3545)",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕</button>}
                   </div>
                 </div>}
                 {/* QUADRATONI stondati (Luca 03/08): stesse forme dei brand */}
                 <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
                   {group.subs.map(sub=>{const d=sale[sub.id];const att=!!(d&&d.active);const b=att?subBadge(d,dupCheck,sub,_reqMissing(group.id+"-"+si+"-"+sub.id)):null;
                     const spia=att?(b&&b.st==="ok"?"✓":b&&b.st==="warn"?"⚠":"●"):"+";
-                    const cSpia=att?(b&&b.st==="ok"?"#28a745":b&&b.st==="warn"?"#f59e0b":"#94a3b8"):bC;
+                    const cSpia=att?(b&&b.st==="ok"?"var(--tf-28a745)":b&&b.st==="warn"?"var(--tf-f59e0b)":"var(--tf-94a3b8)"):bC;
                     return <button key={sub.id}
                       onClick={()=>{if(!att)togSub(group.id,si,sub.id,group.radio?group.subs.map(x=>x.id):null);setProdModal({gid:group.id,si,subId:sub.id});}}
                       title={att?"Apri e modifica i campi":"Aggiungi e compila nel riquadro"}
                       style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,minHeight:54,padding:"11px 8px",borderRadius:12,cursor:"pointer",fontSize:14,fontWeight:700,textAlign:"center",transition:"all .15s",
-                        border:att?"2px solid "+group.color:"1px solid rgba(255,255,255,0.10)",
-                        background:att?group.color+"22":"rgba(255,255,255,0.04)",
-                        color:att?"#f8fafc":"#8892b0"}}>
+                        border:att?"2px solid "+group.color:"1px solid var(--tf-w100)",
+                        background:att?group.color+"22":"var(--tf-w40)",
+                        color:att?"var(--tf-f8fafc)":"var(--tf-8892b0)"}}>
                       <span style={{lineHeight:1.25}}>{sub.title}</span>
                       {att&&<span style={{fontSize:13,fontWeight:900,color:cSpia}}>{spia}</span>}
                     </button>;})}
@@ -5701,21 +5701,21 @@ select.rvIn{cursor:pointer}
         const d=sale[sub.id];if(!(d&&d.active))return null;
         const b=subBadge(d,dupCheck,sub,_reqMissing(group.id+"-"+prodModal.si+"-"+sub.id));
         return <div onClick={()=>setProdModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1300,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div onClick={e=>e.stopPropagation()} style={{width:"min(920px,94vw)",height:"86vh",overflowY:"auto",background:"#12141f",border:"1px solid "+bC+"55",borderRadius:16,boxShadow:"0 18px 50px rgba(0,0,0,.55)"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"15px 20px",borderBottom:"1px solid rgba(255,255,255,0.08)",position:"sticky",top:0,background:"#12141f",zIndex:1}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"min(920px,94vw)",height:"86vh",overflowY:"auto",background:"var(--tf-12141f)",border:"1px solid "+bC+"55",borderRadius:16,boxShadow:"0 18px 50px rgba(0,0,0,.55)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"15px 20px",borderBottom:"1px solid var(--tf-w80)",position:"sticky",top:0,background:"var(--tf-12141f)",zIndex:1}}>
               <span style={{fontSize:21}}>{iconW3Cat(group)}</span>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:15,fontWeight:800,color:"#f8fafc"}}>{sub.title}</div>
+                <div style={{fontSize:15,fontWeight:800,color:"var(--tf-f8fafc)"}}>{sub.title}</div>
                 <div style={{fontSize:10.5,color:group.color,fontWeight:800,textTransform:"uppercase",letterSpacing:.5}}>{group.title} · Vendita #{prodModal.si+1}</div>
               </div>
               {b&&<span style={{fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,background:b.bg,color:b.fg,whiteSpace:"nowrap"}}>{b.label}</span>}
-              <button onClick={()=>setProdModal(null)} style={{background:"transparent",border:"none",color:"#64748b",fontSize:20,cursor:"pointer",lineHeight:1,padding:0}}>✕</button>
+              <button onClick={()=>setProdModal(null)} style={{background:"transparent",border:"none",color:"var(--tf-64748b)",fontSize:20,cursor:"pointer",lineHeight:1,padding:0}}>✕</button>
             </div>
             <div style={{padding:"16px 20px"}}>
               <SubCard sub={sub} rawSd={d||{}} group={group} si={prodModal.si} sessionCode={sesCode} sale={sale} uF={uF} uC={uC} uP={uP} catSales={gS(group.id)} anaCel={(ana.cellulare||"").replace(/\D/g,"")} onOpenVFModal={openVFModal} dupCheck={dupCheck} mobiliRate={mobiliAggancioRate}/>
             </div>
-            <div style={{display:"flex",gap:10,padding:"13px 20px",borderTop:"1px solid rgba(255,255,255,0.08)",position:"sticky",bottom:0,background:"#12141f"}}>
-              <button onClick={()=>{togSub(prodModal.gid,prodModal.si,prodModal.subId,null);setProdModal(null);}} style={{padding:"11px 16px",borderRadius:10,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.08)",color:"#f87171",fontSize:12.5,fontWeight:800,cursor:"pointer"}}>🗑 Rimuovi</button>
+            <div style={{display:"flex",gap:10,padding:"13px 20px",borderTop:"1px solid var(--tf-w80)",position:"sticky",bottom:0,background:"var(--tf-12141f)"}}>
+              <button onClick={()=>{togSub(prodModal.gid,prodModal.si,prodModal.subId,null);setProdModal(null);}} style={{padding:"11px 16px",borderRadius:10,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.08)",color:"var(--tf-f87171)",fontSize:12.5,fontWeight:800,cursor:"pointer"}}>🗑 Rimuovi</button>
               <button onClick={()=>setProdModal(null)} style={{flex:1,padding:"11px 16px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#16a34a,#22c55e)",color:"#fff",fontSize:13.5,fontWeight:900,cursor:"pointer"}}>✔️ Fatto — torna ai prodotti</button>
             </div>
           </div>
@@ -5723,7 +5723,7 @@ select.rvIn{cursor:pointer}
       })()}
 
       {showAna&&showStep4&&brand==="tim"&&tipoCliente==="business"&&(
-        <div style={{background:"linear-gradient(135deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0.02) 100%)",borderRadius:16,padding:"44px 24px",marginBottom:10,border:"2px solid "+TIM_C+"33",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",boxShadow:"0 6px 20px rgba(0,0,0,.07)"}}>
+        <div style={{background:"linear-gradient(135deg,var(--tf-w60) 0%,var(--tf-w20) 100%)",borderRadius:16,padding:"44px 24px",marginBottom:10,border:"2px solid "+TIM_C+"33",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",boxShadow:"0 6px 20px rgba(0,0,0,.07)"}}>
           <svg width="200" height="150" viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">
             <g opacity="0.9">
               <line x1="40" y1="26" x2="160" y2="26" stroke={TIM_C+"33"} strokeWidth="2"/>
@@ -5745,39 +5745,39 @@ select.rvIn{cursor:pointer}
             </g>
           </svg>
           <div style={{fontSize:23,fontWeight:800,color:TIM_C,marginTop:16,letterSpacing:.3}}>TIM Business</div>
-          <div style={{fontSize:15,fontWeight:600,color:"#64748b",marginTop:6}}>Manutenzione in corso...</div>
-          <div style={{fontSize:12,color:"#9aa0a6",marginTop:8,maxWidth:440,lineHeight:1.5}}>Questa sezione è temporaneamente in aggiornamento tecnologico. I prodotti TIM Business saranno disponibili a breve.</div>
+          <div style={{fontSize:15,fontWeight:600,color:"var(--tf-64748b)",marginTop:6}}>Manutenzione in corso...</div>
+          <div style={{fontSize:12,color:"var(--tf-9aa0a6)",marginTop:8,maxWidth:440,lineHeight:1.5}}>Questa sezione è temporaneamente in aggiornamento tecnologico. I prodotti TIM Business saranno disponibili a breve.</div>
         </div>
       )}
 
       {/* SKY LEGACY: disattivato — Sky passa dal flusso catalogo come gli altri
           brand (aggancio 27/07). Il blocco resta come riferimento storico. */}
       {showAna&&showStep4&&brand==="__sky_legacy__"&&(()=>{
-        const SKY_COLOR="#0072C6";
-        const btnSky=(label,active,onClick)=><button onClick={onClick} style={{padding:"10px 18px",borderRadius:8,cursor:"pointer",border:active?"2px solid "+SKY_COLOR:"2px solid rgba(255,255,255,0.1)",background:active?SKY_COLOR:"rgba(255,255,255,0.04)",color:active?"#fff":"#8892b0",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{label}</button>;
-        const ynSky=(val,onYes,onNo)=><div style={{display:"flex",gap:6}}>{[{v:"Sì",fn:onYes},{v:"No",fn:onNo}].map(({v,fn})=><button key={v} onClick={fn} style={{padding:"7px 22px",borderRadius:8,border:val===v?"2px solid "+SKY_COLOR:"2px solid rgba(255,255,255,0.1)",background:val===v?SKY_COLOR:"rgba(255,255,255,0.04)",color:val===v?"#fff":"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>{v}</button>)}</div>;
-        const dBox=(children)=><div style={{marginTop:10,background:"rgba(0,114,198,0.10)",borderRadius:8,padding:12,border:"1px solid rgba(255,255,255,0.12)"}}><div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>{children}</div>;
+        const SKY_COLOR="var(--tf-0072c6)";
+        const btnSky=(label,active,onClick)=><button onClick={onClick} style={{padding:"10px 18px",borderRadius:8,cursor:"pointer",border:active?"2px solid "+SKY_COLOR:"2px solid var(--tf-w100)",background:active?SKY_COLOR:"var(--tf-w40)",color:active?"#fff":"var(--tf-8892b0)",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>{label}</button>;
+        const ynSky=(val,onYes,onNo)=><div style={{display:"flex",gap:6}}>{[{v:"Sì",fn:onYes},{v:"No",fn:onNo}].map(({v,fn})=><button key={v} onClick={fn} style={{padding:"7px 22px",borderRadius:8,border:val===v?"2px solid "+SKY_COLOR:"2px solid var(--tf-w100)",background:val===v?SKY_COLOR:"var(--tf-w40)",color:val===v?"#fff":"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>{v}</button>)}</div>;
+        const dBox=(children)=><div style={{marginTop:10,background:"rgba(0,114,198,0.10)",borderRadius:8,padding:12,border:"1px solid var(--tf-w120)"}}><div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:8,textTransform:"uppercase"}}>📄 Dati contratto</div>{children}</div>;
         const venditeBar=(si,bd)=>{return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:11,fontWeight:700,color:SKY_COLOR}}>Vendita #{si+1}</span>{bd&&<span style={{fontSize:10,fontWeight:800,padding:"2px 9px",borderRadius:999,background:bd.bg,color:bd.fg,whiteSpace:"nowrap"}}>{bd.l}</span>}</div>
           <div style={{display:"flex",gap:6}}>
-            <button onClick={()=>skyReset(si)} title="Reset questa vendita" style={{padding:"4px 10px",borderRadius:6,border:"1px solid #b0b0b0",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:12,fontWeight:700,cursor:"pointer"}}>↺</button>
-            {si===skyS.length-1&&<button onClick={()=>setSkyS(p=>[...p,{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])} style={{padding:"4px 12px",borderRadius:6,border:"1px solid "+SKY_COLOR,background:"rgba(255,255,255,0.02)",color:SKY_COLOR,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Vendita</button>}
-            {si>0&&<button onClick={()=>setSkyS(p=>{const n=[...p];n.splice(si,1);return n})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕</button>}
+            <button onClick={()=>skyReset(si)} title="Reset questa vendita" style={{padding:"4px 10px",borderRadius:6,border:"1px solid #b0b0b0",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>↺</button>
+            {si===skyS.length-1&&<button onClick={()=>setSkyS(p=>[...p,{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])} style={{padding:"4px 12px",borderRadius:6,border:"1px solid "+SKY_COLOR,background:"var(--tf-w20)",color:SKY_COLOR,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Vendita</button>}
+            {si>0&&<button onClick={()=>setSkyS(p=>{const n=[...p];n.splice(si,1);return n})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:10,fontWeight:700,cursor:"pointer"}}>✕</button>}
           </div>
         </div>;};
         return (<div>
           {/* ── BOX TV ── */}
-          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
+          <div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
             <div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:12,textTransform:"uppercase"}}>📺 TV</div>
-            {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+SKY_COLOR}}>
+            {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"var(--tf-w30)",borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyTv(sale)))}
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {(tipoCliente==="business"?SKY_BIZ_TV:SKY_TV).map(pr=>btnSky(pr,sale.tvSel===pr,()=>togSky(si,pr)))}
               </div>
               {sale.tvSel&&dBox(
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px"}}>
-                  <div><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:3}}>Codice contratto <span style={{color:"#dc3545"}}>*</span></div>
-                  <input value={sale.tvCC||""} onChange={e=>uSkyF(si,"tvCC",e.target.value)} placeholder="es. 1679428185586" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
+                  <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Codice contratto <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+                  <input value={sale.tvCC||""} onChange={e=>uSkyF(si,"tvCC",e.target.value)} placeholder="es. 1679428185586" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
                   <SCd session={sesCode} codici={SKY_CODICI_NEGOZIO} val={sale.tvCodIns||""} onCh={v=>uSkyF(si,"tvCodIns",v)}/>
                 </div>
               )}
@@ -5785,49 +5785,49 @@ select.rvIn{cursor:pointer}
           </div>
 
           {/* ── BOX FIBRA ── */}
-          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
+          <div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
             <div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:12,textTransform:"uppercase"}}>🌐 Fibra</div>
-            {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+SKY_COLOR}}>
+            {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"var(--tf-w30)",borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyFib(sale)))}
               <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {(tipoCliente==="business"?SKY_BIZ_FIBRA:SKY_FIBRA).map(pr=>btnSky(pr,sale.fibraSel===pr,()=>togSky(si,pr)))}
               </div>
               {sale.fibraSel&&dBox(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px"}}>
-                <div><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:3}}>Codice contratto <span style={{color:"#dc3545"}}>*</span></div>
-                <input value={sale.fibraCC||""} onChange={e=>uSkyF(si,"fibraCC",e.target.value)} placeholder="es. 1679428185586" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
+                <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Codice contratto <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+                <input value={sale.fibraCC||""} onChange={e=>uSkyF(si,"fibraCC",e.target.value)} placeholder="es. 1679428185586" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
                 <SCd session={sesCode} codici={SKY_CODICI_NEGOZIO} val={sale.fibraCodIns||""} onCh={v=>uSkyF(si,"fibraCodIns",v)}/>
-                <div><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:3}}>GNP?</div>
+                <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>GNP?</div>
                 {ynSky(sale.fibraGnp,()=>uSkyF(si,"fibraGnp","Sì"),()=>{uSkyF(si,"fibraGnp","No");uSkyF(si,"fibraGnpBrand","");uSkyF(si,"fibraGnpNum","");})}</div>
                 {sale.fibraGnp==="Sì"&&<>
-                  <div><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:3}}>Brand GNP</div>
-                  <select value={sale.fibraGnpBrand||""} onChange={e=>uSkyF(si,"fibraGnpBrand",e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12}}>
+                  <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Brand GNP</div>
+                  <select value={sale.fibraGnpBrand||""} onChange={e=>uSkyF(si,"fibraGnpBrand",e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12}}>
                     <option value="">— Seleziona —</option>
                     {SKY_BRAND_FIBRA.map(b=><option key={b} value={b}>{b}</option>)}
                   </select></div>
-                  <div><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:3}}>Numero fisso in portabilità</div>
-                  <input value={sale.fibraGnpNum||""} onChange={e=>uSkyF(si,"fibraGnpNum",e.target.value)} placeholder="es. 060000000" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
+                  <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Numero fisso in portabilità</div>
+                  <input value={sale.fibraGnpNum||""} onChange={e=>uSkyF(si,"fibraGnpNum",e.target.value)} placeholder="es. 060000000" style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
                 </>}
               </div>)}
             </div>)}
           </div>
 
           {/* ── BOX MOBILE — solo privato ── */}
-          {tipoCliente!=="business"&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
+          {tipoCliente!=="business"&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid "+SKY_COLOR}}>
             <div style={{fontSize:11,fontWeight:700,color:SKY_COLOR,marginBottom:12,textTransform:"uppercase"}}>📱 Mobile</div>
-            {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"rgba(255,255,255,0.03)",borderLeft:"3px solid "+SKY_COLOR}}>
+            {skyS.map((sale,si)=><div key={si} style={{padding:12,borderRadius:8,marginBottom:6,background:"var(--tf-w30)",borderLeft:"3px solid "+SKY_COLOR}}>
               {venditeBar(si,skyBadge(skyMob(sale)))}
               <div style={{display:"flex",gap:6}}>
                 {btnSky("Sky Mobile",sale.mobileSel,()=>togSky(si,"Sky Mobile"))}
               </div>
               {sale.mobileSel&&dBox(<div>
                 <div style={{marginBottom:10,maxWidth:240}}><SCd session={sesCode} codici={SKY_CODICI_NEGOZIO} val={sale.mobCodIns||""} onCh={v=>uSkyF(si,"mobCodIns",v)}/></div>
-                <div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:4}}>MNP? <span style={{color:"#dc3545"}}>*</span></div>
+                <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:4}}>MNP? <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
                 {ynSky(sale.mobMnp,()=>uSkyF(si,"mobMnp","Sì"),()=>{uSkyF(si,"mobMnp","No");uSkyF(si,"mobNumProv","");uSkyF(si,"mobNumDef","");uSkyF(si,"mobBrandMnp","");uSkyF(si,"mobIccid","");})}
                 {sale.mobMnp==="Sì"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 12px",marginTop:8}}>
                   <TF l="Numero provvisorio" r v={sale.mobNumProv||""} o={v=>uSkyF(si,"mobNumProv",v)} p="es. 393XXXXXXX"/>
                   <TF l="Numero definitivo" r v={sale.mobNumDef||""} o={v=>uSkyF(si,"mobNumDef",v)} p="Numero da portare"/>
-                  <div><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:3}}>Brand MNP <span style={{color:"#dc3545"}}>*</span></div>
-                  <select value={sale.mobBrandMnp||""} onChange={e=>uSkyF(si,"mobBrandMnp",e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12}}>
+                  <div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Brand MNP <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+                  <select value={sale.mobBrandMnp||""} onChange={e=>uSkyF(si,"mobBrandMnp",e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12}}>
                     <option value="">— Seleziona —</option>
                     {["TIM","Vodafone","Fastweb","WINDTRE","Iliad","PosteMobile","CoopVoce","ho.","Very Mobile","Rabona","Lyca","Kena","MVNO altro"].map(b=><option key={b} value={b}>{b}</option>)}
                   </select></div>
@@ -5837,7 +5837,7 @@ select.rvIn{cursor:pointer}
                   <TF l="Numero" r v={sale.mobNum||""} o={v=>uSkyF(si,"mobNum",v)} p="es. 393XXXXXXX"/>
                   <TF l="ICCID" r v={sale.mobIccidNo||""} o={v=>uSkyF(si,"mobIccidNo",v)} p="893XXXXXXXXXXXXXXXX"/>
                 </div>}
-                <div style={{fontSize:10,fontWeight:700,color:"#8892b0",margin:"10px 0 4px"}}>TIED? <span style={{color:"#dc3545"}}>*</span></div>
+                <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",margin:"10px 0 4px"}}>TIED? <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
                 {ynSky(sale.mobTied,()=>uSkyF(si,"mobTied","Sì"),()=>uSkyF(si,"mobTied","No"))}
               </div>)}
             </div>)}
@@ -5852,93 +5852,93 @@ select.rvIn{cursor:pointer}
 
       {showMargSection&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
         <style>{`@keyframes margSecSlideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
-        <div style={{background:"rgba(255,255,255,0.02)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:640,maxHeight:"80vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSecSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
+        <div style={{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:640,maxHeight:"80vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSecSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
           <div style={{background:"linear-gradient(135deg,#6f42c1,#9b59b6)",padding:"16px 20px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div><div style={{color:"#fff",fontWeight:800,fontSize:17}}>📦 Prodotti in Marginalità</div><div style={{color:"rgba(255,255,255,.75)",fontSize:11,marginTop:2}}>{margItems.length} prodott{margItems.length===1?"o":"i"} registrat{margItems.length===1?"o":"i"}</div></div>
-            <button onClick={()=>setShowMargSection(false)} style={{padding:"6px 14px",borderRadius:8,border:"1px solid rgba(255,255,255,.4)",background:"rgba(255,255,255,.15)",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕ Chiudi</button>
+            <div><div style={{color:"#fff",fontWeight:800,fontSize:17}}>📦 Prodotti in Marginalità</div><div style={{color:"var(--tf-w750)",fontSize:11,marginTop:2}}>{margItems.length} prodott{margItems.length===1?"o":"i"} registrat{margItems.length===1?"o":"i"}</div></div>
+            <button onClick={()=>setShowMargSection(false)} style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--tf-w400)",background:"var(--tf-w150)",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>✕ Chiudi</button>
           </div>
           <div style={{flex:1,overflowY:"auto",padding:16}}>
-            {margItems.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:"#64748b"}}><div style={{fontSize:40}}>📦</div><div style={{fontSize:14,fontWeight:600,marginTop:10}}>Nessun prodotto registrato</div><div style={{fontSize:12,marginTop:4}}>Aggiungi prodotti dal catalogo</div></div>:
+            {margItems.length===0?<div style={{textAlign:"center",padding:"40px 20px",color:"var(--tf-64748b)"}}><div style={{fontSize:40}}>📦</div><div style={{fontSize:14,fontWeight:600,marginTop:10}}>Nessun prodotto registrato</div><div style={{fontSize:12,marginTop:4}}>Aggiungi prodotti dal catalogo</div></div>:
               margItems.map((item,idx)=>(
-                <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid var(--tf-w30)"}}>
                   <div>
                     <div style={{fontWeight:700,fontSize:13}}>{item.product}</div>
-                    {item.model&&<div style={{fontSize:11,color:"#64748b"}}>{item.model}</div>}
-                    <div style={{fontSize:12,color:"#8892b0",marginTop:2}}>x{item.qty||1}{item.importo!=null&&<span style={{color:"#28a745",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>}</div>
+                    {item.model&&<div style={{fontSize:11,color:"var(--tf-64748b)"}}>{item.model}</div>}
+                    <div style={{fontSize:12,color:"var(--tf-8892b0)",marginTop:2}}>x{item.qty||1}{item.importo!=null&&<span style={{color:"var(--tf-28a745)",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>}</div>
                   </div>
-                  <button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #dc3545",background:"rgba(220,53,69,0.12)",color:"#dc3545",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
+                  <button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #dc3545",background:"rgba(220,53,69,0.12)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
                 </div>
               ))
             }
           </div>
-          <div style={{padding:"14px 16px",borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",gap:10}}>
-            <button onClick={()=>{setShowMargSection(false);setShowMargPOS(true)}} style={{flex:1,padding:"12px 0",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"#6f42c1",fontSize:13,fontWeight:800,cursor:"pointer"}}>+ Aggiungi prodotto</button>
+          <div style={{padding:"14px 16px",borderTop:"1px solid var(--tf-w60)",display:"flex",gap:10}}>
+            <button onClick={()=>{setShowMargSection(false);setShowMargPOS(true)}} style={{flex:1,padding:"12px 0",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:13,fontWeight:800,cursor:"pointer"}}>+ Aggiungi prodotto</button>
             {margItems.length>0&&<button onClick={()=>setShowCart(true)} style={{flex:1,padding:"12px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>🛒 Vai al carrello</button>}
           </div>
         </div>
       </div>}
 
-        {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #17a2b8",marginTop:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#17a2b8",marginBottom:14,textTransform:"uppercase"}}>📎 Allegati</div>
+        {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #17a2b8",marginTop:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-17a2b8)",marginBottom:14,textTransform:"uppercase"}}>📎 Allegati</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
             {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
               onDragOver={e=>onBoxDragOver(e,a.t)} onDragEnter={e=>onBoxDragOver(e,a.t)}
               onDragLeave={onBoxDragLeave} onDrop={e=>onBoxDrop(e,a.t)}
-              style={{display:"block",border:"2px dashed "+(over?"#17a2b8":(cnt>0?"rgba(23,162,184,0.55)":"rgba(255,255,255,0.1)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"rgba(255,255,255,0.03)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-flex",gap:6,alignItems:"center",justifyContent:"center"}}><span style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"#17a2b8",color:"#fff",fontSize:10,fontWeight:700}}>Carica</span><button type="button" onClick={e=>{e.preventDefault();e.stopPropagation();openQr(a.t);}} title="Carica dal telefono via QR" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,background:"rgba(23,162,184,0.12)",border:"1px solid rgba(23,162,184,0.5)",color:"#5fd3e6",fontSize:10,fontWeight:700,cursor:"pointer"}}>📱 QR</button></div><div style={{fontSize:9,color:"#64748b",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"#17a2b8",fontWeight:700}}>{cnt} file</div>}</label>;})}
+              style={{display:"block",border:"2px dashed "+(over?"var(--tf-17a2b8)":(cnt>0?"rgba(23,162,184,0.55)":"var(--tf-w100)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"var(--tf-w30)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-flex",gap:6,alignItems:"center",justifyContent:"center"}}><span style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"var(--tf-17a2b8)",color:"#fff",fontSize:10,fontWeight:700}}>Carica</span><button type="button" onClick={e=>{e.preventDefault();e.stopPropagation();openQr(a.t);}} title="Carica dal telefono via QR" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,background:"rgba(23,162,184,0.12)",border:"1px solid rgba(23,162,184,0.5)",color:"var(--tf-5fd3e6)",fontSize:10,fontWeight:700,cursor:"pointer"}}>📱 QR</button></div><div style={{fontSize:9,color:"var(--tf-64748b)",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"var(--tf-17a2b8)",fontWeight:700}}>{cnt} file</div>}</label>;})}
           </div>
-          {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"rgba(255,255,255,0.03)",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}><div style={{fontSize:10,fontWeight:700,color:"#8892b0",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid rgba(255,255,255,0.05)":"none"}}><div style={{fontSize:11,color:"#f8fafc"}}><span onClick={()=>apriAnteprima(file)} title="Anteprima" style={{cursor:"pointer",textDecoration:"underline",textDecorationColor:"rgba(255,255,255,0.3)",textUnderlineOffset:2}}>{file.name}</span> <span style={{color:"#64748b",fontSize:10}}>· {file.type}</span></div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"#dc3545",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
+          {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w60)"}}><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid var(--tf-w50)":"none"}}><div style={{fontSize:11,color:"var(--tf-f8fafc)"}}><span onClick={()=>apriAnteprima(file)} title="Anteprima" style={{cursor:"pointer",textDecoration:"underline",textDecorationColor:"var(--tf-w300)",textUnderlineOffset:2}}>{file.name}</span> <span style={{color:"var(--tf-64748b)",fontSize:10}}>· {file.type}</span></div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
         </div>}
         {preview&&createPortal(<div onClick={chiudiAnteprima} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"#11141d",border:"1px solid rgba(255,255,255,.1)",borderRadius:14,width:"100%",maxWidth:840,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid rgba(255,255,255,.08)"}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#f8fafc",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{preview.name}</div>
+          <div onClick={e=>e.stopPropagation()} style={{background:"var(--tf-11141d)",border:"1px solid var(--tf-w100)",borderRadius:14,width:"100%",maxWidth:840,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",borderBottom:"1px solid var(--tf-w80)"}}>
+              <div style={{fontSize:13,fontWeight:700,color:"var(--tf-f8fafc)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{preview.name}</div>
               <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                <a href={preview.url} target="_blank" rel="noreferrer" style={{fontSize:12,color:"#5fd3e6",textDecoration:"none",fontWeight:700}}>Apri ↗</a>
-                <button onClick={chiudiAnteprima} style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}}>✕</button>
+                <a href={preview.url} target="_blank" rel="noreferrer" style={{fontSize:12,color:"var(--tf-5fd3e6)",textDecoration:"none",fontWeight:700}}>Apri ↗</a>
+                <button onClick={chiudiAnteprima} style={{background:"none",border:"none",color:"var(--tf-94a3b8)",fontSize:18,cursor:"pointer"}}>✕</button>
               </div>
             </div>
-            <div style={{flex:1,minHeight:0,background:"#0b0d14",display:"flex",alignItems:"center",justifyContent:"center",overflow:"auto"}}>
+            <div style={{flex:1,minHeight:0,background:"var(--tf-0b0d14)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"auto"}}>
               {(preview.mime||"").startsWith("image/")
                 ? <img src={preview.url} alt={preview.name} style={{maxWidth:"100%",maxHeight:"80vh",objectFit:"contain"}}/>
                 : (preview.mime||"").includes("pdf")
                   ? <iframe src={preview.url} title={preview.name} style={{width:"100%",height:"80vh",border:"none",background:"#fff"}}/>
-                  : <div style={{padding:40,color:"#94a3b8",textAlign:"center"}}>Anteprima non disponibile.<br/><a href={preview.url} target="_blank" rel="noreferrer" style={{color:"#5fd3e6"}}>Scarica il file</a></div>}
+                  : <div style={{padding:40,color:"var(--tf-94a3b8)",textAlign:"center"}}>Anteprima non disponibile.<br/><a href={preview.url} target="_blank" rel="noreferrer" style={{color:"var(--tf-5fd3e6)"}}>Scarica il file</a></div>}
             </div>
           </div>
         </div>, document.body)}
         {qrBox&&createPortal(<div onClick={closeQr} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"#11141d",border:"1px solid rgba(255,255,255,.08)",borderRadius:16,width:"100%",maxWidth:360,padding:24,margin:"0 16px",textAlign:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"var(--tf-11141d)",border:"1px solid var(--tf-w80)",borderRadius:16,width:"100%",maxWidth:360,padding:24,margin:"0 16px",textAlign:"center"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div style={{fontWeight:800,fontSize:16,color:"#f8fafc"}}>📱 Carica dal telefono</div>
-              <button onClick={closeQr} style={{background:"none",border:"none",color:"#94a3b8",fontSize:18,cursor:"pointer"}}>✕</button>
+              <div style={{fontWeight:800,fontSize:16,color:"var(--tf-f8fafc)"}}>📱 Carica dal telefono</div>
+              <button onClick={closeQr} style={{background:"none",border:"none",color:"var(--tf-94a3b8)",fontSize:18,cursor:"pointer"}}>✕</button>
             </div>
             {qrRecv?(
-              <div style={{padding:"22px 0"}}><div style={{fontSize:48,marginBottom:8}}>✅</div><div style={{fontSize:16,fontWeight:800,color:"#34d399"}}>Ricevuto!</div><div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>{qrRecv.n} file aggiunt{qrRecv.n===1?"o":"i"} agli allegati.</div></div>
+              <div style={{padding:"22px 0"}}><div style={{fontSize:48,marginBottom:8}}>✅</div><div style={{fontSize:16,fontWeight:800,color:"var(--tf-34d399)"}}>Ricevuto!</div><div style={{fontSize:12,color:"var(--tf-94a3b8)",marginTop:6}}>{qrRecv.n} file aggiunt{qrRecv.n===1?"o":"i"} agli allegati.</div></div>
             ):(<>
-              <div style={{fontSize:12,color:"#94a3b8",marginBottom:14}}>Inquadra il QR con la fotocamera del telefono e carica {qrBox==="documento"?"la foto del documento (PNG/JPEG)":"il PDF — se scansioni più pagine verranno unite in un unico file"}.</div>
-              {qrImg?<img src={qrImg} alt="QR" style={{width:216,height:216,borderRadius:12,background:"#fff",padding:8,boxSizing:"border-box",display:"block",margin:"0 auto"}}/>:<div style={{width:216,height:216,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b"}}>Genero…</div>}
-              <div style={{fontSize:11,color:"#f59e0b",marginTop:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{width:8,height:8,borderRadius:4,background:"#f59e0b",display:"inline-block"}}/>In attesa della scansione…</div>
+              <div style={{fontSize:12,color:"var(--tf-94a3b8)",marginBottom:14}}>Inquadra il QR con la fotocamera del telefono e carica {qrBox==="documento"?"la foto del documento (PNG/JPEG)":"il PDF — se scansioni più pagine verranno unite in un unico file"}.</div>
+              {qrImg?<img src={qrImg} alt="QR" style={{width:216,height:216,borderRadius:12,background:"#fff",padding:8,boxSizing:"border-box",display:"block",margin:"0 auto"}}/>:<div style={{width:216,height:216,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--tf-64748b)"}}>Genero…</div>}
+              <div style={{fontSize:11,color:"var(--tf-f59e0b)",marginTop:12,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><span style={{width:8,height:8,borderRadius:4,background:"var(--tf-f59e0b)",display:"inline-block"}}/>In attesa della scansione…</div>
             </>)}
           </div>
         </div>, document.body)}
-        {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{background:"rgba(255,255,255,0.02)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745"}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#28a745",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
+        {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-28a745)",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
             <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/><DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
-            <div><div style={{fontSize:11,fontWeight:600,color:"#8892b0",marginBottom:3}}>Data <span style={{color:"#dc3545"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",fontSize:12,boxSizing:"border-box"}}/></div>
+            <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Data <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
         {vistaStep==="note"&&((margFlow&&!brand)||(showAna&&showStep4))&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
 
       {["prodotti","allegati","note"].includes(vistaStep)&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>{const PREV={prodotti:(margFlow&&!brand)?"brand":"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.02)",color:"#8892b0",fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
-          {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} style={{padding:"11px 22px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"#c7d2fe",fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
-          <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
+          <button onClick={()=>{const PREV={prodotti:(margFlow&&!brand)?"brand":"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
+          {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} style={{padding:"11px 22px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"var(--tf-c7d2fe)",fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
+          <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          {brand&&<button onClick={()=>{addCart();setVistaStep("brand");}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"rgba(255,255,255,0.1)":"#28a745"),background:blockSaveAll?"rgba(255,255,255,0.03)":"rgba(40,167,69,0.12)",color:blockSaveAll?"#64748b":"#28a745",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>💾 Salva vendita</button>}
-          <button onClick={()=>setShowCart(true)} style={{padding:"11px 26px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1e293b,#0f3460)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>🛒 Riepilogo carrello{tCI>0&&<span style={{background:"#FFD800",color:"#f8fafc",borderRadius:10,padding:"1px 8px",fontSize:12,fontWeight:800}}>{tCI}</span>}</button>
+          {brand&&<button onClick={()=>{addCart();setVistaStep("brand");}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>💾 Salva vendita</button>}
+          <button onClick={()=>setShowCart(true)} style={{padding:"11px 26px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1e293b,#0f3460)",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>🛒 Riepilogo carrello{tCI>0&&<span style={{background:"var(--tf-ffd800)",color:"var(--tf-f8fafc)",borderRadius:10,padding:"1px 8px",fontSize:12,fontWeight:800}}>{tCI}</span>}</button>
         </div>
       </div>}
 
@@ -5949,22 +5949,22 @@ select.rvIn{cursor:pointer}
       {vfQtyModal&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setVfQtyModal(null)}}>
           <style>{`@keyframes vfModalIn{from{opacity:0;transform:translateY(48px) scale(0.93)}to{opacity:1;transform:translateY(0) scale(1)}}`}</style>
-          <div style={{background:"rgba(255,255,255,0.02)",borderRadius:20,padding:32,width:360,boxShadow:"0 24px 80px rgba(0,0,0,0.35)",animation:"vfModalIn .28s cubic-bezier(.22,1,.36,1) both",textAlign:"center"}}>
+          <div style={{background:"var(--tf-w20)",borderRadius:20,padding:32,width:360,boxShadow:"0 24px 80px rgba(0,0,0,0.35)",animation:"vfModalIn .28s cubic-bezier(.22,1,.36,1) both",textAlign:"center"}}>
             <div style={{fontSize:36,marginBottom:8}}>📱</div>
-            <div style={{fontSize:18,fontWeight:800,color:"#f8fafc",marginBottom:4}}>Quante SIM hai venduto?</div>
-            <div style={{fontSize:13,fontWeight:600,color:"#E60000",background:"rgba(220,53,69,0.12)",borderRadius:8,padding:"6px 16px",display:"inline-block",marginBottom:24}}>{vfQtyModal.offer}</div>
+            <div style={{fontSize:18,fontWeight:800,color:"var(--tf-f8fafc)",marginBottom:4}}>Quante SIM hai venduto?</div>
+            <div style={{fontSize:13,fontWeight:600,color:"var(--tf-e60000)",background:"rgba(220,53,69,0.12)",borderRadius:8,padding:"6px 16px",display:"inline-block",marginBottom:24}}>{vfQtyModal.offer}</div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:20,marginBottom:28}}>
-              <button onClick={()=>setVfQtyModal(p=>({...p,tempQty:Math.max(1,p.tempQty-1)}))} style={{width:52,height:52,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",fontSize:26,fontWeight:700,cursor:"pointer",color:"#8892b0",lineHeight:"1",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+              <button onClick={()=>setVfQtyModal(p=>({...p,tempQty:Math.max(1,p.tempQty-1)}))} style={{width:52,height:52,borderRadius:"50%",border:"2px solid var(--tf-w100)",background:"var(--tf-w30)",fontSize:26,fontWeight:700,cursor:"pointer",color:"var(--tf-8892b0)",lineHeight:"1",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
               <div style={{textAlign:"center"}}>
-                <div style={{fontSize:52,fontWeight:900,color:"#E60000",lineHeight:1}}>{vfQtyModal.tempQty}</div>
-                <div style={{fontSize:11,color:"#64748b",marginTop:2}}>SIM</div>
+                <div style={{fontSize:52,fontWeight:900,color:"var(--tf-e60000)",lineHeight:1}}>{vfQtyModal.tempQty}</div>
+                <div style={{fontSize:11,color:"var(--tf-64748b)",marginTop:2}}>SIM</div>
               </div>
-              <button onClick={()=>setVfQtyModal(p=>({...p,tempQty:Math.min(9,p.tempQty+1)}))} style={{width:52,height:52,borderRadius:"50%",border:"2px solid #E60000",background:"#E60000",fontSize:26,fontWeight:700,cursor:"pointer",color:"#fff",lineHeight:"1",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+              <button onClick={()=>setVfQtyModal(p=>({...p,tempQty:Math.min(9,p.tempQty+1)}))} style={{width:52,height:52,borderRadius:"50%",border:"2px solid #E60000",background:"var(--tf-e60000)",fontSize:26,fontWeight:700,cursor:"pointer",color:"#fff",lineHeight:"1",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
             </div>
             <div style={{display:"flex",gap:10,justifyContent:"center"}}>
-              <button onClick={()=>setVfQtyModal(null)} style={{padding:"11px 28px",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.03)",color:"#8892b0",fontSize:13,fontWeight:600,cursor:"pointer"}}>Annulla</button>
-              {vfQtyModal&&vfQtyModal.tempQty>0&&((sales[vfQtyModal.catId]||[{}])[vfQtyModal.si]||{})[vfQtyModal.subId]&&((((sales[vfQtyModal.catId]||[{}])[vfQtyModal.si]||{})[vfQtyModal.subId]||{}).vfOffers||{})[vfQtyModal.offer]>0&&<button onClick={()=>{if(!vfQtyModal)return;const{catId,si,subId,offer}=vfQtyModal;const cur=((sales[catId]||[{}])[si]||{})[subId];const newVfO={...((cur&&cur.vfOffers)||{})};delete newVfO[offer];const newVfC={...((cur&&cur.vfContratti)||{})};delete newVfC[offer];uP(catId,si,subId,"vfOffers",newVfO);uP(catId,si,subId,"vfContratti",newVfC);setVfQtyModal(null);}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid #dc3545",background:"rgba(255,255,255,0.02)",color:"#dc3545",fontSize:13,fontWeight:600,cursor:"pointer"}}>✕ Rimuovi</button>}
-              <button onClick={confirmVFQty} style={{padding:"11px 36px",borderRadius:10,border:"none",background:"#E60000",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(230,0,0,0.35)"}}>Conferma</button>
+              <button onClick={()=>setVfQtyModal(null)} style={{padding:"11px 28px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w30)",color:"var(--tf-8892b0)",fontSize:13,fontWeight:600,cursor:"pointer"}}>Annulla</button>
+              {vfQtyModal&&vfQtyModal.tempQty>0&&((sales[vfQtyModal.catId]||[{}])[vfQtyModal.si]||{})[vfQtyModal.subId]&&((((sales[vfQtyModal.catId]||[{}])[vfQtyModal.si]||{})[vfQtyModal.subId]||{}).vfOffers||{})[vfQtyModal.offer]>0&&<button onClick={()=>{if(!vfQtyModal)return;const{catId,si,subId,offer}=vfQtyModal;const cur=((sales[catId]||[{}])[si]||{})[subId];const newVfO={...((cur&&cur.vfOffers)||{})};delete newVfO[offer];const newVfC={...((cur&&cur.vfContratti)||{})};delete newVfC[offer];uP(catId,si,subId,"vfOffers",newVfO);uP(catId,si,subId,"vfContratti",newVfC);setVfQtyModal(null);}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:600,cursor:"pointer"}}>✕ Rimuovi</button>}
+              <button onClick={confirmVFQty} style={{padding:"11px 36px",borderRadius:10,border:"none",background:"var(--tf-e60000)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(230,0,0,0.35)"}}>Conferma</button>
             </div>
           </div>
         </div>

@@ -34,7 +34,7 @@ const SOC_COLORS: Record<string, { text: string; bg: string; border: string }> =
     "Telefutura": { text: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/30" },
     "Telefutura 2SRL": { text: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30" },
 };
-const SOC_ACCENT: Record<string, string> = { "Telefutura": "#3b82f6", "Telefutura 2SRL": "#8b5cf6" };
+const SOC_ACCENT: Record<string, string> = { "Telefutura": "var(--tf-3b82f6)", "Telefutura 2SRL": "var(--tf-8b5cf6)" };
 
 const DOC_TYPES: { key: DocKey; label: string; icon: string; desc: string; required: boolean }[] = [
     { key: "cassa", label: "Chiusura Cassa", icon: "", desc: "Report chiusura cassa giornaliero", required: true },
@@ -166,7 +166,7 @@ function SocietaBlock({ societa, files, setFiles }: { societa: string; files: Fi
             </div>
             <div className="px-4 pt-3">
                 <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-300" style={{ width: `${progressPct}%`, background: mandatoryFilled === 2 ? "#22c55e" : color }} />
+                    <div className="h-full rounded-full transition-all duration-300" style={{ width: `${progressPct}%`, background: mandatoryFilled === 2 ? "var(--tf-22c55e)" : color }} />
                 </div>
             </div>
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
@@ -374,13 +374,13 @@ function VistaInvio({ onClose, onSuccess }: { onClose: () => void; onSuccess?: (
                             return (
                                 <button key={soc} onClick={() => toggleSocieta(soc)}
                                     className="flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left w-full"
-                                    style={{ borderColor: active ? col : "rgba(255,255,255,0.08)", background: active ? col + "12" : "rgba(255,255,255,0.02)" }}>
+                                    style={{ borderColor: active ? col : "var(--tf-w80)", background: active ? col + "12" : "var(--tf-w20)" }}>
                                     <div className="w-6 h-6 rounded-lg border-2 flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-                                        style={{ borderColor: active ? col : "rgba(255,255,255,0.15)", background: active ? col : "transparent" }}>
+                                        style={{ borderColor: active ? col : "var(--tf-w150)", background: active ? col : "transparent" }}>
                                         {active ? "" : ""}
                                     </div>
                                     <div>
-                                        <div className="text-sm font-bold" style={{ color: active ? col : "#94a3b8" }}>{soc}</div>
+                                        <div className="text-sm font-bold" style={{ color: active ? col : "var(--tf-94a3b8)" }}>{soc}</div>
                                         <div className="text-[11px] text-slate-600">{active ? "Chiusura attiva" : "Clicca per attivare"}</div>
                                     </div>
                                 </button>

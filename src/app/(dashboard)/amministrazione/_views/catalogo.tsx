@@ -497,7 +497,7 @@ export function CatalogoView() {
                             className={cn("flex items-center gap-2 px-3.5 py-2 rounded-xl border text-sm font-bold transition-all",
                                 brandSel === b.id ? "border-violet-400/70 bg-violet-500/15 text-white" : "border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/25",
                                 !b.attivo && "opacity-50")}>
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: b.colore1 || "#94a3b8" }} />
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: b.colore1 || "var(--tf-94a3b8)" }} />
                             {b.nome}
                         </button>
                     ))}

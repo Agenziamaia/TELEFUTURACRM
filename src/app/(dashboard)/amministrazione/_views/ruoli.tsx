@@ -23,7 +23,7 @@ import { notify, dbError } from "./toast";
 
 interface Persona { id: string; full_name: string; role: string; grade: string | null; primary_store: string | null; active: boolean }
 
-const AREA_COLORS: Record<string, string> = { pv: "#6366f1", cc: "#0ea5e9", ob: "#f59e0b", sede: "#a855f7" };
+const AREA_COLORS: Record<string, string> = { pv: "var(--tf-6366f1)", cc: "var(--tf-0ea5e9)", ob: "var(--tf-f59e0b)", sede: "var(--tf-a855f7)" };
 const slug = (s: string) => s.trim().toLowerCase()
     .replace(/[àáâä]/g, "a").replace(/[èéêë]/g, "e").replace(/[ìíîï]/g, "i").replace(/[òóôö]/g, "o").replace(/[ùúûü]/g, "u")
     .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -124,7 +124,7 @@ export function RuoliView() {
                             className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
                             style={areaFiltro === a.id
                                 ? { color: AREA_COLORS[a.id], borderColor: AREA_COLORS[a.id], background: AREA_COLORS[a.id] + "22" }
-                                : { color: "#94a3b8", borderColor: "rgba(255,255,255,0.1)" }}>
+                                : { color: "var(--tf-94a3b8)", borderColor: "var(--tf-w100)" }}>
                             {a.label}{areaFiltro === a.id && " ✓"}
                         </button>
                     ))}
@@ -157,7 +157,7 @@ export function RuoliView() {
                                 {visibili.filter((r) => r.area === a.id).map((r) => {
                         const gente = perRuolo.get(r.id) ?? [];
                         const open = aperto === r.id;
-                        const col = AREA_COLORS[r.area] || "#64748b";
+                        const col = AREA_COLORS[r.area] || "var(--tf-64748b)";
                         const areaLbl = AREAS.find((a) => a.id === r.area)?.label || r.area;
                         const gradoSel = gradoFiltro?.startsWith(r.id + "|") ? gradoFiltro.split("|")[1] : null;
                         const mostrate = gradoSel ? gente.filter((p) => p.grade === gradoSel) : gente;
@@ -252,7 +252,7 @@ export function RuoliView() {
                                             className="text-xs px-3 py-2 rounded-lg border font-bold transition-colors"
                                             style={edit.area === a.id
                                                 ? { color: AREA_COLORS[a.id], borderColor: AREA_COLORS[a.id], background: AREA_COLORS[a.id] + "22" }
-                                                : { color: "#94a3b8", borderColor: "rgba(255,255,255,0.1)" }}>
+                                                : { color: "var(--tf-94a3b8)", borderColor: "var(--tf-w100)" }}>
                                             {a.label}{edit.area === a.id && " ✓"}
                                         </button>
                                     ))}

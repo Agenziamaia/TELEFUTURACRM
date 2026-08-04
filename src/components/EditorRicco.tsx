@@ -96,8 +96,8 @@ const EMOJI_CATEGORIE: { nome: string; icona: string; emoji: string[] }[] = [
 ];
 
 // ── barra strumenti: definizione bottoni ────────────────────────────────────
-const COLORI_TESTO = ["#f8fafc", "#fbbf24", "#4ade80", "#60a5fa", "#f472b6", "#a78bfa", "#fb7185", "#f97316", "#94a3b8"];
-const COLORI_EVIDENZIA = ["transparent", "#854d0e", "#14532d", "#1e3a8a", "#701a75", "#7f1d1d", "#334155"];
+const COLORI_TESTO = ["var(--tf-f8fafc)", "var(--tf-fbbf24)", "var(--tf-4ade80)", "var(--tf-60a5fa)", "var(--tf-f472b6)", "var(--tf-a78bfa)", "var(--tf-fb7185)", "var(--tf-f97316)", "var(--tf-94a3b8)"];
+const COLORI_EVIDENZIA = ["transparent", "var(--tf-854d0e)", "var(--tf-14532d)", "var(--tf-1e3a8a)", "var(--tf-701a75)", "var(--tf-7f1d1d)", "var(--tf-334155)"];
 const FONT_FACCE = [
     { id: "", label: "Font — predefinito" },
     { id: "Georgia, 'Times New Roman', serif", label: "Elegante (serif)" },
@@ -169,7 +169,7 @@ export function EditorRicco({ htmlIniziale = "", onChange, placeholder = "Scrivi
                     onChange={(e) => { if (e.target.value) cmd("fontName", e.target.value); else cmd("removeFormat"); }}
                     title="Carattere"
                     className="h-8 rounded-lg bg-white/5 border border-white/10 text-xs text-slate-300 px-1.5 outline-none max-w-[150px]">
-                    {FONT_FACCE.map((f) => <option key={f.label} value={f.id} style={{ background: "#12141f" }}>{f.label}</option>)}
+                    {FONT_FACCE.map((f) => <option key={f.label} value={f.id} style={{ background: "var(--tf-12141f)" }}>{f.label}</option>)}
                 </select>
                 <span className="flex items-center gap-0.5 ml-0.5" title="Grandezza del testo">
                     {TAGLIE.map((t) => <Btn key={t.v} label={t.l} title={`Testo ${t.l}`} on={() => cmd("fontSize", t.v)} />)}

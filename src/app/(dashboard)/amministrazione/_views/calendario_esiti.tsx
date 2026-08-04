@@ -18,9 +18,9 @@ const TIPI: { id: string; label: string; hint: string }[] = [
 ];
 
 const PALETTE: Record<string, string> = {
-    blue: "#60a5fa", emerald: "#34d399", rose: "#fb7185", purple: "#c084fc",
-    yellow: "#facc15", amber: "#fbbf24", orange: "#fb923c", sky: "#38bdf8",
-    violet: "#a78bfa", slate: "#94a3b8",
+    blue: "var(--tf-60a5fa)", emerald: "var(--tf-34d399)", rose: "var(--tf-fb7185)", purple: "var(--tf-c084fc)",
+    yellow: "var(--tf-facc15)", amber: "var(--tf-fbbf24)", orange: "var(--tf-fb923c)", sky: "var(--tf-38bdf8)",
+    violet: "var(--tf-a78bfa)", slate: "var(--tf-94a3b8)",
 };
 
 const slugDi = (s: string) => s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")

@@ -586,10 +586,10 @@ function StoricoPersonale({ nome, parte = "tutto" }: { nome: string; parte?: "kp
     const mese = oggi.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
     const kpiBlock = (
         <div className="grid grid-cols-2 gap-2">
-            <KpiBox label="Ore fatte" value={fmtOre(oreTot)} sub={`${giorniFatti} giorni lavorati`} color="#6366f1" />
-            <KpiBox label="Media giornaliera" value={fmtOre(media)} color="#0ea5e9" />
-            <KpiBox label="Proiezione fine mese" value={fmtOre(proiezione)} sub={`${rimasti} giorni lavorativi rimasti (lun–ven)`} color="#22c55e" />
-            <KpiBox label="Consistenza" value={consistenza != null ? `${consistenza}%` : "—"} sub="regolarità delle ore giornaliere" color="#f59e0b" />
+            <KpiBox label="Ore fatte" value={fmtOre(oreTot)} sub={`${giorniFatti} giorni lavorati`} color="var(--tf-6366f1)" />
+            <KpiBox label="Media giornaliera" value={fmtOre(media)} color="var(--tf-0ea5e9)" />
+            <KpiBox label="Proiezione fine mese" value={fmtOre(proiezione)} sub={`${rimasti} giorni lavorativi rimasti (lun–ven)`} color="var(--tf-22c55e)" />
+            <KpiBox label="Consistenza" value={consistenza != null ? `${consistenza}%` : "—"} sub="regolarità delle ore giornaliere" color="var(--tf-f59e0b)" />
         </div>
     );
     const listaBlock = (
@@ -806,10 +806,10 @@ function PresenzeAdmin() {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                <KpiBox label="Ore totali" value={fmtOre(oreTot)} sub={`${filtered.length} timbrature`} color="#6366f1" />
-                <KpiBox label="Giorni-presenza" value={String(giorniPresenza)} sub={`${personeAttive} person${personeAttive === 1 ? "a" : "e"}`} color="#0ea5e9" />
-                <KpiBox label="Media ore/giorno" value={fmtOre(mediaGiorno)} color="#22c55e" />
-                <KpiBox label="Pause totali" value={`${Math.round(pauseTot)}m`} color="#f59e0b" />
+                <KpiBox label="Ore totali" value={fmtOre(oreTot)} sub={`${filtered.length} timbrature`} color="var(--tf-6366f1)" />
+                <KpiBox label="Giorni-presenza" value={String(giorniPresenza)} sub={`${personeAttive} person${personeAttive === 1 ? "a" : "e"}`} color="var(--tf-0ea5e9)" />
+                <KpiBox label="Media ore/giorno" value={fmtOre(mediaGiorno)} color="var(--tf-22c55e)" />
+                <KpiBox label="Pause totali" value={`${Math.round(pauseTot)}m`} color="var(--tf-f59e0b)" />
             </div>
 
             {/* benchmark mesi passati */}

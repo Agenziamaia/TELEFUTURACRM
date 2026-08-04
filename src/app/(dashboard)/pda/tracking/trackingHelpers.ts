@@ -113,7 +113,7 @@ export function getCat(id: string) {
     id: label || "—",
     label: label ? label.toUpperCase() : "—",
     desc: "Categoria non prevista dal tracking",
-    color: "#94a3b8",
+    color: "var(--tf-94a3b8)",
   };
 }
 

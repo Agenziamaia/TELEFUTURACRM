@@ -209,13 +209,13 @@ export const BRANDS: string[] = [
 
 // Colori originali dei brand per le chip UI: color = base (sfondo/bordo), text = variante leggibile su tema scuro
 export const BRAND_COLORS: Record<string, { color: string; text: string }> = {
-    WindTre: { color: "#ff6600", text: "#ffa366" },
-    Vodafone: { color: "#e60000", text: "#ff6666" },
-    Fastweb: { color: "#ffd400", text: "#ffe066" },
-    Sky: { color: "#0072c9", text: "#66b5ff" },
-    Tim: { color: "#004691", text: "#6fa8ff" },
-    Iliad: { color: "#ff0032", text: "#ff667f" },
-    Energia: { color: "#16a34a", text: "#4ade80" },
+    WindTre: { color: "var(--tf-ff6600)", text: "var(--tf-ffa366)" },
+    Vodafone: { color: "var(--tf-e60000)", text: "var(--tf-ff6666)" },
+    Fastweb: { color: "var(--tf-ffd400)", text: "var(--tf-ffe066)" },
+    Sky: { color: "var(--tf-0072c9)", text: "var(--tf-66b5ff)" },
+    Tim: { color: "var(--tf-004691)", text: "var(--tf-6fa8ff)" },
+    Iliad: { color: "var(--tf-ff0032)", text: "var(--tf-ff667f)" },
+    Energia: { color: "var(--tf-16a34a)", text: "var(--tf-4ade80)" },
 };
 
 // ── Registro DINAMICO dai ruoli a database (role_defs, mig. 087) ─────────────

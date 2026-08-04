@@ -906,12 +906,12 @@ export default function Comunicazioni() {
                                 <div className="mt-2 rounded-2xl border border-dashed border-white/15 bg-black/30 p-3 sm:p-4 pointer-events-none select-none">
                                     {(() => {
                                         const st = fType === "warning"
-                                            ? { color: "#fb7185", bg: "rgba(244,63,94,.12)", border: "rgba(244,63,94,.40)", Icona: AlertTriangle }
+                                            ? { color: "var(--tf-fb7185)", bg: "rgba(244,63,94,.12)", border: "rgba(244,63,94,.40)", Icona: AlertTriangle }
                                             : fType === "success"
-                                                ? { color: "#34d399", bg: "rgba(52,211,153,.12)", border: "rgba(52,211,153,.35)", Icona: CheckCircle2 }
+                                                ? { color: "var(--tf-34d399)", bg: "rgba(52,211,153,.12)", border: "rgba(52,211,153,.35)", Icona: CheckCircle2 }
                                                 : fType === "update"
-                                                    ? { color: "#a78bfa", bg: "rgba(139,92,246,.12)", border: "rgba(139,92,246,.40)", Icona: Rocket }
-                                                    : { color: "#60a5fa", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
+                                                    ? { color: "var(--tf-a78bfa)", bg: "rgba(139,92,246,.12)", border: "rgba(139,92,246,.40)", Icona: Rocket }
+                                                    : { color: "var(--tf-60a5fa)", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
                                         const titolo = fTitle.trim() || "Titolo della comunicazione";
                                         const testoPuro = fContent.trim() || "Il testo che scrivi sopra comparirà qui.";
                                         const testo = fContent.trim() && fContentHtml.trim()

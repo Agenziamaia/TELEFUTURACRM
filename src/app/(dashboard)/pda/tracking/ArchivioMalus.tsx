@@ -16,10 +16,10 @@ import { type EpisodioMalus, totaliEpisodi, formatDataIt } from "./malusStorico"
 export function StatoEpisodioBadge({ ep }: { ep: EpisodioMalus }) {
   const s =
     ep.stato === "compensato"
-      ? { label: "Compensato", color: "#4ade80", bg: "#052e16", border: "#22c55e" }
+      ? { label: "Compensato", color: "var(--tf-4ade80)", bg: "var(--tf-052e16)", border: "var(--tf-22c55e)" }
       : ep.data_fine === null
-        ? { label: "In corso", color: "#fca5a5", bg: "#450a0a", border: "#dc2626" }
-        : { label: "Attivo — da scalare", color: "#fbbf24", bg: "#451a03", border: "#f59e0b" };
+        ? { label: "In corso", color: "var(--tf-fca5a5)", bg: "var(--tf-450a0a)", border: "var(--tf-dc2626)" }
+        : { label: "Attivo — da scalare", color: "var(--tf-fbbf24)", bg: "var(--tf-451a03)", border: "var(--tf-f59e0b)" };
   return (
     <span
       className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold whitespace-nowrap border"
@@ -177,10 +177,10 @@ export function ArchivioMalus({
   };
 
   const cards: { id: "tutti" | "in_corso" | "attivo" | "compensato"; label: string; n: number; val: number; color: string; hint?: string }[] = [
-    { id: "tutti", label: "Totale generato", n: filtratiBase.length, val: tot.totale, color: "#94a3b8" },
-    { id: "in_corso", label: "In corso ora", n: tot.inCorso.n, val: tot.inCorso.eur, color: "#dc2626", hint: "stanno ancora maturando" },
-    { id: "attivo", label: "Attivi — da scalare", n: tot.attivi.n, val: tot.attivi.eur, color: "#f59e0b", hint: "chiusi, in attesa di compensazione" },
-    { id: "compensato", label: "Compensati", n: tot.compensati.n, val: tot.compensati.eur, color: "#22c55e", hint: "gia' scalati dai pagamenti" },
+    { id: "tutti", label: "Totale generato", n: filtratiBase.length, val: tot.totale, color: "var(--tf-94a3b8)" },
+    { id: "in_corso", label: "In corso ora", n: tot.inCorso.n, val: tot.inCorso.eur, color: "var(--tf-dc2626)", hint: "stanno ancora maturando" },
+    { id: "attivo", label: "Attivi — da scalare", n: tot.attivi.n, val: tot.attivi.eur, color: "var(--tf-f59e0b)", hint: "chiusi, in attesa di compensazione" },
+    { id: "compensato", label: "Compensati", n: tot.compensati.n, val: tot.compensati.eur, color: "var(--tf-22c55e)", hint: "gia' scalati dai pagamenti" },
   ];
 
   const thStyle =
@@ -239,10 +239,10 @@ export function ArchivioMalus({
                   onClick={() => setStatoSel(c.id)}
                   onKeyDown={(e) => e.key === "Enter" && setStatoSel(c.id)}
                   className="rounded-xl border p-3.5 cursor-pointer select-none transition-all"
-                  style={{ background: active ? c.color + "22" : "#1e293b", borderColor: active ? c.color : "#334155" }}
+                  style={{ background: active ? c.color + "22" : "var(--tf-1e293b)", borderColor: active ? c.color : "var(--tf-334155)" }}
                 >
                   <div className="text-xl font-bold" style={{ color: c.color }}>{eur(c.val)}</div>
-                  <div className="text-[11px] mt-0.5 font-medium" style={{ color: active ? c.color : "#94a3b8" }}>
+                  <div className="text-[11px] mt-0.5 font-medium" style={{ color: active ? c.color : "var(--tf-94a3b8)" }}>
                     {c.label} · {c.n}
                   </div>
                   {c.hint && <div className="text-[10px] text-slate-500 mt-0.5">{c.hint}</div>}

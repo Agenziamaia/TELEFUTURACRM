@@ -21,14 +21,14 @@ import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
 
 // Loghi e colori come in Registra Contratto (stessa rappresentazione)
 const GARE_BRANDS = [
-    { id: "w3", label: "WindTre", desc: "Soglie e commissioning dei franchising Wind3.", color: "#FF6B00", logo: "/windtre.png" },
-    { id: "vs", label: "Vodafone Store", desc: "Soglie e commissioning dei Vodafone Store.", color: "#E60000", logo: "/vodaphone - Copy.png" },
-    { id: "vnd", label: "Vodafone VND", desc: "Target Vodafone dei negozi multi brand (gestione VND).", color: "#E60000", logo: "/vodaphone - Copy.png" },
-    { id: "fastweb", label: "Fastweb", desc: "Target Fastweb dei multi brand (nessun franchising).", color: "#CC9900", logo: "/fastweb.png" },
-    { id: "sky", label: "Sky", desc: "Soglie e commissioning Sky.", color: "#0072C6", logo: "/sky.png" },
-    { id: "s4", label: "S4", desc: "Soglie e commissioning energia S4.", color: "#28a745", logo: "/energy - Copy.png" },
-    { id: "tim", label: "TIM", desc: "Soglie e commissioning Tim.", color: "#0050FF", logo: "/tim-logo-v2.png" },
-    { id: "dojo", label: "Dojo", desc: "Soglie e commissioning POS Dojo.", color: "#14b8a6", logo: "/dojo - Copy.png" },
+    { id: "w3", label: "WindTre", desc: "Soglie e commissioning dei franchising Wind3.", color: "var(--tf-ff6b00)", logo: "/windtre.png" },
+    { id: "vs", label: "Vodafone Store", desc: "Soglie e commissioning dei Vodafone Store.", color: "var(--tf-e60000)", logo: "/vodaphone - Copy.png" },
+    { id: "vnd", label: "Vodafone VND", desc: "Target Vodafone dei negozi multi brand (gestione VND).", color: "var(--tf-e60000)", logo: "/vodaphone - Copy.png" },
+    { id: "fastweb", label: "Fastweb", desc: "Target Fastweb dei multi brand (nessun franchising).", color: "var(--tf-cc9900)", logo: "/fastweb.png" },
+    { id: "sky", label: "Sky", desc: "Soglie e commissioning Sky.", color: "var(--tf-0072c6)", logo: "/sky.png" },
+    { id: "s4", label: "S4", desc: "Soglie e commissioning energia S4.", color: "var(--tf-28a745)", logo: "/energy - Copy.png" },
+    { id: "tim", label: "TIM", desc: "Soglie e commissioning Tim.", color: "var(--tf-0050ff)", logo: "/tim-logo-v2.png" },
+    { id: "dojo", label: "Dojo", desc: "Soglie e commissioning POS Dojo.", color: "var(--tf-14b8a6)", logo: "/dojo - Copy.png" },
 ] as const;
 
 // le sezioni di GESTIONE traslocate dall'Amministrazione (Luca 03/08)

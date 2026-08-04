@@ -501,7 +501,7 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
                         ) : (
                             <span
                                 className={cn("w-2.5 h-2.5 rounded-full shrink-0", !isActive && "opacity-60")}
-                                style={{ backgroundColor: c.color || "#64748b" }}
+                                style={{ backgroundColor: c.color || "var(--tf-64748b)" }}
                             />
                         )}
                         {c.name}

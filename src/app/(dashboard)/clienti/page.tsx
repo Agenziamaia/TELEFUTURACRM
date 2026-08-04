@@ -108,11 +108,11 @@ function mapRowToContratto(row: Record<string, unknown>): Contratto {
 // Categorie di archiviazione dei documenti (Step 5 della registrazione).
 // Tutto cio' che non rientra in una categoria nota finisce in "Altro".
 const CATEGORIE_DOC = [
-    { id: "documento", label: "Documenti", color: "#38bdf8", match: (t: string | null) => (t || "").toLowerCase() === "documento" },
-    { id: "contratti", label: "Contratti", color: "#a78bfa", match: (t: string | null) => (t || "").toLowerCase() === "contratti" },
+    { id: "documento", label: "Documenti", color: "var(--tf-38bdf8)", match: (t: string | null) => (t || "").toLowerCase() === "documento" },
+    { id: "contratti", label: "Contratti", color: "var(--tf-a78bfa)", match: (t: string | null) => (t || "").toLowerCase() === "contratti" },
     // Segnalazione 84: bollette del vecchio operatore sui contratti energia.
-    { id: "fattura", label: "Fatture", color: "#fbbf24", match: (t: string | null) => (t || "").toLowerCase() === "fattura" },
-    { id: "altro", label: "Altro", color: "#94a3b8", match: (t: string | null) => !["documento", "contratti", "fattura"].includes((t || "").toLowerCase()) },
+    { id: "fattura", label: "Fatture", color: "var(--tf-fbbf24)", match: (t: string | null) => (t || "").toLowerCase() === "fattura" },
+    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura"].includes((t || "").toLowerCase()) },
 ];
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
@@ -188,15 +188,15 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
             if (error) { setEventiDisdette([]); return; }   // tabella assente pre-mig. 125: timeline invariata
             setEventiDisdette((data ?? []).flatMap((r: { id: string; brand: string; storico: unknown }) =>
                 (Array.isArray(r.storico) ? r.storico : []).map((e: { quando?: string; testo?: string }, i: number) => ({
-                    key: `ds${r.id}_${i}`, when: String(e.quando || ""), color: "#f43f5e", icon: "✂️",
+                    key: `ds${r.id}_${i}`, when: String(e.quando || ""), color: "var(--tf-f43f5e)", icon: "✂️",
                     title: String(e.testo || ""), desc: `${r.id} · ${r.brand}`, stato: null as string | null,
                 }))));
         })();
     }, [cliente.id]);
     // Timeline 360°: eventi REALI (contratti registrati + documenti caricati + disdette), in ordine.
     const timeline = [
-        ...contratti.filter((c) => c.data).map((c) => ({ key: "c" + c.id, when: c.data as string, color: "#38bdf8", icon: "✍️", title: "Contratto registrato", desc: `${c.brand} · ${c.categoria}${c.venditore ? " — " + c.venditore : ""}`, stato: c.stato })),
-        ...docs.filter((d) => d.created_at).map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "#f59e0b", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
+        ...contratti.filter((c) => c.data).map((c) => ({ key: "c" + c.id, when: c.data as string, color: "var(--tf-38bdf8)", icon: "✍️", title: "Contratto registrato", desc: `${c.brand} · ${c.categoria}${c.venditore ? " — " + c.venditore : ""}`, stato: c.stato })),
+        ...docs.filter((d) => d.created_at).map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "var(--tf-f59e0b)", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
         ...eventiDisdette.filter((e) => e.when),
     ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
 
