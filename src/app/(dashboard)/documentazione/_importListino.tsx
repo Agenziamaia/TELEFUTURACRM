@@ -21,6 +21,9 @@ const KEYWORDS: Record<string, string[]> = {
     // "sp cash" = prezzo di vendita cash nei listini WindTre (verificato sul
     // "Listino Terminali WINDTRE Prodotti ordinabili" del 22/07/2026)
     modello: ["prodotto", "modello terminale", "modello", "terminale", "descrizione", "device", "smartphone"],
+    // file "magazzino" W3 (Luca 05/08): la MARCA sta in una colonna a parte
+    // e va anteposta al modello, altrimenti si importa "GALAXY A16" senza brand
+    marca: ["marca", "brand", "produttore", "costruttore", "casa"],
     prezzo: ["sp cash", "prezzo listino", "prezzo di listino", "prezzo al pubblico", "listino", "prezzo", "cash", "costo"],
     rata: ["importo rata", "rata mensile", "rata", "canone"],
     mesi: ["n rate", "num rate", "numero rate", "mesi", "durata", "rate"],
@@ -157,7 +160,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
     const [file, setFile] = useState<File | null>(null);
     const [righe, setRighe] = useState<RigaGrezza[]>([]);
     const [headerIdx, setHeaderIdx] = useState(0);
-    const [col, setCol] = useState<{ modello: number; prezzo: number; rata: number; mesi: number; anticipo: number; margine: number }>({ modello: -1, prezzo: -1, rata: -1, mesi: -1, anticipo: -1, margine: -1 });
+    const [col, setCol] = useState<{ modello: number; marca: number; prezzo: number; rata: number; mesi: number; anticipo: number; margine: number }>({ modello: -1, marca: -1, prezzo: -1, rata: -1, mesi: -1, anticipo: -1, margine: -1 });
     const [busy, setBusy] = useState(false);
     const [errore, setErrore] = useState("");
     // listino a BLOCCHI riconosciuto: niente mappatura colonne, voci pronte
@@ -199,6 +202,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
             setRighe(rows); setHeaderIdx(hIdx);
             setCol({
                 modello: indovinaColonna(headers, KEYWORDS.modello),
+                marca: indovinaColonna(headers, KEYWORDS.marca),
                 prezzo: indovinaColonna(headers, KEYWORDS.prezzo),
                 rata: indovinaColonna(headers, KEYWORDS.rata),
                 mesi: indovinaColonna(headers, KEYWORDS.mesi),
@@ -219,8 +223,13 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
         const per = new Map<string, VoceListino>();
         for (let i = headerIdx + 1; i < righe.length; i++) {
             const r = righe[i] || [];
-            const modello = String(r[col.modello] ?? "").trim();
-            if (!modello || modello.length < 2) continue;
+            const modelloRaw = String(r[col.modello] ?? "").trim();
+            if (!modelloRaw || modelloRaw.length < 2) continue;
+            // marca in colonna separata (magazzino W3): si antepone, senza
+            // doppiarla se il modello la contiene già
+            const marca = col.marca >= 0 ? String(r[col.marca] ?? "").trim() : "";
+            const modello = marca && !modelloRaw.toLowerCase().startsWith(marca.toLowerCase())
+                ? `${marca} ${modelloRaw}` : modelloRaw;
             const prezzo = col.prezzo >= 0 ? parseEuro(r[col.prezzo]) : null;
             const rata = col.rata >= 0 ? parseEuro(r[col.rata]) : null;
             const mesi = col.mesi >= 0 ? Math.round(parseEuro(r[col.mesi]) || 0) : 0;
@@ -352,6 +361,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                                 <>
                                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                                         <SelCol campo="modello" label="Modello *" />
+                                        <SelCol campo="marca" label="Marca (se separata)" />
                                         <SelCol campo="prezzo" label="Prezzo listino" />
                                         <SelCol campo="rata" label="Importo rata" />
                                         <SelCol campo="mesi" label="N. mesi/rate" />
