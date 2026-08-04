@@ -282,12 +282,11 @@ html.light {
   color-scheme: light;
 }
 html.light body[class] {
-  background-color: #e4e9f2 !important;
+  background-color: #eef1f7 !important;
   color: #0f172a;
-  background-image: radial-gradient(ellipse at top left,
-      rgba(79, 70, 229, 0.10), transparent 55%),
-    radial-gradient(ellipse at bottom right,
-      rgba(236, 72, 153, 0.08), transparent 55%);
+  /* fondo chiaro PULITO: niente velo lavanda/rosa che slavava tutto — un
+     gradiente verticale tenue, cosi' le card bianche risaltano nette. */
+  background-image: linear-gradient(180deg, #f4f6fb 0%, #e7ebf3 100%);
 }
 
 /* ── 2. Superfici scure cablate → superfici chiare ───────────────────── */
@@ -624,3 +623,14 @@ html.light{--tf-w20:rgba(30,41,82,0.063);--tf-w30:rgba(30,41,82,0.077);--tf-w40:
 /* ===TFDARKRGBA=== superfici rgba scure inline → chiare nel tema chiaro */
 :root{--tfx26_29_41_850:rgba(26, 29, 41, 0.85);--tfx15_17_26_880:rgba(15, 17, 26, 0.88);--tfx15_17_26_980:rgba(15, 17, 26, 0.98);}
 html.light{--tfx26_29_41_850:rgba(232, 232, 234, 0.85);--tfx15_17_26_880:rgba(231, 231, 232, 0.88);--tfx15_17_26_980:rgba(231, 231, 232, 0.98);}
+
+/* ═══ LIGHT MODE — rifinitura estetica (04/08): meno "slavato", piu' nitido ═══ */
+html.light .glass-card,html.light .glass-panel{border-color:rgba(15,23,42,.10) !important;box-shadow:0 1px 2px rgba(15,23,42,.05),0 6px 18px rgba(15,23,42,.07) !important;}
+html.light .glass-card:hover{border-color:rgba(79,70,229,.35) !important;box-shadow:0 2px 4px rgba(15,23,42,.06),0 12px 30px rgba(79,70,229,.12) !important;}
+/* velature/bordi bianchi per CLASSE un filo piu' presenti (bottoni, divisori) — NON nel sidebar (id vince) */
+html.light [class*="bg-white/[0.03]"],html.light [class*="bg-white/[0.04]"],html.light [class*="bg-white/[0.05]"]{background-color:rgba(30,41,82,.055) !important;}
+html.light [class~="bg-white/5"]{background-color:rgba(30,41,82,.06) !important;}
+html.light [class~="bg-white/10"],html.light [class*="bg-white/[0.08]"]{background-color:rgba(30,41,82,.09) !important;}
+html.light [class~="border-white/10"],html.light [class~="border-white/5"],html.light [class*="border-white/[0.08]"]{border-color:rgba(15,23,42,.12) !important;}
+/* header sotto la barra: fondo pulito coerente col nuovo sfondo */
+html.light header{background-color:#ffffff !important;}
