@@ -357,14 +357,20 @@ export default function Dashboard() {
                 const badge = COM_BADGE[c.type] || COM_BADGE.info;
                 return (
                   // card CLICCABILE (BAC-01): porta alla comunicazione aperta in bacheca
+                  // card VIVA come in bacheca (Luca 04/08: "sembrano testi
+                  // normali"): tinta e bordo del genere, filigrana emoji,
+                  // hover che solleva — la comunicazione si riconosce a vista
                   <Link key={c.id} href={`/comunicazioni?apri=${c.id}`}
-                    className="block border-b border-white/5 last:border-0 pb-2.5 last:pb-0 -mx-1.5 px-1.5 rounded-lg hover:bg-white/[0.04] transition-colors cursor-pointer group">
-                    <div className="flex items-center justify-between mb-1">
+                    className="relative block overflow-hidden rounded-xl border p-2.5 mb-2 last:mb-0 cursor-pointer group transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                    style={{ borderColor: `color-mix(in srgb, ${badge.color} 35%, transparent)`, background: `linear-gradient(135deg, ${badge.bg}, transparent 65%)` }}>
+                    <span aria-hidden className="absolute -right-1 -bottom-2 text-4xl opacity-[0.12] group-hover:opacity-25 transition-opacity select-none">{badge.label.split(" ")[0]}</span>
+                    <div className="relative flex items-center justify-between mb-1">
                       <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ color: badge.color, background: badge.bg }}>{badge.label}</span>
-                      <span className="text-[10px] text-slate-600">{c.date_display || ""}</span>
+                      <span className="text-[10px] text-slate-500">{c.date_display || ""}</span>
                     </div>
-                    <div className="text-xs font-semibold text-slate-100 group-hover:text-white">{c.title}</div>
-                    {c.content && <div className="text-[11px] text-slate-400 line-clamp-2">{c.content}</div>}
+                    <div className="relative text-xs font-bold text-slate-100 group-hover:text-white">{c.title}</div>
+                    {c.content && <div className="relative text-[11px] text-slate-400 line-clamp-2">{c.content}</div>}
+                    <div className="relative mt-1 text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: badge.color }}>Apri la comunicazione →</div>
                   </Link>
                 );
               })}

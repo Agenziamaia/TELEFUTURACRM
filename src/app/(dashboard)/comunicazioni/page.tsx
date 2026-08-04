@@ -1159,8 +1159,9 @@ function ComunicazioniInner() {
                                 ) : anteprimaDestinatari.length === 0 ? (
                                     <p className="text-xs text-amber-300 mt-1.5">⚠️ Con questa selezione nessuno la riceverebbe: controlla ruoli/negozi/persone.</p>
                                 ) : (
-                                    // TUTTI i nomi, sempre (Luca 04/08): la lista scorre, mai troncata
-                                    <div className="flex gap-1.5 mt-2 flex-wrap max-h-44 overflow-y-auto pr-1">
+                                    // TUTTI i nomi, sempre (Luca 04/08): niente tetto né scroll
+                                    // interno — il form ha spazio, i chip si distendono tutti
+                                    <div className="flex gap-1.5 mt-2 flex-wrap">
                                         {anteprimaDestinatari.map((u) => (
                                             <span key={u.id} className="px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[11px] text-slate-300">
                                                 {u.nome}{u.id === user?.id ? " (tu)" : ""}
