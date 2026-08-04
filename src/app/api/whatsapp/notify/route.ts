@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { inviaTesto } from "@/lib/evolution";
+import { trovaOCreaConversazione } from "@/lib/waConversazioni";
 
 export const dynamic = "force-dynamic";
 
@@ -27,21 +28,10 @@ export async function POST(request: Request) {
         const inst = (insts ?? []).find((i) => String(i.status || "").toLowerCase().includes("connect")) || (insts ?? [])[0];
         if (!inst) return NextResponse.json({ error: "nessun numero WhatsApp collegato al CRM" }, { status: 400 });
 
-        // trova o crea la conversazione per il numero (aggancio per coda cifre)
-        const coda = dig.slice(-9);
-        const patt = "%" + coda.split("").join("%") + "%";
-        const { data: trovate } = await supabase.from("wa_conversations")
-            .select("id, customer_number, chat_jid").eq("instance_id", inst.id)
-            .ilike("customer_number", patt).limit(1);
-        let conv = (trovate ?? [])[0];
-        if (!conv) {
-            const numero = dig.length === 10 && dig.startsWith("3") ? "39" + dig : dig;
-            const { data: creata, error: ce } = await supabase.from("wa_conversations")
-                .insert({ instance_id: inst.id, customer_number: numero, unread: 0 })
-                .select("id, customer_number, chat_jid").maybeSingle();
-            if (ce || !creata) return NextResponse.json({ error: "conversazione non creata: " + (ce?.message || "?") }, { status: 500 });
-            conv = creata;
-        }
+        // trova o crea la conversazione per il numero — helper CONDIVISO con
+        // send-template: un'unica euristica coda-cifre, mai piu' copie divergenti
+        const { conv, error: convErr } = await trovaOCreaConversazione(inst.id, dig);
+        if (convErr || !conv) return NextResponse.json({ error: "conversazione non creata: " + (convErr || "?") }, { status: 500 });
 
         let waId: string | null = null;
         let stato = "sent";

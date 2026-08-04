@@ -26,6 +26,7 @@ import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
 import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller } from "@/lib/callerMalus";
 import { CallerRegoleModal, ArchivioMalusCallerModal } from "@/components/CallerRegole";
+import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
 
 /* ─────────────────────────────────────────────────────────────────────
    CONSTANTS
@@ -491,6 +492,10 @@ function CallerPageInner() {
     const [modalMode, setModalMode] = useState<"new" | "detail">("new");
     const [editCall, setEditCall] = useState<Call | null>(null);
     const [hoverRow, setHoverRow] = useState<string | null>(null);
+    // CAL-01: step a MODELLI per il WhatsApp — il bottone verde apre il modale
+    // "scegli il messaggio" (invio immediato dal numero del caller, la pratica
+    // resta aperta). Qui il numero destinatario (sole cifre).
+    const [waTemplateNum, setWaTemplateNum] = useState<string | null>(null);
 
     /* ── Storico CLICCABILE (Luca 31/07): la voce si espande coi dettagli
        archiviati (brand/obiettivo/provenienza/tipologia/esito) e, se la voce
@@ -816,6 +821,7 @@ function CallerPageInner() {
         setModalOpen(false);
         setEditCall(null);
         setStoricoOpen(null);
+        setWaTemplateNum(null);
     }
 
     function updateField<K extends keyof Call>(field: K, value: Call[K]) {
@@ -1302,6 +1308,10 @@ function CallerPageInner() {
             }
             if (NRD_STATI.includes(editCall.statoNew) && editCall.whatsappNew) {
                 newStorico.push({ data: now, caller: currentCaller, campo: "WhatsApp", da: "", a: editCall.whatsappNew });
+                // FIX (CAL-01): la colonna calls.whatsapp non veniva MAI scritta
+                // in aggiornamento — il flag viveva solo nello storico jsonb e a
+                // DB risultava vuoto su tutte le righe
+                updates.whatsapp = editCall.whatsappNew;
             }
             if (editCall.noteUpdate) {
                 newStorico.push({ data: now, caller: currentCaller, campo: "Nota", da: "", a: editCall.noteUpdate });
@@ -1637,6 +1647,16 @@ function CallerPageInner() {
     const statiDisponibili = isDirector ? STATI_OPT : STATI_OPT.filter(s => s !== "Nuovo");
 
     /* ── Detail mode flags ── */
+    // scenario del modello WhatsApp (CAL-01): dal COMPORTAMENTO dello stato in
+    // lavorazione (statoNew se scelto, altrimenti lo stato attuale) — non dai
+    // nomi, che dal pannello sono rinominabili
+    const scenarioWa = (c: Call): ScenarioWa => {
+        const s = c.statoNew || c.stato;
+        if (NRD_STATI.includes(s)) return "nr";
+        if (RIC_STATI.includes(s)) return "richiamo";
+        if (APP_STATI.includes(s)) return "appuntamento";
+        return "generico";
+    };
     const statoNewIsNR = !!editCall && NRD_STATI.includes(editCall.statoNew || "");
     const statoNewIsRichiamo = !!editCall && RIC_STATI.includes(editCall.statoNew || "");
     const statoNewIsAppuntamento = !!editCall && APP_STATI.includes(editCall.statoNew || "");
@@ -2336,10 +2356,11 @@ function CallerPageInner() {
                                                     <button type="button" title="Chiama questo numero con Aircall"
                                                         onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                    <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
+                                                    {/* CAL-01: niente piu' salto diretto in chat — modale a modelli */}
+                                                    <button type="button" onClick={() => setWaTemplateNum(String(editCall.numero || "").replace(/\D/g, ""))} title="Scrivi su WhatsApp: scegli un modello e invia dal tuo numero (la pratica resta aperta)"
                                                         className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "var(--tf-25d366)" }}>
                                                         <MessageSquare className="w-4 h-4" />
-                                                    </Link>
+                                                    </button>
                                                 </>)}
                                             </div>
                                         </FormGroup>
@@ -2350,10 +2371,11 @@ function CallerPageInner() {
                                                     <button type="button" title="Chiama questo numero con Aircall"
                                                         onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
                                                         className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                    <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
+                                                    {/* CAL-01: niente piu' salto diretto in chat — modale a modelli */}
+                                                    <button type="button" onClick={() => setWaTemplateNum(String(editCall.cellulare || "").replace(/\D/g, ""))} title="Scrivi su WhatsApp: scegli un modello e invia dal tuo numero (la pratica resta aperta)"
                                                         className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "var(--tf-25d366)" }}>
                                                         <MessageSquare className="w-4 h-4" />
-                                                    </Link>
+                                                    </button>
                                                 </>)}
                                             </div>
                                         </FormGroup>
@@ -2584,10 +2606,11 @@ function CallerPageInner() {
                                                             <button type="button" title="Richiama con Aircall"
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.numero, user?.id); alert(r.msg); }}
                                                                 className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                            <Link href={"/chat?wa=" + String(editCall.numero || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
+                                                            {/* CAL-01: modale a modelli al posto del salto in chat */}
+                                                            <button type="button" onClick={() => setWaTemplateNum(String(editCall.numero || "").replace(/\D/g, ""))} title="Scrivi su WhatsApp: scegli un modello e invia dal tuo numero (la pratica resta aperta)"
                                                                 className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "var(--tf-25d366)" }}>
                                                                 <MessageSquare className="w-4 h-4" />
-                                                            </Link>
+                                                            </button>
                                                         </>)}
                                                     </div>
                                                 </div>
@@ -2599,10 +2622,11 @@ function CallerPageInner() {
                                                             <button type="button" title="Richiama con Aircall"
                                                                 onClick={async () => { const r = await chiamaAircall(editCall.cellulare, user?.id); alert(r.msg); }}
                                                                 className="shrink-0 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">📞</button>
-                                                            <Link href={"/chat?wa=" + String(editCall.cellulare || "").replace(/\D/g, "")} onClick={salvaBozza} title="Scrivi su WhatsApp dal CRM (al ritorno ritrovi la pratica aperta)"
+                                                            {/* CAL-01: modale a modelli al posto del salto in chat */}
+                                                            <button type="button" onClick={() => setWaTemplateNum(String(editCall.cellulare || "").replace(/\D/g, ""))} title="Scrivi su WhatsApp: scegli un modello e invia dal tuo numero (la pratica resta aperta)"
                                                                 className="shrink-0 px-3 rounded-lg flex items-center text-white text-sm font-bold" style={{ background: "var(--tf-25d366)" }}>
                                                                 <MessageSquare className="w-4 h-4" />
-                                                            </Link>
+                                                            </button>
                                                         </>)}
                                                     </div>
                                                 </div>
@@ -2793,8 +2817,8 @@ function CallerPageInner() {
                                                                                         {/* il recording_url salvato scade in ~1h: si ascolta
                                                                                             via proxy che chiede a Aircall un URL fresco */}
                                                                                         {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-                                                                                        <audio controls preload="none" src={`/api/aircall/recording?call=${s.aircall_call_id}`} className="h-8 flex-1 min-w-0" />
-                                                                                        <a href={`/api/aircall/recording?call=${s.aircall_call_id}`} target="_blank" rel="noreferrer" download
+                                                                                        <audio controls preload="none" src={`/api/aircall/recording?call=${s.aircall_call_id}&u=${user?.id || ""}`} className="h-8 flex-1 min-w-0" />
+                                                                                        <a href={`/api/aircall/recording?call=${s.aircall_call_id}&u=${user?.id || ""}`} target="_blank" rel="noreferrer" download
                                                                                             className="text-[11px] font-bold text-emerald-300 hover:underline shrink-0">⬇ Scarica</a>
                                                                                     </div>
                                                                                 )}
@@ -2834,6 +2858,22 @@ function CallerPageInner() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* ── CAL-01: modale "scegli il messaggio" WhatsApp — SOPRA la pratica,
+                che resta aperta: a invio riuscito il flag si auto-setta e sparisce
+                il bisogno della bozza (che resta solo per "Apri la chat") ── */}
+            {modalOpen && editCall && waTemplateNum && (
+                <ModaleTemplateWa
+                    call={editCall}
+                    numero={waTemplateNum}
+                    scenario={scenarioWa(editCall)}
+                    userId={user?.id || null}
+                    callerName={currentCaller}
+                    onClose={() => setWaTemplateNum(null)}
+                    onInviato={() => updateField(modalMode === "detail" ? "whatsappNew" : "whatsapp", "Sì")}
+                    salvaBozza={salvaBozza}
+                />
             )}
 
             {/* ════════════════════════════════════════════════════════════════

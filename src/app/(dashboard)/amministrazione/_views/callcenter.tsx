@@ -6,9 +6,10 @@
 // gia' salvate mantengono il testo con cui sono state esitate). ATTENZIONE:
 // gli stati con automatismi (NR → WhatsApp, richiami, appuntamenti →
 // calendario) sono riconosciuti PER NOME nel codice del Caller.
-import { useCallback, useEffect, useState } from "react";
-import { Phone, Plus, ChevronUp, ChevronDown } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Phone, Plus, ChevronUp, ChevronDown, MessageSquare } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { SelectOpzioni } from "@/components/SelectPersona";
 
 type Opzione = { id: string; categoria: string; voce: string; ordine: number; attiva: boolean; comportamento?: string | null };
 
@@ -27,6 +28,294 @@ const CATEGORIE: { id: string; label: string; hint: string }[] = [
     { id: "tipologia", label: "Tipologie", hint: "Il tipo di attività della chiamata." },
     { id: "obiettivo", label: "Obiettivi", hint: "Cosa si vuole vendere/ottenere." },
 ];
+
+// ── MODELLI WHATSAPP (CAL-01, Luca 04/08) ────────────────────────────────────
+// I messaggi pronti che i caller inviano dal modale WhatsApp della pratica.
+// Lo SCENARIO e' agganciato al comportamento dello stato (non ai nomi);
+// brand/obiettivo/provenienza/tipologia vuoti = il modello vale per tutti.
+// Piu' varianti nello stesso GRUPPO = rotazione anti-ban sul singolo numero.
+
+type WaTemplate = {
+    id: string; gruppo: string; titolo: string | null; corpo: string; scenario: string;
+    brand: string | null; obiettivo: string | null; provenienza: string | null; tipologia: string | null;
+    attivo: boolean; ordine: number;
+};
+
+const SCENARI_WA: { id: string; label: string }[] = [
+    { id: "nr", label: "📵 Non risposto" },
+    { id: "richiamo", label: "☎ Richiamo" },
+    { id: "appuntamento", label: "📅 Appuntamento" },
+    { id: "generico", label: "💬 Generico" },
+];
+const scenLabelWa = (id: string) => SCENARI_WA.find((s) => s.id === id)?.label || id;
+const scenIdWa = (label: string) => SCENARI_WA.find((s) => s.label === label)?.id || "";
+
+// stessi brand cablati della sezione Caller (caller_opzioni non ha la categoria)
+const BRANDS_WA = ["WindTre", "Vodafone", "Fastweb", "Sky", "Energia", "Tim", "Altro"];
+
+const PLACEHOLDER_WA = [
+    "{nome}", "{cognome}", "{ragione_sociale}", "{brand}", "{obiettivo}",
+    "{negozio}", "{negozio_pertinenza}", "{data_appuntamento}", "{ora_appuntamento}",
+    "{fascia_appuntamento}", "{data_richiamo}", "{fascia_richiamo}", "{caller}",
+];
+
+// chips di placeholder cliccabili: si appendono al testo in scrittura
+function ChipsPlaceholder({ onPick }: { onPick: (p: string) => void }) {
+    return (
+        <div className="flex flex-wrap gap-1">
+            {PLACEHOLDER_WA.map((p) => (
+                <button key={p} type="button" onClick={() => onPick(p)} title="Aggiungi al testo"
+                    className="px-1.5 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[10px] font-mono hover:bg-indigo-500/25">
+                    {p}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function ModelliWaView({ opzioniCaller }: { opzioniCaller: Opzione[] }) {
+    const [modelli, setModelli] = useState<WaTemplate[]>([]);
+    const [usi, setUsi] = useState<Record<string, number>>({});
+    const [err, setErr] = useState<string | null>(null);
+    // filtri "tipo catalogo": simulano la pratica — si vedono i modelli che
+    // MATCHEREBBERO con quelle opzioni (vuoto = tutte)
+    const [fScenario, setFScenario] = useState("");
+    const [fBrand, setFBrand] = useState("");
+    const [fObiettivo, setFObiettivo] = useState("");
+    const [fProvenienza, setFProvenienza] = useState("");
+    const [fTipologia, setFTipologia] = useState("");
+    // editing di una variante
+    const [editId, setEditId] = useState<string | null>(null);
+    const [editTitolo, setEditTitolo] = useState("");
+    const [editCorpo, setEditCorpo] = useState("");
+    const [delId, setDelId] = useState<string | null>(null);
+    // nuova variante per gruppo esistente
+    const [varNuova, setVarNuova] = useState<Record<string, string>>({});
+    // nuovo gruppo/modello
+    const [nuovoOpen, setNuovoOpen] = useState(false);
+    const [nuovoGruppo, setNuovoGruppo] = useState("");
+    const [nuovoTitolo, setNuovoTitolo] = useState("");
+    const [nuovoScenario, setNuovoScenario] = useState("");
+    const [nuovoCorpo, setNuovoCorpo] = useState("");
+
+    const opz = (cat: string) => opzioniCaller.filter((r) => r.categoria === cat && r.attiva).sort((a, b) => a.ordine - b.ordine).map((r) => r.voce);
+    const OBIETTIVI_WA = opz("obiettivo");
+    const PROVENIENZE_WA = opz("provenienza");
+    const TIPOLOGIE_WA = opz("tipologia");
+
+    const carica = useCallback(async () => {
+        const { data, error } = await supabase.from("wa_templates").select("*")
+            .order("gruppo").order("ordine").order("created_at");
+        if (error) { setErr(/wa_templates/i.test(error.message) ? "Manca la migrazione wa_templates (modelli WhatsApp)." : error.message); return; }
+        setErr(null);
+        setModelli((data ?? []) as WaTemplate[]);
+        // contatore usi dal log invii (best-effort)
+        const { data: inv } = await supabase.from("wa_template_invii").select("template_id");
+        const cnt: Record<string, number> = {};
+        ((inv ?? []) as { template_id: string | null }[]).forEach((r) => { if (r.template_id) cnt[r.template_id] = (cnt[r.template_id] || 0) + 1; });
+        setUsi(cnt);
+    }, []);
+    useEffect(() => { carica(); }, [carica]);
+
+    // match come nel modale del caller: campo del modello vuoto = jolly
+    const visibili = useMemo(() => modelli.filter((t) =>
+        (!fScenario || t.scenario === fScenario) &&
+        (!fBrand || !t.brand || t.brand === fBrand) &&
+        (!fObiettivo || !t.obiettivo || t.obiettivo === fObiettivo) &&
+        (!fProvenienza || !t.provenienza || t.provenienza === fProvenienza) &&
+        (!fTipologia || !t.tipologia || t.tipologia === fTipologia)
+    ), [modelli, fScenario, fBrand, fObiettivo, fProvenienza, fTipologia]);
+    const gruppi = useMemo(() => {
+        const m = new Map<string, WaTemplate[]>();
+        visibili.forEach((t) => { const arr = m.get(t.gruppo) || []; arr.push(t); m.set(t.gruppo, arr); });
+        return [...m.entries()];
+    }, [visibili]);
+
+    const salvaEdit = async (t: WaTemplate) => {
+        const corpo = editCorpo.trim();
+        setEditId(null);
+        if (!corpo || (corpo === t.corpo && editTitolo.trim() === (t.titolo || ""))) return;
+        const { error } = await supabase.from("wa_templates").update({ corpo, titolo: editTitolo.trim() || null }).eq("id", t.id);
+        if (error) { setErr(error.message); return; }
+        carica();
+    };
+    const toggleAttivo = async (t: WaTemplate) => {
+        await supabase.from("wa_templates").update({ attivo: !t.attivo }).eq("id", t.id);
+        carica();
+    };
+    const elimina = async (t: WaTemplate) => {
+        setDelId(null);
+        await supabase.from("wa_templates").delete().eq("id", t.id);
+        carica();
+    };
+    // nuova variante: eredita scenario e destinatari (brand/obiettivo/...) dal gruppo
+    const aggiungiVariante = async (gruppo: string, base: WaTemplate) => {
+        const corpo = (varNuova[gruppo] || "").trim();
+        if (!corpo) return;
+        const maxOrd = Math.max(0, ...modelli.filter((m) => m.gruppo === gruppo).map((m) => m.ordine));
+        const { error } = await supabase.from("wa_templates").insert({
+            gruppo, titolo: null, corpo, scenario: base.scenario,
+            brand: base.brand, obiettivo: base.obiettivo, provenienza: base.provenienza, tipologia: base.tipologia,
+            ordine: maxOrd + 10,
+        });
+        if (error) { setErr(error.message); return; }
+        setVarNuova((p) => ({ ...p, [gruppo]: "" }));
+        carica();
+    };
+    // nuovo modello: nasce con le opzioni selezionate nei filtri (vuoto = jolly)
+    const aggiungiModello = async () => {
+        const gruppo = nuovoGruppo.trim();
+        const corpo = nuovoCorpo.trim();
+        const scenario = scenIdWa(nuovoScenario);
+        if (!gruppo || !corpo || !scenario) return;
+        const maxOrd = Math.max(0, ...modelli.filter((m) => m.gruppo === gruppo).map((m) => m.ordine));
+        const { error } = await supabase.from("wa_templates").insert({
+            gruppo, titolo: nuovoTitolo.trim() || null, corpo, scenario,
+            brand: fBrand || null, obiettivo: fObiettivo || null,
+            provenienza: fProvenienza || null, tipologia: fTipologia || null,
+            ordine: maxOrd + 10,
+        });
+        if (error) { setErr(error.message); return; }
+        setNuovoGruppo(""); setNuovoTitolo(""); setNuovoCorpo(""); setNuovoOpen(false);
+        carica();
+    };
+
+    const destinatariLabel = (t: WaTemplate) => {
+        const parti = [t.brand, t.obiettivo, t.provenienza, t.tipologia].filter(Boolean);
+        return parti.length ? parti.join(" · ") : "tutti";
+    };
+
+    return (
+        <div className="glass-panel p-5">
+            <div className="flex items-center gap-3 mb-1">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
+                    <MessageSquare className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="flex-1">
+                    <h3 className="text-sm font-bold text-white">Modelli WhatsApp <span className="text-slate-500 font-normal">· {modelli.filter((m) => m.attivo).length} attivi</span></h3>
+                    <p className="text-[11px] text-slate-500">I messaggi pronti del bottone WhatsApp dei caller. Scegli le opzioni per vedere quali modelli matcherebbero su una pratica così fatta; più varianti nello stesso gruppo ruotano da sole (anti-ban): scrivile DAVVERO diverse tra loro.</p>
+                </div>
+                <button onClick={() => setNuovoOpen((v) => !v)}
+                    className="px-3.5 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold flex items-center gap-1.5 shrink-0">
+                    <Plus className="w-4 h-4" /> Nuovo modello
+                </button>
+            </div>
+
+            {err && <div className="p-3 mt-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{err}</div>}
+
+            {/* filtri "simula la pratica" — tendine standard del CRM */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
+                <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest">Scenario</label>
+                    <SelectOpzioni value={fScenario ? scenLabelWa(fScenario) : ""} onChange={(v) => setFScenario(scenIdWa(v))} opzioni={SCENARI_WA.map((s) => s.label)} placeholder="Tutti…" className="glass-input rounded-lg py-2 w-full text-sm" />
+                </div>
+                <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest">Brand</label>
+                    <SelectOpzioni value={fBrand} onChange={setFBrand} opzioni={BRANDS_WA} placeholder="Tutti…" className="glass-input rounded-lg py-2 w-full text-sm" />
+                </div>
+                <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest">Obiettivo</label>
+                    <SelectOpzioni value={fObiettivo} onChange={setFObiettivo} opzioni={OBIETTIVI_WA} placeholder="Tutti…" className="glass-input rounded-lg py-2 w-full text-sm" />
+                </div>
+                <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest">Provenienza</label>
+                    <SelectOpzioni value={fProvenienza} onChange={setFProvenienza} opzioni={PROVENIENZE_WA} placeholder="Tutte…" className="glass-input rounded-lg py-2 w-full text-sm" />
+                </div>
+                <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest">Tipologia</label>
+                    <SelectOpzioni value={fTipologia} onChange={setFTipologia} opzioni={TIPOLOGIE_WA} placeholder="Tutte…" className="glass-input rounded-lg py-2 w-full text-sm" />
+                </div>
+            </div>
+
+            {/* nuovo modello (gruppo nuovo o variante con destinatari diversi) */}
+            {nuovoOpen && (
+                <div className="mt-3 p-4 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.05] space-y-2.5">
+                    <p className="text-[11px] font-bold text-emerald-300 uppercase tracking-widest">Nuovo modello — nasce con le opzioni selezionate sopra (vuote = vale per tutti)</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <input value={nuovoGruppo} onChange={(e) => setNuovoGruppo(e.target.value)} placeholder="Gruppo (es. nr-primo-contatto)" className="glass-input !h-9 text-sm" />
+                        <input value={nuovoTitolo} onChange={(e) => setNuovoTitolo(e.target.value)} placeholder="Titolo (facoltativo)" className="glass-input !h-9 text-sm" />
+                        <SelectOpzioni value={nuovoScenario} onChange={setNuovoScenario} opzioni={SCENARI_WA.map((s) => s.label)} placeholder="Scenario…" className="glass-input rounded-lg py-2 w-full text-sm" />
+                    </div>
+                    <textarea value={nuovoCorpo} onChange={(e) => setNuovoCorpo(e.target.value)} placeholder="Testo del messaggio — usa i placeholder qui sotto…" className="glass-input rounded-lg py-2 w-full min-h-[70px] text-sm" />
+                    <ChipsPlaceholder onPick={(p) => setNuovoCorpo((v) => (v ? v + " " : "") + p)} />
+                    <div className="flex gap-2">
+                        <button onClick={aggiungiModello} disabled={!nuovoGruppo.trim() || !nuovoCorpo.trim() || !scenIdWa(nuovoScenario)}
+                            className="px-3.5 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-40 flex items-center gap-1.5">
+                            <Plus className="w-4 h-4" /> Aggiungi
+                        </button>
+                        <button onClick={() => setNuovoOpen(false)} className="px-3 h-9 rounded-xl border border-white/10 text-slate-400 text-sm">Annulla</button>
+                    </div>
+                </div>
+            )}
+
+            {/* elenco per gruppo, con le varianti */}
+            <div className="mt-4 space-y-3">
+                {gruppi.length === 0 && !err && (
+                    <p className="text-sm text-slate-500">Nessun modello per questa combinazione di opzioni.</p>
+                )}
+                {gruppi.map(([g, vars]) => (
+                    <div key={g} className="p-3.5 rounded-xl border border-white/8 bg-white/[0.02]">
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                            <span className="text-xs font-bold text-white">{g}</span>
+                            <span className="px-2 py-0.5 rounded-full bg-violet-500/15 border border-violet-500/30 text-violet-300 text-[10px] font-bold">{scenLabelWa(vars[0].scenario)}</span>
+                            <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-slate-400 text-[10px]">per: {destinatariLabel(vars[0])}</span>
+                            <span className="text-[10px] text-slate-500">{vars.length} variant{vars.length === 1 ? "e" : "i"}</span>
+                        </div>
+                        <div className="space-y-2">
+                            {vars.map((t) => (
+                                <div key={t.id} className={`p-2.5 rounded-lg border ${t.attivo ? "border-white/8 bg-black/20" : "border-white/5 opacity-50"}`}>
+                                    {editId === t.id ? (
+                                        <div className="space-y-2">
+                                            <input value={editTitolo} onChange={(e) => setEditTitolo(e.target.value)} placeholder="Titolo (facoltativo)" className="glass-input !h-8 text-sm w-full" />
+                                            <textarea autoFocus value={editCorpo} onChange={(e) => setEditCorpo(e.target.value)} className="glass-input rounded-lg py-2 w-full min-h-[70px] text-sm" />
+                                            <ChipsPlaceholder onPick={(p) => setEditCorpo((v) => (v ? v + " " : "") + p)} />
+                                            <div className="flex gap-2">
+                                                <button onClick={() => salvaEdit(t)} className="px-3 h-8 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold">Salva</button>
+                                                <button onClick={() => setEditId(null)} className="px-2.5 h-8 rounded-lg border border-white/10 text-slate-400 text-xs">Annulla</button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-start gap-2">
+                                            <button onClick={() => { setEditId(t.id); setEditTitolo(t.titolo || ""); setEditCorpo(t.corpo); }} title="Clicca per modificare il testo"
+                                                className="flex-1 text-left">
+                                                {t.titolo && <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">{t.titolo}</span>}
+                                                <span className="block text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">{t.corpo}</span>
+                                            </button>
+                                            <span title="Invii registrati con questa variante" className="shrink-0 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[10px] font-bold">{usi[t.id] || 0} usi</span>
+                                            <button onClick={() => toggleAttivo(t)} title={t.attivo ? "Attiva — clicca per spegnerla" : "Spenta — clicca per riattivarla"}
+                                                className={`relative w-9 h-5 rounded-full transition-colors shrink-0 mt-0.5 ${t.attivo ? "bg-emerald-500/70" : "bg-white/10"}`}>
+                                                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${t.attivo ? "left-[18px]" : "left-0.5"}`} />
+                                            </button>
+                                            {delId === t.id ? (
+                                                <span className="inline-flex gap-1 shrink-0">
+                                                    <button onClick={() => elimina(t)} className="text-[10px] px-2 py-1 rounded-md bg-rose-500/20 border border-rose-500/50 text-rose-300 font-bold">Elimina</button>
+                                                    <button onClick={() => setDelId(null)} className="text-[10px] px-1.5 py-1 rounded-md text-slate-400">✕</button>
+                                                </span>
+                                            ) : (
+                                                <button onClick={() => setDelId(t.id)} title="Elimina la variante (gli invii già fatti restano nel log)"
+                                                    className="p-1 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 shrink-0">🗑</button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        {/* nuova variante nello stesso gruppo (stessi destinatari) */}
+                        <div className="flex gap-2 mt-2">
+                            <input value={varNuova[g] || ""} onChange={(e) => setVarNuova((p) => ({ ...p, [g]: e.target.value }))}
+                                onKeyDown={(e) => { if (e.key === "Enter") aggiungiVariante(g, vars[0]); }}
+                                placeholder="Nuova variante di questo messaggio (testo diverso, stesso scopo)…" className="glass-input flex-1 !h-9 text-sm" />
+                            <button onClick={() => aggiungiVariante(g, vars[0])} disabled={!(varNuova[g] || "").trim()}
+                                className="px-3 h-9 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-200 text-sm font-bold disabled:opacity-40 flex items-center gap-1.5">
+                                <Plus className="w-4 h-4" /> Variante
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
 
 export function CallCenterView() {
     const [righe, setRighe] = useState<Opzione[]>([]);
@@ -158,6 +447,9 @@ export function CallCenterView() {
                     );
                 })}
             </div>
+
+            {/* CAL-01: i modelli del bottone WhatsApp dei caller, amministrabili qui */}
+            <ModelliWaView opzioniCaller={righe} />
         </div>
     );
 }
