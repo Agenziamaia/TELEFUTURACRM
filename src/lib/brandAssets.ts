@@ -15,9 +15,10 @@ export const TRK_BRAND_COLORS: Record<string, string> = {
 
 // I file 900x900 (WindTre, Vodafone) hanno il marchio annegato nel canvas
 // trasparente: scala OTTICA per pareggiarli, il box resta identico.
+// Ritocco Luca 04/08: tutti un filo piu' grandi TRANNE S4 (tondo, resta 1.0).
 export const TRK_LOGO_SCALE: Record<string, number> = {
-  windtre: 1.5, vodafone: 1.75, fastweb: 1.55, sky: 1.15, iliad: 1.2,
-  tim: 1.2, dojo: 1.15, homobile: 1.2, kenamobile: 1.2,
+  windtre: 1.7, vodafone: 1.95, fastweb: 1.75, sky: 1.3, iliad: 1.35,
+  tim: 1.35, dojo: 1.3, homobile: 1.35, kenamobile: 1.35, verymobile: 1.15,
 };
 
 // stessi loghi di Registra Vendita (public/)

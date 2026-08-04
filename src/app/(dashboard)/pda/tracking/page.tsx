@@ -326,12 +326,12 @@ function KpiBar({
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "var(--tf-586174)" }}>{b}</span>
                 )}
-                {/* numeretto A FIANCO del logo (Luca): assoluto così il logo
-                    resta perfettamente centrato, distanza dal bordo IDENTICA
-                    per tutti i brand; fondo solido perché i loghi scalati
-                    (transform) sbordano dal box di layout. */}
-                <span className="absolute text-[10px] font-black leading-none px-1.5 py-[3px] rounded-full"
-                  style={{ right: 7, top: "50%", transform: "translateY(-50%)", zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: nBrand === 0 ? .5 : 1 }}>
+                {/* numeretto in ALTO A DESTRA, vicino al logo (Luca 04/08:
+                    al centro-destra si confondeva col marchio); assoluto così
+                    il logo resta centrato; fondo solido perché i loghi
+                    scalati (transform) sbordano dal box di layout. */}
+                <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
+                  style={{ right: 6, top: 5, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: nBrand === 0 ? .5 : 1 }}>
                   {nBrand}
                 </span>
               </button>

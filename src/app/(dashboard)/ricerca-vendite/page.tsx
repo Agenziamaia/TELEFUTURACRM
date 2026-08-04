@@ -945,11 +945,12 @@ export default function RicercaContratto() {
                                         : logo ? <img src={logo} alt={brand} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(brand)] || 1})` }} />
                                             : <span className="text-base font-bold text-slate-200 truncate max-w-full">{brand}</span>}
                                 </span>
-                                {/* numeretto A FIANCO del logo, identico al Tracking: assoluto
-                                    (il bottone e' relative) cosi' il logo resta centrato; fondo
-                                    SOLIDO perche' i loghi scalati via transform sbordano dal box. */}
-                                <span className="absolute text-[10px] font-black leading-none px-1.5 py-[3px] rounded-full"
-                                    style={{ right: 7, top: "50%", transform: "translateY(-50%)", zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
+                                {/* numeretto in ALTO A DESTRA vicino al logo, identico al
+                                    Tracking (Luca 04/08): assoluto (il bottone e' relative)
+                                    cosi' il logo resta centrato; fondo SOLIDO perche' i loghi
+                                    scalati via transform sbordano dal box. */}
+                                <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
+                                    style={{ right: 6, top: 5, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
                                     {n}
                                 </span>
                             </button>
