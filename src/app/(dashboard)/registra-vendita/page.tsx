@@ -5512,7 +5512,7 @@ select.rvIn{cursor:pointer}
         <div style={{fontSize:12.5,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
           {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?b.color+"14":"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
-            {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"rgba(15,17,26,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)"}}>Manutenzione</div></div>}
+            {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"var(--tfx15_17_26_880)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)"}}>Manutenzione</div></div>}
             {(()=>{const nBr=(cart.find(g=>g.brandId===b.id)?.items.length)||0;return nBr>0?<span style={{position:"absolute",top:8,right:8,background:b.color,color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800,zIndex:3}}>{nBr}</span>:null;})()}
             {/* SOLO il logo, grande (Luca 03/08): il nome del brand e' gia' nel logo */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:84,width:"auto",maxWidth:"92%",objectFit:"contain"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>
@@ -5566,7 +5566,7 @@ select.rvIn{cursor:pointer}
             return null;
           })()}
           {sugg.length>0&&(
-            <div style={{marginTop:8,borderRadius:8,border:"1px solid var(--tf-w100)",background:"rgba(15,17,26,0.98)",overflow:"hidden"}}>
+            <div style={{marginTop:8,borderRadius:8,border:"1px solid var(--tf-w100)",background:"var(--tfx15_17_26_980)",overflow:"hidden"}}>
               <div style={{padding:"6px 12px",fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",textTransform:"uppercase",letterSpacing:1,borderBottom:"1px solid var(--tf-w60)"}}>Clienti in visibilità</div>
               {sugg.map(r=>(
                 <button key={r.id} onClick={()=>scegliSugg(r)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"9px 12px",background:"transparent",border:"none",borderBottom:"1px solid var(--tf-w40)",cursor:"pointer",color:"var(--tf-f8fafc)"}}

@@ -19,7 +19,7 @@ import { sameStore } from "@/lib/visibleStores";
 /* CRM dark theme — matches globals.css / other dashboard pages */
 const C = {
   bg: "transparent",
-  card: "rgba(26, 29, 41, 0.85)",
+  card: "var(--tfx26_29_41_850)",
   border: "var(--tf-w80)",
   borderBright: "var(--tf-w150)",
   primary: "var(--tf-6366f1)",
