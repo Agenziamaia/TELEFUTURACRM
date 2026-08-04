@@ -356,6 +356,53 @@ export async function searchEntities(kind: RefKind, q: string): Promise<ChatRef[
   }));
 }
 
+/** CHT-03: un risultato della ricerca globale nei messaggi. */
+export interface ChatSearchHit {
+  message_id: string;
+  conversation_id: string;
+  body: string;
+  created_at: string;
+  sender_id: string | null;
+}
+
+/**
+ * CHT-03 (Luca 04/08): ricerca "stile Telegram" in TUTTE le mie chat.
+ * Perimetro: SOLO le conversazioni in cui compaio tra i partecipanti — la
+ * lista degli id viene letta da chat_participants e passata come filtro alla
+ * query sui messaggi, quindi non si cerca mai nelle chat altrui.
+ * Server-side: ilike sul body (jolly % e _ escapati), max 50 risultati,
+ * i piu' recenti per primi. Il raggruppamento per chat lo fa la UI.
+ */
+export async function searchMyMessages(meId: string, query: string): Promise<ChatSearchHit[]> {
+  const s = query.trim();
+  if (s.length < 3) return [];
+  const { data: mie, error: pErr } = await supabase
+    .from("chat_participants")
+    .select("conversation_id")
+    .eq("user_id", meId);
+  if (pErr) throw pErr;
+  const ids = (mie || []).map((p: any) => p.conversation_id);
+  if (!ids.length) return [];
+  // escape dei jolly di LIKE: chi cerca "100%" o "IT_01" vuole il testo letterale
+  const like = "%" + s.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
+  const { data, error } = await supabase
+    .from("chat_messages")
+    .select("id, conversation_id, body, created_at, sender_id")
+    .in("conversation_id", ids)
+    .ilike("body", like)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) throw error;
+  return ((data || []) as any[]).map((m) => ({
+    message_id: m.id,
+    conversation_id: m.conversation_id,
+    body: m.body || "",
+    created_at: m.created_at,
+    sender_id: m.sender_id ?? null,
+  }));
+}
+
 const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
 
 // Invia un messaggio: carica gli allegati sul bucket, inserisce il messaggio e gli allegati.

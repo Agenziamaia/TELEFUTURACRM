@@ -12,9 +12,9 @@ import {
   getInbox, listMessages, getParticipants, sendMessage, sendGif, markRead,
   subscribeMessages, subscribeInbox, subscribeReceipts, subscribeReactions, toggleReaction, markUnread, forwardMessage, getOrCreateDM, togglePin, editMessage, FINESTRA_MODIFICA_MS, refHref,
   splitBody, refToken, searchAllEntities, recentEntities, deleteConversation,
-  listDirectory, addParticipants, removeParticipant,
+  listDirectory, addParticipants, removeParticipant, searchMyMessages,
 } from "@/lib/chat";
-import type { ChatMessage, DirUser } from "@/lib/chat";
+import type { ChatMessage, ChatSearchHit, DirUser } from "@/lib/chat";
 import { roleLabel, seesAllStores, seesWholeStore } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
@@ -35,6 +35,25 @@ function previewBody(m: ChatMessage): string {
     .join("")
     .trim();
   return t.length > 120 ? t.slice(0, 120) + "…" : (t || "Allegato");
+}
+
+// CHT-03: snippet del messaggio che matcha la ricerca globale, con la parola
+// trovata separata per poterla evidenziare (i tag @[tipo:id|etichetta]
+// diventano la loro etichetta, come nelle anteprime).
+function snippetMatch(body: string, q: string): { prima: string; match: string; dopo: string } {
+  const piatto = splitBody(body || "")
+    .map((p: any) => (p.text !== undefined ? p.text : (p.ref?.label || "").split(" · ")[0]))
+    .join("").replace(/\s+/g, " ").trim();
+  const i = piatto.toLowerCase().indexOf(q.toLowerCase());
+  // match dentro un token (es. CF nell'etichetta piena) ma non nel testo piatto:
+  // si mostra comunque l'inizio del messaggio, senza evidenziatura
+  if (i < 0) return { prima: piatto.slice(0, 90), match: "", dopo: "" };
+  const start = Math.max(0, i - 32);
+  return {
+    prima: (start > 0 ? "…" : "") + piatto.slice(start, i),
+    match: piatto.slice(i, i + q.length),
+    dopo: piatto.slice(i + q.length, i + q.length + 70),
+  };
 }
 
 // icona + colore per tipo di tag
@@ -276,11 +295,62 @@ function ChatPageInner() {
   const [inbox, setInbox] = useState([]);
   const [q, setQ] = useState("");
   const [selId, setSelId] = useState(null);
+  // ── CHT-03 (Luca 04/08): ricerca globale nei messaggi, stile Telegram ──
+  // lente accanto al + -> la lista diventa l'elenco delle chat che contengono
+  // la parola cercata (snippet evidenziato + conteggio); X per uscire.
+  const [searchMode, setSearchMode] = useState(false);
+  const [globalQ, setGlobalQ] = useState("");
+  const [searchHits, setSearchHits] = useState<ChatSearchHit[]>([]);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const scrollToMsgRef = useRef<string | null>(null);   // messaggio da centrare all'apertura della chat
+  useEffect(() => {
+    if (!searchMode || !meId) return;
+    const s = globalQ.trim();
+    if (s.length < 3) { setSearchHits([]); setSearchBusy(false); return; }
+    setSearchBusy(true);
+    const t = setTimeout(async () => {
+      try { setSearchHits(await searchMyMessages(meId, s)); }
+      catch { setSearchHits([]); }
+      finally { setSearchBusy(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchMode, globalQ, meId]);
+  // un risultato per CHAT (come Telegram): il match piu' recente + conteggio
+  const searchGroups = useMemo(() => {
+    const map = new Map<string, { top: ChatSearchHit; count: number }>();
+    for (const h of searchHits) {
+      const g = map.get(h.conversation_id);
+      if (g) g.count += 1; else map.set(h.conversation_id, { top: h, count: 1 });
+    }
+    return [...map.values()];   // gli hit arrivano gia' in ordine di data desc
+  }, [searchHits]);
+  const chiudiRicerca = () => { setSearchMode(false); setGlobalQ(""); setSearchHits([]); };
+  // centra il messaggio trovato e lo evidenzia per qualche secondo
+  const evidenziaMsg = (msgId: string): boolean => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (!el) return false;
+    el.scrollIntoView({ block: "center" });
+    el.classList.add("rounded-xl", "ring-2", "ring-amber-400/60", "bg-amber-400/10");
+    setTimeout(() => el.classList.remove("rounded-xl", "ring-2", "ring-amber-400/60", "bg-amber-400/10"), 2200);
+    return true;
+  };
+  const apriRisultato = (hit: ChatSearchHit) => {
+    if (selId === hit.conversation_id) { evidenziaMsg(hit.message_id); return; }
+    scrollToMsgRef.current = hit.message_id;
+    setSelId(hit.conversation_id);
+  };
   const [messages, setMessages] = useState([]);
   const [parts, setParts] = useState([]);
   const [text, setText] = useState("");
   // Segnalazione 74: messaggio a cui si sta rispondendo (stile WhatsApp).
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  // Luca 04/08: rispondere (doppio click o bottone) deve portare il cursore
+  // DRITTO nel campo di scrittura — prima si partiva a scrivere nel vuoto.
+  const rispondiA = (m: ChatMessage) => {
+    setReplyTo(m);
+    requestAnimationFrame(() => composerRef.current?.focus());
+  };
   // Immagine aperta a schermo (prima si apriva in una scheda nuova).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const [files, setFiles] = useState([]);
@@ -393,7 +463,18 @@ function ChatPageInner() {
     finally { setManageBusy(null); }
   };
 
-  useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [messages]);
+  useEffect(() => {
+    const el = scrollRef.current; if (!el) return;
+    // CHT-03: arrivando da un risultato di ricerca si centra il messaggio
+    // trovato; un solo tentativo appena i messaggi sono a bordo, poi i
+    // reload successivi tornano al normale "vai in fondo"
+    const targetId = scrollToMsgRef.current;
+    if (targetId && messages.length) {
+      scrollToMsgRef.current = null;
+      if (evidenziaMsg(targetId)) return;
+    }
+    el.scrollTop = el.scrollHeight;
+  }, [messages]);
 
   const senderName = useMemo(() => {
     const m = {}; parts.forEach((p) => (m[p.user_id] = p.full_name)); return m;
@@ -532,16 +613,75 @@ function ChatPageInner() {
       <aside className={cn("w-full sm:w-80 lg:w-96 shrink-0 flex-col border-r border-white/5 bg-[#0f111a]/60", selId ? "hidden sm:flex" : "flex")}>
         <div className="flex items-center justify-between px-4 h-14 border-b border-white/5">
           <h2 className="text-white font-semibold flex items-center gap-2"><MessageSquare className="w-5 h-5 text-indigo-400" /> Chat</h2>
-          <button onClick={() => setShowNew(true)} className="p-2 rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25" title="Nuova conversazione">
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="px-3 py-2">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca conversazioni…" className="glass-input w-full pl-9 h-9 text-sm" />
+          <div className="flex items-center gap-1">
+            {/* CHT-03: lente = ricerca per parole in TUTTE le mie chat */}
+            <button onClick={() => setSearchMode(true)}
+              className={cn("p-2 rounded-lg transition-colors", searchMode ? "bg-amber-500/15 text-amber-300" : "text-slate-400 hover:text-indigo-300 hover:bg-white/5")}
+              title="Cerca nei messaggi di tutte le chat">
+              <Search className="w-4 h-4" />
+            </button>
+            <button onClick={() => setShowNew(true)} className="p-2 rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25" title="Nuova conversazione">
+              <Plus className="w-4 h-4" />
+            </button>
           </div>
         </div>
+        <div className="px-3 py-2">
+          {searchMode ? (
+            /* CHT-03: campo della ricerca globale — X (o Esc) per tornare alla lista */
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400" />
+              <input autoFocus value={globalQ} onChange={(e) => setGlobalQ(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") chiudiRicerca(); }}
+                placeholder="Cerca parole in tutte le chat…" className="glass-input w-full pl-9 pr-9 h-9 text-sm" />
+              <button onClick={chiudiRicerca} title="Chiudi la ricerca"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-white hover:bg-white/10">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca conversazioni…" className="glass-input w-full pl-9 h-9 text-sm" />
+            </div>
+          )}
+        </div>
+        {/* CHT-03: in modalita' ricerca la lista mostra SOLO le chat che
+            contengono la parola cercata, con snippet e conteggio (stile Telegram) */}
+        {searchMode ? (
+        <div className="flex-1 overflow-y-auto px-2 pb-2">
+          {globalQ.trim().length < 3 ? (
+            <p className="text-center text-sm text-slate-500 py-10 px-4">Scrivi almeno 3 caratteri:<br />codice fiscale, email, qualsiasi parola.</p>
+          ) : searchBusy && searchGroups.length === 0 ? (
+            <p className="text-center text-sm text-slate-500 py-10">Cerco…</p>
+          ) : searchGroups.length === 0 ? (
+            <p className="text-center text-sm text-slate-500 py-10 px-4">Nessun messaggio contiene<br />“{globalQ.trim()}”.</p>
+          ) : searchGroups.map(({ top, count }) => {
+            const conv = inbox.find((c: any) => c.conversation_id === top.conversation_id);
+            const nome = conv ? (conv.type === "group" ? conv.title : conv.other_name) : "Chat";
+            const sn = snippetMatch(top.body, globalQ.trim());
+            return (
+              <button key={top.conversation_id} onClick={() => apriRisultato(top)}
+                className="w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left hover:bg-white/5 transition-colors">
+                <span className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold border ${conv?.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
+                  {conv?.type === "group" ? <Users className="w-5 h-5" /> : initials(nome || "")}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-white truncate">{nome || "—"}</span>
+                    <span className="text-[10px] text-slate-500 shrink-0">{dayLabel(top.created_at)}</span>
+                  </span>
+                  <span className="block text-xs text-slate-400 truncate">
+                    {sn.prima}
+                    {sn.match && <span className="bg-amber-400/30 text-amber-100 rounded-sm px-0.5">{sn.match}</span>}
+                    {sn.dopo}
+                  </span>
+                  {count > 1 && <span className="block text-[10px] text-indigo-300 mt-0.5">{count} messaggi</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        ) : (
         <div className="flex-1 overflow-y-auto px-2 pb-2">
           {filteredInbox.length === 0 && (
             <p className="text-center text-sm text-slate-500 py-10">Nessuna conversazione.<br />Premi + per iniziare.</p>
@@ -589,6 +729,7 @@ function ChatPageInner() {
             );
           })}
         </div>
+        )}
       </aside>
 
       {/* ── RIGHT: thread ───────────────────────────────────────── */}
@@ -668,7 +809,7 @@ function ChatPageInner() {
                 const quoted = m.reply_to ? messages.find((x) => x.id === m.reply_to) : null;
                 const showDay = (() => { const d = dayLabel(m.created_at); if (d !== lastDay) { lastDay = d; return d; } return null; })();
                 const btnRispondi = (
-                  <button type="button" title="Rispondi" onClick={() => setReplyTo(m)}
+                  <button type="button" title="Rispondi" onClick={() => rispondiA(m)}
                     className="opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-coarse:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-opacity">
                     <Reply className="w-4 h-4" />
                   </button>
@@ -732,7 +873,7 @@ function ChatPageInner() {
                         sul testo il doppio click deve solo selezionare, come nativo. */}
                     <div className={`group flex items-center gap-1 ${mine ? "justify-end" : "justify-start"}`}
                       title="Doppio click a fianco del messaggio per rispondere"
-                      onDoubleClick={(e) => { if ((e.target as HTMLElement).closest("button")) return; setReplyTo(m); }}>
+                      onDoubleClick={(e) => { if ((e.target as HTMLElement).closest("button")) return; rispondiA(m); }}>
                       {mine && <>{btnInfo}{btnModifica}{btnInoltra}{btnReagisci}{btnRispondi}</>}
                       <div onDoubleClick={(e) => e.stopPropagation()}
                         className={`max-w-[75%] rounded-2xl px-3.5 py-2 select-text ${mine ? "bg-indigo-600 text-white rounded-br-sm" : "bg-white/5 text-slate-100 rounded-bl-sm border border-white/5"}`}>
@@ -987,7 +1128,7 @@ function ChatPageInner() {
                     </div>
                   )}
                 </span>}
-                <textarea value={text} onChange={onTextChange} onPaste={onPaste}
+                <textarea ref={composerRef} value={text} onChange={onTextChange} onPaste={onPaste}
                   onKeyDown={(e) => {
                     if (mention && mentionRows.length > 0) {
                       if (e.key === "Enter") { e.preventDefault(); pickMention(mentionRows[0]); return; }
