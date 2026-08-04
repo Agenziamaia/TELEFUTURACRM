@@ -26,7 +26,7 @@ type Hit = {
     data: string | null;
 };
 
-export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
+export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; autoHide?: boolean }) {
     const router = useRouter();
     const pathname = usePathname();
     const [tema, cambiaTema] = useTema();
@@ -213,9 +213,14 @@ export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
                     <ArrowLeft className="w-5 h-5" />
                     <span className="hidden sm:inline text-sm font-medium">Indietro</span>
                 </button>
+                {/* hamburger: su mobile apre il drawer; col menù a scomparsa
+                    (autoHide) resta visibile ANCHE su desktop e apre/chiude la
+                    sidebar col click — senza, l'unica via sarebbe la striscia
+                    invisibile sul bordo sinistro (Luca 04/08) */}
                 <button
                     onClick={onMenuClick}
-                    className="lg:hidden p-2 text-slate-400 hover:text-white transition-colors"
+                    title="Apri/chiudi il menù"
+                    className={cn("p-2 text-slate-400 hover:text-white transition-colors", !autoHide && "lg:hidden")}
                 >
                     <Menu className="w-6 h-6" />
                 </button>

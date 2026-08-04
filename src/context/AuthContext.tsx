@@ -106,6 +106,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }, [pathname, router]);
 
+    // SEC-01: cintura di sicurezza contro la bfcache. Se il browser RIPRISTINA
+    // una pagina congelata (event.persisted: tasto Indietro dopo il logout) lo
+    // heap React e' ancora vivo ma la sessione non c'e' piu': si forza il
+    // ritorno al login. Si legge window.location, non lo stato React congelato.
+    useEffect(() => {
+        const onPageShow = (e: PageTransitionEvent) => {
+            if (!e.persisted) return;
+            try {
+                const p = window.location.pathname;
+                if (!localStorage.getItem("crm_session") && p !== "/" && !p.startsWith("/m/")) {
+                    window.location.replace("/");
+                }
+            } catch { /* localStorage negato: meglio non toccare nulla */ }
+        };
+        window.addEventListener("pageshow", onPageShow);
+        return () => window.removeEventListener("pageshow", onPageShow);
+    }, []);
+
     // Il permesso "guarda come" viene riletto dal database a ogni avvio: cosi'
     // vale subito anche per chi era gia' connesso quando e' stato concesso, senza
     // dover uscire e rientrare (e sparisce subito se viene revocato).
@@ -219,7 +237,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         localStorage.removeItem("crm_session");
         localStorage.removeItem("crm_last_activity");
-        router.push("/");
+        // SEC-01: navigazione HARD (non router.push) — sostituisce la voce di
+        // history e invalida la bfcache: col tasto INDIETRO non si rientra piu'
+        // nella dashboard con lo stato React ancora vivo.
+        window.location.replace("/");
     };
 
     // Segnalazione 49: dopo 15 minuti di inattivita' (nessun click/tasto/scroll)
@@ -238,7 +259,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(null);
             localStorage.removeItem("crm_session");
             localStorage.removeItem("crm_last_activity");
-            router.push("/");
+            // SEC-01: come nel logout esplicito, navigazione hard anti-bfcache
+            window.location.replace("/");
         };
         const reset = () => {
             localStorage.setItem("crm_last_activity", String(Date.now()));
@@ -263,7 +285,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             events.forEach((e) => window.removeEventListener(e, reset));
             document.removeEventListener("visibilitychange", onVisible);
         };
-    }, [user, router]);
+    }, [user]);
 
     return (
         <AuthContext.Provider value={{ user, realRole: baseUser?.role ?? null, viewAs: puoCambiare ? viewAs : null, setViewAs, viewAsUser: puoCambiare ? viewAsUser : null, setViewAsUser, login, completeFirstLogin, logout, isAuthenticated: !!user }}>

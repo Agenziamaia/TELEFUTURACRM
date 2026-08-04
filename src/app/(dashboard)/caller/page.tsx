@@ -1677,8 +1677,10 @@ function CallerPageInner() {
                 Luca 26/07). Il login Aircall resta in cookie: uscendo e rientrando
                 dalla pagina non viene richiesto di nuovo. */}
             <AircallPhoneDock />
-            {/* HEADER */}
-            <header className="flex-none flex flex-wrap items-center justify-between gap-4 px-8 py-6 border-b border-white/5 bg-[#0f111a]/50 backdrop-blur-xl">
+            {/* TITOLO nudo sul gradiente, come Ricerca Vendite (GLB-01, Luca 04/08):
+                niente tag <header> (in tema chiaro diventava una card bianca per la
+                regola globale html.light header) e niente lastra bg/blur/border */}
+            <div className="flex-none flex flex-wrap items-center justify-between gap-4 pb-6">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center border border-violet-500/20">
                         {isListeView ? <ClipboardList className="w-5 h-5 text-violet-400" /> : <Phone className="w-5 h-5 text-violet-400" />}
@@ -1772,7 +1774,7 @@ function CallerPageInner() {
                         </button>
                     )}
                 </div>
-            </header>
+            </div>
 
             {/* hub Call Center: pillole sezione + widget badge rapido (solo chi timbra) */}
             <div className="flex-none px-8 pt-3 flex items-center gap-3 flex-wrap">

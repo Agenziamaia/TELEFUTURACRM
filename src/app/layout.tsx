@@ -17,6 +17,10 @@ export const metadata: Metadata = {
 // continuare a ricevere l'HTML della build PRECEDENTE (x-nextjs-cache: HIT).
 // Con force-dynamic ogni richiesta rende l'HTML fresco della build corrente:
 // per una SPA autenticata come questa il costo e' irrilevante, la coerenza no.
+// NOTA SEC-01: force-dynamic fa gia' uscire l'HTML con Cache-Control no-store,
+// quindi niente header aggiuntivi; il "tasto Indietro dopo il logout" e' chiuso
+// dal logout hard + handler pageshow in AuthContext (la bfcache ignora
+// parzialmente no-store nei browser recenti).
 export const dynamic = 'force-dynamic'
 
 export const viewport: Viewport = {

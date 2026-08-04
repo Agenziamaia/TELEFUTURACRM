@@ -88,11 +88,13 @@ export function DebitiView({ gestore }: { gestore: string }) {
         const du = new URLSearchParams(window.location.search).get("du");
         if (du) setDuPending(du);
     }, []);
-    // il deep-link porta l'ID: appena i nomi sono caricati diventa selezione
+    // il deep-link porta l'ID: appena i nomi sono caricati diventa selezione;
+    // chi arriva dal box della scheda utente vuole il DETTAGLIO, quindi il suo
+    // gruppo si auto-espande (gli altri restano collassati — Luca 04/08)
     useEffect(() => {
         if (!duPending || !persone.length) return;
         const p = persone.find(x => x.id === duPending);
-        if (p) setFUtenti([p.full_name]);
+        if (p) { setFUtenti([p.full_name]); setAperti(new Set([p.id])); }
         setDuPending(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [duPending, persone]);
@@ -254,10 +256,12 @@ export function DebitiView({ gestore }: { gestore: string }) {
             .sort((a, b) => b.totale - a.totale);
     }, [filtrate]);
     const totaleDebiti = useMemo(() => filtrate.reduce((s, r) => s + valoreRiga(r, fMese || undefined), 0), [filtrate, fMese]);
-    // CLICK SUL NOME = nascondi/mostra le righe del collaboratore (03/08):
-    // il cumulato resta sempre visibile anche a dettaglio chiuso
-    const [chiusi, setChiusi] = useState<Set<string>>(new Set());
-    const togChiuso = (uid: string) => setChiusi(p => { const n = new Set(p); if (n.has(uid)) n.delete(uid); else n.add(uid); return n; });
+    // CLICK SUL NOME = mostra/nascondi le righe del collaboratore. Semantica
+    // INVERTITA (Luca 04/08): si tengono gli uid APERTI, default vuoto = tutti
+    // COLLASSATI alla prima apertura; il cumulato resta sempre visibile e i
+    // gruppi nuovi (cambio filtri/archivio) nascono chiusi da soli.
+    const [aperti, setAperti] = useState<Set<string>>(new Set());
+    const togAperto = (uid: string) => setAperti(p => { const n = new Set(p); if (n.has(uid)) n.delete(uid); else n.add(uid); return n; });
     const nStorico = useMemo(() => righe.filter(r => r.origine === "debito" && r.stato === "saldato"
         && (!fUtenti.length || fUtenti.includes(nomeDi(r.user_id)))).length, [righe, fUtenti, nomeDi]);
 
@@ -376,14 +380,14 @@ export function DebitiView({ gestore }: { gestore: string }) {
             ) : gruppi.map(g => (
                 <div key={g.uid} className="glass-card overflow-hidden">
                     <div className="px-4 py-3 bg-white/[0.03] border-b border-white/5 flex items-center justify-between gap-3 flex-wrap">
-                        <button onClick={() => togChiuso(g.uid)} title={chiusi.has(g.uid) ? "Mostra il dettaglio delle righe" : "Nascondi il dettaglio delle righe"}
+                        <button onClick={() => togAperto(g.uid)} title={aperti.has(g.uid) ? "Nascondi il dettaglio delle righe" : "Mostra il dettaglio delle righe"}
                             className="text-sm font-bold text-white flex items-center gap-2 hover:text-rose-200 transition-colors">
                             <Wallet className="w-4 h-4 text-rose-400" /> {nomeDi(g.uid)}
-                            <span className="text-xs font-normal text-slate-500">{chiusi.has(g.uid) ? `▸ ${g.rows.length} voc${g.rows.length === 1 ? "e" : "i"}` : "▾"}</span>
+                            <span className="text-xs font-normal text-slate-500">{aperti.has(g.uid) ? "▾" : `▸ ${g.rows.length} voc${g.rows.length === 1 ? "e" : "i"}`}</span>
                         </button>
                         <p className={cn("text-sm font-black", g.totale > 0 ? "text-rose-400" : "text-emerald-400")}>{g.totale > 0 ? `cumulato ${eur(g.totale)}` : g.totale < 0 ? `in credito ${eur(-g.totale)}` : "in pari"}</p>
                     </div>
-                    {!chiusi.has(g.uid) && <div className="divide-y divide-white/5">
+                    {aperti.has(g.uid) && <div className="divide-y divide-white/5">
                         {g.rows.map(r => (
                             <div key={r.id} className="px-4 py-2.5 flex items-center gap-3 flex-wrap">
                                 <div className="flex-1 min-w-[220px]">

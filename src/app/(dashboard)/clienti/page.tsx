@@ -1221,9 +1221,13 @@ export default function ClientiPage() {
     }, [filteredData, currentPage, itemsPerPage]);
 
     return (
-        <div id="clienti-shell" className="flex-1 flex flex-col h-screen overflow-hidden">
-            {/* HEADER */}
-            <header className="flex-none flex items-center justify-between px-8 py-6 border-b border-white/5 bg-[#0f111a]/50 backdrop-blur-xl">
+        <div className="flex-1 flex flex-col h-screen overflow-hidden">
+            {/* TITOLO nudo sul gradiente, come Ricerca Vendite (GLB-01, Luca 04/08):
+                niente tag <header> (in tema chiaro diventava una card bianca per la
+                regola globale html.light header) e niente lastra bg/blur/border.
+                NB: risolve anche la "barra bianca sospesa" del commit 138bbd4
+                (#clienti-shell): senza lastra non serve il pannello contenitore. */}
+            <div className="flex-none flex items-center justify-between pb-6">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center border border-violet-500/20">
                         <Users className="w-5 h-5 text-violet-400" />
@@ -1266,7 +1270,7 @@ export default function ClientiPage() {
                     <Users className="w-4 h-4" />
                     Nuovo Cliente
                 </button>
-            </header>
+            </div>
 
             {/* ── MODALE MOTIVO richiesta accesso (03/08): il motivo e' OBBLIGATORIO
                 e arriva in chiaro all'amministrazione insieme alla richiesta ── */}
