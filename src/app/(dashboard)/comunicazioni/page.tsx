@@ -431,7 +431,8 @@ function ComunicazioniInner() {
     const [platea, setPlatea] = useState<{ id: string; nome: string; role: string; negozio: string; negozi: string[]; brands: string[] }[] | null>(null);
     useEffect(() => {
         if (platea) return;
-        if (!isAdminRicevute && !list.some((c) => c.created_by === user?.id)) return;
+        // serve anche col FORM aperto: l'anteprima destinatari (Luca 04/08)
+        if (!isAdminRicevute && !formOpen && !list.some((c) => c.created_by === user?.id)) return;
         (async () => {
             const [u, us, st] = await Promise.all([
                 supabase.from("app_users").select("id, full_name, role, primary_store").eq("active", true),
@@ -450,7 +451,35 @@ function ComunicazioniInner() {
                 brands: brandsDi.get(String(x.primary_store || "").trim().toLowerCase()) || [],
             })));
         })();
-    }, [platea, isAdminRicevute, list, user?.id]);
+    }, [platea, isAdminRicevute, formOpen, list, user?.id]);
+
+    // ── ANTEPRIMA DESTINATARI nel form (Luca 04/08): "mandavo ai caller e non
+    //    vedevo CHI la riceve, lo scoprivo solo dopo l'invio". Replica in
+    //    memoria la STESSA risoluzione del submit (ambito incluso) sulla
+    //    platea, così i nomi si vedono PRIMA di pubblicare.
+    const anteprimaDestinatari = useMemo(() => {
+        if (!formOpen || !platea) return null;
+        let ruoliTarget = fTutti ? [] : [...fRuoli];
+        let idsAmbito: string[] = [];
+        const ruoliAmbito = ruoliTarget.filter((r) => destinatarioSoloAmbito(role, r, perms));
+        if (ruoliAmbito.length && !ambitoMittente.seesAll) {
+            ruoliTarget = ruoliTarget.filter((r) => !ruoliAmbito.includes(r));
+            const negoziMiei = ambitoMittente.stores.length ? ambitoMittente.stores : (user?.negozio ? [user.negozio] : []);
+            idsAmbito = platea.filter((u) => ruoliAmbito.includes(u.role)
+                && [...u.negozi, ...(u.negozio ? [u.negozio] : [])].some((s) => negoziMiei.some((m) => sameStore(s, m)))).map((u) => u.id);
+        }
+        const idsPersone = fTutti ? [] : platea.filter((u) => fPersone.includes(u.nome)).map((u) => u.id);
+        const idsTarget = [...new Set([...idsPersone, ...idsAmbito])];
+        const pseudo = {
+            target_roles: fTutti || !ruoliTarget.length ? null : ruoliTarget,
+            target_stores: fTutti || !fNegozi.length ? null : fNegozi,
+            target_users: fTutti || !idsTarget.length ? null : idsTarget,
+            target_brands: fTutti || !fBrand.length ? null : fBrand,
+        } as unknown as Comunicazione;
+        return platea
+            .filter((u) => comunicazionePerMe(pseudo, { userId: u.id, role: u.role, negozio: u.negozio, negozi: u.negozi, brandsNegozio: u.brands }))
+            .sort((a, b) => a.nome.localeCompare(b.nome));
+    }, [formOpen, platea, fTutti, fRuoli, fPersone, fNegozi, fBrand, role, perms, ambitoMittente, user?.negozio]);
     const destinatariSet = useCallback((c: Comunicazione): Set<string> | null => {
         if (!platea) return null;
         return new Set(platea.filter((u) => comunicazionePerMe(c, { userId: u.id, role: u.role, negozio: u.negozio, negozi: u.negozi, brandsNegozio: u.brands })).map((u) => u.id));
@@ -1120,6 +1149,28 @@ function ComunicazioniInner() {
                                     })}
                                 </div>
                             </div>}
+                            {/* CHI LA RICEVE, prima di pubblicare (Luca 04/08) */}
+                            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                    👥 Riceveranno questa comunicazione{anteprimaDestinatari ? ` — ${anteprimaDestinatari.length}` : ""}
+                                </p>
+                                {!anteprimaDestinatari ? (
+                                    <p className="text-[11px] text-slate-500 mt-1.5">Calcolo i destinatari…</p>
+                                ) : anteprimaDestinatari.length === 0 ? (
+                                    <p className="text-xs text-amber-300 mt-1.5">⚠️ Con questa selezione nessuno la riceverebbe: controlla ruoli/negozi/persone.</p>
+                                ) : (
+                                    <div className="flex gap-1.5 mt-2 flex-wrap">
+                                        {anteprimaDestinatari.slice(0, 40).map((u) => (
+                                            <span key={u.id} className="px-2.5 py-1 rounded-full border border-white/10 bg-white/5 text-[11px] text-slate-300">
+                                                {u.nome}{u.id === user?.id ? " (tu)" : ""}
+                                            </span>
+                                        ))}
+                                        {anteprimaDestinatari.length > 40 && (
+                                            <span className="px-2.5 py-1 rounded-full text-[11px] text-slate-500">… e altri {anteprimaDestinatari.length - 40}</span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
                             </div>
                         </div>
                         <div className="flex items-center justify-end gap-2.5 py-4 px-6 border-t border-white/10 shrink-0">
