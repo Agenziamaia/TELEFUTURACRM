@@ -172,7 +172,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
     // "magazzino" = non più ordinabili ma rateizzabili se ancora a stock.
     // L'unicità è per (brand, modello, lista): un caricamento non tocca l'altro.
     const [lista, setLista] = useState<"ordinabili" | "magazzino">("ordinabili");
-    const [fatto, setFatto] = useState<null | { voci: number; conRate: number }>(null);
+    const [fatto, setFatto] = useState<null | { voci: number; conRate: number; spostati: number }>(null);
 
     const leggiFile = async (f: File) => {
         setErrore(""); setFatto(null); setFile(f); setVociBlocchi(null); setForzaColonne(false);
@@ -263,12 +263,39 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                     .upsert(rows.slice(i, i + 500), { onConflict: "brand,modello,lista" });
                 if (error) throw new Error(error.message);
             }
+            // ROTAZIONE AUTOMATICA (Luca 05/08): caricando il NUOVO listino
+            // ordinabili, i modelli che ne sono USCITI diventano per definizione
+            // "magazzino" (non più ordinabili ma rateizzabili) — si spostano da
+            // soli, con gli ultimi prezzi/rate noti. Se il modello esiste già
+            // nel magazzino si tiene quella riga e la vecchia si elimina.
+            let spostati = 0;
+            if (lista === "ordinabili") {
+                const nuoviSet = new Set(rows.map(r => r.modello.toLowerCase()));
+                const [{ data: attuali }, { data: mag }] = await Promise.all([
+                    supabase.from("listini_terminali").select("id,modello").eq("brand", brandName).eq("lista", "ordinabili"),
+                    supabase.from("listini_terminali").select("modello").eq("brand", brandName).eq("lista", "magazzino"),
+                ]);
+                const magSet = new Set((mag ?? []).map(r => String(r.modello).toLowerCase()));
+                const usciti = (attuali ?? []).filter(r => !nuoviSet.has(String(r.modello).toLowerCase()));
+                const daSpostare = usciti.filter(r => !magSet.has(String(r.modello).toLowerCase())).map(r => r.id);
+                const doppioni = usciti.filter(r => magSet.has(String(r.modello).toLowerCase())).map(r => r.id);
+                for (let i = 0; i < daSpostare.length; i += 200) {
+                    const { error } = await supabase.from("listini_terminali")
+                        .update({ lista: "magazzino", aggiornato_da: gestore, aggiornato_il: new Date().toISOString() })
+                        .in("id", daSpostare.slice(i, i + 200));
+                    if (error) throw new Error(error.message);
+                }
+                for (let i = 0; i < doppioni.length; i += 200) {
+                    await supabase.from("listini_terminali").delete().in("id", doppioni.slice(i, i + 200));
+                }
+                spostati = daSpostare.length;
+            }
             // archivio dell'originale nel bucket (per ritrovare la fonte)
             if (file) {
                 const path = `listini/${brandId}/${Date.now()}_${file.name.replace(/[^\w.\-]/g, "_")}`;
                 await supabase.storage.from("documentation").upload(path, file, { upsert: false }).catch(() => { });
             }
-            setFatto({ voci: rows.length, conRate: rows.filter(r => (r.rate as unknown[]).length > 0).length });
+            setFatto({ voci: rows.length, conRate: rows.filter(r => (r.rate as unknown[]).length > 0).length, spostati });
         } catch (e) {
             setErrore("Import fallito: " + (e instanceof Error ? e.message : "riprova"));
         } finally { setBusy(false); }
@@ -298,6 +325,7 @@ export function ImportListino({ brandId, brandName, gestore, onClose }: {
                             <div className="w-14 h-14 mx-auto rounded-full bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center"><Check className="w-7 h-7 text-emerald-400" /></div>
                             <p className="text-white font-bold">Listino {brandName} importato</p>
                             <p className="text-sm text-slate-400">{fatto.voci} modelli aggiornati · {fatto.conRate} con piani rata · margine {margine}% · fonte: {file?.name}</p>
+                            {fatto.spostati > 0 && <p className="text-sm text-amber-300">🏬 {fatto.spostati} modelli usciti dal listino → spostati automaticamente nel Magazzino (rateizzabili se a stock)</p>}
                             <p className="text-xs text-slate-500">I prezzi compaiono sotto le tendine “Modello Terminale” di Registra Vendita.</p>
                             <button onClick={onClose} className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold">Chiudi</button>
                         </div>
