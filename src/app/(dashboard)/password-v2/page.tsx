@@ -5,6 +5,7 @@ import { LockKeyhole, Wifi, Radio, Tv, Zap, Leaf, ArrowLeft, RotateCcw, Eye, Eye
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
+import { routeBases, effectiveAllowed, groupKey, groupByLabel } from "@/lib/nav";
 import { capAllowed, CAP_PASSWORD, CAP_PASSWORD_MODIFICA } from "@/lib/capabilities";
 import { useStoreRecords } from "@/lib/org";
 import { supabase } from "@/lib/supabaseClient";
@@ -97,11 +98,19 @@ export default function PasswordV2Page() {
     const [revealingId, setRevealingId] = useState<number | null>(null);
     const [copiedId, setCopiedId] = useState<number | null>(null);
 
-    const isAllowed = user && ["admin", "store_manager", "direttore_commerciale", "dev", "direttore_generale", "amministrativo"].includes(user.role);
+    // ACCESSO alla sezione: STESSA fonte della sidebar e del blocco rotte
+    // (pannello Permessi + default nav, eccezioni di grado incluse) — mai un
+    // elenco di ruoli cablato qui: le abilitazioni date dal pannello restavano
+    // fuori dalla porta (caso store specialist/senior, Luca 04/08).
+    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade);
+    const navPwd = routeBases().find((r) => r.base === CAP_PASSWORD.section)?.items[0];
+    const grpPwd = navPwd?.group ? groupByLabel(navPwd.group) : undefined;
+    const isAllowed = !!user && !!navPwd
+        && (!navPwd.group || effectiveAllowed(user.role, groupKey(navPwd.group), grpPwd?.roles ?? ["*"], perms, navPwd.group))
+        && effectiveAllowed(user.role, navPwd.href, navPwd.roles, perms, navPwd.group);
     // ROTELLINA Permessi (Luca 03/08): chi puo' MODIFICARE e AGGIUNGERE si
     // decide per ruolo dalla capability "modifica" — default store manager in
     // su; gli altri con accesso restano in sola consultazione.
-    const { perms } = useRolePermissions(user?.role, user?.grade);
     const canManage = !!user && capAllowed(user.role, CAP_PASSWORD.section, CAP_PASSWORD_MODIFICA, perms);
 
     // Categorie dal DB (password_categories), gestibili quando canManage.
@@ -233,6 +242,9 @@ export default function PasswordV2Page() {
     };
 
     if (!isAllowed) {
+        // Permessi ancora in caricamento: niente flash del lucchetto per chi
+        // e' abilitato dal pannello (la riga a DB arriva un istante dopo).
+        if (user && !permsLoaded) return null;
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] p-4 text-center">
                 <div className="glass-card max-w-md w-full p-10 space-y-6">
@@ -242,7 +254,7 @@ export default function PasswordV2Page() {
                     <div>
                         <h1 className="text-2xl font-black text-white tracking-tight">Accesso Riservato</h1>
                         <p className="text-slate-400 mt-2 text-sm">
-                            La sezione Password CRM è riservata ai ruoli <span className="font-semibold text-slate-200">store manager</span>, <span className="font-semibold text-slate-200">direttore commerciale</span> e amministrazione.
+                            Non hai accesso alla sezione <span className="font-semibold text-slate-200">Password</span>. L&apos;abilitazione si gestisce da <span className="font-semibold text-slate-200">Amministrazione → Permessi</span>.
                         </p>
                     </div>
                 </div>
