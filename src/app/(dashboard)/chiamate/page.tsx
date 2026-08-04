@@ -60,6 +60,8 @@ export default function RegistroChiamatePage() {
     const [fNegozio, setFNegozio] = useState("");
     const [ricerca, setRicerca] = useState("");
     const [visibili, setVisibili] = useState(50);
+    // chiamata espansa: l'audio si apre SOLO qui (vista compatta per tutti)
+    const [apertaId, setApertaId] = useState<string | null>(null);
     const [associaEv, setAssociaEv] = useState<EventoChiamata | null>(null);
     const [msg, setMsg] = useState("");
 
@@ -86,6 +88,26 @@ export default function RegistroChiamatePage() {
         else setEventi((data ?? []) as unknown as EventoChiamata[]);
         setCarico(false);
     };
+    // nomi dei clienti agganciati (Luca 04/08): il nome cliccabile in riga
+    // al posto della scritta "apri la scheda cliente"
+    const [nomiClienti, setNomiClienti] = useState<Record<string, string>>({});
+    useEffect(() => {
+        const ids = [...new Set(eventi.map((e) => e.client_id).filter(Boolean))] as string[];
+        const mancanti = ids.filter((id) => !(id in nomiClienti));
+        if (!mancanti.length) return;
+        (async () => {
+            const out: Record<string, string> = {};
+            for (let i = 0; i < mancanti.length; i += 200) {
+                const { data } = await supabase.from("clients")
+                    .select("id, nome, cognome, ragione_sociale").in("id", mancanti.slice(i, i + 200));
+                (data ?? []).forEach((c: { id: string; nome: string | null; cognome: string | null; ragione_sociale: string | null }) => {
+                    out[c.id] = (c.ragione_sociale || `${c.nome || ""} ${c.cognome || ""}`).trim() || "Cliente";
+                });
+            }
+            setNomiClienti((p) => ({ ...p, ...out }));
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [eventi]);
     // il primo fetch parte SOLO a visibilità caricata (regola useVisibleStores);
     // puoAudio in deps: quando le righe di permesso arrivano e cambiano il
     // verdetto, la select va rifatta (recording_url incluso/escluso dai campi)
@@ -217,9 +239,16 @@ export default function RegistroChiamatePage() {
                         </div>
                     ) : (
                         <div className="space-y-2">
-                            {filtrate.slice(0, visibili).map((e) => (
-                                <div key={e.id} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                            {filtrate.slice(0, visibili).map((e) => {
+                                const espandibile = puoAudio && !!e.recording_url && !!e.aircall_call_id;
+                                const aperta = apertaId === e.id;
+                                return (
+                                <div key={e.id}
+                                    onClick={(ev) => { if ((ev.target as HTMLElement).closest("a,button,audio")) return; if (espandibile) setApertaId((p) => p === e.id ? null : e.id); }}
+                                    title={espandibile ? (aperta ? "Chiudi la registrazione" : "Apri la chiamata per ascoltare la registrazione") : undefined}
+                                    className={`rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 transition-colors ${espandibile ? "cursor-pointer hover:bg-white/[0.06]" : ""}`}>
                                     <div className="flex items-center gap-3 flex-wrap text-sm">
+                                        {espandibile && <span className="text-slate-500 text-xs shrink-0">{aperta ? "▾" : "▸"} 🎧</span>}
                                         <span title={e.direction === "inbound" ? "In entrata — il cliente ha chiamato il negozio" : "In uscita — il negozio ha chiamato"}>
                                             {e.direction === "inbound" ? "📥" : "📤"}
                                         </span>
@@ -232,29 +261,37 @@ export default function RegistroChiamatePage() {
                                             ? <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-rose-500/15 text-rose-300">persa</span>
                                             : <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">risposta · {durata(e.duration_sec)}</span>}
                                         {!!e.archiviato && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/5 text-slate-500">archiviata</span>}
-                                        <span className="ml-auto text-xs text-slate-500 font-mono">{numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || "—")}</span>
+                                        {/* cliente agganciato: NOME cliccabile → scheda, poi il numero
+                                            (Luca 04/08 — via la scritta "apri la scheda" sotto) */}
+                                        {e.client_id ? (
+                                            <span className="ml-auto flex items-center gap-2 min-w-0">
+                                                <Link href={`/clienti?id=${encodeURIComponent(e.client_id)}`} title="Apri la scheda del cliente"
+                                                    className="text-xs font-bold text-violet-300 hover:text-violet-100 hover:underline truncate max-w-[220px]">
+                                                    👤 {nomiClienti[e.client_id] || "Cliente"}
+                                                </Link>
+                                                <span className="text-xs text-slate-500 font-mono shrink-0">{numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || "—")}</span>
+                                            </span>
+                                        ) : (
+                                            <span className="ml-auto text-xs text-slate-500 font-mono">{numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || "—")}</span>
+                                        )}
                                     </div>
 
-                                    {/* registrazione: player SOLO da store manager in su (Luca 04/08) */}
-                                    {puoAudio && !!e.recording_url && !!e.aircall_call_id && (
+                                    {/* registrazione SOLO nella chiamata ESPANSA (Luca 04/08:
+                                        "vista compatta per tutti, l'audio esplodendo la chiamata");
+                                        il permesso resta quello della rotellina */}
+                                    {espandibile && aperta && (
                                         <div className="mt-2 flex items-center gap-3">
                                             {/* l'URL salvato scade in ~1h (firma S3): si passa dal proxy,
                                                 che verifica anche il ruolo (?u=) e chiede un URL fresco */}
-                                            <audio controls preload="none" src={`/api/aircall/recording?call=${e.aircall_call_id}&u=${user?.id || ""}`} className="h-8 flex-1 min-w-0" />
+                                            <audio controls autoPlay={false} preload="none" src={`/api/aircall/recording?call=${e.aircall_call_id}&u=${user?.id || ""}`} className="h-8 flex-1 min-w-0" />
                                             <a href={`/api/aircall/recording?call=${e.aircall_call_id}&u=${user?.id || ""}`} target="_blank" rel="noreferrer" download
                                                 className="text-xs font-bold text-sky-300 hover:text-white shrink-0">⬇ Scarica</a>
                                         </div>
                                     )}
 
-                                    {/* aggancio cliente / azioni di anagrafizzazione */}
-                                    {e.client_id ? (
-                                        <div className="mt-1.5">
-                                            <Link href={`/clienti?id=${encodeURIComponent(e.client_id)}`}
-                                                className="text-[11px] font-bold text-violet-300 hover:text-violet-100 hover:underline">
-                                                → apri la scheda cliente
-                                            </Link>
-                                        </div>
-                                    ) : inCoda(e) ? (
+                                    {/* azioni di anagrafizzazione (il cliente agganciato ha già
+                                        il nome cliccabile in riga) */}
+                                    {e.client_id ? null : inCoda(e) ? (
                                         <div className="mt-2 flex items-center gap-2 flex-wrap">
                                             <span className="text-[11px] text-amber-300/90 font-semibold mr-1">Numero sconosciuto:</span>
                                             <Link href={`/clienti?nuovo=${encodeURIComponent(numeroNazionale(String(e.cliente_num || "")) || codaDi(e))}`}
@@ -272,7 +309,8 @@ export default function RegistroChiamatePage() {
                                         </div>
                                     ) : null}
                                 </div>
-                            ))}
+                                );
+                            })}
                             {filtrate.length > visibili && (
                                 <button onClick={() => setVisibili((v) => v + 50)}
                                     className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 text-sm font-medium">
