@@ -1106,7 +1106,7 @@ function Drawer({
                 className="py-2 px-4 bg-transparent border-none border-b-2 cursor-pointer transition-all text-[13px] font-normal"
                 style={{
                   borderBottomColor: active ? "var(--tf-6366f1)" : "transparent",
-                  color: active ? "#f1f5f9" : "var(--tf-475569)",
+                  color: active ? "var(--tf-f1f5f9)" : "var(--tf-475569)",
                   fontWeight: active ? 700 : 400,
                 }}
               >

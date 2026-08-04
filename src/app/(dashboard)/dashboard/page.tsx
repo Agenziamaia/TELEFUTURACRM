@@ -362,7 +362,7 @@ export default function Dashboard() {
                 return (
                   <tr key={v.nome} className="border-t border-white/[0.03]" style={isMe ? { background: "rgba(99,102,241,0.08)" } : undefined}>
                     <td className="py-3 px-5 text-center">{v.rank === 1 ? "🥇" : v.rank === 2 ? "🥈" : v.rank === 3 ? "🥉" : <span className="text-slate-500 font-bold">{v.rank}</span>}</td>
-                    <td className="py-3 px-5"><span className="font-bold" style={{ color: isMe ? "var(--tf-a5b4fc)" : "#f1f5f9" }}>{v.nome}{isMe && <span className="ml-2 text-[9px] font-bold text-indigo-300 bg-indigo-500/15 px-1.5 py-0.5 rounded">TU</span>}</span></td>
+                    <td className="py-3 px-5"><span className="font-bold" style={{ color: isMe ? "var(--tf-a5b4fc)" : "var(--tf-f1f5f9)" }}>{v.nome}{isMe && <span className="ml-2 text-[9px] font-bold text-indigo-300 bg-indigo-500/15 px-1.5 py-0.5 rounded">TU</span>}</span></td>
                     <td className="py-3 px-5 text-slate-400">{v.negozio || "—"}</td>
                     <td className="py-3 px-5 text-right font-black text-slate-200">{v.n}</td>
                   </tr>

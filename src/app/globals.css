@@ -645,3 +645,9 @@ html.light .rvIn::placeholder{color:#94a3b8 !important;}
 html.light .rvLab{color:#64748b !important;}
 /* header di pagina: bianco, con bordo/ombra netti — non piu' una barra "sospesa" */
 html.light header{background-color:#ffffff !important;border-bottom:1px solid rgba(15,23,42,.09) !important;box-shadow:0 1px 3px rgba(15,23,42,.05),0 6px 18px rgba(15,23,42,.05) !important;}
+
+/* testi chiari inline #f1f5f9/#e2e8f0 → scuri nel tema chiaro (nomi classifica ecc.) */
+:root{--tf-f1f5f9:#f1f5f9;--tf-e2e8f0:#e2e8f0;}
+html.light{--tf-f1f5f9:#1f2a3d;--tf-e2e8f0:#2a3646;}
+/* LOGIN: fondo chiaro pulito cosi' la card bianca risalta (era bianco su bianco) */
+html.light #login-root{background:linear-gradient(155deg,#eef2f8 0%,#e2e7f1 100%) !important;}
