@@ -18,7 +18,7 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { PDFDocument } from "pdf-lib";
 
-const LABEL = { documento: "Documenti", contratti: "Contratti", altro: "Altro", fattura: "Fattura", documento_usato: "Documento d'identità (usato)", dichiarazione_usato: "Dichiarazione di vendita (usato)" };
+const LABEL = { documento: "Documenti", contratti: "Contratti", altro: "Altro", fattura: "Fattura", documento_usato: "Documento d'identità (usato)", dichiarazione_usato: "Dichiarazione di vendita (usato)", disdetta: "Modulo di disdetta" };
 
 // ── immagini ──────────────────────────────────────────────────────────
 function blobToImg(blob) {

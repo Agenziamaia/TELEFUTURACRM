@@ -2,9 +2,15 @@
 
 /**
  * TASK URGENTI (⚡ accanto alla campanella): le cose DA FARE, distinte dalle
- * Comunicazioni. Prima voce: "completa il nuovo utente" quando amministrativo o
- * direzione generale creano uno user (costo/visibilita'/brand li mette l'admin).
- * Tabella admin_tasks (mig. 085) — se assente, l'icona semplicemente non compare.
+ * Comunicazioni. FULMINE PER TUTTI (Luca 04/08): il componente si monta per
+ * OGNI utente loggato. Due rami di lettura su admin_tasks (mig. 085):
+ *  - task PERSONALI (target_user_id = io) → per tutti, qualunque target_role:
+ *    prima amministrativo/direzione generale non vedevano le task inserite con
+ *    target_role "admin" a loro indirizzate (chiusura linea, ordine merce);
+ *  - task DI PACK (senza destinatario) → solo pack direzionale, come prima.
+ * In piu' la task SINTETICA dei rigetti disdetta: conteggio live delle proprie
+ * richieste in da_integrare — non dismissibile, resta finche' il reintegro
+ * non riporta la richiesta in_attesa (richiesta esplicita di Luca).
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -28,28 +34,40 @@ export function UrgentTasks() {
     const isDirezione = !!user && ["admin", "dev", "amministrativo", "direttore_generale"].includes(user.role);
 
     useEffect(() => {
-        if (!isDirezione) return;
+        if (!user) return;
         let vivo = true;
         const load = async () => {
             const targets = isAdmin ? ["admin", "direzione"] : ["direzione"];
-            const [t, ccr, car] = await Promise.all([
-                supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at,target_user_id")
-                    .in("target_role", targets).eq("done", false).order("created_at", { ascending: false }),
-                supabase.from("contract_change_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
-                supabase.from("client_access_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
+            const [pers, rig, pack, ccr, car] = await Promise.all([
+                // (1) task personali: le vede il destinatario, chiunque sia
+                supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at")
+                    .eq("target_user_id", user.id).eq("done", false).order("created_at", { ascending: false }),
+                // (2) rigetti chiusura linea: conteggio live per chi ha sottomesso
+                supabase.from("richieste_disdette").select("id", { count: "exact", head: true })
+                    .eq("status", "da_integrare").eq("consulente", user.name || "—"),
+                // (3) code condivise: solo pack direzionale
+                isDirezione ? supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at")
+                    .in("target_role", targets).is("target_user_id", null).eq("done", false).order("created_at", { ascending: false }) : null,
+                isDirezione ? supabase.from("contract_change_requests").select("id", { count: "exact", head: true }).eq("status", "pending") : null,
+                isDirezione ? supabase.from("client_access_requests").select("id", { count: "exact", head: true }).eq("status", "pending") : null,
             ]);
             if (!vivo) return;
-            // task INDIRIZZATI: se hanno un destinatario, li vede solo lui
-            const list: Task[] = ((t.data ?? []) as (Task & { target_user_id?: string | null })[])
-                .filter((x) => !x.target_user_id || x.target_user_id === user?.id);
-            if ((ccr.count ?? 0) > 0) list.push({
+            const list: Task[] = ([...((pers.data ?? []) as Task[]), ...((pack?.data ?? []) as Task[])])
+                .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+            const nRig = rig.count ?? 0;
+            if (nRig > 0) list.push({
+                id: "__disdette_rigettate", synthetic: true, created_at: new Date().toISOString(), link: "/chiusura-linea",
+                titolo: `${nRig} disdett${nRig === 1 ? "a" : "e"} respint${nRig === 1 ? "a" : "e"} da reintegrare`,
+                dettaglio: "La Direzione ha chiesto di correggere i documenti: apri Chiusura Linea e reinoltra. La task resta finché non risolvi.",
+            });
+            if ((ccr?.count ?? 0) > 0) list.push({
                 id: "__ccr", synthetic: true, created_at: new Date().toISOString(), link: "/ricerca-vendite",
-                titolo: `${ccr.count} richiest${ccr.count === 1 ? "a" : "e"} di modifica contratto da approvare`,
+                titolo: `${ccr!.count} richiest${ccr!.count === 1 ? "a" : "e"} di modifica contratto da approvare`,
                 dettaglio: "Si approvano da Ricerca Vendite: il primo del pack direzionale che decide la chiude per tutti.",
             });
-            if ((car.count ?? 0) > 0) list.push({
+            if ((car?.count ?? 0) > 0) list.push({
                 id: "__car", synthetic: true, created_at: new Date().toISOString(), link: "/clienti",
-                titolo: `${car.count} richiest${car.count === 1 ? "a" : "e"} di accesso ai dati cliente`,
+                titolo: `${car!.count} richiest${car!.count === 1 ? "a" : "e"} di accesso ai dati cliente`,
                 dettaglio: "Si approvano dalla pagina Clienti: il primo che decide la chiude per tutti.",
             });
             setTasks(list);
@@ -57,7 +75,7 @@ export function UrgentTasks() {
         load();
         const t = setInterval(load, 60000);
         return () => { vivo = false; clearInterval(t); };
-    }, [isDirezione, isAdmin]);
+    }, [user?.id, user?.name, isDirezione, isAdmin]);
 
     useEffect(() => {
         const onDoc = (e: MouseEvent) => { if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false); };
@@ -70,9 +88,9 @@ export function UrgentTasks() {
         setTasks((p) => p.filter((t) => t.id !== id));
     };
 
-    // Sempre visibile per l'admin (anche a zero task: altrimenti non si scopre);
-    // il colore ambra e il contatore compaiono solo quando c'e' qualcosa da fare.
-    if (!isDirezione) return null;
+    // Sempre visibile (anche a zero task: altrimenti non si scopre); il colore
+    // ambra e il contatore compaiono solo quando c'e' qualcosa da fare.
+    if (!user) return null;
     return (
         <div className="relative" ref={boxRef}>
             <button onClick={() => setOpen((o) => !o)} title={tasks.length ? `${tasks.length} task urgenti da fare` : "Task urgenti (vuoto)"}
@@ -86,7 +104,9 @@ export function UrgentTasks() {
                 <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto rounded-xl border border-white/10 bg-[#0f1420] shadow-2xl z-[200] p-2 space-y-1">
                     <div className="px-2 py-1.5 text-xs font-bold text-amber-300 uppercase tracking-wider">⚡ Task urgenti</div>
                     {tasks.length === 0 && (
-                        <div className="p-3 text-sm text-slate-500">Nessuna task urgente. Qui arrivano le cose DA FARE — ad esempio un nuovo utente creato dall'amministrazione da completare con costo, visibilità e brand.</div>
+                        <div className="p-3 text-sm text-slate-500">{isDirezione
+                            ? "Nessuna task urgente. Qui arrivano le cose DA FARE — ad esempio un nuovo utente creato dall'amministrazione da completare con costo, visibilità e brand."
+                            : "Nessuna task urgente. Qui arrivano le cose DA FARE che ti riguardano — ad esempio una disdetta respinta dalla Direzione da correggere e reinoltrare."}</div>
                     )}
                     {tasks.map((t) => (
                         <div key={t.id} className="p-2.5 rounded-lg bg-white/[0.03] border border-white/8">
@@ -98,10 +118,12 @@ export function UrgentTasks() {
                             {!t.synthetic && <button onClick={() => fatta(t.id)} className="mt-1.5 text-[11px] px-2 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 font-bold">✓ Fatta</button>}
                         </div>
                     ))}
-                    <button onClick={() => { router.push("/storico-approvazioni"); setOpen(false); }}
-                        className="w-full text-left px-2.5 py-2 rounded-lg text-xs font-bold text-indigo-300 hover:bg-white/[0.05] border border-transparent hover:border-white/10">
-                        📜 Storico approvazioni →
-                    </button>
+                    {isDirezione && (
+                        <button onClick={() => { router.push("/storico-approvazioni"); setOpen(false); }}
+                            className="w-full text-left px-2.5 py-2 rounded-lg text-xs font-bold text-indigo-300 hover:bg-white/[0.05] border border-transparent hover:border-white/10">
+                            📜 Storico approvazioni →
+                        </button>
+                    )}
                 </div>
             )}
         </div>

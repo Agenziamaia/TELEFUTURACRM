@@ -16,13 +16,16 @@
    - a ogni INVIO o REINTEGRO parte il task ⚡ ai designati dell'incarico
      "chiusura_linea" (Amministrazione → Utenti → Incarichi), come le ferie. */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useStores } from "@/lib/org";
 import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { RicercaCliente, type ClienteTrovato } from "@/components/RicercaCliente";
+import { SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
+import { DatePickerInput } from "@/components/DatePickerInput";
+import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
 import { trovaDuplicati } from "@/lib/clientChecks";
 import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
@@ -54,6 +57,15 @@ const dmy = (iso: string | null | undefined) => {
     if (!iso) return "—";
     const [y, m, d] = String(iso).slice(0, 10).split("-");
     return d && m && y ? `${d}/${m}/${y}` : String(iso).slice(0, 10);
+};
+// gg/mm/aaaa -> aaaa-mm-gg (pattern di Ricerca Vendite): una data incompleta
+// o non valida ritorna "" e il filtro semplicemente non si applica
+const dataIso = (v: string) => {
+    const s = (v || "").trim();
+    const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    return "";
 };
 const nomeCliente = (t: Ticket) => {
     const c = t.clients;
@@ -92,6 +104,9 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
     const [dataProg, setDataProg] = useState("");
     const [note, setNote] = useState("");
     const [busy, setBusy] = useState(false);
+    // carica dal telefono via QR (CHL-02): i File ricevuti si accodano e
+    // seguono l'identico flusso di upload del submit
+    const qr = useQrUpload((ricevuti) => setFiles(p => [...p, ...ricevuti]));
 
     const reset = () => { setCliSel(null); setCreaNuovo(false); setAna({ ...ANA_VUOTA }); setBrand(""); setFiles([]); setIsProg(false); setDataProg(""); setNote(""); };
 
@@ -164,7 +179,7 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
             }).select("id").single();
             if (error) { msg("⚠️ Invio non riuscito: " + error.message); return; }
 
-            await taskAiDesignati(`✂️ Chiusura linea ${brand}: ${cliSel ? (cliSel.ragione_sociale || `${cliSel.nome || ""} ${cliSel.cognome || ""}`.trim()) : (ana.ragioneSociale || `${ana.nome} ${ana.cognome}`.trim())}${isProg ? ` (programmata al ${dmy(dataProg)})` : ""}`, note.trim() || "Senza note.", user?.name || "");
+            await taskAiDesignati(`✂️ Chiusura linea ${brand}: ${cliSel ? (cliSel.ragione_sociale || `${cliSel.nome || ""} ${cliSel.cognome || ""}`.trim()) : (ana.ragioneSociale || `${ana.nome} ${ana.cognome}`.trim())}${isProg ? ` (programmata al ${dmy(dataProg)})` : ""}`, note.trim() || "Senza note.", user?.name || "", riga?.id as string | undefined);
             msg(`✅ Richiesta ${riga?.id || ""} inviata alla direzione`);
             reset();
             onInviata();
@@ -229,15 +244,16 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
             <div className={cn("space-y-3 transition-opacity", (cliSel || creaNuovo) ? "opacity-100" : "opacity-40 pointer-events-none")}>
                 <div>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">2. Brand e documenti</p>
-                    <select value={brand} onChange={e => setBrand(e.target.value)} className="glass-input w-full text-sm">
-                        <option value="">Seleziona brand da disdire…</option>
-                        {BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                    </select>
+                    <SelectOpzioni value={brand} onChange={setBrand} opzioni={BRANDS} placeholder="Seleziona brand da disdire…" />
                 </div>
-                <label className="block border border-dashed border-white/20 hover:border-indigo-400/60 rounded-xl p-4 text-center cursor-pointer bg-white/[0.01] transition-colors">
-                    <input type="file" multiple accept=".pdf,image/*" className="hidden" onChange={e => { const list = Array.from(e.target.files ?? []); if (list.length) setFiles(p => [...p, ...list]); e.target.value = ""; }} />
-                    <span className="text-xs font-semibold text-indigo-300 flex items-center justify-center gap-2"><Upload className="w-4 h-4" /> Carica PDF (modulo + documento) — anche più file</span>
-                </label>
+                <div className="flex items-stretch gap-2">
+                    <label className="flex-1 block border border-dashed border-white/20 hover:border-indigo-400/60 rounded-xl p-4 text-center cursor-pointer bg-white/[0.01] transition-colors">
+                        <input type="file" multiple accept=".pdf,image/*" className="hidden" onChange={e => { const list = Array.from(e.target.files ?? []); if (list.length) setFiles(p => [...p, ...list]); e.target.value = ""; }} />
+                        <span className="text-xs font-semibold text-indigo-300 flex items-center justify-center gap-2"><Upload className="w-4 h-4" /> Carica PDF (modulo + documento) — anche più file</span>
+                    </label>
+                    <button type="button" onClick={() => qr.openQr("disdetta", "doc")} title="Carica dal telefono via QR"
+                        className="px-3 rounded-xl border border-indigo-400/40 bg-indigo-500/10 text-indigo-300 text-xs font-bold hover:bg-indigo-500/20 shrink-0 whitespace-nowrap">📱 QR</button>
+                </div>
                 {files.length > 0 && (
                     <div className="space-y-1">
                         {files.map((f, i) => (
@@ -268,17 +284,21 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
                     {busy ? "Invio in corso…" : "INVIA ALLA DIREZIONE"}
                 </button>
             </div>
+            <QrUploadModal qr={qr} />
         </div>
     );
 }
 
-// task ⚡ ai designati dell'incarico (come le ferie); usato da invio e reintegro
-async function taskAiDesignati(titolo: string, dettaglio: string, autore: string) {
+// task ⚡ ai designati dell'incarico (come le ferie); usato da invio e reintegro.
+// Il link porta l'id della DS: cosi' apre il ticket giusto e gestisci() puo'
+// spegnere le task a gestione avvenuta.
+async function taskAiDesignati(titolo: string, dettaglio: string, autore: string, dsId?: string | null) {
     try {
         const { ids: ass, fulmine } = await designatiIncarico("chiusura_linea");
         if (fulmine && ass.length) {
+            const link = dsId ? `/chiusura-linea?ds=${dsId}` : "/chiusura-linea";
             await supabase.from("admin_tasks").insert(ass.map((uid) => ({
-                tipo: "chiusura_linea", titolo, dettaglio, link: "/chiusura-linea",
+                tipo: "chiusura_linea", titolo, dettaglio, link,
                 target_role: "admin", created_by: autore, target_user_id: uid,
             })));
         }
@@ -294,6 +314,9 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
     const [motivo, setMotivo] = useState("");
     const [nuoviFile, setNuoviFile] = useState<File[]>([]);
     const [busy, setBusy] = useState(false);
+    // QR per il reintegro (CHL-02): il modale sta in portal a z-3000, sopra
+    // questa modale (z-[1100])
+    const qr = useQrUpload((ricevuti) => setNuoviFile(p => [...p, ...ricevuti]));
 
     const transizione = async (patch: Record<string, unknown>, evento: Evento) => {
         const { error } = await supabase.from("richieste_disdette").update({
@@ -304,7 +327,17 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
         return true;
     };
 
-    const gestisci = () => transizione({ status: "gestita" }, { quando: new Date().toISOString(), tipo: "chiusura", testo: "Disdetta completata" });
+    const gestisci = async () => {
+        const ok = await transizione({ status: "gestita" }, { quando: new Date().toISOString(), tipo: "chiusura", testo: "Disdetta completata" });
+        // a gestione avvenuta si spengono le task ⚡ di invio/reintegro di questa DS
+        if (ok) {
+            try {
+                await supabase.from("admin_tasks")
+                    .update({ done: true, done_by: user?.name || "—", done_at: new Date().toISOString() })
+                    .eq("tipo", "chiusura_linea").eq("done", false).eq("link", `/chiusura-linea?ds=${t.id}`);
+            } catch { /* al peggio restano chiudibili a mano dal fulmine */ }
+        }
+    };
 
     const rigetta = async () => {
         if (!motivo.trim()) { msg("⚠️ Scrivi la motivazione del rigetto"); return; }
@@ -329,7 +362,7 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
             const ok = await transizione(
                 { status: "in_attesa", feedback_admin: "", files: [...caricati, ...(t.files || [])] },
                 { quando: new Date().toISOString(), tipo: "reintegro", testo: "Nuovo documento caricato per disdetta" });
-            if (ok) await taskAiDesignati(`✂️ Disdetta ${t.id} reintegrata: ${nomeCliente(t)} (${t.brand})`, "Nuovo documento caricato dopo il rigetto.", user?.name || "");
+            if (ok) await taskAiDesignati(`✂️ Disdetta ${t.id} reintegrata: ${nomeCliente(t)} (${t.brand})`, "Nuovo documento caricato dopo il rigetto.", user?.name || "", t.id);
         } finally { setBusy(false); }
     };
 
@@ -388,12 +421,16 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
                             <p className="text-[10px] font-bold text-rose-400 uppercase tracking-widest mb-1">Nota dalla Direzione:</p>
                             <p className="text-sm text-rose-200 leading-relaxed">“{t.feedback_admin}”</p>
                         </div>
-                        <label className="block border border-dashed border-rose-500/50 rounded-xl p-3.5 text-center cursor-pointer bg-white/[0.02]">
-                            <input type="file" multiple accept=".pdf,image/*" className="hidden" onChange={e => { const list = Array.from(e.target.files ?? []); if (list.length) setNuoviFile(p => [...p, ...list]); e.target.value = ""; }} />
-                            <span className={cn("text-xs font-semibold", nuoviFile.length ? "text-emerald-400" : "text-rose-300")}>
-                                {nuoviFile.length ? `✅ ${nuoviFile.map(f => f.name).join(", ")}` : "📎 Clicca qui per allegare il nuovo PDF"}
-                            </span>
-                        </label>
+                        <div className="flex items-stretch gap-2">
+                            <label className="flex-1 block border border-dashed border-rose-500/50 rounded-xl p-3.5 text-center cursor-pointer bg-white/[0.02]">
+                                <input type="file" multiple accept=".pdf,image/*" className="hidden" onChange={e => { const list = Array.from(e.target.files ?? []); if (list.length) setNuoviFile(p => [...p, ...list]); e.target.value = ""; }} />
+                                <span className={cn("text-xs font-semibold", nuoviFile.length ? "text-emerald-400" : "text-rose-300")}>
+                                    {nuoviFile.length ? `✅ ${nuoviFile.map(f => f.name).join(", ")}` : "📎 Clicca qui per allegare il nuovo PDF"}
+                                </span>
+                            </label>
+                            <button type="button" onClick={() => qr.openQr("disdetta", "doc")} title="Carica dal telefono via QR"
+                                className="px-3 rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-xs font-bold hover:bg-rose-500/20 shrink-0 whitespace-nowrap">📱 QR</button>
+                        </div>
                         <button onClick={reintegra} disabled={busy || !nuoviFile.length}
                             className={cn("w-full py-3 rounded-xl font-bold text-xs uppercase tracking-wide", nuoviFile.length ? "bg-emerald-600 text-white hover:brightness-110" : "bg-white/10 text-slate-500 cursor-not-allowed")}>
                             {busy ? "Invio…" : "Reinoltra alla Direzione"}
@@ -421,6 +458,7 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
                     </div>
                 )}
             </div>
+            <QrUploadModal qr={qr} />
         </div>
     );
 }
@@ -430,7 +468,7 @@ export default function ChiusuraLineaPage() {
     const { user } = useAuth();
     // due livelli decisi da Amministrazione → Utenti → Permessi (rotellina
     // "Chiusura Linea"): accesso semplice (invia) e gestione (vista direzione)
-    const { perms } = useRolePermissions(user?.role, user?.grade);
+    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade);
     const direzione = capAllowed(user?.role, CAP_DISDETTE.section, CAP_DISDETTE_GESTISCE, perms);
     const puoInviare = direzione || capAllowed(user?.role, CAP_DISDETTE.section, CAP_DISDETTE_INVIA, perms);
     const wholeStore = seesWholeStore(user?.role);
@@ -441,10 +479,35 @@ export default function ChiusuraLineaPage() {
     const [loading, setLoading] = useState(true);
     const [sel, setSel] = useState<Ticket | null>(null);
     const [q, setQ] = useState("");
-    const [fBrand, setFBrand] = useState("");
-    const [fNegozio, setFNegozio] = useState("");
+    const [fBrands, setFBrands] = useState<string[]>([]);
+    const [fNegozi, setFNegozi] = useState<string[]>([]);
+    const [fUtenti, setFUtenti] = useState<string[]>([]);
+    const [fDal, setFDal] = useState("");
+    const [fAl, setFAl] = useState("");
+    const [fStati, setFStati] = useState<string[]>([]);   // [] = tutti gli stati
     const [toast, setToast] = useState("");
     const msg = (m: string) => { setToast(m); setTimeout(() => setToast(""), 5000); };
+
+    // DESIGNATI dell'incarico chiusura_linea (fonte unica src/lib/incarichi):
+    // servono per il preset stato — null = non ancora caricati
+    const [designati, setDesignati] = useState<string[] | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        designatiIncarico("chiusura_linea").then(({ ids }) => { if (vivo) setDesignati(ids); });
+        return () => { vivo = false; };
+    }, []);
+    const sonoDesignato = !!user?.id && (designati ?? []).includes(user.id);
+
+    // FILTRO PREIMPOSTATO una-tantum (Luca 04/08, pattern Ordine Merce):
+    // designato incarico → solo In Attesa (cio' che ha DA LAVORARE); direzione
+    // non designata e richiedenti → In Attesa + Da Integrare. Le gestite
+    // restano a un click sulla tessera dedicata.
+    const presetFatto = useRef(false);
+    useEffect(() => {
+        if (presetFatto.current || !visLoaded || !permsLoaded || designati === null || !user) return;
+        setFStati(sonoDesignato ? ["in_attesa"] : ["in_attesa", "da_integrare"]);
+        presetFatto.current = true;
+    }, [visLoaded, permsLoaded, designati, sonoDesignato, user]);
 
     const load = useCallback(async () => {
         const { data, error } = await supabase.from("richieste_disdette")
@@ -454,6 +517,18 @@ export default function ChiusuraLineaPage() {
         setLoading(false);
     }, []);
     useEffect(() => { load(); }, [load]);
+
+    // deep-link dal fulmine: /chiusura-linea?ds=<id> apre il ticket (letto da
+    // window.location per non introdurre il boundary Suspense di useSearchParams)
+    const dsAperto = useRef(false);
+    useEffect(() => {
+        if (dsAperto.current || loading) return;
+        dsAperto.current = true;
+        const ds = new URLSearchParams(window.location.search).get("ds");
+        if (!ds) return;
+        const t = tickets.find(x => x.id === ds);
+        if (t) setSel(t);
+    }, [loading, tickets]);
 
     // visibilita': direzione tutto; store manager il proprio team (negozi
     // visibili); consulente solo le proprie
@@ -466,14 +541,50 @@ export default function ChiusuraLineaPage() {
         return tickets.filter(t => t.consulente === user?.name);
     }, [tickets, direzione, wholeStore, visStores, user?.name, user?.negozio]);
 
-    const filtrati = useMemo(() => {
+    // consulenti presenti nei ticket visibili: opzioni del filtro utente
+    // (rispettano da sole la visibilita' per ruolo)
+    const consulentiVisibili = useMemo(
+        () => [...new Set(visibili.map(t => t.consulente).filter(Boolean))].sort(),
+        [visibili]);
+
+    // tutti i filtri TRANNE lo stato: le tessere contatore contano su questa base
+    const baseFiltrati = useMemo(() => {
         let out = visibili;
         const cerca = q.trim().toLowerCase();
         if (cerca) out = out.filter(t => `${nomeCliente(t)} ${t.id} ${t.clients?.cf_piva || ""}`.toLowerCase().includes(cerca));
-        if (fBrand) out = out.filter(t => t.brand === fBrand);
-        if (fNegozio) out = out.filter(t => sameStore(t.negozio, fNegozio));
+        if (fBrands.length) out = out.filter(t => fBrands.includes(t.brand));
+        if (fNegozi.length) out = out.filter(t => fNegozi.some(n => sameStore(t.negozio, n)));
+        if (fUtenti.length) out = out.filter(t => fUtenti.includes(t.consulente));
+        const dal = dataIso(fDal), al = dataIso(fAl);
+        if (dal) out = out.filter(t => String(t.created_at).slice(0, 10) >= dal);
+        if (al) out = out.filter(t => String(t.created_at).slice(0, 10) <= al);
         return out;
-    }, [visibili, q, fBrand, fNegozio]);
+    }, [visibili, q, fBrands, fNegozi, fUtenti, fDal, fAl]);
+
+    const filtrati = useMemo(
+        () => (fStati.length ? baseFiltrati.filter(t => fStati.includes(t.status)) : baseFiltrati),
+        [baseFiltrati, fStati]);
+
+    const conta = useMemo(() => ({
+        tot: baseFiltrati.length,
+        in_attesa: baseFiltrati.filter(t => t.status === "in_attesa").length,
+        da_integrare: baseFiltrati.filter(t => t.status === "da_integrare").length,
+        gestita: baseFiltrati.filter(t => t.status === "gestita").length,
+    }), [baseFiltrati]);
+
+    // tessere cliccabili stile Ordine Merce: "Tutte" azzera, "Gestite" e'
+    // esclusiva (ri-click = preset del ruolo), le altre si flaggano una a una
+    const statClick = (key: string) => {
+        const DEF = sonoDesignato ? ["in_attesa"] : ["in_attesa", "da_integrare"];
+        if (key === "tutte") { setFStati([]); return; }
+        if (key === "gestita") { setFStati(p => (p.length === 1 && p[0] === "gestita") ? DEF : ["gestita"]); return; }
+        setFStati(p => {
+            const base = p.includes("gestita") ? [] : [...p];
+            const i = base.indexOf(key);
+            if (i >= 0) base.splice(i, 1); else base.push(key);
+            return base;
+        });
+    };
 
     // ORDINAMENTO DIREZIONE (dal brief): 1) in_attesa/da_integrare sopra le
     // gestite; 2) programmata scaduta/oggi = priorita' assoluta, programmata
@@ -497,6 +608,30 @@ export default function ChiusuraLineaPage() {
 
     if (!visLoaded) return <div className="flex items-center gap-3 text-slate-400 py-24 justify-center"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento…</div>;
 
+    // tessere contatore (comuni alle due viste): contano su baseFiltrati, cosi'
+    // le gestite nascoste dal preset non "spariscono" — restano a un click
+    const tessere = (
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+            {[
+                { key: "in_attesa", label: "In Attesa", icon: "⏳", val: conta.in_attesa, attiva: fStati.includes("in_attesa"), on: "border-amber-400/70 bg-amber-500/10", txt: "text-amber-400" },
+                { key: "da_integrare", label: "Da Integrare", icon: "⚠️", val: conta.da_integrare, attiva: fStati.includes("da_integrare"), on: "border-rose-400/70 bg-rose-500/10", txt: "text-rose-400" },
+                { key: "gestita", label: "Gestite", icon: "✅", val: conta.gestita, attiva: fStati.includes("gestita"), on: "border-emerald-400/70 bg-emerald-500/10", txt: "text-emerald-400" },
+                { key: "tutte", label: "Tutte", icon: "📋", val: conta.tot, attiva: fStati.length === 0, on: "border-indigo-400/70 bg-indigo-500/10", txt: "text-indigo-300" },
+            ].map(s => (
+                <button key={s.key} type="button" onClick={() => statClick(s.key)}
+                    title={s.attiva ? "Filtro attivo — clicca per toglierlo" : "Clicca per filtrare"}
+                    className={cn("rounded-2xl border-2 p-3.5 text-left backdrop-blur-xl transition-colors",
+                        s.attiva ? s.on : "border-white/10 bg-white/[0.03] hover:border-white/25")}>
+                    <div className="flex items-center justify-between gap-2">
+                        <span className={cn("text-[10px] font-bold uppercase tracking-widest", s.attiva ? s.txt : "text-slate-500")}>{s.attiva ? "✓ " : ""}{s.label}</span>
+                        <span className="text-lg opacity-70">{s.icon}</span>
+                    </div>
+                    <div className={cn("text-2xl font-black mt-0.5", s.txt)}>{s.val}</div>
+                </button>
+            ))}
+        </div>
+    );
+
     return (
         <div className="p-6">
             <div className="max-w-7xl mx-auto space-y-6">
@@ -505,21 +640,22 @@ export default function ChiusuraLineaPage() {
                         <h1 className="text-2xl font-black text-white flex items-center gap-2.5"><Scissors className="w-6 h-6 text-indigo-400" /> Chiusura Linea</h1>
                         <p className="text-sm text-slate-500 mt-0.5">{direzione ? "Gestione globale delle richieste di disdetta" : puoInviare ? "Invio e monitoraggio delle tue richieste di disdetta" : "Consultazione delle richieste di disdetta"}</p>
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-start gap-2 flex-wrap">
                         <div className="relative">
                             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
                             <input value={q} onChange={e => setQ(e.target.value)} placeholder="Cerca cliente…" className="glass-input !pl-8 text-xs w-44" />
                         </div>
                         {direzione && (
                             <>
-                                <select value={fBrand} onChange={e => setFBrand(e.target.value)} className="glass-input text-xs">
-                                    <option value="">Tutti i brand</option>{BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                                </select>
-                                <select value={fNegozio} onChange={e => setFNegozio(e.target.value)} className="glass-input text-xs">
-                                    <option value="">Tutti i negozi</option>{negozi.map(n => <option key={n} value={n}>{n}</option>)}
-                                </select>
+                                <div className="w-40"><SelectMulti values={fBrands} onChange={setFBrands} opzioni={BRANDS} placeholder="Brand: tutti" className="glass-input w-full text-xs" /></div>
+                                <div className="w-44"><SelectMulti values={fNegozi} onChange={setFNegozi} opzioni={negozi} placeholder="Negozio: tutti" className="glass-input w-full text-xs" /></div>
                             </>
                         )}
+                        {consulentiVisibili.length > 1 && (
+                            <div className="w-44"><SelectMulti values={fUtenti} onChange={setFUtenti} opzioni={consulentiVisibili} placeholder="Utente: tutti" className="glass-input w-full text-xs" /></div>
+                        )}
+                        <div className="w-36"><DatePickerInput value={fDal} onChange={setFDal} placeholder="Dal gg/mm/aaaa" /></div>
+                        <div className="w-36"><DatePickerInput value={fAl} onChange={setFAl} placeholder="Al gg/mm/aaaa" /></div>
                     </div>
                 </div>
 
@@ -533,7 +669,9 @@ export default function ChiusuraLineaPage() {
                     {loading ? (
                         <div className="flex items-center gap-3 text-slate-400 py-16 justify-center"><Loader2 className="w-5 h-5 animate-spin" /> Caricamento richieste…</div>
                     ) : direzione ? (
-                        /* VISTA DIREZIONE: super-tabella globale */
+                        /* VISTA DIREZIONE: tessere contatore + super-tabella globale */
+                        <div className="space-y-4 min-w-0">
+                        {tessere}
                         <div className="glass-card overflow-hidden">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-xs">
@@ -559,15 +697,17 @@ export default function ChiusuraLineaPage() {
                                             </tr>
                                         ))}
                                         {ordinatiDirezione.length === 0 && (
-                                            <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500 text-sm">Nessuna richiesta di disdetta.</td></tr>
+                                            <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500 text-sm">Nessuna richiesta di disdetta con questi filtri.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
                             </div>
                         </div>
+                        </div>
                     ) : (
-                        /* VISTA CONSULENTE: le mie richieste (SM: anche il team) */
-                        <div className="space-y-3">
+                        /* VISTA CONSULENTE: tessere + le mie richieste (SM: anche il team) */
+                        <div className="space-y-3 min-w-0">
+                            {tessere}
                             <h2 className="text-lg font-bold text-white">{wholeStore ? "Richieste del negozio" : "Le mie richieste"}</h2>
                             {ordinatiConsulente.map(t => (
                                 <div key={t.id} className={cn("glass-card p-4 flex items-center justify-between gap-3 flex-wrap", t.status === "da_integrare" && "border-l-4 border-l-rose-500")}>
@@ -586,7 +726,7 @@ export default function ChiusuraLineaPage() {
                                     </div>
                                 </div>
                             ))}
-                            {ordinatiConsulente.length === 0 && <p className="text-sm text-slate-500 py-10 text-center">Nessuna richiesta ancora: usa il modulo a sinistra per inviare la prima.</p>}
+                            {ordinatiConsulente.length === 0 && <p className="text-sm text-slate-500 py-10 text-center">{conta.tot > 0 ? "Nessuna richiesta con questi filtri: prova le tessere qui sopra." : "Nessuna richiesta ancora: usa il modulo a sinistra per inviare la prima."}</p>}
                         </div>
                     )}
                 </div>
