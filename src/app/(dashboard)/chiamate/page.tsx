@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Phone, Search, X, UserPlus, Link2, Archive, RefreshCw } from "lucide-react";
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Search, X, UserPlus, Link2, Archive, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
@@ -249,8 +249,15 @@ export default function RegistroChiamatePage() {
                                     className={`rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 transition-colors ${espandibile ? "cursor-pointer hover:bg-white/[0.06]" : ""}`}>
                                     <div className="flex items-center gap-3 flex-wrap text-sm">
                                         {espandibile && <span className="text-slate-500 text-xs shrink-0">{aperta ? "▾" : "▸"} 🎧</span>}
-                                        <span title={e.direction === "inbound" ? "In entrata — il cliente ha chiamato il negozio" : "In uscita — il negozio ha chiamato"}>
-                                            {e.direction === "inbound" ? "📥" : "📤"}
+                                        {/* direzione stile Telegram (Luca 04/08): telefono con
+                                            freccetta colorata, non i vassoi dei messaggi —
+                                            verde=ricevuta, blu=effettuata, rossa=persa */}
+                                        <span className="shrink-0" title={e.missed && e.direction === "inbound" ? "Persa — il cliente ha chiamato e nessuno ha risposto" : e.direction === "inbound" ? "Ricevuta — il cliente ha chiamato il negozio" : "Effettuata — il negozio ha chiamato"}>
+                                            {e.missed && e.direction === "inbound"
+                                                ? <PhoneMissed className="w-4 h-4 text-rose-400" />
+                                                : e.direction === "inbound"
+                                                    ? <PhoneIncoming className="w-4 h-4 text-emerald-400" />
+                                                    : <PhoneOutgoing className="w-4 h-4 text-sky-400" />}
                                         </span>
                                         <span className="text-white font-semibold">{quando(e.started_at)}</span>
                                         {mostraNegozio && !!e.negozio && (
