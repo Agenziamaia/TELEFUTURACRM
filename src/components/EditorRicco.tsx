@@ -8,13 +8,14 @@
 
    Offre: undo/redo · font (default/elegante/tecnico) · 4 taglie · B I U S ·
    colore testo · evidenziatore · elenchi puntati e numerati · allineamento ·
-   pulisci formato · EMOJI ILLIMITATE (picker a categorie, rare comprese).
+   pulisci formato · TUTTE le emoji Unicode (~1.900 base, dataset generato da
+   scripts/genera-emoji.mjs) con ricerca per nome/keyword in italiano e inglese.
 
    Il valore viaggia in HTML (onChange) + testo puro (onChangeTesto, per
    validazioni e compatibilità). `sanificaHtml` è il guardiano: whitelist di
    tag/attributi, via script e handler — da usare SEMPRE anche al render. */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // ── SANIFICATORE (whitelist): l'HTML si mostra solo ripulito ────────────────
 const TAG_OK = new Set(["B", "STRONG", "I", "EM", "U", "S", "STRIKE", "SPAN", "FONT", "DIV", "P", "BR", "UL", "OL", "LI", "A", "H1", "H2", "H3", "BLOCKQUOTE"]);
@@ -58,42 +59,28 @@ export function sanificaHtml(html: string): string {
     return doc.body.innerHTML;
 }
 
-// ── EMOJI ILLIMITATE per categorie (Luca: "anche rare e alternative") ───────
-const EMOJI_CATEGORIE: { nome: string; icona: string; emoji: string[] }[] = [
-    {
-        nome: "Faccine", icona: "😀", emoji: ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😜", "🤪", "😝", "🤑", "🤗", "🤭", "🫢", "🫣", "🤫", "🤔", "🫡", "🤐", "🤨", "😐", "😑", "🫥", "😶‍🌫️", "😏", "😒", "🙄", "😬", "🤥", "🫨", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕", "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "😵‍💫", "🤯", "🤠", "🥳", "🥸", "😎", "🤓", "🧐", "😕", "🫤", "😟", "🙁", "😮", "😯", "😲", "😳", "🥺", "🥹", "😦", "😨", "😰", "😥", "😢", "😭", "😱", "😖", "😣", "😞", "😓", "😩", "😫", "🥱", "😤", "😡", "🤬", "😈", "👿", "💀", "☠️", "💩", "🤡", "👹", "👺", "👻", "👽", "👾", "🤖", "🫠"],
-    },
-    {
-        nome: "Gesti", icona: "👍", emoji: ["👍", "👎", "👊", "✊", "🤛", "🤜", "👏", "🙌", "🫶", "👐", "🤲", "🤝", "🙏", "✍️", "💅", "🤳", "💪", "🦾", "🖕", "✌️", "🤞", "🫰", "🤟", "🤘", "🤙", "👈", "👉", "👆", "👇", "☝️", "🫵", "👋", "🤚", "🖐️", "✋", "🖖", "🫱", "🫲", "🫳", "🫴", "👌", "🤌", "🤏", "🫸", "🫷"],
-    },
-    {
-        nome: "Persone", icona: "🧑", emoji: ["👶", "🧒", "👦", "👧", "🧑", "👱", "👨", "🧔", "👩", "🧓", "👴", "👵", "🙍", "🙎", "🙅", "🙆", "💁", "🙋", "🧏", "🙇", "🤦", "🤷", "👮", "🕵️", "💂", "🥷", "👷", "🫅", "🤴", "👸", "👳", "👲", "🧕", "🤵", "👰", "🤰", "🫃", "🫄", "🤱", "👼", "🎅", "🤶", "🦸", "🦹", "🧙", "🧚", "🧛", "🧜", "🧝", "🧞", "🧟", "🧌", "💆", "💇", "🚶", "🧍", "🧎", "🏃", "💃", "🕺", "🕴️", "👯", "🧖", "🧗", "🤺", "🏇", "⛷️", "🏂", "🏌️", "🏄", "🚣", "🏊", "⛹️", "🏋️", "🚴", "🚵", "🤸", "🤼", "🤽", "🤾", "🤹", "🧘"],
-    },
-    {
-        nome: "Festa & premi", icona: "🎉", emoji: ["🎉", "🎊", "🥳", "🎈", "🎂", "🍰", "🧁", "🍾", "🥂", "🍻", "🎁", "🎀", "🪅", "🪩", "🎆", "🎇", "✨", "🌟", "💫", "⭐", "🏆", "🥇", "🥈", "🥉", "🏅", "🎖️", "👑", "💎", "🔮", "🪄", "🎗️", "🎟️", "🎫", "🎯", "🎳", "🎮", "🕹️", "🎲", "🧩", "🪀", "🪁", "🎭", "🎨", "🎬", "🎤", "🎧", "🎼", "🎵", "🎶", "🪕", "🪗", "🪘", "🪇", "🪈", "🎷", "🎺", "🎸", "🎻", "🥁"],
-    },
-    {
-        nome: "Lavoro & ufficio", icona: "💼", emoji: ["💼", "🗂️", "📁", "📂", "📄", "📃", "📑", "🧾", "📊", "📈", "📉", "📋", "📌", "📍", "📎", "🖇️", "📏", "📐", "✂️", "🖊️", "🖋️", "✒️", "🖌️", "🖍️", "✏️", "📝", "🔍", "🔎", "🔏", "🔐", "🔒", "🔓", "🗝️", "🔑", "🪪", "📇", "🗃️", "🗄️", "🗑️", "📅", "📆", "🗓️", "⏰", "⏱️", "⏲️", "🕐", "⌛", "⏳", "📞", "☎️", "📟", "📠", "📧", "📨", "📩", "📤", "📥", "📦", "🏷️", "🪧", "📣", "📢", "🔔", "🔕", "💡", "🔦", "🕯️", "🪔"],
-    },
-    {
-        nome: "Tech & telefonia", icona: "📱", emoji: ["📱", "📲", "☎️", "📶", "🛜", "📡", "🔋", "🪫", "🔌", "💻", "🖥️", "🖨️", "⌨️", "🖱️", "🖲️", "💽", "💾", "💿", "📀", "🧮", "🎥", "📷", "📸", "📹", "📼", "🔬", "🔭", "⚙️", "🛠️", "🔧", "🔨", "⚒️", "🪛", "🪚", "🔩", "⛏️", "🪓", "🪝", "⛓️", "🧲", "🪜", "🧰", "🛡️", "🚨", "🧯", "🛎️", "🤖", "👾", "🛰️", "🚀", "🛸", "🪐", "☄️", "⚡", "🔥", "💥", "🌐"],
-    },
-    {
-        nome: "Soldi & business", icona: "💰", emoji: ["💰", "🪙", "💴", "💵", "💶", "💷", "💸", "💳", "🧾", "💹", "📈", "📉", "🏦", "🏧", "🤑", "💲", "🛒", "🛍️", "🏪", "🏬", "🏢", "🏭", "🏗️", "🧱", "🪵", "🛖", "🏠", "🏡", "🏘️", "🏚️", "⚖️", "🤝", "📜", "🔖", "🎰", "🎲", "♟️", "🥊"],
-    },
-    {
-        nome: "Natura & tempo", icona: "🌈", emoji: ["☀️", "🌤️", "⛅", "🌥️", "☁️", "🌦️", "🌧️", "⛈️", "🌩️", "🌨️", "❄️", "☃️", "⛄", "🌬️", "💨", "🌪️", "🌫️", "🌈", "☔", "💧", "💦", "🫧", "🌊", "🌍", "🌎", "🌏", "🌕", "🌖", "🌗", "🌘", "🌑", "🌒", "🌓", "🌔", "🌙", "🌚", "🌝", "🌞", "🪐", "💫", "⭐", "🌟", "✨", "☄️", "🌱", "🪴", "🌿", "☘️", "🍀", "🍁", "🍂", "🍃", "🪺", "🪹", "🌸", "💮", "🪷", "🌹", "🥀", "🌺", "🌻", "🌼", "🌷", "🪻", "🌵", "🌴", "🌳", "🌲", "🪾", "🍄", "🐝", "🦋", "🐞", "🐢", "🦎", "🐍", "🦂", "🕷️", "🦀", "🐙", "🦑", "🦈", "🐬", "🐳", "🦭", "🪼", "🐠", "🦩", "🦜", "🦚", "🦉", "🦅", "🕊️", "🦢", "🪿", "🐓", "🦃", "🐺", "🦊", "🐗", "🫎", "🦌", "🐎", "🦄", "🦓", "🦒", "🐘", "🦣", "🦏", "🦛", "🐪", "🦙", "🦘", "🐃", "🐂", "🐄", "🫏", "🐐", "🐏", "🐑", "🐖", "🐕", "🦮", "🐩", "🐈", "🐈‍⬛", "🐅", "🐆", "🦁", "🐯", "🐻", "🐻‍❄️", "🐼", "🦥", "🦦", "🦨", "🦡", "🐾"],
-    },
-    {
-        nome: "Cibo", icona: "🍕", emoji: ["🍕", "🍔", "🍟", "🌭", "🥪", "🌮", "🌯", "🫔", "🥙", "🧆", "🥘", "🍝", "🍜", "🍲", "🍛", "🍣", "🍱", "🥟", "🍤", "🍙", "🍚", "🍘", "🍥", "🥠", "🍢", "🍡", "🍧", "🍨", "🍦", "🥧", "🧁", "🍰", "🎂", "🍮", "🍭", "🍬", "🍫", "🍿", "🍩", "🍪", "🌰", "🥜", "🫘", "🍯", "🥛", "🫗", "🍼", "☕", "🫖", "🍵", "🧃", "🥤", "🧋", "🍶", "🍺", "🍻", "🥂", "🍷", "🥃", "🍸", "🍹", "🍾", "🧉", "🧊", "🥄", "🍴", "🍽️", "🥣", "🥡", "🥢", "🧂", "🍎", "🍐", "🍊", "🍋", "🍋‍🟩", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍", "🥥", "🥝", "🍅", "🍆", "🥑", "🫛", "🥦", "🥬", "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅", "🥔", "🍠", "🫚", "🥐", "🥯", "🍞", "🥖", "🥨", "🧀", "🥚", "🍳", "🧈", "🥞", "🧇", "🥓", "🥩", "🍗", "🍖", "🦴"],
-    },
-    {
-        nome: "Trasporti & luoghi", icona: "🚗", emoji: ["🚗", "🚕", "🚙", "🚌", "🚎", "🏎️", "🚓", "🚑", "🚒", "🚐", "🛻", "🚚", "🚛", "🚜", "🦯", "🦽", "🦼", "🛴", "🚲", "🛵", "🏍️", "🛺", "🚨", "🚔", "🚍", "🚘", "🚖", "🚡", "🚠", "🚟", "🚃", "🚋", "🚞", "🚝", "🚄", "🚅", "🚈", "🚂", "🚆", "🚇", "🚊", "🚉", "✈️", "🛫", "🛬", "🛩️", "💺", "🚁", "🛶", "⛵", "🚤", "🛥️", "🛳️", "⛴️", "🚢", "⚓", "🪝", "⛽", "🚧", "🚦", "🚥", "🗺️", "🗿", "🗽", "🗼", "🏰", "🏯", "🏟️", "🎡", "🎢", "🎠", "⛲", "⛱️", "🏖️", "🏝️", "🏜️", "🌋", "⛰️", "🏔️", "🗻", "🏕️", "⛺", "🛤️", "🛣️", "🏗️", "🌁", "🗾", "🌆", "🌇", "🌃", "🌉", "🌌", "🎑", "🏙️"],
-    },
-    {
-        nome: "Simboli", icona: "❤️", emoji: ["❤️", "🩷", "🧡", "💛", "💚", "💙", "🩵", "💜", "🤎", "🖤", "🩶", "🤍", "💔", "❤️‍🔥", "❤️‍🩹", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "☮️", "✝️", "☪️", "🕉️", "☸️", "✡️", "🔯", "🕎", "☯️", "☦️", "🛐", "⛎", "♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓", "🆔", "⚛️", "🉑", "☢️", "☣️", "📴", "📳", "🈶", "🈚", "🈸", "🈺", "🈷️", "✴️", "🆚", "💮", "🉐", "㊙️", "㊗️", "🈴", "🈵", "🈹", "🈲", "🅰️", "🅱️", "🆎", "🆑", "🅾️", "🆘", "❌", "⭕", "🛑", "⛔", "📛", "🚫", "💯", "💢", "♨️", "🚷", "🚯", "🚳", "🚱", "🔞", "📵", "🚭", "❗", "❕", "❓", "❔", "‼️", "⁉️", "🔅", "🔆", "〽️", "⚠️", "🚸", "🔱", "⚜️", "🔰", "♻️", "✅", "🈯", "💹", "❇️", "✳️", "❎", "🌐", "💠", "Ⓜ️", "🌀", "💤", "🏧", "🚾", "♿", "🅿️", "🛗", "🈳", "🈂️", "🛂", "🛃", "🛄", "🛅", "🚹", "🚺", "🚼", "⚧️", "🚻", "🚮", "🎦", "🛜", "📶", "🈁", "🔣", "ℹ️", "🔤", "🔡", "🔠", "🆖", "🆗", "🆙", "🆒", "🆕", "🆓", "0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🔢", "#️⃣", "*️⃣", "⏏️", "▶️", "⏸️", "⏯️", "⏹️", "⏺️", "⏭️", "⏮️", "⏩", "⏪", "⏫", "⏬", "◀️", "🔼", "🔽", "➡️", "⬅️", "⬆️", "⬇️", "↗️", "↘️", "↙️", "↖️", "↕️", "↔️", "↪️", "↩️", "⤴️", "⤵️", "🔀", "🔁", "🔂", "🔄", "🔃", "🎵", "🎶", "➕", "➖", "➗", "✖️", "🟰", "♾️", "💲", "💱", "™️", "©️", "®️", "👁️‍🗨️", "🔚", "🔙", "🔛", "🔝", "🔜", "〰️", "➰", "➿", "✔️", "☑️", "🔘", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "⚫", "⚪", "🟤", "🔺", "🔻", "🔸", "🔹", "🔶", "🔷", "🔳", "🔲", "▪️", "▫️", "◾", "◽", "◼️", "◻️", "🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "⬛", "⬜", "🟫", "🔈", "🔇", "🔉", "🔊", "🔔", "🔕", "📣", "📢", "💬", "💭", "🗯️", "♠️", "♣️", "♥️", "♦️", "🃏", "🎴", "🀄", "🕐", "🧿", "🪬", "🪩"],
-    },
+// ── EMOJI COMPLETE (COM-01) — dataset generato da scripts/genera-emoji.mjs ──
+// src/lib/emojiData.json: ~1.900 emoji base (niente varianti di carnagione),
+// nomi e keywords CLDR it+en. Caricato PIGRAMENTE alla prima apertura del
+// pannello (import dinamico): il bundle principale non cresce. I gruppi
+// seguono l'ordine Unicode e devono combaciare con GRUPPO_OUT nello script.
+type EmojiDato = { e: string; n: string; k: string[]; g: number };
+type EmojiIndicizzata = EmojiDato & { s: string }; // s = testo di ricerca già normalizzato
+const GRUPPI_EMOJI: { nome: string; icona: string }[] = [
+    { nome: "Faccine ed emozioni", icona: "😀" },
+    { nome: "Persone e corpo", icona: "👋" },
+    { nome: "Animali e natura", icona: "🐻" },
+    { nome: "Cibo e bevande", icona: "🍕" },
+    { nome: "Viaggi e luoghi", icona: "🚗" },
+    { nome: "Attività", icona: "⚽" },
+    { nome: "Oggetti", icona: "💡" },
+    { nome: "Simboli", icona: "🔣" },
+    { nome: "Bandiere", icona: "🏁" },
 ];
+const PASSO_EMOJI = 300;  // celle per "pagina" nelle categorie grosse (Mostra altre)
+const CAP_RICERCA = 300;  // massimo risultati mostrati con una ricerca attiva
+// accent-insensitive: "perche" trova "perché", "caffe" trova "caffè"
+const normalizza = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 
 // ── barra strumenti: definizione bottoni ────────────────────────────────────
 const COLORI_TESTO = ["var(--tf-f8fafc)", "var(--tf-fbbf24)", "var(--tf-4ade80)", "var(--tf-60a5fa)", "var(--tf-f472b6)", "var(--tf-a78bfa)", "var(--tf-fb7185)", "var(--tf-f97316)", "var(--tf-94a3b8)"];
@@ -119,6 +106,38 @@ export function EditorRicco({ htmlIniziale = "", onChange, placeholder = "Scrivi
     const [pann, setPann] = useState<"" | "colore" | "evidenzia" | "emoji">("");
     const [catEmoji, setCatEmoji] = useState(0);
     const [attivi, setAttivi] = useState<Record<string, boolean>>({});
+    // dataset emoji: caricato via import dinamico alla PRIMA apertura del pannello
+    const [datiEmoji, setDatiEmoji] = useState<EmojiIndicizzata[] | null>(null);
+    const [caricoEmoji, setCaricoEmoji] = useState(false);
+    const [cercaEmoji, setCercaEmoji] = useState("");
+    const [limiteEmoji, setLimiteEmoji] = useState(PASSO_EMOJI);
+
+    const apriPannelloEmoji = () => {
+        const prossimo = pann === "emoji" ? "" : "emoji";
+        setPann(prossimo);
+        if (prossimo !== "emoji" || datiEmoji || caricoEmoji) return;
+        setCaricoEmoji(true);
+        import("@/lib/emojiData.json")
+            .then((m) => {
+                // indice di ricerca precalcolato: nome + keywords it/en, senza accenti
+                const lista = (m.default as EmojiDato[]).map((d) => ({ ...d, s: normalizza(d.n + " " + d.k.join(" ")) }));
+                setDatiEmoji(lista);
+            })
+            .catch(() => { /* rete/chunk ko: restano le emoji rapide */ })
+            .finally(() => setCaricoEmoji(false));
+    };
+
+    const queryEmoji = normalizza(cercaEmoji.trim());
+    const emojiVisibili = useMemo(() => {
+        if (!datiEmoji) return { lista: [] as EmojiIndicizzata[], totale: 0 };
+        if (queryEmoji) {
+            // ricerca GLOBALE su tutte le categorie, col cap per non piantare i PC dei negozi
+            const trovate = datiEmoji.filter((d) => d.s.includes(queryEmoji));
+            return { lista: trovate.slice(0, CAP_RICERCA), totale: trovate.length };
+        }
+        const gruppo = datiEmoji.filter((d) => d.g === catEmoji);
+        return { lista: gruppo.slice(0, limiteEmoji), totale: gruppo.length };
+    }, [datiEmoji, queryEmoji, catEmoji, limiteEmoji]);
 
     useEffect(() => {
         if (box.current && htmlIniziale && !box.current.innerHTML) box.current.innerHTML = sanificaHtml(htmlIniziale);
@@ -188,7 +207,7 @@ export function EditorRicco({ htmlIniziale = "", onChange, placeholder = "Scrivi
                 <Btn label="⬅" title="Allinea a sinistra" on={() => cmd("justifyLeft")} />
                 <Btn label="⬌" title="Centra" on={() => cmd("justifyCenter")} />
                 <Sep />
-                <Btn label="😀" title="Emoji — tutte, rare comprese" attivo={pann === "emoji"} on={() => setPann(pann === "emoji" ? "" : "emoji")} />
+                <Btn label="😀" title="Emoji — tutte, con ricerca per nome" attivo={pann === "emoji"} on={apriPannelloEmoji} />
                 <Btn label="⌫" title="Pulisci la formattazione del testo selezionato" on={() => { cmd("removeFormat"); cmd("unlink"); }} />
             </div>
 
@@ -225,22 +244,47 @@ export function EditorRicco({ htmlIniziale = "", onChange, placeholder = "Scrivi
                             ))}
                         </div>
                     )}
-                    <div className="flex items-center gap-1 px-2 pt-2 overflow-x-auto">
-                        {EMOJI_CATEGORIE.map((c, i) => (
-                            <button key={c.nome} type="button" onMouseDown={(e) => { e.preventDefault(); setCatEmoji(i); }}
-                                title={c.nome}
-                                className={`px-2 h-7 rounded-lg text-sm shrink-0 ${catEmoji === i ? "bg-violet-500/25 border border-violet-400/50" : "hover:bg-white/10 border border-transparent"}`}>
-                                {c.icona}
+                    <div className="px-2 pt-2">
+                        <input value={cercaEmoji} onChange={(e) => setCercaEmoji(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+                            placeholder="Cerca un'emoji… (nome o parola, italiano o inglese)"
+                            className="w-full h-8 rounded-lg bg-white/5 border border-white/10 px-2.5 text-xs text-slate-200 placeholder:text-slate-600 outline-none focus:border-violet-400/50" />
+                    </div>
+                    {caricoEmoji && <div className="px-3 py-3 text-xs text-slate-500">Carico tutte le emoji…</div>}
+                    {datiEmoji && !queryEmoji && (
+                        <div className="flex items-center gap-1 px-2 pt-2 overflow-x-auto">
+                            {GRUPPI_EMOJI.map((c, i) => (
+                                <button key={c.nome} type="button" onMouseDown={(e) => { e.preventDefault(); setCatEmoji(i); setLimiteEmoji(PASSO_EMOJI); }}
+                                    title={c.nome}
+                                    className={`px-2 h-7 rounded-lg text-sm shrink-0 ${catEmoji === i ? "bg-violet-500/25 border border-violet-400/50" : "hover:bg-white/10 border border-transparent"}`}>
+                                    {c.icona}
+                                </button>
+                            ))}
+                            <span className="text-[10px] text-slate-500 ml-auto pr-1 shrink-0">{GRUPPI_EMOJI[catEmoji].nome}</span>
+                        </div>
+                    )}
+                    {datiEmoji && emojiVisibili.lista.length > 0 && (
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(30px,1fr))] gap-0.5 p-2 max-h-44 overflow-y-auto">
+                            {emojiVisibili.lista.map((d) => (
+                                <button key={d.e} type="button" title={d.n} onMouseDown={(ev) => { ev.preventDefault(); inserisci(d.e); }}
+                                    className="h-8 rounded-lg hover:bg-white/10 text-lg leading-none">{d.e}</button>
+                            ))}
+                        </div>
+                    )}
+                    {datiEmoji && queryEmoji && emojiVisibili.totale === 0 && (
+                        <div className="px-3 py-3 text-xs text-slate-500">Nessuna emoji trovata: prova con un&apos;altra parola (anche in inglese).</div>
+                    )}
+                    {datiEmoji && queryEmoji && emojiVisibili.totale > CAP_RICERCA && (
+                        <div className="px-3 pb-2 text-[10px] text-slate-500">{emojiVisibili.totale} risultati, mostro i primi {CAP_RICERCA} — affina la ricerca.</div>
+                    )}
+                    {datiEmoji && !queryEmoji && emojiVisibili.totale > limiteEmoji && (
+                        <div className="px-2 pb-2">
+                            <button type="button" onMouseDown={(e) => { e.preventDefault(); setLimiteEmoji((l) => l + PASSO_EMOJI); }}
+                                className="w-full h-7 rounded-lg text-[11px] font-bold text-slate-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors">
+                                Mostra altre {Math.min(PASSO_EMOJI, emojiVisibili.totale - limiteEmoji)} · {limiteEmoji} di {emojiVisibili.totale}
                             </button>
-                        ))}
-                        <span className="text-[10px] text-slate-500 ml-auto pr-1 shrink-0">{EMOJI_CATEGORIE[catEmoji].nome}</span>
-                    </div>
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(30px,1fr))] gap-0.5 p-2 max-h-44 overflow-y-auto">
-                        {EMOJI_CATEGORIE[catEmoji].emoji.map((e, i) => (
-                            <button key={e + i} type="button" onMouseDown={(ev) => { ev.preventDefault(); inserisci(e); }}
-                                className="h-8 rounded-lg hover:bg-white/10 text-lg leading-none">{e}</button>
-                        ))}
-                    </div>
+                        </div>
+                    )}
                 </div>
             )}
 
