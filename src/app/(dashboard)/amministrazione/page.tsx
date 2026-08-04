@@ -24,6 +24,7 @@ import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from 
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { RichiesteProfiloBox } from "@/components/RichiesteProfilo";
+import { SelectOpzioni } from "@/components/SelectPersona";
 import {
     ROLES,
     AREAS,
@@ -122,6 +123,7 @@ interface Store {
     shared_percent: number | null;
     store_category: string | null;
     brands?: string[] | null;   // brand trattati (mig. 112): comunicazioni per brand
+    brand_negozio?: string | null; // windtre | vodafone | multibrand (mig. 159): logo nella sezione Turni
 }
 
 const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[]; visibility: string[] } = {
@@ -2136,6 +2138,10 @@ function StoreDetail({ store, onClose, month, livePeople }: { store: Store; onCl
     const onItemTotals = useCallback((a: number, v: number) => setItemTotals({ a, v }), []);
     const [tab, setTab] = useState<"costi" | "collaboratori" | "allegati">("costi");
     const [cat, setCat] = useState(store.store_category || "");
+    // Brand del negozio (mig. 159): decide il LOGO nella sezione Turni. Da non
+    // confondere con stores.brands (chip delle comunicazioni mirate).
+    const BRAND_NEGOZIO_LABELS: Record<string, string> = { windtre: "WindTre", vodafone: "Vodafone", multibrand: "Multibrand" };
+    const [brandNeg, setBrandNeg] = useState(BRAND_NEGOZIO_LABELS[store.brand_negozio || ""] || "");
     const [fixedTotals, setFixedTotals] = useState({ a: 0, v: 0 });
     const onFixedTotals = useCallback((a: number, v: number) => setFixedTotals({ a, v }), []);
 
@@ -2225,6 +2231,21 @@ function StoreDetail({ store, onClose, month, livePeople }: { store: Store; onCl
                                 <option value="">— non classificato —</option>
                                 {STORE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
+                            <span className="text-xs text-slate-500 ml-2" title="Logo mostrato nella sezione Turni. Diverso dai brand trattati (comunicazioni).">Brand</span>
+                            <div className="w-36">
+                                <SelectOpzioni
+                                    value={brandNeg}
+                                    onChange={async (v) => {
+                                        setBrandNeg(v);
+                                        const chiave = Object.entries(BRAND_NEGOZIO_LABELS).find(([, l]) => l === v)?.[0] || null;
+                                        const { error } = await supabase.from("stores").update({ brand_negozio: chiave }).eq("id", store.id);
+                                        if (!dbError("Salvataggio brand negozio", error)) notify("Brand salvato ✓", "ok");
+                                    }}
+                                    opzioni={Object.values(BRAND_NEGOZIO_LABELS)}
+                                    placeholder="— nessuno —"
+                                    className="glass-input w-full text-sm"
+                                />
+                            </div>
                             <div className="flex gap-1.5 ml-auto">
                                 {([["costi", "Costi"], ["collaboratori", "Collaboratori"], ["allegati", "Allegati"]] as const).map(([id, label]) => (
                                     <button

@@ -228,6 +228,8 @@ export default function Calendario() {
     const [selectedMeeting, setSelectedMeeting] = useState<CalendarMeeting | null>(null);
     const [showMeetingDetailModal, setShowMeetingDetailModal] = useState(false);
     const [showSearchDrawer, setShowSearchDrawer] = useState(false);
+    // pannello elenco TASK ARRETRATE (Luca 04/08, riporto stile Google)
+    const [showArretrate, setShowArretrate] = useState(false);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
 
     // Deep link dai tag in chat: /calendario?appuntamento=<id> apre l'appuntamento
@@ -609,28 +611,29 @@ export default function Calendario() {
         visibleAppointments.filter(a => a.date === dateStr)
             .sort((a, b) => minutiDi(a.time) - minutiDi(b.time));
 
-    const tasksByDate = (dateStr: string) => {
-        if (!catOn("task")) return [];
-        return tasks.filter(t => {
-            if (t.date !== dateStr) return false;
-            if (isCallCenter) {
-                if (filterAgent && filterAgent !== "Tutti" && !t.assignedToStore && t.assignedTo !== filterAgent) return false;
-                if (filterStores.length > 0 && t.assignedToStore && !filterStores.includes(t.assignedToStore)) return false;
-                if (taskOutcomeFilter && t.status !== taskOutcomeFilter) return false;
-                return true;
-            }
-            // Agent: visible if assigned to me, or assigned to my store
-            if (t.assignedToStore) {
-                // task assegnate a QUALSIASI negozio visibile
-                const storeMatch = mieiNegozi.some((m) => sameStore(t.assignedToStore, m));
-                if (!storeMatch) return false;
-            } else {
-                if (!(t.assignedTo === user?.name || t.createdBy === user?.name)) return false;
-            }
-            if (taskOutcomeFilter && t.status !== taskOutcomeFilter) return false;
+    // ── VISIBILITA' TASK (Luca 04/08): estratta da tasksByDate per valere
+    //    identica anche sul riporto arretrate. Regole invariate: gating
+    //    categoria, filtri admin, match per NOME utente (storico), task di
+    //    negozio visibili su QUALSIASI negozio dell'utente. Il filtro esito
+    //    resta FUORI: alle arretrate non si applica (aperte per definizione).
+    const taskVisibile = (t: CalendarTask): boolean => {
+        if (!catOn("task")) return false;
+        if (isCallCenter) {
+            if (filterAgent && filterAgent !== "Tutti" && !t.assignedToStore && t.assignedTo !== filterAgent) return false;
+            if (filterStores.length > 0 && t.assignedToStore && !filterStores.includes(t.assignedToStore)) return false;
             return true;
-        });
+        }
+        // Agent: visible if assigned to me, or assigned to my store
+        if (t.assignedToStore) {
+            // task assegnate a QUALSIASI negozio visibile
+            if (!mieiNegozi.some((m) => sameStore(t.assignedToStore, m))) return false;
+        } else {
+            if (!(t.assignedTo === user?.name || t.createdBy === user?.name)) return false;
+        }
+        return true;
     };
+    const tasksByDate = (dateStr: string) =>
+        tasks.filter(t => t.date === dateStr && taskVisibile(t) && (!taskOutcomeFilter || t.status === taskOutcomeFilter));
 
     const meetingsByDate = (dateStr: string) => catOn("meeting") ? meetings.filter(m => m.date === dateStr) : [];
 
@@ -731,6 +734,9 @@ export default function Calendario() {
             notes: newTask.notes || null,
             client_ref: newTask.clientRef || null,
             created_by: user?.name || "Sconosciuto",
+            // esplicito: il default DB storico era TRUE e lo script di pulizia
+            // demo cancellerebbe task vere (sanato con la mig. 160)
+            is_demo: false,
         };
         const rows = [
             ...persone.map((p) => ({ ...base, assigned_to: p, assigned_to_store: null })),
@@ -902,6 +908,23 @@ export default function Calendario() {
     const dateMeetings = selectedDate ? meetingsByDate(selectedDate) : [];
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
+    // ── TASK ARRETRATE, riporto stile Google Calendar (Luca 04/08): date < oggi
+    //    e stato non chiuso — SOLO fatta/abbandonata chiudono, le SOSPESE si
+    //    riportano (decisione Luca). Nessuna riga duplicata: la task resta
+    //    sulla sua data e a mezzanotte il riporto si sposta da solo (todayStr).
+    const CHIUSE_TASK = ["fatta", "abbandonata"];
+    const tasksArretrate = tasks
+        .filter(t => t.date < todayStr && !CHIUSE_TASK.includes(t.status) && taskVisibile(t))
+        .sort((a, b) => a.date === b.date ? minutiDi(a.time) - minutiDi(b.time) : a.date.localeCompare(b.date));
+    // In COLONNA (giorno corrente) la direzione vede SOLO le proprie (assegnate
+    // o create da lei): l'elenco di tutta la rete sta nel pannello del bottone
+    // ⏰ — altrimenti le arretrate altrui coprirebbero gli impegni del giorno.
+    const arretrateInColonna = isCallCenter
+        ? tasksArretrate.filter(t => t.assignedTo === user?.name || t.createdBy === user?.name)
+        : tasksArretrate;
+    const giorniFa = (d: string) => Math.round((new Date(todayStr + "T12:00:00").getTime() - new Date(d + "T12:00:00").getTime()) / 86400000);
+    const ggMm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+
     const parseSearchDate = (val: string): string | null => {
         if (!val || !val.trim()) return null;
         const m = val.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -1006,6 +1029,20 @@ export default function Calendario() {
                         <Search className="w-4 h-4" />
                         Cerca appuntamenti
                     </button>
+                    {tasksArretrate.length > 0 && (
+                        <button
+                            onClick={() => setShowArretrate(v => !v)}
+                            title="Task con data passata non ancora chiuse (fatta/abbandonata)"
+                            className={cn(
+                                "h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border",
+                                showArretrate
+                                    ? "bg-amber-500/25 text-amber-200 border-amber-500/60 shadow-amber-500/20"
+                                    : "bg-amber-500/10 text-amber-300 border-amber-500/40 hover:bg-amber-500/20"
+                            )}
+                        >
+                            ⏰ Arretrate ({tasksArretrate.length})
+                        </button>
+                    )}
                     <button
                         onClick={() => openCreateTaskModal()}
                         className="h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-500/50 shadow-emerald-500/20"
@@ -1296,6 +1333,38 @@ export default function Calendario() {
                 </div>
             )}
 
+            {/* ── PANNELLO TASK ARRETRATE (Luca 04/08): l'elenco COMPLETO — per la
+                direzione tutta la rete (coi filtri negozio/consulente attivi),
+                per gli altri le proprie. Click sulla riga = dettaglio task, da
+                lì si chiude (fatta/abbandonata) o si sposta la data. ── */}
+            {showArretrate && tasksArretrate.length > 0 && (
+                <div className="glass-card mb-6 p-6 animate-in slide-in-from-top-4 fade-in duration-200">
+                    <h3 className="text-lg font-medium text-white mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
+                        ⏰ Task arretrate
+                        <span className="text-sm font-bold text-amber-300">({tasksArretrate.length})</span>
+                        <span className="ml-auto text-xs font-normal text-slate-500">non chiuse, in ordine dalla più vecchia</span>
+                    </h3>
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                        {tasksArretrate.map(t => (
+                            <button
+                                key={`arrp-${t.id}`}
+                                onClick={() => setTaskDettaglio(t)}
+                                title="Apri la task (dettaglio e modifica)"
+                                className="w-full text-left p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] hover:bg-amber-500/[0.12] transition-colors flex items-center gap-3 flex-wrap"
+                            >
+                                <span className="text-xs font-mono font-bold text-amber-300 shrink-0">{ggMm(t.date)}</span>
+                                <span className="text-[10px] text-slate-500 shrink-0">{giorniFa(t.date)} gg fa</span>
+                                <span className="text-sm font-semibold text-white truncate flex-1 min-w-[160px]">{t.title}</span>
+                                <span className="text-xs text-slate-400 truncate max-w-[220px]">{t.assignedToStore ? `🏬 ${t.assignedToStore}` : (t.assignedTo || t.createdBy)}</span>
+                                <span className={cn("text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border shrink-0", esitoClasse(t.status, "task"))}>
+                                    {esitoLabel(t.status, "task")}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Calendar Grid */}
                 <div className="lg:col-span-2 glass-card p-6">
@@ -1331,6 +1400,18 @@ export default function Calendario() {
                                 </button>
                             ))}
                         </div>
+                        {/* Domenica a scomparsa: pill visibile come nel calendario ferie
+                            (Luca 04/08, superato il "volutamente discreto" del 31/07).
+                            ATTENZIONE semantica: qui lo stato e' mostraDomenica
+                            (true = mostra), la pill e' accesa quando e' NASCOSTA. */}
+                        {calView === "week" && (
+                            <button onClick={() => setMostraDomenica(v => !v)}
+                                title="La domenica i negozi sono chiusi: nascondendola le colonne respirano"
+                                className={cn("shrink-0 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-colors",
+                                    !mostraDomenica ? "border-rose-400/60 bg-rose-500/15 text-rose-200" : "border-white/10 text-slate-500 hover:text-slate-300")}>
+                                {!mostraDomenica ? "🙈 Domenica nascosta" : "Nascondi domenica"}
+                            </button>
+                        )}
                         <button
                             onClick={calView === "month" ? nextMonth : calView === "week" ? () => setWeekStart(addDays(weekStart, 7)) : () => { const d = addDays(dayDate, 1); setDayDate(d); selectDate(d); }}
                             className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-slate-300"
@@ -1390,6 +1471,10 @@ export default function Calendario() {
                                     {isBlocked && (
                                         <Lock className="w-3 h-3 text-amber-400 mt-0.5" />
                                     )}
+                                    {/* riporto arretrate (Luca 04/08): badge sul giorno corrente */}
+                                    {isToday && arretrateInColonna.length > 0 && (
+                                        <span className="mt-0.5 text-[9px] font-black text-amber-300" title={`${arretrateInColonna.length} task arretrate da chiudere`}>⏰{arretrateInColonna.length}</span>
+                                    )}
                                     {(dayAppts.length > 0 || dayTasks.length > 0 || dayMeetings.length > 0) && (
                                         <div className="flex flex-wrap gap-0.5 mt-1 justify-center items-center">
                                             {dayAppts.slice(0, 3).map(a => (
@@ -1424,15 +1509,6 @@ export default function Calendario() {
                         cliccabili (l'appuntamento apre il suo dettaglio, la riunione il
                         suo); il pannello a destra resta e segue il giorno selezionato. */}
                     {calView === "week" && (<>
-                        <div className="flex justify-end -mb-3">
-                            {/* volutamente DISCRETO (Luca 31/07): se l'ho nascosta non
-                                voglio che il pulsante si faccia notare */}
-                            <button onClick={() => setMostraDomenica(v => !v)}
-                                title={mostraDomenica ? "Nascondi la domenica: gli altri giorni si allargano" : "Mostra di nuovo la domenica"}
-                                className="px-2.5 py-1 rounded-lg text-[11px] text-slate-600 hover:text-slate-300 transition-colors">
-                                {mostraDomenica ? "Nascondi domenica" : "Mostra domenica"}
-                            </button>
-                        </div>
                         <div className={cn("grid gap-1.5", mostraDomenica ? "grid-cols-7" : "grid-cols-6")}>
                             {(mostraDomenica ? weekDays : weekDays.slice(0, 6)).map((dateStr) => {
                                 const wd = new Date(dateStr + "T12:00:00");
@@ -1465,6 +1541,25 @@ export default function Calendario() {
                                             {isBlocked && <Lock className="w-3 h-3 text-amber-400 mx-auto mt-0.5" />}
                                         </button>
                                         <div className="flex-1 overflow-y-auto p-1 space-y-1 custom-scrollbar">
+                                            {/* RIPORTO ARRETRATE (Luca 04/08): in cima al giorno CORRENTE,
+                                                blocco separato dalle task di oggi — la task resta sulla
+                                                sua data, qui è solo richiamata. */}
+                                            {dateStr === todayStr && arretrateInColonna.length > 0 && (
+                                                <div className="mb-1 space-y-1">
+                                                    <div className="px-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400/90">⏰ Arretrate ({arretrateInColonna.length})</div>
+                                                    {arretrateInColonna.map((t) => (
+                                                        <button
+                                                            key={`arr-${t.id}`}
+                                                            onClick={() => { selectDate(dateStr); setTaskDettaglio(t); }}
+                                                            title={`Task del ${ggMm(t.date)} non ancora chiusa — apri il dettaglio`}
+                                                            className="w-full text-left px-1.5 py-1 rounded-lg border border-amber-500/40 bg-amber-500/10 text-[10px] leading-tight hover:bg-amber-500/20 transition-colors"
+                                                        >
+                                                            <div className="font-semibold text-amber-200 truncate">{ggMm(t.date)} · {t.title}</div>
+                                                            <div className="text-slate-400 truncate">{t.assignedToStore || t.assignedTo}</div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
                                             {/* UNICA lista cronologica (Luca 29/07): l'ORARIO è il principe —
                                                 senza-orario IN TESTA, poi tutte le categorie mescolate
                                                 in ordine di orario reale (non tre liste in sequenza). */}
@@ -1542,6 +1637,9 @@ export default function Calendario() {
                         const dayTasks = tasksByDate(dayDate);
                         const dayMeetings = meetingsByDate(dayDate);
                         const senzaOra = dayTasks.filter(t => !t.time);
+                        // riporto arretrate (Luca 04/08): solo sul giorno CORRENTE,
+                        // nella striscia "Tutto il giorno" come fa Google
+                        const arretrateOggi = dayDate === todayStr ? arretrateInColonna : [];
                         type Ev = { key: string; min: number; durata: number; titolo: string; sotto: string; extra?: string; classi: string; onClick: () => void };
                         const evs: Ev[] = [
                             ...dayAppts.filter(a => minutiDi(a.time) < 24 * 60).map((a): Ev => ({
@@ -1580,9 +1678,16 @@ export default function Calendario() {
                         const oraLinea = dayDate === todayStr ? adesso.getHours() * 60 + adesso.getMinutes() : null;
                         return (
                             <div>
-                                {senzaOra.length > 0 && (
+                                {(senzaOra.length > 0 || arretrateOggi.length > 0) && (
                                     <div className="mb-3 flex flex-wrap gap-1.5 items-center">
                                         <span className="text-[10px] uppercase tracking-wider text-slate-500">Tutto il giorno:</span>
+                                        {arretrateOggi.map(t => (
+                                            <button key={`arr-${t.id}`} onClick={() => setTaskDettaglio(t)}
+                                                title={`Task arretrata del ${ggMm(t.date)} — apri il dettaglio`}
+                                                className="px-2 py-1 rounded-lg border border-amber-500/40 bg-amber-500/15 text-[11px] text-amber-200 hover:bg-amber-500/25">
+                                                ⏰ {ggMm(t.date)} · {t.title}
+                                            </button>
+                                        ))}
                                         {senzaOra.map(t => (
                                             <button key={`sg-${t.id}`} onClick={() => selectDate(dayDate)}
                                                 className="px-2 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 text-[11px] text-emerald-200 hover:bg-emerald-500/25">
@@ -1721,6 +1826,25 @@ export default function Calendario() {
                                 <CheckSquare className="w-3.5 h-3.5" />
                                 Task
                             </h4>
+
+                            {/* riporto arretrate (Luca 04/08): sopra le task del giorno,
+                                solo quando il pannello mostra OGGI */}
+                            {selectedDate === todayStr && arretrateInColonna.length > 0 && (
+                                <div className="mb-3 space-y-2">
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400">⏰ Task arretrate ({arretrateInColonna.length})</p>
+                                    {arretrateInColonna.map(t => (
+                                        <button key={`arrs-${t.id}`} onClick={() => setTaskDettaglio(t)}
+                                            title="Apri la task (dettaglio e modifica)"
+                                            className="w-full text-left p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] hover:bg-amber-500/[0.14] transition-colors">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-sm font-semibold text-white truncate">{t.title}</span>
+                                                <span className="text-[10px] font-mono font-bold text-amber-300 shrink-0">{ggMm(t.date)}</span>
+                                            </div>
+                                            <div className="text-xs text-slate-400 truncate mt-0.5">{t.assignedToStore ? `🏬 ${t.assignedToStore}` : t.assignedTo} · {giorniFa(t.date)} gg fa</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
 
                             {dateTasks.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center text-slate-500 gap-2 mb-4">
@@ -2851,6 +2975,7 @@ function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, on
             const base = {
                 title: (patch.title as string) || t.title, date: data, time: ora || null, status: "da_fare",
                 notes: note || null, client_ref: t.clientRef || null, created_by: t.createdBy || "—",
+                is_demo: false, // il default DB storico era TRUE (mig. 160)
             };
             const rows = [
                 ...addPersone.filter((p) => p !== t.assignedTo).map((p) => ({ ...base, assigned_to: p, assigned_to_store: null })),

@@ -232,27 +232,60 @@ export function StoreAttachments({ storeId }: { storeId: string }) {
    Turni: spostati qui) e CHIUSURE STRAORDINARIE (es. chiusura estiva,
    dal → al con motivo). La sezione Turni legge tutto da qui. ── */
 type ChiusuraRow = { id: number; store: string; dal: string; al: string; motivo: string };
+// pausa/is_ufficio opzionali = mig. 158/159: il fallback pre-migrazione
+// carica solo le colonne storiche
+type NegozioOrariRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null };
+type CampoOrario = "orario_apertura" | "orario_chiusura" | "orario_pausa_inizio" | "orario_pausa_fine";
 export function OrariChiusureView() {
-    const [negozi, setNegozi] = useState<{ name: string; orario_apertura: string | null; orario_chiusura: string | null }[]>([]);
+    const [negozi, setNegozi] = useState<NegozioOrariRow[]>([]);
     const [chiusure, setChiusure] = useState<ChiusuraRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [nuova, setNuova] = useState<Record<string, { dal: string; al: string; motivo: string }>>({});
+    // toggle "spezzato" per negozio: acceso a mano oppure dedotto dalla pausa a DB
+    const [spezzatoUi, setSpezzatoUi] = useState<Record<string, boolean>>({});
     const carica = useCallback(async () => {
-        const [st, ch] = await Promise.all([
-            supabase.from("stores").select("name, orario_apertura, orario_chiusura").order("name"),
+        const [st0, ch] = await Promise.all([
+            supabase.from("stores").select("name, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio").order("name"),
             supabase.from("chiusure_negozio").select("id, store, dal, al, motivo").order("dal"),
         ]);
-        setNegozi((st.data ?? []) as never);
+        // mig. 158/159 non ancora applicate: si ripiega sulle colonne storiche
+        const st = st0.error
+            ? await supabase.from("stores").select("name, orario_apertura, orario_chiusura").order("name")
+            : st0;
+        // gli UFFICI (mig. 159) non hanno orari da amministrare: fuori dal pannello
+        setNegozi(((st.data ?? []) as NegozioOrariRow[]).filter(n => !n.is_ufficio));
         setChiusure((ch.data ?? []) as ChiusuraRow[]);
         setLoading(false);
     }, []);
     useEffect(() => { carica(); }, [carica]);
     const hhmm = (t: string | null | undefined, fb: string) => (t || fb).slice(0, 5);
-    const salvaOrario = async (store: string, campo: "orario_apertura" | "orario_chiusura", val: string) => {
+    const salvaOrario = async (store: string, campo: CampoOrario, val: string) => {
         if (!val) return;
+        // validazione orario spezzato: apertura < pausa_inizio < pausa_fine < chiusura
+        const n = negozi.find(x => x.name === store);
+        if (n) {
+            const cand = {
+                orario_apertura: hhmm(n.orario_apertura, "09:30"),
+                orario_chiusura: hhmm(n.orario_chiusura, "19:30"),
+                orario_pausa_inizio: n.orario_pausa_inizio ? hhmm(n.orario_pausa_inizio, "") : "",
+                orario_pausa_fine: n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : "",
+                [campo]: val,
+            } as Record<CampoOrario, string>;
+            const { orario_apertura: ap, orario_chiusura: ch, orario_pausa_inizio: pi, orario_pausa_fine: pf } = cand;
+            if (ch <= ap) { notify("La chiusura è prima dell'apertura"); return; }
+            if ((pi && (pi <= ap || pi >= ch)) || (pf && (pf <= ap || pf >= ch))) { notify("La pausa deve stare dentro l'orario di apertura"); return; }
+            if (pi && pf && pf <= pi) { notify("La fine della pausa è prima dell'inizio"); return; }
+        }
         const { error } = await supabase.from("stores").update({ [campo]: val }).eq("name", store);
         if (dbError("Orario negozio", error)) return;
-        setNegozi(p => p.map(n => n.name === store ? { ...n, [campo]: val } : n));
+        setNegozi(p => p.map(x => x.name === store ? { ...x, [campo]: val } : x));
+    };
+    // ritorno all'orario CONTINUATO: pausa azzerata a DB (null/null)
+    const rimuoviPausa = async (store: string) => {
+        const { error } = await supabase.from("stores").update({ orario_pausa_inizio: null, orario_pausa_fine: null }).eq("name", store);
+        if (dbError("Orario negozio", error)) return;
+        setNegozi(p => p.map(x => x.name === store ? { ...x, orario_pausa_inizio: null, orario_pausa_fine: null } : x));
+        setSpezzatoUi(p => ({ ...p, [store]: false }));
     };
     const aggiungiChiusura = async (store: string) => {
         const f = nuova[store];
@@ -275,13 +308,17 @@ export function OrariChiusureView() {
         <div className="space-y-3">
             <p className="text-xs text-slate-500 max-w-2xl">
                 Gli <b className="text-slate-300">orari</b> sono la base dei turni (giornata, mattina, pomeriggio);
-                le <b className="text-rose-300">chiusure straordinarie</b> (ferie estive, lavori…) chiudono il punto
+                con l&apos;<b className="text-amber-300">orario spezzato</b> (☕ pausa pranzo) mattina e pomeriggio
+                seguono le due fasce; le <b className="text-rose-300">chiusure straordinarie</b> (ferie estive, lavori…) chiudono il punto
                 vendita nel periodo indicato: la sezione Turni lo mostra 🔒 e blocca le assegnazioni.
             </p>
             {negozi.map(n => {
                 const mie = chiusure.filter(c => c.store === n.name);
                 const f = nuova[n.name] || { dal: "", al: "", motivo: "" };
                 const setF = (patch: Partial<typeof f>) => setNuova(p => ({ ...p, [n.name]: { ...f, ...patch } }));
+                // orario SPEZZATO (mig. 158): il toggle mostra i due campi
+                // pausa; pausa a null/null = continuato (come oggi)
+                const spezzato = spezzatoUi[n.name] ?? !!(n.orario_pausa_inizio && n.orario_pausa_fine);
                 return (
                     <div key={n.name} className="glass-card p-4 flex items-start gap-4 flex-wrap">
                         <div className="w-44 shrink-0">
@@ -291,6 +328,20 @@ export function OrariChiusureView() {
                                 <span>–</span>
                                 <input type="time" value={hhmm(n.orario_chiusura, "19:30")} onChange={e => salvaOrario(n.name, "orario_chiusura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
                             </div>
+                            {spezzato ? (
+                                <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-400" title="Pausa pranzo: il negozio è chiuso tra questi orari (mattina = apertura → inizio pausa, pomeriggio = fine pausa → chiusura)">
+                                    <span className="text-xs shrink-0">☕</span>
+                                    <input type="time" value={n.orario_pausa_inizio ? hhmm(n.orario_pausa_inizio, "") : ""} onChange={e => salvaOrario(n.name, "orario_pausa_inizio", e.target.value)} className="glass-input !h-7 !px-1 text-[11px] w-[68px]" />
+                                    <span>–</span>
+                                    <input type="time" value={n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : ""} onChange={e => salvaOrario(n.name, "orario_pausa_fine", e.target.value)} className="glass-input !h-7 !px-1 text-[11px] w-[68px]" />
+                                    <button onClick={() => rimuoviPausa(n.name)} title="Torna all'orario continuato (toglie la pausa)" className="text-slate-500 hover:text-rose-400 font-bold shrink-0">✕</button>
+                                </div>
+                            ) : (
+                                <button onClick={() => setSpezzatoUi(p => ({ ...p, [n.name]: true }))}
+                                    className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-amber-300 transition-colors">
+                                    ＋ Orario spezzato
+                                </button>
+                            )}
                         </div>
                         <div className="flex-1 min-w-[280px] space-y-1.5">
                             {mie.length === 0 && <p className="text-xs text-slate-600 italic mt-1.5">Nessuna chiusura straordinaria.</p>}

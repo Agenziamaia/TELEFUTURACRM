@@ -1863,7 +1863,13 @@ function RitardiSection() {
    aggiungono con mezzi turni (mattina/pomeriggio dagli orari del negozio)
    o orari personalizzati. Orari di apertura/chiusura modificabili qui. ── */
 type TurnoRow = { id: number; store: string; data: string; persona: string; inizio: string; fine: string; tipo: string; creato_da: string | null };
-type StoreRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null };
+// campi opzionali = mig. 158/159 (pausa pranzo, flag ufficio, brand): il
+// fallback pre-migrazione carica solo le colonne storiche
+type StoreRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; brand_negozio?: string | null };
+// loghi brand del punto vendita (mig. 159): per i multibrand la "donnina"
+// /logo-crm.png, che sul tema chiaro ha gia' la chip scura automatica
+// (globals.css). Brand NULL → icona generica 🏬.
+const LOGO_BRAND: Record<string, string> = { windtre: "/windtre.png", vodafone: "/vodaphone - Copy.png", multibrand: "/logo-crm.png" };
 
 function TurniSection() {
     const { user } = useAuth();
@@ -1880,14 +1886,20 @@ function TurniSection() {
     const hhmm = (t: string | null | undefined, fallback: string) => (t || fallback).slice(0, 5);
 
     const caricaBase = useCallback(async () => {
-        const [st, us, links, ch] = await Promise.all([
-            supabase.from("stores").select("name, orario_apertura, orario_chiusura").order("name"),
+        const [st0, us, links, ch] = await Promise.all([
+            supabase.from("stores").select("name, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, brand_negozio").order("name"),
             supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name"),
             supabase.from("user_stores").select("user_id, store_name, app_users!inner(full_name, active)"),
             supabase.from("chiusure_negozio").select("store, dal, al, motivo"),
         ]);
+        // mig. 158/159 non ancora applicate: si ripiega sulle colonne storiche
+        const st = st0.error
+            ? await supabase.from("stores").select("name, orario_apertura, orario_chiusura").order("name")
+            : st0;
         setChiusure((ch.data ?? []) as never);
-        setNegozi((st.data ?? []) as StoreRow[]);
+        // gli UFFICI non sono punti vendita a turni (mig. 159): fuori dalla
+        // lista, ma le loro persone restano selezionabili come coperture
+        setNegozi(((st.data ?? []) as StoreRow[]).filter(n => !n.is_ufficio));
         setStaff((us.data ?? []) as never);
         const m = new Map<string, string[]>();
         const aggiungi = (store: string | null, nome: string | null | undefined) => {
@@ -1949,6 +1961,12 @@ function TurniSection() {
             <div className="glass-card overflow-hidden divide-y divide-white/5">
                 {negozi.map(n => {
                     const ap = hhmm(n.orario_apertura, "09:30"), ch = hhmm(n.orario_chiusura, "19:30");
+                    // orario SPEZZATO (mig. 158): con la pausa valorizzata le
+                    // coperture M/P seguono le due fasce; senza pausa resta lo
+                    // spartiacque storico delle 14:00
+                    const pi = n.orario_pausa_inizio ? hhmm(n.orario_pausa_inizio, "") : "";
+                    const pf = n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : "";
+                    const spezzato = !!(pi && pf);
                     const chiusura = chiusure.find(c => c.store === n.name && c.dal <= dataSel && c.al >= dataSel);
                     const turniStore = turni.filter(t => t.store === n.name);
                     const aTurno = new Set(turniStore.map(t => t.persona));
@@ -1957,13 +1975,18 @@ function TurniSection() {
                     const setNv = (patch: Partial<typeof nv>) => setNuovo(p => ({ ...p, [n.name]: { ...nv, ...patch } }));
                     return (
                         <div key={n.name} className={cn("flex items-center gap-4 px-4 py-3 flex-wrap", chiusura && "bg-rose-500/[0.05]")}>
-                            {/* colonna negozio */}
-                            <div className="w-48 shrink-0">
-                                <p className="text-sm font-bold text-white truncate">🏬 {n.name}</p>
+                            {/* colonna negozio: logo del brand (mig. 159) al posto dell'emoji */}
+                            <div className="w-56 shrink-0">
+                                <p className="text-sm font-bold text-white flex items-center gap-1.5">
+                                    {n.brand_negozio && LOGO_BRAND[n.brand_negozio]
+                                        ? <img src={LOGO_BRAND[n.brand_negozio]} alt="" className="w-5 h-5 object-contain shrink-0" />
+                                        : <span className="shrink-0">🏬</span>}
+                                    <span className="truncate min-w-0">{n.name}</span>
+                                </p>
                                 {chiusura ? (
                                     <p className="text-[10px] font-black uppercase text-rose-400 mt-0.5">🔒 Chiuso{chiusura.motivo ? ` · ${chiusura.motivo}` : ""}</p>
                                 ) : (
-                                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">🕐 {ap}–{ch}</p>
+                                    <p className="text-[11px] text-slate-500 font-mono mt-0.5">🕐 {spezzato ? `${ap}–${pi} · ${pf}–${ch}` : `${ap}–${ch}`}</p>
                                 )}
                             </div>
                             {/* persone in ORIZZONTALE */}
@@ -1997,8 +2020,8 @@ function TurniSection() {
                                 <div className="flex items-center gap-1.5 flex-wrap shrink-0" onClick={e => e.stopPropagation()}>
                                     <div className="w-44"><SelectPersona value={nv.persona} onChange={v => setNv({ persona: v })} opzioni={tuttiINomi} placeholder="Copertura…" className="glass-input text-xs rounded-lg py-1.5 w-full" /></div>
                                     <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, ch, "giornata")} disabled={!nv.persona} title="Giornata intera" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 disabled:opacity-40">G</button>
-                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, "14:00", "mattina")} disabled={!nv.persona} title="Mattina (apertura → 14)" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 disabled:opacity-40">M</button>
-                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, "14:00", ch, "pomeriggio")} disabled={!nv.persona} title="Pomeriggio (14 → chiusura)" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 disabled:opacity-40">P</button>
+                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, ap, pi || "14:00", "mattina")} disabled={!nv.persona} title={`Mattina (${ap} → ${pi || "14:00"})`} className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-sky-500/15 border border-sky-500/40 text-sky-300 disabled:opacity-40">M</button>
+                                    <button onClick={() => aggiungiTurno(n.name, nv.persona, pf || "14:00", ch, "pomeriggio")} disabled={!nv.persona} title={`Pomeriggio (${pf || "14:00"} → ${ch})`} className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 disabled:opacity-40">P</button>
                                     <input type="time" value={nv.inizio} onChange={e => setNv({ inizio: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
                                     <input type="time" value={nv.fine} onChange={e => setNv({ fine: e.target.value })} className="glass-input !h-7 !px-1 text-[10px] w-[70px]" />
                                     <button onClick={() => aggiungiTurno(n.name, nv.persona, nv.inizio, nv.fine, "personalizzato")} disabled={!nv.persona} title="Orario personalizzato" className="px-2 py-1.5 rounded-lg text-[10px] font-bold bg-violet-500/15 border border-violet-500/40 text-violet-300 disabled:opacity-40">＋</button>
