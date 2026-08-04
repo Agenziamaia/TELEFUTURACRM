@@ -59,6 +59,25 @@ export function CatalogoView() {
         } catch (e) { setSyncDisp("⚠️ " + ((e as Error)?.message || "sync non riuscita")); }
         finally { setSyncBusy(false); }
     };
+    // SYNC PREZZI USATO (Francesco 04/08): popola market_buyback_prices da
+    // refurbed.it (retail - margine). Resumabile: salta i modelli gia' freschi
+    // (<15gg), quindi si riclicca finche' "restano 0". Frontend Registra Usato
+    // legge poi la cache e mostra la ricompra suggerita per grado.
+    const [pxDisp, setPxDisp] = useState<string | null>(null);
+    const [pxBusy, setPxBusy] = useState(false);
+    const syncPrezziUsato = async () => {
+        if (pxBusy) return;
+        setPxBusy(true); setPxDisp("⏳ Sincronizzo i prezzi da refurbed.it… (può richiedere ~1-2 min)");
+        try {
+            const r = await fetch("/api/usati/sync-prices", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limit: 40 }) });
+            const j = await r.json();
+            if (j.ok) {
+                setPxDisp(`✅ ${j.devices_ok} modelli aggiornati (${j.rows_upserted} tagli) · ${j.not_found} non su refurbed · margine ${j.margin_pct}%.`
+                    + (j.remaining > 0 ? ` Restano ~${j.remaining}: riclicca per continuare.` : " Aggiornamento completo."));
+            } else setPxDisp("⚠️ " + (j.error || "sync prezzi non riuscita"));
+        } catch (e) { setPxDisp("⚠️ " + ((e as Error)?.message || "sync prezzi non riuscita")); }
+        finally { setPxBusy(false); }
+    };
     const [loading, setLoading] = useState(true);
     const [cats, setCats] = useState<Cat[]>([]);
     const [brands, setBrands] = useState<Brand[]>([]);
@@ -490,6 +509,8 @@ export function CatalogoView() {
         <div className="mb-3 flex items-center gap-3 flex-wrap">
           <button onClick={aggiornaDispositivi} disabled={syncBusy} className="px-4 py-2.5 rounded-xl border border-indigo-400/50 bg-indigo-500/15 text-indigo-200 text-sm font-bold hover:bg-indigo-500/25 disabled:opacity-50">{syncBusy ? "Aggiornamento in corso…" : "📱 Aggiorna catalogo dispositivi (Apple + Google)"}</button>
           {syncDisp && <span className="text-xs text-slate-300">{syncDisp}</span>}
+          <button onClick={syncPrezziUsato} disabled={pxBusy} className="px-4 py-2.5 rounded-xl border border-emerald-400/50 bg-emerald-500/15 text-emerald-200 text-sm font-bold hover:bg-emerald-500/25 disabled:opacity-50">{pxBusy ? "Sync prezzi in corso…" : "🔄 Sync prezzi usato (refurbed.it)"}</button>
+          {pxDisp && <span className="text-xs text-slate-300">{pxDisp}</span>}
         </div>
         <div className="space-y-5">
             {/* intestazione */}

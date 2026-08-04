@@ -1092,6 +1092,41 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   // SOLO catalogo universale: niente ripieghi cablati, cosi' la fonte e' una
   const brandOptions = dbBrands;
   const modelOptions = dbModelli;
+  // ── MOTORE PREZZI USATO (Francesco 04/08): ricompra max suggerita PER GRADO.
+  //    Legge SOLO la cache locale market_buyback_prices (popolata dal bottone
+  //    "Sync prezzi" in Amministrazione) — nessuna query internet dal front-end.
+  //    Scatta appena ci sono categoria + brand + modello + capacita'.
+  type MktRow = { grade_a_price: number | null; grade_b_price: number | null; grade_c_price: number | null; storage?: string; market_source?: string; margin_pct?: number };
+  const [mktRow, setMktRow] = useState<MktRow | null>(null);
+  const [mktState, setMktState] = useState<"idle" | "loading" | "ok" | "empty" | "err">("idle");
+  useEffect(() => {
+    let vivo = true;
+    if (!brand || !model || !capacita) { setMktRow(null); setMktState("idle"); return; }
+    setMktState("loading");
+    const cap = capacita.replace(/\s+/g, "").toUpperCase(); // "128 GB" -> "128GB"
+    supabase.from("market_buyback_prices").select("*")
+      .eq("categoria", catDisp).ilike("brand", brand).ilike("device_model", model)
+      .then((res) => {
+        if (!vivo) return;
+        if (res.error) { setMktRow(null); setMktState("err"); return; }
+        const rows: MktRow[] = res.data || [];
+        const norm = (s: string) => (s || "").replace(/\s+/g, "").toUpperCase();
+        const hit = rows.find((r) => norm(r.storage || "") === cap) || rows.find((r) => !r.storage) || rows[0] || null;
+        setMktRow(hit); setMktState(hit ? "ok" : "empty");
+      });
+    return () => { vivo = false; };
+  }, [catDisp, brand, model, capacita]);
+  // Ricompra massima per un grado del form: A/B/C dal mercato; Km0/D stimati (~).
+  const buybackGrado = (key: string): { val: number; approx: boolean } | null => {
+    const r = mktRow; if (!r) return null;
+    const A = r.grade_a_price, B = r.grade_b_price, C = r.grade_c_price, R = (n: number) => Math.round(n);
+    if (key === "A" && A != null) return { val: A, approx: false };
+    if (key === "B" && B != null) return { val: B, approx: false };
+    if (key === "C" && C != null) return { val: C, approx: false };
+    if (key === "Km0" && A != null) return { val: R(A * 1.1), approx: true };
+    if (key === "D" && C != null) return { val: R(C * 0.8), approx: true };
+    return null;
+  };
   const [hasExtraMargine, setHasExtraMargine] = useState(false);
   const [extraMargineImporto, setExtraMargineImporto] = useState("");
   const [metodoPagamento, setMetodoPagamento] = useState<"contanti" | "buono" | "bonifico" | "">("");
@@ -1384,14 +1419,26 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
           </div>
           <div>
             <label className={lbl}>Grado di Usura *</label>
+            {brand && model && capacita && mktState !== "idle" && (
+              <div className="mb-2 flex items-start gap-2 text-[11px] font-semibold rounded-lg px-3 py-2 bg-emerald-500/[0.06] border border-emerald-500/20 text-slate-400">
+                {mktState === "loading" && <span>⏳ Carico i prezzi di mercato…</span>}
+                {mktState === "ok" && <span>💶 <b className="text-emerald-400">Ricompra massima suggerita</b> per grado — fonte {mktRow?.market_source || "mercato ricondizionato"}, margine {mktRow?.margin_pct ?? "—"}%. Km 0 e Grado D sono stime (~).</span>}
+                {mktState === "empty" && <span>ℹ️ Nessun prezzo in cache per questo modello/taglio — esegui “🔄 Sync prezzi” in Amministrazione.</span>}
+                {mktState === "err" && <span>⚠️ Prezzi non ancora disponibili (tabella da sincronizzare).</span>}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
-              {GRADI_USURA.map(g => (
+              {GRADI_USURA.map(g => {
+                const sugg = buybackGrado(g.key);
+                return (
                 <div key={g.key} onClick={() => setGradoUsura(g.key)}
                   className={`p-3 rounded-xl border cursor-pointer transition-all ${gradoUsura === g.key ? "bg-purple-500/10 border-purple-500/40" : "bg-white/[0.02] border-white/5 hover:border-white/10"}`}>
                   <div className={`text-xs font-bold ${gradoUsura === g.key ? "text-purple-300" : "text-slate-300"}`}>{g.label}</div>
                   <div className="text-[11px] text-slate-500 mt-0.5">{g.desc}</div>
+                  {sugg && <div className="text-[11px] font-extrabold text-emerald-400 mt-1">💶 fino a €{sugg.val}{sugg.approx ? " ~" : ""}</div>}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
           <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer border transition-all ${hasExtraMargine ? "bg-yellow-500/10 border-yellow-500/30" : "bg-white/[0.02] border-white/5"}`}>
