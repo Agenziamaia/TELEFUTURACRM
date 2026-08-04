@@ -46,6 +46,34 @@ export function useStores(): string[] {
   return v;
 }
 
+// Negozi ATTIVI (stores.active = true), uffici COMPRESI: e' la lista per le
+// tendine di ATTRIBUZIONE (es. il Negozio nel modale di Ricerca Vendite), dove
+// deve comparire anche un punto vendita appena creato e ancora senza vendite —
+// caso "Agenzia" (is_ufficio = true), nato apposta per le vendite outbound:
+// qui is_ufficio NON va filtrato. useStores resta com'e' (tutti i negozi).
+let activeStoresCache: string[] | null = null;
+let activeStoresPromise: Promise<string[]> | null = null;
+
+async function loadActiveStores(): Promise<string[]> {
+  if (activeStoresCache) return activeStoresCache;
+  if (!activeStoresPromise) {
+    activeStoresPromise = (async () => {
+      const { data } = await supabase
+        .from("stores").select("name").eq("active", true).order("name");
+      activeStoresCache = (data || []).map((r: any) => r.name).filter(Boolean) as string[];
+      return activeStoresCache;
+    })();
+  }
+  return activeStoresPromise;
+}
+
+/** Nomi dei negozi ATTIVI (uffici inclusi), per le tendine di attribuzione. */
+export function useActiveStores(): string[] {
+  const [v, setV] = useState<string[]>(activeStoresCache || []);
+  useEffect(() => { let ok = true; loadActiveStores().then((s) => ok && setV(s)).catch(() => {}); return () => { ok = false; }; }, []);
+  return v;
+}
+
 export interface StoreRec { id: string; name: string; code: string | null }
 let storeRecsCache: StoreRec[] | null = null;
 let storeRecsPromise: Promise<StoreRec[]> | null = null;
@@ -102,6 +130,6 @@ export function useCallers(): string[] {
 
 /** Svuota la cache (utile dopo aver creato/rinominato un negozio o un utente). */
 export function invalidateOrgCache() {
-  storesCache = sellersCache = callersCache = null;
-  storesPromise = sellersPromise = callersPromise = null;
+  storesCache = sellersCache = callersCache = activeStoresCache = null;
+  storesPromise = sellersPromise = callersPromise = activeStoresPromise = null;
 }

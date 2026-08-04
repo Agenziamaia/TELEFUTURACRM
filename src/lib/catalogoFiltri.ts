@@ -38,14 +38,26 @@ export type MargArticolo = { name: string; kind: string };
 // "Very"/"Ho Mobile"/"Kena" creerebbero doppioni a DB): qui si traduce solo.
 export const LABEL_SLUG: Record<string, string> = { "WindTre": "windtre", "Vodafone": "vodafone", "Fastweb": "fastweb", "Iliad": "iliad", "Sky": "sky", "TIM": "tim", "Tim": "tim", "S4": "s4", "Dojo": "dojo", "Very Mobile": "very", "Very": "very", "Ho. Mobile": "ho", "Ho Mobile": "ho", "Kena Mobile": "kena", "Kena": "kena" };
 
-// ── Cache di modulo: il catalogo non cambia durante la sessione ──────────────
+// ── Cache di modulo: il catalogo cambia di rado, un viaggio per brand basta ──
+// MA il pannello amministrazione puo' aggiornarlo A SESSIONE APERTA: chi ha il
+// modale di Ricerca Vendite vedrebbe la versione vecchia fino al reload della
+// pagina. Percio' i loader accettano { fresh: true } (bypass della cache, che
+// viene comunque RIAGGIORNATA: anche i filtri di pagina beneficiano del dato
+// nuovo) e c'e' invalidaCatalogo() per svuotare tutto (Luca 05/08).
 let _catNomi: { id: string; nome: string }[] | null = null;
-const _catFiltro: Record<string, CatFiltro> = {};
+let _catFiltro: Record<string, CatFiltro> = {};
 let _margListino: MargArticolo[] | null = null;
 
+/** Svuota la cache del catalogo: la prossima load rilegge dal DB. */
+export function invalidaCatalogo() {
+    _catNomi = null;
+    _catFiltro = {};
+    _margListino = null;
+}
+
 /** Categorie del catalogo (id + nome), in ordine di catalogo. */
-export async function loadCatalogoCategorie(): Promise<{ id: string; nome: string }[]> {
-    if (!_catNomi) {
+export async function loadCatalogoCategorie(opts?: { fresh?: boolean }): Promise<{ id: string; nome: string }[]> {
+    if (!_catNomi || opts?.fresh) {
         const rc = await supabase.from("catalog_categorie").select("id, nome").order("ordine");
         _catNomi = (rc.data ?? []) as { id: string; nome: string }[];
     }
@@ -53,10 +65,10 @@ export async function loadCatalogoCategorie(): Promise<{ id: string; nome: strin
 }
 
 /** Catalogo completo di un brand (per slug), pronto per le tendine. */
-export async function loadCatalogoBrand(slug: string): Promise<CatFiltro> {
+export async function loadCatalogoBrand(slug: string, opts?: { fresh?: boolean }): Promise<CatFiltro> {
     const hit = _catFiltro[slug];
-    if (hit) return hit;
-    const catNomi = await loadCatalogoCategorie();
+    if (hit && !opts?.fresh) return hit;
+    const catNomi = await loadCatalogoCategorie(opts);
     const rp = await supabase.from("catalog_prodotti").select("id, nome, categoria_id").eq("brand_id", slug);
     const prods = (rp.data ?? []) as { id: string; nome: string; categoria_id: string }[];
     let offs: { id: string; prodotto_id: string; nome: string }[] = [];
@@ -94,8 +106,8 @@ export async function loadCatalogoBrand(slug: string): Promise<CatFiltro> {
 }
 
 /** Listino Marginalità: articoli con il loro tipo (prodotti/servizi), A–Z. */
-export async function loadMargListino(): Promise<MargArticolo[]> {
-    if (_margListino) return _margListino;
+export async function loadMargListino(opts?: { fresh?: boolean }): Promise<MargArticolo[]> {
+    if (_margListino && !opts?.fresh) return _margListino;
     const [rc, ri] = await Promise.all([
         supabase.from("marg_categories").select("id, kind"),
         // anche gli articoli spenti: lo storico li contiene

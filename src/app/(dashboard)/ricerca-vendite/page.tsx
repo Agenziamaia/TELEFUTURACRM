@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
-import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation, FileText } from "lucide-react";
+import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation, FileText, ChevronDown } from "lucide-react";
 import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
 import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
+import { useActiveStores } from "@/lib/org";
 import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE, TRK_BADGE_OFFSET, TRK_BADGE_OFFSET_DEFAULT } from "@/lib/brandAssets";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { seesWholeStore } from "@/lib/roles";
@@ -101,6 +102,16 @@ const CLIENT_FIELDS: EditField[] = [
     { key: "nome_ref", label: "Nome referente" },
     { key: "cognome_ref", label: "Cognome referente" },
 ];
+
+// RIC-05 (Luca 05/08): il modale si riorganizza in sezioni richiudibili.
+// Questi campi contratto stanno nella sezione 🏪 ATTRIBUZIONE & DETTAGLI
+// (chi/dove/quando, insieme a Cod.Ins. e ai Dettagli registrazione); il resto
+// dei CONTRACT_FIELDS resta nella sezione 📄 DATI DEL CONTRATTO.
+const ATTRIB_KEYS = ["venditore", "negozio", "data_registrazione", "data_attivazione", "data"];
+
+// Sezione 📎 ALLEGATI: righe di contract_attachments (bucket storage "contracts")
+type Allegato = { id: string; file_url: string; file_name: string; file_type: string | null; created_at: string | null };
+const ALLEGATO_EMOJI: Record<string, string> = { documento: "🪪", contratti: "📄", fattura: "🧾" };
 
 const READONLY_META: EditField[] = [
     { key: "id", label: "Codice contratto" },
@@ -279,6 +290,18 @@ export default function RicercaContratto() {
     // uniqueProdotti (distinct dello storico) rimosso con RIC-03: la tendina
     // Prodotto del modale ora attinge al catalogo del brand, non allo storico.
     const [uniqueNegozi, setUniqueNegozi] = useState<string[]>([]);
+    // BUG NEGOZIO (Luca 05/08): la tendina Negozio del MODALE nasceva da
+    // uniqueNegozi (distinct dei contratti), quindi un punto vendita nuovo e
+    // ancora senza vendite — caso "Agenzia", creato per attribuire le vendite
+    // outbound — non compariva MAI. Nel modale la fonte sono TUTTI i negozi
+    // ATTIVI della tabella stores (uffici/Agenzia inclusi) UNITI ai valori
+    // storici dei contratti (radici legacy tipo "Magliana"), dedup. I FILTRI
+    // di pagina restano su uniqueNegozi: filtrare su un negozio senza vendite
+    // non serve a niente.
+    const negoziAttivi = useActiveStores();
+    const negoziModale = useMemo(
+        () => Array.from(new Set([...negoziAttivi, ...uniqueNegozi])).sort(),
+        [negoziAttivi, uniqueNegozi]);
 
     // RBAC: Store-Based Visibility Logic
     // Ruoli reali (roles.ts): la vecchia lista era ancora quella del mock, quindi
@@ -674,6 +697,10 @@ export default function RicercaContratto() {
         if (!data) { alert("Contratto " + id + " non trovato."); return; }
         openContract(mapContractToRow(data as any, (data as any).clients), "view");
     };
+    // RIC-05: stato aperto/chiuso delle 4 sezioni del modale (locale, si
+    // resetta a ogni apertura da openContract).
+    const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({});
+    const toggleSec = (id: string) => setOpenSecs(p => ({ ...p, [id]: !p[id] }));
     const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
         const vals: Record<string, string> = {};
         CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
@@ -685,6 +712,9 @@ export default function RicercaContratto() {
         setEditValues(vals);
         setReqNote("");
         setReqMsg(null);
+        // RIC-05: default delle sezioni richiudibili — in EDIT solo "Dati del
+        // contratto" aperta (si va dritti al punto), in VISTA Dati + Attribuzione.
+        setOpenSecs(mode === "edit" ? { contratto: true } : { contratto: true, attrib: true });
         setSelectedContract(row);
         setDetailMode(mode);
     };
@@ -738,6 +768,57 @@ export default function RicercaContratto() {
         })();
     }, [selectedContract, saving]);
 
+    // ── RIC-05: ALLEGATI della pratica nel modale (Luca 05/08) ────────────────
+    // Come sono salvati (verificato su registra-vendita + una riga vera a DB):
+    // file nel bucket storage "contracts" sotto <client_id>/<file>, riferimenti
+    // nella tabella contract_attachments (contract_id, file_url, file_name,
+    // file_type documento/contratti/fattura/altro, created_at). NB: il Registra
+    // aggancia gli allegati al PRIMO contratto del carrello: le altre righe
+    // della stessa vendita possono risultare senza — per quelle resta il
+    // bottone "Documenti cliente" in alto.
+    const [allegati, setAllegati] = useState<Allegato[]>([]);
+    const [attDelId, setAttDelId] = useState<string | null>(null);
+    const [attBusy, setAttBusy] = useState(false);
+    const [attMsg, setAttMsg] = useState<string | null>(null);
+    const ricaricaAllegati = async (contractId: string) => {
+        const { data } = await supabase.from("contract_attachments")
+            .select("id, file_url, file_name, file_type, created_at")
+            .eq("contract_id", contractId)
+            .order("created_at", { ascending: true });
+        setAllegati((data ?? []) as Allegato[]);
+    };
+    useEffect(() => {
+        setAttDelId(null); setAttMsg(null);
+        if (!selectedContract) { setAllegati([]); return; }
+        ricaricaAllegati(selectedContract.id);
+    }, [selectedContract?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Eliminazione allegato: SOLO per chi ha la modifica DIRETTA (rotellina).
+    // Il formato `changes` delle richieste porta solo campi contract/client/
+    // dettagli (applicaCambiamenti non saprebbe applicare un'eliminazione di
+    // riga in contract_attachments), quindi — scelta pragmatica dichiarata —
+    // chi salva "con autorizzazione" vede gli allegati in sola lettura con nota.
+    const eliminaAllegato = async (a: Allegato) => {
+        if (!selectedContract || attBusy) return;
+        setAttBusy(true); setAttMsg(null);
+        // 1) file dallo storage: best-effort (se fallisce resta un orfano nel
+        //    bucket, ma il riferimento a DB — la verità — viene comunque tolto)
+        const path = decodeURIComponent(a.file_url.split("/object/public/contracts/")[1] || "");
+        if (path) { try { await supabase.storage.from("contracts").remove([path]); } catch { /* best-effort */ } }
+        // 2) riferimento sul contratto (riga contract_attachments)
+        const { error } = await supabase.from("contract_attachments").delete().eq("id", a.id);
+        if (error) { setAttMsg("⚠️ Allegato NON eliminato: " + error.message); setAttBusy(false); return; }
+        // 3) traccia nella storia del contratto, come le altre modifiche dirette
+        try {
+            const storia: any[] = Array.isArray(selectedContract.raw?.storia) ? [...(selectedContract.raw.storia as any[])] : [];
+            storia.push({ at: new Date().toISOString(), user: `${user?.name || "—"} (modifica diretta)`, campo: "Allegato eliminato", da: a.file_name, a: "—" });
+            await supabase.from("contracts").update({ storia }).eq("id", selectedContract.id);
+            setSelectedContract(prev => prev && prev.id === selectedContract.id ? { ...prev, storia, raw: { ...prev.raw, storia } } : prev);
+        } catch { /* best-effort: l'eliminazione è già avvenuta */ }
+        setAttDelId(null); setAttBusy(false);
+        await ricaricaAllegati(selectedContract.id);
+    };
+
     // ── RIC-03: catalogo del brand del contratto APERTO nel modale ────────────
     // Indipendente dal catalogo dei filtri (catalogoBrand segue le tessere, il
     // modale può aprirsi su qualunque riga). Segue il brand in EDITING: se lo
@@ -749,16 +830,22 @@ export default function RicercaContratto() {
         setCatalogoModale(null);
         if (!selectedContract || !editBrand) return;
         let alive = true;
+        // PROBLEMA CACHE (Luca 05/08): il loader ha cache di modulo, quindi se
+        // l'amministrazione aggiorna il catalogo il modale mostrava la versione
+        // vecchia fino al reload della pagina. In EDIT si passa { fresh: true }:
+        // le tendine riflettono SEMPRE il DB attuale (e la cache, riaggiornata,
+        // serve dati freschi anche a vista e filtri). In vista basta la cache.
+        const fresh = detailMode === "edit";
         if (_isExtraBrand(editBrand)) {
             // per la Marginalità i "prodotti" sono gli articoli del listino
-            loadMargListino().then((l) => { if (alive) setMargModale(l); });
+            loadMargListino({ fresh }).then((l) => { if (alive) setMargModale(l); });
             return () => { alive = false; };
         }
         const slug = LABEL_SLUG[editBrand] || null;
         if (!slug) return;
-        loadCatalogoBrand(slug).then((t) => { if (alive) setCatalogoModale(t); });
+        loadCatalogoBrand(slug, { fresh }).then((t) => { if (alive) setCatalogoModale(t); });
         return () => { alive = false; };
-    }, [selectedContract, editBrand]);
+    }, [selectedContract, editBrand, detailMode]);
 
     // ── RIC-04: APPLICAZIONE dei cambiamenti al contratto ─────────────────────
     // Percorso UNICO condiviso tra l'approvazione di una richiesta e il
@@ -1507,7 +1594,10 @@ export default function RicercaContratto() {
                 // tendine popolate dai valori reali.
                 const optionsFor = (k: string): string[] | null => {
                     if (k === "contract::venditore") return [...venditoriTeam, ...venditoriAltri];
-                    if (k === "contract::negozio") return uniqueNegozi;
+                    // FIX Agenzia (Luca 05/08): negozi ATTIVI da stores (uffici
+                    // inclusi) + radici storiche dei contratti — non piu' il solo
+                    // distinct dello storico, che nascondeva i negozi senza vendite.
+                    if (k === "contract::negozio") return negoziModale;
                     if (k === "contract::brand") return BRAND_CANONICI;  // lista ufficiale: un brand senza vendite (es. TIM) deve comunque esserci
                     // RIC-03: la catena categoria→prodotto→offerta arriva dal
                     // CATALOGO del brand della riga (come i filtri in alto), non
@@ -1535,7 +1625,9 @@ export default function RicercaContratto() {
                     // quindi comparivano solo i codici gia' usati (per Kena il solo
                     // "Collatina") e per i brand senza storico non compariva nulla.
                     if (/^dettagli::cod\.?\s?ins/i.test(k)) {
-                        return codiciPerBrand(row.brand, uniqueNegozi);
+                        // fallback (energia/brand non censiti): tutti i negozi
+                        // attivi + radici storiche, non solo quelli con vendite
+                        return codiciPerBrand(row.brand, negoziModale);
                     }
                     return null;
                 };
@@ -1561,7 +1653,7 @@ export default function RicercaContratto() {
                     const inRichiesta = pendingKeys.includes(k);
                     if (detailMode === "view") {
                         return (
-                            <div className={inRichiesta ? "rounded-lg ring-2 ring-amber-400/60 bg-amber-400/10 px-2 py-1.5 -mx-2" : undefined}>
+                            <div key={k} className={inRichiesta ? "rounded-lg ring-2 ring-amber-400/60 bg-amber-400/10 px-2 py-1.5 -mx-2" : undefined}>
                                 <span className="text-[11px] uppercase tracking-wider text-slate-500">{label}{inRichiesta && <span className="ml-1.5 text-amber-300 font-bold normal-case">· modifica richiesta</span>}</span>
                                 <p className="text-white text-sm break-words">{fmtVal(orig)}</p>
                             </div>
@@ -1610,16 +1702,36 @@ export default function RicercaContratto() {
                     );
                 };
 
-                {/* Segnalazione 92: era un COMPONENTE definito nel render, quindi a ogni
-                    battuta cambiava identita' e React rimontava le caselle, facendo
-                    perdere il focus (si inseriva un carattere alla volta). Ora e' una
-                    funzione che restituisce JSX: nessun rimontaggio, il focus resta. */}
-                const Section = (title: string, children: React.ReactNode) => (
-                    <div>
-                        <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-3 pb-2 border-b border-white/10">{title}</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{children}</div>
-                    </div>
-                );
+                {/* Segnalazione 92 (regola ancora valida): funzione che RESTITUISCE JSX,
+                    mai un componente definito nel render — cambierebbe identita' a ogni
+                    battuta e React rimonterebbe le caselle (focus perso).
+                    RIC-05 (Luca 05/08): sezione RICHIUDIBILE — intestazione-icona
+                    cliccabile con chevron e riassunto inline quando e' chiusa. */}
+                const SectionC = (id: string, icona: string, titolo: string, riassunto: string, children: React.ReactNode) => {
+                    const open = !!openSecs[id];
+                    return (
+                        <div className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden">
+                            <button type="button" onClick={() => toggleSec(id)} aria-expanded={open}
+                                className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-white/[0.05] transition-colors">
+                                <span className="text-base leading-none shrink-0">{icona}</span>
+                                <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider shrink-0">{titolo}</span>
+                                {!open && riassunto && <span className="text-xs text-slate-400 truncate flex-1 min-w-0">{riassunto}</span>}
+                                <ChevronDown className={cn("w-4 h-4 text-slate-400 shrink-0 ml-auto transition-transform", !open && "-rotate-90")} />
+                            </button>
+                            {open && <div className="px-4 pb-4 pt-3 border-t border-white/10 space-y-4">{children}</div>}
+                        </div>
+                    );
+                };
+                // RIC-05: spartizione dei CONTRACT_FIELDS tra le sezioni 📄 e 🏪
+                // (ATTRIB_KEYS nell'ordine voluto: venditore, negozio, date).
+                const contrattoFields = CONTRACT_FIELDS.filter(f => !ATTRIB_KEYS.includes(f.key));
+                const attribFields = ATTRIB_KEYS.map(k => CONTRACT_FIELDS.find(f => f.key === k)).filter(Boolean) as EditField[];
+                // riassunti inline delle sezioni chiuse
+                const tipoCliente = String(row.client?.tipo || "");
+                const isBusiness = tipoCliente.toLowerCase() === "business";
+                const dataBreve = (s: string) => { const m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}` : (s && s !== "—" ? s : ""); };
+                const riasDati = [editBrand || row.brand, row.prodotto, row.stato].filter(s => s && s !== "—").join(" · ");
+                const riasAttrib = [row.negozio, row.venditore, dataBreve(row.data_attivazione)].filter(s => s && s !== "—").join(" · ");
 
                 return (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedContract(null)}>
@@ -1688,52 +1800,115 @@ export default function RicercaContratto() {
                                 )}
 
 
-                                {(detEditable.length > 0 || detReadonly.length > 0) && (
-                                    Section("Dettagli registrazione", <>
-                                        {detEditable.map(([k]) => renderField("dettagli::" + k, k))}
-                                        {detReadonly.map(([k, v]) => (
-                                            <div key={k} className="sm:col-span-2 lg:col-span-3">
-                                                <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>
-                                                <pre className="text-white text-xs bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
+                                {/* RIC-05: contenuto in 4 SEZIONI RICHIUDIBILI (Luca 05/08).
+                                    Solo disposizione: pendingChanges/labelOf/evidenza ambra
+                                    e le logiche di salvataggio restano identiche. */}
+                                <div className="space-y-3">
+                                    {SectionC("anagrafica", isBusiness ? "🏢" : "👤", "Anagrafica cliente",
+                                        [row.cliente, tipoCliente].filter(s => s && s !== "—").join(" · "),
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {CLIENT_FIELDS.map(f => renderField("client::" + f.key, f.label, f.kind))}
+                                        </div>)}
+
+                                    {SectionC("contratto", "📄", "Dati del contratto", riasDati,
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {contrattoFields.map(f => (
+                                                // RIC-03: per le righe a catalogo la Categoria mostrata e
+                                                // modificata e' quella FINE (dettagli.categoria_catalogo),
+                                                // la stessa su cui filtra la pagina; canonica e macro si
+                                                // derivano all'approvazione. La Marginalità resta sulla
+                                                // canonica (fuori catalogo).
+                                                f.key === "categoria" && !isMarg
+                                                    ? renderField("dettagli::categoria_catalogo", "Categoria")
+                                                    : renderField("contract::" + f.key, f.label, f.kind)
+                                            ))}
+                                            {/* RIC-03: opzioni della vendita (jsonb dal catalogo) in sola
+                                                lettura — prima non comparivano da nessuna parte. */}
+                                            <div>
+                                                <span className="text-[11px] uppercase tracking-wider text-slate-500">Opzioni</span>
+                                                <p className="text-white text-sm break-words">{fmtOpzioni(row.raw?.opzioni)}</p>
                                             </div>
-                                        ))}
-                                    </>)
-                                )}
+                                        </div>)}
 
-                                {Section("Dati contratto", <>
-                                    {CONTRACT_FIELDS.map(f => (
-                                        // RIC-03: per le righe a catalogo la Categoria mostrata e
-                                        // modificata e' quella FINE (dettagli.categoria_catalogo),
-                                        // la stessa su cui filtra la pagina; canonica e macro si
-                                        // derivano all'approvazione. La Marginalità resta sulla
-                                        // canonica (fuori catalogo).
-                                        f.key === "categoria" && !isMarg
-                                            ? renderField("dettagli::categoria_catalogo", "Categoria")
-                                            : renderField("contract::" + f.key, f.label, f.kind)
-                                    ))}
-                                    {/* Segnalazione 67/71: il codice inserimento sta nel box Dati
-                                        contratto ed e' modificabile come gli altri campi (tendina). */}
-                                    {renderField("dettagli::" + codInsKey, "Codice inserimento")}
-                                    {/* RIC-03: opzioni della vendita (jsonb dal catalogo) in sola
-                                        lettura — prima non comparivano da nessuna parte. */}
-                                    <div>
-                                        <span className="text-[11px] uppercase tracking-wider text-slate-500">Opzioni</span>
-                                        <p className="text-white text-sm break-words">{fmtOpzioni(row.raw?.opzioni)}</p>
-                                    </div>
-                                </>)}
+                                    {SectionC("allegati", "📎", "Allegati",
+                                        allegati.length === 0 ? "nessun documento sulla pratica" : `${allegati.length} ${allegati.length === 1 ? "documento" : "documenti"}`,
+                                        <div className="space-y-2">
+                                            {attMsg && <div className="text-sm font-medium text-rose-300">{attMsg}</div>}
+                                            {allegati.length === 0 ? (
+                                                <p className="text-sm text-slate-500">
+                                                    Nessun allegato agganciato a questa pratica.
+                                                    {row.raw?.client_id ? " Gli altri documenti del cliente sono nella sua scheda (bottone “Documenti cliente” in alto)." : ""}
+                                                </p>
+                                            ) : allegati.map(a => {
+                                                const isImg = /\.(jpe?g|png|webp|gif|heic)$/i.test(a.file_name || a.file_url);
+                                                const emoji = ALLEGATO_EMOJI[String(a.file_type || "").toLowerCase()] || "📁";
+                                                return (
+                                                    <div key={a.id} className="flex items-center gap-3 rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                                                        <a href={a.file_url} target="_blank" rel="noopener noreferrer" className="shrink-0" title="Apri in una nuova scheda">
+                                                            {isImg
+                                                                ? <img src={a.file_url} alt={a.file_name} className="w-10 h-10 rounded-md object-cover border border-white/10" />
+                                                                : <span className="w-10 h-10 rounded-md bg-white/5 border border-white/10 flex items-center justify-center text-lg">{emoji}</span>}
+                                                        </a>
+                                                        <div className="min-w-0 flex-1">
+                                                            <a href={a.file_url} target="_blank" rel="noopener noreferrer"
+                                                                className="text-sm font-medium text-white hover:text-indigo-300 hover:underline break-all">
+                                                                {a.file_name || "allegato"}
+                                                            </a>
+                                                            <p className="text-[11px] text-slate-500">
+                                                                {emoji} {String(a.file_type || "altro")}{a.created_at ? " · " + new Date(a.created_at).toLocaleDateString("it-IT") : ""}
+                                                            </p>
+                                                        </div>
+                                                        {/* 🗑 SOLO in edit e SOLO con modifica DIRETTA (stesse regole
+                                                            della rotellina); conferma esplicita inline. */}
+                                                        {detailMode === "edit" && modificaDiretta && (attDelId === a.id ? (
+                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                <span className="text-[11px] font-semibold text-rose-300">Eliminare?</span>
+                                                                <button disabled={attBusy} onClick={() => eliminaAllegato(a)}
+                                                                    className="px-2 py-1 rounded-md text-[11px] font-bold bg-rose-500/20 border border-rose-500/40 text-rose-300 hover:bg-rose-500/30 disabled:opacity-50">
+                                                                    {attBusy ? "Attendere…" : "Sì, elimina"}
+                                                                </button>
+                                                                <button disabled={attBusy} onClick={() => setAttDelId(null)}
+                                                                    className="px-2 py-1 rounded-md text-[11px] font-semibold bg-white/5 text-slate-300 hover:bg-white/10">
+                                                                    Annulla
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <button onClick={() => setAttDelId(a.id)} title="Elimina questo allegato"
+                                                                className="p-1.5 rounded-md bg-rose-500/10 text-rose-400 hover:bg-rose-500/25 transition-colors shrink-0">
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            })}
+                                            {detailMode === "edit" && !modificaDiretta && allegati.length > 0 && (
+                                                <p className="text-xs text-slate-500 italic">
+                                                    Gli allegati qui sono in sola lettura: l&apos;eliminazione richiede la modifica diretta — chiedi all&apos;amministrazione.
+                                                </p>
+                                            )}
+                                        </div>)}
 
-                                {Section("Anagrafica cliente", <>
-                                    {CLIENT_FIELDS.map(f => renderField("client::" + f.key, f.label, f.kind))}
-                                </>)}
-
-                                {Section("Riferimenti sistema", <>
-                                    {READONLY_META.map(f => (
-                                        <div key={f.key}>
-                                            <span className="text-[11px] uppercase tracking-wider text-slate-500">{f.label}</span>
-                                            <p className="text-white text-sm font-mono break-all">{fmtVal(row.raw?.[f.key])}</p>
-                                        </div>
-                                    ))}
-                                </>)}
+                                    {SectionC("attrib", "🏪", "Attribuzione & dettagli", riasAttrib,
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {attribFields.map(f => renderField("contract::" + f.key, f.label, f.kind))}
+                                            {/* Segnalazione 67/71: codice inserimento modificabile a
+                                                tendina (chiave nei dettagli, varia per brand). */}
+                                            {renderField("dettagli::" + codInsKey, "Codice inserimento")}
+                                            {detEditable.map(([k]) => renderField("dettagli::" + k, k))}
+                                            {detReadonly.map(([k, v]) => (
+                                                <div key={k} className="sm:col-span-2 lg:col-span-3">
+                                                    <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>
+                                                    <pre className="text-white text-xs bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
+                                                </div>
+                                            ))}
+                                            {READONLY_META.map(f => (
+                                                <div key={f.key}>
+                                                    <span className="text-[11px] uppercase tracking-wider text-slate-500">{f.label}</span>
+                                                    <p className="text-white text-sm font-mono break-all">{fmtVal(row.raw?.[f.key])}</p>
+                                                </div>
+                                            ))}
+                                        </div>)}
+                                </div>
 
                                 {detailMode === "edit" && (
                                     <div className="pt-4 border-t border-white/10 space-y-3">
