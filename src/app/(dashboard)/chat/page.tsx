@@ -21,7 +21,7 @@ import { NewChatModal } from "./_components/NewChatModal";
 import { ScreenshotEditor } from "./_components/ScreenshotEditor";
 import { TagPicker } from "./_components/TagPicker";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil } from "lucide-react";
+import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
 import { cn } from "@/utils";
@@ -133,6 +133,11 @@ function ChatPageInner() {
   //    nativo del browser (si puo' scegliere lo schermo intero, non solo il
   //    CRM); il file finisce tra gli allegati del messaggio in scrittura ──
   const [recording, setRecording] = useState(false);
+  // getDisplayMedia NON esiste su iOS Safari / Android Chrome: senza questo
+  // check i bottoni screenshot/registra fallivano in silenzio su telefono.
+  // In state (non a render) per evitare mismatch di idratazione SSR.
+  const [canCapture, setCanCapture] = useState(false);
+  useEffect(() => { setCanCapture(typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getDisplayMedia === "function"); }, []);
   // agganci al registratore di MODULO (vedi in fondo al file): montandomi
   // riprendo lo stato vivo e ritiro l'eventuale registrazione finita altrove
   useEffect(() => {
@@ -519,7 +524,9 @@ function ChatPageInner() {
       ) : (
       <div className="flex-1 min-h-0 flex overflow-hidden">
       {/* ── LEFT: conversation list ─────────────────────────────── */}
-      <aside className="w-full sm:w-80 lg:w-96 shrink-0 flex flex-col border-r border-white/5 bg-[#0f111a]/60">
+      {/* CHT-01: sotto sm i pannelli si alternano (colonna singola pilotata da
+          selId): chat aperta -> solo thread; nessuna chat -> solo lista. */}
+      <aside className={cn("w-full sm:w-80 lg:w-96 shrink-0 flex-col border-r border-white/5 bg-[#0f111a]/60", selId ? "hidden sm:flex" : "flex")}>
         <div className="flex items-center justify-between px-4 h-14 border-b border-white/5">
           <h2 className="text-white font-semibold flex items-center gap-2"><MessageSquare className="w-5 h-5 text-indigo-400" /> Chat</h2>
           <button onClick={() => setShowNew(true)} className="p-2 rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25" title="Nuova conversazione">
@@ -561,13 +568,13 @@ function ChatPageInner() {
                       {c.pinned_at && <Pin className="w-3 h-3 text-indigo-300" />}
                       <span role="button" tabIndex={0} title={c.pinned_at ? "Sgancia la chat" : "Fissa in alto (max 5)"}
                         onClick={(e) => onTogglePin(e, c)}
-                        className="opacity-0 group-hover/riga:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
+                        className="opacity-0 group-hover/riga:opacity-100 pointer-coarse:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
                         {c.pinned_at ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
                       </span>
                       {c.unread === 0 && (
                         <span role="button" tabIndex={0} title="Segna come da leggere"
                           onClick={(e) => onMarkUnread(e, c.conversation_id)}
-                          className="opacity-0 group-hover/riga:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
+                          className="opacity-0 group-hover/riga:opacity-100 pointer-coarse:opacity-100 p-1 rounded-md text-slate-500 hover:text-indigo-300 hover:bg-white/10 transition-opacity">
                           <EyeOff className="w-3.5 h-3.5" />
                         </span>
                       )}
@@ -582,7 +589,7 @@ function ChatPageInner() {
       </aside>
 
       {/* ── RIGHT: thread ───────────────────────────────────────── */}
-      <section className="hidden sm:flex flex-1 flex-col bg-[#0b0d14] relative"
+      <section className={cn("flex-1 flex-col bg-[#0b0d14] relative", selId ? "flex" : "hidden sm:flex")}
         onDragEnter={selConv ? onDragEnter : undefined}
         onDragOver={selConv ? onDragOver : undefined}
         onDragLeave={selConv ? onDragLeave : undefined}
@@ -600,10 +607,22 @@ function ChatPageInner() {
           <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
             <MessageSquare className="w-12 h-12 mb-3 opacity-40" />
             <p>Seleziona una conversazione</p>
+            {/* selId puntato su una chat non (ancora) in inbox: su mobile la lista
+                e' nascosta, serve comunque una via di ritorno */}
+            {selId && (
+              <button onClick={() => setSelId(null)} className="sm:hidden mt-3 flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200">
+                <ChevronLeft className="w-4 h-4" /> Torna alle conversazioni
+              </button>
+            )}
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-3 px-5 h-14 border-b border-white/5 shrink-0">
+            <div className="flex items-center gap-3 px-4 sm:px-5 h-14 border-b border-white/5 shrink-0">
+              {/* CHT-01: indietro (solo mobile) — torna alla lista */}
+              <button onClick={() => setSelId(null)} title="Torna alle conversazioni"
+                className="sm:hidden p-1.5 -ml-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 shrink-0">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
               <span className="relative shrink-0">
                 <span className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border ${selConv.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
                   {selConv.type === "group" ? <Users className="w-4 h-4" /> : initials(title)}
@@ -647,19 +666,19 @@ function ChatPageInner() {
                 const showDay = (() => { const d = dayLabel(m.created_at); if (d !== lastDay) { lastDay = d; return d; } return null; })();
                 const btnRispondi = (
                   <button type="button" title="Rispondi" onClick={() => setReplyTo(m)}
-                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-opacity">
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-coarse:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-opacity">
                     <Reply className="w-4 h-4" />
                   </button>
                 );
                 const btnModifica = (mine && (Date.now() - new Date(m.created_at).getTime() <= FINESTRA_MODIFICA_MS) && m.body) ? (
                   <button type="button" title="Modifica (entro 3 minuti)" onClick={() => avviaModifica(m)}
-                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-white/10 transition-opacity">
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-coarse:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-white/10 transition-opacity">
                     <Pencil className="w-4 h-4" />
                   </button>
                 ) : null;
                 const btnInoltra = (
                   <button type="button" title="Inoltra" onClick={() => { setForwardMsg(m); setForwardCerca(""); }}
-                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-opacity">
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-coarse:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-opacity">
                     <Forward className="w-4 h-4" />
                   </button>
                 );
@@ -668,11 +687,13 @@ function ChatPageInner() {
                   <span className="relative shrink-0">
                     <button type="button" title="Reagisci"
                       onClick={() => { setReactPickerFor(null); setReactFor(reactFor === m.id ? null : m.id); }}
-                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-white/10 transition-opacity">
+                      className="opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-coarse:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-white/10 transition-opacity">
                       <SmilePlus className="w-4 h-4" />
                     </button>
                     {reactFor === m.id && !reactPickerFor && (
-                      <div className={`absolute bottom-full mb-1 z-30 flex gap-0.5 px-1.5 py-1 rounded-full bg-[#171622] border border-white/15 shadow-2xl ${mine ? "right-0" : "left-0"}`}>
+                      // CHT-01: sotto sm i picker si sganciano dall'ancora (fixed in
+                      // basso, tutta larghezza), altrimenti sbordano dal viewport
+                      <div className={`fixed sm:absolute left-3 right-3 bottom-20 sm:bottom-full mb-1 z-30 flex flex-wrap justify-center sm:justify-start gap-0.5 px-1.5 py-1 rounded-full bg-[#171622] border border-white/15 shadow-2xl ${mine ? "sm:left-auto sm:right-0" : "sm:right-auto sm:left-0"}`}>
                         {QUICK_REACTIONS.map((e) => (
                           <button key={e} type="button" onClick={() => onReact(m.id, e)}
                             className="text-lg leading-none p-1 rounded-full hover:bg-white/10 hover:scale-125 transition-transform">{e}</button>
@@ -683,7 +704,7 @@ function ChatPageInner() {
                       </div>
                     )}
                     {reactFor === m.id && reactPickerFor === m.id && (
-                      <div className={`absolute bottom-full mb-1 z-30 w-64 max-h-48 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl ${mine ? "right-0" : "left-0"}`}>
+                      <div className={`fixed sm:absolute left-3 right-3 bottom-20 sm:bottom-full mb-1 z-30 w-auto sm:w-64 max-h-48 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl ${mine ? "sm:left-auto sm:right-0" : "sm:right-auto sm:left-0"}`}>
                         <div className="grid grid-cols-8 gap-0.5">
                           {EMOJI_SET.map((e) => (
                             <button key={e} type="button" onClick={() => { setReactPickerFor(null); onReact(m.id, e); }}
@@ -697,7 +718,7 @@ function ChatPageInner() {
                 // #126: solo l'amministratore del gruppo vede il tasto "i" (chi ha letto e quando)
                 const btnInfo = (selConv.type === "group" && iAmGroupAdmin) ? (
                   <button type="button" title="Chi ha letto" onClick={() => setInfoMsg(m)}
-                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-white/10 transition-opacity">
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 pointer-coarse:opacity-100 shrink-0 p-1.5 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-white/10 transition-opacity">
                     <Info className="w-4 h-4" />
                   </button>
                 ) : null;
@@ -894,7 +915,10 @@ function ChatPageInner() {
                   <Tag className="w-5 h-5" />
                 </button>
                 <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-                <span className="relative shrink-0">
+                {/* CHT-01: screenshot/registrazione SOLO dove getDisplayMedia esiste
+                    (su iOS/Android fallivano in silenzio) e da sm in su (composer
+                    ridotto su mobile). Registrazione viva: il tasto stop resta. */}
+                {canCapture && <span className="relative shrink-0 hidden sm:block">
                   <button type="button" title="Screenshot (finestra intera o area)" onClick={() => setShotMenu(v => !v)}
                     className={`p-2 rounded-lg transition-colors ${shotMenu ? "text-sky-300 bg-white/10" : "text-slate-400 hover:text-sky-300 hover:bg-white/10"}`}>
                     <Camera className="w-5 h-5" />
@@ -909,19 +933,21 @@ function ChatPageInner() {
                       </button>
                     </div>
                   )}
-                </span>
-                <button type="button" onClick={toggleRegistrazione}
+                </span>}
+                {canCapture && <button type="button" onClick={toggleRegistrazione}
                   title={recording ? "Ferma la registrazione (si allega al messaggio)" : "Registra lo schermo (clicca di nuovo per fermare)"}
-                  className={`p-2 rounded-lg transition-colors shrink-0 ${recording ? "text-red-400 bg-red-500/15 animate-pulse" : "text-slate-400 hover:text-red-400 hover:bg-white/10"}`}>
+                  className={`p-2 rounded-lg transition-colors shrink-0 ${recording ? "text-red-400 bg-red-500/15 animate-pulse" : "hidden sm:block text-slate-400 hover:text-red-400 hover:bg-white/10"}`}>
                   <Disc className="w-5 h-5" />
-                </button>
+                </button>}
                 <span className="relative shrink-0">
                   <button type="button" title="Emoji" onClick={() => { setShowEmoji(v => !v); setShowGif(false); }}
                     className={`p-2 rounded-lg transition-colors ${showEmoji ? "text-amber-300 bg-white/10" : "text-slate-400 hover:text-amber-300 hover:bg-white/10"}`}>
                     <Smile className="w-5 h-5" />
                   </button>
                   {showEmoji && (
-                    <div className="absolute bottom-full mb-2 left-0 z-40 w-72 max-h-56 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl">
+                    // CHT-01: sotto sm il picker si sgancia dall'ancora (fixed, tutta
+                    // larghezza), altrimenti sborda dal viewport
+                    <div className="fixed sm:absolute left-3 right-3 bottom-20 sm:left-0 sm:right-auto sm:bottom-full mb-2 z-40 w-auto sm:w-72 max-h-56 overflow-y-auto p-2 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl">
                       <div className="grid grid-cols-8 gap-0.5">
                         {EMOJI_SET.map((e) => (
                           <button key={e} type="button" onClick={() => setText((t) => t + e)}
@@ -938,7 +964,7 @@ function ChatPageInner() {
                     <span className="block h-5 leading-5 text-[11px] font-black tracking-wide">GIF</span>
                   </button>
                   {showGif && (
-                    <div className="absolute bottom-full mb-2 left-0 z-40 w-80 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl p-2">
+                    <div className="fixed sm:absolute left-3 right-3 bottom-20 sm:left-0 sm:right-auto sm:bottom-full mb-2 z-40 w-auto sm:w-80 rounded-2xl bg-[#171622] border border-white/15 shadow-2xl p-2">
                       <input autoFocus value={gifQuery} onChange={(e) => setGifQuery(e.target.value)} placeholder="Cerca una GIF…"
                         className="glass-input w-full h-9 text-sm mb-2" />
                       <div className="max-h-64 overflow-y-auto">

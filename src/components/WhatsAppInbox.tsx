@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
-import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut, Trash2 } from "lucide-react";
+import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut, Trash2, ChevronLeft } from "lucide-react";
 import { cn } from "@/utils";
 
 type Instance = { id: string; instance_name: string; display_name: string | null; wa_number: string | null; status: string; owner_user_id: string | null; negozio: string | null };
@@ -345,8 +345,9 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                 </div>
             ) : (
                 <div className={cn("grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4", embedded ? "flex-1 min-h-0" : "h-[calc(100vh-230px)]")}>
-                    {/* elenco conversazioni */}
-                    <div className="glass-card overflow-y-auto">
+                    {/* elenco conversazioni — CHT-01: sotto lg lista e thread si
+                        alternano (prima si impilavano entrambi, pannelli minuscoli) */}
+                    <div className={cn("glass-card overflow-y-auto", selConv && "hidden lg:block")}>
                         {instConnessa && instConnessa.status !== "connessa" && (
                             <div className="p-3 text-xs text-amber-300 border-b border-amber-500/20 bg-amber-500/5">
                                 {instConnessa.status === "disconnessa" ? "Sessione scaduta — le conversazioni sono nascoste" : "Numero non ancora collegato"} — premi{" "}
@@ -379,13 +380,18 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null }: { embedde
                     </div>
 
                     {/* thread */}
-                    <div className="glass-card flex flex-col min-h-0">
+                    <div className={cn("glass-card flex-col min-h-0", selConv ? "flex" : "hidden lg:flex")}>
                         {!selConv ? (
                             <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">Seleziona una conversazione</div>
                         ) : (
                             <>
                                 <div className="px-4 py-3 border-b border-white/10 flex items-center gap-3">
-                                    <div className={cn("w-9 h-9 rounded-full border flex items-center justify-center text-xs font-bold",
+                                    {/* CHT-01: indietro (solo sotto lg) — torna alla lista */}
+                                    <button onClick={() => setSelConv(null)} title="Torna alle conversazioni"
+                                        className="lg:hidden p-1.5 -ml-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 shrink-0">
+                                        <ChevronLeft className="w-5 h-5" />
+                                    </button>
+                                    <div className={cn("w-9 h-9 rounded-full border flex items-center justify-center text-xs font-bold shrink-0",
                                         selConv.is_group ? "bg-sky-500/15 border-sky-500/25 text-sky-300" : "bg-emerald-500/15 border-emerald-500/25 text-emerald-300")}>
                                         {selConv.is_group ? <Users className="w-4 h-4" /> : (selConv.customer_name || selConv.customer_number).slice(0, 2).toUpperCase()}
                                     </div>

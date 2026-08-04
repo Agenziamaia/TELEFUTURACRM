@@ -13,7 +13,7 @@ import { seesAllStores } from "@/lib/roles";
 import {
     Mail, Plus, Send, X, RefreshCw, Loader2, Paperclip, Check, PenSquare, Inbox,
     Star, Trash2, ShieldAlert, Archive, Search, CornerUpLeft, FileText, SendHorizontal,
-    RotateCcw, ChevronLeft, MailOpen, Code,
+    RotateCcw, ChevronLeft, MailOpen, Code, Settings,
 } from "lucide-react";
 import { cn } from "@/utils";
 
@@ -47,6 +47,7 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     const [sending, setSending] = useState(false);
     const [search, setSearch] = useState("");
     const [connectModal, setConnectModal] = useState(false);
+    const [manageModal, setManageModal] = useState(false);   // gestione/eliminazione caselle (EML-02)
     const [refreshing, setRefreshing] = useState(false);
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const { stores: myStores } = useVisibleStores();
@@ -288,7 +289,7 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
 
     return (
         <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
-            <TopBar embedded={embedded} onConnect={() => setConnectModal(true)} onRefresh={() => aggiorna()} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />
+            <TopBar embedded={embedded} onConnect={() => setConnectModal(true)} onManage={() => setManageModal(true)} onRefresh={() => aggiorna()} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />
             {pollErr && <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5 shrink-0">{pollErr}</p>}
 
             {/* selettore casella (se piu' di una) */}
@@ -513,12 +514,22 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
             )}
 
             {connectModal && <ConnectModal onClose={() => { setConnectModal(false); loadAccounts(); }} ownerUserId={user?.id} negozio={user?.negozio} />}
+            {manageModal && (
+                <ManageAccountsModal accounts={visibleAccounts} coloreCasella={coloreCasella} userId={user?.id}
+                    onClose={() => setManageModal(false)}
+                    onDeleted={(id) => {
+                        // reset selezione: l'effect sui visibili ripiega da solo sulla
+                        // prima casella rimasta (o sullo stato "nessuna casella")
+                        if (selAcc === id) { setSelAcc(null); setSelConv(null); }
+                        loadAccounts();
+                    }} />
+            )}
         </div>
     );
 }
 
 // intestazione riusabile (titolo/azioni + ricerca)
-function TopBar({ embedded, onConnect, onRefresh, refreshing, search, setSearch, showSearch }: { embedded: boolean; onConnect: () => void; onRefresh?: () => void; refreshing?: boolean; search?: string; setSearch?: (v: string) => void; showSearch?: boolean }) {
+function TopBar({ embedded, onConnect, onManage, onRefresh, refreshing, search, setSearch, showSearch }: { embedded: boolean; onConnect: () => void; onManage?: () => void; onRefresh?: () => void; refreshing?: boolean; search?: string; setSearch?: (v: string) => void; showSearch?: boolean }) {
     return (
         <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
             {embedded ? (
@@ -538,6 +549,11 @@ function TopBar({ embedded, onConnect, onRefresh, refreshing, search, setSearch,
                 {onRefresh && (
                     <button onClick={onRefresh} disabled={refreshing} title="Scarica la posta nuova" className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 disabled:opacity-40">
                         {refreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                    </button>
+                )}
+                {onManage && (
+                    <button onClick={onManage} title="Gestisci caselle (elimina dal CRM)" className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300">
+                        <Settings className="w-4 h-4" />
                     </button>
                 )}
                 <button onClick={onConnect} className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold flex items-center gap-2"><Plus className="w-4 h-4" /> Collega email</button>
@@ -621,6 +637,80 @@ function EmailBody({ html, text }: { html: string | null; text: string | null })
             ) : (
                 <p className="text-sm text-slate-100 whitespace-pre-wrap break-words leading-relaxed">{plain}</p>
             )}
+        </div>
+    );
+}
+
+// Modal: gestione caselle (EML-02). Elenco delle caselle visibili con Elimina:
+// eliminazione COMPLETA dal CRM (decisione Luca 04/08) — cascade su conversazioni,
+// messaggi e bozze. La conferma mostra i CONTEGGI reali e chiarisce che la casella
+// sul server di posta NON viene toccata. L'autorizzazione vera sta nella route.
+function ManageAccountsModal({ accounts, coloreCasella, userId, onClose, onDeleted }: {
+    accounts: Account[];
+    coloreCasella: (id: string) => { chip: string; dot: string; badge: string };
+    userId?: string;
+    onClose: () => void;
+    onDeleted: (id: string) => void;
+}) {
+    const [busyId, setBusyId] = useState<string | null>(null);
+    const elimina = async (a: Account) => {
+        if (busyId) return;
+        setBusyId(a.id);
+        try {
+            // conteggi reali per la conferma esplicita
+            const [conv, msg] = await Promise.all([
+                supabase.from("email_conversations").select("id", { count: "exact", head: true }).eq("account_id", a.id),
+                supabase.from("email_messages").select("id", { count: "exact", head: true }).eq("account_id", a.id),
+            ]);
+            const nConv = conv.count ?? 0, nMsg = msg.count ?? 0;
+            const nome = a.display_name || a.email_address;
+            if (!window.confirm(
+                `Eliminare la casella "${nome}" dal CRM?\n\n` +
+                `Verranno eliminati ${nMsg} messaggi di ${nConv} conversazioni (bozze e allegati compresi). ` +
+                `L'operazione NON si può annullare.\n\n` +
+                `La casella reale sul server di posta NON viene toccata: le email restano sul server e in webmail. ` +
+                `Ricollegandola in futuro si riparte da zero.`
+            )) return;
+            const res = await api("/api/email/account", { action: "delete", id: a.id, userId });
+            if (res?.error) { alert("Eliminazione non riuscita: " + res.error); return; }
+            onDeleted(a.id);
+        } finally { setBusyId(null); }
+    };
+    return (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+            <div className="glass-card w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between gap-2 p-4 border-b border-white/10 bg-white/5">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2"><Settings className="w-5 h-5 text-sky-300" /> Gestisci caselle</h3>
+                    <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                    {accounts.length === 0 && <p className="text-sm text-slate-500 text-center py-8">Nessuna casella collegata.</p>}
+                    {accounts.map(a => {
+                        const col = coloreCasella(a.id);
+                        return (
+                            <div key={a.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-white/10 bg-white/[0.03]">
+                                <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", col.dot)} />
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-semibold text-white truncate">{a.display_name || a.email_address}</p>
+                                    <p className="text-[11px] text-slate-500 truncate">{a.email_address}{a.negozio ? ` · ${a.negozio}` : ""}</p>
+                                    {a.status !== "attiva"
+                                        ? <p className="text-[11px] text-rose-300 truncate" title={a.last_error || ""}>In errore{a.last_error ? ` — ${a.last_error}` : ""}</p>
+                                        : <p className="text-[11px] text-emerald-300">Attiva</p>}
+                                </div>
+                                <button onClick={() => elimina(a)} disabled={!!busyId}
+                                    title="Elimina la casella dal CRM con tutto lo storico scaricato (la casella sul server non viene toccata)"
+                                    className="px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-1.5 hover:bg-rose-500/25 disabled:opacity-40 shrink-0">
+                                    {busyId === a.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} Elimina
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+                <div className="px-4 py-3 border-t border-white/10 text-[11px] text-slate-500">
+                    L'eliminazione toglie la casella dal CRM con tutto lo storico scaricato (conversazioni, messaggi, bozze, allegati).
+                    La casella reale sul server di posta non viene toccata.
+                </div>
+            </div>
         </div>
     );
 }

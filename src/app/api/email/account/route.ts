@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { impostazioniPer, cifra, testConnessione } from "@/lib/email";
+import { seesAllStores } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,7 +11,14 @@ export const dynamic = "force-dynamic";
 //  GET                                             -> elenco (senza password)
 //  POST { action:"connect", email, password, ... } -> testa e collega
 //  POST { action:"test",  ... }                     -> solo test credenziali
-//  POST { action:"delete", id }                     -> scollega
+//  POST { action:"delete", id, userId }             -> elimina casella + storico (cascade)
+
+// stesso confronto tollerante di sameStore (lib client, qui replicato lato server)
+const stessoNegozio = (a?: string | null, b?: string | null) => {
+    const x = String(a || "").trim().toLowerCase();
+    const y = String(b || "").trim().toLowerCase();
+    return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x));
+};
 
 export async function GET() {
     const { data } = await supabase.from("email_accounts")
@@ -83,7 +91,48 @@ export async function POST(request: Request) {
         }
 
         if (action === "delete") {
-            await supabase.from("email_accounts").delete().eq("id", b.id);
+            // ELIMINAZIONE COMPLETA (decisione Luca 04/08): via la casella dal CRM
+            // con TUTTO lo storico scaricato (cascade su conversazioni, messaggi,
+            // bozze). La casella reale sul server di posta NON viene toccata.
+            const id = String(b.id || "");
+            const userId = String(b.userId || "");
+            if (!id || !userId) return NextResponse.json({ error: "id e userId obbligatori" }, { status: 400 });
+            const { data: acc } = await supabase.from("email_accounts")
+                .select("id, owner_user_id, negozio").eq("id", id).maybeSingle();
+            if (!acc) return NextResponse.json({ error: "casella non trovata" }, { status: 404 });
+
+            // AUTORIZZAZIONE: stessa regola di visibilita' della UI (EmailInbox) —
+            // proprietario della casella, store manager del negozio della casella,
+            // o ruolo che vede tutti i negozi.
+            const { data: chi } = await supabase.from("app_users")
+                .select("id, role, primary_store").eq("id", userId).maybeSingle();
+            if (!chi) return NextResponse.json({ error: "utente non riconosciuto" }, { status: 403 });
+            let autorizzato = acc.owner_user_id === userId || seesAllStores(chi.role);
+            if (!autorizzato && chi.role === "store_manager" && acc.negozio) {
+                const [us, uv] = await Promise.all([
+                    supabase.from("user_stores").select("store_name").eq("user_id", userId),
+                    supabase.from("user_store_visibility").select("store_name").eq("user_id", userId),
+                ]);
+                const stores = [chi.primary_store, ...(us.data || []).map((r: any) => r.store_name), ...(uv.data || []).map((r: any) => r.store_name)]
+                    .filter(Boolean) as string[];
+                autorizzato = stores.some(s => stessoNegozio(acc.negozio, s));
+            }
+            if (!autorizzato) return NextResponse.json({ error: "non autorizzato a eliminare questa casella" }, { status: 403 });
+
+            // pulizia BEST-EFFORT del bucket allegati (path: <convId>/<file>) prima
+            // della delete: dopo il cascade i file resterebbero orfani per sempre.
+            try {
+                const { data: convIds } = await supabase.from("email_conversations").select("id").eq("account_id", id);
+                for (const c of convIds || []) {
+                    const { data: files } = await supabase.storage.from("email-attachments").list(c.id, { limit: 1000 });
+                    if (files && files.length) {
+                        await supabase.storage.from("email-attachments").remove(files.map(f => `${c.id}/${f.name}`));
+                    }
+                }
+            } catch { /* allegati orfani tollerati: non bloccano l'eliminazione */ }
+
+            const { error } = await supabase.from("email_accounts").delete().eq("id", id);
+            if (error) return NextResponse.json({ error: error.message }, { status: 500 });
             return NextResponse.json({ ok: true });
         }
 
