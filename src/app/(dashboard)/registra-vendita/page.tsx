@@ -5251,9 +5251,15 @@ function CRM() {
           allG.map((g,gi)=>(
             <div key={gi} style={{background:"var(--tf-w20)",borderRadius:12,marginBottom:12,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,.06)"}}>
               <div style={{background:g.brandColor,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);return bd&&bd.logo?<Image src={bd.logo} alt={g.brandLabel} width={190} height={46} style={{height:40,width:"auto",maxWidth:180,objectFit:"contain",filter:"brightness(0) invert(1)"}}/>:<span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandIcon} {g.brandLabel}</span>;})()}<span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"var(--tf-ffd800)",borderRadius:12,padding:"2px 10px",color:"var(--tf-f8fafc)",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>{(()=>{const bd=BRANDS.find(x=>x.id===g.brandId||x.label===g.brandLabel);
+                  // logo ORIGINALE su chip bianca (Luca 04/08): l'invert bianco
+                  // sulla banda rossa Vodafone rendeva il logo invisibile
+                  return bd&&bd.logo?<span style={{background:"#fff",borderRadius:8,padding:"3px 10px",display:"inline-flex",alignItems:"center"}}><Image src={bd.logo} alt={g.brandLabel} width={190} height={46} style={{height:32,width:"auto",maxWidth:150,objectFit:"contain"}}/></span>:<span style={{color:"#fff",fontWeight:700,fontSize:15}}>{g.brandIcon} {g.brandLabel}</span>;})()}<span style={{background:"var(--tf-w250)",borderRadius:12,padding:"2px 10px",color:"#fff",fontSize:11,fontWeight:600}}>{g.items.length}</span>{g.isCurrent&&<span style={{background:"var(--tf-ffd800)",borderRadius:12,padding:"2px 10px",color:"var(--tf-f8fafc)",fontSize:10,fontWeight:700}}>IN CORSO</span>}</div>
                 <div style={{display:"flex",gap:6}}>
                   <button onClick={()=>g.isCurrent?setShowCart(false):editCG(gi)} style={{background:"var(--tf-w250)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>✏️ Modifica</button>
+                  {/* 🗑 elimina la vendita dal carrello (Luca 04/08) — la "in
+                      corso" si azzera invece col Reset form in pagina */}
+                  {!g.isCurrent&&<button onClick={()=>{if(window.confirm("Eliminare la vendita "+g.brandLabel+" ("+g.items.length+" prodotti) dal carrello?"))rmCG(gi);}} title={"Elimina la vendita "+g.brandLabel} style={{background:"rgba(220,53,69,0.25)",border:"1px solid rgba(255,255,255,0.35)",borderRadius:6,padding:"5px 12px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:700}}>🗑️</button>}
                   {!g.isCurrent&&<button onClick={()=>rmCG(gi)} style={{background:"rgba(255,0,0,.25)",border:"none",borderRadius:6,padding:"5px 14px",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:600}}>✕ Rimuovi</button>}
                 </div>
               </div>
@@ -5284,7 +5290,7 @@ function CRM() {
                   <span style={{fontSize:11,color:"var(--tf-8892b0)"}}>€</span>
                 </span>}
                 {item.auto?<button onClick={()=>setMargItems(p=>p.filter((_,i)=>i!==idx))} title="Rimuovi" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,.5)",background:"rgba(220,53,69,0.1)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>
-                :<button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button>}
+                :<span style={{display:"inline-flex",gap:6}}><button onClick={()=>{const it=margItems[idx];setMargItems(p=>p.filter((_,i)=>i!==idx));setMargEditItem(it);setShowCart(false);setShowMargPOS(true)}} style={{padding:"4px 12px",borderRadius:6,border:"1px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button><button onClick={()=>{const it=margItems[idx];if(window.confirm("Eliminare \""+(it?.product||"voce")+"\" dal carrello?"))setMargItems(p=>p.filter((_,i)=>i!==idx));}} title="Elimina la voce" style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(220,53,69,0.5)",background:"rgba(220,53,69,0.10)",color:"var(--tf-dc3545)",fontSize:11,fontWeight:700,cursor:"pointer"}}>🗑️</button></span>}
               </div>
             </div>
           ))}

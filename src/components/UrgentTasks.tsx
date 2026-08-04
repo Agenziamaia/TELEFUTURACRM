@@ -122,7 +122,13 @@ export function UrgentTasks() {
                     )}
                     {tasks.map((t) => (
                         <div key={t.id} className="p-2.5 rounded-lg bg-white/[0.03] border border-white/8">
-                            <button onClick={() => { if (t.link) { router.push(t.link); setOpen(false); } }} className="text-left w-full">
+                            <button onClick={() => { if (t.link) {
+                                // nonce sul link (Luca 04/08, video Claudia): ricliccare la
+                                // STESSA task non cambiava l'URL → il deep-link non riscattava
+                                // e la scheda non si apriva più. Col nonce ogni click conta.
+                                router.push(t.link + (t.link.includes("?") ? "&" : "?") + "t=" + Date.now());
+                                setOpen(false);
+                            } }} className="text-left w-full">
                                 <div className="text-sm font-semibold text-white leading-snug">{t.titolo}</div>
                                 {t.dettaglio && <div className="text-xs text-slate-400 mt-0.5">{t.dettaglio}</div>}
                                 {!t.synthetic && <div className="text-[10px] text-slate-600 mt-1">{new Date(t.created_at).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>}

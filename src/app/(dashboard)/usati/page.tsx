@@ -1703,12 +1703,18 @@ function GestioneUsatiInner() {
       });
   }, [showBonifici, devices]);
   const searchParams = useSearchParams();
-  const _deepDone = useRef(false);
+  // Deep-link RIUTILIZZABILE (Luca 04/08, video Claudia): prima era one-shot
+  // (_deepDone) — ricliccando la stessa task ⚡ la scheda non si apriva più.
+  // Ora si tiene l'ultima CHIAVE id+nonce gestita: ogni click dal fulmine
+  // (che aggiunge &t=) riapre la scheda, anche a pagina già montata.
+  const _deepKey = useRef("");
   useEffect(() => {
     const id = searchParams.get("id");
-    if (!id || _deepDone.current || !devices.length) return;
+    if (!id || !devices.length) return;
+    const key = id + "|" + (searchParams.get("t") || "");
+    if (_deepKey.current === key) return;
     const d = devices.find(x => String(x.id) === String(id));
-    if (d) { _deepDone.current = true; setSelectedDevice(d); }
+    if (d) { _deepKey.current = key; setSelectedDevice(d); }
   }, [devices, searchParams]);
 
   const fetchDevices = useCallback(async () => {
