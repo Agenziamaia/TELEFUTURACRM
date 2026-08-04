@@ -1862,7 +1862,14 @@ function GestioneUsatiInner() {
         if (nuovi.length) {
           const { ids: ass, fulmine } = await designatiIncarico("ricambi");
           if (ass.length && fulmine) {
-            await supabase.from("admin_tasks").insert(ass.map((uid) => ({
+            // GUARD anti-doppione (video Claudia 04/08: due task identiche):
+            // niente nuova task a chi ne ha già una APERTA sullo stesso telefono
+            const { data: gia } = await supabase.from("admin_tasks")
+              .select("target_user_id").eq("tipo", "ricambio_da_ordinare")
+              .eq("link", `/usati?id=${u.id}`).eq("done", false).in("target_user_id", ass);
+            const giaSet = new Set((gia ?? []).map((t) => t.target_user_id));
+            const destinatari = ass.filter((uid) => !giaSet.has(uid));
+            if (destinatari.length) await supabase.from("admin_tasks").insert(destinatari.map((uid) => ({
               tipo: "ricambio_da_ordinare",
               titolo: `🔧 Ricambi da ordinare: ${u.model} — ${nuovi.map(r => r.name).join(", ")}`,
               dettaglio: `${u.store} · IMEI ${u.imei}. Apri la scheda del telefono per i dettagli.`,

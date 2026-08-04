@@ -18,6 +18,8 @@ import { useRouter } from "next/navigation";
 import { Zap } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capChoice, CAP_RICERCA_MODIFICA } from "@/lib/capabilities";
 
 interface Task { id: string; titolo: string; dettaglio: string | null; link: string | null; created_at: string; synthetic?: boolean }
 
@@ -32,6 +34,11 @@ export function UrgentTasks() {
     // toglie a tutti (sono conteggi live sulle code, non copie per persona).
     const isAdmin = !!user && ["admin", "dev"].includes(user.role);
     const isDirezione = !!user && ["admin", "dev", "amministrativo", "direttore_generale"].includes(user.role);
+    // Richieste di modifica contratto: il contatore segue la ROTELLINA di
+    // Ricerca Vendite (chi ha la modifica "diretta" approva — 04/08), non più
+    // la sola lista direzionale.
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const vedeRichiesteModifica = !!user && capChoice(user.role, CAP_RICERCA_MODIFICA, capPerms) === "diretta";
 
     useEffect(() => {
         if (!user) return;
@@ -48,7 +55,7 @@ export function UrgentTasks() {
                 // (3) code condivise: solo pack direzionale
                 isDirezione ? supabase.from("admin_tasks").select("id,titolo,dettaglio,link,created_at")
                     .in("target_role", targets).is("target_user_id", null).eq("done", false).order("created_at", { ascending: false }) : null,
-                isDirezione ? supabase.from("contract_change_requests").select("id", { count: "exact", head: true }).eq("status", "pending") : null,
+                vedeRichiesteModifica ? supabase.from("contract_change_requests").select("id", { count: "exact", head: true }).eq("status", "pending") : null,
                 isDirezione ? supabase.from("client_access_requests").select("id", { count: "exact", head: true }).eq("status", "pending") : null,
             ]);
             if (!vivo) return;
@@ -87,7 +94,7 @@ export function UrgentTasks() {
         const onVis = () => { if (document.visibilityState === "visible") ricarica(); };
         document.addEventListener("visibilitychange", onVis);
         return () => { vivo = false; clearInterval(t); if (deb) clearTimeout(deb); supabase.removeChannel(ch); document.removeEventListener("visibilitychange", onVis); };
-    }, [user?.id, user?.name, isDirezione, isAdmin]);
+    }, [user?.id, user?.name, isDirezione, isAdmin, vedeRichiesteModifica]);
 
     useEffect(() => {
         const onDoc = (e: MouseEvent) => { if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false); };
