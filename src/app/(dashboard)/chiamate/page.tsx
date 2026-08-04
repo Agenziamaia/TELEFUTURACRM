@@ -3,8 +3,9 @@
 // REGISTRO CHIAMATE (AIR-01b/e, Luca 04/08): il registro telefonico Aircall del
 // punto vendita — ogni chiamata in entrata/uscita con esito, registrazione e
 // aggancio alla scheda cliente. Visibilità per negozio come WhatsApp/email
-// (useVisibleStores); l'AUDIO delle registrazioni è riservato da store manager
-// in su (decisione Luca 04/08 — gate anche sul proxy /api/aircall/recording).
+// (useVisibleStores); l'AUDIO delle registrazioni è una CAPABILITY
+// (cap:/clienti:ascolta_registrazioni, rotellina Clienti in Permessi — gate
+// anche sul proxy /api/aircall/recording; default: store manager in su + cc).
 // La tab "Da anagrafizzare" è la coda delle inbound dal go-live (04/08/2026)
 // senza cliente: da lì si crea l'anagrafica, si associa a un cliente esistente
 // o si archivia. NIENTE task automatiche: lista da smaltire quando c'è tempo.
@@ -20,6 +21,7 @@ import { SelectOpzioni } from "@/components/SelectPersona";
 import { RicercaCliente, etichettaCliente, type ClienteTrovato } from "@/components/RicercaCliente";
 import { numeroNazionale } from "@/lib/telefono";
 import { puoAscoltareRegistrazioni, ANYTIME_NUMBER_IDS, ANYTIME_USER_RANGE } from "@/lib/aircall";
+import { useRolePermissions } from "@/lib/usePermissions";
 
 // GO-LIVE della coda di anagrafizzazione (Luca 04/08): le 1100+ inbound
 // storiche senza cliente NON entrano in coda — le aggancia il backfill.
@@ -44,7 +46,10 @@ export default function RegistroChiamatePage() {
     const { user } = useAuth();
     const { seesAll, stores, loaded } = useVisibleStores();
     const NEGOZI = useStores();
-    const puoAudio = puoAscoltareRegistrazioni(user?.role);
+    // AUDIO a capability (cap:/clienti:ascolta_registrazioni, Luca 04/08):
+    // amministrabile dalla rotellina Clienti; il registro resta visibile a tutti
+    const { perms } = useRolePermissions(user?.role, user?.grade);
+    const puoAudio = puoAscoltareRegistrazioni(user?.role, perms);
 
     const [eventi, setEventi] = useState<EventoChiamata[]>([]);
     const [carico, setCarico] = useState(true);
@@ -81,9 +86,11 @@ export default function RegistroChiamatePage() {
         else setEventi((data ?? []) as unknown as EventoChiamata[]);
         setCarico(false);
     };
-    // il primo fetch parte SOLO a visibilità caricata (regola useVisibleStores)
+    // il primo fetch parte SOLO a visibilità caricata (regola useVisibleStores);
+    // puoAudio in deps: quando le righe di permesso arrivano e cambiano il
+    // verdetto, la select va rifatta (recording_url incluso/escluso dai campi)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    useEffect(() => { if (loaded) carica(); }, [loaded, seesAll, stores.join("|")]);
+    useEffect(() => { if (loaded) carica(); }, [loaded, seesAll, stores.join("|"), puoAudio]);
 
     // coda "Da anagrafizzare": inbound senza cliente, non archiviate, dal go-live
     const inCoda = (e: EventoChiamata) =>
@@ -144,7 +151,7 @@ export default function RegistroChiamatePage() {
                         <h1 className="text-2xl font-bold tracking-tight text-white">Registro Chiamate</h1>
                         <p className="text-sm text-slate-400">
                             {seesAll ? "Tutte le chiamate Aircall dei punti vendita" : "Le chiamate Aircall del tuo negozio"}
-                            {!puoAudio && " — l'audio delle registrazioni è riservato da store manager in su"}
+                            {!puoAudio && " — l'ascolto dell'audio delle registrazioni non è abilitato per il tuo ruolo"}
                         </p>
                         {msg && <p className={`text-sm mt-1 font-medium ${msg.startsWith("✅") ? "text-emerald-400" : "text-amber-400"}`}>{msg}</p>}
                     </div>

@@ -27,6 +27,7 @@ import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
 import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller } from "@/lib/callerMalus";
 import { CallerRegoleModal, ArchivioMalusCallerModal } from "@/components/CallerRegole";
 import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
+import { puoAscoltareRegistrazioni } from "@/lib/aircall";
 
 /* ─────────────────────────────────────────────────────────────────────
    CONSTANTS
@@ -435,6 +436,10 @@ function CallerPageInner() {
     const hubTab = searchParams.get("tab") === "badge" ? "badge" : "caller";
     const { perms: hubPerms } = useRolePermissions(user?.role, user?.grade);
     const badgeVisibile = effectiveAllowed(user?.role, "/caller?tab=badge", EVERYONE, hubPerms, "Call Center");
+    // AUDIO delle registrazioni a capability (cap:/clienti:ascolta_registrazioni,
+    // Luca 04/08): senza permesso il player nello storico voce non compare —
+    // i dettagli della chiamata (operatore, direzione, durata) restano visibili.
+    const puoAudio = puoAscoltareRegistrazioni(user?.role, hubPerms);
     const hubPills = (
         <div className="flex items-center gap-2">
             {[{ id: "caller", l: "📞 Caller", href: "/caller" }, ...(badgeVisibile ? [{ id: "badge", l: "🕒 Badge", href: "/caller?tab=badge" }] : [])].map(t => (
@@ -2812,7 +2817,7 @@ function CallerPageInner() {
                                                                             <>
                                                                                 {ev.agente_nome && <span>Operatore: <strong className="text-slate-200">{ev.agente_nome}</strong></span>}
                                                                                 {ev.direction && <span>Telefonata: <strong className="text-slate-200">{ev.direction === "inbound" ? "Inbound ↙" : "Outbound ↗"}</strong>{ev.answered ? " · risposta" : " · non risposta"}{typeof ev.duration_sec === "number" ? ` · ${ev.duration_sec}s` : ""}</span>}
-                                                                                {ev.recording_url && s.aircall_call_id && (
+                                                                                {puoAudio && ev.recording_url && s.aircall_call_id && (
                                                                                     <div className="col-span-2 flex items-center gap-2">
                                                                                         {/* il recording_url salvato scade in ~1h: si ascolta
                                                                                             via proxy che chiede a Aircall un URL fresco */}

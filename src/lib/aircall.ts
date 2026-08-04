@@ -6,6 +6,8 @@
 // importabili anche dalle pagine client.
 
 import { supabase } from "@/lib/supabaseClient";
+import { capAllowed, capKey, CAP_CLIENTI_REGISTRAZIONI } from "@/lib/capabilities";
+import type { PermMap } from "@/lib/nav";
 
 const API = "https://api.aircall.io/v1";
 
@@ -56,20 +58,37 @@ export function eventoAnyTime(aircallUserId?: number | null, aircallNumberId?: n
     return false;
 }
 
-/** DECISIONE Luca 04/08: l'AUDIO delle registrazioni si ascolta da store
- *  manager in su; il registro SENZA audio lo vede tutto il negozio. Funzione
- *  pura: la usano sia il proxy /api/aircall/recording (gate a DB) sia i player
- *  nelle pagine (per non mostrare un audio che poi risponderebbe 403). */
-export function puoAscoltareRegistrazioni(role: string | null | undefined): boolean {
-    return [
-        "store_manager", "supervisore", "direttore_commerciale",
-        "direttore_cc", "direttore_ob", "back_office_caller",
-        // i caller riascoltano le proprie chiamate del call center (funzione
-        // preesistente): la restrizione "store manager in su" nasce per il
-        // registro dei NEGOZI, non per il flusso caller.
-        "caller",
-        "amministrativo", "direttore_generale", "admin", "dev",
-    ].includes(role || "");
+/** AUDIO delle registrazioni = CAPABILITY (Luca 04/08, seconda passata):
+ *  cap:/clienti:ascolta_registrazioni (CAP_CLIENTI_REGISTRAZIONI), amministrabile
+ *  dalla rotellina Clienti in Permessi. Il default della capability replica la
+ *  vecchia lista cablata "store manager in su + call center". Variante CLIENT:
+ *  riceve la PermMap di useRolePermissions (con perms=null valgono i default,
+ *  come tutte le capacità). I player la usano per non mostrare un audio che
+ *  poi risponderebbe 403 dal proxy /api/aircall/recording. */
+export function puoAscoltareRegistrazioni(role: string | null | undefined, perms: PermMap | null): boolean {
+    return capAllowed(role, "/clienti", CAP_CLIENTI_REGISTRAZIONI, perms);
+}
+
+/** Variante SERVER pura per il proxy registrazioni: riceve le righe di
+ *  role_permissions già lette a DB (role e role@grade) e replica la semantica
+ *  di capAllowed — l'eccezione di grado vince sulla riga di ruolo, nessuna
+ *  riga = default della capability. admin/dev: come sul client
+ *  (useRolePermissions non carica righe) valgono SEMPRE i default. */
+export function puoAscoltareRegistrazioniServer(
+    role: string | null | undefined,
+    grade: string | null | undefined,
+    righe: { role: string; perm_key: string; allowed: boolean }[],
+): boolean {
+    if (!role) return false;
+    const m: PermMap = new Map();
+    if (role !== "admin" && role !== "dev") {
+        const chiave = capKey("/clienti", CAP_CLIENTI_REGISTRAZIONI.id);
+        // prima la riga di ruolo, poi l'eccezione di grado SOPRA (stesso ordine
+        // di fusione di useRolePermissions)
+        righe.filter((r) => r.role === role && r.perm_key === chiave).forEach((r) => m.set(r.perm_key, r.allowed));
+        if (grade) righe.filter((r) => r.role === `${role}@${grade}` && r.perm_key === chiave).forEach((r) => m.set(r.perm_key, r.allowed));
+    }
+    return capAllowed(role, "/clienti", CAP_CLIENTI_REGISTRAZIONI, m);
 }
 
 /** MATCH CLIENTE dal numero chiamante (AIR-01b) — fonte unica per webhook e

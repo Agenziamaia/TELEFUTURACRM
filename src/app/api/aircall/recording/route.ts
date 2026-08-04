@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { aircallGet, puoAscoltareRegistrazioni } from "@/lib/aircall";
+import { aircallGet, puoAscoltareRegistrazioniServer } from "@/lib/aircall";
+import { capKey, CAP_CLIENTI_REGISTRAZIONI } from "@/lib/capabilities";
 
 export const dynamic = "force-dynamic";
 
@@ -19,15 +20,24 @@ export async function GET(request: Request) {
         if (!id || !/^\d+$/.test(id)) {
             return NextResponse.json({ error: "id chiamata Aircall mancante o non valido" }, { status: 400 });
         }
-        // GATE PER RUOLO (decisione Luca 04/08): prima l'endpoint era SENZA
-        // login — chiunque col link scaricava l'audio. Ora serve ?u=<app_users.id>
-        // e il ruolo si verifica A DB (pattern del progetto, come /api/aircall/dial):
-        // l'audio delle registrazioni si ascolta da store manager in su.
+        // GATE A CAPABILITY (Luca 04/08, seconda passata): serve ?u=<app_users.id>
+        // e si verifica A DB (pattern del progetto, come /api/aircall/dial) la
+        // capability cap:/clienti:ascolta_registrazioni — righe role e role@grade
+        // di role_permissions con la stessa semantica di capAllowed (eccezione di
+        // grado vince, nessuna riga = default della capability). Amministrabile
+        // dalla rotellina Clienti in Permessi, senza codice.
         const uid = params.get("u");
         if (!uid) return NextResponse.json({ error: "Utente non riconosciuto" }, { status: 401 });
-        const { data: u } = await supabase.from("app_users").select("role, active").eq("id", uid).maybeSingle();
-        if (!u || u.active === false || !puoAscoltareRegistrazioni(u.role)) {
-            return NextResponse.json({ error: "Le registrazioni si ascoltano da store manager in su" }, { status: 403 });
+        const { data: u } = await supabase.from("app_users").select("role, grade, active").eq("id", uid).maybeSingle();
+        if (!u || u.active === false) {
+            return NextResponse.json({ error: "Utente non riconosciuto o disattivato" }, { status: 403 });
+        }
+        const chiavi = u.grade ? [u.role, `${u.role}@${u.grade}`] : [u.role];
+        const { data: righe } = await supabase.from("role_permissions")
+            .select("role, perm_key, allowed").in("role", chiavi)
+            .eq("perm_key", capKey("/clienti", CAP_CLIENTI_REGISTRAZIONI.id));
+        if (!puoAscoltareRegistrazioniServer(u.role, u.grade, (righe ?? []) as { role: string; perm_key: string; allowed: boolean }[])) {
+            return NextResponse.json({ error: "Non hai il permesso di ascoltare le registrazioni (si abilita da Amministrazione → Permessi)" }, { status: 403 });
         }
         const info = await aircallGet(`/calls/${id}`);
         const url: string | null = info?.call?.recording || info?.call?.asset || null;

@@ -23,6 +23,7 @@ import { CAP_CLIENTI, CAP_CLIENTI_ALLEGATI, CAP_CLIENTI_INTEGRA_DOC, capChoice, 
 import { chiamaAircall } from "@/lib/dialer";
 import { numeroNazionale } from "@/lib/telefono";
 import { puoAscoltareRegistrazioni } from "@/lib/aircall";
+import { trkBrandKey, TRK_BRAND_LOGOS } from "@/lib/brandAssets";
 
 interface Cliente {
     id: string;
@@ -61,6 +62,8 @@ interface Contratto {
     venditore?: string | null;   // segnalazione 97
     negozio?: string | null;     // segnalazione 97
     note?: string | null;   // nota scritta allo Step 7 della registrazione
+    prodotto?: string | null;    // TML-01: dettaglio nella timeline espansa
+    offerta?: string | null;
 }
 
 
@@ -104,6 +107,8 @@ function mapRowToContratto(row: Record<string, unknown>): Contratto {
         stato: row.stato as string,
         venditore: (row.venditore as string | null) ?? null,
         negozio: (row.negozio as string | null) ?? null,
+        prodotto: (row.prodotto as string | null) ?? null,
+        offerta: (row.offerta as string | null) ?? null,
     };
 }
 
@@ -175,7 +180,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
 
     const [showStorico, setShowStorico] = useState(false);
     // Nuovo layout (Luca 01/08): pannello destro a schede.
-    const [tab, setTab] = useState<"timeline" | "contratti" | "documenti">("contratti");
+    // Luca 04/08: la scheda cliente si apre sulla TIMELINE (prima: contratti)
+    const [tab, setTab] = useState<"timeline" | "contratti" | "documenti">("timeline");
     // Click su una vendita -> apre il dettaglio in Ricerca Contratto (deep link ?id=).
     const openContract = (id: string) => { onClose(); router.push(`/ricerca-vendite?id=${encodeURIComponent(id)}`); };
 
@@ -195,9 +201,76 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                 }))));
         })();
     }, [cliente.id]);
-    // Timeline 360°: eventi REALI (contratti registrati + documenti caricati + disdette), in ordine.
-    const timeline = [
-        ...contratti.filter((c) => c.data).map((c) => ({ key: "c" + c.id, when: c.data as string, color: "var(--tf-38bdf8)", icon: "✍️", title: "Contratto registrato", desc: `${c.brand} · ${c.categoria}${c.venditore ? " — " + c.venditore : ""}`, stato: c.stato })),
+    // ── TIMELINE INTERATTIVA (TML-01, Luca 04/08) ──
+    // CHIAMATE del cliente (call_events, già agganciate per client_id): voce
+    // compatta per giorno+direzione+interlocutore; il click porta allo storico
+    // chiamate della scheda (player e dettagli stanno LÀ, la timeline resta leggera).
+    const [chiamateTml, setChiamateTml] = useState<{ id: string; direction: string | null; negozio: string | null; agente_nome: string | null; started_at: string | null }[]>([]);
+    useEffect(() => {
+        (async () => {
+            const { data } = await supabase.from("call_events")
+                .select("id, direction, negozio, agente_nome, started_at")
+                .eq("client_id", cliente.id)
+                .order("started_at", { ascending: false }).limit(200);
+            setChiamateTml((data ?? []) as never);
+        })();
+    }, [cliente.id]);
+    // giorni-contratto espansi inline (stato locale: nessuna navigazione)
+    const [gruppiAperti, setGruppiAperti] = useState<Record<string, boolean>>({});
+
+    // Voce della timeline: "semplice" (documenti/disdette), con `contratti`
+    // (giorno+negozio espandibile inline) o con `apreStorico` (chiamate → click
+    // sullo storico chiamate della scheda).
+    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean };
+
+    // CONTRATTI raggruppati per giorno+negozio: "è andato in negozio e ha
+    // attivato N contratti" — il dettaglio (brand, tipologia, venditore) esplode
+    // DENTRO la timeline al click, e da lì si apre il singolo contratto.
+    const gruppiContratti = new Map<string, Contratto[]>();
+    contratti.filter((c) => c.data).forEach((c) => {
+        const k = `${c.data}|${(c.negozio || "").trim()}`;
+        gruppiContratti.set(k, [...(gruppiContratti.get(k) || []), c]);
+    });
+    const vociContratti: VoceTimeline[] = [...gruppiContratti.entries()].map(([k, cs]) => {
+        const negozio = (cs[0].negozio || "").trim();
+        const brands = [...new Set(cs.map((c) => c.brand).filter(Boolean))];
+        // Presentazione voluta da Luca (04/08): NOME DEL NEGOZIO in evidenza,
+        // sotto in piccolo il numero di contratti; il resto solo espandendo.
+        return {
+            key: "g" + k, when: cs[0].data, color: "var(--tf-38bdf8)", icon: "🏬",
+            title: negozio || "In negozio",
+            desc: `${cs.length === 1 ? "1 contratto attivato" : `${cs.length} contratti attivati`}${brands.length ? " · " + brands.join(" · ") : ""}`,
+            stato: null, contratti: cs,
+        };
+    });
+
+    // CHIAMATE per giorno: inbound = "Ha chiamato <negozio|Call Center>",
+    // outbound = "Chiamato da …" (negozio dalla colonna negozio; null con
+    // agente = Call Center). Più chiamate stesso giorno = una voce col contatore.
+    const gruppiChiamate = new Map<string, { when: string; dir: "in" | "out"; chi: string; n: number }>();
+    chiamateTml.filter((e) => e.started_at).forEach((e) => {
+        const chi = (e.negozio || "").trim() || (e.agente_nome ? "Call Center" : "Telefutura");
+        const dir: "in" | "out" = e.direction === "inbound" ? "in" : "out";
+        const k = String(e.started_at).slice(0, 10) + "|" + dir + "|" + chi;
+        const g = gruppiChiamate.get(k);
+        if (g) { g.n += 1; if (String(e.started_at) > g.when) g.when = String(e.started_at); }
+        else gruppiChiamate.set(k, { when: String(e.started_at), dir, chi, n: 1 });
+    });
+    const vociChiamate: VoceTimeline[] = [...gruppiChiamate.entries()].map(([k, g]) => ({
+        key: "t" + k, when: g.when,
+        color: g.dir === "in" ? "var(--tf-22c55e)" : "var(--tf-a78bfa)",
+        icon: g.dir === "in" ? "📥" : "📤",
+        title: g.dir === "in" ? `Ha chiamato ${g.chi}` : `Chiamato da ${g.chi}`,
+        desc: g.n === 1
+            ? new Date(g.when).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
+            : `${g.n} chiamate`,
+        stato: null, apreStorico: true,
+    }));
+
+    // Timeline 360°: eventi REALI (contratti + chiamate + documenti + disdette), in ordine.
+    const timeline: VoceTimeline[] = [
+        ...vociContratti,
+        ...vociChiamate,
         ...docs.filter((d) => d.created_at).map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "var(--tf-f59e0b)", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
         ...eventiDisdette.filter((e) => e.when),
     ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
@@ -337,25 +410,68 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                         </div>
                         <div className="p-5 flex-1 overflow-y-auto scrollbar-hide">
 
-                    {/* ===== TAB TIMELINE ===== */}
+                    {/* ===== TAB TIMELINE (interattiva, TML-01) ===== */}
                     {tab === "timeline" && (timeline.length === 0 ? (
                         <div className="text-center py-16 text-slate-600 text-sm">Nessuna attività registrata per questo cliente.</div>
                     ) : (
                         <div className="relative">
                             <div className="absolute left-[19px] top-2 bottom-2 w-px bg-white/5" />
                             <div className="space-y-6">
-                                {timeline.map(ev => (
-                                    <div key={ev.key} className="flex gap-4 relative">
-                                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-base shrink-0 z-10" style={{ background: ev.color + "1f", border: "1px solid " + ev.color + "55" }}>{ev.icon}</div>
-                                        <div className="flex-1 min-w-0 pt-1.5">
-                                            <div className="flex items-center justify-between gap-2">
-                                                <h4 className="text-sm font-semibold text-slate-100">{ev.title}</h4>
-                                                <span className="text-[11px] text-slate-500 shrink-0">{new Date(ev.when).toLocaleDateString("it-IT")}</span>
+                                {timeline.map(ev => {
+                                    const cliccabile = !!ev.contratti || !!ev.apreStorico;
+                                    const aperta = !!ev.contratti && !!gruppiAperti[ev.key];
+                                    return (
+                                        <div key={ev.key} className="relative">
+                                            <div role={cliccabile ? "button" : undefined} tabIndex={cliccabile ? 0 : undefined}
+                                                onClick={() => {
+                                                    if (ev.contratti) setGruppiAperti((p) => ({ ...p, [ev.key]: !p[ev.key] }));
+                                                    else if (ev.apreStorico) setShowStorico(true);
+                                                }}
+                                                onKeyDown={(e) => { if (cliccabile && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
+                                                title={ev.contratti ? (aperta ? "Chiudi i contratti del giorno" : "Mostra i contratti del giorno") : ev.apreStorico ? "Apri lo storico chiamate" : undefined}
+                                                className={`flex gap-4 relative ${cliccabile ? "cursor-pointer group/tml rounded-xl -mx-2 px-2 py-1 -my-1 hover:bg-white/[0.03] transition-colors" : ""}`}>
+                                                {/* color-mix: le tinte stanno nei CSS var del tema (chiaro incluso) */}
+                                                <div className="w-10 h-10 rounded-full flex items-center justify-center text-base shrink-0 z-10"
+                                                    style={{ background: `color-mix(in srgb, ${ev.color} 12%, transparent)`, border: `1px solid color-mix(in srgb, ${ev.color} 33%, transparent)` }}>{ev.icon}</div>
+                                                <div className="flex-1 min-w-0 pt-1.5">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <h4 className="text-sm font-semibold text-slate-100 flex items-center gap-1.5 min-w-0">
+                                                            <span className="truncate">{ev.title}</span>
+                                                            {ev.contratti && <span className="text-slate-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
+                                                            {ev.apreStorico && <span className="text-[11px] font-bold text-violet-300 opacity-0 group-hover/tml:opacity-100 transition-opacity shrink-0">→ storico</span>}
+                                                        </h4>
+                                                        <span className="text-[11px] text-slate-500 shrink-0">{new Date(ev.when).toLocaleDateString("it-IT")}</span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-400 mt-0.5">{ev.desc}{ev.stato ? ` · ${ev.stato}` : ""}</p>
+                                                </div>
                                             </div>
-                                            <p className="text-xs text-slate-400 mt-0.5">{ev.desc}{ev.stato ? ` · ${ev.stato}` : ""}</p>
+                                            {/* esplosione INLINE dei contratti del giorno: brand col logo,
+                                                tipologia/prodotto, venditore — il click sulla riga apre il
+                                                dettaglio contratto (stesso deep link della tab Contratti) */}
+                                            {aperta && (
+                                                <div className="ml-14 mt-2 space-y-1.5">
+                                                    {ev.contratti!.map((c) => {
+                                                        const logo = TRK_BRAND_LOGOS[trkBrandKey(c.brand || "")];
+                                                        return (
+                                                            <button key={c.id} onClick={() => openContract(c.id)} title="Apri il dettaglio del contratto"
+                                                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 text-left transition-all group">
+                                                                {logo
+                                                                    ? <img src={logo} alt={c.brand} className="w-5 h-5 object-contain shrink-0" />
+                                                                    : <span className="w-5 h-5 rounded bg-white/10 border border-white/10 flex items-center justify-center text-[9px] font-bold text-slate-300 shrink-0">{(c.brand || "?").charAt(0).toUpperCase()}</span>}
+                                                                <span className="flex-1 min-w-0">
+                                                                    <span className="block text-xs font-semibold text-slate-100 truncate">{c.brand} · {c.categoria}</span>
+                                                                    <span className="block text-[10px] text-slate-500 truncate">{[c.prodotto || c.offerta, c.venditore].filter(Boolean).join(" — ") || "—"}</span>
+                                                                </span>
+                                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 border ${c.stato === "Attivato" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : c.stato === "In Lavorazione" ? "bg-amber-500/10 border-amber-500/20 text-amber-400" : "bg-rose-500/10 border-rose-500/20 text-rose-400"}`}>{c.stato}</span>
+                                                                <ExternalLink className="w-3 h-3 text-slate-600 group-hover:text-indigo-400 shrink-0 transition-colors" />
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     ))}
@@ -1807,11 +1923,13 @@ export default function ClientiPage() {
    - calls = le pratiche del call center (esiti: NR, appuntamenti, ecc.),
      agganciate per CF/P.IVA o per numero. */
 function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; cellulare?: string | null; cf_piva?: string | null; nome?: string | null; cognome?: string | null; ragioneSociale?: string | null; tipo?: string | null }; onClose: () => void }) {
-    // AUDIO registrazioni SOLO da store manager in su (decisione Luca 04/08):
-    // il gate vero sta sul proxy /api/aircall/recording (?u= verificato a DB),
-    // qui si evita di mostrare un player che risponderebbe 403.
+    // AUDIO registrazioni a CAPABILITY (cap:/clienti:ascolta_registrazioni,
+    // Luca 04/08): il gate vero sta sul proxy /api/aircall/recording (?u=
+    // verificato a DB), qui si evita di mostrare un player che risponderebbe
+    // 403. Lo storico SENZA audio resta visibile a chi vede il cliente.
     const { user: uStorico } = useAuth();
-    const puoAudio = puoAscoltareRegistrazioni(uStorico?.role);
+    const { perms: permsStorico } = useRolePermissions(uStorico?.role, uStorico?.grade);
+    const puoAudio = puoAscoltareRegistrazioni(uStorico?.role, permsStorico);
     const [eventi, setEventi] = useState<Record<string, unknown>[]>([]);
     const [pratiche, setPratiche] = useState<Record<string, unknown>[]>([]);
     const [caricoStorico, setCaricoStorico] = useState(true);

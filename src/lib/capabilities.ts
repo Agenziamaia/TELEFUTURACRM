@@ -144,11 +144,25 @@ export const CAP_CLIENTI_INTEGRA_DOC: CapDef = {
     desc: "Nella scheda cliente può CARICARE i documenti mancanti sui contratti già registrati (mai eliminare quelli esistenti). Regola Luca 31/07: di default solo i ruoli del punto vendita da store manager in su.",
     default: (r) => ["store_manager", "direttore_commerciale", "amministrativo", "admin", "dev", "direttore_generale"].includes(r),
 };
+// Chi può ASCOLTARE l'audio delle chiamate (Luca 04/08): amministrabile dalla
+// rotellina — lo storico chiamate senza audio resta visibile a chi vede il
+// cliente/negozio. Il default replica la regola "store manager in su + call
+// center" nata con il Registro Chiamate.
+export const CAP_CLIENTI_REGISTRAZIONI: CapDef = {
+    id: "ascolta_registrazioni",
+    label: "Ascolta le registrazioni",
+    desc: "Player e download dell'audio delle chiamate (timeline e storico cliente, Registro Chiamate, Caller). Spenta: vede lo storico chiamate senza audio. Default: store manager in su + ruoli del call center.",
+    default: (r) => [
+        "store_manager", "supervisore", "direttore_commerciale",
+        "direttore_cc", "direttore_ob", "back_office_caller", "caller",
+        "amministrativo", "direttore_generale", "admin", "dev",
+    ].includes(r),
+};
 export const CAP_CLIENTI_EXTRA: CapGroupFlags = {
     mode: "flags",
     section: "/clienti",
     sectionLabel: "Clienti — funzioni",
-    caps: [CAP_CLIENTI_ALLEGATI, CAP_CLIENTI_INTEGRA_DOC],
+    caps: [CAP_CLIENTI_ALLEGATI, CAP_CLIENTI_INTEGRA_DOC, CAP_CLIENTI_REGISTRAZIONI],
 };
 
 // ─── GESTIONE USATO: rotellina della sezione (Luca 31/07) ────────────────────
@@ -313,4 +327,35 @@ export const CAP_PASSWORD: CapGroupFlags = {
 /** Catalogo completo: la pagina Permessi lo rende amministrabile da solo.
  *  Piu' gruppi possono condividere la stessa sezione: l'ingranaggio li mostra
  *  impilati nello stesso pannello. */
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
+// ─── RICERCA VENDITE: come si modificano le vendite (rotellina, Luca 04/08) ──
+// "diretta" = salva subito e approva le richieste altrui; "richiesta" =
+// comportamento storico (le modifiche passano dall'approvazione);
+// "nessuna" = sola consultazione (niente modifica né eliminazione).
+export const CAP_RICERCA_MODIFICA: CapGroupChoice = {
+    mode: "choice",
+    section: "/ricerca-vendite",
+    sectionLabel: "Ricerca Vendite",
+    caps: [
+        {
+            id: "diretta",
+            label: "Modifica diretta",
+            desc: "Le modifiche e le eliminazioni si applicano subito, senza approvazione; vede e approva le richieste degli altri.",
+            default: (r) => ["amministrativo", "admin", "dev", "direttore_generale"].includes(r),
+        },
+        {
+            id: "nessuna",
+            label: "Sola consultazione",
+            desc: "Vede le vendite ma non può proporre modifiche né eliminazioni.",
+            default: () => false,
+        },
+    ],
+    // "richiesta" vive SOLO come fallback (pattern CAP_CLIENTI/"propri"): se
+    // stesse anche in caps il radio della rotellina la mostrerebbe due volte.
+    fallback: {
+        id: "richiesta",
+        label: "Modifica con autorizzazione",
+        desc: "Le modifiche e le eliminazioni diventano richieste per l'amministrazione e si applicano solo dopo l'approvazione.",
+    },
+};
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
