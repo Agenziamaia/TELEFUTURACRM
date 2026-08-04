@@ -68,7 +68,7 @@ const ALL_BRANDS = [
     bg: "var(--tf-f3eefb)",
     desc: "POS · Terminali di pagamento",
     onlyBusiness: true,
-    logo: "/dojo - Copy.png",
+    logo: "/dojo-round.png",   // il cerchio, come Registra Vendita (Luca 04/08)
   },
 ];
 
@@ -2099,18 +2099,19 @@ export default function InviaPda() {
                       style={brand === b.id ? { borderColor: b.color, backgroundColor: `${b.color}15` } : {}}
                     >
                       <div className="absolute top-0 left-0 right-0 h-1" style={{background:`linear-gradient(to right, ${b.color}, ${b.color}88)`}}/>
-                      <div className="flex flex-col items-center justify-center text-center gap-4 py-4">
-                        <div className="w-20 h-20 rounded-xl overflow-hidden flex items-center justify-center" style={{background:`${b.color}15`}}>
-                          {b.logo && <Image src={b.logo} alt={b.label} width={80} height={80} className="w-full h-full object-cover rounded-xl"/>}
+                      {/* SOLO il logo, grande e centrato (Luca 04/08, come Registra
+                          Vendita): via nome e sottotitolo mobile/fisso/luce&gas */}
+                      <div className="flex flex-col items-center justify-center text-center gap-3 py-4" title={`${b.label} — ${b.desc}`}>
+                        <div className="flex items-center justify-center h-[88px]">
+                          {b.logo
+                            ? <Image src={b.logo} alt={b.label} width={260} height={88} className="h-[84px] w-auto max-w-[92%] object-contain"
+                                style={{transform:`scale(${({w3:1.7,fastweb:1.75})[b.id]||1})`}}/>
+                            : <span className="text-xl font-bold text-white">{b.label}</span>}
                         </div>
-                        <div>
-                          <h3 className="text-xl font-bold text-white mb-1">{b.label}</h3>
-                          <p className="text-sm font-semibold" style={{color:b.color}}>{b.desc}</p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
+                        {(b.onlyBusiness || brand === b.id) && <div className="flex flex-wrap gap-2 justify-center">
                           {b.onlyBusiness && <Tag c="var(--tf-a78bfa)" bg="#a78bfa10">Solo Business</Tag>}
                           {brand === b.id && <Tag c="var(--tf-10b981)" bg="#10b98110">Selezionato</Tag>}
-                        </div>
+                        </div>}
                       </div>
                     </div>
                   ))}
