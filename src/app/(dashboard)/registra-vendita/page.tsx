@@ -11,7 +11,7 @@ import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
 import { erroreIbanIT } from "@/lib/iban";
-import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { useClientiVisibili } from "@/lib/clientiVisibili";
 import { stessoMagazzino } from "@/lib/visibleStores";
 import { CODICI_KENA } from "@/lib/codiciInserimento";
@@ -4821,6 +4821,9 @@ function CRM() {
     if (!_soloSky && !attachments.some(a => a.type === "contratti")) m.push("📄 contratto firmato (step Allegati)");
     if (!selVend || !selNeg || !dataVendita) m.push("🏪 attribuzione: venditore, negozio e data");
     if (!stepVisti.note) m.push("📝 passaggio dallo step Note");
+    // Bug indirizzo (Luca 04/08): la via resta facoltativa, ma se è compilata
+    // SENZA numero civico l'anagrafica va completata prima di salvare.
+    if (String(ana.via || "").trim() && civicoMancante(ana.via)) m.push("🏠 numero civico nell'indirizzo (step Cliente)");
     return m;
   };
   const finalSubmit = async () => {
@@ -4843,7 +4846,7 @@ function CRM() {
       const _manca = mancanzeVendita();
       if (_manca.length) {
         setShowCart(false);
-        setVistaStep(_manca.some((x) => x.includes("Allegati") || x.includes("attribuzione")) ? "allegati" : "note");
+        setVistaStep(_manca.some((x) => x.includes("Allegati") || x.includes("attribuzione")) ? "allegati" : _manca.some((x) => x.includes("civico")) ? "cliente" : "note");
         sT("⚠️ Per salvare la vendita completa prima: " + _manca.join(" · "));
         return;
       }
@@ -5193,6 +5196,8 @@ function CRM() {
           !f.tel.trim()&&"Cellulare"].filter(Boolean)
         :[!f.nome.trim()&&"Nome",!f.cognome.trim()&&"Cognome",!f.tel.trim()&&"Cellulare"].filter(Boolean);
       if(miss.length){showToast("⚠️ Campi obbligatori mancanti: "+miss.join(", "));return;}
+      // Bug indirizzo (Luca 04/08): via facoltativa, ma se compilata il civico va messo
+      if(f.via.trim()&&civicoMancante(f.via)){showToast("⚠️ Nell'indirizzo manca il numero civico (es. \"Via Roma 12\"): aggiungilo o lascia il campo vuoto");return;}
     }
     setMargSaving(true);
     try{

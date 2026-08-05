@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
-import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { IndirizzoAutocomplete, civicoMancante, sembraVia } from "@/components/IndirizzoAutocomplete";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video } from "lucide-react";
 import { cn } from "@/utils";
 import { usePageView } from "@/lib/pageView";
@@ -704,6 +704,12 @@ export default function Calendario() {
             alert(`Questa data è bloccata in agenda. Motivo: ${block?.note ?? "—"}`);
             return;
         }
+        // Bug indirizzo (Luca 04/08): indirizzo facoltativo, ma se compilato il
+        // civico è OBBLIGATORIO — l'agente a domicilio senza civico non arriva.
+        if (newAppt.type !== "incoming" && newAppt.customerAddress.trim() && civicoMancante(newAppt.customerAddress)) {
+            alert("Nell'indirizzo del cliente manca il numero civico (es. \"Via Roma 12\"): aggiungilo oppure lascia il campo vuoto.");
+            return;
+        }
         const payload = {
             date: selectedDate,
             time: newAppt.time,
@@ -830,6 +836,12 @@ export default function Calendario() {
             !newMeeting.brand && "Brand",
         ].filter(Boolean);
         if (mancanti.length) { alert("Per salvare la riunione compila: " + mancanti.join(", ")); return; }
+        // Bug indirizzo (Luca 04/08): il Luogo può essere anche una sede
+        // ("Negozio Tivoli"), ma se è chiaramente una VIA il civico ci vuole.
+        if (newMeeting.type === "in_person" && sembraVia(newMeeting.location) && civicoMancante(newMeeting.location)) {
+            alert("Nel luogo della riunione manca il numero civico (es. \"Via Roma 12\"): aggiungilo.");
+            return;
+        }
 
         const payload = {
             title: newMeeting.title,

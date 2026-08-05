@@ -6,7 +6,10 @@
    solo come ripiego (indirizzo non trovato): il campo è sempre testo libero
    e i campi CAP/città restano editabili.
    Motore: /api/geo/indirizzi (Photon/OpenStreetMap, bias Roma). Se il civico
-   non è censito su OSM, si tiene quello DIGITATO dall'utente. */
+   non è censito su OSM, si tiene quello DIGITATO dall'utente.
+   Bug indirizzo (Luca 04/08): l'indirizzo resta FACOLTATIVO, ma se è
+   compilato il CIVICO è obbligatorio — qui si mostra bordo/hint ambra e
+   si espone `civicoMancante` per i gate di salvataggio dei form. */
 
 import { useEffect, useRef, useState } from "react";
 
@@ -28,8 +31,28 @@ function civicoDigitato(testo: string): string {
     return v && v.replace(/\D/g, "").length < 5 ? v : "";
 }
 
+/** BUG INDIRIZZO (Luca 04/08): civico OBBLIGATORIO SE l'indirizzo è compilato.
+ *  Vero quando il testo contiene qualcosa ma NESSUN civico riconoscibile
+ *  ("Via Roma" sì, "Via Roma 12" no). Vuoto = falso: l'indirizzo resta
+ *  facoltativo, è il civico a diventare obbligatorio quando si compila.
+ *  "SNC" (senza numero civico) vale come civico dichiarato. */
+export function civicoMancante(testo: string): boolean {
+    const t = String(testo || "").trim();
+    if (!t) return false;
+    if (/\bs\.?n\.?c\.?\b/i.test(t)) return false;
+    return !civicoDigitato(t);
+}
+
+/** vero se il testo INIZIA come un indirizzo stradale: serve ai campi "luogo"
+ *  (es. riunioni) che ammettono anche nomi di sede — lì il blocco civico
+ *  scatta solo su ciò che è chiaramente una via. */
+export function sembraVia(testo: string): boolean {
+    return /^(via|viale|v\.le|piazza|p\.zza|p\.za|piazzale|corso|c\.so|largo|l\.go|vicolo|vico|strada|borgo|salita|contrada|c\.da|localit[aà]|loc\.|traversa|circonvallazione|lungotevere|lungomare)\b/i
+        .test(String(testo || "").trim());
+}
+
 export function IndirizzoAutocomplete({
-    value, onChange, onPick, placeholder = "Via e numero civico…", className = "", inputStyle, disabled = false,
+    value, onChange, onPick, placeholder = "Via e numero civico…", className = "", inputStyle, disabled = false, onCivicoMancante,
 }: {
     value: string;
     onChange: (v: string) => void;
@@ -38,6 +61,8 @@ export function IndirizzoAutocomplete({
     className?: string;
     inputStyle?: React.CSSProperties;   // per le pagine a stili inline (registra)
     disabled?: boolean;
+    /** notifica live dello stato "manca il civico" (per bloccare i submit) */
+    onCivicoMancante?: (manca: boolean) => void;
 }) {
     const [aperta, setAperta] = useState(false);
     const [righe, setRighe] = useState<Suggerimento[]>([]);
@@ -56,6 +81,10 @@ export function IndirizzoAutocomplete({
         document.addEventListener("mousedown", h);
         return () => document.removeEventListener("mousedown", h);
     }, []);
+
+    // stato "manca il civico": bordo/hint ambra + notifica al form (04/08)
+    const manca = civicoMancante(value);
+    useEffect(() => { onCivicoMancante?.(manca); }, [manca]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ricerca con debounce mentre si digita
     useEffect(() => {
@@ -89,19 +118,22 @@ export function IndirizzoAutocomplete({
 
     return (
         <div ref={box} className="relative">
-            <input
-                value={value} disabled={disabled}
-                onChange={(e) => { digitato.current = e.target.value; onChange(e.target.value); }}
-                onFocus={() => { if (righe.length) setAperta(true); }}
-                onKeyDown={(e) => {
-                    if (e.key === "Enter" && aperta && righe[0]) { e.preventDefault(); scegli(righe[0]); }
-                    if (e.key === "Escape") setAperta(false);
-                }}
-                placeholder={placeholder}
-                className={inputStyle ? undefined : (className || "glass-input w-full")}
-                style={inputStyle}
-            />
-            {cerco && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">cerco…</span>}
+            <div className="relative">
+                <input
+                    value={value} disabled={disabled}
+                    onChange={(e) => { digitato.current = e.target.value; onChange(e.target.value); }}
+                    onFocus={() => { if (righe.length) setAperta(true); }}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter" && aperta && righe[0]) { e.preventDefault(); scegli(righe[0]); }
+                        if (e.key === "Escape") setAperta(false);
+                    }}
+                    placeholder={placeholder}
+                    className={inputStyle ? undefined : (className || "glass-input w-full")}
+                    style={manca ? { ...(inputStyle || {}), borderColor: "#f59e0b" } : inputStyle}
+                />
+                {cerco && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500">cerco…</span>}
+            </div>
+            {manca && <p className="mt-1 text-[11px] font-bold text-amber-500">⚠️ Aggiungi il numero civico</p>}
             {aperta && righe.length > 0 && (
                 <div className="absolute z-[1300] mt-1 w-full min-w-[260px] rounded-lg border border-white/10 bg-[#0f111a] shadow-2xl overflow-hidden">
                     {righe.map((r) => {

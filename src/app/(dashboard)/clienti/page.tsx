@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
-import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
 import { seesWholeStore, seesAllStores } from "@/lib/roles";
 import { usePageView } from "@/lib/pageView";
@@ -756,6 +756,13 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
         }
         if (!cliente && !acquisito) {
             setError("Seleziona da chi è stato acquisito il cliente (negozio o Agenzia).");
+            return;
+        }
+        // Bug indirizzo (Luca 04/08): l'indirizzo resta facoltativo, ma se è
+        // compilato il numero civico è OBBLIGATORIO (in archivio senza civico
+        // non serve a niente).
+        if (indirizzo.trim() && civicoMancante(indirizzo)) {
+            setError("Nell'indirizzo manca il numero civico (es. \"Via Roma 12\"): aggiungilo oppure lascia il campo vuoto.");
             return;
         }
 

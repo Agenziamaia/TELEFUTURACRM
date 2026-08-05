@@ -22,7 +22,7 @@ import { useRoles } from "@/lib/useRoles";
 import { MoneyInput } from "./_views/money";
 import { RoleCostsModal, useRoleCosts, effVisibleCost, type RoleCostRule } from "./_views/rolecosts";
 import { MonthBar, MonthInitBanner, useCostMonths, currentMonthKey, monthLabel } from "./_views/months";
-import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { RichiesteProfiloBox } from "@/components/RichiesteProfilo";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import {
@@ -808,6 +808,10 @@ function UserForm({
             const mancanti = obbligatori.filter(([, v]) => !String(v ?? "").trim()).map(([l]) => l);
             if (mancanti.length) { setErr("Campi obbligatori mancanti: " + mancanti.join(", ") + " (solo l'IBAN può attendere)."); return; }
         }
+        // Bug indirizzo (Luca 04/08): indirizzo/domicilio facoltativi, ma se
+        // compilati il numero civico è OBBLIGATORIO.
+        if (civicoMancante(String(f.address ?? ""))) { setErr("Nell'indirizzo manca il numero civico (es. \"Via Roma 12\"): aggiungilo oppure lascia il campo vuoto."); return; }
+        if (f.different_domicile && civicoMancante(String(f.domicile ?? ""))) { setErr("Nel domicilio manca il numero civico (es. \"Via Roma 12\"): aggiungilo oppure lascia il campo vuoto."); return; }
         setSaving(true);
         setErr("");
         const status = f.status || "attivo";

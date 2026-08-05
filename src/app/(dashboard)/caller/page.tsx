@@ -22,7 +22,7 @@ import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
-import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
 import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller } from "@/lib/callerMalus";
 import { CallerRegoleModal } from "@/components/CallerRegole";
@@ -1030,6 +1030,9 @@ function CallerPageInner() {
             if (!String(c.nome || "").trim() || !String(c.cognome || "").trim()) { alert("NOME e COGNOME obbligatori (anche sui Non risponde): è il cliente che stiamo lavorando."); return false; }
             if (!String(c.cf || "").trim()) { alert("CODICE FISCALE obbligatorio: crea l'anagrafica del cliente e traccia lo storico delle chiamate."); return false; }
         }
+        // Bug indirizzo (Luca 04/08): indirizzo facoltativo, ma se compilato il
+        // civico è OBBLIGATORIO — la pratica finisce in anagrafica e a calendario.
+        if (civicoMancante(String(c.indirizzo || ""))) { alert("Nell'INDIRIZZO manca il numero civico (es. \"Via Roma 12\"): aggiungilo oppure svuota il campo."); return false; }
         return true;
     }
     // Se il CF/P.IVA non esiste in anagrafica, il cliente NASCE qui (senza

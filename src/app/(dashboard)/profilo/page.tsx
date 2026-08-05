@@ -17,6 +17,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CAMPI_PROFILO, campiMancanti, caricaProfilo, type RigaProfilo } from "@/lib/profilo";
 import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
+import { civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { AvatarUtente, notificaAvatarAggiornato } from "@/components/AvatarUtente";
 import { Camera, Pencil, KeyRound, AlertTriangle, CheckCircle2, Type, Trash2, Loader2 } from "lucide-react";
 
@@ -158,6 +159,12 @@ export default function ProfiloPage() {
             nuovo = normalizzaIban(nuovo);
             const e = erroreIbanIT(nuovo);
             if (e) { setMsg("⚠ IBAN non valido: " + e); return; }   // resta in modifica
+        }
+        // Bug indirizzo (Luca 04/08): se residenza/domicilio si compilano, il
+        // numero civico è OBBLIGATORIO (resta in modifica finché non c'è)
+        if ((campo === "address" || campo === "domicilio") && civicoMancante(nuovo)) {
+            setMsg(`⚠ Ne${campo === "address" ? "ll'indirizzo di residenza" : "l domicilio"} manca il numero civico (es. "Via Roma 12"): aggiungilo.`);
+            return;
         }
         setEditCampo(null);
         const attuale = String((riga as Record<string, unknown>)[campo] ?? "").trim();

@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef, Suspense } from "rea
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import { SelectPersona, SelectOpzioni } from "@/components/SelectPersona";
-import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
+import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -1230,7 +1230,9 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
 
   const canNext = () => {
     if (step === 1) return !!(venditore && negozio);
-    if (step === 2) return !!(tipoCliente && clienteFound !== null) && (!ana.iban || !erroreIbanIT(ana.iban));
+    // Bug indirizzo (Luca 04/08): domicilio/sede legale facoltativi, ma se
+    // compilati SENZA civico l'Avanti resta grigio (l'hint ambra è sul campo)
+    if (step === 2) return !!(tipoCliente && clienteFound !== null) && (!ana.iban || !erroreIbanIT(ana.iban)) && !civicoMancante(tipoCliente === "business" ? ana.sedeLegale : ana.domicilio);
     // Segnalazione 58: le 15 cifre valgono SOLO per smartphone e tablet.
     // Portatili e watch hanno un seriale alfanumerico, anche piu' corto.
     if (step === 3) return !!(tipoProdotto && brand && model && capacita && colore && imeiValido && prezzoAcquisto && gradoUsura && (!hasExtraMargine || extraMargineImporto));
