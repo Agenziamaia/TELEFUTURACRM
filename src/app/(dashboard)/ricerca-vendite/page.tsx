@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
+import { createPortal } from "react-dom";
+import { SelectOpzioni } from "@/components/SelectPersona";
 import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation, FileText, ChevronDown } from "lucide-react";
 import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
@@ -160,31 +161,199 @@ function codInsDi(row: ContrattoRow): string {
     return v == null ? "" : String(v).trim();
 }
 
+// ── RIC-06 (Luca 05/08): TENDINA MULTI-SELEZIONE per i filtri della pagina ──
+// Convenzione unica: values === null → TUTTO selezionato (default, NESSUN
+// filtro: si vede anche lo storico fuori dalle opzioni note); array → insieme
+// scelto; array VUOTO → nessuna voce spuntata = ZERO risultati. Spuntare di
+// nuovo TUTTE le voci ricompatta a null. In testa "Seleziona/Deseleziona
+// tutto"; sul bottone la chip riassuntiva ("Tutti" / nome se 1 / "N selezionati").
+// Componente a livello di MODULO, mai definito dentro la pagina (regola
+// segnalazione 71: identita' stabile, niente rimontaggi/perdita di focus).
+// Menu in PORTAL come SelectPersona (i glass-panel creano stacking context
+// separati e lo z-index interno non basta — Luca 30/07).
+function FiltroMulti({ values, onChange, opzioni, className = "", disabled = false,
+    etichettaTutti = "Tutti", testoDisabilitato, etichette }: {
+    values: string[] | null;
+    onChange: (v: string[] | null) => void;
+    opzioni: readonly string[];
+    className?: string;
+    disabled?: boolean;
+    etichettaTutti?: string;          // chip nello stato "tutto selezionato"
+    testoDisabilitato?: string;       // chip quando la tendina e' spenta (motivo)
+    etichette?: Record<string, string>; // valore → etichetta visuale (es. tipi marginalità)
+}) {
+    const [aperta, setAperta] = useState(false);
+    const [testo, setTesto] = useState("");
+    const box = useRef<HTMLDivElement | null>(null);
+    const menu = useRef<HTMLDivElement | null>(null);
+    const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+    // chiusura al click fuori (campo E tendina: la tendina sta nel portal) + Esc
+    useEffect(() => {
+        if (!aperta) return;
+        const h = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (box.current && !box.current.contains(t) && !(menu.current && menu.current.contains(t))) {
+                setAperta(false); setTesto("");
+            }
+        };
+        const k = (e: KeyboardEvent) => { if (e.key === "Escape") { setAperta(false); setTesto(""); } };
+        document.addEventListener("mousedown", h);
+        document.addEventListener("keydown", k);
+        return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", k); };
+    }, [aperta]);
+
+    // posizione della tendina agganciata al campo, viva su scroll/resize
+    useEffect(() => {
+        if (!aperta) { setPos(null); return; }
+        const update = () => {
+            const r = box.current?.getBoundingClientRect();
+            if (r) setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 230) });
+        };
+        update();
+        window.addEventListener("scroll", update, true);
+        window.addEventListener("resize", update);
+        return () => { window.removeEventListener("scroll", update, true); window.removeEventListener("resize", update); };
+    }, [aperta]);
+
+    const tutte = values === null;
+    const visuale = (o: string) => etichette?.[o] ?? o;
+    const spuntata = (o: string) => tutte || (values as string[]).includes(o);
+    const toggle = (o: string) => {
+        if (values === null) { onChange(opzioni.filter((x) => x !== o)); return; } // dal "tutto" si toglie la prima voce
+        const next = values.includes(o) ? values.filter((x) => x !== o) : [...values, o];
+        onChange(opzioni.length > 0 && opzioni.every((x) => next.includes(x)) ? null : next);
+    };
+
+    const chip = disabled ? (testoDisabilitato ?? etichettaTutti)
+        : tutte ? etichettaTutti
+        : values.length === 0 ? "Nessuno selezionato"
+        : values.length === 1 ? visuale(values[0])
+        : `${values.length} selezionati`;
+
+    // ricerca interna (stesso match di SelectPersona: inclusione o iniziali)
+    const q = testo.trim().toLowerCase();
+    const filtrate = !q ? opzioni : opzioni.filter((n) => {
+        const nome = (visuale(n) + " " + n).toLowerCase();
+        if (nome.includes(q)) return true;
+        const parole = nome.split(/\s+/);
+        return q.split(/\s+/).every((t) => parole.some((p) => p.startsWith(t)));
+    });
+
+    const menuBody = pos ? (
+        <div ref={menu}
+            className="select-persona-menu fixed z-[4000] rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 overflow-hidden"
+            style={{ top: pos.top, left: pos.left, width: pos.width }}>
+            <button type="button"
+                onMouseDown={(e) => { e.preventDefault(); onChange(tutte ? [] : null); }}
+                className="w-full text-left px-3.5 py-2.5 text-xs font-bold uppercase tracking-wider text-indigo-300 hover:bg-indigo-500/20 border-b border-white/10">
+                {tutte ? "Deseleziona tutto" : "Seleziona tutto"}
+            </button>
+            {opzioni.length > 8 && (
+                <div className="p-2 border-b border-white/10">
+                    <input value={testo} onChange={(e) => setTesto(e.target.value)}
+                        placeholder="Scrivi per filtrare…" autoFocus
+                        className="glass-input w-full text-sm" />
+                </div>
+            )}
+            <div className="max-h-64 overflow-y-auto divide-y divide-white/5">
+                {filtrate.length > 0 ? filtrate.map((n) => {
+                    const sel = spuntata(n);
+                    return (
+                        <button key={n} type="button"
+                            onMouseDown={(e) => { e.preventDefault(); toggle(n); }}
+                            className={`w-full text-left px-3.5 py-2.5 text-sm transition-colors hover:bg-indigo-500/20 flex items-center gap-2 ${sel ? "text-indigo-300 font-bold" : "text-slate-100"}`}>
+                            <span className={`w-3.5 h-3.5 rounded border shrink-0 flex items-center justify-center text-[9px] ${sel ? "border-indigo-400 bg-indigo-500/40" : "border-slate-600"}`}>{sel ? "✓" : ""}</span>
+                            <span className="truncate">{visuale(n)}</span>
+                        </button>
+                    );
+                }) : (
+                    <div className="px-3.5 py-2.5 text-sm text-slate-500">Nessuna voce corrispondente</div>
+                )}
+            </div>
+        </div>
+    ) : null;
+
+    return (
+        <div ref={box} className="relative">
+            <button type="button" disabled={disabled} onClick={() => setAperta((v) => !v)}
+                className={(className || "glass-input w-full text-sm") + " flex items-center justify-between gap-2 text-left disabled:opacity-50"}>
+                <span className={"truncate " + (disabled || tutte ? "text-slate-400" : "text-white font-semibold")}>{chip}</span>
+                <ChevronDown className={"w-4 h-4 shrink-0 text-slate-400 transition-transform " + (aperta ? "rotate-180" : "")} />
+            </button>
+            {aperta && !disabled && typeof document !== "undefined" && menuBody && createPortal(menuBody, document.body)}
+        </div>
+    );
+}
+
+// chiave stabile per le dipendenze degli effect: null ("tutto") ≠ [] ("niente")
+const kMulti = (v: string[] | null) => (v === null ? "*" : v.join("|"));
+
+// ── RIC-06 (Luca 05/08): badge del conteggio ANCORATO AL LOGO ───────────────
+// Prima il numeretto stava a calc(50% + offset px) dal centro della TESSERA
+// (offset per-brand del Tracking, TRK_BADGE_OFFSET): al restringersi della
+// scheda il logo si rimpicciolisce (maxWidth 92%) ma l'offset restava fisso e
+// il badge "scappava". Ora badge e logo vivono nello stesso contenitore
+// relative e l'offset viene RISCALATO con la misura reale dell'immagine
+// (ResizeObserver: altezza resa / 56 = fattore di riduzione, la scala ottica
+// transform non tocca il box). A logo pieno (56px) i pixel coincidono con
+// quelli calibrati da Luca il 04/08; a tessera stretta il badge segue la
+// spalla del logo. Componente a livello di modulo (regola segnalazione 71).
+function LogoConBadge({ brand, logo, n }: { brand: string; logo: string; n: number }) {
+    const img = useRef<HTMLImageElement | null>(null);
+    const [fattore, setFattore] = useState(1);
+    useEffect(() => {
+        const el = img.current;
+        if (!el) return;
+        const misura = () => { if (el.offsetHeight > 0) setFattore(Math.min(1, el.offsetHeight / 56)); };
+        misura();
+        const ro = new ResizeObserver(misura);
+        ro.observe(el);
+        el.addEventListener("load", misura);   // dimensioni note solo a immagine caricata
+        return () => { ro.disconnect(); el.removeEventListener("load", misura); };
+    }, [logo]);
+    const key = trkBrandKey(brand);
+    const colBadge = "var(--tf-94a3b8)";   // neutro, come il Tracking a riposo
+    const offset = TRK_BADGE_OFFSET[key] ?? TRK_BADGE_OFFSET_DEFAULT;
+    return (
+        /* stesso box logo del Tracking (72px, logo 56 + scala ottica per brand) */
+        <span className="relative h-[72px] w-full flex items-center justify-center" title={brand}>
+            <img ref={img} src={logo} alt={brand}
+                style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[key] || 1})` }} />
+            {/* fondo SOLIDO perche' i loghi sbordano (scala ottica) */}
+            <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
+                style={{ left: `calc(50% + ${Math.round(offset * fattore)}px)`, top: 0, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
+                {n}
+            </span>
+        </span>
+    );
+}
+
 export default function RicercaContratto() {
     const { user } = useAuth();
     const [contractList, setContractList] = useState<ContrattoRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
 
-    // Filter state
-    const [filterVenditore, setFilterVenditore] = useState("");
+    // Filter state — RIC-06 (Luca 05/08): TUTTE le tendine sono multi-selezione
+    // (FiltroMulti). Convenzione: null = tutto selezionato (nessun filtro,
+    // default); array = insieme scelto; array vuoto = zero risultati.
+    const [filterVenditori, setFilterVenditori] = useState<string[] | null>(null);
     const [filterCodice, setFilterCodice] = useState("");
     const [filterBrand, setFilterBrand] = useState("");
     // Filtro prodotto multiplo (richiesta Luca #7): piu' prodotti dello stesso brand insieme.
-    const [filterProdotti, setFilterProdotti] = useState<string[]>([]);
-    const [prodPick, setProdPick] = useState("");
+    const [filterProdotti, setFilterProdotti] = useState<string[] | null>(null);
     // ── FILTRI DAL CATALOGO (regole Luca 28/07): categoria sempre filtrabile;
     //    prodotto e offerta SOLO con un brand solo selezionato dalle tessere
     //    (altrimenti "milioni di variabili"); entrambi MULTI-selezione.
     //    Le liste arrivano da catalog_* (incluse le voci spente: lo storico
     //    le contiene), non piu' dai distinct dello storico.
-    const [filterCategoria, setFilterCategoria] = useState("");
-    const [filterOfferte, setFilterOfferte] = useState<string[]>([]);
-    const [offPick, setOffPick] = useState("");
+    const [filterCategorie, setFilterCategorie] = useState<string[] | null>(null);
+    const [filterOfferte, setFilterOfferte] = useState<string[] | null>(null);
     // OPZIONI (Luca 28/07): quarto anello della catena — si sbloccano dopo
-    // l'offerta; multi, match sul jsonb contracts.opzioni [{nome,quantita}].
-    const [filterOpzioni, setFilterOpzioni] = useState<string[]>([]);
-    const [opzPick, setOpzPick] = useState("");
+    // l'offerta; multi, match sul jsonb contracts.opzioni [{nome,quantita}]:
+    // la vendita deve contenerle TUTTE (@>), come da regola originaria.
+    const [filterOpzioni, setFilterOpzioni] = useState<string[] | null>(null);
     // catNames = categorie del CATALOGO che il brand vende davvero (in ordine
     // di catalogo, Wallet e Ric. Auto SEPARATE — Luca 28/07: non c'è altro modo
     // di distinguere un'offerta wallet da una a ricarica automatica). Il filtro
@@ -198,12 +367,11 @@ export default function RicercaContratto() {
     // da marg_categories.kind — Kasko/Servizi sono servizi; SIM/ESIM/Telefono
     // Cash/Prodotti sono prodotti), poi gli ARTICOLI del listino di quel tipo.
     // Attivi solo con la sola tessera Marginalità selezionata.
-    const [margTipo, setMargTipo] = useState<"" | "prodotti" | "servizi">("");
-    const [margArticoli, setMargArticoli] = useState<string[]>([]);
-    const [margPick, setMargPick] = useState("");
+    const [margTipi, setMargTipi] = useState<string[] | null>(null);
+    const [margArticoli, setMargArticoli] = useState<string[] | null>(null);
     const [margListino, setMargListino] = useState<MargArticolo[] | null>(null);
-    const [filterNegozio, setFilterNegozio] = useState("");
-    const [filterCodiceAttivazione, setFilterCodiceAttivazione] = useState("");
+    const [filterNegozi, setFilterNegozi] = useState<string[] | null>(null);
+    const [filterCodiciIns, setFilterCodiciIns] = useState<string[] | null>(null);
     const [filterCliente, setFilterCliente] = useState("");
     const [filterCellulare, setFilterCellulare] = useState("");
     const [filterImei, setFilterImei] = useState("");
@@ -283,8 +451,15 @@ export default function RicercaContratto() {
     const [venditoriTeam, setVenditoriTeam] = useState<string[]>([]);
     const [venditoriAltri, setVenditoriAltri] = useState<string[]>([]);
     const [uniqueBrands, setUniqueBrands] = useState<string[]>([]);
-    // Segnalazione 53: prodotti e codici filtrati per brand.
-    const [brandCounts, setBrandCounts] = useState<{ brand: string; n: number }[]>([]);
+    // RIC-06 (Luca 05/08): tessere brand in due pezzi — l'ELENCO (con ordine)
+    // e' stabile e arriva da fetchFilters (solo RBAC: una tessera filtrata a
+    // zero mostra 0 sbiadito, NON sparisce ne' cambia posto); i NUMERI sono i
+    // conteggi faceted che seguono i filtri attivi (effect dedicato sotto).
+    const [brandBase, setBrandBase] = useState<{ brand: string; n: number }[]>([]);
+    const [facetCounts, setFacetCounts] = useState<Record<string, number>>({});
+    const brandCounts = useMemo(
+        () => brandBase.map(({ brand }) => ({ brand, n: facetCounts[brand] ?? 0 })),
+        [brandBase, facetCounts]);
     const [prodByBrand, setProdByBrand] = useState<Record<string, string[]>>({});
     const [codeByBrand, setCodeByBrand] = useState<Record<string, string[]>>({});
     // uniqueProdotti (distinct dello storico) rimosso con RIC-03: la tendina
@@ -388,7 +563,8 @@ export default function RicercaContratto() {
             _prevSlug.current = soloSlug;
             // cambio brand = si riparte: anche la CATEGORIA, che in modalità
             // catalogo elenca voci specifiche del brand (conseguenzialità).
-            setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); setFilterCategoria("");
+            // null = tutto selezionato (stato di default delle tendine).
+            setFilterProdotti(null); setFilterOfferte(null); setFilterOpzioni(null); setFilterCategorie(null);
         }
         if (!soloSlug) { setCatalogoBrand(null); return; }
         let alive = true;
@@ -401,19 +577,23 @@ export default function RicercaContratto() {
     // può esistere sia in Wallet sia in Ric. Auto).
     const offerteDisponibili = useMemo(() => {
         if (!catalogoBrand) return [];
-        const base = filterProdotti.length ? filterProdotti
-            : filterCategoria ? (catalogoBrand.prodsByCat[filterCategoria] || [])
+        // RIC-06: categorie/prodotti sono insiemi (null = tutto selezionato =
+        // nessuna restrizione); con piu' categorie scelte si fa l'UNIONE.
+        const base = filterProdotti?.length ? filterProdotti
+            : filterCategorie?.length ? filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || [])
             : null;
         if (!base) return catalogoBrand.offNames;
         let set = new Set<string>();
         base.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
-        const inCat = filterCategoria ? catalogoBrand.offsByCat[filterCategoria] : null;
-        if (inCat) { const s2 = new Set(inCat); set = new Set(Array.from(set).filter((o) => s2.has(o))); }
+        if (filterCategorie?.length) {
+            const s2 = new Set(filterCategorie.flatMap((c) => catalogoBrand.offsByCat[c] || []));
+            set = new Set(Array.from(set).filter((o) => s2.has(o)));
+        }
         return Array.from(set).sort();
-    }, [catalogoBrand, filterProdotti, filterCategoria]);
+    }, [catalogoBrand, filterProdotti, filterCategorie]);
     // le OPZIONI si sbloccano con almeno un'offerta scelta: unione delle loro
     const opzioniDisponibili = useMemo(() => {
-        if (!catalogoBrand || !filterOfferte.length) return [];
+        if (!catalogoBrand || !filterOfferte?.length) return [];
         const set = new Set<string>();
         filterOfferte.forEach((on) => (catalogoBrand.opzByOff[on] || []).forEach((z) => set.add(z)));
         return Array.from(set).sort();
@@ -421,15 +601,16 @@ export default function RicercaContratto() {
     // Sola tessera Marginalità attiva → si accendono i due layer dedicati.
     const soloMarg = !!soloBrandLabel && ["marginalità", "marginalita"].includes(soloBrandLabel.toLowerCase());
     useEffect(() => {
-        if (!soloMarg) { setMargTipo(""); setMargArticoli([]); setMargPick(""); return; }
-        setFilterCategoria("");   // la categoria nascosta non deve restare a filtrare
+        if (!soloMarg) { setMargTipi(null); setMargArticoli(null); return; }
+        setFilterCategorie(null);   // la categoria nascosta non deve restare a filtrare
         let alive = true;
         loadMargListino().then((l) => { if (alive) setMargListino(l); });
         return () => { alive = false; };
     }, [soloMarg]);
+    // articoli del listino dei TIPI scelti (null = nessun tipo scelto → tendina spenta)
     const margArticoliDisponibili = useMemo(
-        () => (margListino ?? []).filter(x => margTipo && x.kind === margTipo).map(x => x.name),
-        [margListino, margTipo]);
+        () => (margListino ?? []).filter(x => margTipi?.includes(x.kind)).map(x => x.name),
+        [margListino, margTipi]);
     const lockedStores = !isGlobalView && visStores.length ? negozioInValues(visStores) : null;
     const visKey = (lockedStores || []).join("|");
     // Finche' la lista visibilita' non e' arrivata NON si interroga (si eviterebbe
@@ -477,6 +658,12 @@ export default function RicercaContratto() {
                 });
                 setProdByBrand(Object.fromEntries(Object.entries(pb).map(([k, v]) => [k, [...v].sort()])));
                 setCodeByBrand(Object.fromEntries(Object.entries(cb).map(([k, v]) => [k, [...v].sort()])));
+                // RIC-06: ELENCO stabile delle tessere brand (segnalazione 57),
+                // ordinato per volume storico — i numeri visibili sono i
+                // conteggi faceted, ma presenza e ordine non ballano coi filtri.
+                const bb: Record<string, number> = {};
+                (data as any[]).forEach(r => { if (r.brand) bb[r.brand] = (bb[r.brand] || 0) + 1; });
+                setBrandBase(Object.entries(bb).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
             }
         };
         if (visReady) fetchFilters();
@@ -504,10 +691,95 @@ export default function RicercaContratto() {
         })();
     }, [user?.negozio, visKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    // RIC-06: un filtro con insieme esplicitamente VUOTO ("Deseleziona tutto"
+    // senza rispuntare nulla) = per definizione ZERO risultati: niente query.
+    // NB: e' diverso dal default null ("tutto selezionato" = nessun filtro).
+    const filtroVuoto =
+        [filterVenditori, filterNegozi, filterCodiciIns, filterProdotti, filterOfferte, filterOpzioni]
+            .some((v) => v !== null && v.length === 0)
+        || (!soloMarg && filterCategorie !== null && filterCategorie.length === 0)
+        || (soloMarg && ((margTipi !== null && margTipi.length === 0) || (margArticoli !== null && margArticoli.length === 0)));
+
+    // ── RIC-06: FILTRI CONDIVISI tra l'elenco e i conteggi delle tessere ──────
+    // Un solo posto per tutte le condizioni: `conTessere: false` applica tutto
+    // TRANNE la selezione brand delle tessere (faceted classico — ogni tessera
+    // mostra quanti risultati darebbe quel brand con gli altri filtri attivi).
+    // Le tendine multi (null = tutto) passano da eq a .in sull'insieme scelto.
+    const applicaFiltriRicerca = (q0: any, conTessere: boolean) => {
+        let query = q0;
+        if (filterVenditori !== null) query = query.in("venditore", filterVenditori);
+        if (filterNegozi !== null) query = query.in("negozio", filterNegozi);
+        if (filterCodice) query = query.ilike("id", `%${filterCodice}%`);
+        if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
+        if (filterProdotti !== null) query = query.in("prodotto", filterProdotti);
+        if (filterOfferte !== null) query = query.in("offerta", filterOfferte);
+        // opzioni selezionate: la vendita deve contenerle TUTTE (@> sul jsonb)
+        if (filterOpzioni !== null && filterOpzioni.length > 0) query = query.contains("opzioni", filterOpzioni.map((o) => ({ nome: o })));
+        // CATEGORIA = sempre quella FINE del catalogo, con uno o più brand
+        // (Luca 28/07): dettagli->>categoria_catalogo copre il 100% dello
+        // storico dopo il backfill (regola pagamento per i mobile vecchi).
+        if (filterCategorie !== null && !soloMarg) query = query.in("dettagli->>categoria_catalogo", filterCategorie);
+        // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
+        // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
+        if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
+        // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
+        // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
+        if (filterCodiciIns !== null) query = query.in('dettagli->>"Cod.Ins."', filterCodiciIns);
+        if (filterCellulare) query = query.ilike("clients.cellulare", `%${filterCellulare}%`);
+        // Segnalazione 80: i filtri data valgono per elenco E tessere insieme.
+        // Le date sono in formato AAAA-MM-GG, quindi il confronto e' diretto.
+        const _daIso = dataIso(daDataAttivazione), _aIso = dataIso(aDataAttivazione);
+        if (_daIso) query = query.gte("data_attivazione", _daIso);
+        if (_aIso) query = query.lte("data_attivazione", _aIso);
+
+        // tessere brand a selezione positiva: con una selezione attiva
+        // passano SOLO i brand scelti; nello stato di default (nessuna
+        // selezione) la MARGINALITÀ resta esclusa — si vede solo cliccandola.
+        // I conteggi faceted SALTANO questo blocco (conTessere: false).
+        if (conTessere) {
+            if (selBrands.size > 0) query = query.in("brand", Array.from(selBrands));
+            else query = query.neq("brand", "Marginalità").neq("brand", "Extra");
+        }
+
+        // MARGINALITÀ a due layer: gli articoli scelti vincono; coi soli
+        // tipi selezionati passano tutti gli articoli di quei tipi.
+        if (soloMarg) {
+            if (margArticoli !== null && margArticoli.length > 0) query = query.in("prodotto", margArticoli);
+            else if (margTipi !== null && margTipi.length > 0) {
+                const names = (margListino ?? []).filter((x) => margTipi.includes(x.kind)).map((x) => x.name);
+                if (names.length) query = query.in("prodotto", names);
+            }
+        }
+
+        if (filterCliente) {
+            const safe = filterCliente.trim().replace(/[",()]/g, "");
+            if (safe) {
+                const term = `%${safe}%`;
+                // Segnalazione 36. Prima: .or("clients.nome.ilike.…") — PostgREST
+                // legge "clients" come colonna e "nome" come operatore, e risponde
+                // 400 PGRST100 "failed to parse logic tree". Le condizioni su una
+                // tabella agganciata vanno passate con referencedTable.
+                query = query.or(
+                    `nome.ilike.${term},cognome.ilike.${term},ragione_sociale.ilike.${term}`,
+                    { referencedTable: "clients" }
+                );
+            }
+        }
+
+        // RBAC: tutti i negozi visibili (negozioInValues include anche la radice
+        // legacy: i contratti storici salvavano "Magliana" senza suffisso).
+        if (!isGlobalView) {
+            if (lockedStores) query = query.in("negozio", lockedStores);
+            if (lockedVenditore) query = query.eq("venditore", lockedVenditore);
+        }
+        return query;
+    };
+
     const fetchData = async () => {
         if (!visReady) return; // la lista dei negozi visibili non e' ancora arrivata
         setLoading(true);
         try {
+            if (filtroVuoto) { setContractList([]); setTotalCount(0); return; }
             let query = supabase
                 .from("contracts")
                 // Anagrafica COMPLETA anche dalla lista: il dettaglio aperto da qui
@@ -515,71 +787,8 @@ export default function RicercaContratto() {
                 // la query portava solo i 4 campi delle colonne).
                 .select("*, clients!inner(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)", { count: "exact" });
 
-            // Apply Server-side filters
-            if (filterVenditore && filterVenditore !== "Tutti") query = query.eq("venditore", filterVenditore);
-            if (filterNegozio && filterNegozio !== "Tutti") query = query.eq("negozio", filterNegozio);
-            if (filterCodice) query = query.ilike("id", `%${filterCodice}%`);
-            if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
-            if (filterProdotti.length > 0) query = query.in("prodotto", filterProdotti);
-            if (filterOfferte.length > 0) query = query.in("offerta", filterOfferte);
-            // opzioni selezionate: la vendita deve contenerle TUTTE (@> sul jsonb)
-            if (filterOpzioni.length > 0) query = query.contains("opzioni", filterOpzioni.map(o => ({ nome: o })));
-            // CATEGORIA = sempre quella FINE del catalogo, con uno o più brand
-            // (Luca 28/07): dettagli->>categoria_catalogo copre il 100% dello
-            // storico dopo il backfill (regola pagamento per i mobile vecchi).
-            if (filterCategoria && !soloMarg) query = query.eq("dettagli->>categoria_catalogo", filterCategoria);
-            // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
-            // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
-            if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
-            // Segnalazione 53: si filtra sul codice di inserimento (dettagli['Cod.Ins.']),
-            // non piu' sul codice contratto. Chiave con punti -> va quotata per PostgREST.
-            if (filterCodiceAttivazione) query = query.eq('dettagli->>"Cod.Ins."', filterCodiceAttivazione);
-            if (filterCellulare) query = query.ilike("clients.cellulare", `%${filterCellulare}%`);
-            // Segnalazione 80: i quattro filtri data non venivano MAI applicati alla
-            // ricerca (li usava solo il conteggio delle tessere brand): si sceglieva
-            // una data e l'elenco restava identico. Le date sono in formato
-            // AAAA-MM-GG, quindi il confronto e' diretto.
-            const _daIso = dataIso(daDataAttivazione), _aIso = dataIso(aDataAttivazione);
-            if (_daIso) query = query.gte("data_attivazione", _daIso);
-            if (_aIso) query = query.lte("data_attivazione", _aIso);
-
-            // tessere brand a selezione positiva: con una selezione attiva
-            // passano SOLO i brand scelti; nello stato di default (nessuna
-            // selezione) la MARGINALITÀ resta esclusa — si vede solo cliccandola.
-            if (selBrands.size > 0) query = query.in("brand", Array.from(selBrands));
-            else query = query.neq("brand", "Marginalità").neq("brand", "Extra");
-
-            // MARGINALITÀ a due layer: gli articoli scelti vincono; col solo
-            // tipo selezionato passano tutti gli articoli di quel tipo.
-            if (soloMarg && (margArticoli.length || margTipo)) {
-                if (margArticoli.length) query = query.in("prodotto", margArticoli);
-                else {
-                    const names = (margListino ?? []).filter(x => x.kind === margTipo).map(x => x.name);
-                    if (names.length) query = query.in("prodotto", names);
-                }
-            }
-
-            if (filterCliente) {
-                const safe = filterCliente.trim().replace(/[",()]/g, "");
-                if (safe) {
-                    const term = `%${safe}%`;
-                    // Segnalazione 36. Prima: .or("clients.nome.ilike.…") — PostgREST
-                    // legge "clients" come colonna e "nome" come operatore, e risponde
-                    // 400 PGRST100 "failed to parse logic tree". Le condizioni su una
-                    // tabella agganciata vanno passate con referencedTable.
-                    query = query.or(
-                        `nome.ilike.${term},cognome.ilike.${term},ragione_sociale.ilike.${term}`,
-                        { referencedTable: "clients" }
-                    );
-                }
-            }
-
-            // RBAC: tutti i negozi visibili (negozioInValues include anche la radice
-            // legacy: i contratti storici salvavano "Magliana" senza suffisso).
-            if (!isGlobalView) {
-                if (lockedStores) query = query.in("negozio", lockedStores);
-                if (lockedVenditore) query = query.eq("venditore", lockedVenditore);
-            }
+            // Server-side filters (condivisi con le tessere: applicaFiltriRicerca)
+            query = applicaFiltriRicerca(query, true);
 
             const { data, count, error } = await query
                 .order("created_at", { ascending: false })
@@ -597,28 +806,27 @@ export default function RicercaContratto() {
         }
     };
 
-    // Segnalazione 57: conteggio contratti per brand, rispettando RBAC e le date.
+    // Segnalazione 57 + RIC-06 (Luca 05/08): i numeretti delle tessere seguono
+    // i FILTRI ATTIVI. Faceted classico: per ogni brand si conta quanti
+    // risultati darebbe applicando TUTTI i filtri correnti TRANNE la selezione
+    // brand delle tessere (conTessere: false) — il numero dice cosa
+    // succederebbe cliccando la tessera. Stessa query dell'elenco (stesso
+    // builder, stesso join clients!inner), quindi i conti tornano col
+    // "Trovati N". caricaTutte: il tetto server 1000 troncava i conteggi in
+    // silenzio sui volumi reali. Debounce come il fetch dell'elenco.
     useEffect(() => {
-        (async () => {
-            if (!visReady) return;
-            let q = supabase.from("contracts").select("brand, data_registrazione");
-            if (!isGlobalView) {
-                if (lockedStores) q = q.in("negozio", lockedStores);
-                if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
-            }
-            if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
-            // Segnalazione 80: le tessere devono seguire GLI STESSI filtri data
-            // dell'elenco. Prima guardavano solo le date di registrazione, quindi
-            // filtrando per data di attivazione l'elenco cambiava e le tessere no.
-            const _daIso = dataIso(daDataAttivazione), _aIso = dataIso(aDataAttivazione);
-            if (_daIso) q = q.gte("data_attivazione", _daIso);
-            if (_aIso) q = q.lte("data_attivazione", _aIso);
-            const { data } = await q;
+        if (!visReady) return;
+        const timer = setTimeout(async () => {
+            if (filtroVuoto) { setFacetCounts({}); return; }
+            const { data } = await caricaTutte<{ brand: string | null }>((from, to) =>
+                applicaFiltriRicerca(supabase.from("contracts").select("brand, clients!inner(id)"), false)
+                    .order("id").range(from, to));
             const m: Record<string, number> = {};
-            (data ?? []).forEach((r: any) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
-            setBrandCounts(Object.entries(m).map(([brand, n]) => ({ brand, n })).sort((a, b) => b.n - a.n));
-        })();
-    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, aDataAttivazione, daDataAttivazione, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
+            (data ?? []).forEach((r) => { if (r.brand) m[r.brand] = (m[r.brand] || 0) + 1; });
+            setFacetCounts(m);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterOpzioni), kMulti(filterCategorie), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, daDataAttivazione, aDataAttivazione, Array.from(selBrands).join("|"), kMulti(margTipi), kMulti(margArticoli), (margListino ?? []).length, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
     // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
@@ -628,13 +836,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|"), filterOpzioni.join("|")]);
+    }, [kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni)]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, filterVenditore, filterCodice, filterBrand, filterProdotti.join("|"), filterOfferte.join("|"), filterCategoria, filterNegozio, filterCodiceAttivazione, filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, margTipo, margArticoli.join("|"), filterOpzioni.join("|"), (margListino ?? []).length, catalogoBrand?.slug ?? ""]);
+    }, [page, visKey, visReady, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni), (margListino ?? []).length, catalogoBrand?.slug ?? ""]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -1086,19 +1294,27 @@ export default function RicercaContratto() {
                                         ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
                                         : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]")}>
                                 {/* RIC-01: box logo alla misura del Tracking (72px, logo 56
-                                    + scala ottica per brand): loghi grandi uguali ovunque. */}
-                                <span className="h-[72px] w-full flex items-center justify-center" title={brand}>
-                                    {isExtra ? <span className="text-4xl">💰</span>
-                                        : logo ? <img src={logo} alt={brand} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(brand)] || 1})` }} />
-                                            : <span className="text-base font-bold text-slate-200 truncate max-w-full">{brand}</span>}
-                                </span>
-                                {/* numeretto ADIACENTE alla spalla destra del logo, in alto,
-                                    identico al Tracking (Luca 04/08): centro + offset
-                                    per-brand; fondo SOLIDO perche' i loghi sbordano. */}
-                                <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
-                                    style={{ left: `calc(50% + ${isExtra ? 26 : (TRK_BADGE_OFFSET[trkBrandKey(brand)] ?? TRK_BADGE_OFFSET_DEFAULT)}px)`, top: 8, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
-                                    {n}
-                                </span>
+                                    + scala ottica per brand): loghi grandi uguali ovunque.
+                                    RIC-06 (Luca 05/08): il numeretto e' ancorato AL LOGO
+                                    (LogoConBadge, offset riscalato con la misura resa),
+                                    non piu' al centro della tessera: prima, restringendo
+                                    la scheda, il logo si rimpiccioliva e il badge restava
+                                    fermo. Emoji/testo non si riscalano: per loro il
+                                    centro-tessera + offset fisso resta corretto. */}
+                                {!isExtra && logo ? (
+                                    <LogoConBadge brand={brand} logo={logo} n={n} />
+                                ) : (
+                                    <>
+                                        <span className="h-[72px] w-full flex items-center justify-center" title={brand}>
+                                            {isExtra ? <span className="text-4xl">💰</span>
+                                                : <span className="text-base font-bold text-slate-200 truncate max-w-full">{brand}</span>}
+                                        </span>
+                                        <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
+                                            style={{ left: `calc(50% + ${isExtra ? 26 : (TRK_BADGE_OFFSET[trkBrandKey(brand)] ?? TRK_BADGE_OFFSET_DEFAULT)}px)`, top: 8, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
+                                            {n}
+                                        </span>
+                                    </>
+                                )}
                             </button>
                         );
                     })}
@@ -1264,15 +1480,16 @@ export default function RicercaContratto() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
 
-                    {/* 1. Venditore */}
+                    {/* 1. Venditore — multi (RIC-06); il team resta in cima (segn. 26).
+                        Se bloccato dal RBAC mostra il proprio nome, il filtro vero
+                        resta lockedVenditore lato query. */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Venditore</label>
-                        <SelectPersona
+                        <FiltroMulti
                             disabled={!canPickVenditore}
-                            value={canPickVenditore ? (filterVenditore === "Tutti" ? "" : filterVenditore) : (lockedVenditore || "")}
-                            onChange={(v) => setFilterVenditore(v || "Tutti")}
+                            testoDisabilitato={lockedVenditore || "Tutti"}
+                            values={filterVenditori} onChange={setFilterVenditori}
                             opzioni={[...venditoriTeam, ...venditoriAltri]}
-                            placeholder="Tutti — scrivi per filtrare"
                             className="glass-input w-full"
                         />
                     </div>
@@ -1298,12 +1515,11 @@ export default function RicercaContratto() {
                         Prima era disabled e inchiodata sul primary_store. */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Negozio di attivazione</label>
-                        {/* Tendina unificata (Luca 30/07): "Tutti" resta il valore-sentinella storico */}
-                        <SelectOpzioni
-                            value={filterNegozio === "Tutti" ? "" : filterNegozio}
-                            onChange={(v) => setFilterNegozio(v || "Tutti")}
+                        {/* RIC-06: multi-selezione, piu' negozi insieme */}
+                        <FiltroMulti
+                            values={filterNegozi} onChange={setFilterNegozi}
                             opzioni={uniqueNegozi}
-                            placeholder={(isGlobalView ? "Tutti i negozi" : "Tutti i miei negozi") + " — scrivi per filtrare"}
+                            etichettaTutti={isGlobalView ? "Tutti i negozi" : "Tutti i miei negozi"}
                             className="glass-input w-full text-sm"
                         />
                     </div>
@@ -1312,12 +1528,12 @@ export default function RicercaContratto() {
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Codice di inserimento</label>
                         {/* Segnalazione 53: tendina dei codici di inserimento (Cod.Ins.),
-                            suddivisi per brand; se un brand e' selezionato mostra solo i suoi. */}
-                        <SelectOpzioni
-                            value={filterCodiceAttivazione}
-                            onChange={setFilterCodiceAttivazione}
+                            suddivisi per brand; se un brand e' selezionato mostra solo i suoi.
+                            RIC-06: multi-selezione. */}
+                        <FiltroMulti
+                            values={filterCodiciIns} onChange={setFilterCodiciIns}
                             opzioni={[...new Set(filterBrand ? (codeByBrand[filterBrand] || []) : Object.values(codeByBrand).flat())]}
-                            placeholder="Tutti i codici — scrivi per filtrare"
+                            etichettaTutti="Tutti i codici"
                             className="glass-input w-full text-sm"
                         />
                     </div>
@@ -1342,14 +1558,15 @@ export default function RicercaContratto() {
                         Marginalità si spegne (per lei c'è la riga sotto). */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Categoria {catalogoBrand && soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
-                        {/* CONSEGUENZIALITÀ: cambiare categoria azzera prodotti e
-                            offerte (che si restringono alla nuova categoria). */}
-                        <SelectOpzioni
-                            value={filterCategoria} disabled={soloMarg}
-                            onChange={(v) => { setFilterCategoria(v); setFilterProdotti([]); setProdPick(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); }}
+                        {/* CONSEGUENZIALITÀ: cambiare le categorie azzera prodotti e
+                            offerte (che si restringono alle nuove categorie). RIC-06: multi. */}
+                        <FiltroMulti
+                            values={filterCategorie} disabled={soloMarg}
+                            testoDisabilitato="Per la Marginalità: riga sotto"
+                            onChange={(v) => { setFilterCategorie(v); setFilterProdotti(null); setFilterOfferte(null); setFilterOpzioni(null); }}
                             opzioni={catalogoBrand ? catalogoBrand.catNames : catNomiAll}
-                            placeholder={soloMarg ? "Per la Marginalità: riga sotto" : "Tutte le categorie — scrivi per filtrare"}
-                            className="glass-input w-full text-sm disabled:opacity-50"
+                            etichettaTutti="Tutte le categorie"
+                            className="glass-input w-full text-sm"
                         />
                     </div>
 
@@ -1357,14 +1574,14 @@ export default function RicercaContratto() {
                         dalle tessere, altrimenti le variabili esplodono (regola Luca). */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Prodotto {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
-                        {/* selezione IMMEDIATA (via il "+": Luca 28/07, "le offerte non
-                            seguivano il prodotto" — in realtà serviva il click sul +);
-                            la lista segue la categoria scelta. */}
-                        <SelectMulti
+                        {/* la lista segue le categorie scelte (unione). RIC-06: multi
+                            con checkbox, default tutto selezionato. */}
+                        <FiltroMulti
                             values={filterProdotti} onChange={setFilterProdotti}
-                            opzioni={catalogoBrand ? (filterCategoria ? (catalogoBrand.prodsByCat[filterCategoria] || []) : catalogoBrand.prodNames) : []}
+                            opzioni={catalogoBrand ? (filterCategorie?.length ? Array.from(new Set(filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || []))) : catalogoBrand.prodNames) : []}
                             disabled={!catalogoBrand}
-                            placeholder={!catalogoBrand ? "Seleziona un solo brand dalle tessere" : "Tutti i prodotti — scrivi per filtrare"}
+                            testoDisabilitato="Seleziona un solo brand dalle tessere"
+                            etichettaTutti="Tutti i prodotti"
                             className="glass-input w-full text-sm"
                         />
                     </div>
@@ -1373,22 +1590,24 @@ export default function RicercaContratto() {
                         se ci sono prodotti selezionati offre solo le loro offerte. */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Offerta {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
-                        <SelectMulti
+                        <FiltroMulti
                             values={filterOfferte} onChange={setFilterOfferte}
                             opzioni={offerteDisponibili}
                             disabled={!catalogoBrand}
-                            placeholder={!catalogoBrand ? "Seleziona un solo brand dalle tessere" : "Tutte le offerte — scrivi per filtrare"}
+                            testoDisabilitato="Seleziona un solo brand dalle tessere"
+                            etichettaTutti="Tutte le offerte"
                             className="glass-input w-full text-sm"
                         />
                     </div>
                     {/* OPZIONI (Luca 28/07): si sbloccano dopo l'offerta; multi. */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Opzioni {soloBrandLabel && <span className="text-slate-500 font-normal">— {soloBrandLabel}</span>}</label>
-                        <SelectMulti
+                        <FiltroMulti
                             values={filterOpzioni} onChange={setFilterOpzioni}
                             opzioni={opzioniDisponibili}
-                            disabled={!catalogoBrand || !filterOfferte.length}
-                            placeholder={!catalogoBrand ? "Seleziona un solo brand dalle tessere" : !filterOfferte.length ? "Prima scegli un'offerta" : "Tutte le opzioni — scrivi per filtrare"}
+                            disabled={!catalogoBrand || !filterOfferte?.length}
+                            testoDisabilitato={!catalogoBrand ? "Seleziona un solo brand dalle tessere" : "Prima scegli un'offerta"}
+                            etichettaTutti="Tutte le opzioni"
                             className="glass-input w-full text-sm"
                         />
                     </div>
@@ -1401,23 +1620,30 @@ export default function RicercaContratto() {
                         prodotti e servizi (dal kind delle categorie del listino). */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Tipo <span className="text-slate-500 font-normal">— Marginalità</span></label>
-                        <select className="glass-input w-full disabled:opacity-50" value={margTipo} disabled={!soloMarg}
-                            onChange={e => { setMargTipo(e.target.value as "" | "prodotti" | "servizi"); setMargArticoli([]); setMargPick(""); }}>
-                            <option value="">{soloMarg ? "Prodotti e servizi" : "Clicca la sola tessera Marginalità"}</option>
-                            <option value="prodotti">🛍 Prodotti</option>
-                            <option value="servizi">🛠 Servizi</option>
-                        </select>
+                        {/* RIC-06: multi anche qui (e via la <select> nuda, contro la
+                            regola di progetto); cambiare i tipi azzera gli articoli. */}
+                        <FiltroMulti
+                            values={margTipi}
+                            onChange={(v) => { setMargTipi(v); setMargArticoli(null); }}
+                            opzioni={["prodotti", "servizi"]}
+                            etichette={{ prodotti: "🛍 Prodotti", servizi: "🛠 Servizi" }}
+                            disabled={!soloMarg}
+                            testoDisabilitato="Clicca la sola tessera Marginalità"
+                            etichettaTutti="Prodotti e servizi"
+                            className="glass-input w-full"
+                        />
                     </div>
 
                     {/* MARGINALITÀ layer 2: gli articoli del listino del tipo scelto
                         (multi, come i prodotti del catalogo). */}
                     <div>
                         <label className="block text-sm font-medium text-slate-300 mb-2">Articolo <span className="text-slate-500 font-normal">— Marginalità</span></label>
-                        <SelectMulti
+                        <FiltroMulti
                             values={margArticoli} onChange={setMargArticoli}
                             opzioni={margArticoliDisponibili}
-                            disabled={!soloMarg || !margTipo}
-                            placeholder={!soloMarg ? "Clicca la sola tessera Marginalità" : !margTipo ? "Prima scegli Prodotti o Servizi" : `Tutti i ${margTipo} — scrivi per filtrare`}
+                            disabled={!soloMarg || !margTipi?.length}
+                            testoDisabilitato={!soloMarg ? "Clicca la sola tessera Marginalità" : "Prima scegli Prodotti o Servizi"}
+                            etichettaTutti="Tutti gli articoli"
                             className="glass-input w-full text-sm"
                         />
                     </div>
@@ -1438,7 +1664,7 @@ export default function RicercaContratto() {
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditore(""); setFilterCodice(""); setFilterBrand(""); setFilterProdotti([]); setProdPick(""); setFilterCategoria(""); setFilterOfferte([]); setOffPick(""); setFilterOpzioni([]); setOpzPick(""); setMargTipo(""); setMargArticoli([]); setMargPick(""); setFilterNegozio(""); setFilterCodiceAttivazione(""); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditori(null); setFilterCodice(""); setFilterBrand(""); setFilterProdotti(null); setFilterCategorie(null); setFilterOfferte(null); setFilterOpzioni(null); setMargTipi(null); setMargArticoli(null); setFilterNegozi(null); setFilterCodiciIns(null); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportExcel}>
                         Scarica Excel
                     </button>
