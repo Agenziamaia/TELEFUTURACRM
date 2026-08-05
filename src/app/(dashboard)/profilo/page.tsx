@@ -8,14 +8,46 @@
 //   l'amministrazione approva dal pannello Utenti; fino ad allora resta il
 //   valore vecchio (chip "in attesa")
 // - cambio PASSWORD sempre libero (RPC change_password: verifica la vecchia)
-import { useCallback, useEffect, useState } from "react";
+// - FOTO PROFILO (Luca 05/08): l'iconcina a sinistra del nome e' cliccabile —
+//   file picker → ridimensiona a max 512px (canvas) → bucket "avatars"
+//   (<user_id>.jpg, upsert) → public URL in app_users.avatar_url (mig.
+//   20260805020000). Senza migrazione tutto regge: si resta alle iniziali.
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CAMPI_PROFILO, campiMancanti, caricaProfilo, type RigaProfilo } from "@/lib/profilo";
 import { erroreIbanIT, normalizzaIban } from "@/lib/iban";
-import { User as UserIcon, Pencil, KeyRound, AlertTriangle, CheckCircle2, Type } from "lucide-react";
+import { AvatarUtente, notificaAvatarAggiornato } from "@/components/AvatarUtente";
+import { Camera, Pencil, KeyRound, AlertTriangle, CheckCircle2, Type, Trash2, Loader2 } from "lucide-react";
 
 type Richiesta = { id: number; campo: string; valore_nuovo: string; stato: string };
+
+// Ridimensiona lato client (max ~512px sul lato lungo) e converte in JPEG:
+// upload leggero e formato unico, qualunque cosa carichi l'utente.
+async function ridimensionaImmagine(file: File, maxLato = 512): Promise<Blob> {
+    const urlTmp = URL.createObjectURL(file);
+    try {
+        const img = await new Promise<HTMLImageElement>((res, rej) => {
+            const i = new Image();
+            i.onload = () => res(i);
+            i.onerror = () => rej(new Error("file non leggibile come immagine"));
+            i.src = urlTmp;
+        });
+        const scala = Math.min(1, maxLato / Math.max(img.width || 1, img.height || 1));
+        const w = Math.max(1, Math.round((img.width || 1) * scala));
+        const h = Math.max(1, Math.round((img.height || 1) * scala));
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("canvas non disponibile su questo browser");
+        // fondo bianco: i PNG trasparenti diventano JPEG puliti, senza aloni neri
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.85));
+        if (!blob) throw new Error("conversione dell'immagine non riuscita");
+        return blob;
+    } finally { URL.revokeObjectURL(urlTmp); }
+}
 
 export default function ProfiloPage() {
     const { user } = useAuth();
@@ -46,6 +78,10 @@ export default function ProfiloPage() {
     const [pwNuova, setPwNuova] = useState("");
     const [pwConferma, setPwConferma] = useState("");
     const [pwBusy, setPwBusy] = useState(false);
+    // FOTO PROFILO: url attuale, upload in corso e input file nascosto
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+    const [avatarBusy, setAvatarBusy] = useState(false);
+    const fileRef = useRef<HTMLInputElement | null>(null);
 
     const carica = useCallback(async () => {
         if (!user?.id) return;
@@ -54,8 +90,63 @@ export default function ProfiloPage() {
             const { data } = await supabase.from("profilo_richieste").select("id, campo, valore_nuovo, stato").eq("user_id", user.id).eq("stato", "in_attesa");
             setRichieste((data ?? []) as Richiesta[]);
         } catch { /* mig. 120 non applicata */ }
+        // select SEPARATA e tollerante: se la colonna avatar_url non esiste
+        // (migrazione non ancora applicata) fallisce da sola senza rompere il resto
+        try {
+            const { data, error } = await supabase.from("app_users").select("avatar_url").eq("id", user.id).maybeSingle();
+            if (!error) setAvatarUrl((data as { avatar_url?: string | null } | null)?.avatar_url ?? null);
+        } catch { /* colonna assente: niente foto */ }
     }, [user?.id]);
     useEffect(() => { carica(); }, [carica]);
+
+    // ─── FOTO PROFILO: upload (con ridimensionamento) e rimozione ───
+    const caricaFoto = async (file: File | null | undefined) => {
+        if (!file || !user?.id || avatarBusy) return;
+        if (!/^image\//.test(file.type)) { setMsg("⚠ Scegli un file immagine (JPG, PNG…)."); return; }
+        setAvatarBusy(true);
+        try {
+            const blob = await ridimensionaImmagine(file, 512);
+            const path = `${user.id}.jpg`;
+            const up = await supabase.storage.from("avatars").upload(path, blob, { upsert: true, contentType: "image/jpeg" });
+            if (up.error) {
+                setMsg(/bucket/i.test(up.error.message)
+                    ? "⚠ Manca la migrazione foto profilo (bucket \"avatars\"): chiedi all'amministrazione."
+                    : "⚠ Caricamento non riuscito: " + up.error.message);
+                return;
+            }
+            const { data: pub } = supabase.storage.from("avatars").getPublicUrl(path);
+            // ?v=timestamp: il path e' sempre lo stesso, cosi' la cache del browser non mostra la foto vecchia
+            const nuovaUrl = `${pub.publicUrl}?v=${Date.now()}`;
+            const { error } = await supabase.from("app_users").update({ avatar_url: nuovaUrl }).eq("id", user.id);
+            if (error) {
+                setMsg(/column|avatar_url/i.test(error.message)
+                    ? "⚠ Manca la migrazione foto profilo (colonna avatar_url): chiedi all'amministrazione."
+                    : "⚠ Salvataggio non riuscito: " + error.message);
+                return;
+            }
+            setAvatarUrl(nuovaUrl);
+            notificaAvatarAggiornato(user.id, nuovaUrl);   // header e chat si aggiornano subito
+            setMsg("✅ Foto profilo aggiornata.");
+        } catch (e) {
+            setMsg("⚠ Foto non caricata: " + (e instanceof Error ? e.message : "errore imprevisto"));
+        } finally {
+            setAvatarBusy(false);
+            if (fileRef.current) fileRef.current.value = "";  // ricaricare lo STESSO file rilancia onChange
+        }
+    };
+
+    const rimuoviFoto = async () => {
+        if (!user?.id || avatarBusy) return;
+        setAvatarBusy(true);
+        try {
+            try { await supabase.storage.from("avatars").remove([`${user.id}.jpg`]); } catch { /* best-effort */ }
+            const { error } = await supabase.from("app_users").update({ avatar_url: null }).eq("id", user.id);
+            if (error) { setMsg("⚠ Rimozione non riuscita: " + error.message); return; }
+            setAvatarUrl(null);
+            notificaAvatarAggiornato(user.id, null);
+            setMsg("✅ Foto profilo rimossa: tornano le iniziali.");
+        } finally { setAvatarBusy(false); }
+    };
 
     const mancanti = campiMancanti(riga);
     const inAttesa = (campo: string) => richieste.find((r) => r.campo === campo);
@@ -106,12 +197,42 @@ export default function ProfiloPage() {
     return (
         <div className="w-full max-w-3xl mx-auto p-4 md:p-8 space-y-6">
             <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full bg-indigo-500/20 text-indigo-300 border-2 border-indigo-500/40 flex items-center justify-center">
-                    <UserIcon className="w-7 h-7" />
+                {/* FOTO PROFILO: avatar CLICCABILE — anello, matita/fotocamera
+                    sempre visibili e overlay "Cambia foto" al passaggio, cosi'
+                    si capisce al volo che ci si puo' cliccare (Luca 05/08) */}
+                <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                    onChange={(e) => caricaFoto(e.target.files?.[0])} />
+                <div className="relative shrink-0">
+                    <button type="button" onClick={() => !avatarBusy && fileRef.current?.click()} disabled={avatarBusy}
+                        title={avatarUrl ? "Clicca per cambiare la foto profilo" : "Clicca per aggiungere la tua foto"}
+                        className="group relative block w-20 h-20 rounded-full cursor-pointer ring-2 ring-indigo-500/40 ring-offset-2 ring-offset-transparent hover:ring-indigo-400 focus:outline-none focus:ring-indigo-400 transition-all disabled:cursor-wait">
+                        <AvatarUtente url={avatarUrl} nome={user?.name} className="w-20 h-20 text-2xl" />
+                        {/* overlay affordance: 📷 + "Cambia foto" in hover (e sempre su touch) */}
+                        <span className={`absolute inset-0 rounded-full bg-black/55 flex flex-col items-center justify-center gap-0.5 text-white transition-opacity ${avatarBusy ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus:opacity-100"}`}>
+                            {avatarBusy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
+                            <span className="text-[9px] font-bold uppercase tracking-wide">{avatarBusy ? "Carico…" : avatarUrl ? "Cambia foto" : "Aggiungi foto"}</span>
+                        </span>
+                    </button>
+                    {/* badge fotocamera SEMPRE visibile: l'invito al click c'e' anche senza hover */}
+                    <span className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded-full bg-indigo-500 border-2 border-[#0f111a] flex items-center justify-center pointer-events-none shadow-lg">
+                        <Camera className="w-3.5 h-3.5 text-white" />
+                    </span>
                 </div>
                 <div>
                     <h2 className="text-2xl font-bold text-white">{user?.name || "Il mio profilo"}</h2>
                     <p className="text-slate-400 text-sm">I tuoi dati a sistema. La prima compilazione è libera; la modifica di un dato già presente passa dall&apos;approvazione dell&apos;amministrazione.</p>
+                    <div className="flex items-center gap-3 mt-1.5">
+                        <button type="button" onClick={() => !avatarBusy && fileRef.current?.click()}
+                            className="text-[11px] font-bold text-indigo-300 hover:text-indigo-200 flex items-center gap-1">
+                            <Camera className="w-3.5 h-3.5" /> {avatarUrl ? "Cambia foto" : "Aggiungi una foto"}
+                        </button>
+                        {avatarUrl && (
+                            <button type="button" onClick={rimuoviFoto} disabled={avatarBusy}
+                                className="text-[11px] font-bold text-rose-300/90 hover:text-rose-300 flex items-center gap-1 disabled:opacity-40">
+                                <Trash2 className="w-3.5 h-3.5" /> Rimuovi foto
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 

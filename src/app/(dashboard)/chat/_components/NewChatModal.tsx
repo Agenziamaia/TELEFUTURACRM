@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { X, Search, Users, MessageSquarePlus, Check, Megaphone, Store } from "lucide-react";
 import { listDirectory, getOrCreateDM, createGroup, broadcast, DirUser } from "@/lib/chat";
 import { areaOf, areaLabel, roleLabel } from "@/lib/roles";
+import { AvatarUtente } from "@/components/AvatarUtente";
 
 const AREA_ORDER = ["pv", "cc", "ob", "sede"];
-const initials = (n: string) => n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 
 export function NewChatModal({ meId, onClose, onCreated, onBroadcastDone }: {
   meId: string;
@@ -191,9 +191,8 @@ export function NewChatModal({ meId, onClose, onCreated, onBroadcastDone }: {
                 return (
                   <button key={u.id} onClick={() => (multi ? toggle(u.id) : startDM(u.id))}
                     className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg text-left transition-colors ${on ? "bg-indigo-500/15" : "hover:bg-white/5"}`}>
-                    <span className="w-9 h-9 shrink-0 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30 flex items-center justify-center">
-                      {initials(u.full_name)}
-                    </span>
+                    {/* FOTO PROFILO (Luca 05/08): foto nell'elenco persone, iniziali se manca */}
+                    <AvatarUtente userId={u.id} nome={u.full_name} className="w-9 h-9 text-xs text-indigo-300" />
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-white truncate">{u.full_name}</span>
                       <span className="block text-xs text-slate-500 truncate">

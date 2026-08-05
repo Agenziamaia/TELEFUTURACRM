@@ -24,6 +24,7 @@ import { ImageLightbox } from "@/components/ImageLightbox";
 import { Plus, Search, Send, Paperclip, X, Users, FileText, MessageSquare, Check, CheckCheck, Tag, User, CalendarDays, Trash2, Reply, MessageCircle, Mail, Info, UserPlus, UserMinus, SmilePlus, Smile, EyeOff, Forward, Camera, Disc, Pin, PinOff, Pencil, ChevronLeft } from "lucide-react";
 import { WhatsAppInbox } from "@/components/WhatsAppInbox";
 import { EmailInbox } from "@/components/EmailInbox";
+import { AvatarUtente } from "@/components/AvatarUtente";
 import { cn } from "@/utils";
 
 // Segnalazione 74: testo breve del messaggio citato (i tag @[tipo:id|etichetta]
@@ -63,7 +64,6 @@ const REF_UI = {
   appuntamento: { Icon: CalendarDays, cls: "bg-amber-500/15 text-amber-200 border-amber-500/30 hover:bg-amber-500/25" },
 };
 
-const initials = (n = "") => n.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
 const fmtTime = (s) => new Date(s).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 function dayLabel(s) {
   const d = new Date(s), t = new Date(), y = new Date(); y.setDate(t.getDate() - 1);
@@ -692,9 +692,14 @@ function ChatPageInner() {
             return (
               <button key={top.conversation_id} onClick={() => apriRisultato(top)}
                 className="w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left hover:bg-white/5 transition-colors">
-                <span className={`w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold border ${conv?.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
-                  {conv?.type === "group" ? <Users className="w-5 h-5" /> : initials(nome || "")}
-                </span>
+                {conv?.type === "group" ? (
+                  <span className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold border bg-purple-500/20 text-purple-200 border-purple-500/30">
+                    <Users className="w-5 h-5" />
+                  </span>
+                ) : (
+                  /* FOTO PROFILO (Luca 05/08): la foto dell'utente, iniziali se manca */
+                  <AvatarUtente userId={conv?.other_id} nome={nome || ""} className="w-11 h-11 text-xs" />
+                )}
                 <span className="flex-1 min-w-0">
                   <span className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-white truncate">{nome || "—"}</span>
@@ -723,9 +728,14 @@ function ChatPageInner() {
               <button key={c.conversation_id} onClick={() => setSelId(c.conversation_id)}
                 className={`group/riga w-full flex items-center gap-3 px-2 py-2.5 rounded-lg text-left transition-colors ${active ? "bg-indigo-500/15" : "hover:bg-white/5"}`}>
                 <span className="relative shrink-0">
-                  <span className={`w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold border ${c.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
-                    {c.type === "group" ? <Users className="w-5 h-5" /> : initials(name)}
-                  </span>
+                  {c.type === "group" ? (
+                    <span className="w-11 h-11 rounded-full flex items-center justify-center text-xs font-bold border bg-purple-500/20 text-purple-200 border-purple-500/30">
+                      <Users className="w-5 h-5" />
+                    </span>
+                  ) : (
+                    /* FOTO PROFILO (Luca 05/08): foto nelle chat 1:1, iniziali se manca */
+                    <AvatarUtente userId={c.other_id} nome={name} className="w-11 h-11 text-xs" />
+                  )}
                   {c.type === "dm" && isOnline(c.other_id) && (
                     <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-[#0f111a]" />
                   )}
@@ -798,9 +808,14 @@ function ChatPageInner() {
                 <ChevronLeft className="w-5 h-5" />
               </button>
               <span className="relative shrink-0">
-                <span className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border ${selConv.type === "group" ? "bg-purple-500/20 text-purple-200 border-purple-500/30" : "bg-indigo-500/20 text-indigo-200 border-indigo-500/30"}`}>
-                  {selConv.type === "group" ? <Users className="w-4 h-4" /> : initials(title)}
-                </span>
+                {selConv.type === "group" ? (
+                  <span className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border bg-purple-500/20 text-purple-200 border-purple-500/30">
+                    <Users className="w-4 h-4" />
+                  </span>
+                ) : (
+                  /* FOTO PROFILO (Luca 05/08): foto dell'interlocutore nell'intestazione */
+                  <AvatarUtente userId={selConv.other_id} nome={title} className="w-9 h-9 text-xs" />
+                )}
                 {selConv.type === "dm" && dmOnline && (
                   <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-[#0b0d14]" />
                 )}
@@ -1279,9 +1294,7 @@ function ChatPageInner() {
                     return cand.slice(0, 50).map((u) => (
                       <button key={u.id} disabled={manageBusy === u.id} onClick={() => addMember(u)}
                         className="w-full flex items-center gap-3 px-2 py-2 rounded-lg text-left hover:bg-white/5 disabled:opacity-50">
-                        <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border bg-indigo-500/20 text-indigo-200 border-indigo-500/30 shrink-0">
-                          {initials(u.full_name)}
-                        </span>
+                        <AvatarUtente userId={u.id} nome={u.full_name} className="w-8 h-8 text-[10px]" />
                         <span className="flex-1 min-w-0">
                           <span className="block text-sm text-white truncate">{u.full_name}</span>
                           <span className="block text-[10px] text-slate-500 truncate">{roleLabel(u.role) || "—"}{u.primary_store ? ` · ${u.primary_store}` : ""}</span>
@@ -1303,9 +1316,7 @@ function ChatPageInner() {
                   return (
                     <div key={m.user_id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-colors">
                       <span className="relative shrink-0">
-                        <span className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border bg-indigo-500/20 text-indigo-200 border-indigo-500/30">
-                          {initials(m.full_name)}
-                        </span>
+                        <AvatarUtente userId={m.user_id} nome={m.full_name} className="w-9 h-9 text-xs" />
                         {online && <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-[#0b0d14]" />}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -1369,7 +1380,7 @@ function ChatPageInner() {
                   {read.length === 0 ? <p className="text-xs text-slate-500 px-1 py-1">Nessuno ha ancora letto.</p> :
                     [...read].sort((a, b) => new Date(b.last_read_at!).getTime() - new Date(a.last_read_at!).getTime()).map((p) => (
                       <div key={p.user_id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5">
-                        <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border bg-indigo-500/20 text-indigo-200 border-indigo-500/30 shrink-0">{initials(p.full_name)}</span>
+                        <AvatarUtente userId={p.user_id} nome={p.full_name} className="w-8 h-8 text-[10px]" />
                         <span className="flex-1 min-w-0 text-sm text-white truncate">{p.full_name}</span>
                         <span className="text-[11px] text-sky-300/90 shrink-0">{readAtLabel(p.last_read_at)}</span>
                       </div>
@@ -1384,7 +1395,7 @@ function ChatPageInner() {
                       const delivered = p.last_delivered_at && new Date(p.last_delivered_at).getTime() >= T;
                       return (
                         <div key={p.user_id} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/5">
-                          <span className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold border bg-white/5 text-slate-300 border-white/10 shrink-0">{initials(p.full_name)}</span>
+                          <AvatarUtente userId={p.user_id} nome={p.full_name} className="w-8 h-8 text-[10px] bg-white/5 text-slate-300 border-white/10" />
                           <span className="flex-1 min-w-0 text-sm text-slate-300 truncate">{p.full_name}</span>
                           <span className="text-[11px] text-slate-500 shrink-0">{delivered ? "Consegnato" : "In attesa"}</span>
                         </div>
