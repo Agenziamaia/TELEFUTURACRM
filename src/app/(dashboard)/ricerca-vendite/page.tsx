@@ -769,8 +769,12 @@ export default function RicercaContratto() {
                 // legge "clients" come colonna e "nome" come operatore, e risponde
                 // 400 PGRST100 "failed to parse logic tree". Le condizioni su una
                 // tabella agganciata vanno passate con referencedTable.
+                // Video Ferrarelli (Luca 05/08): il placeholder prometteva "Nome,
+                // C.F. o P.IVA" ma cf_piva NON era tra le colonne cercate — il
+                // filtro per codice fiscale non trovava mai nulla. Aggiunti
+                // cf_piva e il referente business (nome_ref/cognome_ref).
                 query = query.or(
-                    `nome.ilike.${term},cognome.ilike.${term},ragione_sociale.ilike.${term}`,
+                    `nome.ilike.${term},cognome.ilike.${term},ragione_sociale.ilike.${term},cf_piva.ilike.${term},nome_ref.ilike.${term},cognome_ref.ilike.${term}`,
                     { referencedTable: "clients" }
                 );
             }
