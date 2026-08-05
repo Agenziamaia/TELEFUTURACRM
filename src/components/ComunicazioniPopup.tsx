@@ -48,8 +48,8 @@ const CSS_SFONDI = `@keyframes hazardScorri{0%{transform:translateX(0)}100%{tran
 .anim-bordo-rosso{animation:bordoRosso 1.5s ease-in-out infinite}
 @keyframes scossaIcona{0%,86%,100%{transform:rotate(0)}88%{transform:rotate(-9deg)}90%{transform:rotate(8deg)}92%{transform:rotate(-6deg)}94%{transform:rotate(5deg)}96%{transform:rotate(-2deg)}}
 .anim-scossa{animation:scossaIcona 2.8s ease-in-out infinite}
-@keyframes bombaScossa{0%{transform:translate(0,0) rotate(0)}10%{transform:translate(-9px,6px) rotate(-.6deg)}20%{transform:translate(8px,-7px) rotate(.5deg)}30%{transform:translate(-7px,5px) rotate(-.4deg)}40%{transform:translate(6px,-4px) rotate(.35deg)}50%{transform:translate(-5px,3px) rotate(-.25deg)}60%{transform:translate(4px,-3px) rotate(.2deg)}70%{transform:translate(-3px,2px) rotate(-.12deg)}80%{transform:translate(2px,-1px) rotate(.08deg)}90%{transform:translate(-1px,1px) rotate(0)}100%{transform:translate(0,0) rotate(0)}}
-@keyframes bombaFlash{0%{opacity:0}6%{opacity:1}30%{opacity:.55}100%{opacity:0}}`;
+@keyframes bombaScossa{0%{transform:translate(0,0) rotate(0)}4%{transform:translate(-28px,20px) rotate(-1.6deg)}8%{transform:translate(26px,-22px) rotate(1.4deg)}12%{transform:translate(-24px,16px) rotate(-1.2deg)}16%{transform:translate(22px,-14px) rotate(1deg)}22%{transform:translate(-18px,12px) rotate(-.8deg)}28%{transform:translate(15px,-10px) rotate(.65deg)}36%{transform:translate(-12px,8px) rotate(-.5deg)}46%{transform:translate(9px,-6px) rotate(.35deg)}58%{transform:translate(-6px,4px) rotate(-.22deg)}72%{transform:translate(4px,-3px) rotate(.12deg)}86%{transform:translate(-2px,1px) rotate(-.05deg)}100%{transform:translate(0,0) rotate(0)}}
+@keyframes bombaFlash{0%{opacity:0}3%{opacity:1}7%{opacity:.25}11%{opacity:1}16%{opacity:.4}24%{opacity:.9}38%{opacity:.5}60%{opacity:.22}100%{opacity:0}}`;
 
 export function fondoComunicazione(genere?: string | null): string {
     return genere === "success" ? "linear-gradient(160deg,#0d1f13 0%,#12141f 55%,#0f2417 100%)"
@@ -474,26 +474,30 @@ export function Confetti() {   // esportato (03/08): festa anche aprendo le buon
     return <canvas ref={ref} aria-hidden style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none", zIndex: 6000 }} />;
 }
 
-// 💣 ESPLOSIONE BOMBA (Luca 04/08, genere 'novita'): "esplode tutto il
-// computer" alla PRIMA apertura — flash bianco/arancio fullscreen, onda
-// d'urto, detriti/fiamme su canvas e scossa dello schermo (keyframe
-// bombaScossa sul body, smorzata). One-shot ~2.5s, canvas autonomo con
-// pointer-events none come Confetti. Il guard "una volta per utente e
-// comunicazione" sta nel chiamante (localStorage bomba_vista_*).
-// Rispetta prefers-reduced-motion: in quel caso non parte proprio.
+// 💣 ESPLOSIONE BOMBA v2 (Luca 05/08: «deve scoppiare il computer, falla
+// esagerata»). Sequenza cinematografica ~4.5s: INNESCO (la bomba cade al
+// centro con la miccia che sfrigola, lo schermo si oscura) → DETONAZIONE
+// (flash a strobo, palla di fuoco turbolenta, TRIPLA onda d'urto, scossa
+// violenta dello schermo, CREPE tipo vetro rotto) → FALLOUT (600+ detriti
+// fiammeggianti con scia, scintille, fumo che sale, braci che sfarfallano,
+// vignetta rossa che sfuma). One-shot, canvas autonomo pointer-events none.
+// Il guard "una volta per utente e comunicazione" sta nel chiamante
+// (localStorage bomba_vista_*). Rispetta prefers-reduced-motion: non parte.
+const BOOM_MS = 430;   // durata dell'innesco: poi BOOM
 export function EsplosioneBomba() {
     const ref = useRef<HTMLCanvasElement | null>(null);
     const flashRef = useRef<HTMLDivElement | null>(null);
     useEffect(() => {
         if (typeof window === "undefined") return;
         if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
-        // SCOSSA dello schermo: keyframe applicato al body, poi ripulito;
-        // il FLASH parte da qui (via ref) così con reduced-motion resta spento
-        if (flashRef.current) flashRef.current.style.animation = "bombaFlash 2.2s ease-out forwards";
+        // SCOSSA + FLASH partono alla DETONAZIONE (dopo l'innesco), non al mount
         const prima = document.body.style.animation;
-        document.body.style.animation = "bombaScossa .9s cubic-bezier(.36,.07,.19,.97) both";
-        const tScossa = setTimeout(() => { document.body.style.animation = prima; }, 950);
-        return () => { clearTimeout(tScossa); document.body.style.animation = prima; };
+        const tBoom = setTimeout(() => {
+            if (flashRef.current) flashRef.current.style.animation = "bombaFlash 2.6s ease-out forwards";
+            document.body.style.animation = "bombaScossa 1.5s cubic-bezier(.36,.07,.19,.97) both";
+        }, BOOM_MS);
+        const tFine = setTimeout(() => { document.body.style.animation = prima; }, BOOM_MS + 1600);
+        return () => { clearTimeout(tBoom); clearTimeout(tFine); document.body.style.animation = prima; };
     }, []);
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -505,56 +509,164 @@ export function EsplosioneBomba() {
         const setup = () => { W = window.innerWidth; H = window.innerHeight; canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); };
         setup();
         const cx = W * 0.5, cy = H * 0.45;
-        const fuoco = ["#fb923c", "#f97316", "#fbbf24", "#ef4444", "#fde047", "#fca5a5", "#78716c"];
-        type P = { x: number; y: number; vx: number; vy: number; size: number; color: string; rot: number; vr: number; shape: number };
+        // tipi particella: 0 detrito fiammeggiante, 1 scintilla con scia, 2 fumo, 3 brace
+        const TINTE: string[][] = [
+            ["#fb923c", "#f97316", "#fbbf24", "#ef4444", "#fde047", "#fca5a5", "#78716c"],
+            ["#fff7ed", "#fde047", "#fef3c7", "#fdba74"],
+            ["#57534e", "#44403c", "#78716c"],
+            ["#fb923c", "#ef4444", "#f97316"],
+        ];
+        type P = { x: number; y: number; vx: number; vy: number; size: number; color: string; rot: number; vr: number; tipo: number };
         const parts: P[] = [];
-        // DETRITI e fiamme: due raffiche dal centro, più violente dei coriandoli
-        const raffica = (n: number, power: number) => {
+        const raffica = (n: number, power: number, tipo: number) => {
+            const tinte = TINTE[tipo];
             for (let i = 0; i < n; i++) {
                 const a = Math.random() * Math.PI * 2;
-                const s = power * (0.3 + Math.random() * 1.0);
-                parts.push({ x: cx, y: cy, vx: Math.cos(a) * s, vy: Math.sin(a) * s - power * 0.25, size: 4 + Math.random() * 8, color: fuoco[(Math.random() * fuoco.length) | 0], rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.5, shape: (Math.random() * 3) | 0 });
+                const s = power * (0.3 + Math.random() * 1.0) * (tipo === 1 ? 1.6 : tipo === 2 ? 0.35 : tipo === 3 ? 0.55 : 1);
+                parts.push({
+                    x: cx, y: cy, vx: Math.cos(a) * s, vy: Math.sin(a) * s - power * 0.25,
+                    size: tipo === 1 ? 1.5 + Math.random() * 2 : tipo === 2 ? 14 + Math.random() * 18 : tipo === 3 ? 2 + Math.random() * 3.5 : 5 + Math.random() * 9,
+                    color: tinte[(Math.random() * tinte.length) | 0],
+                    rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.5, tipo,
+                });
             }
         };
-        raffica(170, 15);
-        const t2 = setTimeout(() => raffica(90, 10), 160);
+        // CREPE tipo vetro rotto: polilinee che si irradiano dal centro
+        const crepe: [number, number][][] = [];
+        const generaCrepe = () => {
+            const maxDim = Math.max(W, H);
+            const nCrepe = 9 + ((Math.random() * 3) | 0);
+            for (let i = 0; i < nCrepe; i++) {
+                let a = (i / nCrepe) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+                let x = cx, y = cy;
+                const pts: [number, number][] = [[x, y]];
+                const segs = 9 + ((Math.random() * 6) | 0);
+                for (let k = 0; k < segs; k++) {
+                    const passo = maxDim * (0.03 + Math.random() * 0.06);
+                    a += (Math.random() - 0.5) * 0.55;
+                    x += Math.cos(a) * passo; y += Math.sin(a) * passo;
+                    pts.push([x, y]);
+                }
+                crepe.push(pts);
+            }
+        };
+        let esplosa = false;
+        const timers: ReturnType<typeof setTimeout>[] = [];
         const start = Date.now();
         let raf = 0;
         const tick = () => {
             const t = Date.now() - start;
             ctx.clearRect(0, 0, W, H);
-            // ONDA D'URTO: anello che si espande e sfuma nei primi ~700ms
-            if (t < 700) {
-                const p = t / 700;
-                const r = 30 + p * Math.max(W, H) * 0.75;
-                ctx.globalAlpha = (1 - p) * 0.8;
-                ctx.lineWidth = 14 * (1 - p) + 2;
-                ctx.strokeStyle = "#fdba74";
-                ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-                ctx.globalAlpha = (1 - p) * 0.35;
-                ctx.lineWidth = 30 * (1 - p) + 4;
-                ctx.strokeStyle = "#f97316";
-                ctx.beginPath(); ctx.arc(cx, cy, r * 0.82, 0, Math.PI * 2); ctx.stroke();
+            if (t < BOOM_MS) {
+                // ── INNESCO: buio che sale, bomba che cade, miccia che sfrigola ──
+                ctx.globalAlpha = Math.min(0.6, (t / BOOM_MS) * 0.6);
+                ctx.fillStyle = "#000"; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+                const p = t / BOOM_MS;
+                const by = cy - (1 - p * p) * H * 0.55;
+                ctx.save(); ctx.translate(cx, by); ctx.rotate(Math.sin(t / 90) * 0.14);
+                ctx.font = "92px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.fillText("💣", 0, 0); ctx.restore();
+                for (let i = 0; i < 4; i++) {
+                    ctx.globalAlpha = 0.5 + Math.random() * 0.5;
+                    ctx.fillStyle = i % 2 ? "#fde047" : "#fff7ed";
+                    ctx.beginPath();
+                    ctx.arc(cx + 36 + (Math.random() - 0.5) * 18, by - 48 + (Math.random() - 0.5) * 18, 1.2 + Math.random() * 2.4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
                 ctx.globalAlpha = 1;
+            } else {
+                const te = t - BOOM_MS;
+                if (!esplosa) {
+                    esplosa = true; generaCrepe();
+                    raffica(240, 19, 0); raffica(150, 26, 1); raffica(60, 6, 2); raffica(120, 9, 3);
+                    timers.push(setTimeout(() => { raffica(120, 14, 0); raffica(60, 20, 1); }, 180));
+                    timers.push(setTimeout(() => { raffica(80, 11, 0); raffica(50, 6, 3); }, 420));
+                }
+                // ── PALLA DI FUOCO turbolenta (0–900ms) ──
+                if (te < 900) {
+                    const p = te / 900;
+                    const R = 40 + p * Math.min(W, H) * 0.55;
+                    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+                    g.addColorStop(0, `rgba(255,247,237,${0.95 * (1 - p)})`);
+                    g.addColorStop(0.25, `rgba(253,224,71,${0.85 * (1 - p)})`);
+                    g.addColorStop(0.55, `rgba(249,115,22,${0.7 * (1 - p)})`);
+                    g.addColorStop(0.85, `rgba(239,68,68,${0.4 * (1 - p)})`);
+                    g.addColorStop(1, "rgba(0,0,0,0)");
+                    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+                    for (let i = 0; i < 7; i++) {
+                        const a = (i / 7) * Math.PI * 2 + p * 2;
+                        ctx.globalAlpha = 0.25 * (1 - p);
+                        ctx.fillStyle = i % 2 ? "#f97316" : "#fbbf24";
+                        ctx.beginPath();
+                        ctx.arc(cx + Math.cos(a) * R * 0.55, cy + Math.sin(a) * R * 0.44, R * 0.28 * (0.6 + Math.random() * 0.3), 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    ctx.globalAlpha = 1;
+                }
+                // ── TRIPLA ONDA D'URTO ──
+                const onde: [number, number, string, number][] = [[0, 750, "#fdba74", 16], [120, 850, "#f97316", 30], [320, 950, "#fca5a5", 10]];
+                for (const [ritardo, dur, col, lw] of onde) {
+                    const tt = te - ritardo;
+                    if (tt > 0 && tt < dur) {
+                        const p = tt / dur;
+                        const r = 30 + p * Math.max(W, H) * 0.95;
+                        ctx.globalAlpha = (1 - p) * 0.75; ctx.lineWidth = lw * (1 - p) + 2; ctx.strokeStyle = col;
+                        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+                    }
+                }
+                // ── CREPE: lo schermo "si rompe", poi sfumano ──
+                if (te < 2100) {
+                    ctx.save();
+                    ctx.globalAlpha = te < 1400 ? 0.85 : 0.85 * (1 - (te - 1400) / 700);
+                    ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 1.4;
+                    ctx.shadowColor = "rgba(255,255,255,.8)"; ctx.shadowBlur = 5;
+                    for (const c of crepe) {
+                        ctx.beginPath(); ctx.moveTo(c[0][0], c[0][1]);
+                        for (let k = 1; k < c.length; k++) ctx.lineTo(c[k][0], c[k][1]);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+                // ── VIGNETTA rossa ai bordi che sfuma ──
+                if (te < 2400) {
+                    const p = 1 - te / 2400;
+                    const vg = ctx.createRadialGradient(cx, cy, Math.min(W, H) * 0.35, cx, cy, Math.max(W, H) * 0.8);
+                    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, `rgba(127,29,29,${0.5 * p})`);
+                    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+                }
+                // ── PARTICELLE: detriti con coda, scintille con scia, fumo, braci ──
+                let vivo = false;
+                for (const p of parts) {
+                    const grav = p.tipo === 2 ? -0.02 : p.tipo === 1 ? 0.16 : p.tipo === 3 ? 0.12 : 0.3;
+                    p.vy += grav; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+                    if (p.tipo === 2) p.size *= 1.006;
+                    const durVita = p.tipo === 1 ? 1100 : p.tipo === 2 ? 3600 : p.tipo === 3 ? 3400 : 2600;
+                    const vita = Math.max(0, 1 - te / durVita);
+                    if (vita <= 0 || p.y > H + 40) continue;
+                    vivo = true;
+                    ctx.save();
+                    ctx.globalAlpha = p.tipo === 3 ? vita * (0.55 + 0.45 * Math.sin(te / 60 + p.rot * 13)) : p.tipo === 2 ? vita * 0.3 : vita;
+                    ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.color;
+                    if (p.tipo === 1) {
+                        ctx.strokeStyle = p.color; ctx.lineWidth = p.size;
+                        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-p.vx * 2.2, -p.vy * 2.2); ctx.stroke();
+                    } else if (p.tipo === 2 || p.tipo === 3) {
+                        ctx.beginPath(); ctx.arc(0, 0, p.size * 0.5, 0, Math.PI * 2); ctx.fill();
+                    } else {
+                        ctx.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6);
+                        ctx.globalAlpha *= 0.5; ctx.fillStyle = "#fbbf24";
+                        ctx.fillRect(-p.size / 2 - p.vx * 1.2, -p.size * 0.2 - p.vy * 1.2, p.size * 0.7, p.size * 0.4);
+                    }
+                    ctx.restore();
+                }
+                if (!vivo && te > 2600) { ctx.clearRect(0, 0, W, H); return; }
             }
-            let vivo = false;
-            for (const p of parts) {
-                p.vy += 0.3; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
-                const vita = Math.max(0, 1 - t / 2400);
-                if (vita <= 0 || p.y > H + 30) continue;
-                vivo = true;
-                ctx.save(); ctx.globalAlpha = vita; ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillStyle = p.color;
-                if (p.shape === 0) ctx.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6);
-                else if (p.shape === 1) { ctx.beginPath(); ctx.arc(0, 0, p.size * 0.45, 0, Math.PI * 2); ctx.fill(); }
-                else { ctx.beginPath(); ctx.moveTo(0, -p.size * 0.5); ctx.lineTo(p.size * 0.5, p.size * 0.4); ctx.lineTo(-p.size * 0.5, p.size * 0.4); ctx.closePath(); ctx.fill(); }
-                ctx.restore();
-            }
-            if ((vivo || t < 700) && t < 2600) raf = requestAnimationFrame(tick);
+            if (t < BOOM_MS + 4300) raf = requestAnimationFrame(tick);
             else ctx.clearRect(0, 0, W, H);
         };
         raf = requestAnimationFrame(tick);
         window.addEventListener("resize", setup);
-        return () => { cancelAnimationFrame(raf); clearTimeout(t2); window.removeEventListener("resize", setup); };
+        return () => { cancelAnimationFrame(raf); timers.forEach(clearTimeout); window.removeEventListener("resize", setup); };
     }, []);
     return (
         <>
