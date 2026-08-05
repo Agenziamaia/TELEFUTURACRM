@@ -10,9 +10,10 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/utils";
-import { Loader2, Zap, Users } from "lucide-react";
+import { Loader2, Zap, Users, RefreshCw } from "lucide-react";
 import { notify, dbError } from "./toast";
 import { useRoles } from "@/lib/useRoles";
+import { caricaTutte } from "@/lib/fetchTutte";
 
 interface Incarico { chiave: string; titolo: string; descrizione: string; assegnatari: string[]; ruoli?: string[] | null; fulmine: boolean; whatsapp?: string | null }
 interface Persona { id: string; full_name: string; role: string }
@@ -23,15 +24,21 @@ export function IncarichiView() {
     const [persone, setPersone] = useState<Persona[]>([]);
     const [busy, setBusy] = useState(false);
     const [q, setQ] = useState<Record<string, string>>({});   // ricerca risorsa per incarico
+    const [lettoAlle, setLettoAlle] = useState("");           // ora dell'ultima lettura dal DB
 
     const carica = async () => {
         const [inc, pers] = await Promise.all([
             supabase.from("incarichi").select("*").order("chiave"),
-            supabase.from("app_users").select("id, full_name, role").eq("active", true).order("full_name"),
+            // lista COMPLETA degli utenti attivi (caricaTutte: oltre il tetto
+            // PostgREST da 1000 righe; ordinamento stabile full_name+id)
+            caricaTutte<Persona>((from, to) =>
+                supabase.from("app_users").select("id, full_name, role").eq("active", true).order("full_name").order("id").range(from, to)),
         ]);
         if (dbError("Caricamento incarichi", inc.error)) return;
+        dbError("Caricamento utenti", pers.error);
         setIncarichi((inc.data ?? []) as Incarico[]);
-        setPersone((pers.data ?? []) as Persona[]);
+        setPersone(pers.data);
+        setLettoAlle(new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }));
         setLoading(false);
     };
     useEffect(() => { carica(); }, []);
@@ -55,7 +62,7 @@ export function IncarichiView() {
     // RUOLI DESIGNATI (Luca 03/08, mig. 156): tutto un ruolo insieme — la
     // risoluzione in persone avviene AL MOMENTO dell'evento, quindi chi viene
     // creato in futuro con quel ruolo entra nell'incarico da solo.
-    const { roles: tuttiRuoli } = useRoles();
+    const { roles: tuttiRuoli, labelOf } = useRoles();
     const togRuolo = (inc: Incarico, ruoloId: string) => {
         const cur = (inc.ruoli ?? []) as string[];
         const next = cur.includes(ruoloId) ? cur.filter((x) => x !== ruoloId) : [...cur, ruoloId];
@@ -70,6 +77,52 @@ export function IncarichiView() {
         const pb = ["amministrativo", "admin", "direttore_generale"].includes(b.role) ? 0 : 1;
         return pa - pb || a.full_name.localeCompare(b.full_name);
     });
+
+    // RIQUADRO "Designati adesso" (Luca 05/08) — helper JSX chiamato come
+    // funzione. Alla selezione di un ruolo si vede SUBITO chi ne fa parte:
+    // stessa regola di lib/incarichi.designatiIncarico (singoli + utenti
+    // ATTIVI dei ruoli designati, senza doppioni), calcolata sugli app_users
+    // riletti dal DB a ogni salvataggio — non una cache stantia.
+    const boxDesignatiAdesso = (inc: Incarico) => {
+        const ruoliSel = (inc.ruoli ?? []) as string[];
+        if (!ruoliSel.length) return null;
+        const visti = new Set<string>();
+        const nomi: string[] = [];
+        for (const id of inc.assegnatari) {
+            if (visti.has(id)) continue;
+            visti.add(id);
+            nomi.push(persone.find((p) => p.id === id)?.full_name || id);
+        }
+        for (const p of persone) {
+            if (ruoliSel.includes(p.role) && !visti.has(p.id)) { visti.add(p.id); nomi.push(p.full_name); }
+        }
+        nomi.sort((a, b) => a.localeCompare(b));
+        const ruoliVuoti = ruoliSel.filter((r) => !persone.some((p) => p.role === r));
+        return (
+            <div className="mt-2.5 rounded-xl border border-sky-400/25 bg-white/[0.03] px-3.5 py-2.5 space-y-1">
+                <div className="flex items-start justify-between gap-3">
+                    <p className="text-xs text-sky-100">
+                        <span className="font-bold">Designati adesso: {nomi.length}</span>
+                        {nomi.length > 0
+                            ? <span className="font-normal text-slate-300"> — {nomi.join(", ")}</span>
+                            : <span className="font-normal text-slate-400"> — nessun utente attivo con i ruoli scelti</span>}
+                    </p>
+                    <button onClick={() => carica()} disabled={busy}
+                        title="Rileggi adesso utenti e incarichi dal database"
+                        className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-sky-300 transition-colors disabled:opacity-50">
+                        <RefreshCw className="w-3 h-3" /> {lettoAlle && `letto alle ${lettoAlle}`}
+                    </button>
+                </div>
+                {ruoliVuoti.length > 0 && (
+                    <p className="text-[10px] text-amber-300">Nessun utente attivo per: {ruoliVuoti.map((r) => labelOf(r)).join(", ")}.</p>
+                )}
+                <p className="text-[10px] text-slate-500">
+                    Elenco risolto dal ruolo, non fotografato: ogni nuovo utente creato con uno di questi ruoli
+                    diventa designato automaticamente, senza ritoccare l&apos;incarico.
+                </p>
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-4">
@@ -107,7 +160,7 @@ export function IncarichiView() {
                     </div>
                     <div>
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
-                            Designati <span className="normal-case font-normal">({inc.assegnatari.length || "nessuno — vale il comportamento standard"})</span>
+                            Designati scelti uno a uno <span className="normal-case font-normal">({inc.assegnatari.length || (((inc.ruoli ?? []) as string[]).length ? "nessuno" : "nessuno — vale il comportamento standard")})</span>
                         </p>
                         {/* RICERCA A SCRITTURA (Luca 29/07): scrivi la risorsa e la selezioni —
                             con più incarichi la lista completa farebbe solo disordine. */}
@@ -162,6 +215,7 @@ export function IncarichiView() {
                                 );
                             })}
                         </div>
+                        {boxDesignatiAdesso(inc)}
                     </div>
                 </div>
             ))}
