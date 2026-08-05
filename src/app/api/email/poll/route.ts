@@ -178,17 +178,31 @@ async function pollAccount(accId: string) {
                 .eq("account_id", accId).in("message_id", arr.slice(i, i + 100));
             (data || []).forEach((r: { conversation_id: string }) => { mappa[r.conversation_id] = (mappa[r.conversation_id] || 0) + 1; });
         }
+        // stato attuale dei contatori: UNA lettura, poi aggiornamenti IN BLOCCO
+        // (il primo giro faceva 2 chiamate per conversazione: su amministrazione
+        // erano migliaia e il giro sforava il timeout del proxy)
+        const { data: attuali } = await supabase.from("email_conversations").select("id, unread")
+            .eq("account_id", accId).gt("unread", 0).limit(2000);
+        const attualiMap = new Map((attuali || []).map((c: { id: string; unread: number }) => [c.id, c.unread]));
         // azzera SOLO se la lista UNSEEN è completa (se troncata, niente zeri al buio)
-        if (!troncate) {
-            const { data: aperte } = await supabase.from("email_conversations").select("id, unread")
-                .eq("account_id", accId).gt("unread", 0).limit(1000);
-            for (const c of (aperte || [])) {
-                if (!mappa[c.id]) { await supabase.from("email_conversations").update({ unread: 0 }).eq("id", c.id); unreadAllineate++; }
-            }
+        const daAzzerare = troncate ? [] : (attuali || []).filter((c: { id: string }) => !mappa[c.id]).map((c: { id: string }) => c.id);
+        for (let i = 0; i < daAzzerare.length; i += 100) {
+            const blocco = daAzzerare.slice(i, i + 100);
+            await supabase.from("email_conversations").update({ unread: 0 }).in("id", blocco);
+            unreadAllineate += blocco.length;
         }
+        // conteggi da impostare, raggruppati per valore (quasi tutti 1 → una chiamata)
+        const perN: Record<number, string[]> = {};
         for (const [cid, n] of Object.entries(mappa)) {
-            const { count } = await supabase.from("email_conversations").select("id", { count: "exact", head: true }).eq("id", cid).eq("unread", n);
-            if (!count) { await supabase.from("email_conversations").update({ unread: n }).eq("id", cid); unreadAllineate++; }
+            if (attualiMap.get(cid) === n) continue;
+            (perN[n] = perN[n] || []).push(cid);
+        }
+        for (const [n, cids] of Object.entries(perN)) {
+            for (let i = 0; i < cids.length; i += 100) {
+                const blocco = cids.slice(i, i + 100);
+                await supabase.from("email_conversations").update({ unread: Number(n) }).in("id", blocco);
+                unreadAllineate += blocco.length;
+            }
         }
     } catch { /* IMAP momentaneamente giù: si riallinea al giro dopo */ }
 
@@ -200,14 +214,26 @@ async function pollAccount(accId: string) {
     return { nuovi, inviateImportate, unreadAllineate, lastUid: res.lastUid };
 }
 
+// LOCK anti-sovrapposizione (05/08): il giro completo può superare il timeout
+// del proxy — nginx risponde 504 ma il lavoro prosegue; senza lucchetto il cron
+// rilancia e i giri si accavallano sulle stesse caselle. Uno alla volta.
+let pollTutteInCorso = false;
+
 export async function POST(request: Request) {
     try {
         const b = await request.json().catch(() => ({}));
         if (b?.accountId) return NextResponse.json(await pollAccount(b.accountId));
-        const { data: accs } = await supabase.from("email_accounts").select("id").eq("status", "attiva");
-        const results: any[] = [];
-        for (const a of (accs || [])) results.push({ id: a.id, ...(await pollAccount(a.id)) });
-        return NextResponse.json({ ok: true, results });
+        if (pollTutteInCorso) return NextResponse.json({ ok: true, skipped: "giro precedente ancora in corso" });
+        pollTutteInCorso = true;
+        try {
+            const { data: accs } = await supabase.from("email_accounts").select("id").eq("status", "attiva");
+            const results: any[] = [];
+            for (const a of (accs || [])) {
+                try { results.push({ id: a.id, ...(await pollAccount(a.id)) }); }
+                catch (e) { results.push({ id: a.id, error: e instanceof Error ? e.message : String(e) }); }
+            }
+            return NextResponse.json({ ok: true, results });
+        } finally { pollTutteInCorso = false; }
     } catch (err) {
         return NextResponse.json({ error: err instanceof Error ? err.message : "Internal Server Error" }, { status: 500 });
     }
