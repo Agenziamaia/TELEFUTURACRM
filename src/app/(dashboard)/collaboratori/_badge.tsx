@@ -17,6 +17,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, capAllowed } from "@/lib/capabilities";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
+import { caricaTutte } from "@/lib/fetchTutte";
 import { SelectOpzioni } from "@/components/SelectPersona";
 
 type EventoTurno = { t: string; tipo: "inizio" | "pausa" | "ripresa" | "fine" | "correzione"; note?: string };
@@ -410,7 +411,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                             onClick={esportaOre}
                             disabled={exporting}
                             title="Scarica le ore di tutti i collaboratori (si apre con Excel)"
-                            className="px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-bold flex items-center gap-2 disabled:opacity-50"
+                            className="h-9 px-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-bold flex items-center gap-2 disabled:opacity-50"
                         >
                             <Download className="w-4 h-4" />
                             {exporting ? "Esporto…" : "Esporta ore"}
@@ -421,18 +422,19 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
                         placeholder="Nome..."
                         value={filterPerson}
                         onChange={(e) => setFilterPerson(e.target.value)}
-                        className="glass-input !h-9 px-3 text-xs w-full sm:w-32"
+                        className="glass-input !h-9 !rounded-xl px-3 text-xs w-full sm:w-32"
                     />
                     <input
                         type="text"
                         placeholder="Negozio..."
                         value={filterStore}
                         onChange={(e) => setFilterStore(e.target.value)}
-                        className="glass-input !h-9 px-3 text-xs w-full sm:w-32"
+                        className="glass-input !h-9 !rounded-xl px-3 text-xs w-full sm:w-32"
                     />
                     <button
                         onClick={() => { fetchShifts(); onRefresh(); }}
-                        className="p-2 bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg transition-colors group"
+                        title="Aggiorna i turni in servizio"
+                        className="h-9 w-9 flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors group"
                     >
                         <Clock className={cn("w-4 h-4 text-slate-400 group-hover:text-indigo-400", loading && "animate-spin")} />
                     </button>
@@ -515,7 +517,7 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
 
 
 
-function oreNette(s: ShiftRow): number {
+function oreNette(s: Pick<ShiftRow, "started_at" | "ended_at" | "total_pause_minutes">): number {
     if (!s.ended_at) return 0;
     const ms = new Date(s.ended_at).getTime() - new Date(s.started_at).getTime();
     return Math.max(0, ms / 3600000 - (s.total_pause_minutes || 0) / 60);
@@ -528,6 +530,27 @@ function giorniLavorativi(from: Date, to: Date): number {
     const fine = new Date(to); fine.setHours(13, 0, 0, 0);
     while (d <= fine) { const g = d.getDay(); if (g >= 1 && g <= 5) n++; d.setDate(d.getDate() + 1); }
     return n;
+}
+
+// ── FILTRI RAPIDI dello storico (Luca 05/08): data in formato LOCALE (il
+// vecchio toISOString().slice(0,10) è UTC e a cavallo di mezzanotte sballa)
+const ymdLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// preset che compilano Dal/Al con un click; "attivo" = Dal/Al coincidono col preset
+const PRESET_PERIODO: { chiave: string; label: string; range: () => { da: string; a: string } }[] = [
+    { chiave: "oggi", label: "Oggi", range: () => { const t = ymdLocal(new Date()); return { da: t, a: t }; } },
+    { chiave: "ieri", label: "Ieri", range: () => { const d = new Date(); d.setDate(d.getDate() - 1); const t = ymdLocal(d); return { da: t, a: t }; } },
+    { chiave: "settimana", label: "Settimana", range: () => { const oggi = new Date(); const lun = new Date(oggi); lun.setDate(oggi.getDate() - ((oggi.getDay() + 6) % 7)); return { da: ymdLocal(lun), a: ymdLocal(oggi) }; } },
+    { chiave: "mese", label: "Mese", range: () => { const oggi = new Date(); return { da: ymdLocal(new Date(oggi.getFullYear(), oggi.getMonth(), 1)), a: ymdLocal(oggi) }; } },
+    { chiave: "mese-scorso", label: "Mese scorso", range: () => { const oggi = new Date(); return { da: ymdLocal(new Date(oggi.getFullYear(), oggi.getMonth() - 1, 1)), a: ymdLocal(new Date(oggi.getFullYear(), oggi.getMonth(), 0)) }; } },
+];
+// minuti netti maturati oggi da un turno — anche APERTO: conta fino ad adesso
+// scontando la pausa eventualmente in corso (stesso conto del timer personale)
+function minutiTurnoOggi(s: ShiftRow): number {
+    const inizio = new Date(s.started_at).getTime();
+    const fine = s.ended_at ? new Date(s.ended_at).getTime() : Date.now();
+    let pausa = Number(s.total_pause_minutes) || 0;
+    if (!s.ended_at && s.pause_started_at) pausa += (Date.now() - new Date(s.pause_started_at).getTime()) / 60000;
+    return Math.max(0, (fine - inizio) / 60000 - pausa);
 }
 
 function KpiBox({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
@@ -697,7 +720,7 @@ function PresenzeAdmin() {
     };
     const primoDelMese = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; };
     const [da, setDa] = useState(primoDelMese());
-    const [a, setA] = useState(() => new Date().toISOString().slice(0, 10));
+    const [a, setA] = useState(() => ymdLocal(new Date()));
     // filtro persone MULTIPLO (Luca 29/07): vuoto = tutte; click per
     // aggiungere/togliere più caller contemporaneamente
     const [personeSel, setPersoneSel] = useState<string[]>([]);
@@ -708,11 +731,31 @@ function PresenzeAdmin() {
 
     useEffect(() => {
         if (!da || !a) return;
-        supabase.from("shifts").select("*")
+        let vivo = true;
+        // Cap PostgREST (max-rows 1000): il vecchio .limit(3000) veniva TRONCATO
+        // in silenzio sui periodi lunghi — ora si pagina con caricaTutte.
+        caricaTutte<ShiftRow>((from, to) => supabase.from("shifts").select("*")
             .gte("started_at", da + "T00:00:00").lte("started_at", a + "T23:59:59")
-            .not("ended_at", "is", null).order("started_at", { ascending: false }).limit(3000)
-            .then(({ data }) => setRows((data ?? []) as ShiftRow[]));
+            .not("ended_at", "is", null)
+            .order("started_at", { ascending: false }).order("id", { ascending: false })
+            .range(from, to))
+            .then(({ data }) => { if (vivo) setRows(data); });
+        return () => { vivo = false; };
     }, [da, a]);
+
+    // ── "Ore fatte oggi" (Luca 05/08): turni di OGGI, anche quelli ancora
+    // aperti — segue i filtri persone/negozio e si rinfresca da solo ogni minuto
+    const [turniOggi, setTurniOggi] = useState<ShiftRow[]>([]);
+    useEffect(() => {
+        const carica = () => {
+            supabase.from("shifts").select("*").gte("started_at", ymdLocal(new Date()) + "T00:00:00")
+                .order("started_at", { ascending: false }).limit(1000)
+                .then(({ data }) => setTurniOggi((data ?? []) as ShiftRow[]));
+        };
+        carica();
+        const t = setInterval(carica, 60000);
+        return () => clearInterval(t);
+    }, []);
 
     // benchmark: ore totali degli ultimi 3 mesi (rispetta il filtro persona)
     useEffect(() => {
@@ -722,12 +765,15 @@ function PresenzeAdmin() {
             for (let i = 2; i >= 0; i--) {
                 const m0 = new Date(now.getFullYear(), now.getMonth() - i, 1);
                 const m1 = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
-                let q = supabase.from("shifts").select("started_at,ended_at,total_pause_minutes")
-                    .gte("started_at", m0.toISOString()).lte("started_at", m1.toISOString())
-                    .not("ended_at", "is", null).limit(3000);
-                if (personeSel.length) q = q.in("employee_name", personeSel);
-                const { data } = await q;
-                out.push({ label: m0.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }), ore: ((data ?? []) as ShiftRow[]).reduce((acc, x) => acc + oreNette(x), 0) });
+                // anche qui niente .limit(3000): oltre le 1000 righe il server tronca muto
+                const { data } = await caricaTutte<Pick<ShiftRow, "started_at" | "ended_at" | "total_pause_minutes">>((from, to) => {
+                    let q = supabase.from("shifts").select("started_at,ended_at,total_pause_minutes")
+                        .gte("started_at", m0.toISOString()).lte("started_at", m1.toISOString())
+                        .not("ended_at", "is", null).order("started_at").order("id");
+                    if (personeSel.length) q = q.in("employee_name", personeSel);
+                    return q.range(from, to);
+                });
+                out.push({ label: m0.toLocaleDateString("it-IT", { month: "short", year: "2-digit" }), ore: data.reduce((acc, x) => acc + oreNette(x), 0) });
             }
             setBench(out);
         })();
@@ -741,6 +787,10 @@ function PresenzeAdmin() {
     const personeAttive = new Set(filtered.map((r) => r.employee_name)).size;
     const mediaGiorno = giorniPresenza ? oreTot / giorniPresenza : 0;
     const pauseTot = filtered.reduce((acc, x) => acc + (x.total_pause_minutes || 0), 0);
+    // "Ore fatte oggi": stessi filtri persone/negozio dello storico
+    const oggiFiltrati = turniOggi.filter((s) => (!personeSel.length || personeSel.includes(s.employee_name)) && (!negozio || s.store === negozio));
+    const oreOggi = oggiFiltrati.reduce((acc, s) => acc + minutiTurnoOggi(s), 0) / 60;
+    const inTurnoOra = oggiFiltrati.filter((s) => !s.ended_at).length;
 
     // GLB-03: da CSV a vero .xlsx \u2014 pausa e ore nette come celle numeriche.
     const esportaExcel = async () => {
@@ -759,45 +809,91 @@ function PresenzeAdmin() {
 
     return (
         <div className="glass-card p-6">
-            <div className="flex flex-wrap items-end gap-3 mb-4">
-                <h3 className="text-base font-bold text-white mr-auto">🗓 Storico presenze</h3>
+            {/* ── Testata + export (restyle Luca 05/08: "un po' retro, filtri sfasati") ── */}
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Dal</label>
-                    <input type="date" value={da} onChange={(e) => setDa(e.target.value)} className="glass-input text-xs py-1.5" />
-                </div>
-                <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Al</label>
-                    <input type="date" value={a} onChange={(e) => setA(e.target.value)} className="glass-input text-xs py-1.5" />
-                </div>
-                <div className="max-w-xl">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Persone <span className="normal-case font-normal">(clicca per sommarle; nessuna = tutte)</span></label>
-                    <div className="flex flex-wrap gap-1.5">
-                        <button type="button" onClick={() => setPersoneSel([])}
-                            className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all",
-                                personeSel.length === 0 ? "border-indigo-400/70 bg-indigo-500/15 text-indigo-200" : "border-white/10 text-slate-400 hover:border-white/25")}>
-                            Tutte
-                        </button>
-                        {persone.map((n) => (
-                            <button key={n} type="button" onClick={() => togPersona(n)}
-                                className={cn("px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all",
-                                    personeSel.includes(n) ? "border-indigo-400/70 bg-indigo-500/20 text-indigo-100" : "border-white/10 text-slate-400 hover:border-white/25")}>
-                                {personeSel.includes(n) ? "✓ " : ""}{n}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-                <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Negozio</label>
-                    <SelectOpzioni value={negozio} onChange={setNegozio} opzioni={negozi} placeholder="Tutti — scrivi per filtrare" className="glass-input text-xs py-1.5" />
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                        <History className="w-4 h-4 text-indigo-400" />
+                        Storico presenze
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Totali, benchmark ed export seguono i filtri qui sotto.</p>
                 </div>
                 <button onClick={esportaExcel} disabled={filtered.length === 0}
-                    className="h-8 px-4 rounded-lg text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40">
-                    ⬇️ Esporta Excel
+                    className="h-9 px-4 rounded-xl text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40 flex items-center gap-1.5 transition-colors">
+                    <Download className="w-3.5 h-3.5" />
+                    Esporta Excel
                 </button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                <KpiBox label="Ore totali" value={fmtOre(oreTot)} sub={`${filtered.length} timbrature`} color="var(--tf-6366f1)" />
+            {/* ── Barra filtri allineata: preset rapidi + periodo + negozio, tutti h-9 / rounded-xl / text-xs ── */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+                <div className="flex items-center gap-0.5 h-9 px-1 rounded-xl bg-white/[0.03] border border-white/10">
+                    {PRESET_PERIODO.map((p) => {
+                        const r = p.range();
+                        const attivo = da === r.da && a === r.a;
+                        return (
+                            <button key={p.chiave} type="button" onClick={() => { setDa(r.da); setA(r.a); }}
+                                className={cn("h-7 px-2.5 rounded-lg text-[11px] font-bold transition-colors",
+                                    attivo ? "bg-indigo-500/25 text-indigo-100 ring-1 ring-inset ring-indigo-400/50" : "text-slate-400 hover:text-white hover:bg-white/[0.06]")}>
+                                {p.label}
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="flex items-center gap-1.5 h-9 px-2.5 rounded-xl bg-white/[0.03] border border-white/10 focus-within:border-indigo-400/60 transition-colors" title="Periodo dello storico (Dal → Al)">
+                    <CalendarDays className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <input type="date" value={da} onChange={(e) => setDa(e.target.value)} aria-label="Dal"
+                        className="h-7 bg-transparent border-0 p-0 text-xs text-slate-200 outline-none w-[6.8rem]" />
+                    <span className="text-slate-600 text-xs">→</span>
+                    <input type="date" value={a} onChange={(e) => setA(e.target.value)} aria-label="Al"
+                        className="h-7 bg-transparent border-0 p-0 text-xs text-slate-200 outline-none w-[6.8rem]" />
+                </div>
+                <div className="flex items-center h-9 pl-2.5 rounded-xl bg-white/[0.03] border border-white/10 focus-within:border-indigo-400/60 transition-colors" title="Filtra per negozio">
+                    <Store className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <SelectOpzioni value={negozio} onChange={setNegozio} opzioni={negozi} placeholder="Tutti i negozi"
+                        className="h-8 w-40 bg-transparent border-0 outline-none text-xs text-slate-200 pl-1.5 pr-6" />
+                </div>
+                {(personeSel.length > 0 || negozio) && (
+                    <button type="button" onClick={() => { setPersoneSel([]); setNegozio(""); }}
+                        className="h-9 px-3 rounded-xl text-[11px] font-bold border border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors">
+                        ✕ Azzera filtri
+                    </button>
+                )}
+            </div>
+
+            {/* ── Persone: chip multi-selezione (clic per sommarle; nessuna = tutte) ── */}
+            <div className="flex flex-wrap items-center gap-1.5 mb-4">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1 flex items-center gap-1">
+                    <Users className="w-3.5 h-3.5" /> Persone
+                </span>
+                <button type="button" onClick={() => setPersoneSel([])}
+                    className={cn("h-7 px-3 rounded-full text-[11px] font-bold border transition-all",
+                        personeSel.length === 0 ? "border-indigo-400/70 bg-indigo-500/15 text-indigo-200" : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/25")}>
+                    Tutte
+                </button>
+                {persone.map((n) => (
+                    <button key={n} type="button" onClick={() => togPersona(n)}
+                        className={cn("h-7 px-3 rounded-full text-[11px] font-bold border transition-all",
+                            personeSel.includes(n) ? "border-indigo-400/70 bg-indigo-500/20 text-indigo-100" : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/25")}>
+                        {personeSel.includes(n) ? "✓ " : ""}{n}
+                    </button>
+                ))}
+                <span className="text-[10px] text-slate-600">clicca più nomi per sommarli</span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2 mb-3">
+                {/* "Ore fatte oggi" in evidenza: segue persone/negozio e include i turni ancora aperti */}
+                <div className="p-3 rounded-xl border border-emerald-400/30 bg-emerald-500/10">
+                    <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-300 flex items-center gap-1.5">
+                        {inTurnoOra > 0 && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                        Ore fatte oggi
+                    </div>
+                    <div className="text-xl font-bold text-white mt-0.5">{fmtOre(oreOggi)}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                        {inTurnoOra > 0 ? `${inTurnoOra} in turno adesso` : oggiFiltrati.length > 0 ? `${oggiFiltrati.length} timbratur${oggiFiltrati.length === 1 ? "a" : "e"} oggi` : "nessuna timbratura oggi"}
+                    </div>
+                </div>
+                <KpiBox label="Ore nel periodo" value={fmtOre(oreTot)} sub={`${filtered.length} timbrature`} color="var(--tf-6366f1)" />
                 <KpiBox label="Giorni-presenza" value={String(giorniPresenza)} sub={`${personeAttive} person${personeAttive === 1 ? "a" : "e"}`} color="var(--tf-0ea5e9)" />
                 <KpiBox label="Media ore/giorno" value={fmtOre(mediaGiorno)} color="var(--tf-22c55e)" />
                 <KpiBox label="Pause totali" value={`${Math.round(pauseTot)}m`} color="var(--tf-f59e0b)" />
