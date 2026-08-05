@@ -90,6 +90,11 @@ export function UrgentTasks() {
         const ch = supabase.channel("urgent-tasks-" + user?.id)
             .on("postgres_changes", { event: "*", schema: "public", table: "admin_tasks" }, ricarica)
             .on("postgres_changes", { event: "*", schema: "public", table: "richieste_disdette" }, ricarica)
+            // Luca 05/08: i contatori sintetici leggono anche queste due code —
+            // senza ascoltarle il pallino si muoveva solo col polling (mig. 180
+            // le aggiunge alla publication)
+            .on("postgres_changes", { event: "*", schema: "public", table: "contract_change_requests" }, ricarica)
+            .on("postgres_changes", { event: "*", schema: "public", table: "client_access_requests" }, ricarica)
             .subscribe();
         const onVis = () => { if (document.visibilityState === "visible") ricarica(); };
         document.addEventListener("visibilitychange", onVis);

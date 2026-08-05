@@ -81,13 +81,12 @@ export default function RegistroChiamatePage() {
         if (!seesAll) {
             const valori = negozioInValues(stores);
             if (valori.length === 0) { setEventi([]); setCarico(false); return; }
-            // ANCHE le chiamate del NUMERO UNICO (negozio null): squillano su
-            // tutti i punti vendita e sulle PERSE nessuna utenza risponde →
-            // Aircall non sa attribuirle (caso Ferrelli 04/08: 120 inbound su
-            // 158 erano invisibili agli store manager). Ogni negozio le vede
-            // e chi richiama/anagrafizza se le prende.
-            const inList = valori.map((v) => `"${String(v).replace(/"/g, "")}"`).join(",");
-            q = q.or(`negozio.is.null,negozio.in.(${inList})`);
+            // SOLO le chiamate del proprio interno (Luca 05/08): il broadcast
+            // delle perse del numero unico (negozio null) faceva vedere a ogni
+            // negozio le chiamate di tutti — marcia indietro. Le non attribuite
+            // restano alla direzione (registro completo, badge 🌐), che le
+            // anagrafizza o le smista.
+            q = q.in("negozio", valori);
         }
         const { data, error } = await q;
         if (error) { setErrore(error.message); setEventi([]); }
@@ -134,7 +133,8 @@ export default function RegistroChiamatePage() {
             if (fDirezione === "In uscita" && e.direction !== "outbound") return false;
             if (fEsito === "Risposte" && e.missed) return false;
             if (fEsito === "Perse" && !e.missed) return false;
-            if (fNegozio && !sameStore(e.negozio, fNegozio)) return false;
+            if (fNegozio === "🌐 Numero unico") { if (e.negozio) return false; }
+            else if (fNegozio && !sameStore(e.negozio, fNegozio)) return false;
             if (cifre.length >= 3 && !String(e.cliente_num || "").replace(/\D/g, "").includes(cifre)) return false;
             return true;
         });
@@ -229,7 +229,7 @@ export default function RegistroChiamatePage() {
                             <div className="space-y-1">
                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Negozio</label>
                                 <SelectOpzioni value={fNegozio} onChange={setFNegozio}
-                                    opzioni={seesAll ? NEGOZI : stores} placeholder="Tutti" />
+                                    opzioni={seesAll ? ["🌐 Numero unico", ...NEGOZI] : stores} placeholder="Tutti" />
                             </div>
                         )}
                     </div>
