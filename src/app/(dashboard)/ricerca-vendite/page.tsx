@@ -11,7 +11,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
 import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
 import { useActiveStores } from "@/lib/org";
-import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE, TRK_BADGE_OFFSET, TRK_BADGE_OFFSET_DEFAULT } from "@/lib/brandAssets";
+import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
@@ -289,42 +289,52 @@ function FiltroMulti({ values, onChange, opzioni, className = "", disabled = fal
 // chiave stabile per le dipendenze degli effect: null ("tutto") ≠ [] ("niente")
 const kMulti = (v: string[] | null) => (v === null ? "*" : v.join("|"));
 
-// ── RIC-06 (Luca 05/08): badge del conteggio ANCORATO AL LOGO ───────────────
-// Prima il numeretto stava a calc(50% + offset px) dal centro della TESSERA
-// (offset per-brand del Tracking, TRK_BADGE_OFFSET): al restringersi della
-// scheda il logo si rimpicciolisce (maxWidth 92%) ma l'offset restava fisso e
-// il badge "scappava". Ora badge e logo vivono nello stesso contenitore
-// relative e l'offset viene RISCALATO con la misura reale dell'immagine
-// (ResizeObserver: altezza resa / 56 = fattore di riduzione, la scala ottica
-// transform non tocca il box). A logo pieno (56px) i pixel coincidono con
-// quelli calibrati da Luca il 04/08; a tessera stretta il badge segue la
-// spalla del logo. Componente a livello di modulo (regola segnalazione 71).
+// ── RIC-06 v2 (Luca 05/08, secondo giro): badge sull'ANGOLO VISIVO del logo ──
+// Il primo tentativo (top:0 + offset orizzontale riscalato) piazzava il
+// numeretto sul SOFFITTO della tessera, lontano dal logo (screenshot Luca ore
+// 15:44). Ora niente offset calibrati: si misura il riquadro VISIVO reale del
+// logo con getBoundingClientRect — che tiene conto anche della scala ottica
+// transform — e il badge si incolla alla sua spalla destra in alto, a ogni
+// larghezza. Rimisurato da ResizeObserver su logo e contenitore (+load).
+// Componente a livello di modulo (regola segnalazione 71).
 function LogoConBadge({ brand, logo, n }: { brand: string; logo: string; n: number }) {
+    const box = useRef<HTMLSpanElement | null>(null);
     const img = useRef<HTMLImageElement | null>(null);
-    const [fattore, setFattore] = useState(1);
+    const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
     useEffect(() => {
-        const el = img.current;
-        if (!el) return;
-        const misura = () => { if (el.offsetHeight > 0) setFattore(Math.min(1, el.offsetHeight / 56)); };
+        const el = img.current, cont = box.current;
+        if (!el || !cont) return;
+        const misura = () => {
+            const r = el.getBoundingClientRect(), c = cont.getBoundingClientRect();
+            if (r.width === 0 || c.width === 0) return;
+            setPos({
+                // spalla destra del logo, col badge un filo sovrapposto; mai
+                // oltre il bordo della tessera né sopra il suo tetto
+                left: Math.min(r.right - c.left - 8, c.width - 26),
+                top: Math.max(0, r.top - c.top - 7),
+            });
+        };
         misura();
         const ro = new ResizeObserver(misura);
-        ro.observe(el);
+        ro.observe(el); ro.observe(cont);
         el.addEventListener("load", misura);   // dimensioni note solo a immagine caricata
         return () => { ro.disconnect(); el.removeEventListener("load", misura); };
     }, [logo]);
     const key = trkBrandKey(brand);
     const colBadge = "var(--tf-94a3b8)";   // neutro, come il Tracking a riposo
-    const offset = TRK_BADGE_OFFSET[key] ?? TRK_BADGE_OFFSET_DEFAULT;
     return (
         /* stesso box logo del Tracking (72px, logo 56 + scala ottica per brand) */
-        <span className="relative h-[72px] w-full flex items-center justify-center" title={brand}>
+        <span ref={box} className="relative h-[72px] w-full flex items-center justify-center" title={brand}>
             <img ref={img} src={logo} alt={brand}
                 style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[key] || 1})` }} />
-            {/* fondo SOLIDO perche' i loghi sbordano (scala ottica) */}
-            <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
-                style={{ left: `calc(50% + ${Math.round(offset * fattore)}px)`, top: 0, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
-                {n}
-            </span>
+            {/* fondo SOLIDO perche' i loghi sbordano (scala ottica); compare
+                solo a misura fatta, niente flash nel posto sbagliato */}
+            {pos && (
+                <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
+                    style={{ left: pos.left, top: pos.top, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
+                    {n}
+                </span>
+            )}
         </span>
     );
 }
@@ -1295,25 +1305,24 @@ export default function RicercaContratto() {
                                         : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]")}>
                                 {/* RIC-01: box logo alla misura del Tracking (72px, logo 56
                                     + scala ottica per brand): loghi grandi uguali ovunque.
-                                    RIC-06 (Luca 05/08): il numeretto e' ancorato AL LOGO
-                                    (LogoConBadge, offset riscalato con la misura resa),
-                                    non piu' al centro della tessera: prima, restringendo
-                                    la scheda, il logo si rimpiccioliva e il badge restava
-                                    fermo. Emoji/testo non si riscalano: per loro il
-                                    centro-tessera + offset fisso resta corretto. */}
+                                    RIC-06 v2 (Luca 05/08, screenshot 15:44): il numeretto
+                                    si incolla all'ANGOLO VISIVO del logo (LogoConBadge,
+                                    getBoundingClientRect) — il primo giro con top:0 lo
+                                    spediva sul soffitto della tessera. Emoji 💰 e testo:
+                                    badge ancorato all'elemento stesso (wrapper relative). */}
                                 {!isExtra && logo ? (
                                     <LogoConBadge brand={brand} logo={logo} n={n} />
                                 ) : (
-                                    <>
-                                        <span className="h-[72px] w-full flex items-center justify-center" title={brand}>
+                                    <span className="h-[72px] w-full flex items-center justify-center" title={brand}>
+                                        <span className="relative inline-flex items-center justify-center max-w-full">
                                             {isExtra ? <span className="text-4xl">💰</span>
                                                 : <span className="text-base font-bold text-slate-200 truncate max-w-full">{brand}</span>}
+                                            <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
+                                                style={{ left: "calc(100% - 8px)", top: -7, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
+                                                {n}
+                                            </span>
                                         </span>
-                                        <span className="absolute text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full"
-                                            style={{ left: `calc(50% + ${isExtra ? 26 : (TRK_BADGE_OFFSET[trkBrandKey(brand)] ?? TRK_BADGE_OFFSET_DEFAULT)}px)`, top: 8, zIndex: 1, color: colBadge, background: "var(--tf-0d1424)", border: `1px solid ${colBadge}66`, opacity: n === 0 ? .5 : 1 }}>
-                                            {n}
-                                        </span>
-                                    </>
+                                    </span>
                                 )}
                             </button>
                         );
