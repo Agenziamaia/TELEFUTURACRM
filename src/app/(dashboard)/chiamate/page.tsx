@@ -40,6 +40,7 @@ interface EventoChiamata {
     started_at: string | null;
     client_id: string | null;
     archiviato: boolean | null;
+    risposta_cc?: boolean | null;   // AIR-04: risposta dal call center (badge)
 }
 
 export default function RegistroChiamatePage() {
@@ -69,7 +70,7 @@ export default function RegistroChiamatePage() {
         setCarico(true); setErrore(null);
         // recording_url SOLO per chi può ascoltare: agli altri il link firmato
         // non serve e non deve nemmeno viaggiare nella risposta
-        const campi = "id, aircall_call_id, direction, cliente_num, agente_nome, negozio, missed, duration_sec, started_at, client_id, archiviato"
+        const campi = "id, aircall_call_id, direction, cliente_num, agente_nome, negozio, missed, duration_sec, started_at, client_id, archiviato, risposta_cc"
             + (puoAudio ? ", recording_url" : "");
         let q = supabase.from("call_events").select(campi)
             // righe storiche AnyTime Fitness fuori (stesso account Aircall,
@@ -272,6 +273,13 @@ export default function RegistroChiamatePage() {
                                         {!e.negozio && (
                                             <span title="Chiamata sul numero unico aziendale: squilla su tutti i negozi, nessuno ha risposto — non è attribuibile a un punto vendita"
                                                 className="px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/25 text-[11px] text-sky-300">🌐 Numero unico</span>
+                                        )}
+                                        {/* AIR-04 (Luca 05/08): il cliente ha scelto il negozio
+                                            nell'IVR ma ha risposto il call center — il negozio
+                                            vede la chiamata e sa chi l'ha gestita */}
+                                        {!!e.risposta_cc && (
+                                            <span title={`Il punto vendita non ha risposto in tempo: ha risposto il call center${e.agente_nome ? ` (${e.agente_nome})` : ""}`}
+                                                className="px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/25 text-[11px] text-indigo-300">☎️ risposta dal Call Center</span>
                                         )}
                                         <span className="text-slate-400">{String(e.agente_nome || "—")}</span>
                                         {e.missed

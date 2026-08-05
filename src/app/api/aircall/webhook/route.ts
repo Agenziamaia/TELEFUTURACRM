@@ -35,6 +35,24 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: true, ignored: event });
         }
 
+        // ── AIR-04 (Luca 05/08): la SCELTA IVR del cliente ───────────────────
+        // Evento dedicato (sottoscritto il 05/08): si salva SOLO ivr_scelta —
+        // upsert parziale, così gli eventi successivi (answered/ended, che non
+        // portano la scelta) non la sovrascrivono e viceversa. La scelta si
+        // trasforma in negozio all'evento terminale, quando l'attribuzione via
+        // utenza/numero non basta (persa o risposta dal call center).
+        if (event === "call.ivr_option_selected") {
+            const sel = Array.isArray(d.ivr_options_selected) && d.ivr_options_selected.length
+                ? d.ivr_options_selected[d.ivr_options_selected.length - 1]
+                : (d.ivr_option || payload?.ivr_option || null);
+            const titolo = String(sel?.title || sel?.branch || sel || "").trim();
+            if (titolo) {
+                await supabase.from("call_events")
+                    .upsert({ aircall_call_id: d.id, ivr_scelta: titolo }, { onConflict: "aircall_call_id" });
+            }
+            return NextResponse.json({ ok: true, event, ivr: titolo || null });
+        }
+
         const direction = d.direction || null;                 // inbound | outbound
         const clienteNum = d.raw_digits || d.to || d.from || null; // l'altro capo
         const aircallUserId = d.user?.id ?? null;
@@ -75,10 +93,31 @@ export async function POST(request: Request) {
                 .eq("aircall_user_id", aircallUserId).order("name").limit(5);
             negozio = nomeDaStores((st ?? []).map((s) => s.name));
         }
+        // AIR-04: chi ha risposto e' del CALL CENTER? (check sull'utenza, PRIMA
+        // dei fallback numero/IVR: l'utenza CC non mappa nessun negozio). La
+        // chiamata resta del punto vendita, ma col badge "risposta dal CC".
+        let rispostaCc = false;
+        if (answeredBool && aircallUserId && !negozio) {
+            const { data: u } = await supabase.from("app_users").select("role").eq("aircall_user_id", aircallUserId).maybeSingle();
+            if (u && (areaOf(u.role) === "cc" || ["direttore_cc", "back_office_caller"].includes(u.role))) rispostaCc = true;
+        }
         if (!negozio && numberId) {
             const { data: st } = await supabase.from("stores").select("name")
                 .eq("aircall_number_id", numberId).order("name").limit(5);
             negozio = nomeDaStores((st ?? []).map((s) => s.name));
+        }
+        // AIR-04: terzo fallback — la SCELTA IVR del cliente (salvata
+        // dall'evento dedicato). Vale per le PERSE del numero unico e per le
+        // risposte del call center: la chiamata torna al punto vendita scelto.
+        let ivrScelta: string | null = null;
+        if (!negozio) {
+            const { data: prev } = await supabase.from("call_events").select("ivr_scelta").eq("aircall_call_id", d.id).maybeSingle();
+            ivrScelta = (prev?.ivr_scelta as string) || null;
+            if (ivrScelta) {
+                const { data: st } = await supabase.from("stores").select("name")
+                    .ilike("name", ivrScelta.trim() + "%").eq("active", true).order("name").limit(5);
+                negozio = nomeDaStores((st ?? []).map((s) => s.name));
+            }
         }
 
         // cliente dal numero: match condiviso (cellulare > client_numeri >
@@ -94,7 +133,7 @@ export async function POST(request: Request) {
             from_number: d.from ?? null, to_number: d.to ?? null,
             cliente_num: clienteNum,
             aircall_user_id: aircallUserId, agente_nome: agente,
-            aircall_number_id: numberId, negozio,
+            aircall_number_id: numberId, negozio, risposta_cc: rispostaCc,
             answered: answeredBool, duration_sec: durata,
             recording_url: registrazione, missed,
             started_at: started, answered_at: answered, ended_at: ended,
