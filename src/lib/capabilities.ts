@@ -124,11 +124,21 @@ export const CAP_BADGE_TEAM: CapDef = {
     desc: "Contatori team, turni in corso (con forza chiusura) e Storico presenze allargato con filtri, benchmark ed export.",
     default: (r) => (seesAllStores(r) || seesWholeStore(r)) && r !== "back_office_caller",
 };
+// Correzione/eliminazione dei turni e chiusura forzata (Luca 05/08): prima era
+// codice fisso "amministrativo in su" — il direttore del telefonico vede tutto
+// ma non tocca (default giusto), pero' ora si puo' abilitare dalla rotellina.
+export const CAP_BADGE_CORREGGE: CapDef = {
+    id: "corregge_turni",
+    label: "Corregge i turni",
+    desc: "Può correggere entrata/uscita, eliminare turni e forzare la chiusura dei turni dimenticati aperti. Default: amministrazione e direzione generale.",
+    default: (r) => ["amministrativo", "admin", "dev", "direttore_generale"].includes(r),
+    requires: "vede_team",
+};
 export const CAP_BADGE: CapGroupFlags = {
     mode: "flags",
     section: BADGE_SECTION,
     sectionLabel: "Badge (Call Center)",
-    caps: [CAP_BADGE_TIMBRA, CAP_BADGE_TEAM],
+    caps: [CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, CAP_BADGE_CORREGGE],
 };
 
 // ─── CLIENTI: funzioni aggiuntive della scheda ───────────────────────────────

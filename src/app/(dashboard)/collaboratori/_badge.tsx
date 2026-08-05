@@ -14,7 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { seesAllStores, seesWholeStore, isAdminOrAbove } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, capAllowed } from "@/lib/capabilities";
+import { BADGE_SECTION, CAP_BADGE_TIMBRA, CAP_BADGE_TEAM, CAP_BADGE_CORREGGE, capAllowed } from "@/lib/capabilities";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { caricaTutte } from "@/lib/fetchTutte";
@@ -397,6 +397,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
 
 function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
     const { user } = useAuth();   // serve per il tasto "Esporta ore" (segn.83)
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
     const [shifts, setShifts] = useState<ShiftRow[]>([]);
     const [filterPerson, setFilterPerson] = useState("");
     const [filterStore, setFilterStore] = useState("");
@@ -415,8 +416,10 @@ function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
     }, [fetchShifts]);
 
     const activeShifts = shifts.filter(s => !s.ended_at);
-    // Chiusura FORZATA di un turno rimasto aperto: solo pack amministrazione.
-    const canForce = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    // Chiusura FORZATA di un turno rimasto aperto: dalla ROTELLINA (Luca
+    // 05/08, cap corregge_turni — default: pack amministrazione, accendibile
+    // ad es. al direttore del telefonico dal pannello Permessi).
+    const canForce = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_CORREGGE, capPerms);
     const [forceId, setForceId] = useState<number | null>(null);
     // TIMELINE anche sul turno LIVE (Luca 31/07): click sulla card "In
     // Servizio" → pause fatte finora e quella eventualmente in corso
@@ -766,20 +769,23 @@ function StoricoPersonale({ nome, parte = "tutto" }: { nome: string; parte?: "kp
 }
 
 function PresenzeAdmin() {
-    // Cancellare una timbratura dallo storico: SOLO l'admin (regola Luca 25/07).
     const { user } = useAuth();
-    const canDeleteShift = ["admin", "dev"].includes(user?.role || "");
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    // Correzione ED eliminazione turni dalla ROTELLINA (Luca 05/08, cap
+    // corregge_turni): prima cancellare era solo-admin (25/07) e correggere
+    // era codice fisso "amministrativo in su" — ora un interruttore unico.
+    const canDeleteShift = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_CORREGGE, capPerms);
     const [delId, setDelId] = useState<number | null>(null);
     const eliminaTimbratura = async (id: number) => {
         await supabase.from("shifts").delete().eq("id", id);
         setDelId(null);
         setRows((prev) => prev.filter((r) => r.id !== id));
     };
-    // ── MODIFICA TURNO (Luca 30/07): dall'amministrativo in su si correggono
-    // entrata e uscita; le ore nette si ricalcolano da sole (sono derivate).
-    // Al salvataggio si sceglie se AVVISARE il caller (messaggio in chat dal
-    // profilo di chi corregge) o correggere in silenzio.
-    const canEditShift = ["amministrativo", "admin", "dev", "direttore_generale"].includes(user?.role || "");
+    // ── MODIFICA TURNO (Luca 30/07): si correggono entrata e uscita; le ore
+    // nette si ricalcolano da sole (sono derivate). Al salvataggio si sceglie
+    // se AVVISARE il caller o correggere in silenzio. Dal 05/08 il permesso
+    // sta nella ROTELLINA (cap corregge_turni, default amministrativo in su).
+    const canEditShift = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_CORREGGE, capPerms);
     // TIMELINE della giornata (Luca 31/07): dall'amministrativo in su il click
     // sulla riga apre il dettaglio — entrata, ogni pausa con durata, riprese,
     // uscita. I turni senza eventi (pre-mig. 110) mostrano il riepilogo.
