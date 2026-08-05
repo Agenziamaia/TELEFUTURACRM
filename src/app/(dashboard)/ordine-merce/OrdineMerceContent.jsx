@@ -365,6 +365,17 @@ const Pill = ({ label, color, bg, small }) => (
   }}>{label}</span>
 );
 
+/* ─── Chip ambra "richiesti X → inviati Y (+Z)" (titolare 05/08) ───
+   Helper chiamato come funzione (non componente): evidenzia l'evasione
+   MAGGIORATA, cioe' piu' pezzi inviati di quelli richiesti dal negozio. */
+const chipExtra = (richiesti, inviati) => (
+  <span style={{
+    display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 12,
+    fontSize: 10, fontWeight: 700, whiteSpace: "nowrap",
+    color: C.warning, background: C.warningBg, border: `1px solid ${C.warning}50`,
+  }}>richiesti {richiesti} → inviati {inviati} (+{inviati - richiesti})</span>
+);
+
 /* ═══ MAIN COMPONENT ═══ */
 export default function OrdineMerceContent({ role: propRole, myStore: propMyStore, myStores: propMyStores, seesAll: propSeesAll }) {
   const [roleState, setRoleState] = useState("store_manager");
@@ -588,6 +599,11 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
   // ORDINATA, un non-senso) — i casi sono tre: intera, parziale, non disponibile.
   const [parzialeIdx, setParzialeIdx] = useState(null);
   const [parzialeQty, setParzialeQty] = useState("");
+  // INVIA DI PIU' (titolare 05/08): l'amministrativo puo' evadere con PIU'
+  // pezzi di quelli richiesti (es. richiesti 10 → inviati 20). Vale SOLO in
+  // evasione, per chi gia' evade, a ordine inviato; la parziale resta identica.
+  const [maggioraIdx, setMaggioraIdx] = useState(null);
+  const [maggioraQty, setMaggioraQty] = useState("");
 
   // PANNELLO amministrazione (azioni, colonne, bulk): dipende dal RUOLO.
   const isAdmin = ["admin","dev","direttore_generale","amministrativo","back_office_caller","back_office"].includes(role || "");
@@ -789,8 +805,11 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
     const order = orders.find(o => o.id === oid);
     if (!order) return;
     const item = order.items[idx];
-    // evaso pieno = tutti i pezzi; parziale = quelli dichiarati; il resto azzera
-    const sent = newSt === "evaso" ? (item.qty ?? qtySent) : newSt === "parziale" ? qtySent : null;
+    // evaso = tutti i pezzi richiesti oppure, se l'amministrativo lo dichiara
+    // (qtySent esplicito), anche DI PIU' del richiesto — es. richiesti 10,
+    // inviati 20 (titolare 05/08: via il tetto al richiesto, solo in evasione);
+    // parziale = quelli dichiarati; il resto azzera.
+    const sent = newSt === "evaso" ? (qtySent ?? item.qty ?? null) : newSt === "parziale" ? qtySent : null;
     const { error } = await supabase.from("merchandise_order_items").update({
       item_status: newSt,
       qty_sent: sent,
@@ -1762,6 +1781,10 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
               const renderItemRow = (it) => {
                 const ist = ITEM_STATUS[it.itemStatus] || ITEM_STATUS.pending;
                 const mancano = it.itemStatus === "parziale" ? Math.max(0, (it.qty || 0) - (it.qtySent || 0)) : 0;
+                // MAGGIORATA (titolare 05/08): evasa con PIU' pezzi del richiesto
+                // — il negozio deve vederlo chiaro ("richiesti 10 · inviati 20")
+                const extraInviati = it.itemStatus === "evaso" && it.qtySent != null && it.qtySent > (it.qty || 0)
+                  ? it.qtySent - (it.qty || 0) : 0;
 
                 return (
                   <tr key={it._idx} style={{ background: ist.bg }}>
@@ -1774,7 +1797,9 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                     <td style={{ ...s.td, textAlign: "center", fontWeight: 700 }}>
                       {it.itemStatus === "parziale" && it.qtySent != null
                         ? <span style={{ color: C.info }} title={`Inviati ${it.qtySent} su ${it.qty}`}>{it.qtySent}/{it.qty}</span>
-                        : it.qty}
+                        : extraInviati > 0
+                          ? <span style={{ color: C.warning }} title={`Richiesti ${it.qty} · inviati ${it.qtySent} (+${extraInviati})`}>{it.qty} → {it.qtySent}</span>
+                          : it.qty}
                     </td>
                     <td style={s.td}><Pill {...ist} label={it.itemStatus === "parziale" && it.qtySent != null ? `Parziale ${it.qtySent}/${it.qty}` : ist.label} small /></td>
                     <td style={s.td}>
@@ -1789,6 +1814,9 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                         )
                       ) : it.itemStatus === "parziale" ? (
                         <span style={{ fontSize: 11, fontWeight: 700, color: C.warning }}>mancano {mancano} {mancano === 1 ? "pezzo" : "pezzi"}</span>
+                      ) : extraInviati > 0 ? (
+                        /* MAGGIORATA: stessa colonna dove la parziale dice "mancano N" */
+                        chipExtra(it.qty, it.qtySent)
                       ) : (
                         <span style={{ fontSize: 11, color: C.grayLight }}>—</span>
                       )}
@@ -1814,6 +1842,40 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                               <button style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: "transparent", border: `1px solid ${C.border}`, color: C.gray }}
                                 onClick={() => { setParzialeIdx(null); setParzialeQty(""); }}>✕</button>
                             </>
+                          ) : maggioraIdx === it._idx ? (
+                            (() => {
+                              /* INVIA DI PIU' (titolare 05/08): quanti pezzi PARTONO —
+                                 puo' SUPERARE il richiesto; sotto il richiesto c'e' 📤 Parziale */
+                              const richiesti = it.qty || 1;
+                              const n = parseInt(maggioraQty) || 0;
+                              return (
+                                <>
+                                  <div style={s.qtyControl}>
+                                    <button style={{ ...s.qtyBtn, width: 22, height: 22, fontSize: 13 }}
+                                      onClick={() => setMaggioraQty(String(Math.max(richiesti, n - 1)))}>−</button>
+                                    <input type="number" min={richiesti} value={maggioraQty} autoFocus
+                                      onChange={e => setMaggioraQty(e.target.value)}
+                                      onKeyDown={e => { if (e.key === "Escape") { setMaggioraIdx(null); setMaggioraQty(""); } }}
+                                      style={{ ...s.qtyInput, width: 44, height: 22, fontSize: 11 }} />
+                                    <button style={{ ...s.qtyBtn, width: 22, height: 22, fontSize: 13 }}
+                                      onClick={() => setMaggioraQty(String(Math.max(richiesti, n) + 1))}>+</button>
+                                  </div>
+                                  {n > richiesti
+                                    ? chipExtra(richiesti, n)
+                                    : <span style={{ fontSize: 10, color: C.grayLight, whiteSpace: "nowrap" }}>
+                                        {n === richiesti ? "pari al richiesto = evasione normale" : `richiesti ${richiesti} — sali col +`}
+                                      </span>}
+                                  <button style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: C.warning, color: "#111827" }}
+                                    onClick={() => {
+                                      if (!n || n < richiesti) { alert(`Qui dichiari di inviarne PIÙ del richiesto (minimo ${richiesti}). Per inviarne meno usa 📤 Parziale.`); return; }
+                                      updateItemStatus(order.id, it._idx, "evaso", n);
+                                      setMaggioraIdx(null); setMaggioraQty("");
+                                    }}>✓ Conferma</button>
+                                  <button style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: "transparent", border: `1px solid ${C.border}`, color: C.gray }}
+                                    onClick={() => { setMaggioraIdx(null); setMaggioraQty(""); }}>✕</button>
+                                </>
+                              );
+                            })()
                           ) : (
                             <>
                               {it.itemStatus !== "evaso" && (
@@ -1823,10 +1885,23 @@ export default function OrdineMerceContent({ role: propRole, myStore: propMyStor
                                 </button>
                               )}
                               {(it.qty || 0) > 1 && it.itemStatus !== "evaso" && (
-                                <button onClick={() => { setParzialeIdx(it._idx); setParzialeQty(it.qtySent ? String(it.qtySent) : ""); }}
+                                <button onClick={() => { setParzialeIdx(it._idx); setParzialeQty(it.qtySent ? String(it.qtySent) : ""); setMaggioraIdx(null); setMaggioraQty(""); }}
                                   title="Inviata una parte dei pezzi richiesti: dichiara quanti"
                                   style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: C.infoBg, color: C.info, border: `1px solid ${C.info}50` }}>
                                   📤 Parziale
+                                </button>
+                              )}
+                              {it.itemStatus !== "evaso" && (
+                                /* INVIA DI PIU' (titolare 05/08): evasione con piu' pezzi
+                                   del richiesto — es. richiesti 10 → inviati 20 (+10) */
+                                <button onClick={() => {
+                                  setMaggioraIdx(it._idx);
+                                  setMaggioraQty(String(it.qtySent && it.qtySent > (it.qty || 1) ? it.qtySent : (it.qty || 1) + 1));
+                                  setParzialeIdx(null); setParzialeQty("");
+                                }}
+                                  title="Invia PIÙ pezzi di quelli richiesti — es. richiesti 10 → inviati 20 (+10)"
+                                  style={{ ...s.btn, fontSize: 10, padding: "3px 8px", background: C.warningBg, color: C.warning, border: `1px solid ${C.warning}50` }}>
+                                  ⬆ Più pezzi
                                 </button>
                               )}
                               {it.itemStatus !== "ordinato" && it.itemStatus !== "evaso" && it.itemStatus !== "parziale" && (
