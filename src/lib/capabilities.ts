@@ -358,4 +358,43 @@ export const CAP_RICERCA_MODIFICA: CapGroupChoice = {
     },
 };
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
+// ─── CALENDARIO: ambito di visibilità degli appuntamenti (rotellina, 05/08) ──
+// Caso Alex Coviello (back office): vedeva TUTTI gli appuntamenti del call
+// center — ora il back office parte da "solo i propri" e l'ambito si decide
+// dalla rotellina. La priorità replica il codice storico del calendario.
+export const CAP_CALENDARIO_VISTA: CapGroupChoice = {
+    mode: "choice",
+    section: "/calendario",
+    sectionLabel: "Calendario",
+    caps: [
+        {
+            id: "tutti",
+            label: "Tutto il calendario",
+            desc: "Vede ogni appuntamento di ogni negozio e reparto, con tutti i filtri (punto vendita, consulente, fissato da).",
+            default: (r) => ["admin", "dev", "direttore_generale", "amministrativo"].includes(r),
+        },
+        {
+            id: "call_center",
+            label: "Appuntamenti del call center",
+            desc: "I propri più tutti quelli fissati dallo staff del call center (per chi lo dirige).",
+            default: (r) => r === "direttore_cc",
+        },
+        {
+            id: "negozio",
+            label: "Propri + negozio",
+            desc: "I propri (fissati da lui o a lui assegnati) più gli appuntamenti in negozio dei punti vendita in visibilità.",
+            // fotografia del codice storico per tutti gli altri ruoli; il back
+            // office caller ne resta FUORI (Luca 05/08: vede solo i suoi)
+            default: (r) => r !== "back_office_caller",
+        },
+    ],
+    // "propri" solo come fallback (pattern CAP_RICERCA_MODIFICA): niente
+    // doppioni nel radio della rotellina.
+    fallback: {
+        id: "propri",
+        label: "Solo i propri",
+        desc: "Vede soltanto gli appuntamenti che ha fissato lui o che gli sono assegnati come consulente.",
+    },
+};
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];

@@ -13,6 +13,8 @@ import { numeroNazionale } from "@/lib/telefono";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
+import { useRolePermissions } from "@/lib/usePermissions";
+import { capChoice, CAP_CALENDARIO_VISTA } from "@/lib/capabilities";
 import { fasciaLabel } from "@/lib/fasce";
 import { RicercaCliente } from "@/components/RicercaCliente";
 
@@ -556,10 +558,15 @@ export default function Calendario() {
     const daysInMonth = getDaysInMonth(viewYear, viewMonth);
     const firstDay = getFirstDayOfMonth(viewYear, viewMonth);
 
-    // Pieni poteri calendario: admin, dev, direzione e AMMINISTRAZIONE — nessuna
-    // differenza tra admin e amministrativo (regola Luca 25/07): vedono tutti gli
-    // appuntamenti e usano tutti i filtri (punto vendita, consulente, fissato da).
-    const isCallCenter = ["admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "");
+    // AMBITO DI VISIBILITÀ dalla ROTELLINA (Luca 05/08, caso Alex Coviello:
+    // il back office vedeva tutto il call center — ora default "solo i propri").
+    // Scelte: tutti / call_center / negozio / propri (fallback). I default
+    // fotografano il codice storico: admin+direzione+amministrazione = tutti,
+    // direttore_cc = call_center, il resto = negozio.
+    const { perms: calPerms } = useRolePermissions(user?.role, user?.grade);
+    const vistaCal = capChoice(user?.role, CAP_CALENDARIO_VISTA, calPerms);
+    // Pieni poteri calendario (tutti i filtri: punto vendita, consulente, fissato da)
+    const isCallCenter = vistaCal === "tutti";
     // Segnalazione "Non posso assegnare task a nessun collaboratore": l'assegnazione
     // era legata a isCallCenter (solo admin/dev), quindi ogni store manager vedeva
     // una casella in sola lettura col proprio nome. Ora vale la regola del CRM:
@@ -577,7 +584,9 @@ export default function Calendario() {
     // vede gli inbound del suo negozio; il caller vede quelli che ha fissato;
     // la direzione del call center vede tutti quelli presi dal call center.
     const ccStaff = useCallers();
-    const isDirezioneCc = ["direttore_cc", "back_office_caller"].includes(user?.role || "");
+    // "call_center" dalla rotellina (prima era hardcoded direttore_cc + back
+    // office; il back office ora parte da "solo i propri" — Luca 05/08)
+    const isDirezioneCc = vistaCal === "call_center";
     // FILTRI negozio/consulente ANCHE per chi ha più negozi in visibilità
     // (Luca 05/08): prima erano solo di admin/direzione — uno store manager
     // multi-negozio non poteva restringere il calendario.
@@ -593,8 +602,10 @@ export default function Calendario() {
         if (isDirezioneCc && a.createdBy && ccStaff.includes(a.createdBy)) return true;
         // Agent: own appointments, or inbound appointments for their store
         if (a.agente === user?.name) return true;
-        // Appuntamenti inbound di QUALSIASI negozio visibile (non solo il principale).
-        if (a.type === "incoming" && a.store && mieiNegozi.some((m) => sameStore(a.store, m))) return true;
+        // Appuntamenti inbound di QUALSIASI negozio visibile (non solo il
+        // principale) — SOLO con ambito "negozio": chi ha "propri" si ferma
+        // a fissati-da-me / assegnati-a-me (rotellina, Luca 05/08).
+        if (vistaCal === "negozio" && a.type === "incoming" && a.store && mieiNegozi.some((m) => sameStore(a.store, m))) return true;
         return false;
     };
     const visibleAppointments = appointments.filter(a => {
