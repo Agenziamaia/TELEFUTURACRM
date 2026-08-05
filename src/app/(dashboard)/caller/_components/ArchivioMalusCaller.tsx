@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { SelectPersona } from "@/components/SelectPersona";
-import type { EpisodioCaller } from "@/lib/callerMalus";
+import { giornoYmd, type EpisodioCaller, type MalusLive } from "@/lib/callerMalus";
 
 const eur = (n: number) => "€ " + (Math.round(n * 100) / 100).toLocaleString("it-IT");
 
@@ -48,11 +48,21 @@ export function ArchivioMalusCaller({
     puoCompensare,
     utente,
     soloCaller,
+    malusAttuali,
+    versione,
     onClose,
 }: {
     puoCompensare: boolean;
     utente: string;
     soloCaller?: string;
+    /** call_id → fotografia LIVE delle pratiche OGGI in fase malus (dalla
+     *  pagina): con questa gli in_corso vengono RICALCOLATI al volo lato
+     *  client — un in_corso la cui pratica non e' piu' in fase malus si mostra
+     *  gia' "Attivo — da scalare" con fine=oggi, coerente col filtro 💸, anche
+     *  quando chi guarda non scrive su caller_malus (non-direttori). */
+    malusAttuali?: Map<string, MalusLive> | null;
+    /** bump a sincronizzazione DB finita: fa ricaricare gli episodi POST-sync */
+    versione?: number;
     onClose: () => void;
 }) {
     const [episodi, setEpisodi] = useState<EpisodioCaller[]>([]);
@@ -69,7 +79,27 @@ export function ArchivioMalusCaller({
             setCaricato(true);
         });
     }, [soloCaller]);
-    useEffect(() => { carica(); }, [carica]);
+    // versione cambia quando la sincronizzazione della pagina ha finito di
+    // scrivere: si ricarica per mostrare i dati POST-sincronizzazione
+    useEffect(() => { void versione; carica(); }, [carica, versione]);
+
+    // Vista RICALCOLATA degli in_corso (stessa logica di sincronizzaMalusCaller,
+    // ma senza scritture): pratica ancora in malus con lo stesso `dal` →
+    // giorni/importo aggiornati a oggi; pratica NON piu' in malus → chiusura
+    // d'ufficio mostrata al volo (attivo, fine=oggi — l'importo resta da
+    // scalare). A DB scrive solo la sync dei direttori; qui e' solo la vista.
+    const episodiVista = useMemo(() => {
+        if (!malusAttuali) return episodi;
+        return episodi.map((e) => {
+            if (e.stato !== "in_corso") return e;
+            const live = malusAttuali.get(e.call_id);
+            if (live && live.dal === e.dal) {
+                if (live.giorni === Number(e.giorni) && live.importo === Number(e.importo)) return e;
+                return { ...e, giorni: live.giorni, importo: live.importo };
+            }
+            return { ...e, stato: "attivo" as const, al: giornoYmd(new Date()) };
+        });
+    }, [episodi, malusAttuali]);
 
     const [statoSel, setStatoSel] = useState<"tutti" | "in_corso" | "attivo" | "compensato">("tutti");
     const [callerSel, setCallerSel] = useState("");
@@ -81,7 +111,7 @@ export function ArchivioMalusCaller({
     // Filtri trasversali (ricerca + caller); le card di riepilogo filtrano lo stato.
     const filtratiBase = useMemo(() => {
         const q = search.trim().toLowerCase();
-        return episodi.filter((e) => {
+        return episodiVista.filter((e) => {
             if (callerSel && (e.caller || "—") !== callerSel) return false;
             if (q) {
                 const match = [e.caller, e.stato_pratica].some((v) => (v || "").toLowerCase().includes(q));
@@ -89,7 +119,7 @@ export function ArchivioMalusCaller({
             }
             return true;
         });
-    }, [episodi, callerSel, search]);
+    }, [episodiVista, callerSel, search]);
 
     const filtrati = useMemo(
         () => filtratiBase.filter((e) => statoSel === "tutti" || e.stato === statoSel),
@@ -109,8 +139,8 @@ export function ArchivioMalusCaller({
     }, [filtratiBase]);
 
     const callers = useMemo(
-        () => Array.from(new Set(episodi.map((e) => e.caller || "—"))).sort(),
-        [episodi]
+        () => Array.from(new Set(episodiVista.map((e) => e.caller || "—"))).sort(),
+        [episodiVista]
     );
 
     // Totali per collaboratore: quanto ha generato, quanto e' ancora da

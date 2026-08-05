@@ -128,6 +128,13 @@ export type EpisodioCaller = {
     compensato_il: string | null; compensato_da: string | null;
 };
 
+/** Fotografia LIVE di una pratica OGGI in fase malus (call_id → questi dati):
+ *  serve all'archivio per mostrare gli episodi in_corso RICALCOLATI al volo
+ *  lato client — stessa logica della sync, ma senza scritture (i non-direttori
+ *  non scrivono su caller_malus, eppure devono vedere l'archivio coerente col
+ *  filtro 💸 Malus della pagina). */
+export type MalusLive = { dal: string; giorni: number; importo: number };
+
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Allinea gli episodi alle pratiche: aggiorna gli in_corso, chiude (→ attivo)

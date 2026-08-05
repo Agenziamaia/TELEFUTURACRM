@@ -18,13 +18,14 @@ import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { useStores, useSellers, useCallers } from "@/lib/org";
+import { caricaTutte } from "@/lib/fetchTutte";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
-import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller } from "@/lib/callerMalus";
+import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller, type MalusLive } from "@/lib/callerMalus";
 import { CallerRegoleModal } from "@/components/CallerRegole";
 import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
 import { ArchivioMalusCaller } from "./_components/ArchivioMalusCaller";
@@ -569,16 +570,19 @@ function CallerPageInner() {
     const setCurrentView = (v: "calls" | "liste") => setView((p) => ({ ...p, currentView: v }));
 
     /* ── Fetchers ── */
+    // caricaTutte (05/08): la select secca veniva TRONCATA a 1000 righe da
+    // PostgREST in silenzio — con più di 1000 pratiche la sync malus non
+    // vedeva le più vecchie e poteva chiudere d'ufficio episodi ancora vivi.
     const fetchCalls = async () => {
-        const { data, error } = await supabase
-            .from("calls")
-            .select("*")
-            .order("data_chiamata", { ascending: false });
-        if (error) {
-            setLoadError(error.message);
-            setCalls([]);
-        } else {
+        try {
+            const { data } = await caricaTutte<Record<string, unknown>>((from, to) =>
+                supabase.from("calls").select("*")
+                    .order("data_chiamata", { ascending: false }).order("id", { ascending: false })
+                    .range(from, to));
             setCalls((data ?? []).map(mapRowToCall));
+        } catch (e) {
+            setLoadError(e instanceof Error ? e.message : String(e));
+            setCalls([]);
         }
     };
 
@@ -685,19 +689,56 @@ function CallerPageInner() {
     const puoRegoleCaller = ["admin", "dev"].includes(user?.role || "");
     const [showRegoleCaller, setShowRegoleCaller] = useState(false);
     const [showArchivioMalus, setShowArchivioMalus] = useState(false);
-    // sincronizzazione episodi (una volta per sessione, solo direzione/admin:
-    // vede tutte le pratiche, quindi l'archivio resta completo)
+    // ── SINCRONIZZAZIONE episodi caller_malus (rivista, Luca 05/08) ──
+    // Le SCRITTURE restano ai soli direttori/admin (vedono tutte le pratiche:
+    // l'archivio resta completo e la chiusura d'ufficio — in_corso senza fase
+    // malus attuale → attivo con al=oggi — non chiude mai per dati parziali).
+    // Prima girava una volta sola al mount: bastava che a visitare /caller
+    // fossero solo caller (o un direttore in "guarda come", che qui vale come
+    // ruolo EFFETTIVO e quindi non e' isDirector) perche' NESSUNO
+    // risincronizzasse — il ponte Aircall sposta data_chiamata, la pratica
+    // esce dalla fase malus, ma l'episodio restava "In corso" a DB: filtro
+    // vuoto e storico pieno (l'anomalia segnalata). Ora la sync parte appena
+    // i dati sono pronti E viene RIESEGUITA a ogni apertura dell'archivio;
+    // a sync finita malusSyncVersione fa ricaricare l'archivio (dati POST-
+    // sincronizzazione). Per i non-direttori niente scritture: l'archivio
+    // riceve malusAttuali e ricalcola lo stato al volo lato client.
     const malusSyncDone = useRef(false);
+    const malusSyncInCorso = useRef(false);
+    const [malusSyncVersione, setMalusSyncVersione] = useState(0);
+    const malusDatiPronti = regoleCaller.size > 0 && calls.length > 0 && badgePronto;
+    const eseguiSyncMalus = useCallback(async () => {
+        if (!isDirector || !malusDatiPronti || malusSyncInCorso.current) return;
+        malusSyncInCorso.current = true;
+        try {
+            const pratiche = calls.map((c) => {
+                const fi = faseInfo(c);
+                const r = regoleCaller.get(c.stato);
+                return { id: c.id, stato: c.stato, caller: c.caller, fase: fi.fase, giorniMalus: fi.giorniMalus, malusGiorno: r?.malus_giorno || 0, dalMalus: fi.dalMalus };
+            });
+            await sincronizzaMalusCaller(pratiche);
+            setMalusSyncVersione((v) => v + 1);
+        } finally { malusSyncInCorso.current = false; }
+    }, [isDirector, malusDatiPronti, calls, regoleCaller, faseInfo]);
     useEffect(() => {
-        if (malusSyncDone.current || !isDirector || !regoleCaller.size || !calls.length || !badgePronto) return;
+        if (malusSyncDone.current || !isDirector || !malusDatiPronti) return;
         malusSyncDone.current = true;
-        const pratiche = calls.map((c) => {
+        eseguiSyncMalus();
+    }, [isDirector, malusDatiPronti, eseguiSyncMalus]);
+    // Fotografia LIVE delle pratiche OGGI in fase malus: l'archivio la usa per
+    // mostrare gli in_corso ricalcolati (coerenti col filtro 💸) senza scrivere.
+    // Con dati non pronti (o fetch calls fallito) torna null: niente ricalcolo,
+    // mai "tutto chiuso" per un elenco pratiche vuoto per errore.
+    const malusAttuali = useMemo(() => {
+        if (!regoleCaller.size || !calls.length || !badgePronto) return null;
+        const m = new Map<string, MalusLive>();
+        calls.forEach((c) => {
             const fi = faseInfo(c);
-            const r = regoleCaller.get(c.stato);
-            return { id: c.id, stato: c.stato, caller: c.caller, fase: fi.fase, giorniMalus: fi.giorniMalus, malusGiorno: r?.malus_giorno || 0, dalMalus: fi.dalMalus };
+            if (fi.fase === "malus" && fi.dalMalus) m.set(c.id, { dal: giornoYmd(fi.dalMalus), giorni: fi.giorniMalus, importo: fi.importo });
         });
-        sincronizzaMalusCaller(pratiche);
-    }, [isDirector, regoleCaller, calls, faseInfo, badgePronto]);
+        return m;
+    }, [calls, regoleCaller, badgePronto, faseInfo]);
+    const apriArchivioMalus = useCallback(() => { setShowArchivioMalus(true); eseguiSyncMalus(); }, [eseguiSyncMalus]);
 
     const matchFiltri = (c: Call, ignoraBrand = false, ignoraFase = false) => {
         // le pratiche ASSORBITE (il cliente ha risposto su un'altra riga)
@@ -1883,36 +1924,56 @@ function CallerPageInner() {
                             </div>
 
                             {/* DA LAVORARE / WARNING / MALUS (Luca 31/07, stile Dragon PDA):
-                                contatori-filtro sul perimetro filtrato; ⚙️ regole (admin) e
-                                ⏱ archivio malus (direzione) in alto a destra della riga */}
+                                contatori-filtro sul perimetro filtrato; ⚙️ regole a destra.
+                                BOTTONE UNICO (Luca 05/08, come il tracking PDA): il bottone
+                                separato dell'archivio e' sparito — lo storico si apre dal
+                                bottoncino ⏱ DENTRO la card-filtro 💸 Malus. Le card sono div
+                                role=button perche' un button annidato in un button e' HTML
+                                non valido (stessa scelta del tracking). */}
                             <div className="flex gap-3 items-stretch">
                                 {([
                                     ["da_lavorare", "📋 Da Lavorare", faseCounts.da_lavorare, "border-sky-500/40 bg-sky-500/10 text-sky-300"],
                                     ["warning", "⚠️ Warning", faseCounts.warning, "border-amber-500/40 bg-amber-500/10 text-amber-300"],
                                     ["malus", "💸 Malus", faseCounts.malus, "border-rose-500/40 bg-rose-500/10 text-rose-300"],
                                 ] as const).map(([k, l, n, cls]) => (
-                                    <button key={k} onClick={() => setFaseFilter(faseFilter === k ? "" : k)}
+                                    <div key={k} role="button" tabIndex={0}
+                                        onClick={() => setFaseFilter(faseFilter === k ? "" : k)}
+                                        onKeyDown={(e) => e.key === "Enter" && setFaseFilter(faseFilter === k ? "" : k)}
                                         title={faseFilter === k ? "Filtro attivo — clicca per toglierlo" : `Mostra solo le pratiche ${l}`}
-                                        className={`flex-1 rounded-2xl border px-3 py-3 text-left transition-all ${cls} ${faseFilter === k ? "ring-2 ring-white/30 brightness-125" : faseFilter ? "opacity-50 hover:opacity-80" : "hover:brightness-110"}`}>
-                                        <div className="text-sm font-bold">{l}</div>
+                                        className={`flex-1 rounded-2xl border px-3 py-3 text-left cursor-pointer select-none transition-all ${cls} ${faseFilter === k ? "ring-2 ring-white/30 brightness-125" : faseFilter ? "opacity-50 hover:opacity-80" : "hover:brightness-110"}`}>
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="text-sm font-bold">{l}</div>
+                                            {/* ⏱ storico dentro la card: stopPropagation, il click NON
+                                                deve attivare/disattivare il filtro. Visibile a tutti come
+                                                il vecchio bottone: per i caller resta "il tuo storico"
+                                                (soloCaller), per la direzione l'archivio completo */}
+                                            {k === "malus" && (
+                                                <span role="button" tabIndex={0}
+                                                    onClick={(e) => { e.stopPropagation(); apriArchivioMalus(); }}
+                                                    onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); apriArchivioMalus(); } }}
+                                                    title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"}
+                                                    className="text-[10px] font-bold underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100 whitespace-nowrap leading-tight mt-0.5">
+                                                    ⏱ Storico →
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-2xl font-black tabular-nums leading-tight">{n}</div>
                                         {k === "malus" && isDirector && faseCounts.importo > 0 && (
                                             <div className="text-[11px] font-semibold">−{faseCounts.importo.toFixed(2).replace(".", ",")} € maturati</div>
                                         )}
-                                    </button>
+                                    </div>
                                 ))}
                                 <div className="flex flex-col gap-2 justify-center">
-                                    {/* lo STORICO ce l'hanno anche i caller (Luca 31/07, come il
-                                        tracking PDA): ognuno vede solo i propri episodi */}
-                                    <button onClick={() => setShowArchivioMalus(true)} title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⏱ {isDirector ? "Malus" : "Storico"}</button>
                                     {/* regole VISIBILI a tutti (Luca 31/07); i giorni li tocca solo l'admin */}
                                     <button onClick={() => setShowRegoleCaller(true)} title={puoRegoleCaller ? "Regole: giorni e malus giornaliero per stato" : "Le regole di lavorazione (sola lettura)"} className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>
                                 </div>
                             </div>
                             {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} soloLettura={!puoRegoleCaller} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
                             {/* storico malus nel LINGUAGGIO di Ricerca Vendite (Luca 05/08):
-                                card-filtro, totali per collaboratore, tabella episodi */}
-                            {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} onClose={() => setShowArchivioMalus(false)} />}
+                                card-filtro, totali per collaboratore, tabella episodi.
+                                malusAttuali = vista coerente col filtro anche senza scritture;
+                                versione = ricarica a sincronizzazione finita (dati POST-sync) */}
+                            {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} malusAttuali={malusAttuali} versione={malusSyncVersione} onClose={() => setShowArchivioMalus(false)} />}
 
                             {/* Filter bar */}
                             <div className="glass-panel p-5">
