@@ -4123,18 +4123,25 @@ const SubCard = ({sub,rawSd,group,si,sessionCode,sale,uF,uC,uP,catSales,anaCel,o
 // campi del promemoria non avevano ne' value ne' onChange, quindi quello che
 // l'operatore scriveva restava nel DOM e spariva al salvataggio: 0 contratti su
 // 62 avevano una nota. Ora lo stato vive nel genitore e viene salvato.
-const NoteStep = ({store,show,setShow,nota,setNota,pData,setPData,pOra,setPOra,pNeg,setPNeg,pDesc,setPDesc}) => {
+// SCELTA ESPLICITA Sì/NO (Luca 05/08): prima il "No" sembrava gia' flaggato
+// (i bottoni coloravano sul booleano notaOn, che parte a false) e lo step non
+// risultava mai "completo". Ora `scelta` e' un tri-stato null|"si"|"no":
+// NESSUN bottone preselezionato; appena l'operatore ne flagga uno lo step
+// diventa verde nella barra e compare "Vai al carrello →" nel footer.
+const NoteStep = ({store,show,setShow,scelta,setScelta,nota,setNota,pData,setPData,pOra,setPOra,pNeg,setPNeg,pDesc,setPDesc}) => {
   const negozioPro=pNeg, setNegozioPro=setPNeg;
   useEffect(()=>{if(store)setNegozioPro(p=>p||store);},[store]);
+  const si=scelta==="si", no=scelta==="no";
   const content = (
     <div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #e83e8c",boxShadow:"var(--rv-shadow)"}}>
       <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e83e8c)",marginBottom:14,textTransform:"uppercase"}}>📝 Step 7 — Note / Promemoria</div>
       <div style={{textAlign:"center",marginBottom:show?16:0}}>
-        <div style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",marginBottom:10}}>Nota o promemoria?</div>
+        <div style={{fontSize:13,fontWeight:600,color:"var(--tf-f8fafc)",marginBottom:10}}>Vuoi aggiungere delle note?</div>
         <div style={{display:"flex",gap:10,justifyContent:"center"}}>
-          <button onClick={()=>setShow(true)} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:show?"2px solid #28a745":"2px solid var(--tf-w100)",background:show?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:show?"var(--tf-28a745)":"var(--tf-8892b0)"}}>Sì</button>
-          <button onClick={()=>setShow(false)} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:!show?"2px solid #dc3545":"2px solid var(--tf-w100)",background:!show?"rgba(220,53,69,0.12)":"var(--tf-w40)",color:!show?"var(--tf-f87171)":"var(--tf-8892b0)"}}>No</button>
+          <button onClick={()=>{setScelta("si");setShow(true);}} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:si?"2px solid #28a745":"2px solid var(--tf-w100)",background:si?"rgba(40,167,69,0.12)":"var(--tf-w40)",color:si?"var(--tf-28a745)":"var(--tf-8892b0)"}}>Sì</button>
+          <button onClick={()=>{setScelta("no");setShow(false);}} style={{padding:"8px 28px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",border:no?"2px solid #dc3545":"2px solid var(--tf-w100)",background:no?"rgba(220,53,69,0.12)":"var(--tf-w40)",color:no?"var(--tf-f87171)":"var(--tf-8892b0)"}}>No</button>
         </div>
+        {!scelta&&<div style={{fontSize:11,color:"var(--tf-64748b)",marginTop:8}}>Scegli Sì o No per completare lo step</div>}
       </div>
       {show&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
         <div style={{border:"1px solid var(--tf-w100)",borderRadius:10,padding:14,background:"var(--tf-w30)"}}><div style={{fontSize:13,fontWeight:700,marginBottom:8}}>📋 Nota</div><textarea placeholder="Nota…" rows={3} value={nota} onChange={e=>setNota(e.target.value)} style={{width:"100%",padding:"8px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/></div>
@@ -4213,6 +4220,11 @@ function CRM() {
   useEffect(()=>{setStepVisti(p=>p[vistaStep]?p:{...p,[vistaStep]:true});},[vistaStep]);
   // Step 7 — nota e promemoria (segnalazione 21)
   const [notaOn,setNotaOn]=useState(false);
+  // Scelta ESPLICITA Sì/No sulle note (Luca 05/08): null = non ancora scelto.
+  // Lo step Note e' "completo" (cerchio verde + bottone "Vai al carrello")
+  // SOLO dopo la scelta; notaOn resta il booleano usato dal submit e viene
+  // tenuto in sincrono (si -> true, no -> false).
+  const [notaScelta,setNotaScelta]=useState(null);
   const [nota,setNota]=useState("");
   const [promData,setPromData]=useState("");
   const [promOra,setPromOra]=useState("");
@@ -4228,26 +4240,33 @@ function CRM() {
   // NB: materializzare SUBITO la FileList. Se si costruisce l'array dentro
   // l'updater di setState, quando l'updater viene eseguito l'input e' gia' stato
   // svuotato (e.target.value="") e la FileList risulta vuota.
-  const addFiles = (fileList, type) => {
-    const nf = Array.from(fileList || []).map(file => ({ file, name: file.name, type }));
+  // ALLEGATI PER CONTRATTO (Luca 05/08): contratto/altro portano una `rowKey`
+  // (la chiave della riga di carrello a cui appartengono); documento/fattura
+  // restano a livello carrello (rowKey null) e valgono per tutta la vendita.
+  const addFiles = (fileList, type, rowKey = null) => {
+    const nf = Array.from(fileList || []).map(file => ({ file, name: file.name, type, rowKey: rowKey || null }));
     if (nf.length) setAttachments(prev => [...prev, ...nf]);
     return nf.length;
   };
-  const handleFileChange = (e, type) => { addFiles(e.target.files, type); e.target.value = ""; };
+  const handleFileChange = (e, type, rowKey = null) => { addFiles(e.target.files, type, rowKey); e.target.value = ""; };
   // Trascinamento file sulle caselle Documento / Contratti / Altro (richiesta Francesco).
+  // dragBox contiene l'ID univoco della casella (tipo + rowKey), perche' ora
+  // le caselle Contratto/Altro sono UNA PER RIGA di carrello.
   const [dragBox, setDragBox] = useState(null);   // quale casella e' sotto il cursore
-  const onBoxDragOver = (e, t) => { e.preventDefault(); e.stopPropagation(); if (dragBox !== t) setDragBox(t); };
+  const boxIdDi = (t, rowKey) => t + "::" + (rowKey || "");
+  const onBoxDragOver = (e, boxId) => { e.preventDefault(); e.stopPropagation(); if (dragBox !== boxId) setDragBox(boxId); };
   const onBoxDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setDragBox(null); };
-  const onBoxDrop = (e, t) => {
+  const onBoxDrop = (e, t, rowKey = null) => {
     e.preventDefault(); e.stopPropagation(); setDragBox(null);
     const dt = e.dataTransfer;
-    if (dt && dt.files && dt.files.length) addFiles(dt.files, t);
+    if (dt && dt.files && dt.files.length) addFiles(dt.files, t, rowKey);
   };
   // ── Carica dal telefono via QR ─────────────────────────────────────
   // Crea una sessione effimera, mostra un QR; il telefono apre /m/u/<token>,
   // carica il file (foto per Documento, PDF per gli altri) e il desktop lo tira
   // dentro `attachments` come un normale allegato (stesso salvataggio al submit).
   const [qrBox, setQrBox] = useState(null);     // tipo casella con QR aperto
+  const [qrRow, setQrRow] = useState(null);     // rowKey della riga (caselle per-contratto)
   const [qrToken, setQrToken] = useState(null);
   const [qrImg, setQrImg] = useState(null);     // dataURL del QR
   const [qrRecv, setQrRecv] = useState(null);   // {name} a ricezione avvenuta
@@ -4263,7 +4282,7 @@ function CRM() {
     catch { /* file non disponibile */ }
   };
   const chiudiAnteprima = () => { if (preview?.url) { try { URL.revokeObjectURL(preview.url); } catch { } } setPreview(null); };
-  const openQr = async (type) => {
+  const openQr = async (type, rowKey = null) => {
     try {
       const token = (window.crypto?.randomUUID?.() || (Date.now() + "-" + Math.random().toString(36).slice(2)));
       // documento = solo foto (una o piu'); contratti/altro = foto o scansione PDF
@@ -4272,10 +4291,10 @@ function CRM() {
       if (error) { alert("QR non generato: " + error.message); return; }
       const url = `${window.location.origin}/m/u/${token}`;
       const img = await QRCode.toDataURL(url, { width: 240, margin: 1 });
-      setQrBox(type); setQrToken(token); setQrImg(img); setQrRecv(null);
+      setQrBox(type); setQrRow(rowKey || null); setQrToken(token); setQrImg(img); setQrRecv(null);
     } catch (e) { alert("QR non generato: " + (e?.message || e)); }
   };
-  const closeQr = () => { setQrBox(null); setQrToken(null); setQrImg(null); setQrRecv(null); };
+  const closeQr = () => { setQrBox(null); setQrRow(null); setQrToken(null); setQrImg(null); setQrRecv(null); };
   useEffect(() => {
     if (!qrToken) return;
     let alive = true;
@@ -4290,7 +4309,7 @@ function CRM() {
             const resp = await fetch(f.url);
             const blob = await resp.blob();
             const file = new File([blob], f.name || "allegato", { type: f.mime || blob.type });
-            setAttachments(p => [...p, { file, name: file.name, type: qrBox }]);
+            setAttachments(p => [...p, { file, name: file.name, type: qrBox, rowKey: qrRow || null }]);
           }
           setQrRecv({ n: files.length });
         } catch (e) { alert("Ricezione file non riuscita: " + (e?.message || e)); }
@@ -4306,7 +4325,7 @@ function CRM() {
       }
     }, 2000);
     return () => { alive = false; clearInterval(t); };
-  }, [qrToken, qrBox]);
+  }, [qrToken, qrBox, qrRow]);
   const [draftLoaded,setDraftLoaded]=useState(false);
   const [showCart,setShowCart]=useState(false);
   // DRAWER carrello (revamp 03/08): il riepilogo live si apre su QUALSIASI
@@ -4434,6 +4453,9 @@ function CRM() {
   const catAperta=(g)=>catOpen[g.id]!==undefined?catOpen[g.id]:(nessunaSelezione||catHaSelezione(g));
   const togCat=(g)=>setCatOpen(p=>{const cur=p[g.id]!==undefined?p[g.id]:(nessunaSelezione||catHaSelezione(g));return {...p,[g.id]:!cur};});
   const sT=m=>{setToast(m);setTimeout(()=>setToast(null),3500)};
+  // alias: sei punti del percorso marginalità chiamavano showToast MAI definito
+  // (@ts-nocheck lo nascondeva → ReferenceError a runtime, scoperto 05/08)
+  const showToast=sT;
   const uA=(k,v)=>setAna(p=>({...p,[k]:v}));
   const gS=catId=>sales[catId]||[{}];
   const _reqReg=useRef({});
@@ -4538,14 +4560,14 @@ function CRM() {
   // stessa logica storica — conferma se c'e' lavoro fuori carrello, ripresa
   // del gruppo dal carrello se il brand c'era gia'.
   const _pickBrand=(b)=>{if(!b.ready)return;if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;setMargFlow(false);const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
-  const fullReset=()=>{setMargFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  const fullReset=()=>{setMargFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNotaScelta(null);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
     setSelVend(user?.name||"");setSelNeg(user?.negozio||"");};
   // ── Auto-save every state change (solo dopo il ripristino della bozza) ──
   // #118: si salva l'intera vendita in corso (brand, prodotti, carrello, flusso).
-  useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,cart,selVend,selNeg,lookupValue,margItems,clienteFound,lookupDone,showAna,showStep4,notaOn,nota,promData,promOra,promNeg,promDesc,turista},draftLoaded);
+  useAutoSave("crm_v9",{brand,tipoCliente,ana,sales,sesCode,skyS,cart,selVend,selNeg,lookupValue,margItems,clienteFound,lookupDone,showAna,showStep4,notaOn,notaScelta,nota,promData,promOra,promNeg,promDesc,turista},draftLoaded);
 
   // ── Load draft on mount (once) ──
   // #118: ripristino COMPLETO della vendita in corso. Prima si ricaricava solo un
@@ -4565,6 +4587,12 @@ function CRM() {
     if(typeof d.showAna==="boolean")setShowAna(d.showAna);
     if(typeof d.showStep4==="boolean")setShowStep4(d.showStep4);
     if(typeof d.notaOn==="boolean")setNotaOn(d.notaOn);if(d.nota)setNota(d.nota);
+    // MIGRAZIONE bozze (05/08): le bozze vecchie non hanno notaScelta. Se
+    // l'operatore aveva gia' attivato le note (notaOn=true) la scelta era
+    // esplicita -> "si"; il vecchio "no" era preselezionato di default e NON
+    // vale come scelta: resta null e va riflaggato. Valori sconosciuti ignorati.
+    if(d.notaScelta==="si"||d.notaScelta==="no")setNotaScelta(d.notaScelta);
+    else if(d.notaOn===true)setNotaScelta("si");
     if(d.promData)setPromData(d.promData);if(d.promOra)setPromOra(d.promOra);
     if(d.promNeg)setPromNeg(d.promNeg);if(d.promDesc)setPromDesc(d.promDesc);
   }},[]);
@@ -4810,17 +4838,106 @@ function CRM() {
   // tutti e 5 gli step superati — sono state salvate vendite SENZA documento
   // del cliente e senza contratto, saltando Allegati/Attribuzione dal
   // riepilogo. Documento + contratto sono OBBLIGATORI.
+  // ── RIGHE DI CARRELLO = CONTRATTI (Luca 05/08) ─────────────────────────
+  // Ogni offerta selezionata e' UN contratto e vuole i SUOI allegati: qui si
+  // enumerano le righe (gruppi del carrello + brand in corso, nello STESSO
+  // ordine del submit) con una chiave deterministica brand+offerta+occorrenza.
+  // La stessa enumerazione gira nel submit per mappare riga -> contract_id
+  // senza ambiguita' (l'id contratto e' generato lato client PRIMA dell'insert).
+  const _etichettaRiga = (it) => String((it && it.catalogo && it.catalogo.offerta) || (it && it.sub) || "prodotto");
+  const righeCarrello = () => {
+    const gruppi = [...cart];
+    const curI = colItems();
+    if (curI.length > 0 && bObj) gruppi.push({ brandId: brand, brandLabel: bObj.label, brandIcon: bObj.icon, brandColor: bObj.color, items: curI, isCurrent: true });
+    const rows = []; const conta = {};
+    gruppi.forEach(g => (g.items || []).forEach(it => {
+      const base = String(g.brandId || "") + "::" + _etichettaRiga(it);
+      conta[base] = (conta[base] || 0) + 1;
+      rows.push({ key: base + "::" + conta[base], base, nCopia: conta[base], brandId: g.brandId, brandLabel: g.brandLabel, brandIcon: g.brandIcon, brandColor: g.brandColor, isCurrent: !!g.isCurrent, label: _etichettaRiga(it), sky: String(g.brandId || "").toLowerCase() === "sky" });
+    }));
+    rows.forEach(r => { r.multi = (conta[r.base] || 0) > 1; });
+    return rows;
+  };
+  // allegati di contratto/altro la cui riga non esiste piu' (riga eliminata o
+  // offerta cambiata dopo l'upload): non si perdono — restano visibili in una
+  // lista a parte e al submit finiscono sul PRIMO contratto (fallback storico)
+  const allegatiOrfani = () => {
+    const chiavi = {}; righeCarrello().forEach(r => { chiavi[r.key] = true; });
+    return attachments.map((a, i) => ({ a, i })).filter(({ a }) => (a.type === "contratti" || a.type === "altro") && !chiavi[a.rowKey || ""]);
+  };
+  // GEMELLE (verifica avversaria 05/08): tra offerte IDENTICHE dello stesso
+  // brand la chiave e' posizionale (::1, ::2…) — se una gemella sparisce dopo
+  // l'upload, la superstite EREDITEREBBE in silenzio il contratto della riga
+  // cancellata (PDF firmato sulla pratica sbagliata). Quando il numero di
+  // gemelle di un'etichetta SCENDE, gli allegati di quell'etichetta si
+  // STACCANO (rowKey azzerata → lista "da ricollegare", il gate torna rosso):
+  // meglio un riaggancio esplicito che un documento legale sbagliato.
+  const _gemelleRef = useRef({});
+  useEffect(() => {
+    const conta = {};
+    righeCarrello().forEach(r => { conta[r.base] = (conta[r.base] || 0) + 1; });
+    const prima = _gemelleRef.current || {};
+    const calate = Object.keys(prima).filter(b => prima[b] > 1 && (conta[b] || 0) < prima[b]);
+    if (calate.length) {
+      setAttachments(p => p.map(a => (a.type === "contratti" || a.type === "altro") && a.rowKey && calate.some(b => String(a.rowKey).indexOf(b + "::") === 0)
+        ? { ...a, rowKey: "" } : a));
+      showToast("⚠️ Hai tolto una di più offerte identiche: ricollega i contratti alle righe giuste (lista allegati da ricollegare).");
+    }
+    _gemelleRef.current = conta;
+  });
+  // ── Renderer dello step Allegati (FUNZIONI chiamate nel JSX, mai componenti
+  // dentro il componente: si perderebbe il focus a ogni render) ─────────────
+  // Casella di upload (click, drag&drop, QR): per documento/fattura rowKey e'
+  // null (livello carrello), per contratto/altro e' la chiave della riga.
+  const boxAllegato = (a, rowKey = null, notaBox = null) => {
+    const boxId = boxIdDi(a.t, rowKey);
+    const cnt = attachments.filter(x => x.type === a.t && ((a.t === "contratti" || a.t === "altro") ? (x.rowKey || "") === (rowKey || "") : true)).length;
+    const over = dragBox === boxId;
+    return <label key={boxId}
+      onDragOver={e => onBoxDragOver(e, boxId)} onDragEnter={e => onBoxDragOver(e, boxId)}
+      onDragLeave={onBoxDragLeave} onDrop={e => onBoxDrop(e, a.t, rowKey)}
+      style={{ display: "block", border: "2px dashed " + (over ? "var(--tf-17a2b8)" : (cnt > 0 ? "rgba(23,162,184,0.55)" : "var(--tf-w100)")), borderRadius: 10, padding: "14px 10px", textAlign: "center", cursor: "pointer", background: over ? "rgba(23,162,184,0.22)" : (cnt > 0 ? "rgba(23,162,184,0.08)" : "var(--tf-w30)"), transform: over ? "scale(1.02)" : "none", transition: "all .12s" }}>
+      <input type="file" multiple onChange={e => handleFileChange(e, a.t, rowKey)} style={{ display: "none" }} />
+      <div style={{ fontSize: 24, marginBottom: 4 }}>{a.i}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6 }}>{a.l}</div>
+      <div style={{ display: "inline-flex", gap: 6, alignItems: "center", justifyContent: "center" }}>
+        <span style={{ display: "inline-block", padding: "5px 14px", borderRadius: 6, background: "var(--tf-17a2b8)", color: "#fff", fontSize: 10, fontWeight: 700 }}>Carica</span>
+        <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); openQr(a.t, rowKey); }} title="Carica dal telefono via QR" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 6, background: "rgba(23,162,184,0.12)", border: "1px solid rgba(23,162,184,0.5)", color: "var(--tf-5fd3e6)", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>📱 QR</button>
+      </div>
+      <div style={{ fontSize: 9, color: "var(--tf-64748b)", marginTop: 5 }}>{over ? "Rilascia qui" : "o trascina i file"}</div>
+      {notaBox && <div style={{ fontSize: 9, fontWeight: 700, color: "var(--tf-8892b0)", marginTop: 4 }}>{notaBox}</div>}
+      {cnt > 0 && <div style={{ marginTop: 6, fontSize: 10, color: "var(--tf-17a2b8)", fontWeight: 700 }}>{cnt} file</div>}
+    </label>;
+  };
+  // Lista file: `voci` = [{a: allegato, i: indice REALE in attachments}] cosi'
+  // la ✕ rimuove l'elemento giusto anche dentro le liste filtrate per riga.
+  const listaFileAllegati = (voci) => !voci.length ? null : (
+    <div style={{ marginTop: 10, padding: 10, background: "var(--tf-w30)", borderRadius: 8, border: "1px solid var(--tf-w60)" }}>
+      {voci.map(({ a: file, i: fi }, k) => <div key={fi} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 0", borderBottom: k < voci.length - 1 ? "1px solid var(--tf-w50)" : "none" }}>
+        <div style={{ fontSize: 11, color: "var(--tf-f8fafc)" }}>
+          <span onClick={() => apriAnteprima(file)} title="Anteprima" style={{ cursor: "pointer", textDecoration: "underline", textDecorationColor: "var(--tf-w300)", textUnderlineOffset: 2 }}>{file.name}</span>
+          {" "}<span style={{ color: "var(--tf-64748b)", fontSize: 10 }}>· {file.type}</span>
+          {file.reused && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 800, color: "var(--tf-34d399)", background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.4)", borderRadius: 999, padding: "1px 8px" }}>♻️ dall&apos;archivio</span>}
+        </div>
+        <button type="button" onClick={() => setAttachments(p => p.filter((_, j) => j !== fi))} style={{ background: "none", border: "none", color: "var(--tf-dc3545)", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>✕</button>
+      </div>)}
+    </div>
+  );
   const mancanzeVendita = () => {
     const m = [];
     if (!attachments.some(a => a.type === "documento")) m.push("🪪 documento del cliente (step Allegati)");
-    // ECCEZIONE SKY (Luca 04/08): Sky non rilascia il contratto — su vendite
-    // di SOLO Sky l'unico obbligo è il documento; se nel carrello c'è anche
-    // un altro brand, il contratto resta obbligatorio (serve per quello).
-    const _brands = [...cart.map(g => g.brandId), ...(brand && colItems().length ? [brand] : [])];
-    const _soloSky = _brands.length > 0 && _brands.every(b => b === "sky");
-    if (!_soloSky && !attachments.some(a => a.type === "contratti")) m.push("📄 contratto firmato (step Allegati)");
+    // CONTRATTO PER OGNI RIGA (Luca 05/08): ogni offerta non-Sky del carrello
+    // vuole il SUO upload di contratto, agganciato alla riga (rowKey).
+    // ECCEZIONE SKY (Luca 04/08): Sky non rilascia il contratto — le righe
+    // Sky non lo richiedono mai (la casella resta disponibile, facoltativa).
+    righeCarrello().forEach(r => {
+      if (r.sky) return;
+      if (!attachments.some(a => a.type === "contratti" && (a.rowKey || "") === r.key))
+        m.push(`📄 contratto per ${r.brandLabel} — ${r.label}${r.multi ? " (n°" + r.nCopia + ")" : ""} (step Allegati)`);
+    });
     if (!selVend || !selNeg || !dataVendita) m.push("🏪 attribuzione: venditore, negozio e data");
-    if (!stepVisti.note) m.push("📝 passaggio dallo step Note");
+    // scelta ESPLICITA Sì/No sulle note (Luca 05/08): non basta passare dallo step
+    if (!notaScelta) m.push("📝 la scelta Sì/No sulle note (step Note)");
     // Bug indirizzo (Luca 04/08): la via resta facoltativa, ma se è compilata
     // SENZA numero civico l'anagrafica va completata prima di salvare.
     if (String(ana.via || "").trim() && civicoMancante(ana.via)) m.push("🏠 numero civico nell'indirizzo (step Cliente)");
@@ -4992,7 +5109,7 @@ function CRM() {
         // RIUSO ARCHIVIO (Luca 05/08): l'allegato punta a un file GIA' nel
         // bucket — niente nuovo upload, si riaggancia lo stesso file_url al
         // contratto di questa vendita (nessun doppione in storage).
-        if (att.reused && att.url) { uploadedFiles.push({ url: att.url, name: att.name, type: att.type }); continue; }
+        if (att.reused && att.url) { uploadedFiles.push({ url: att.url, name: att.name, type: att.type, rowKey: att.rowKey || null }); continue; }
         const fileExt = att.name.split(".").pop();
         const fileName = `${clientId}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
         const filePath = `${clientId}/${fileName}`;
@@ -5006,7 +5123,7 @@ function CRM() {
           uploadFailCount++;
         } else {
           const { data: { publicUrl } } = supabase.storage.from("contracts").getPublicUrl(filePath);
-          uploadedFiles.push({ url: publicUrl, name: att.name, type: att.type });
+          uploadedFiles.push({ url: publicUrl, name: att.name, type: att.type, rowKey: att.rowKey || null });
         }
       }
       if (uploadFailCount > 0) {
@@ -5017,6 +5134,14 @@ function CRM() {
       const contractRows = [];
       const dateStr = dataVendita || new Date().toISOString().split("T")[0];
 
+      // MAPPA riga carrello -> contract_id (Luca 05/08): l'id del contratto e'
+      // generato QUI, prima dell'insert, quindi non serve fidarsi dell'ordine
+      // delle righe restituite dal DB. La chiave e' la STESSA enumerazione
+      // deterministica di righeCarrello() (fc = [...cart] + brand in corso,
+      // stessi gruppi nello stesso ordine, stessa etichetta, stessa occorrenza).
+      const _ctrIdPerRiga = {};   // rowKey -> contract id
+      const _contaRighe = {};
+      const _energiaIds = [];     // contratti energia: ci va la fattura
       fc.forEach(group => {
         (group.items || []).forEach((item) => {
           // Segnalazione 39: la colonna "Codice attivazione" funzionava solo per
@@ -5050,8 +5175,14 @@ function CRM() {
           const _ctrl = controlliDi(item.details);
           const mobileSemplice = macroId === "mobile" && !_ctrl.includes("mnp") && !_ctrl.includes("finanziamento");
           const giaAttivo = /sostituzione|sost /i.test(String(item.sub || "")) || macroId === "extra" || mobileSemplice;
+          // chiave riga identica a righeCarrello(): brand + etichetta + occorrenza
+          const _rigaBase = String(group.brandId || "") + "::" + _etichettaRiga(item);
+          _contaRighe[_rigaBase] = (_contaRighe[_rigaBase] || 0) + 1;
+          const _ctrId = `CTR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+          _ctrIdPerRiga[_rigaBase + "::" + _contaRighe[_rigaBase]] = _ctrId;
+          if (macroId === "energia") _energiaIds.push(_ctrId);
           contractRows.push({
-            id: `CTR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
+            id: _ctrId,
             client_id: clientId,
             data: dateStr,
             brand: group.brandLabel,
@@ -5126,17 +5257,27 @@ function CRM() {
 
       // 5. Insert contracts then link attachments
       if (contractRows.length > 0) {
-        const { data: createdContracts, error: contractErr } = await supabase.from("contracts").insert(contractRows).select();
+        const { error: contractErr } = await supabase.from("contracts").insert(contractRows);
         if (contractErr) throw contractErr;
 
-        if (uploadedFiles.length > 0 && createdContracts && createdContracts.length > 0) {
-          const firstContractId = createdContracts[0].id;
-          const attendanceRows = uploadedFiles.map(f => ({
-            contract_id: firstContractId,
-            file_url: f.url,
-            file_name: f.name,
-            file_type: f.type
-          }));
+        // ALLEGATI PER CONTRATTO (Luca 05/08): prima TUTTI gli allegati
+        // finivano sul primo contratto del carrello. Ora:
+        //  - documento d'identita' (caricato o riusato): replicato su OGNI
+        //    contratto della vendita (stesso file_url, una riga per contratto)
+        //    cosi' ogni contratto e' completo nel modale di Ricerca Vendite;
+        //  - contratto/altro: sulla riga corrispondente via rowKey; se la
+        //    riga non esiste piu' (orfano) fallback sul primo contratto;
+        //  - fattura (energia): sui contratti energia, o primo se non ce ne sono.
+        if (uploadedFiles.length > 0) {
+          const _tuttiIds = contractRows.map(r => r.id);
+          const _primoId = _tuttiIds[0];
+          const attendanceRows = [];
+          uploadedFiles.forEach(f => {
+            const aggiungi = (cid) => attendanceRows.push({ contract_id: cid, file_url: f.url, file_name: f.name, file_type: f.type });
+            if (f.type === "documento") _tuttiIds.forEach(aggiungi);
+            else if (f.type === "fattura") (_energiaIds.length ? _energiaIds : [_primoId]).forEach(aggiungi);
+            else aggiungi((f.rowKey && _ctrIdPerRiga[f.rowKey]) || _primoId);
+          });
           const { error: attErr } = await supabase.from("contract_attachments").insert(attendanceRows);
           if (attErr) console.error("Attachment Meta Error:", attErr);
         }
@@ -5436,7 +5577,7 @@ function CRM() {
     if(i===3)return (showStep4&&tCI>0)?"done":"active";
     if(i===4)return attachments.length>0?"done":"active";
     if(i===5)return (selVend&&selNeg&&dataVendita)?"done":"active";
-    return (notaOn&&nota.trim())?"done":"active";
+    return notaScelta?"done":"active";
   };
 
   // #124: il popup di conferma reset è condiviso da form E carrello (il carrello
@@ -5531,7 +5672,7 @@ function CRM() {
         {!onlyMarg&&<div style={{background:"var(--tf-w20)",border:"1px solid var(--tf-w60)",borderRadius:10,padding:"12px 16px",marginTop:12,marginBottom:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>📎 {attachments.length} allegat{attachments.length===1?"o":"i"}</span>
           <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>🏪 {selVend||"—"} · {selNeg||"—"} · {dataVendita?dataVendita.split("-").reverse().join("/"):"—"}</span>
-          <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>📝 {notaOn&&nota.trim()?"nota inserita":"nessuna nota"}</span>
+          <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>📝 {notaScelta==="si"&&nota.trim()?"nota inserita":notaScelta?"nessuna nota":"scelta Sì/No da fare"}</span>
           <button onClick={()=>setShowCart(false)} style={{marginLeft:"auto",padding:"7px 14px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-cbd5e1)",fontSize:11,fontWeight:800,cursor:"pointer"}}>✏️ Modifica in pagina</button>
         </div>}
         {onlyMarg&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745",marginTop:12}}>
@@ -5772,8 +5913,9 @@ select.rvIn{cursor:pointer}
           {id:"brand",label:margFlow&&!brand?"Marginalità":"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{margFlow&&!brand?"📦":(bObj?bObj.icon:"⚡")}</span>,perc:(brand||margFlow)?100:0,abil:true},
           {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
           {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:23}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
-          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:(attachments.length>0?50:0)+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
-          {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:(notaOn&&nota.trim())?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
+          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?attachments.length>0:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.sky||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
+          // verde APPENA si flagga Sì o No (Luca 05/08): la scelta completa lo step
+          {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:notaScelta?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
         ];
         const _doneCount=STEPS.filter(s=>s.perc>=100).length;
         const _railPct=Math.min(100,(_doneCount/(STEPS.length-1))*100);
@@ -6178,15 +6320,59 @@ select.rvIn{cursor:pointer}
             Esito) sopra le caselle di upload; compare solo se il cliente ha
             gia' documenti d'identita' agli atti. */}
         {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&pannelloDocRiuso()}
+        {/* STEP ALLEGATI PER CONTRATTO (Luca 05/08): il documento d'identita'
+            e' UNICO per tutto il carrello (e' sempre lo stesso cliente);
+            contratto e "altro" si caricano PER OGNI riga/offerta del carrello
+            (piu' offerte dello stesso brand = piu' contratti = piu' upload).
+            Le righe solo-marginalita' non hanno gruppo. ECCEZIONE SKY: il
+            gruppo c'e' ma il contratto e' FACOLTATIVO (Sky non lo rilascia). */}
         {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #17a2b8",marginTop:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--tf-17a2b8)",marginBottom:14,textTransform:"uppercase"}}>📎 Allegati</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-            {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map((a,i)=>{const cnt=attachments.filter(x=>x.type===a.t).length;const over=dragBox===a.t;return <label key={i}
-              onDragOver={e=>onBoxDragOver(e,a.t)} onDragEnter={e=>onBoxDragOver(e,a.t)}
-              onDragLeave={onBoxDragLeave} onDrop={e=>onBoxDrop(e,a.t)}
-              style={{display:"block",border:"2px dashed "+(over?"var(--tf-17a2b8)":(cnt>0?"rgba(23,162,184,0.55)":"var(--tf-w100)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"var(--tf-w30)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-flex",gap:6,alignItems:"center",justifyContent:"center"}}><span style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"var(--tf-17a2b8)",color:"#fff",fontSize:10,fontWeight:700}}>Carica</span><button type="button" onClick={e=>{e.preventDefault();e.stopPropagation();openQr(a.t);}} title="Carica dal telefono via QR" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,background:"rgba(23,162,184,0.12)",border:"1px solid rgba(23,162,184,0.5)",color:"var(--tf-5fd3e6)",fontSize:10,fontWeight:700,cursor:"pointer"}}>📱 QR</button></div><div style={{fontSize:9,color:"var(--tf-64748b)",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"var(--tf-17a2b8)",fontWeight:700}}>{cnt} file</div>}</label>;})}
-          </div>
-          {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w60)"}}><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid var(--tf-w50)":"none"}}><div style={{fontSize:11,color:"var(--tf-f8fafc)"}}><span onClick={()=>apriAnteprima(file)} title="Anteprima" style={{cursor:"pointer",textDecoration:"underline",textDecorationColor:"var(--tf-w300)",textUnderlineOffset:2}}>{file.name}</span> <span style={{color:"var(--tf-64748b)",fontSize:10}}>· {file.type}</span>{file.reused&&<span style={{marginLeft:6,fontSize:9,fontWeight:800,color:"var(--tf-34d399)",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.4)",borderRadius:999,padding:"1px 8px"}}>♻️ dall&apos;archivio</span>}</div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
+          {(margFlow&&!brand)?(<>
+            {/* flusso P&M senza brand: caselle generiche come prima (nessun contratto brand) */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+              {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map(a=>boxAllegato(a))}
+            </div>
+            {listaFileAllegati(attachments.map((a,i)=>({a,i})))}
+          </>):(<>
+            {/* sezione CONDIVISA: un solo documento d'identita' per tutta la vendita */}
+            <div style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderRadius:12,padding:14,marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:800,color:"var(--tf-f8fafc)",marginBottom:4}}>🪪 Documento d&apos;identità del cliente</div>
+              <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:10}}>Vale per TUTTO il carrello: si carica (o si riusa dall&apos;archivio) una volta sola e al salvataggio viene agganciato a ogni contratto.</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+                {boxAllegato({l:"Documento",i:"🪪",t:"documento"})}
+                {haEnergia&&boxAllegato({l:"Fattura",i:"🧾",t:"fattura"},null,"per i contratti energia")}
+              </div>
+              {listaFileAllegati(attachments.map((a,i)=>({a,i})).filter(({a})=>a.type==="documento"||a.type==="fattura"))}
+            </div>
+            {/* UN GRUPPO PER OGNI CONTRATTO del carrello (riga = offerta) */}
+            {righeCarrello().map(r=>{
+              const bd=BRANDS.find(x=>x.id===r.brandId||x.label===r.brandLabel);
+              return <div key={r.key} style={{background:"var(--tf-w30)",border:"1px solid var(--tf-w60)",borderLeft:"4px solid "+(r.brandColor||"#17a2b8"),borderRadius:12,padding:14,marginBottom:14}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:10}}>
+                  {bd&&bd.logo?<span style={{background:"#fff",borderRadius:8,padding:"2px 8px",display:"inline-flex",alignItems:"center"}}><Image src={bd.logo} alt={r.brandLabel} width={120} height={30} style={{height:20,width:"auto",maxWidth:96,objectFit:"contain"}}/></span>:<span style={{fontSize:13,fontWeight:800,color:"var(--tf-f8fafc)"}}>{r.brandIcon} {r.brandLabel}</span>}
+                  <span style={{fontSize:12,fontWeight:800,color:"var(--tf-f8fafc)"}}>{r.label}{r.multi?<span style={{color:"var(--tf-8892b0)",fontWeight:700}}> · n°{r.nCopia}</span>:null}</span>
+                  {r.isCurrent&&<span style={{background:"var(--tf-ffd800)",borderRadius:12,padding:"2px 10px",color:"#111",fontSize:9,fontWeight:800}}>IN CORSO</span>}
+                  {r.sky?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>Sky: contratto facoltativo</span>
+                    :(attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key)
+                      ?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-34d399)",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.4)",borderRadius:999,padding:"2px 10px"}}>✓ contratto caricato</span>
+                      :<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f87171)",background:"rgba(220,53,69,0.10)",border:"1px solid rgba(220,53,69,0.4)",borderRadius:999,padding:"2px 10px"}}>contratto mancante</span>)}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
+                  {boxAllegato({l:"Contratto",i:"📄",t:"contratti"},r.key,r.sky?"Sky non rilascia contratti — facoltativo":"obbligatorio per questa offerta")}
+                  {boxAllegato({l:"Altro",i:"📁",t:"altro"},r.key,"facoltativo")}
+                </div>
+                {listaFileAllegati(attachments.map((a,i)=>({a,i})).filter(({a})=>(a.type==="contratti"||a.type==="altro")&&(a.rowKey||"")===r.key))}
+              </div>;
+            })}
+            {righeCarrello().length===0&&<div style={{fontSize:11,color:"var(--tf-8892b0)",background:"var(--tf-w30)",border:"1px dashed var(--tf-w100)",borderRadius:10,padding:"12px 14px",marginBottom:4}}>🛒 Nessuna offerta nel carrello: le caselle del contratto compaiono qui, una per ogni offerta selezionata.</div>}
+            {/* file rimasti senza riga (offerta cambiata/eliminata dopo l'upload) */}
+            {allegatiOrfani().length>0&&<div style={{background:"var(--tf-w30)",border:"1px dashed var(--tf-w100)",borderRadius:12,padding:14,marginBottom:4}}>
+              <div style={{fontSize:10,fontWeight:800,color:"var(--tf-f59e0b)",marginBottom:4}}>📁 File non più associati a un&apos;offerta del carrello</div>
+              <div style={{fontSize:10,color:"var(--tf-8892b0)"}}>L&apos;offerta è stata modificata o rimossa: ricarica il contratto nella sua casella. Se li lasci qui, al salvataggio verranno agganciati al primo contratto.</div>
+              {listaFileAllegati(allegatiOrfani())}
+            </div>}
+          </>)}
         </div>}
         {preview&&createPortal(<div onClick={chiudiAnteprima} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"var(--tf-11141d)",border:"1px solid var(--tf-w100)",borderRadius:14,width:"100%",maxWidth:840,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -6228,7 +6414,7 @@ select.rvIn{cursor:pointer}
             <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Data <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
           </div>
         </div>}
-        {vistaStep==="note"&&((margFlow&&!brand)||(showAna&&showStep4))&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
+        {vistaStep==="note"&&((margFlow&&!brand)||(showAna&&showStep4))&&<NoteStep store={selNeg} show={notaOn} setShow={setNotaOn} scelta={notaScelta} setScelta={setNotaScelta} nota={nota} setNota={setNota} pData={promData} setPData={setPromData} pOra={promOra} setPOra={setPromOra} pNeg={promNeg} setPNeg={setPromNeg} pDesc={promDesc} setPDesc={setPromDesc}/>}
 
       {["prodotti","allegati","note"].includes(vistaStep)&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -6240,12 +6426,13 @@ select.rvIn{cursor:pointer}
           {({prodotti:"allegati",allegati:"note"})[vistaStep]&&<button onClick={()=>setVistaStep(({prodotti:"allegati",allegati:"note"})[vistaStep])} style={{padding:"11px 30px",borderRadius:10,border:"1.5px solid rgba(99,102,241,0.6)",background:"rgba(99,102,241,0.14)",color:"var(--tf-c7d2fe)",fontSize:14,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>}
           {/* Luca 04/08: NIENTE scorciatoia al riepilogo da qui (si saltavano
               Allegati/Note e partivano vendite senza documenti) — l'utente
-              avanza con "Avanti"; "Salva vendita" compare SOLO allo step 5
-              (Note), il riepilogo si apre dal pannello/🛒 laterale. */}
-          {/* dopo "Salva vendita" si APRE IL RIEPILOGO (caso Damiano 04/08:
-              col ritorno alla griglia brand il toast sembrava "fatto" e la
-              registrazione finale non partiva mai — carrello perso) */}
-          {brand&&vistaStep==="note"&&<button onClick={()=>{addCart();setVistaStep("brand");setShowCart(true);}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>💾 Salva vendita</button>}
+              avanza con "Avanti"; il riepilogo si apre dal pannello/🛒 laterale. */}
+          {/* Luca 05/08: il bottone si chiama "Vai al carrello →" (non piu'
+              "Salva vendita", che dava l'impressione di uscire: il salvataggio
+              VERO resta nel riepilogo) e compare SOLO dopo la scelta Sì/No
+              sulle note. Apre il RIEPILOGO (caso Damiano 04/08: col ritorno
+              alla griglia brand la registrazione finale non partiva mai). */}
+          {brand&&vistaStep==="note"&&notaScelta&&<button onClick={()=>{addCart();setVistaStep("brand");setShowCart(true);}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>🛒 Vai al carrello →</button>}
         </div>
       </div>}
 
