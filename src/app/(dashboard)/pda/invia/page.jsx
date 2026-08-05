@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Search, ShoppingBag, User, Check, ChevronLeft, ChevronRight, Plus, Trash2, Archive, HelpCircle, Info, LayoutGrid, Clock, Calendar, ExternalLink, MoreVertical, ChevronUp, ChevronDown } from "lucide-react";
+import { Search, ShoppingBag, User, Check, ChevronRight, Info, LayoutGrid, ChevronUp, ChevronDown } from "lucide-react";
 import { calculateCF, _CNA, _PNA } from "@/lib/cf";
 import { getDraft, saveDraft, clearDraft } from "@/lib/draft";
 import { supabase } from "@/lib/supabaseClient";
@@ -184,8 +184,6 @@ const ORIGIN_OPERATORS_FISSO = ["", "TIM (ex Telecom Italia)", "Vodafone Italia"
 const DONOR_FISSO = ORIGIN_OPERATORS_FISSO; // used also for SME Fisso
 const DONOR_LUCE_GAS = ["", "Enel Energia", "Eni Plenitude", "A2A Energia", "Iren", "Hera Comm", "Edison", "Sorgenia", "E.ON", "Illumia", "Engie", "Optima", "Wekiwi", "Estra", "Axpo", "Iberdrola", "Acea Energia", "Servizio Elettrico Nazionale", "Altro"];
 
-const STEP_LABELS = ["Venditore", "Cliente", "Brand", "Prodotti"];
-
 // W3 GA Consumer offerte per tipologia+easypay key
 const MOB_OFFERS = {
   "Underground_Sì": ["EP LOCAL"],
@@ -257,52 +255,80 @@ const DRAFT_KEY_PDA = "pda-invia";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function InviaPda() {
-  const NEGOZI = useStores();
   const VENDITORI = useSellers();
-  const draftRef = useRef(undefined);
-  if (draftRef.current === undefined) draftRef.current = getDraft(DRAFT_KEY_PDA);
-  const draft = draftRef.current;
 
   const { user } = useAuth();
-  const [step, setStep] = useState(draft?.step ?? 1);
-  const [venditore, setVenditore] = useState(draft?.venditore ?? user?.name ?? "");
-  const [negozio, setNegozio] = useState(draft?.negozio ?? user?.negozio ?? "");
-  // AUTOCOMPILAZIONE (Luca 29/07): il venditore è CHI È LOGGATO. L'init sopra
-  // non basta: al primo render l'utente può non essere ancora arrivato, e una
+  const [step, setStep] = useState(1);
+  const [venditore, setVenditore] = useState("");
+  const [negozio, setNegozio] = useState("");
+  // AUTOCOMPILAZIONE (Luca 29/07): il venditore è CHI È LOGGATO. L'init non
+  // basta: al primo render l'utente può non essere ancora arrivato, e una
   // bozza con venditore VUOTO ("" non è nullish) bloccava il fallback → il
   // campo restava da selezionare a mano.
-  useEffect(() => { if (!venditore && user?.name) setVenditore(user.name); }, [user?.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!venditore && user?.name) setVenditore(user.name);
+    if (!negozio && user?.negozio) setNegozio(user.negozio);
+  }, [user?.name, user?.negozio]); // eslint-disable-line react-hooks/exhaustive-deps
   // "Data Vendita" era un input non controllato fisso al 2026-03-07 (residuo
   // del mock): mostrava sempre il 7 marzo e il valore scelto non veniva letto.
   const [dataVendita, setDataVendita] = useState(
-    () => draft?.dataVendita ?? new Date().toISOString().split("T")[0]
+    () => new Date().toISOString().split("T")[0]
   );
   const [confirmReset, setConfirmReset] = useState(false);
 
-  const [tipoCliente, setTipoCliente] = useState(draft?.tipoCliente ?? null);
-  const [lookupValue, setLookupValue] = useState(draft?.lookupValue ?? "");
-  const [clienteFound, setClienteFound] = useState(!!draft?.clienteFound);
-  const [lookupDone, setLookupDone] = useState(!!draft?.lookupDone);
-  const [anConsumer, setAnConsumer] = useState({ nome: "", cognome: "", cf: "", email: "", numeroFisso: "", cellulare: "", iban: "", domicilio: "", note: "", ...draft?.anConsumer });
-  const [anBusiness, setAnBusiness] = useState({ ragioneSociale: "", piva: "", referente: "", cfReferente: "", numeroFisso: "", mobile: "", email: "", pec: "", codiceUnivoco: "", iban: "", sedeLegale: "", note: "", ...draft?.anBusiness });
+  const [tipoCliente, setTipoCliente] = useState(null);
+  const [lookupValue, setLookupValue] = useState("");
+  const [clienteFound, setClienteFound] = useState(false);
+  const [lookupDone, setLookupDone] = useState(false);
+  const [anConsumer, setAnConsumer] = useState({ nome: "", cognome: "", cf: "", email: "", numeroFisso: "", cellulare: "", iban: "", domicilio: "", note: "" });
+  const [anBusiness, setAnBusiness] = useState({ ragioneSociale: "", piva: "", referente: "", cfReferente: "", numeroFisso: "", mobile: "", email: "", pec: "", codiceUnivoco: "", iban: "", sedeLegale: "", note: "" });
 
-  const [brand, setBrand] = useState(draft?.brand ?? null);
+  const [brand, setBrand] = useState(null);
 
   const [showCF, setShowCF] = useState(false);
-  const [cfD, setCfD] = useState({ nome: "", cognome: "", sesso: "M", giorno: "", mese: "", anno: "", comune: "", estero: false, paese: "", ...draft?.cfD });
+  const [cfD, setCfD] = useState({ nome: "", cognome: "", sesso: "M", giorno: "", mese: "", anno: "", comune: "", estero: false, paese: "" });
   const [attachments, setAttachments] = useState([]); // { file: File, name: string, type: string }
   const [uploading, setUploading] = useState(false);
 
 
   // Carrello multi-brand
-  const [cart, setCart] = useState(Array.isArray(draft?.cart) ? draft.cart : []);
+  const [cart, setCart] = useState([]);
   const [showCart, setShowCart] = useState(false);
   const [expI, setExpI] = useState({});
   const [toast, setToast] = useState(null);
 
   // { [catKey]: [ { product:"", fields:{}, skyPkt:[], skyTech:"", skyDec:"", lucaGasSez:"" } ] }
-  const [allSales, setAllSales] = useState(draft?.allSales && typeof draft.allSales === "object" ? draft.allSales : {});
+  const [allSales, setAllSales] = useState({});
   const [collapsedToggles, setCollapsedToggles] = useState({});
+
+  // RIPRISTINO BOZZA come Registra Vendita (#118): la bozza si legge in un
+  // effect DOPO il mount, MAI durante il render. Leggerla nel render (vecchio
+  // draftRef) faceva divergere l'HTML del server (senza sessionStorage, quindi
+  // senza bozza) da quello del client (con bozza) → all'apertura la pagina
+  // andava in errore di idratazione React ("Hydration failed"). L'auto-save
+  // sotto è gated su draftLoaded, così il primo salvataggio non cancella la
+  // bozza prima di averla ripristinata.
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  useEffect(() => {
+    if (draftLoaded) return;
+    setDraftLoaded(true);
+    const d = getDraft(DRAFT_KEY_PDA);
+    if (!d) return;
+    if (d.step) setStep(d.step);
+    if (d.venditore) setVenditore(d.venditore);
+    if (d.negozio) setNegozio(d.negozio);
+    if (d.dataVendita) setDataVendita(d.dataVendita);
+    if (d.tipoCliente) setTipoCliente(d.tipoCliente);
+    if (d.lookupValue) setLookupValue(d.lookupValue);
+    setClienteFound(!!d.clienteFound);
+    setLookupDone(!!d.lookupDone);
+    if (d.anConsumer) setAnConsumer(p => ({ ...p, ...d.anConsumer }));
+    if (d.anBusiness) setAnBusiness(p => ({ ...p, ...d.anBusiness }));
+    if (d.brand) setBrand(d.brand);
+    if (d.cfD) setCfD(p => ({ ...p, ...d.cfD }));
+    if (Array.isArray(d.cart)) setCart(d.cart);
+    if (d.allSales && typeof d.allSales === "object") setAllSales(d.allSales);
+  }, [draftLoaded]);
 
   const getSales = (ck) => allSales[ck] || [{ product: "", fields: {}, skyPkt: [], skyTech: "", skyDec: "", lgSez: "" }];
   const updSale = (ck, si, up) => setAllSales(p => { const a = [...getSales(ck)]; a[si] = { ...a[si], ...up }; return { ...p, [ck]: a }; });
@@ -314,7 +340,11 @@ export default function InviaPda() {
   // INDIRIZZO COMPLETO (Luca 29/07): via con riconoscimento + CAP e Citta'
   // compilati dalla lista (chiavi <k>Cap e <k>Citta nei dettagli); a mano
   // solo se non trovato. Montato su fisso, energia, Dojo e SME.
-  const CampiIndirizzo = ({ k, sale, catKey, si }) => {
+  // FUNZIONE CHIAMATA, NON componente (fix 05/08): definito come <CampiIndirizzo/>
+  // dentro il componente cambiava identità a ogni render → React smontava e
+  // rimontava gli input a OGNI tasto: focus perso dopo un carattere e tendina
+  // dell'autocomplete che si chiudeva da sola. La pagina "sembrava in errore".
+  const campiIndirizzo = ({ k, sale, catKey, si }) => {
     const f = sale.fields || {};
     return (
       <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1.2fr] gap-2 mt-2">
@@ -469,10 +499,11 @@ export default function InviaPda() {
   };
 
   useEffect(() => {
+    if (!draftLoaded) return; // il primo render non deve sovrascrivere la bozza
     const payload = { step, venditore, negozio, tipoCliente, lookupValue, clienteFound, lookupDone, anConsumer, anBusiness, brand, cfD, cart, allSales, attachments_count: attachments.length };
     const t = setTimeout(() => saveDraft(DRAFT_KEY_PDA, payload), 800);
     return () => clearTimeout(t);
-  }, [step, venditore, negozio, tipoCliente, lookupValue, clienteFound, lookupDone, anConsumer, anBusiness, brand, cfD, cart, allSales, attachments.length]);
+  }, [draftLoaded, step, venditore, negozio, tipoCliente, lookupValue, clienteFound, lookupDone, anConsumer, anBusiness, brand, cfD, cart, allSales, attachments.length]);
 
   const finalSubmit = async () => {
     const cur = colItems();
@@ -746,7 +777,7 @@ export default function InviaPda() {
                       {opts.map(o => <option key={o} value={o}>{o || "— Seleziona —"}</option>)}
                     </select>
                   ) : f.key.toLowerCase().startsWith("indirizzo") ? (
-                    <CampiIndirizzo k={f.key} sale={sale} catKey={catKey} si={si} />
+                    campiIndirizzo({ k: f.key, sale, catKey, si })
                   ) : (
                     <input
                       type="text"
@@ -774,7 +805,8 @@ export default function InviaPda() {
       const COMM_MIN = 0.50, COMM_MAX = 1.10, COMM_STEP = 0.10;
       const clamp = (v, mn, mx, st) => Math.round(Math.min(mx, Math.max(mn, Math.round(v / st) * st)) * 1000) / 1000;
       const pct = (v, mn, mx) => ((v - mn) / (mx - mn)) * 100;
-      const Stepper = ({ label, value, min, max, step, fieldKey, unit, decimals }) => {
+      // funzione chiamata, non componente (fix 05/08: identità stabile, niente remount)
+      const stepper = ({ label, value, min, max, step, fieldKey, unit, decimals }) => {
         const canDec = value > min, canInc = value < max;
         const pctVal = pct(value, min, max);
         return (
@@ -812,10 +844,10 @@ export default function InviaPda() {
         <div className="mt-4 p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-6">
           <div>
             <Label text="Indirizzo installazione" required />
-            <CampiIndirizzo k="dojoAddr" sale={sale} catKey={catKey} si={si} />
+            {campiIndirizzo({ k: "dojoAddr", sale, catKey, si })}
           </div>
-          <Stepper label="Costo mensile" value={cost} min={COST_MIN} max={COST_MAX} step={COST_STEP} fieldKey="dojoCost" unit="€/mese" decimals={2} />
-          <Stepper label="Commissione transazioni" value={comm} min={COMM_MIN} max={COMM_MAX} step={COMM_STEP} fieldKey="dojoComm" unit="%" decimals={2} />
+          {stepper({ label: "Costo mensile", value: cost, min: COST_MIN, max: COST_MAX, step: COST_STEP, fieldKey: "dojoCost", unit: "€/mese", decimals: 2 })}
+          {stepper({ label: "Commissione transazioni", value: comm, min: COMM_MIN, max: COMM_MAX, step: COMM_STEP, fieldKey: "dojoComm", unit: "%", decimals: 2 })}
         </div>
       );
     }
@@ -830,8 +862,8 @@ export default function InviaPda() {
       const smeAddr = sale.fields?.smeAddr || "";
       const smePayM = sale.fields?.payMeth || "";
 
-      // Generic Stepper for SME
-      const SmeStep = ({ label, value, min, max, fieldKey }) => {
+      // Generic stepper for SME — funzione chiamata, non componente (fix 05/08)
+      const smeStep = ({ label, value, min, max, fieldKey }) => {
         const canDec = value > min;
         const canInc = value < max;
         const pctVal = ((value - min) / (max - min)) * 100;
@@ -872,11 +904,11 @@ export default function InviaPda() {
 
       return (
         <div className="mt-4 p-5 rounded-2xl bg-white/[0.03] border border-white/5 space-y-6">
-          <SmeStep label="📊 Numero di linee totali" value={numLinee} min={2} max={8} fieldKey="smeLinee" />
+          {smeStep({ label: "📊 Numero di linee totali", value: numLinee, min: 2, max: 8, fieldKey: "smeLinee" })}
 
           {lineeSet && (
             <div className="pt-4 border-t border-white/5 animate-in fade-in duration-200">
-              <SmeStep label="📞 Linee in portabilità" value={Math.min(numPort, numLinee)} min={0} max={numLinee} fieldKey="smePort" />
+              {smeStep({ label: "📞 Linee in portabilità", value: Math.min(numPort, numLinee), min: 0, max: numLinee, fieldKey: "smePort" })}
             </div>
           )}
 
@@ -910,7 +942,7 @@ export default function InviaPda() {
           {lineeSet && portSet && payDone && (
             <div className="pt-4 border-t border-white/5 animate-in fade-in duration-200">
               <Label text="📍 Indirizzo installazione" required />
-              <CampiIndirizzo k="smeAddr" sale={sale} catKey={catKey} si={si} />
+              {campiIndirizzo({ k: "smeAddr", sale, catKey, si })}
             </div>
           )}
 
@@ -983,8 +1015,9 @@ export default function InviaPda() {
       const cambioVal = sale.fields?.cbCambioVal || "";
       const addons = sale.fields?.cbAddons || {};
 
-      const MiniBtn = ({ val, active, onClick, color = "var(--tf-2e75b6)" }) => (
-        <button onClick={onClick}
+      // funzione chiamata, non componente (fix 05/08): la key va sull'elemento reso
+      const miniBtn = ({ k, val, active, onClick, color = "var(--tf-2e75b6)" }) => (
+        <button key={k} onClick={onClick}
           className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-bold transition-all ${active ? "text-white shadow-lg" : "bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10"
             }`}
           style={active ? { background: color } : {}}>
@@ -1002,17 +1035,17 @@ export default function InviaPda() {
               <div>
                 <Label text="📡 Tipologia Mobile" required color={color} />
                 <div className="flex gap-3 mt-2">
-                  {["Underground", "Mass Market"].map(opt => (
-                    <MiniBtn key={opt} val={opt} active={tipMob === opt} color={color}
-                      onClick={() => {
-                        setField(catKey, si, "tipMob", tipMob === opt ? null : opt);
-                        if (opt !== tipMob) {
-                          setField(catKey, si, "mnp", opt === "Underground" ? true : null);
-                          setField(catKey, si, "easyPay", null);
-                          setField(catKey, si, "offerta", "");
-                        }
-                      }} />
-                  ))}
+                  {["Underground", "Mass Market"].map(opt => miniBtn({
+                    k: opt, val: opt, active: tipMob === opt, color,
+                    onClick: () => {
+                      setField(catKey, si, "tipMob", tipMob === opt ? null : opt);
+                      if (opt !== tipMob) {
+                        setField(catKey, si, "mnp", opt === "Underground" ? true : null);
+                        setField(catKey, si, "easyPay", null);
+                        setField(catKey, si, "offerta", "");
+                      }
+                    },
+                  }))}
                 </div>
               </div>
 
@@ -1024,10 +1057,10 @@ export default function InviaPda() {
                     {isUnd ? (
                       <div className="flex-1 py-2.5 px-4 rounded-xl text-sm font-bold text-white shadow-lg text-center" style={{ background: color }}>Sì (fisso Underground)</div>
                     ) : (
-                      ["Sì", "No"].map(opt => (
-                        <MiniBtn key={opt} val={opt} active={mnp === opt} color={color}
-                          onClick={() => { setField(catKey, si, "mnp", mnp === opt ? null : opt); setField(catKey, si, "easyPay", null); setField(catKey, si, "offerta", ""); }} />
-                      ))
+                      ["Sì", "No"].map(opt => miniBtn({
+                        k: opt, val: opt, active: mnp === opt, color,
+                        onClick: () => { setField(catKey, si, "mnp", mnp === opt ? null : opt); setField(catKey, si, "easyPay", null); setField(catKey, si, "offerta", ""); },
+                      }))
                     )}
                   </div>
                 </div>
@@ -1038,10 +1071,10 @@ export default function InviaPda() {
                 <div className="animate-in fade-in slide-in-from-top-2 duration-200">
                   <Label text="💳 Easy Pay?" required color={color} />
                   <div className="flex gap-3 mt-2">
-                    {["Sì", "No"].map(opt => (
-                      <MiniBtn key={opt} val={opt} active={easyPay === opt} color={color}
-                        onClick={() => { setField(catKey, si, "easyPay", easyPay === opt ? null : opt); setField(catKey, si, "offerta", ""); }} />
-                    ))}
+                    {["Sì", "No"].map(opt => miniBtn({
+                      k: opt, val: opt, active: easyPay === opt, color,
+                      onClick: () => { setField(catKey, si, "easyPay", easyPay === opt ? null : opt); setField(catKey, si, "offerta", ""); },
+                    }))}
                   </div>
                 </div>
               )}
@@ -1118,10 +1151,10 @@ export default function InviaPda() {
               <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
                 <Label text="📱 TNP (Terminale Nuovo Prodotto)?" color={color} />
                 <div className="flex gap-3 mt-2">
-                  {["Sì", "No"].map(opt => (
-                    <MiniBtn key={opt} val={opt} active={hasTnp === opt} color={color}
-                      onClick={() => setField(catKey, si, "cbHasTnp", hasTnp === opt ? null : opt)} />
-                  ))}
+                  {["Sì", "No"].map(opt => miniBtn({
+                    k: opt, val: opt, active: hasTnp === opt, color,
+                    onClick: () => setField(catKey, si, "cbHasTnp", hasTnp === opt ? null : opt),
+                  }))}
                 </div>
                 {hasTnp === "Sì" && (
                   <div className="mt-3 animate-in fade-in duration-200">
@@ -1137,10 +1170,10 @@ export default function InviaPda() {
               <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
                 <Label text="🔄 Cambio Offerta?" color={color} />
                 <div className="flex gap-3 mt-2">
-                  {["Sì", "No"].map(opt => (
-                    <MiniBtn key={opt} val={opt} active={hasCambio === opt} color={color}
-                      onClick={() => setField(catKey, si, "cbHasCambio", hasCambio === opt ? null : opt)} />
-                  ))}
+                  {["Sì", "No"].map(opt => miniBtn({
+                    k: opt, val: opt, active: hasCambio === opt, color,
+                    onClick: () => setField(catKey, si, "cbHasCambio", hasCambio === opt ? null : opt),
+                  }))}
                 </div>
                 {hasCambio === "Sì" && (
                   <div className="mt-3 animate-in fade-in duration-200">
@@ -1374,7 +1407,7 @@ export default function InviaPda() {
                     placeholder="— Seleziona —"
                   />
                 ) : f.key.toLowerCase().startsWith("indirizzo") ? (
-                  <CampiIndirizzo k={f.key} sale={sale} catKey={catKey} si={si} />
+                  campiIndirizzo({ k: f.key, sale, catKey, si })
                 ) : (
                   <input
                     type="text"
@@ -1453,7 +1486,7 @@ export default function InviaPda() {
         {tech && (
           <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/5">
             <Label text="Indirizzo installazione" color={color} />
-            <CampiIndirizzo k="indirizzoInstallazione" sale={sale} catKey={catKey} si={si} />
+            {campiIndirizzo({ k: "indirizzoInstallazione", sale, catKey, si })}
           </div>
         )}
       </div>
@@ -1470,14 +1503,12 @@ export default function InviaPda() {
     const isSkyTV = categoria === "Abbonamenti SKY";
 
     return (
-      <div key={categoria} className="glass-panel p-6 border-l-4" style={{ borderLeftColor: catColor }}>
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <span className="text-xl">{catIcon}</span>
-            <h3 className="text-sm font-bold text-white uppercase tracking-widest">{categoria}</h3>
-          </div>
-          <button onClick={() => addSale(catKey)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-bold text-slate-400 uppercase rounded-lg transition-all">
-            <span>➕</span> Aggiungi {categoria}
+      <div key={categoria} style={{ background: "var(--tf-w30)", borderRadius: 14, padding: 18, borderLeft: "4px solid " + catColor }}>
+        <div className="flex items-center justify-between gap-3" style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: catColor, textTransform: "uppercase", letterSpacing: .8 }}>{catIcon} {categoria}</div>
+          <button onClick={() => addSale(catKey)}
+            style={{ padding: "7px 14px", borderRadius: 8, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 11, fontWeight: 700, cursor: "pointer", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+            ➕ Aggiungi {categoria}
           </button>
         </div>
 
@@ -1666,7 +1697,10 @@ export default function InviaPda() {
                 const gc = "var(--tf-28a745)";
 
                 // Chip pill: mostra risposta collassata, click → espandi
-                const Chip = ({ tkKey, label, answer, extra }) => (
+                // (funzioni chiamate, non componenti — fix 05/08: TBlock come
+                //  <TBlock/> veniva rimontato a ogni render e l'input IBAN
+                //  perdeva il focus dopo OGNI carattere digitato)
+                const chipPill = ({ tkKey, label, answer, extra }) => (
                   <div onClick={() => expandToggle(tkKey)}
                     className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 cursor-pointer select-none">
                     <span className="text-xs text-slate-300">{label}</span>
@@ -1677,7 +1711,7 @@ export default function InviaPda() {
                 );
 
                 // Blocco toggle pieno con opzionale IBAN interno
-                const TBlock = ({ tkKey, label, cur, onSet, ibanField, ibanSetKey, ibanAna }) => {
+                const tBlock = ({ tkKey, label, cur, onSet, ibanField, ibanSetKey, ibanAna }) => {
                   const collapsed = collapsedToggles[tkKey] !== false;
                   const isDone = !!cur && (cur === "No" || !ibanSetKey || (cur === "Sì" && !!ibanField));
                   if (isDone && collapsed) return null; // mostrato come chip sopra
@@ -1727,15 +1761,15 @@ export default function InviaPda() {
                   const k1 = `${catKey}_${si}_port1`, k2 = `${catKey}_${si}_sec`, k3 = `${catKey}_${si}_port2`;
                   return (
                     <div className="mt-4">
-                      {port1 && collapsedToggles[k1] !== false && <Chip tkKey={k1} label="📞 Portabilità" answer={port1} />}
-                      <TBlock tkKey={k1} label="📞 Portabilità?" cur={port1} onSet={v => setField(catKey, si, "portabilita", v)} />
+                      {port1 && collapsedToggles[k1] !== false && chipPill({ tkKey: k1, label: "📞 Portabilità", answer: port1 })}
+                      {tBlock({ tkKey: k1, label: "📞 Portabilità?", cur: port1, onSet: v => setField(catKey, si, "portabilita", v) })}
                       {port1 && (<>
-                        {sec && collapsedToggles[k2] !== false && <Chip tkKey={k2} label="🔌 Seconda linea" answer={sec} />}
-                        <TBlock tkKey={k2} label="🔌 Seconda linea?" cur={sec} onSet={v => setField(catKey, si, "secondaLinea", v)} />
+                        {sec && collapsedToggles[k2] !== false && chipPill({ tkKey: k2, label: "🔌 Seconda linea", answer: sec })}
+                        {tBlock({ tkKey: k2, label: "🔌 Seconda linea?", cur: sec, onSet: v => setField(catKey, si, "secondaLinea", v) })}
                       </>)}
                       {port1 && sec === "Sì" && (<>
-                        {port2 && collapsedToggles[k3] !== false && <Chip tkKey={k3} label="📞 2° Linea Port." answer={port2} />}
-                        <TBlock tkKey={k3} label="📞 2° Linea, Portabilità?" cur={port2} onSet={v => setField(catKey, si, "portabilita2", v)} />
+                        {port2 && collapsedToggles[k3] !== false && chipPill({ tkKey: k3, label: "📞 2° Linea Port.", answer: port2 })}
+                        {tBlock({ tkKey: k3, label: "📞 2° Linea, Portabilità?", cur: port2, onSet: v => setField(catKey, si, "portabilita2", v) })}
                       </>)}
                     </div>
                   );
@@ -1752,14 +1786,18 @@ export default function InviaPda() {
                   return (
                     <div className="mt-4">
                       {domDone && collapsedToggles[kDom] !== false &&
-                        <Chip tkKey={kDom} label="🏦 Domiciliazione" answer={domFisso}
-                          extra={domFisso === "Sì" && ibanFisso ? "···" + ibanFisso.slice(-4) : null} />}
-                      <TBlock tkKey={kDom} label="🏦 Domiciliazione?" cur={domFisso}
-                        onSet={v => setField(catKey, si, "domFisso", v)}
-                        ibanField={ibanFisso} ibanSetKey="ibanFisso" ibanAna={ibanAnaF} />
+                        chipPill({
+                          tkKey: kDom, label: "🏦 Domiciliazione", answer: domFisso,
+                          extra: domFisso === "Sì" && ibanFisso ? "···" + ibanFisso.slice(-4) : null,
+                        })}
+                      {tBlock({
+                        tkKey: kDom, label: "🏦 Domiciliazione?", cur: domFisso,
+                        onSet: v => setField(catKey, si, "domFisso", v),
+                        ibanField: ibanFisso, ibanSetKey: "ibanFisso", ibanAna: ibanAnaF,
+                      })}
                       {domFisso && (<>
-                        {port1 && collapsedToggles[kPort] !== false && <Chip tkKey={kPort} label="📞 Portabilità" answer={port1} />}
-                        <TBlock tkKey={kPort} label="📞 Portabilità?" cur={port1} onSet={v => setField(catKey, si, "portabilita", v)} />
+                        {port1 && collapsedToggles[kPort] !== false && chipPill({ tkKey: kPort, label: "📞 Portabilità", answer: port1 })}
+                        {tBlock({ tkKey: kPort, label: "📞 Portabilità?", cur: port1, onSet: v => setField(catKey, si, "portabilita", v) })}
                       </>)}
                     </div>
                   );
@@ -1770,8 +1808,8 @@ export default function InviaPda() {
                 const kPort = `${catKey}_${si}_portF`;
                 return (
                   <div className="mt-4">
-                    {port1 && collapsedToggles[kPort] !== false && <Chip tkKey={kPort} label="📞 Portabilità" answer={port1} />}
-                    <TBlock tkKey={kPort} label="📞 Portabilità?" cur={port1} onSet={v => setField(catKey, si, "portabilita", v)} />
+                    {port1 && collapsedToggles[kPort] !== false && chipPill({ tkKey: kPort, label: "📞 Portabilità", answer: port1 })}
+                    {tBlock({ tkKey: kPort, label: "📞 Portabilità?", cur: port1, onSet: v => setField(catKey, si, "portabilita", v) })}
                   </div>
                 );
               })()}
@@ -1802,70 +1840,43 @@ export default function InviaPda() {
 
 
   return (
-    <div className="p-6 md:p-8 max-w-[1600px] mx-auto space-y-6 text-slate-300">
-      {/* TOAST */}
+    <div className="p-6 md:p-8 max-w-[1600px] mx-auto text-slate-300">
+      {/* TOAST — identico a Registra Vendita */}
       {toast && (
         <div style={{ position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", background: "var(--tf-28a745)", color: "#fff", padding: "12px 28px", borderRadius: 10, fontSize: 14, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,0,0,.2)", zIndex: 9999 }}>
           {toast}
         </div>
       )}
 
-      {/* HEADER DASHBOARD */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Inserimento Contratto</h1>
-          <p className="sr-only">v5.5</p>
-          <div className="flex items-center gap-2 text-sm text-slate-400 font-medium">
-            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/5 border border-white/10 uppercase tracking-wider text-[10px] font-bold text-slate-500">
-              Multi-Brand v5.5
-            </span>
-            {venditore && <span className="text-slate-500">/</span>}
-            {venditore && <span className="flex items-center gap-1 text-slate-300">👤 {venditore}</span>}
-            {tipoCliente && <span className="text-slate-500">/</span>}
-            {tipoCliente && (
-              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${tipoCliente === "privato" ? "bg-emerald-500/10 text-emerald-400" : "bg-violet-500/10 text-violet-400"}`}>
-                {tipoCliente === "privato" ? "Consumer" : "Business"}
-              </span>
-            )}
-            {currentBrand && <span className="text-slate-500">/</span>}
-            {currentBrand && <span className="text-slate-300">🏷 {currentBrand.label}</span>}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {brand && step === 4 && (
-            <button onClick={addCart}
-              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2">
-              <Plus className="w-4 h-4" /> 📦 Cambia brand
-            </button>
-          )}
-          <button onClick={reset} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all flex items-center gap-2">
-            <ChevronLeft className="w-4 h-4" /> Ricomincia
-          </button>
-        </div>
+      {/* TITOLO in alto a sinistra, come Registra Vendita (Luca 03/08).
+          Via il breadcrumb e i bottoni in testata: la navigazione passa dalla
+          barra step, il reset sta nel footer (convenzione RV). */}
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ fontSize: 28, fontWeight: 800, color: "var(--tf-f8fafc)", margin: 0, letterSpacing: -0.3 }}>Invia PDA</h1>
       </div>
 
       {showCart ? (
-        <div className="space-y-6 animate-in fade-in duration-300">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-white flex items-center gap-3">
-              <ShoppingBag className="w-6 h-6 text-violet-400" />
-              Carrello Prodotti ({tCI})
+        <div className="animate-in fade-in duration-300">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "var(--tf-f8fafc)", display: "flex", alignItems: "center", gap: 10 }}>
+              <ShoppingBag className="w-5 h-5 text-violet-400" />
+              Riepilogo carrello ({tCI})
             </h2>
-            <button onClick={() => setShowCart(false)} className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-sm font-medium transition-all">
-              Torna al modulo
+            <button onClick={() => setShowCart(false)}
+              style={{ padding: "11px 20px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              ← Torna al modulo
             </button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-2 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-3">
               {[...cart, ...(colItems().length > 0 ? [{ brandId: brand, brandLabel: currentBrand?.label, brandColor: currentBrand?.color, items: colItems(), isCurrent: true }] : [])].map((group, gi) => (
-                <div key={gi} className="glass-panel overflow-hidden border-l-4" style={{ borderLeftColor: group.brandColor }}>
-                  <div className="p-4 bg-white/[0.03] border-b border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg">{group.brandIcon || "📦"}</span>
-                      <h3 className="font-bold text-white uppercase tracking-wider text-sm">{group.brandLabel}</h3>
+                <div key={gi} style={{ background: "var(--tf-w20)", borderRadius: 14, borderLeft: "4px solid " + (group.brandColor || "var(--tf-6f42c1)"), overflow: "hidden" }}>
+                  <div style={{ padding: "12px 16px", background: "var(--tf-w30)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: .8, color: group.brandColor || "var(--tf-f8fafc)" }}>
+                      {group.brandLabel}
                     </div>
-                    {group.isCurrent && <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full uppercase">In Corso</span>}
+                    {group.isCurrent && <span style={{ fontSize: 10, fontWeight: 800, color: "var(--tf-28a745)", background: "rgba(40,167,69,0.12)", borderRadius: 10, padding: "2px 10px", textTransform: "uppercase" }}>In corso</span>}
                   </div>
                   <div className="p-4 space-y-4">
                     {group.items.map((it, ii) => (
@@ -1876,23 +1887,23 @@ export default function InviaPda() {
               ))}
             </div>
 
-            <div className="space-y-6">
-              <div className="glass-panel p-6 sticky top-24">
-                <h3 className="text-sm font-bold text-slate-400 mb-6 uppercase tracking-widest">Resoconto</h3>
-                <div className="space-y-4 mb-4">
-                  <div className="flex justify-between text-sm py-2 border-b border-white/5">
-                    <span className="text-slate-500 font-bold uppercase text-[10px]">Totale Brand</span>
-                    <span className="text-white font-bold">{cart.length + (colItems().length > 0 ? 1 : 0)}</span>
+            <div className="space-y-3">
+              <div className="sticky top-24" style={{ background: "var(--tf-w20)", borderRadius: 14, padding: 18 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tf-8892b0)", marginBottom: 14, textTransform: "uppercase", letterSpacing: 1 }}>Resoconto</div>
+                <div className="mb-4">
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--tf-w60)" }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-64748b)", textTransform: "uppercase" }}>Totale Brand</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "var(--tf-f8fafc)" }}>{cart.length + (colItems().length > 0 ? 1 : 0)}</span>
                   </div>
-                  <div className="flex justify-between text-sm py-2 border-b border-white/5">
-                    <span className="text-slate-500 font-bold uppercase text-[10px]">Totale Prodotti</span>
-                    <span className="text-white font-bold">{tCI}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--tf-w60)" }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-64748b)", textTransform: "uppercase" }}>Totale Prodotti</span>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "var(--tf-f8fafc)" }}>{tCI}</span>
                   </div>
                 </div>
 
-                {/* STEP 5 & 6 (CART INLINE) */}
+                {/* ATTRIBUZIONE & ALLEGATI (pelle RV: kicker verde, riquadri tratteggiati) */}
                 <div className="mt-6 mb-6">
-                  <h4 className="text-[10px] font-black uppercase text-slate-400 mb-3 tracking-widest flex items-center gap-2"><Archive className="w-3 h-3 text-emerald-400" /> Attribuzione & Allegati</h4>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tf-28a745)", marginBottom: 12, textTransform: "uppercase" }}>🏪 Attribuzione & Allegati</div>
 
                   {/* Il campo NEGOZIO è stato TOLTO (Luca 28/07): la pratica dell'agente
                       è dell'AGENZIA e di chi l'ha inserita — il negozio di attivazione
@@ -1910,132 +1921,173 @@ export default function InviaPda() {
                     {uploading && <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center rounded-xl"><div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div></div>}
                     <Label text="Allegati (Trascina o clicca)" />
                     <div className="grid grid-cols-3 gap-2 mt-2">
-                      {[{ l: "Identità", i: "🪪", t: "identity" }, { l: "Contratti", i: "📄", t: "contract" }, { l: "Altro", i: "📁", t: "other" }].map(a => (
-                        <label key={a.l} className="border border-dashed border-white/10 rounded-xl p-3 text-center bg-white/[0.02] hover:bg-white/[0.05] cursor-pointer group flex flex-col items-center">
-                          <input type="file" multiple className="hidden" onChange={(e) => handleFileChange(e, a.t)} />
-                          <div className="text-xl mb-1 group-hover:scale-110 transition-transform">{a.i}</div>
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter line-clamp-1">{a.l}</div>
-                          <div className="flex flex-wrap justify-center gap-0.5 mt-1">
-                            {attachments.filter(at => at.type === a.t).map((at, ii) => (
-                              <div key={ii} className="w-1.5 h-1.5 rounded-full bg-cyan-500" title={at.name}></div>
-                            ))}
-                          </div>
-                        </label>
-                      ))}
+                      {[{ l: "Identità", i: "🪪", t: "identity" }, { l: "Contratti", i: "📄", t: "contract" }, { l: "Altro", i: "📁", t: "other" }].map(a => {
+                        const cnt = attachments.filter(at => at.type === a.t).length;
+                        return (
+                          <label key={a.l} className="cursor-pointer group flex flex-col items-center"
+                            style={{ border: "2px dashed " + (cnt > 0 ? "rgba(23,162,184,0.55)" : "var(--tf-w100)"), borderRadius: 10, padding: "12px 8px", textAlign: "center", background: cnt > 0 ? "rgba(23,162,184,0.08)" : "var(--tf-w30)", transition: "all .12s" }}>
+                            <input type="file" multiple className="hidden" onChange={(e) => handleFileChange(e, a.t)} />
+                            <div className="text-xl mb-1 group-hover:scale-110 transition-transform">{a.i}</div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-8892b0)", textTransform: "uppercase" }}>{a.l}</div>
+                            {cnt > 0 && <div style={{ marginTop: 5, fontSize: 10, color: "var(--tf-17a2b8)", fontWeight: 700 }}>{cnt} file</div>}
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
 
                 <div className="flex flex-col gap-3">
                   {colItems().length > 0 && (
-                    <button onClick={addCart} className="w-full py-3 bg-white/5 border border-white/10 text-slate-300 rounded-xl font-bold hover:bg-white/10 transition-all text-xs uppercase tracking-widest">
-                      + Aggiungi Altro Brand
+                    <button onClick={addCart}
+                      style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                      📦 + Aggiungi altro brand
                     </button>
                   )}
+                  {/* stesso stile del "💾 Salva vendita" di Registra Vendita */}
                   <button onClick={finalSubmit} disabled={tCI === 0}
-                    className={`w-full py-4 rounded-xl font-black uppercase tracking-widest text-sm flex items-center justify-center gap-2 transition-all ${tCI > 0 ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}>
-                    <Check className="w-5 h-5" /> Invia Tutto
+                    style={tCI > 0
+                      ? { width: "100%", padding: "13px 0", borderRadius: 10, border: "2px solid var(--tf-28a745)", background: "rgba(40,167,69,0.12)", color: "var(--tf-28a745)", fontSize: 14, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }
+                      : { width: "100%", padding: "13px 0", borderRadius: 10, border: "2px solid var(--tf-w100)", background: "var(--tf-w30)", color: "var(--tf-64748b)", fontSize: 14, fontWeight: 800, cursor: "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                    📨 Invia PDA
                   </button>
                 </div>
-                <p className="text-[9px] text-slate-500 text-center mt-4 uppercase font-bold tracking-tighter">I dati verranno salvati nel sistema centralizzato</p>
+                <p style={{ fontSize: 10, color: "var(--tf-64748b)", textAlign: "center", marginTop: 12, textTransform: "uppercase", fontWeight: 700 }}>I dati verranno salvati nel sistema centralizzato</p>
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* PROGRESS BAR */}
-          <div className="flex gap-2 mb-8">
-            {STEP_LABELS.map((s, i) => {
-              const n = i + 1, done = n < step, active = n === step;
-              return (
-                <div key={i} onClick={() => done && setStep(n)}
-                  className={`flex-1 h-1.5 rounded-full transition-all duration-300 ${active ? "bg-violet-500 shadow-[0_0_10px_rgba(139,92,246,0.3)]" : done ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)]" : "bg-white/10"}`}
-                  title={s}
-                />
-              );
-            })}
-          </div>
+        <div>
+          {/* BARRA STEP RICCA — stessa di Registra Vendita (classi rvsteps in
+              globals.css, già pronte per il tema chiaro): nodi con anello di
+              avanzamento conico, logo del brand scelto, etichetta + stato. */}
+          {(() => {
+            const cli100 = !!tipoCliente && lookupDone
+              && !(tipoCliente === "business" && (!String(anBusiness.referente || "").trim() || !/^[A-Z0-9]{16}$/.test(String(anBusiness.cfReferente || "").trim().toUpperCase())));
+            const STEPS = [
+              { n: 1, label: "Venditore", icona: <span>{venditore ? "👤" : "🧑‍💼"}</span>, perc: venditore ? 100 : 0, abil: true },
+              { n: 2, label: "Cliente", icona: <span>{tipoCliente ? (tipoCliente === "privato" ? "👤" : "🏢") : "🧑‍💼"}</span>, perc: !tipoCliente ? 0 : (cli100 ? 100 : 50), abil: !!venditore },
+              {
+                n: 3, label: "Brand",
+                icona: currentBrand?.logo
+                  ? <Image src={currentBrand.logo} alt={currentBrand.label} width={84} height={30} style={{ height: 26, width: "auto", maxWidth: 82, objectFit: "contain" }} />
+                  : <span>🏷️</span>,
+                perc: (brand || cart.length > 0) ? 100 : 0, abil: cli100,
+              },
+              { n: 4, label: "Prodotti", icona: <span>🛒</span>, perc: tCI > 0 ? 100 : (step === 4 ? 50 : 0), abil: !!brand || cart.length > 0 },
+            ];
+            const doneCount = STEPS.filter(s => s.perc >= 100).length;
+            const railPct = Math.min(100, (doneCount / (STEPS.length - 1)) * 100);
+            return (
+              <div className="rvsteps">
+                <div className="rvsteps-rail"><i style={{ width: railPct + "%" }} /></div>
+                {STEPS.map(st => {
+                  const attivo = step === st.n;
+                  const fatto = st.perc >= 100;
+                  const ringC = fatto ? "#22c55e" : "#6d5cff";
+                  const sub = fatto ? "Completo" : attivo ? "Sei qui" : st.perc > 0 ? st.perc + "%" : st.abil ? "Da fare" : "Bloccato";
+                  return (
+                    <button key={st.n} type="button" disabled={!st.abil}
+                      className={"rvnode-step" + (attivo ? " is-active" : "") + (fatto ? " is-done" : "") + (st.abil ? "" : " is-locked")}
+                      onClick={() => { if (st.abil) setStep(st.n); }}
+                      title={!st.abil ? "Completa prima gli step precedenti" : attivo ? "Sei qui" : "Vai a " + st.label}>
+                      <span className="rvnode-ring" style={{ background: `conic-gradient(${ringC} ${st.perc}%, var(--rv-track) 0)` }}>
+                        <span className="rvnode">{st.icona}</span>
+                        {fatto && <span className="rvnode-check">✓</span>}
+                      </span>
+                      <span className="rvnode-lab">{st.label}</span>
+                      <span className="rvnode-sub">{sub}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
 
-          <div className="space-y-6">
-            {/* CART BAR */}
+          <div>
+            {/* CART BAR — riassunto carrello cliccabile, pelle RV */}
             {cart.length > 0 && (
-              <div onClick={() => setShowCart(true)}
-                className="glass-panel p-4 flex items-center justify-between cursor-pointer hover:bg-white/5 transition-all group border-l-2 border-violet-500/50">
+              <div onClick={() => setShowCart(true)} role="button"
+                style={{ background: "var(--tf-w20)", borderRadius: 14, padding: 14, marginBottom: 12, borderLeft: "4px solid #6f42c1", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}
+                className="group hover:bg-white/5 transition-all">
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-400 group-hover:scale-110 transition-transform">
                     <ShoppingBag className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-white">Carrello Prodotti</div>
-                    <div className="flex gap-2 mt-1">
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "var(--tf-6f42c1)", textTransform: "uppercase" }}>🛒 Carrello PDA</div>
+                    <div className="flex gap-2 mt-1 flex-wrap">
                       {cart.map((g, i) => (
-                        <span key={i} className="px-2 py-0.5 rounded bg-white/5 text-[10px] font-bold text-slate-400 border border-white/5 uppercase tracking-tighter">
-                          {g.brandLabel} ({g.items.length})
+                        <span key={i} style={{ background: "var(--tf-w30)", borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 700, color: "var(--tf-e2e8f0)" }}>
+                          {g.brandLabel} <span style={{ color: "var(--tf-64748b)", fontWeight: 600 }}>x{g.items.length}</span>
                         </span>
                       ))}
                     </div>
                   </div>
                 </div>
-                <span className="text-xs font-medium text-slate-500 group-hover:text-white transition-colors flex items-center gap-1 uppercase tracking-widest text-[10px]">Dettagli <ChevronRight className="w-3 h-3" /></span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--tf-6f42c1)", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>Riepilogo <ChevronRight className="w-3 h-3" /></span>
               </div>
             )}
 
-            {/* ══ STEP 1 ══ */}
+            {/* ══ STEP 1 — VENDITORE ══ */}
             {step === 1 && (
-              <StepCard title="Step 1 — Venditore" color="var(--tf-e83e8c)" icon="👤">
-                <div style={{ maxWidth: 360 }}>
-                  <Label text="Seleziona il tuo nome" required note="Pre-compilato dal login" />
-                  <SearchableSelect
-                    options={VENDITORI}
-                    value={venditore}
-                    onChange={setVenditore}
-                    placeholder="— Seleziona venditore —"
-                    icon={<User className="w-4 h-4 text-violet-400" />}
-                  />
-                </div>
+              <>
+                <StepCard title="Venditore — chi invia la PDA" color="var(--tf-6f42c1)" icon="👤">
+                  <div style={{ maxWidth: 360 }}>
+                    <Label text="Seleziona il tuo nome" required note="Pre-compilato dal login" />
+                    <SearchableSelect
+                      options={VENDITORI}
+                      value={venditore}
+                      onChange={setVenditore}
+                      placeholder="— Seleziona venditore —"
+                      icon={<User className="w-4 h-4 text-violet-400" />}
+                    />
+                  </div>
+                </StepCard>
                 <NavBar onNext={goNext} canNext={canProceed()} isFirst />
-              </StepCard>
+              </>
             )}
 
-            {/* ══ STEP 2 ══ */}
+            {/* ══ STEP 2 — CLIENTE (due card come RV: tipo+ricerca, poi anagrafica) ══ */}
             {step === 2 && (
-              <StepCard title="Step 2 — Tipo Cliente e Anagrafica" color="var(--tf-6f42c1)" icon="🧑‍💼">
-                <div className="grid grid-cols-2 gap-4 mb-8">
-                  {[{ id: "privato", icon: "👤", label: "Consumer", desc: "Persona fisica" }, { id: "business", icon: "🏢", label: "Business", desc: "Azienda / P.IVA" }].map(o => (
-                    <button key={o.id}
-                      onClick={() => { setTipoCliente(o.id); setLookupDone(false); setClienteFound(false); setLookupValue(""); setBrand(null); setAllSales({}); }}
-                      className={`p-6 rounded-2xl text-center border-2 transition-all ${tipoCliente === o.id ? "bg-violet-500/10 border-violet-500 shadow-lg shadow-violet-500/20" : "bg-white/5 border-white/5 hover:bg-white/10"}`}>
-                      <div className="text-3xl mb-3">{o.icon}</div>
-                      <div className={`font-bold text-sm uppercase tracking-wide ${tipoCliente === o.id ? "text-violet-400" : "text-slate-300"}`}>{o.label}</div>
-                      <div className="text-[10px] text-slate-500 mt-1 uppercase font-bold">{o.desc}</div>
-                    </button>
-                  ))}
-                </div>
-
-                {tipoCliente && (
-                  <div className="bg-white/[0.03] rounded-2xl p-6 mb-8 border border-white/5">
-                    <Label text="Cliente esistente" required note="Cerca per CF/P.IVA, cellulare, nome e cognome o ragione sociale" />
-                    <div className="flex gap-3 mt-3 items-start">
-                      {/* ricerca STANDARD del CRM, identica a Registra Vendita (Luca 31/07) */}
-                      <RicercaCliente
-                        tipo={tipoCliente === "privato" ? "consumer" : "business"}
-                        className="flex-1"
-                        onScelto={applicaClientePda}
-                      />
-                      <button onClick={() => { setClienteFound(false); setLookupDone(true); }}
-                        className="px-6 py-2.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl text-sm font-bold border border-white/10 transition-all flex items-center gap-2 shrink-0">
-                        <User className="w-4 h-4" /> Nuovo
+              <>
+                <StepCard title="Cliente — tipo e ricerca" color="var(--tf-6f42c1)" icon="👥">
+                  <div style={{ display: "flex", gap: 12, marginBottom: tipoCliente ? 16 : 0 }}>
+                    {[{ id: "privato", icon: "👤", label: "Privato" }, { id: "business", icon: "🏢", label: "Business" }].map(o => (
+                      <button key={o.id} type="button"
+                        onClick={() => { setTipoCliente(o.id); setLookupDone(false); setClienteFound(false); setLookupValue(""); setBrand(null); setAllSales({}); }}
+                        style={{ flex: 1, padding: 12, borderRadius: 10, border: tipoCliente === o.id ? "2px solid #6f42c1" : "2px solid var(--tf-w60)", background: tipoCliente === o.id ? "rgba(111,66,193,0.12)" : "var(--tf-w40)", cursor: "pointer", textAlign: "center" }}>
+                        <div style={{ fontSize: 22, marginBottom: 2 }}>{o.icon}</div>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: tipoCliente === o.id ? "var(--tf-6f42c1)" : "var(--tf-f8fafc)" }}>{o.label}</div>
                       </button>
-                    </div>
-                    {clienteFound && <div className="mt-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-sm text-emerald-400 flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest"><Check className="w-4 h-4" /> Cliente trovato! Dati pre-compilati.</div>}
-                    {lookupDone && !clienteFound && <div className="mt-4 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-sm text-amber-400 flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest"><Info className="w-4 h-4" /> Nuovo cliente — compila manualmente.</div>}
+                    ))}
                   </div>
-                )}
+
+                  {tipoCliente && (
+                    <div style={{ background: "var(--tf-w30)", borderRadius: 8, padding: 14 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--tf-8892b0)", marginBottom: 8 }}>Cliente esistente — cerca per CF/P.IVA, cellulare, nome e cognome o ragione sociale</div>
+                      <div className="flex gap-3 items-start">
+                        {/* ricerca STANDARD del CRM, identica a Registra Vendita (Luca 31/07) */}
+                        <RicercaCliente
+                          tipo={tipoCliente === "privato" ? "consumer" : "business"}
+                          className="flex-1"
+                          onScelto={applicaClientePda}
+                        />
+                        <button onClick={() => { setClienteFound(false); setLookupDone(true); }}
+                          style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid var(--tf-w180)", background: "var(--tf-w40)", color: "var(--tf-cbd5e1)", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                          ✏️ Nuovo
+                        </button>
+                      </div>
+                      {clienteFound && <div style={{ marginTop: 10, background: "rgba(40,167,69,0.12)", borderRadius: 6, padding: "8px 12px", fontSize: 12, color: "var(--tf-28a745)" }}>✅ Cliente trovato in anagrafica — dati pre-compilati</div>}
+                      {lookupDone && !clienteFound && <div style={{ marginTop: 10, background: "rgba(245,158,11,0.12)", borderRadius: 6, padding: "8px 12px", fontSize: 12, color: "var(--tf-f59e0b)" }}>⚠ Cliente non presente in anagrafica — compila i dati a mano</div>}
+                    </div>
+                  )}
+                </StepCard>
 
                 {tipoCliente && lookupDone && (
-                  <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    <SectionTitle>📝 Dati Anagrafici <Tag c="var(--tf-6f42c1)" bg="var(--tf-f3eefb)">{tipoCliente === "privato" ? "Consumer" : "Business"}</Tag></SectionTitle>
+                  <StepCard title="Anagrafica" color="var(--tf-8fb4dd)" stripe="#1B3A5C" icon="📝"
+                    badge={tipoCliente === "privato" ? "Consumer" : "Business"}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {tipoCliente === "privato" ? (
                         <>
@@ -2076,86 +2128,96 @@ export default function InviaPda() {
                         </>
                       )}
                     </div>
-                  </div>
+                  </StepCard>
                 )}
                 <NavBar onBack={goBack} onNext={goNext} canNext={canProceed()} />
-              </StepCard>
+              </>
             )}
 
-            {/* ══ STEP 3 ══ */}
+            {/* ══ STEP 3 — BRAND (griglia solo-logo identica a RV, Luca 03-04/08) ══ */}
             {step === 3 && (
-              <StepCard title="Step 3 — Seleziona Brand" color="var(--tf-2e75b6)" icon="🏷️">
-                {tipoCliente === "business" && (
-                  <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-3 text-sm text-violet-400 mb-6 flex items-center gap-2 font-bold uppercase text-[10px] tracking-widest">
-                    <Info className="w-4 h-4" /> Modalità Business — tutti i brand inclusi
-                  </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {visibleBrands.map(b => (
-                    <div
-                      key={b.id}
-                      onClick={() => { setBrand(b.id); setAllSales({}); }}
-                      className={`glass-card p-6 cursor-pointer group hover:bg-white/[0.04] transition-all relative overflow-hidden border ${brand === b.id ? "" : "border-white/[0.08]"}`}
-                      style={brand === b.id ? { borderColor: b.color, backgroundColor: `${b.color}15` } : {}}
-                    >
-                      <div className="absolute top-0 left-0 right-0 h-1" style={{background:`linear-gradient(to right, ${b.color}, ${b.color}88)`}}/>
-                      {/* SOLO il logo, grande e centrato (Luca 04/08, come Registra
-                          Vendita): via nome e sottotitolo mobile/fisso/luce&gas */}
-                      <div className="flex flex-col items-center justify-center text-center gap-3 py-4" title={`${b.label} — ${b.desc}`}>
-                        <div className="flex items-center justify-center h-[88px]">
-                          {b.logo
-                            ? <Image src={b.logo} alt={b.label} width={260} height={88} className="h-[84px] w-auto max-w-[92%] object-contain"
-                                style={{transform:`scale(${({w3:1.7,fastweb:1.75})[b.id]||1})`}}/>
-                            : <span className="text-xl font-bold text-white">{b.label}</span>}
-                        </div>
-                        {(b.onlyBusiness || brand === b.id) && <div className="flex flex-wrap gap-2 justify-center">
-                          {b.onlyBusiness && <Tag c="var(--tf-a78bfa)" bg="#a78bfa10">Solo Business</Tag>}
-                          {brand === b.id && <Tag c="var(--tf-10b981)" bg="#10b98110">Selezionato</Tag>}
-                        </div>}
-                      </div>
+              <>
+                <StepCard title="Scegli il brand" color="var(--tf-8892b0)" noStripe>
+                  {tipoCliente === "business" && (
+                    <div style={{ marginBottom: 14, background: "rgba(111,66,193,0.12)", borderRadius: 6, padding: "7px 12px", fontSize: 12, fontWeight: 600, color: "var(--tf-6f42c1)", display: "flex", alignItems: "center", gap: 6 }}>
+                      <Info className="w-4 h-4" /> Modalità Business — tutti i brand inclusi
                     </div>
-                  ))}
-                </div>
+                  )}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 14 }}>
+                    {visibleBrands.map(b => {
+                      const sel = brand === b.id;
+                      const nBr = cart.filter(g => g.brandId === b.id).reduce((s, g) => s + g.items.length, 0);
+                      return (
+                        <button
+                          key={b.id} type="button"
+                          onClick={() => { setBrand(b.id); setAllSales({}); }}
+                          title={`${b.label} — ${b.desc}`}
+                          style={{ padding: "26px 16px", borderRadius: 14, border: sel ? "2px solid " + b.color : "2px solid var(--tf-w60)", background: sel ? b.color + "14" : "var(--tf-w20)", cursor: "pointer", textAlign: "center", position: "relative", overflow: "hidden", transition: "border-color .15s,background .15s" }}
+                          onMouseEnter={e => { if (!sel) { e.currentTarget.style.borderColor = b.color; e.currentTarget.style.background = "var(--tf-w50)"; } }}
+                          onMouseLeave={e => { if (!sel) { e.currentTarget.style.borderColor = "var(--tf-w60)"; e.currentTarget.style.background = "var(--tf-w20)"; } }}
+                        >
+                          {nBr > 0 && <span style={{ position: "absolute", top: 8, right: 8, background: b.color, color: "#fff", borderRadius: 10, padding: "2px 10px", fontSize: 12, fontWeight: 800, zIndex: 3 }}>{nBr}</span>}
+                          {/* SOLO il logo, grande e centrato (Luca 04/08, come Registra
+                              Vendita): via nome e sottotitolo mobile/fisso/luce&gas.
+                              Scala OTTICA per i wordmark annegati nel canvas. */}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 88 }}>
+                            {b.logo
+                              ? <Image src={b.logo} alt={b.label} width={260} height={88}
+                                  style={{ height: 84, width: "auto", maxWidth: "92%", objectFit: "contain", transform: `scale(${({ w3: 1.7, fastweb: 1.75 })[b.id] || 1})` }} />
+                              : <span style={{ fontSize: 20, fontWeight: 700, color: "var(--tf-f8fafc)" }}>{b.label}</span>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </StepCard>
                 <NavBar onBack={goBack} onNext={goNext} canNext={canProceed()} />
-              </StepCard>
+              </>
             )}
 
-            {/* ══ STEP 4 ══ */}
+            {/* ══ STEP 4 — PRODOTTI ══ */}
             {step === 4 && (
-              <StepCard title="Step 4 — Prodotti" color={currentBrand?.color || "var(--tf-2e75b6)"} icon="📂"
-                badge={`${currentBrand?.label} · ${tipoCliente === "business" ? "Business" : "Consumer"}`}>
-                {Object.keys(brandProdotti).length > 0
-                  ? <div className="space-y-6">
-                    {Object.entries(brandProdotti).map(([cat, prods]) => renderCategoria(cat, prods))}
-                  </div>
-                  : (
-                    <div className="text-center py-20 bg-white/[0.02] rounded-3xl border border-dashed border-white/10">
-                      <div className="text-4xl mb-4 opacity-40">🚧</div>
-                      <div className="text-sm font-bold text-slate-500 uppercase tracking-widest">Nessun prodotto disponibile per questa selezione</div>
+              <>
+                <StepCard title="Prodotti e Contratto" color={currentBrand?.color || "var(--tf-2e75b6)"} icon="📂"
+                  badge={`${currentBrand?.label} · ${tipoCliente === "business" ? "Business" : "Consumer"}`}>
+                  {Object.keys(brandProdotti).length > 0
+                    ? <div className="space-y-4">
+                      {Object.entries(brandProdotti).map(([cat, prods]) => renderCategoria(cat, prods))}
                     </div>
-                  )
-                }
-                <div className="flex justify-between items-center mt-8 pt-6 border-t border-white/10 gap-4 flex-wrap">
-                  <div className="flex items-center gap-3">
-                    <button onClick={goBack} className="px-5 py-2.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 text-sm font-medium transition-all">← Indietro</button>
+                    : (
+                      <div style={{ textAlign: "center", padding: "64px 0", background: "var(--tf-w30)", borderRadius: 14, border: "2px dashed var(--tf-w100)" }}>
+                        <div style={{ fontSize: 34, marginBottom: 10, opacity: .5 }}>🚧</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--tf-64748b)", textTransform: "uppercase", letterSpacing: 2 }}>Nessun prodotto disponibile per questa selezione</div>
+                      </div>
+                    )
+                  }
+                </StepCard>
+
+                {/* Footer wizard RV: Indietro/Reset a sinistra, Avanti a DESTRA (Luca 04/08) */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 20, marginTop: 8, gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <button onClick={goBack} style={{ padding: "11px 20px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>← Indietro</button>
                     {confirmReset ? (
-                      <div className="flex items-center gap-3 animate-in fade-in duration-200 ml-2">
-                        <span className="text-xs font-bold text-rose-500 uppercase">Sei sicuro?</span>
-                        <button onClick={reset} className="px-4 py-2 rounded-lg bg-rose-500 text-white text-xs font-bold hover:bg-rose-600 transition-all">Sì, resetta</button>
-                        <button onClick={() => setConfirmReset(false)} className="px-4 py-2 rounded-lg bg-white/5 text-slate-300 text-xs font-bold hover:bg-white/10 border border-white/10 transition-all">Annulla</button>
+                      <div className="flex items-center gap-2 animate-in fade-in duration-200">
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--tf-dc3545)", textTransform: "uppercase" }}>Sei sicuro?</span>
+                        <button onClick={reset} style={{ padding: "9px 16px", borderRadius: 10, border: "none", background: "var(--tf-dc3545)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Sì, resetta</button>
+                        <button onClick={() => setConfirmReset(false)} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Annulla</button>
                       </div>
                     ) : (
-                      <button onClick={() => setConfirmReset(true)} className="px-5 py-2.5 flex items-center gap-2 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 transition-all uppercase tracking-widest">
-                        <Trash2 className="w-4 h-4" /> Reset form
-                      </button>
+                      <button onClick={() => setConfirmReset(true)} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid #dc3545", background: "var(--tf-w20)", color: "var(--tf-dc3545)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>🗑️ Reset form</button>
+                    )}
+                    {brand && (
+                      <button onClick={addCart} title="Metti nel carrello i prodotti di questo brand e scegline un altro"
+                        style={{ padding: "11px 22px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>📦 Cambia brand</button>
                     )}
                   </div>
-
-                  <button onClick={() => setShowCart(true)} className="px-8 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-xl text-sm font-bold uppercase tracking-widest shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all flex items-center gap-2">
-                    🛒 Riepilogo Carrello {tCI > 0 && <span className="bg-white text-violet-600 px-2 py-0.5 rounded-full text-[10px] font-black ml-1">{tCI}</span>}
+                  <button onClick={() => setShowCart(true)}
+                    style={{ padding: "11px 30px", borderRadius: 10, border: "1.5px solid rgba(99,102,241,0.6)", background: "rgba(99,102,241,0.14)", color: "var(--tf-c7d2fe)", fontSize: 14, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+                    Avanti — riepilogo →
+                    {tCI > 0 && <span style={{ background: "var(--tf-ffd800)", color: "#111", borderRadius: 10, padding: "1px 9px", fontSize: 12, fontWeight: 900 }}>{tCI}</span>}
                   </button>
                 </div>
-              </StepCard>
+              </>
             )}
           </div>
         </div>
@@ -2243,7 +2305,7 @@ export default function InviaPda() {
       <div className="mt-12 bg-blue-500/5 border border-blue-500/10 rounded-2xl p-6 shadow-sm">
         <div className="flex items-center gap-3 mb-4">
           <Info className="w-5 h-5 text-blue-400" />
-          <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">Guida Rapida Dashboard v5.5</h4>
+          <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">Guida rapida — Invia PDA</h4>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="text-[10px] text-slate-500 leading-relaxed uppercase space-y-2">
@@ -2267,27 +2329,20 @@ export default function InviaPda() {
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 
-function StepCard({ title, color, icon, badge, children }) {
-  const m = /(\d+)/.exec(title || "");
-  const kicker = m ? `Passo ${m[1]} di ${STEP_LABELS.length}` : null;
-  const parts = title && title.includes("—") ? title.split("—") : null;
+// Card di sezione — stessa pelle delle card di Registra Vendita: superficie
+// var(--tf-w20), radius 14, stanghetta colorata a sinistra e kicker maiuscolo.
+// `stripe` permette una stanghetta di colore diverso dal testo (es. Anagrafica
+// RV: stanghetta #1B3A5C, kicker azzurro); `noStripe` la toglie (griglia brand).
+function StepCard({ title, color, icon, badge, children, noStripe, stripe }) {
   return (
-    <div className="glass-panel sc-card relative p-6 md:p-8 animate-in slide-in-from-top-2 fade-in duration-200">
-      <span className="sc-stripe" aria-hidden />
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3.5">
-          <span className="sc-ic">{icon}</span>
-          <div className="min-w-0">
-            {kicker && <div className="sc-kicker">{kicker}</div>}
-            <h2 className="sc-title">
-              {parts
-                ? <>{parts[0].trim()} — <b>{parts.slice(1).join("—").trim()}</b></>
-                : title}
-            </h2>
-          </div>
+    <div className="animate-in fade-in duration-200"
+      style={{ background: "var(--tf-w20)", borderRadius: 14, padding: 18, marginBottom: 12, borderLeft: noStripe ? undefined : "4px solid " + (stripe || color) }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: .6 }}>
+          {icon ? icon + " " : ""}{title}
         </div>
         {badge && (
-          <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-slate-400 uppercase">
+          <span style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-8892b0)", background: "var(--tf-w30)", borderRadius: 6, padding: "3px 10px", textTransform: "uppercase", whiteSpace: "nowrap" }}>
             {badge}
           </span>
         )}
@@ -2297,30 +2352,35 @@ function StepCard({ title, color, icon, badge, children }) {
   );
 }
 
+// Footer di navigazione — convenzione wizard di Registra Vendita (Luca 04/08):
+// "← Indietro" a sinistra, "Avanti →" a DESTRA in indaco tenue.
 function NavBar({ onBack, onNext, canNext, isFirst }) {
   return (
-    <div className={`flex gap-4 ${isFirst ? 'justify-end' : 'justify-between'} mt-8 pt-6 border-t border-white/10`}>
+    <div style={{ display: "flex", justifyContent: isFirst ? "flex-end" : "space-between", alignItems: "center", gap: 10, marginTop: 8, paddingBottom: 20 }}>
       {!isFirst && (
-        <button onClick={onBack} className="px-6 py-2.5 rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 text-sm font-medium transition-all">
-          ← Torna indietro
+        <button onClick={onBack} style={{ padding: "11px 20px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          ← Indietro
         </button>
       )}
       <button onClick={onNext} disabled={!canNext}
-        className={`px-8 py-2.5 rounded-xl text-sm font-bold transition-all ${canNext ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40' : 'bg-white/5 text-slate-500 cursor-not-allowed'}`}>
-        {onNext.name === 'finalSubmit' ? 'Invia Tutto ✓' : 'Vai avanti →'}
+        style={canNext
+          ? { padding: "11px 30px", borderRadius: 10, border: "1.5px solid rgba(99,102,241,0.6)", background: "rgba(99,102,241,0.14)", color: "var(--tf-c7d2fe)", fontSize: 14, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }
+          : { padding: "11px 30px", borderRadius: 10, border: "1.5px solid var(--tf-w100)", background: "var(--tf-w80)", color: "var(--tf-64748b)", fontSize: 14, fontWeight: 800, cursor: "not-allowed", display: "flex", alignItems: "center", gap: 6 }}>
+        Avanti →
       </button>
     </div>
   );
 }
 
+// Etichetta campo — stessa taglia delle label di Registra Vendita (TF).
 function Label({ text, required, note }) {
   return (
-    <div className="text-sm font-semibold text-slate-400 mb-2 flex items-center justify-between">
-      <span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--tf-8892b0)" }}>
         {text}
-        {required && <span className="text-rose-500 ml-1">*</span>}
+        {required && <span style={{ color: "var(--tf-dc3545)", marginLeft: 3 }}>*</span>}
       </span>
-      {note && <span className="text-[10px] font-medium text-slate-600 uppercase italic">{note}</span>}
+      {note && <span style={{ fontSize: 10, fontStyle: "italic", color: "var(--tf-64748b)", textTransform: "uppercase" }}>{note}</span>}
     </div>
   );
 }
@@ -2432,30 +2492,6 @@ function SearchableSelect({ options, value, onChange, placeholder, icon }) {
       </button>
       {typeof document !== "undefined" && dropdownEl && dropdownStyle.position === "fixed" && createPortal(dropdownEl, document.body)}
     </div>
-  );
-}
-
-function SectionTitle({ children }) {
-  return (
-    <div className="flex items-center gap-2 text-sm font-bold text-slate-200 mt-6 mb-4 pb-2 border-b border-white/5">
-      {children}
-    </div>
-  );
-}
-
-function Tag({ c, bg, children }) {
-  return (
-    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase" style={{ color: c, backgroundColor: bg }}>
-      {children}
-    </span>
-  );
-}
-
-function Pill({ children }) {
-  return (
-    <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-xs font-medium text-slate-300">
-      {children}
-    </span>
   );
 }
 
