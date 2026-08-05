@@ -397,4 +397,42 @@ export const CAP_CALENDARIO_VISTA: CapGroupChoice = {
     },
 };
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
+// ─── CALENDARIO: ambito di visibilità delle TASK (rotellina, Luca 05/08) ─────
+// «Nei permessi non c'è la visibilità delle task: oggi è legata a quella del
+// calendario ma devono essere due cose diverse.» Stessa section "/calendario"
+// (i due gruppi si impilano nello stesso pannello ⚙️, pattern CAP_CLIENTI +
+// CAP_CLIENTI_EXTRA) ma id con prefisso task_: la chiave in role_permissions
+// è cap:<section>:<id> e senza prefisso colliderebbe con quelle della VISTA.
+// FOTOGRAFIA del codice storico (a tabella vuota NON cambia nulla): chi aveva
+// la vista appuntamenti "tutti" (admin/dev/DG/amministrativo) vedeva TUTTE le
+// task; ogni altro ruolo vedeva le proprie (assegnate a lui o create da lui)
+// più quelle assegnate ai punti vendita in visibilità.
+export const CAP_CALENDARIO_TASK: CapGroupChoice = {
+    mode: "choice",
+    section: "/calendario",
+    sectionLabel: "Calendario — task",
+    caps: [
+        {
+            id: "task_tutte",
+            label: "Tutte le task",
+            desc: "Vede ogni task di ogni persona e punto vendita, con i filtri e l'elenco completo delle arretrate.",
+            default: (r) => ["admin", "dev", "direttore_generale", "amministrativo"].includes(r),
+        },
+        {
+            id: "task_negozio",
+            label: "Proprie + negozio",
+            desc: "Le proprie (assegnate a lui o create da lui) più le task assegnate ai punti vendita in visibilità.",
+            // fotografia: oggi vale per tutti i ruoli senza vista completa
+            default: () => true,
+        },
+    ],
+    // "task_proprie" solo come fallback (pattern CAP_CALENDARIO_VISTA):
+    // raggiungibile spegnendo entrambe le scelte dalla rotellina.
+    fallback: {
+        id: "task_proprie",
+        label: "Solo le proprie",
+        desc: "Vede soltanto le task assegnate a lui o create da lui; niente task di punto vendita.",
+    },
+};
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { SelectPersona, SelectOpzioni, SelectMulti } from "@/components/SelectPersona";
 import { IndirizzoAutocomplete, civicoMancante, sembraVia } from "@/components/IndirizzoAutocomplete";
 import { ChevronLeft, ChevronRight, Plus, X, Phone, MapPin, User, Clock, Search, Bell, Circle, CheckCircle2, PauseCircle, ChevronDown, ChevronUp, CheckSquare, Calendar, Lock, XCircle, Users, Video } from "lucide-react";
@@ -14,7 +15,7 @@ import { seesAllStores, seesWholeStore } from "@/lib/roles";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
 import { useRolePermissions } from "@/lib/usePermissions";
-import { capChoice, CAP_CALENDARIO_VISTA } from "@/lib/capabilities";
+import { capChoice, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK } from "@/lib/capabilities";
 import { fasciaLabel } from "@/lib/fasce";
 import { RicercaCliente } from "@/components/RicercaCliente";
 
@@ -117,6 +118,130 @@ function brandCoincide(a: string, b: string): boolean {
 // id e' l'uuid di app_users (gli operatori arrivano dagli utenti reali, non piu'
 // dalla tabella seed calendar_operators).
 type MeetingUser = { id: string; name: string; store: string; brands: string[] };
+
+// ── TENDINA MULTI-SELEZIONE per i filtri del calendario (Luca 05/08) ─────────
+// «Chi vede più negozi o più consulenti deve avere il filtro … con una tendina
+// a selezione multipla.» Stesso pattern del FiltroMulti di Ricerca Vendite
+// (RIC-06): convenzione values === null → TUTTO selezionato (default, nessun
+// filtro); array → insieme scelto; array VUOTO → niente spuntato = zero
+// risultati. Spuntare di nuovo TUTTE le voci ricompatta a null. In testa
+// "Seleziona/Deseleziona tutto"; sul bottone la chip riassuntiva.
+// Componente a livello di MODULO, mai dentro la pagina (regola segnalazione
+// 71: identità stabile, niente rimontaggi). Menu in PORTAL con classe
+// select-persona-menu (i glass-panel creano stacking context separati e il
+// tema chiaro la ristila da globals.css — Luca 30/07).
+function FiltroMulti({ values, onChange, opzioni, className = "", disabled = false,
+    etichettaTutti = "Tutti", testoDisabilitato }: {
+    values: string[] | null;
+    onChange: (v: string[] | null) => void;
+    opzioni: readonly string[];
+    className?: string;
+    disabled?: boolean;
+    etichettaTutti?: string;          // chip nello stato "tutto selezionato"
+    testoDisabilitato?: string;       // chip quando la tendina e' spenta (motivo)
+}) {
+    const [aperta, setAperta] = useState(false);
+    const [testo, setTesto] = useState("");
+    const box = useRef<HTMLDivElement | null>(null);
+    const menu = useRef<HTMLDivElement | null>(null);
+    const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+    // chiusura al click fuori (campo E tendina: la tendina sta nel portal) + Esc
+    useEffect(() => {
+        if (!aperta) return;
+        const h = (e: MouseEvent) => {
+            const t = e.target as Node;
+            if (box.current && !box.current.contains(t) && !(menu.current && menu.current.contains(t))) {
+                setAperta(false); setTesto("");
+            }
+        };
+        const k = (e: KeyboardEvent) => { if (e.key === "Escape") { setAperta(false); setTesto(""); } };
+        document.addEventListener("mousedown", h);
+        document.addEventListener("keydown", k);
+        return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", k); };
+    }, [aperta]);
+
+    // posizione della tendina agganciata al campo, viva su scroll/resize
+    useEffect(() => {
+        if (!aperta) { setPos(null); return; }
+        const update = () => {
+            const r = box.current?.getBoundingClientRect();
+            if (r) setPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 230) });
+        };
+        update();
+        window.addEventListener("scroll", update, true);
+        window.addEventListener("resize", update);
+        return () => { window.removeEventListener("scroll", update, true); window.removeEventListener("resize", update); };
+    }, [aperta]);
+
+    const tutte = values === null;
+    const spuntata = (o: string) => tutte || (values as string[]).includes(o);
+    const toggle = (o: string) => {
+        if (values === null) { onChange(opzioni.filter((x) => x !== o)); return; } // dal "tutto" si toglie la prima voce
+        const next = values.includes(o) ? values.filter((x) => x !== o) : [...values, o];
+        onChange(opzioni.length > 0 && opzioni.every((x) => next.includes(x)) ? null : next);
+    };
+
+    const chip = disabled ? (testoDisabilitato ?? etichettaTutti)
+        : tutte ? etichettaTutti
+        : values.length === 0 ? "Nessuno selezionato"
+        : values.length === 1 ? values[0]
+        : `${values.length} selezionati`;
+
+    // ricerca interna (stesso match di SelectPersona: inclusione o iniziali)
+    const q = testo.trim().toLowerCase();
+    const filtrate = !q ? opzioni : opzioni.filter((n) => {
+        const nome = n.toLowerCase();
+        if (nome.includes(q)) return true;
+        const parole = nome.split(/\s+/);
+        return q.split(/\s+/).every((t) => parole.some((p) => p.startsWith(t)));
+    });
+
+    const menuBody = pos ? (
+        <div ref={menu}
+            className="select-persona-menu fixed z-[4000] rounded-xl border border-white/15 bg-[#161a2c] shadow-2xl shadow-black/60 overflow-hidden"
+            style={{ top: pos.top, left: pos.left, width: pos.width }}>
+            <button type="button"
+                onMouseDown={(e) => { e.preventDefault(); onChange(tutte ? [] : null); }}
+                className="w-full text-left px-3.5 py-2.5 text-xs font-bold uppercase tracking-wider text-indigo-300 hover:bg-indigo-500/20 border-b border-white/10">
+                {tutte ? "Deseleziona tutto" : "Seleziona tutto"}
+            </button>
+            {opzioni.length > 8 && (
+                <div className="p-2 border-b border-white/10">
+                    <input value={testo} onChange={(e) => setTesto(e.target.value)}
+                        placeholder="Scrivi per filtrare…" autoFocus
+                        className="glass-input w-full text-sm" />
+                </div>
+            )}
+            <div className="max-h-64 overflow-y-auto divide-y divide-white/5">
+                {filtrate.length > 0 ? filtrate.map((n) => {
+                    const sel = spuntata(n);
+                    return (
+                        <button key={n} type="button"
+                            onMouseDown={(e) => { e.preventDefault(); toggle(n); }}
+                            className={`w-full text-left px-3.5 py-2.5 text-sm transition-colors hover:bg-indigo-500/20 flex items-center gap-2 ${sel ? "text-indigo-300 font-bold" : "text-slate-100"}`}>
+                            <span className={`w-3.5 h-3.5 rounded border shrink-0 flex items-center justify-center text-[9px] ${sel ? "border-indigo-400 bg-indigo-500/40" : "border-slate-600"}`}>{sel ? "✓" : ""}</span>
+                            <span className="truncate">{n}</span>
+                        </button>
+                    );
+                }) : (
+                    <div className="px-3.5 py-2.5 text-sm text-slate-500">Nessuna voce corrispondente</div>
+                )}
+            </div>
+        </div>
+    ) : null;
+
+    return (
+        <div ref={box} className="relative">
+            <button type="button" disabled={disabled} onClick={() => setAperta((v) => !v)}
+                className={(className || "glass-input w-full text-sm") + " flex items-center justify-between gap-2 text-left disabled:opacity-50"}>
+                <span className={"truncate " + (disabled || tutte ? "text-slate-400" : "text-white font-semibold")}>{chip}</span>
+                <ChevronDown className={"w-4 h-4 shrink-0 text-slate-400 transition-transform " + (aperta ? "rotate-180" : "")} />
+            </button>
+            {aperta && !disabled && typeof document !== "undefined" && menuBody && createPortal(menuBody, document.body)}
+        </div>
+    );
+}
 
 function mapAppointmentRow(r: Record<string, unknown>): Appointment {
     return {
@@ -232,6 +357,10 @@ export default function Calendario() {
     const [showSearchDrawer, setShowSearchDrawer] = useState(false);
     // pannello elenco TASK ARRETRATE (Luca 04/08, riporto stile Google)
     const [showArretrate, setShowArretrate] = useState(false);
+    // filtri del MODALE arretrate (Luca 05/08): solo per chi vede task altrui
+    // — stessa convenzione FiltroMulti (null = tutto / array = scelti)
+    const [arrFiltroNegozi, setArrFiltroNegozi] = useState<string[] | null>(null);
+    const [arrFiltroPersone, setArrFiltroPersone] = useState<string[] | null>(null);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
 
     // Deep link dai tag in chat: /calendario?appuntamento=<id> apre l'appuntamento
@@ -407,12 +536,13 @@ export default function Calendario() {
     const [searchDateFrom, setSearchDateFrom] = useState("");
     const [searchDateTo, setSearchDateTo] = useState("");
 
-    // Admin Grid Filters State
-    // MULTISELEZIONE (Luca 03/08): piu' punti vendita insieme; vuoto = tutti
-    const [filterStores, setFilterStores] = useState<string[]>([]);
-    const [filterAgent, setFilterAgent] = useState("");
-    // chi ha FISSATO l'appuntamento (non l'incaricato)
-    const [filterCreatedBy, setFilterCreatedBy] = useState("");
+    // Filtri della griglia — TUTTI MULTI-SELEZIONE (Luca 05/08, FiltroMulti):
+    // convenzione null = tutto selezionato (nessun filtro, default); array =
+    // insieme scelto; array vuoto = niente spuntato = zero risultati.
+    const [filterStores, setFilterStores] = useState<string[] | null>(null);
+    const [filterAgents, setFilterAgents] = useState<string[] | null>(null);
+    // chi ha FISSATO l'appuntamento (non l'incaricato) — multi per coerenza
+    const [filterCreatedBys, setFilterCreatedBys] = useState<string[] | null>(null);
     // Filtro CATEGORIE (i "pallini" in alto, cliccabili — per tutti i ruoli):
     // vuoto = tutto; altrimenti si vede solo cio' che e' selezionato.
     const [catFilter, setCatFilter] = useState<string[]>([]);
@@ -565,6 +695,12 @@ export default function Calendario() {
     // direttore_cc = call_center, il resto = negozio.
     const { perms: calPerms } = useRolePermissions(user?.role, user?.grade);
     const vistaCal = capChoice(user?.role, CAP_CALENDARIO_VISTA, calPerms);
+    // VISIBILITÀ TASK SEPARATA (Luca 05/08): «oggi è legata a quella del
+    // calendario ma devono essere due cose diverse» — rotellina "Calendario —
+    // task" (CAP_CALENDARIO_TASK): task_tutte / task_negozio / task_proprie
+    // (fallback). Appuntamenti e task ora si governano indipendenti.
+    const vistaTask = capChoice(user?.role, CAP_CALENDARIO_TASK, calPerms);
+    const isTaskTutte = vistaTask === "task_tutte";
     // Pieni poteri calendario (tutti i filtri: punto vendita, consulente, fissato da)
     const isCallCenter = vistaCal === "tutti";
     // Segnalazione "Non posso assegnare task a nessun collaboratore": l'assegnazione
@@ -587,10 +723,6 @@ export default function Calendario() {
     // "call_center" dalla rotellina (prima era hardcoded direttore_cc + back
     // office; il back office ora parte da "solo i propri" — Luca 05/08)
     const isDirezioneCc = vistaCal === "call_center";
-    // FILTRI negozio/consulente ANCHE per chi ha più negozi in visibilità
-    // (Luca 05/08): prima erano solo di admin/direzione — uno store manager
-    // multi-negozio non poteva restringere il calendario.
-    const puoFiltrareCal = isCallCenter || mieiNegozi.length > 1;
     // visibilità PURA (senza i filtri): serve anche a costruire le opzioni
     // delle tendine, che altrimenti si auto-svuoterebbero filtrando
     const visibileBase = (a: (typeof appointments)[number]) => {
@@ -611,19 +743,40 @@ export default function Calendario() {
     const visibleAppointments = appointments.filter(a => {
         if (!visibileBase(a)) return false;
         if (appointmentOutcomeFilter && a.status !== appointmentOutcomeFilter) return false;
-        if (puoFiltrareCal) {
-            // sameStore: i gemelli ("Magliana" storica vs "Magliana W3") contano
-            if (filterStores.length > 0 && !filterStores.some((s) => sameStore(a.store || "", s))) return false;
-            if (filterAgent && filterAgent !== "Tutti" && a.agente !== filterAgent) return false;
-            if (isCallCenter && filterCreatedBy && filterCreatedBy !== "Tutti" && (a.createdBy || "") !== filterCreatedBy) return false;
-        }
+        // filtri multi (null = tutto): possono essere valorizzati solo da chi
+        // vede le tendine. sameStore: i gemelli ("Magliana" / "Magliana W3") contano
+        if (filterStores !== null && !filterStores.some((s) => sameStore(a.store || "", s))) return false;
+        if (filterAgents !== null && !filterAgents.includes(a.agente)) return false;
+        if (filterCreatedBys !== null && !filterCreatedBys.includes(a.createdBy || "")) return false;
         return true;
     });
-    // opzioni consulente per i NON-direzione: le persone degli appuntamenti visibili
+    // opzioni consulente per i NON-direzione: le persone degli appuntamenti
+    // visibili (per il direttore CC: gli agenti degli appuntamenti dei caller).
+    // vistaCal/ccStaff nelle dipendenze: i permessi arrivano DOPO gli
+    // appuntamenti e la platea va ricalcolata quando cambia l'ambito.
     const agentiMiei = useMemo(() =>
         Array.from(new Set(appointments.filter(visibileBase).map((a) => a.agente).filter(Boolean))).sort() as string[],
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [appointments, catFilter, mieiNegozi.join("|"), user?.name]);
+        [appointments, catFilter, mieiNegozi.join("|"), user?.name, vistaCal, ccStaff.length]);
+    // negozi degli appuntamenti visibili: decide la COMPARSA del filtro negozio
+    const negoziMiei = useMemo(() =>
+        Array.from(new Set(appointments.filter(visibileBase).map((a) => a.store).filter(Boolean))).sort() as string[],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [appointments, catFilter, mieiNegozi.join("|"), user?.name, vistaCal, ccStaff.length]);
+    // ── REGOLE DI COMPARSA DEI FILTRI (Luca 05/08): «chiunque abbia visibilità
+    //    di più negozi o più consulenti» ha la tendina — non più solo la
+    //    direzione. Negozio: vista "tutti", o più negozi in visibilità, o
+    //    appuntamenti visibili di più negozi. Consulente: vista "tutti" o
+    //    platea reale con più persone (es. direttore CC coi caller).
+    //    "Fissato da" resta della sola vista "tutti" (ma ora multi anche lui).
+    const mostraFiltroNegozio = isCallCenter || mieiNegozi.length > 1 || negoziMiei.length > 1;
+    const mostraFiltroConsulente = isCallCenter || agentiMiei.length > 1;
+    const puoFiltrareCal = mostraFiltroNegozio || mostraFiltroConsulente;
+    // opzioni delle tendine: la direzione pesca dalle liste complete, gli
+    // altri dalla platea REALE dei visibili (+ i propri negozi, coi gemelli)
+    const negoziOpzioni = isCallCenter ? storeNames : Array.from(new Set([...negoziMiei, ...mieiNegozi])).sort();
+    const consulentiOpzioni = isCallCenter ? agents : agentiMiei;
+    const fissatoDaOpzioni = Array.from(new Set(appointments.map((a) => a.createdBy).filter(Boolean))).sort() as string[];
 
     // ORARIO → MINUTI ("9:30"→570). Il vecchio ordinamento era ALFABETICO
     // sulle stringhe: "7:00" finiva dopo "15:00" (Luca 29/07). Senza orario
@@ -637,24 +790,28 @@ export default function Calendario() {
             .sort((a, b) => minutiDi(a.time) - minutiDi(b.time));
 
     // ── VISIBILITA' TASK (Luca 04/08): estratta da tasksByDate per valere
-    //    identica anche sul riporto arretrate. Regole invariate: gating
-    //    categoria, filtri admin, match per NOME utente (storico), task di
-    //    negozio visibili su QUALSIASI negozio dell'utente. Il filtro esito
-    //    resta FUORI: alle arretrate non si applica (aperte per definizione).
+    //    identica anche sul riporto arretrate. Match per NOME utente (storico),
+    //    task di negozio visibili su QUALSIASI negozio dell'utente. Il filtro
+    //    esito resta FUORI: alle arretrate non si applica (aperte per
+    //    definizione). L'AMBITO ora arriva dalla rotellina "Calendario — task"
+    //    (Luca 05/08), NON più dalla vista appuntamenti: task_tutte = tutte;
+    //    task_negozio = proprie + punti vendita in visibilità (fotografia del
+    //    codice storico); task_proprie = solo assegnate a lui / create da lui.
     const taskVisibile = (t: CalendarTask): boolean => {
         if (!catOn("task")) return false;
-        if (isCallCenter) {
-            if (filterAgent && filterAgent !== "Tutti" && !t.assignedToStore && t.assignedTo !== filterAgent) return false;
-            if (filterStores.length > 0 && t.assignedToStore && !filterStores.includes(t.assignedToStore)) return false;
-            return true;
+        if (!isTaskTutte) {
+            if (t.assignedToStore) {
+                // task di punto vendita: solo con ambito "negozio", su
+                // QUALSIASI negozio visibile (gemelli inclusi, sameStore)
+                if (vistaTask !== "task_negozio") return false;
+                if (!mieiNegozi.some((m) => sameStore(t.assignedToStore, m))) return false;
+            } else if (!(t.assignedTo === user?.name || t.createdBy === user?.name)) return false;
         }
-        // Agent: visible if assigned to me, or assigned to my store
-        if (t.assignedToStore) {
-            // task assegnate a QUALSIASI negozio visibile
-            if (!mieiNegozi.some((m) => sameStore(t.assignedToStore, m))) return false;
-        } else {
-            if (!(t.assignedTo === user?.name || t.createdBy === user?.name)) return false;
-        }
+        // filtri multi della griglia (null = tutto): il filtro consulente vale
+        // sulle task personali, quello negozio sulle task di punto vendita —
+        // stessa semantica del vecchio filtro della direzione, ora per tutti
+        if (filterAgents !== null && !t.assignedToStore && !filterAgents.includes(t.assignedTo)) return false;
+        if (filterStores !== null && t.assignedToStore && !filterStores.some((s) => sameStore(t.assignedToStore, s))) return false;
         return true;
     };
     const tasksByDate = (dateStr: string) =>
@@ -953,14 +1110,53 @@ export default function Calendario() {
     const tasksArretrate = tasks
         .filter(t => t.date < todayStr && !CHIUSE_TASK.includes(t.status) && taskVisibile(t))
         .sort((a, b) => a.date === b.date ? minutiDi(a.time) - minutiDi(b.time) : a.date.localeCompare(b.date));
-    // In COLONNA (giorno corrente) la direzione vede SOLO le proprie (assegnate
-    // o create da lei): l'elenco di tutta la rete sta nel pannello del bottone
-    // ⏰ — altrimenti le arretrate altrui coprirebbero gli impegni del giorno.
-    const arretrateInColonna = isCallCenter
+    // In COLONNA (giorno corrente) chi vede TUTTE le task vede SOLO le proprie
+    // (assegnate o create da lui): l'elenco di tutta la rete sta dietro il
+    // bottone ⏰ — altrimenti le arretrate altrui coprirebbero gli impegni del
+    // giorno. Ora la soglia è la capability task (prima: vista appuntamenti).
+    const arretrateInColonna = isTaskTutte
         ? tasksArretrate.filter(t => t.assignedTo === user?.name || t.createdBy === user?.name)
         : tasksArretrate;
+    // ── MODALE ARRETRATE (Luca 05/08): chi vede task ALTRUI (di altre persone
+    //    o di più punti vendita) apre le arretrate in una finestra SOVRAPPOSTA
+    //    con i filtri in testa — non più il pannello che esplode dentro il
+    //    calendario («altrimenti applicare i filtri è scomodo»). Chi vede solo
+    //    le proprie tiene il pannello inline di prima: lì i filtri non
+    //    servirebbero a nulla.
+    const personaTask = (t: CalendarTask) => t.assignedTo || t.createdBy || "";
+    const negoziArretrate = Array.from(new Set(tasksArretrate.map((t) => t.assignedToStore).filter(Boolean))).sort() as string[];
+    const personeArretrate = Array.from(new Set(tasksArretrate.filter((t) => !t.assignedToStore).map(personaTask).filter(Boolean))).sort();
+    const arretrateInModale = isTaskTutte
+        || personeArretrate.some((p) => p !== user?.name)      // task di altre persone
+        || negoziArretrate.length > 1                          // o di più punti vendita
+        || (negoziArretrate.length > 0 && mieiNegozi.length > 1);
+    // filtri del modale: consulente sulle task personali, negozio su quelle di
+    // punto vendita (stessa semantica dei filtri della griglia)
+    const arretrateFiltrate = tasksArretrate.filter((t) => {
+        if (arrFiltroNegozi !== null && t.assignedToStore && !arrFiltroNegozi.includes(t.assignedToStore)) return false;
+        if (arrFiltroPersone !== null && !t.assignedToStore && !arrFiltroPersone.includes(personaTask(t))) return false;
+        return true;
+    });
     const giorniFa = (d: string) => Math.round((new Date(todayStr + "T12:00:00").getTime() - new Date(d + "T12:00:00").getTime()) / 86400000);
     const ggMm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+    // riga di una task arretrata — identica nel pannello inline e nel modale
+    // (helper JSX chiamato come funzione, MAI componente annidato)
+    const rigaArretrata = (t: CalendarTask) => (
+        <button
+            key={`arrp-${t.id}`}
+            onClick={() => setTaskDettaglio(t)}
+            title="Apri la task (dettaglio e modifica)"
+            className="w-full text-left p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] hover:bg-amber-500/[0.12] transition-colors flex items-center gap-3 flex-wrap"
+        >
+            <span className="text-xs font-mono font-bold text-amber-300 shrink-0">{ggMm(t.date)}</span>
+            <span className="text-[10px] text-slate-500 shrink-0">{giorniFa(t.date)} gg fa</span>
+            <span className="text-sm font-semibold text-white truncate flex-1 min-w-[160px]">{t.title}</span>
+            <span className="text-xs text-slate-400 truncate max-w-[220px]">{t.assignedToStore ? `🏬 ${t.assignedToStore}` : (t.assignedTo || t.createdBy)}</span>
+            <span className={cn("text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border shrink-0", esitoClasse(t.status, "task"))}>
+                {esitoLabel(t.status, "task")}
+            </span>
+        </button>
+    );
 
     const parseSearchDate = (val: string): string | null => {
         if (!val || !val.trim()) return null;
@@ -1046,11 +1242,17 @@ export default function Calendario() {
                 <div>
                     <h2 className="text-3xl font-bold text-white mb-2">Calendario Appuntamenti</h2>
                     <p className="text-slate-400">
-                        {isCallCenter ? (
-                            filterStores.length > 0 || (filterAgent && filterAgent !== "Tutti") || (filterCreatedBy && filterCreatedBy !== "Tutti")
-                                ? <span className="text-indigo-300 font-medium">Filtro attivo: {[filterStores.length ? filterStores.join(" + ") : null, filterAgent && filterAgent !== "Tutti" ? filterAgent : null, filterCreatedBy && filterCreatedBy !== "Tutti" ? `fissato da ${filterCreatedBy}` : null].filter(Boolean).join(" · ")}</span>
-                                : "Visualizzazione completa — tutti i consulenti"
-                        ) : `I tuoi appuntamenti — ${user?.name}`}
+                        {(() => {
+                            // riepilogo filtri multi: null = tutto (nessun filtro attivo)
+                            const riass = (v: string[] | null, vuoto: string) => v === null ? null : (v.length === 0 ? vuoto : v.join(" + "));
+                            const parti = [
+                                riass(filterStores, "nessun punto vendita"),
+                                riass(filterAgents, "nessun consulente"),
+                                filterCreatedBys === null ? null : `fissato da ${filterCreatedBys.length === 0 ? "nessuno" : filterCreatedBys.join(" + ")}`,
+                            ].filter(Boolean);
+                            if (parti.length) return <span className="text-indigo-300 font-medium">Filtro attivo: {parti.join(" · ")}</span>;
+                            return isCallCenter ? "Visualizzazione completa — tutti i consulenti" : `I tuoi appuntamenti — ${user?.name}`;
+                        })()}
                     </p>
                 </div>
                 <div className="flex gap-3">
@@ -1118,39 +1320,38 @@ export default function Calendario() {
                 </div>
             </div>
 
-            {/* Filtri negozio/consulente: direzione E chi ha più negozi (Luca 05/08) */}
+            {/* Filtri negozio/consulente MULTI-SELEZIONE (Luca 05/08): compaiono
+                a chiunque veda più negozi o più consulenti — direttore CC coi
+                caller, direttore commerciale multi-negozio, non solo la
+                direzione. Ogni tendina appare solo se la sua platea è plurale. */}
             {puoFiltrareCal && (
                 <div className="mb-6 flex flex-col md:flex-row gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                    <div className="flex-1">
+                    {mostraFiltroNegozio && <div className="flex-1">
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Punto Vendita</label>
-                        <SelectMulti
-                            className="glass-input w-full text-sm"
+                        <FiltroMulti
                             values={filterStores}
                             onChange={setFilterStores}
-                            opzioni={isCallCenter ? storeNames : mieiNegozi}
-                            maxVoci={100}
-                            placeholder="Tutti i punti vendita — scrivi per filtrare"
+                            opzioni={negoziOpzioni}
+                            etichettaTutti="Tutti i punti vendita"
                         />
-                    </div>
-                    <div className="flex-1">
+                    </div>}
+                    {mostraFiltroConsulente && <div className="flex-1">
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Consulente</label>
-                        <SelectPersona
-                            className="glass-input w-full text-sm"
-                            value={filterAgent === "Tutti" ? "" : filterAgent}
-                            onChange={(v) => setFilterAgent(v || "Tutti")}
-                            opzioni={isCallCenter ? agents : agentiMiei}
-                            placeholder="Tutti — scrivi per filtrare"
+                        <FiltroMulti
+                            values={filterAgents}
+                            onChange={setFilterAgents}
+                            opzioni={consulentiOpzioni}
+                            etichettaTutti="Tutti i consulenti"
                         />
-                    </div>
+                    </div>}
                     {isCallCenter && <div className="flex-1">
                         {/* chi ha PRENOTATO l'appuntamento, non l'incaricato */}
                         <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Fissato da</label>
-                        <SelectPersona
-                            className="glass-input w-full text-sm"
-                            value={filterCreatedBy === "Tutti" ? "" : filterCreatedBy}
-                            onChange={(v) => setFilterCreatedBy(v || "Tutti")}
-                            opzioni={Array.from(new Set(appointments.map((a) => a.createdBy).filter(Boolean))).sort() as string[]}
-                            placeholder="Chiunque — scrivi per filtrare"
+                        <FiltroMulti
+                            values={filterCreatedBys}
+                            onChange={setFilterCreatedBys}
+                            opzioni={fissatoDaOpzioni}
+                            etichettaTutti="Chiunque"
                         />
                     </div>}
                 </div>
@@ -1370,11 +1571,11 @@ export default function Calendario() {
                 </div>
             )}
 
-            {/* ── PANNELLO TASK ARRETRATE (Luca 04/08): l'elenco COMPLETO — per la
-                direzione tutta la rete (coi filtri negozio/consulente attivi),
-                per gli altri le proprie. Click sulla riga = dettaglio task, da
-                lì si chiude (fatta/abbandonata) o si sposta la data. ── */}
-            {showArretrate && tasksArretrate.length > 0 && (
+            {/* ── TASK ARRETRATE, pannello INLINE (Luca 04/08): resta per chi
+                vede SOLO le proprie task — lì i filtri non servono. Click
+                sulla riga = dettaglio task, da lì si chiude (fatta/
+                abbandonata) o si sposta la data. ── */}
+            {showArretrate && tasksArretrate.length > 0 && !arretrateInModale && (
                 <div className="glass-card mb-6 p-6 animate-in slide-in-from-top-4 fade-in duration-200">
                     <h3 className="text-lg font-medium text-white mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
                         ⏰ Task arretrate
@@ -1382,22 +1583,53 @@ export default function Calendario() {
                         <span className="ml-auto text-xs font-normal text-slate-500">non chiuse, in ordine dalla più vecchia</span>
                     </h3>
                     <div className="space-y-2 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
-                        {tasksArretrate.map(t => (
-                            <button
-                                key={`arrp-${t.id}`}
-                                onClick={() => setTaskDettaglio(t)}
-                                title="Apri la task (dettaglio e modifica)"
-                                className="w-full text-left p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] hover:bg-amber-500/[0.12] transition-colors flex items-center gap-3 flex-wrap"
-                            >
-                                <span className="text-xs font-mono font-bold text-amber-300 shrink-0">{ggMm(t.date)}</span>
-                                <span className="text-[10px] text-slate-500 shrink-0">{giorniFa(t.date)} gg fa</span>
-                                <span className="text-sm font-semibold text-white truncate flex-1 min-w-[160px]">{t.title}</span>
-                                <span className="text-xs text-slate-400 truncate max-w-[220px]">{t.assignedToStore ? `🏬 ${t.assignedToStore}` : (t.assignedTo || t.createdBy)}</span>
-                                <span className={cn("text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border shrink-0", esitoClasse(t.status, "task"))}>
-                                    {esitoLabel(t.status, "task")}
+                        {tasksArretrate.map((t) => rigaArretrata(t))}
+                    </div>
+                </div>
+            )}
+
+            {/* ── TASK ARRETRATE, MODALE SOVRAPPOSTO (Luca 05/08): per chi vede
+                task altrui — «si deve aprire una finestra in sovrapposizione,
+                NON un'altra tendina che esplode dentro il calendario» — con i
+                filtri multi Negozio/Persona in testa. Stesso z-50 dei modali
+                del CRM ma PRIMA del TaskDettaglioModal nel DOM: il dettaglio
+                aperto da una riga si impila sopra, e alla chiusura si torna
+                all'elenco. ── */}
+            {showArretrate && tasksArretrate.length > 0 && arretrateInModale && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowArretrate(false)}>
+                    <div className="glass-card p-6 w-full max-w-3xl max-h-[85vh] flex flex-col animate-in zoom-in-95 fade-in duration-200" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-2">
+                            <h3 className="text-lg font-medium text-white flex items-center gap-2">
+                                ⏰ Task arretrate
+                                <span className="text-sm font-bold text-amber-300">
+                                    ({arretrateFiltrate.length}{arretrateFiltrate.length !== tasksArretrate.length ? ` di ${tasksArretrate.length}` : ""})
                                 </span>
-                            </button>
-                        ))}
+                            </h3>
+                            <button onClick={() => setShowArretrate(false)} className="text-slate-500 hover:text-slate-300"><X className="w-5 h-5" /></button>
+                        </div>
+                        {/* filtri in testa: negozio sulle task di punto vendita,
+                            persona su quelle personali (stessa semantica della griglia) */}
+                        <div className="mb-4 flex flex-col sm:flex-row gap-3">
+                            {negoziArretrate.length > 0 && (
+                                <div className="flex-1">
+                                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Punto vendita</label>
+                                    <FiltroMulti values={arrFiltroNegozi} onChange={setArrFiltroNegozi} opzioni={negoziArretrate} etichettaTutti="Tutti i punti vendita" />
+                                </div>
+                            )}
+                            {personeArretrate.length > 0 && (
+                                <div className="flex-1">
+                                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Persona</label>
+                                    <FiltroMulti values={arrFiltroPersone} onChange={setArrFiltroPersone} opzioni={personeArretrate} etichettaTutti="Tutte le persone" />
+                                </div>
+                            )}
+                        </div>
+                        <p className="text-xs text-slate-500 mb-2">Non chiuse, in ordine dalla più vecchia — clicca una task per aprirla (dettaglio, esito, spostamento data).</p>
+                        <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-2 custom-scrollbar">
+                            {arretrateFiltrate.map((t) => rigaArretrata(t))}
+                            {arretrateFiltrate.length === 0 && (
+                                <div className="text-center py-8 text-slate-500 text-sm">Nessuna task arretrata con i filtri scelti.</div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
