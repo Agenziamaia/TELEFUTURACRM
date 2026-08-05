@@ -1975,14 +1975,13 @@ function CallerPageInner() {
                                     </div>
                                 ))}
                                 {/* regole VISIBILI a tutti (Luca 31/07); i giorni li tocca solo
-                                    l'admin. TAGLIA DA CARD (Luca 05/08): stesso box dei
-                                    filtri fase, non piu' un bottoncino spaiato. */}
-                                <button onClick={() => setShowRegoleCaller(true)}
-                                    title={puoRegoleCaller ? "Regole: giorni e malus giornaliero per stato" : "Le regole di lavorazione (sola lettura)"}
-                                    className="flex-1 rounded-2xl border px-3 py-3 text-left cursor-pointer select-none transition-all border-white/15 bg-white/[0.05] text-slate-300 hover:bg-white/10 hover:brightness-110">
-                                    <div className="text-sm font-bold">⚙️ Regole</div>
-                                    <div className="text-[11px] text-slate-500 mt-1 leading-tight">{puoRegoleCaller ? "giorni e €/gg per stato" : "sola lettura"}</div>
-                                </button>
+                                    l'admin. Bottone COMPATTO com'era (Luca 05/08 sera: la card
+                                    intera era troppo grossa — giusta solo l'ampiezza in piu') */}
+                                <div className="flex items-center">
+                                    <button onClick={() => setShowRegoleCaller(true)}
+                                        title={puoRegoleCaller ? "Regole: giorni e malus giornaliero per stato" : "Le regole di lavorazione (sola lettura)"}
+                                        className="px-5 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-xs font-bold hover:bg-white/10 whitespace-nowrap">⚙️ Regole</button>
+                                </div>
                             </div>
                             {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} soloLettura={!puoRegoleCaller} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
                             {/* storico malus nel LINGUAGGIO di Ricerca Vendite (Luca 05/08):

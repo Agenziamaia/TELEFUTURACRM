@@ -101,6 +101,29 @@ export function ArchivioMalusCaller({
         });
     }, [episodi, malusAttuali]);
 
+    // Dettaglio PRATICA per episodio (Luca 05/08: «da qui non capisco niente»):
+    // cliente e numero accanto a ogni riga — senza, episodi di pratiche DIVERSE
+    // dello stesso caller sembravano doppioni inspiegabili.
+    const [pratiche, setPratiche] = useState<Map<string, { cli: string; num: string; statoOra: string }>>(new Map());
+    useEffect(() => {
+        const ids = [...new Set(episodi.map((e) => e.call_id).filter(Boolean))];
+        if (!ids.length) { setPratiche(new Map()); return; }
+        (async () => {
+            const m = new Map<string, { cli: string; num: string; statoOra: string }>();
+            for (let i = 0; i < ids.length; i += 100) {
+                const { data } = await supabase.from("calls").select("id, nome, cognome, ragione_sociale, cellulare, numero, stato").in("id", ids.slice(i, i + 100));
+                (data ?? []).forEach((r: { id: string; nome: string | null; cognome: string | null; ragione_sociale: string | null; cellulare: string | null; numero: string | null; stato: string | null }) => {
+                    m.set(String(r.id), {
+                        cli: (r.ragione_sociale || `${r.nome || ""} ${r.cognome || ""}`).trim() || "—",
+                        num: r.cellulare || r.numero || "",
+                        statoOra: r.stato || "",
+                    });
+                });
+            }
+            setPratiche(m);
+        })();
+    }, [episodi]);
+
     const [statoSel, setStatoSel] = useState<"tutti" | "in_corso" | "attivo" | "compensato">("tutti");
     const [callerSel, setCallerSel] = useState("");
     const [search, setSearch] = useState("");
@@ -114,12 +137,13 @@ export function ArchivioMalusCaller({
         return episodiVista.filter((e) => {
             if (callerSel && (e.caller || "—") !== callerSel) return false;
             if (q) {
-                const match = [e.caller, e.stato_pratica].some((v) => (v || "").toLowerCase().includes(q));
+                const p = pratiche.get(e.call_id);
+                const match = [e.caller, e.stato_pratica, p?.cli, p?.num].some((v) => (v || "").toLowerCase().includes(q));
                 if (!match) return false;
             }
             return true;
         });
-    }, [episodiVista, callerSel, search]);
+    }, [episodiVista, callerSel, search, pratiche]);
 
     const filtrati = useMemo(
         () => filtratiBase.filter((e) => statoSel === "tutti" || e.stato === statoSel),
@@ -335,6 +359,7 @@ export function ArchivioMalusCaller({
                                     <thead>
                                         <tr className="bg-white/[0.04]">
                                             <th className={thStyle}>Caller</th>
+                                            <th className={thStyle}>Pratica</th>
                                             <th className={thStyle}>Stato pratica</th>
                                             <th className={thStyle}>Inizio</th>
                                             <th className={thStyle}>Fine</th>
@@ -351,6 +376,14 @@ export function ArchivioMalusCaller({
                                             return (
                                                 <tr key={ep.id}>
                                                     <td className={tdStyle + " text-slate-100 font-semibold"}>{ep.caller || "—"}</td>
+                                                    <td className={tdStyle}>
+                                                        {(() => { const p = pratiche.get(ep.call_id); return p ? (
+                                                            <>
+                                                                <div className="text-slate-100 font-semibold truncate max-w-[180px]" title={p.cli}>{p.cli}</div>
+                                                                <div className="text-[10px] text-slate-500 font-mono">{p.num}{p.statoOra && p.statoOra !== ep.stato_pratica ? ` · ora: ${p.statoOra}` : ""}</div>
+                                                            </>
+                                                        ) : <span className="text-slate-600">—</span>; })()}
+                                                    </td>
                                                     <td className={tdStyle + " text-slate-300"}>{ep.stato_pratica || "—"}</td>
                                                     <td className={tdStyle + " text-slate-400 whitespace-nowrap"}>{formatDataIt(ep.dal)}</td>
                                                     <td className={tdStyle + " text-slate-400 whitespace-nowrap"}>
