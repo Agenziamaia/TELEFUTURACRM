@@ -1143,12 +1143,27 @@ export default function Calendario() {
     const ggMm = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
     // riga di una task arretrata — identica nel pannello inline e nel modale
     // (helper JSX chiamato come funzione, MAI componente annidato)
+    // CESTINO ADMIN (Luca 05/08): eliminazione DEFINITIVA di qualsiasi task —
+    // la riga sparisce dal DB per tutti, nessuna traccia (niente soft-delete).
+    const puoEliminareTask = ["admin", "dev"].includes(user?.role || "");
+    const eliminaTask = async (t: CalendarTask) => {
+        if (!puoEliminareTask) return;
+        if (!window.confirm(`Eliminare PER SEMPRE la task "${t.title}"? Sparisce per tutti, senza lasciare traccia.`)) return;
+        const { error } = await supabase.from("calendar_tasks").delete().eq("id", t.id);
+        if (error) { alert("Eliminazione non riuscita: " + error.message); return; }
+        setTasks(prev => prev.filter(x => x.id !== t.id));
+        setTaskDettaglio(cur => (cur && cur.id === t.id ? null : cur));
+    };
     const rigaArretrata = (t: CalendarTask) => (
-        <button
+        // div role=button (non <button>): il cestino admin annidato dentro un
+        // <button> sarebbe HTML non valido — stesso pattern delle card malus
+        <div
             key={`arrp-${t.id}`}
+            role="button" tabIndex={0}
             onClick={() => setTaskDettaglio(t)}
+            onKeyDown={(e) => e.key === "Enter" && setTaskDettaglio(t)}
             title="Apri la task (dettaglio e modifica)"
-            className="w-full text-left p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] hover:bg-amber-500/[0.12] transition-colors flex items-center gap-3 flex-wrap"
+            className="w-full text-left p-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.06] hover:bg-amber-500/[0.12] transition-colors flex items-center gap-3 flex-wrap cursor-pointer select-none"
         >
             <span className="text-xs font-mono font-bold text-amber-300 shrink-0">{ggMm(t.date)}</span>
             <span className="text-[10px] text-slate-500 shrink-0">{giorniFa(t.date)} gg fa</span>
@@ -1157,7 +1172,15 @@ export default function Calendario() {
             <span className={cn("text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full border shrink-0", esitoClasse(t.status, "task"))}>
                 {esitoLabel(t.status, "task")}
             </span>
-        </button>
+            {puoEliminareTask && (
+                <span role="button" tabIndex={0} title="Elimina PER SEMPRE (admin): sparisce per tutti, senza traccia"
+                    onClick={(e) => { e.stopPropagation(); eliminaTask(t); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); eliminaTask(t); } }}
+                    className="shrink-0 px-2 py-1 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/25 text-xs">
+                    🗑
+                </span>
+            )}
+        </div>
     );
 
     const parseSearchDate = (val: string): string | null => {
@@ -1900,6 +1923,7 @@ export default function Calendario() {
                             onClose={() => setTaskDettaglio(null)}
                             onAggiornata={(nt) => setTasks(prev => prev.map(x => x.id === nt.id ? nt : x))}
                             onCopie={(ns) => setTasks(prev => [...prev, ...ns])}
+                            onElimina={puoEliminareTask ? eliminaTask : undefined}
                         />
                     )}
 
@@ -3213,7 +3237,7 @@ export default function Calendario() {
 // Cliccando una task nel calendario centrale o nel pannello a destra si apre
 // questo modale: campi modificabili (per chi la gestisce), stato, e AGGIUNTA
 // di nuovi assegnatari — persone o punti vendita — che genera task gemelle.
-function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, onAggiornata, onCopie }: {
+function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, onAggiornata, onCopie, onElimina }: {
     t: CalendarTask;
     puoGestire: boolean;
     persone: string[];
@@ -3222,6 +3246,8 @@ function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, on
     onClose: () => void;
     onAggiornata: (t: CalendarTask) => void;
     onCopie: (nuove: CalendarTask[]) => void;
+    /** cestino ADMIN (Luca 05/08): eliminazione definitiva, senza traccia */
+    onElimina?: (t: CalendarTask) => void;
 }) {
     const [titolo, setTitolo] = useState(t.title);
     const [data, setData] = useState(t.date);
@@ -3320,7 +3346,13 @@ function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, on
                         </div>
                     )}
                     <div className="flex items-center justify-between gap-3 pt-1">
-                        <p className="text-[11px] text-slate-600">Creata da {t.createdBy || "—"}</p>
+                        <div className="flex items-center gap-3 min-w-0">
+                            <p className="text-[11px] text-slate-600 truncate">Creata da {t.createdBy || "—"}</p>
+                            {onElimina && (
+                                <button onClick={() => onElimina(t)} title="Elimina PER SEMPRE (admin): sparisce per tutti, senza traccia"
+                                    className="px-3 py-2 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/25 text-sm shrink-0">🗑 Elimina</button>
+                            )}
+                        </div>
                         <div className="flex gap-2">
                             <button onClick={onClose} className="px-4 py-2 rounded-xl border border-white/10 text-slate-300 text-sm">Chiudi</button>
                             <button onClick={salva} disabled={busy} className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-40">{busy ? "Salvo…" : "Salva"}</button>
