@@ -629,7 +629,9 @@ export default function Calendario() {
     const [calView, setCalView] = useState<"month" | "week" | "day">("month");
     // domenica a scomparsa nella vista settimana (Luca 31/07): nascosta, gli
     // altri giorni respirano di piu'
-    const [mostraDomenica, setMostraDomenica] = useState(true);
+    // Domenica NASCOSTA di default (Luca 05/08): il tasto la rimostra e la
+    // scelta resta salvata per utente (localStorage sotto).
+    const [mostraDomenica, setMostraDomenica] = useState(false);
     // PREFERENZA PER ACCOUNT (Luca 31/07): la vista scelta (mese/settimana/
     // giorno) e la domenica nascosta restano salvate — niente piu' ritorno
     // al mensile a ogni apertura. Si risalva solo DOPO aver caricato.
@@ -1690,23 +1692,26 @@ export default function Calendario() {
                     </div>
 
                     {calView === "month" && (<>
-                    {/* Day headers */}
-                    <div className="grid grid-cols-7 mb-2">
-                        {DAYS_IT.map(d => (
+                    {/* Day headers — senza Domenica quando è nascosta (Luca 05/08) */}
+                    <div className={cn("mb-2 grid", mostraDomenica ? "grid-cols-7" : "grid-cols-6")}>
+                        {(mostraDomenica ? DAYS_IT : DAYS_IT.slice(0, 6)).map(d => (
                             <div key={d} className="text-center text-xs font-semibold text-slate-500 uppercase tracking-wider py-2">
                                 {d}
                             </div>
                         ))}
                     </div>
 
-                    {/* Day cells */}
-                    <div className="grid grid-cols-7 gap-1">
+                    {/* Day cells — con la domenica nascosta la griglia è a 6 colonne,
+                        le domeniche si saltano (indice 6, lunedì=0) e se il mese
+                        parte di domenica la prima riga non ha celle vuote */}
+                    <div className={cn("grid gap-1", mostraDomenica ? "grid-cols-7" : "grid-cols-6")}>
                         {/* Empty cells before first day */}
-                        {Array.from({ length: firstDay }).map((_, i) => (
+                        {Array.from({ length: mostraDomenica ? firstDay : (firstDay === 6 ? 0 : firstDay) }).map((_, i) => (
                             <div key={`empty-${i}`} />
                         ))}
                         {Array.from({ length: daysInMonth }).map((_, i) => {
                             const day = i + 1;
+                            if (!mostraDomenica && (firstDay + i) % 7 === 6) return null;
                             const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                             const dayAppts = apptsByDate(dateStr);
                             const dayTasks = tasksByDate(dateStr);
