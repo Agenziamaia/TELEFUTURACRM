@@ -90,6 +90,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     const vistaDirezione = vistaTeam && !puoTimbrare;
     const [dirStats, setDirStats] = useState<{
         pause: number; pauseMin: number; inPausaOra: number;
+        entrati: number;
         primo: { nome: string; ora: string } | null;
         ultimo: { nome: string; ora: string } | null;
         chiusi: number; mediaOre: number;
@@ -111,6 +112,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
             pause: turni.reduce((a, s) => a + contaPause(s), 0),
             pauseMin: Math.round(turni.reduce((a, s) => a + minutiPausa(s), 0)),
             inPausaOra: inPausa || 0,
+            entrati: new Set(turni.map((s) => s.employee_name)).size,
             primo: turni.length ? ingresso(turni[0]) : null,
             ultimo: turni.length > 1 ? ingresso(turni[turni.length - 1]) : null,
             chiusi: chiusi.length,
@@ -196,21 +198,24 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
             </p>
         </div>
     );
+    // v2 (Luca 05/08: "non è chiaro"): il numero grande era un ORARIO — ora è
+    // una metrica come le altre card: QUANTE persone sono entrate oggi, e
+    // sotto primo e ultimo ingresso con nome e ora.
     const cardIngressiOggi = () => (
-        <div className="glass-panel p-5 border-l-4 border-l-indigo-500 badge-kpi" title="Primo ingresso della giornata e ultimo arrivato">
+        <div className="glass-panel p-5 border-l-4 border-l-indigo-500 badge-kpi" title="Quante persone sono entrate oggi, col primo ingresso e l'ultimo arrivato">
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">🚪 Ingressi Oggi</p>
             {dirStats?.primo ? (
                 <>
                     <p className="text-2xl font-black text-white truncate">
-                        {dirStats.primo.ora} <span className="text-sm text-indigo-400">{dirStats.primo.nome}</span>
+                        {dirStats.entrati} <span className="text-sm font-bold text-indigo-400">{dirStats.entrati === 1 ? "persona entrata" : "persone entrate"}</span>
                     </p>
                     <p className="text-[11px] text-slate-500 mt-1 truncate">
-                        {dirStats.ultimo ? `ultimo arrivato: ${dirStats.ultimo.nome} · ${dirStats.ultimo.ora}` : "unico ingresso finora"}
+                        {`primo: ${dirStats.primo.nome} · ${dirStats.primo.ora}`}{dirStats.ultimo ? ` — ultimo: ${dirStats.ultimo.nome} · ${dirStats.ultimo.ora}` : ""}
                     </p>
                 </>
             ) : (
                 <>
-                    <p className="text-2xl font-black text-white">—</p>
+                    <p className="text-2xl font-black text-white">0</p>
                     <p className="text-[11px] text-slate-500 mt-1">{dirStats ? "nessun ingresso oggi" : ""}</p>
                 </>
             )}
