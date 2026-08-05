@@ -106,17 +106,34 @@ export async function POST(request: Request) {
                 .eq("aircall_number_id", numberId).order("name").limit(5);
             negozio = nomeDaStores((st ?? []).map((s) => s.name));
         }
-        // AIR-04: terzo fallback — la SCELTA IVR del cliente (salvata
-        // dall'evento dedicato). Vale per le PERSE del numero unico e per le
-        // risposte del call center: la chiamata torna al punto vendita scelto.
+        // AIR-04b (Luca 05/08 sera: «c'è già un IVR, ti perdi qualcosa» — VERO):
+        // il percorso IVR viaggia dentro d.ivr_options DELLA CHIAMATA — non è
+        // il menù statico ma le TAPPE attraversate dal cliente, coi timestamp
+        // (livello 1 = brand es. "Wind3", livello 2 = punto vendita es. "San
+        // Paolo"). ivr_options_selected invece resta sempre null (quirk
+        // Aircall, anche via API). Si scorre il percorso dall'ULTIMA tappa e
+        // la prima che combacia con un negozio è la scelta del cliente: vale
+        // per le perse del numero unico e per le risposte del call center.
+        const negozioDaBranch = async (branch: string): Promise<string | null> => {
+            const { data: st } = await supabase.from("stores").select("name")
+                .ilike("name", branch + "%").eq("active", true).order("name").limit(5);
+            return nomeDaStores((st ?? []).map((s) => s.name));
+        };
         let ivrScelta: string | null = null;
         if (!negozio) {
-            const { data: prev } = await supabase.from("call_events").select("ivr_scelta").eq("aircall_call_id", d.id).maybeSingle();
-            ivrScelta = (prev?.ivr_scelta as string) || null;
-            if (ivrScelta) {
-                const { data: st } = await supabase.from("stores").select("name")
-                    .ilike("name", ivrScelta.trim() + "%").eq("active", true).order("name").limit(5);
-                negozio = nomeDaStores((st ?? []).map((s) => s.name));
+            const tappe = Array.isArray(d.ivr_options) ? [...d.ivr_options].reverse() : [];
+            for (const t of tappe) {
+                const branch = String(t?.branch || t?.title || "").trim();
+                if (!branch) continue;
+                if (!ivrScelta) ivrScelta = branch;   // l'ultima tappa si salva comunque
+                const hit = await negozioDaBranch(branch);
+                if (hit) { negozio = hit; ivrScelta = branch; break; }
+            }
+            // fallback: scelta salvata dall'evento dedicato (se mai arrivasse)
+            if (!negozio && !ivrScelta) {
+                const { data: prev } = await supabase.from("call_events").select("ivr_scelta").eq("aircall_call_id", d.id).maybeSingle();
+                const salvata = (prev?.ivr_scelta as string) || null;
+                if (salvata) { ivrScelta = salvata; negozio = await negozioDaBranch(salvata); }
             }
         }
 
@@ -134,6 +151,9 @@ export async function POST(request: Request) {
             cliente_num: clienteNum,
             aircall_user_id: aircallUserId, agente_nome: agente,
             aircall_number_id: numberId, negozio, risposta_cc: rispostaCc,
+            // solo se derivata: undefined viene scartato dalla serializzazione e
+            // sull'upsert non sovrascrive un valore già salvato dall'evento IVR
+            ...(ivrScelta ? { ivr_scelta: ivrScelta } : {}),
             answered: answeredBool, duration_sec: durata,
             recording_url: registrazione, missed,
             started_at: started, answered_at: answered, ended_at: ended,
