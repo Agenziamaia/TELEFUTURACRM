@@ -3235,7 +3235,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
           {offSel.opzioni.map(o=>{const on=!!opz[o.nome];return(
             <span key={o.nome} style={{display:"inline-flex",alignItems:"center",gap:6}}>
-              <button onClick={()=>togOpz(o)} style={{padding:"6px 12px",borderRadius:999,cursor:"pointer",border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
+              <button onClick={()=>togOpz(o)} className={on?"opz-on":undefined} style={{padding:"6px 12px",borderRadius:999,cursor:"pointer",border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
               {on&&o.tipo==="numero"&&<input type="number" min="1" value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{const q=Math.max(1,parseInt(e.target.value||"1",10)||1);setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",fontSize:12,background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>}
             </span>);})}
         </div>
@@ -5272,9 +5272,9 @@ function CRM() {
     const cartContent = (
       <div style={{fontFamily:"Inter,-apple-system,sans-serif",background:"transparent",minHeight:"100vh",padding:16,maxWidth:1100,margin:"0 auto"}}>
         {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"var(--tf-28a745)",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
-        <div style={{background:"linear-gradient(135deg,#1e293b,#16213e,#0f3460)",borderRadius:16,padding:"24px 28px",marginBottom:20}}>
+        <div className="cart-head" style={{background:"linear-gradient(135deg,#1e293b,#16213e,#0f3460)",borderRadius:16,padding:"24px 28px",marginBottom:20}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div><div style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"var(--tf-w600)",fontSize:13}}>{onlyMarg?"Riepilogo vendite 💰":((tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale)+" - Riepilogo vendite 💰")}</div>
+            <div><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:22,marginBottom:4}}>🛒 Carrello</div><div style={{color:"var(--tf-w600)",fontSize:13}}>{onlyMarg?"Riepilogo vendite 💰":((tipoCliente==="privato"?(ana.nome+" "+ana.cognome):ana.ragioneSociale)+" - Riepilogo vendite 💰")}</div>
               {!onlyMarg&&(ana.cf||ana.cellulare||ana.email||ana.iban)&&<div style={{marginTop:4,display:"flex",gap:12,flexWrap:"wrap"}}>
                 {ana.cf&&<span style={{fontSize:11,color:"var(--tf-w750)",fontFamily:"monospace"}}>🪪 {ana.cf}</span>}
                 {ana.cellulare&&<span style={{fontSize:11,color:"var(--tf-w750)"}}>📱 {ana.cellulare}</span>}
@@ -5283,8 +5283,8 @@ function CRM() {
               </div>}
             </div>
             <div style={{display:"flex",gap:8}}>
-              <div style={{background:"var(--tf-w150)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:22}}>{allG.length}</div><div style={{color:"var(--tf-w600)",fontSize:10}}>BRAND</div></div>
-              <div style={{background:"var(--tf-w150)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div style={{color:"#fff",fontWeight:800,fontSize:22}}>{tp}</div><div style={{color:"var(--tf-w600)",fontSize:10}}>PRODOTTI</div></div>
+              <div className="cart-stat" style={{background:"var(--tf-w150)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:22}}>{allG.length}</div><div style={{color:"var(--tf-w600)",fontSize:10}}>BRAND</div></div>
+              <div className="cart-stat" style={{background:"var(--tf-w150)",borderRadius:10,padding:"8px 16px",textAlign:"center"}}><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:22}}>{tp}</div><div style={{color:"var(--tf-w600)",fontSize:10}}>PRODOTTI</div></div>
             </div>
           </div>
         </div>
