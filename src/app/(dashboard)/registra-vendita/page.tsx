@@ -4253,7 +4253,12 @@ function CRM() {
   const [qrRecv, setQrRecv] = useState(null);   // {name} a ricezione avvenuta
   // anteprima allegato: clic sul nome -> mostra foto o PDF
   const [preview, setPreview] = useState(null); // {url,name,mime}
+  // mime "indovinato" dall'estensione: serve per gli allegati RIUSATI
+  // dall'archivio (righe contract_attachments), dove non c'e' un File in memoria.
+  const _mimeDaNome = (s) => /\.pdf(\?.*)?$/i.test(s || "") ? "application/pdf" : (/\.(jpe?g|png|gif|webp|bmp|heic)(\?.*)?$/i.test(s || "") ? "image/jpeg" : "");
   const apriAnteprima = (att) => {
+    // allegato riusato dall'archivio: niente objectURL, si apre il file gia' nel bucket
+    if (att && att.reused && att.url) { setPreview({ url: att.url, name: att.name, mime: _mimeDaNome(att.name || att.url) }); return; }
     try { setPreview({ url: URL.createObjectURL(att.file), name: att.name, mime: att.file?.type || "" }); }
     catch { /* file non disponibile */ }
   };
@@ -4533,7 +4538,7 @@ function CRM() {
   // stessa logica storica — conferma se c'e' lavoro fuori carrello, ripresa
   // del gruppo dal carrello se il brand c'era gia'.
   const _pickBrand=(b)=>{if(!b.ready)return;if(turista&&b.id!=="windtre"){sT("🌍 Cliente turista: consentiti solo WindTre (privato) e Marginalità");return;}if(b.id===brand)return;/* stesso brand: niente reset a sorpresa (03/08) */const _lavoro=Object.values(sales).some(r=>Array.isArray(r)&&r.some(row=>row&&Object.values(row).some(sub=>sub&&sub.active)));if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: cambiando brand la perdi.\n\nCambiare comunque?"))return;setMargFlow(false);const cont=cart.length>0||(tipoCliente&&(ana.nome||ana.cognome||ana.ragioneSociale));const ei=cart.findIndex(g=>g.brandId===b.id);setBrand(b.id);setCambioBrand(false);const dSky=[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}];if(ei>=0){const g=cart[ei];setSales(g.sv&&g.sv.sales?g.sv.sales:{});setSesCode(g.sv&&g.sv.sesCode?g.sv.sesCode:"");setSkyS(g.sv&&g.sv.skyS?g.sv.skyS:dSky);setCart(p=>p.filter((_,i)=>i!==ei));}else{setSales({});setSesCode("");setSkyS(dSky);}if(b.id==="very"||b.id==="ho"){setTipoCliente("privato");if(!cont)setClienteFound(false);setShowAna(true);setShowStep4(cont||ei>=0?true:false);}else if(cont||ei>=0){setShowAna(true);setShowStep4(true);}else{setTipoCliente(null);setShowAna(false);setShowStep4(false);}};
-  const fullReset=()=>{setMargFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
+  const fullReset=()=>{setMargFlow(false);setBrand(null);setTipoCliente(null);setTurista(false);setLookupValue("");setClienteFound(false);setLookupDone(false);setShowAna(false);setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setCart([]);setShowCart(false);setExpI({});setConfirmReset(false);setShowStep4(false);setMargItems([]);setAttachments([]);setDocRiuso(null);setNotaOn(false);setNota("");setPromData("");setPromOra("");setPromNeg("");setPromDesc("");setVistaStep("brand");setStepVisti({});clearDraft("crm_v9");setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
     // Segnalazione 89: dopo il salvataggio operatore e negozio restavano quelli
     // dell'ultima vendita (es. il collaboratore per cui avevo registrato). Ora
     // tornano al MIO nominativo e al MIO negozio, come a inizio giornata.
@@ -4623,6 +4628,172 @@ function CRM() {
     if(!_listiniTutti)caricaListini().then(()=>{ setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); });
   },[sales,skyS,brand]); // eslint-disable-line react-hooks/exhaustive-deps
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
+
+  // ── RIUSO DOCUMENTI D'ARCHIVIO (Luca 05/08): se il cliente ha gia' un
+  // documento d'identita' agli atti (righe contract_attachments con
+  // file_type='documento' sui suoi contratti), allo step Allegati compare un
+  // mini-flusso "gaming" a 3 tappe (Trovati → Verifica → Esito): l'operatore
+  // VISIONA i documenti, spunta il check "non sono scaduti" e la vendita
+  // AGGANCIA gli stessi file_url (nuove righe contract_attachments sul nuovo
+  // contratto, NESSUN nuovo file nel bucket → niente doppioni). Se invece sono
+  // scaduti carica i nuovi come sempre e, al salvataggio, le righe vecchie
+  // passano a file_type='documento_archiviato': le viste che filtrano
+  // 'documento' non le contano piu' — validi solo i nuovi.
+  // docRiuso={cid,docs:[{id,url,name,created}],fase:'trovati'|'verifica'|'conferma'|'esito',esito:null|'validi'|'scaduti',check:bool}
+  const [docRiuso, setDocRiuso] = useState(null);
+  useEffect(() => {
+    if (vistaStep !== "allegati") return;
+    // il cliente e' identificato con certezza SOLO dal CF/P.IVA (stessa regola
+    // del submit): senza CF (es. turista, cliente nuovo) lo step resta identico a oggi.
+    const cf = (ana.cf || "").trim().toUpperCase().replace(/\s+/g, "");
+    if (!cf) return;
+    if (docRiuso && docRiuso.cid === cf) return; // gia' caricato per questo cliente
+    // CF cambiato dopo un riuso gia' applicato: via gli agganci del cliente precedente
+    if (docRiuso && docRiuso.cid !== cf) setAttachments(prev => prev.filter(a => !a.reused));
+    let alive = true;
+    (async () => {
+      try {
+        const { data: cli } = await supabase.from("clients").select("id").eq("cf_piva", cf).limit(1);
+        const cliId = cli && cli[0] && cli[0].id;
+        if (!cliId) { if (alive) setDocRiuso({ cid: cf, docs: [] }); return; }
+        const { data: ctr } = await supabase.from("contracts").select("id").eq("client_id", cliId).limit(500);
+        const ids = (ctr || []).map(c => c.id);
+        if (!ids.length) { if (alive) setDocRiuso({ cid: cf, docs: [] }); return; }
+        const { data: atts } = await supabase.from("contract_attachments")
+          .select("id,file_url,file_name,created_at")
+          .in("contract_id", ids).eq("file_type", "documento")
+          .order("created_at", { ascending: false }).limit(40);
+        // i piu' recenti vincono; dedup per nome file (lo stesso documento
+        // riagganciato su piu' vendite = una sola card)
+        const visti = {}; const docs = [];
+        (atts || []).forEach(a => {
+          const k = String(a.file_name || a.file_url).trim().toLowerCase();
+          if (visti[k]) return; visti[k] = true;
+          docs.push({ id: a.id, url: a.file_url, name: a.file_name || "documento", created: a.created_at });
+        });
+        if (alive) setDocRiuso({ cid: cf, docs: docs.slice(0, 6), fase: "trovati", esito: null, check: false });
+      } catch { if (alive) setDocRiuso({ cid: cf, docs: [] }); }
+    })();
+    return () => { alive = false; };
+  }, [vistaStep, ana.cf]); // eslint-disable-line react-hooks/exhaustive-deps
+  // nuovi documenti caricati a mano in QUESTA vendita (esclusi i riusati)
+  const _nuoviDocCaricati = attachments.filter(a => a.type === "documento" && !a.reused).length;
+  const riusaDocumenti = () => {
+    if (!docRiuso || !(docRiuso.docs || []).length || !docRiuso.check) return;
+    setAttachments(prev => [
+      ...prev.filter(a => !a.reused),
+      // stesso file_url dell'archivio: al submit NIENTE upload, solo la nuova
+      // riga contract_attachments sul contratto di questa vendita
+      ...docRiuso.docs.map(d => ({ reused: true, file: null, url: d.url, attId: d.id, name: d.name, type: "documento" }))
+    ]);
+    setDocRiuso(p => ({ ...p, fase: "esito", esito: "validi" }));
+    sT("♻️ Documenti agganciati alla vendita: zero ricaricamenti, zero doppioni");
+  };
+  const docScaduti = () => {
+    setAttachments(prev => prev.filter(a => !a.reused));
+    setDocRiuso(p => ({ ...p, fase: "esito", esito: "scaduti", check: false }));
+  };
+  const docRiusoReset = () => {
+    setAttachments(prev => prev.filter(a => !a.reused));
+    setDocRiuso(p => ({ ...p, fase: "trovati", esito: null, check: false }));
+  };
+  // Pannello del mini-flusso: FUNZIONE chiamata nel JSX (mai componente
+  // dentro il componente: si perderebbe il focus a ogni render).
+  const pannelloDocRiuso = () => {
+    if (!docRiuso || !(docRiuso.docs || []).length) return null;
+    const fase = docRiuso.fase || "trovati";
+    const dotAttivo = fase === "trovati" ? 0 : (fase === "esito" ? 2 : 1);
+    const doneOk = fase === "esito" && docRiuso.esito === "validi";
+    const doneExp = fase === "esito" && docRiuso.esito === "scaduti";
+    const thumb = (d, h) => {
+      const mime = _mimeDaNome(d.name || d.url);
+      return mime.startsWith("image/")
+        ? <img src={d.url} alt={d.name} style={{ width: "100%", height: h, objectFit: "cover", borderRadius: 8, display: "block", background: "var(--tf-w30)" }} />
+        : <div style={{ width: "100%", height: h, borderRadius: 8, background: "var(--tf-w30)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: h > 80 ? 42 : 30 }}>{mime.includes("pdf") ? "📄" : "🪪"}</div>;
+    };
+    return (
+      <div style={{ background: "var(--tf-w20)", borderRadius: 14, padding: 18, marginBottom: 12, marginTop: 12, borderLeft: "4px solid " + (doneOk ? "#28a745" : doneExp ? "#f59e0b" : "#a78bfa") }}>
+        <style>{`@keyframes docRiusoIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}@keyframes docRiusoPulse{0%,100%{box-shadow:0 0 0 0 rgba(167,139,250,.45)}50%{box-shadow:0 0 0 7px rgba(167,139,250,0)}}`}</style>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--tf-a78bfa)", textTransform: "uppercase" }}>📇 Documenti già in archivio</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {["Trovati", "Verifica", "Esito"].map((s, i) => (
+              <div key={s} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {i > 0 && <div style={{ width: 18, height: 2, borderRadius: 1, background: i <= dotAttivo ? "var(--tf-a78bfa)" : "var(--tf-w100)" }} />}
+                <span style={{ width: 10, height: 10, borderRadius: "50%", background: i < dotAttivo ? "var(--tf-34d399)" : i === dotAttivo ? "var(--tf-a78bfa)" : "var(--tf-w100)", display: "inline-block", animation: i === dotAttivo && fase !== "esito" ? "docRiusoPulse 1.6s infinite" : "none" }} />
+                <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: .5, color: i === dotAttivo ? "var(--tf-f8fafc)" : "var(--tf-64748b)" }}>{s}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        {fase === "trovati" && <div style={{ animation: "docRiusoIn .25s ease both" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--tf-f8fafc)", marginBottom: 4 }}>🎁 Bonus tempo! Questo cliente ha già consegnato i documenti.</div>
+          <div style={{ fontSize: 11, color: "var(--tf-8892b0)", marginBottom: 12 }}>Niente scanner e niente doppioni in archivio: dagli un&apos;occhiata e decidi se valgono ancora.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: 10, marginBottom: 14 }}>
+            {docRiuso.docs.map(d => (
+              <div key={d.id} style={{ background: "var(--tf-w30)", border: "1px solid var(--tf-w60)", borderRadius: 10, padding: 8 }}>
+                {thumb(d, 64)}
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-f8fafc)", marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                <div style={{ fontSize: 9, color: "var(--tf-64748b)" }}>caricato il {d.created ? new Date(d.created).toLocaleDateString("it-IT") : "—"}</div>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => setDocRiuso(p => ({ ...p, fase: "verifica" }))} style={{ padding: "11px 26px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#7c3aed,#a78bfa)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 16px rgba(124,58,237,.35)" }}>👀 Verificali</button>
+        </div>}
+        {fase === "verifica" && <div style={{ animation: "docRiusoIn .25s ease both" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--tf-f8fafc)", marginBottom: 4 }}>🔍 Missione verifica: aprili e guardali bene.</div>
+          <div style={{ fontSize: 11, color: "var(--tf-8892b0)", marginBottom: 12 }}>Clicca una card per l&apos;anteprima grande. Nitidi, leggibili e con la scadenza a posto?</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 10, marginBottom: 14 }}>
+            {docRiuso.docs.map(d => (
+              <div key={d.id} onClick={() => apriAnteprima({ reused: true, url: d.url, name: d.name })} title="Anteprima grande" style={{ background: "var(--tf-w30)", border: "1px solid var(--tf-w60)", borderRadius: 10, padding: 8, cursor: "zoom-in" }}>
+                {thumb(d, 110)}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, marginTop: 6 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-f8fafc)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                  <span style={{ fontSize: 10 }}>🔎</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "var(--tf-f8fafc)", marginBottom: 8 }}>Come li vedi?</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button type="button" onClick={() => setDocRiuso(p => ({ ...p, fase: "conferma", esito: null }))} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-28a745)", background: "rgba(40,167,69,0.12)", color: "var(--tf-28a745)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>✅ Validi e leggibili</button>
+            <button type="button" onClick={docScaduti} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-f59e0b)", background: "rgba(245,158,11,0.12)", color: "var(--tf-f59e0b)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>⏰ Scaduti o da sostituire</button>
+          </div>
+        </div>}
+        {fase === "conferma" && <div style={{ animation: "docRiusoIn .25s ease both" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--tf-f8fafc)", marginBottom: 10 }}>🛡️ Ultimo check e sblocchi il riuso.</div>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "var(--tf-w30)", border: "1px solid var(--tf-w60)", borderRadius: 10, padding: "12px 14px", cursor: "pointer", marginBottom: 14 }}>
+            <input type="checkbox" checked={!!docRiuso.check} onChange={e => { const on = e.target.checked; setDocRiuso(p => ({ ...p, check: on })); }} style={{ marginTop: 2, width: 16, height: 16, accentColor: "#28a745", cursor: "pointer" }} />
+            <span style={{ fontSize: 12, color: "var(--tf-f8fafc)", fontWeight: 600 }}>Confermo di aver verificato che i documenti <b>non sono scaduti</b> e sono leggibili.</span>
+          </label>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <button type="button" onClick={riusaDocumenti} disabled={!docRiuso.check} style={{ padding: "11px 26px", borderRadius: 10, border: "none", background: docRiuso.check ? "linear-gradient(135deg,#16a34a,#34d399)" : "var(--tf-w30)", color: docRiuso.check ? "#fff" : "var(--tf-64748b)", fontSize: 13, fontWeight: 800, cursor: docRiuso.check ? "pointer" : "not-allowed", boxShadow: docRiuso.check ? "0 4px 16px rgba(22,163,74,.35)" : "none" }}>♻️ Riusa senza ricaricare</button>
+            <button type="button" onClick={() => setDocRiuso(p => ({ ...p, fase: "verifica", check: false }))} style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>← Torna alla verifica</button>
+          </div>
+        </div>}
+        {doneOk && <div style={{ animation: "docRiusoIn .25s ease both" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--tf-34d399)", marginBottom: 4 }}>🏆 Combo! Documenti agganciati alla vendita.</div>
+          <div style={{ fontSize: 11, color: "var(--tf-8892b0)", marginBottom: 10 }}>Zero caricamenti e zero doppioni: al salvataggio la vendita punterà agli stessi file già in archivio.</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {docRiuso.docs.map(d => <span key={d.id} style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-34d399)", background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.4)", borderRadius: 999, padding: "4px 10px" }}>♻️ {d.name}</span>)}
+          </div>
+          <button type="button" onClick={docRiusoReset} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>↩︎ Cambia scelta</button>
+        </div>}
+        {doneExp && <div style={{ animation: "docRiusoIn .25s ease both" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--tf-f59e0b)", marginBottom: 4 }}>🔄 Nuova run: servono documenti freschi.</div>
+          <div style={{ fontSize: 11, color: "var(--tf-8892b0)", marginBottom: 10 }}>Carica i nuovi nella casella 🪪 Documento qui sotto. Al salvataggio i vecchi passano in archivio: da lì in poi valgono solo i nuovi.</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ width: 12, height: 12, borderRadius: "50%", background: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-w100)", display: "inline-block" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-8892b0)" }}>{_nuoviDocCaricati > 0 ? (_nuoviDocCaricati === 1 ? "✅ 1 nuovo documento caricato — obiettivo completato!" : `✅ ${_nuoviDocCaricati} nuovi documenti caricati — obiettivo completato!`) : "In attesa del nuovo documento… 🎯"}</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {docRiuso.docs.map(d => <span key={d.id} style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-64748b)", background: "var(--tf-w30)", border: "1px solid var(--tf-w60)", borderRadius: 999, padding: "4px 10px", textDecoration: "line-through" }}>🗄️ {d.name}</span>)}
+          </div>
+          <button type="button" onClick={docRiusoReset} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>↩︎ Cambia scelta</button>
+        </div>}
+      </div>
+    );
+  };
 
   // Segnalazione 27: i contratti si duplicavano perche' "Salva contratto" non
   // aveva alcun blocco mentre il salvataggio era in corso. Un secondo clic (o un
@@ -4815,6 +4986,10 @@ function CRM() {
       const uploadedFiles = [];
       let uploadFailCount = 0;
       for (const att of attachments) {
+        // RIUSO ARCHIVIO (Luca 05/08): l'allegato punta a un file GIA' nel
+        // bucket — niente nuovo upload, si riaggancia lo stesso file_url al
+        // contratto di questa vendita (nessun doppione in storage).
+        if (att.reused && att.url) { uploadedFiles.push({ url: att.url, name: att.name, type: att.type }); continue; }
         const fileExt = att.name.split(".").pop();
         const fileName = `${clientId}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
         const filePath = `${clientId}/${fileName}`;
@@ -4961,6 +5136,18 @@ function CRM() {
           }));
           const { error: attErr } = await supabase.from("contract_attachments").insert(attendanceRows);
           if (attErr) console.error("Attachment Meta Error:", attErr);
+        }
+
+        // DOCUMENTI SCADUTI → ARCHIVIO (Luca 05/08): le righe vecchie passano a
+        // file_type='documento_archiviato' SOLO quando la vendita con i NUOVI
+        // documenti e' realmente salvata (qui). Da questo momento le viste che
+        // filtrano 'documento' non le contano piu': validi solo i nuovi.
+        // Idempotente: un retry riscrive lo stesso valore sulle stesse righe.
+        if (docRiuso && docRiuso.esito === "scaduti" && (docRiuso.docs || []).length && uploadedFiles.some(f => f.type === "documento")) {
+          const { error: archErr } = await supabase.from("contract_attachments")
+            .update({ file_type: "documento_archiviato" })
+            .in("id", docRiuso.docs.map(d => d.id));
+          if (archErr) console.error("Archivio documenti scaduti error:", archErr);
         }
       }
 
@@ -5982,6 +6169,10 @@ select.rvIn{cursor:pointer}
         </div>
       </div>}
 
+        {/* RIUSO DOCUMENTI D'ARCHIVIO: pannello gaming (Trovati → Verifica →
+            Esito) sopra le caselle di upload; compare solo se il cliente ha
+            gia' documenti d'identita' agli atti. */}
+        {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&pannelloDocRiuso()}
         {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #17a2b8",marginTop:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--tf-17a2b8)",marginBottom:14,textTransform:"uppercase"}}>📎 Allegati</div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
@@ -5990,7 +6181,7 @@ select.rvIn{cursor:pointer}
               onDragLeave={onBoxDragLeave} onDrop={e=>onBoxDrop(e,a.t)}
               style={{display:"block",border:"2px dashed "+(over?"var(--tf-17a2b8)":(cnt>0?"rgba(23,162,184,0.55)":"var(--tf-w100)")),borderRadius:10,padding:"14px 10px",textAlign:"center",cursor:"pointer",background:over?"rgba(23,162,184,0.22)":(cnt>0?"rgba(23,162,184,0.08)":"var(--tf-w30)"),transform:over?"scale(1.02)":"none",transition:"all .12s"}}><input type="file" multiple onChange={e=>handleFileChange(e,a.t)} style={{display:"none"}}/><div style={{fontSize:24,marginBottom:4}}>{a.i}</div><div style={{fontSize:11,fontWeight:700,marginBottom:6}}>{a.l}</div><div style={{display:"inline-flex",gap:6,alignItems:"center",justifyContent:"center"}}><span style={{display:"inline-block",padding:"5px 14px",borderRadius:6,background:"var(--tf-17a2b8)",color:"#fff",fontSize:10,fontWeight:700}}>Carica</span><button type="button" onClick={e=>{e.preventDefault();e.stopPropagation();openQr(a.t);}} title="Carica dal telefono via QR" style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,background:"rgba(23,162,184,0.12)",border:"1px solid rgba(23,162,184,0.5)",color:"var(--tf-5fd3e6)",fontSize:10,fontWeight:700,cursor:"pointer"}}>📱 QR</button></div><div style={{fontSize:9,color:"var(--tf-64748b)",marginTop:5}}>{over?"Rilascia qui":"o trascina i file"}</div>{cnt>0&&<div style={{marginTop:6,fontSize:10,color:"var(--tf-17a2b8)",fontWeight:700}}>{cnt} file</div>}</label>;})}
           </div>
-          {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w60)"}}><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid var(--tf-w50)":"none"}}><div style={{fontSize:11,color:"var(--tf-f8fafc)"}}><span onClick={()=>apriAnteprima(file)} title="Anteprima" style={{cursor:"pointer",textDecoration:"underline",textDecorationColor:"var(--tf-w300)",textUnderlineOffset:2}}>{file.name}</span> <span style={{color:"var(--tf-64748b)",fontSize:10}}>· {file.type}</span></div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
+          {attachments.length>0&&<div style={{marginTop:12,padding:12,background:"var(--tf-w30)",borderRadius:8,border:"1px solid var(--tf-w60)"}}><div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:8,textTransform:"uppercase"}}>File caricati ({attachments.length})</div>{attachments.map((file,fi)=><div key={fi} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 0",borderBottom:fi<attachments.length-1?"1px solid var(--tf-w50)":"none"}}><div style={{fontSize:11,color:"var(--tf-f8fafc)"}}><span onClick={()=>apriAnteprima(file)} title="Anteprima" style={{cursor:"pointer",textDecoration:"underline",textDecorationColor:"var(--tf-w300)",textUnderlineOffset:2}}>{file.name}</span> <span style={{color:"var(--tf-64748b)",fontSize:10}}>· {file.type}</span>{file.reused&&<span style={{marginLeft:6,fontSize:9,fontWeight:800,color:"var(--tf-34d399)",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.4)",borderRadius:999,padding:"1px 8px"}}>♻️ dall&apos;archivio</span>}</div><button type="button" onClick={()=>setAttachments(p=>p.filter((_,j)=>j!==fi))} style={{background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button></div>)}</div>}
         </div>}
         {preview&&createPortal(<div onClick={chiudiAnteprima} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"var(--tf-11141d)",border:"1px solid var(--tf-w100)",borderRadius:14,width:"100%",maxWidth:840,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
