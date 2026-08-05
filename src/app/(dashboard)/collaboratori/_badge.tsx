@@ -81,6 +81,49 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
         setTeamStats({ presenti: presenti || 0, totalMinutes: Math.floor(totalMins) });
     }, [vistaTeam]);
 
+    // ── QUADRI DIREZIONE (Luca 05/08): per chi NON timbra (amministrativo in
+    // su) "Stato attuale"/"Tempo oggi" erano fermi a FUORI TURNO / 0h — inutili.
+    // Al loro posto tre quadri live sulla giornata del team: pause, ingressi,
+    // turni chiusi. Fotografia di TUTTO il team come i contatori accanto
+    // (Presenti ora / Totale ore): NON seguono i filtri dello storico e si
+    // rinfrescano da soli ogni minuto.
+    const vistaDirezione = vistaTeam && !puoTimbrare;
+    const [dirStats, setDirStats] = useState<{
+        pause: number; pauseMin: number; inPausaOra: number;
+        primo: { nome: string; ora: string } | null;
+        ultimo: { nome: string; ora: string } | null;
+        chiusi: number; mediaOre: number;
+    } | null>(null);
+    const fetchDirStats = useCallback(async () => {
+        if (!vistaDirezione) return;
+        const [{ data: turniData }, { count: inPausa }] = await Promise.all([
+            supabase.from("shifts").select("*").gte("started_at", ymdLocal(new Date()) + "T00:00:00")
+                .order("started_at", { ascending: true }).limit(1000),
+            // "in pausa adesso": tutti i turni APERTI (anche dimenticati da ieri),
+            // stessa platea del contatore "Presenti ora"
+            supabase.from("shifts").select("*", { count: "exact", head: true }).is("ended_at", null).not("pause_started_at", "is", null),
+        ]);
+        const turni = (turniData ?? []) as ShiftRow[];
+        const chiusi = turni.filter((s) => s.ended_at);
+        const fmtT = (iso: string) => new Date(iso).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+        const ingresso = (s: ShiftRow) => ({ nome: s.employee_name, ora: fmtT(s.started_at) });
+        setDirStats({
+            pause: turni.reduce((a, s) => a + contaPause(s), 0),
+            pauseMin: Math.round(turni.reduce((a, s) => a + minutiPausa(s), 0)),
+            inPausaOra: inPausa || 0,
+            primo: turni.length ? ingresso(turni[0]) : null,
+            ultimo: turni.length > 1 ? ingresso(turni[turni.length - 1]) : null,
+            chiusi: chiusi.length,
+            mediaOre: chiusi.length ? chiusi.reduce((a, s) => a + oreNette(s), 0) / chiusi.length : 0,
+        });
+    }, [vistaDirezione]);
+    useEffect(() => {
+        if (!vistaDirezione) return;
+        fetchDirStats();
+        const t = setInterval(fetchDirStats, 60000);   // live come gli altri quadri
+        return () => clearInterval(t);
+    }, [vistaDirezione, fetchDirStats]);
+
     useEffect(() => {
         (async () => {
             await Promise.all([fetchActiveShift(), fetchTeamStats()]);
@@ -141,28 +184,83 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
         await fetchTeamStats();
     };
 
+    // helper JSX dei quadri direzione (funzioni chiamate, non componenti)
+    const cardPauseOggi = () => (
+        <div className="glass-panel p-5 border-l-4 border-l-amber-500 badge-kpi" title="Pause fatte oggi da tutto il team, minuti compresi (anche la pausa in corso)">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">⏸️ Pause Oggi</p>
+            <p className="text-2xl font-black text-white">
+                {dirStats ? dirStats.pause : "—"} <span className="text-sm text-amber-400">· {dirStats ? dirStats.pauseMin : 0} min</span>
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1">
+                {!dirStats ? "" : dirStats.inPausaOra > 0 ? `${dirStats.inPausaOra} in pausa adesso` : "nessuno in pausa adesso"}
+            </p>
+        </div>
+    );
+    const cardIngressiOggi = () => (
+        <div className="glass-panel p-5 border-l-4 border-l-indigo-500 badge-kpi" title="Primo ingresso della giornata e ultimo arrivato">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">🚪 Ingressi Oggi</p>
+            {dirStats?.primo ? (
+                <>
+                    <p className="text-2xl font-black text-white truncate">
+                        {dirStats.primo.ora} <span className="text-sm text-indigo-400">{dirStats.primo.nome}</span>
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1 truncate">
+                        {dirStats.ultimo ? `ultimo arrivato: ${dirStats.ultimo.nome} · ${dirStats.ultimo.ora}` : "unico ingresso finora"}
+                    </p>
+                </>
+            ) : (
+                <>
+                    <p className="text-2xl font-black text-white">—</p>
+                    <p className="text-[11px] text-slate-500 mt-1">{dirStats ? "nessun ingresso oggi" : ""}</p>
+                </>
+            )}
+        </div>
+    );
+    const cardTurniChiusiOggi = () => (
+        <div className="glass-panel p-5 border-l-4 border-l-emerald-500 badge-kpi" title="Turni conclusi oggi e media di ore nette per turno chiuso">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">🏁 Turni Chiusi Oggi</p>
+            <p className="text-2xl font-black text-white">
+                {dirStats ? dirStats.chiusi : "—"} <span className="text-sm text-emerald-400">chius{dirStats?.chiusi === 1 ? "o" : "i"}</span>
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1">
+                {!dirStats ? "" : dirStats.chiusi > 0 ? `media ${fmtOre(dirStats.mediaOre)} a turno` : "nessun turno concluso finora"}
+            </p>
+        </div>
+    );
+
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Top Stats Bar - Only for Admins or to show personal today summary */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="glass-panel p-5 border-l-4 border-l-indigo-500 badge-kpi">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Stato Attuale</p>
-                    <div className="flex items-center gap-3">
-                        <div className={cn(
-                            "w-2.5 h-2.5 rounded-full animate-pulse",
-                            status === "running" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" :
-                                status === "paused" ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" : "bg-slate-600"
-                        )} />
-                        <p className="text-xl font-bold text-white uppercase tracking-tight">{labelStatus}</p>
-                    </div>
-                </div>
+            {/* Top Stats Bar — personale (Stato/Tempo) per chi timbra; per la
+                direzione (vede_team senza timbra) i tre quadri live del team */}
+            <div className={cn("grid grid-cols-1 md:grid-cols-2 gap-4", vistaDirezione ? "lg:grid-cols-3 xl:grid-cols-5" : "lg:grid-cols-4")}>
+                {vistaDirezione ? (
+                    <>
+                        {cardPauseOggi()}
+                        {cardIngressiOggi()}
+                        {cardTurniChiusiOggi()}
+                    </>
+                ) : (
+                    <>
+                        <div className="glass-panel p-5 border-l-4 border-l-indigo-500 badge-kpi">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Stato Attuale</p>
+                            <div className="flex items-center gap-3">
+                                <div className={cn(
+                                    "w-2.5 h-2.5 rounded-full animate-pulse",
+                                    status === "running" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" :
+                                        status === "paused" ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" : "bg-slate-600"
+                                )} />
+                                <p className="text-xl font-bold text-white uppercase tracking-tight">{labelStatus}</p>
+                            </div>
+                        </div>
 
-                <div className="glass-panel p-5 border-l-4 border-l-emerald-500 badge-kpi">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Tempo Oggi</p>
-                    <p className="text-2xl font-black text-white">
-                        {Math.floor(todaySeconds / 3600)}h <span className="text-emerald-400">{String(Math.floor(todaySeconds / 60) % 60).padStart(2, "0")}m</span> <span className="text-sm text-slate-400">{String(todaySeconds % 60).padStart(2, "0")}s</span>
-                    </p>
-                </div>
+                        <div className="glass-panel p-5 border-l-4 border-l-emerald-500 badge-kpi">
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Tempo Oggi</p>
+                            <p className="text-2xl font-black text-white">
+                                {Math.floor(todaySeconds / 3600)}h <span className="text-emerald-400">{String(Math.floor(todaySeconds / 60) % 60).padStart(2, "0")}m</span> <span className="text-sm text-slate-400">{String(todaySeconds % 60).padStart(2, "0")}s</span>
+                            </p>
+                        </div>
+                    </>
+                )}
 
                 {vistaTeam && (
                     <>
@@ -551,6 +649,19 @@ function minutiTurnoOggi(s: ShiftRow): number {
     let pausa = Number(s.total_pause_minutes) || 0;
     if (!s.ended_at && s.pause_started_at) pausa += (Date.now() - new Date(s.pause_started_at).getTime()) / 60000;
     return Math.max(0, (fine - inizio) / 60000 - pausa);
+}
+// ── Quadri direzione: numero di pause di un turno. Con la timeline (mig. 110)
+// si contano gli eventi "pausa"; i turni senza eventi si stimano dal totale
+// registrato più l'eventuale pausa ancora in corso.
+function contaPause(s: ShiftRow): number {
+    if (Array.isArray(s.eventi) && s.eventi.length) return s.eventi.filter((e) => e.tipo === "pausa").length;
+    return ((Number(s.total_pause_minutes) || 0) > 0.5 ? 1 : 0) + (!s.ended_at && s.pause_started_at ? 1 : 0);
+}
+// minuti di pausa di un turno, inclusa la pausa eventualmente in corso
+function minutiPausa(s: ShiftRow): number {
+    let m = Number(s.total_pause_minutes) || 0;
+    if (!s.ended_at && s.pause_started_at) m += (Date.now() - new Date(s.pause_started_at).getTime()) / 60000;
+    return m;
 }
 
 function KpiBox({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
