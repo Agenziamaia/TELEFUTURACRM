@@ -25,8 +25,10 @@ import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
 import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller } from "@/lib/callerMalus";
-import { CallerRegoleModal, ArchivioMalusCallerModal } from "@/components/CallerRegole";
+import { CallerRegoleModal } from "@/components/CallerRegole";
 import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
+import { ArchivioMalusCaller } from "./_components/ArchivioMalusCaller";
+import { trkBrandKey, TRK_LOGO_SCALE } from "@/lib/brandAssets";
 import { puoAscoltareRegistrazioni } from "@/lib/aircall";
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -1824,11 +1826,22 @@ function CallerPageInner() {
                         <>
                             {/* Tessere brand su UNA riga (si dividono lo spazio): tutte attive
                                 per definizione; il click su una = filtro SOLO quella, i click
-                                successivi aggiungono/tolgono; tutte scelte o nessuna = tutte. */}
+                                successivi aggiungono/tolgono; tutte scelte o nessuna = tutte.
+                                Restyle Luca 05/08 come Tracking PDA: loghi GRANDI (scala ottica
+                                condivisa TRK_LOGO_SCALE) e conteggio a BADGE attaccato alla
+                                spalla del logo — qui pero' ANCORATO al logo stesso (wrapper
+                                relative + badge absolute), non a offset dal centro tessera,
+                                cosi' regge qualsiasi larghezza. Il colore del badge segue il
+                                filtro fase attivo (Da Lavorare/Warning/Malus). */}
                             <div className="flex gap-3">
                                 {brandCounts.map(({ brand, n }) => {
                                     const active = selBrands.size === 0 || selBrands.has(brand);
                                     const logo = BRAND_LOGO[brand];
+                                    const scala = TRK_LOGO_SCALE[trkBrandKey(brand)] || 1;
+                                    const colBadge = faseFilter === "da_lavorare" ? "var(--tf-38bdf8)"
+                                        : faseFilter === "warning" ? "var(--tf-f59e0b)"
+                                            : faseFilter === "malus" ? "var(--tf-f43f5e)"
+                                                : "var(--tf-94a3b8)";
                                     return (
                                         <button key={brand}
                                             onClick={() => setSelBrands((p) => {
@@ -1837,15 +1850,30 @@ function CallerPageInner() {
                                                 if (nx.has(brand)) nx.delete(brand); else nx.add(brand);
                                                 return nx.size >= BRANDS.length ? new Set<string>() : nx;
                                             })}
-                                            title={selBrands.size === 0 ? `Filtra solo ${brand}` : active ? `${brand} nel filtro — clicca per toglierlo` : `Aggiungi ${brand} al filtro`}
-                                            className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-4 transition-all ${active
+                                            title={selBrands.size === 0 ? `Filtra solo ${brand} — ${n} call` : active ? `${brand} nel filtro (${n} call) — clicca per toglierlo` : `Aggiungi ${brand} al filtro (${n} call)`}
+                                            aria-label={`${brand}: ${n} call`}
+                                            className={`flex-1 min-w-0 h-[84px] flex items-center justify-center rounded-2xl border px-3 transition-all ${active
                                                 ? "border-indigo-400/80 bg-indigo-500/20 ring-1 ring-indigo-400/40 shadow-lg shadow-indigo-500/25 brightness-110"
                                                 : "border-white/15 bg-white/[0.05] opacity-70 grayscale-[60%] hover:opacity-90 hover:grayscale-[30%]"}`}>
-                                            <span className="h-12 flex items-center justify-center" title={brand}>
-                                                {logo ? <img src={logo} alt={brand} className="h-12 w-auto max-w-full object-contain" />
-                                                    : <span className="text-base font-bold text-slate-200">{brand}</span>}
+                                            {/* wrapper RELATIVE sul logo: il badge si aggancia alla
+                                                sua spalla destra e segue il logo a ogni larghezza */}
+                                            <span className="relative inline-block max-w-full" title={brand}>
+                                                {logo ? (
+                                                    <img src={logo} alt={brand} className="block object-contain max-w-full"
+                                                        style={{ maxHeight: 56, transform: scala !== 1 ? `scale(${scala})` : undefined }} />
+                                                ) : (
+                                                    <span className="block text-base font-bold text-slate-200 leading-[56px] px-1">{brand}</span>
+                                                )}
+                                                <span className="absolute -top-2 -right-2 translate-x-1/2 z-10 text-[11px] font-black leading-none px-1.5 py-[3px] rounded-full tabular-nums"
+                                                    style={{
+                                                        color: colBadge,
+                                                        background: "var(--tf-0d1424)",
+                                                        border: `1px solid color-mix(in srgb, ${colBadge} 45%, transparent)`,
+                                                        opacity: n === 0 ? .5 : 1,
+                                                    }}>
+                                                    {n}
+                                                </span>
                                             </span>
-                                            <span className="text-[11px] text-slate-400 tabular-nums leading-none">{n} call</span>
                                         </button>
                                     );
                                 })}
@@ -1879,7 +1907,9 @@ function CallerPageInner() {
                                 </div>
                             </div>
                             {showRegoleCaller && <CallerRegoleModal stati={STATI_OPT} soloLettura={!puoRegoleCaller} onClose={() => setShowRegoleCaller(false)} onSaved={() => caricaRegoleCaller().then(setRegoleCaller)} />}
-                            {showArchivioMalus && <ArchivioMalusCallerModal puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} onClose={() => setShowArchivioMalus(false)} />}
+                            {/* storico malus nel LINGUAGGIO di Ricerca Vendite (Luca 05/08):
+                                card-filtro, totali per collaboratore, tabella episodi */}
+                            {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} onClose={() => setShowArchivioMalus(false)} />}
 
                             {/* Filter bar */}
                             <div className="glass-panel p-5">
