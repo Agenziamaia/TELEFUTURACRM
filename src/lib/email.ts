@@ -162,6 +162,79 @@ export async function leggiNuove(a: Account, maxCount = 30): Promise<{ messages:
     return { messages: out, lastUid, uidValidity };
 }
 
+// ── threading (Luca 05/08): una conversazione = un THREAD ─────────────
+/** Radice dell'oggetto: via i prefissi di risposta/inoltro, anche ripetuti
+ *  ("Re: R: Fattura" → "fattura"). Normalizzata per il confronto. */
+export function oggettoRadice(s: string | null | undefined): string {
+    let t = String(s || "").trim();
+    for (let i = 0; i < 6; i++) {
+        const m = /^(re|r|fw|fwd|i|rif)\s*:\s*/i.exec(t);
+        if (!m) break;
+        t = t.slice(m[0].length).trim();
+    }
+    return t.toLowerCase().replace(/\s+/g, " ");
+}
+/** true se l'oggetto pare una risposta/inoltro (Re:, R:, Fwd:, I:…). */
+export function pareRisposta(s: string | null | undefined): boolean {
+    return /^\s*(re|r|fw|fwd|i|rif)\s*:/i.test(String(s || ""));
+}
+
+// ── non lette allineate alla webmail (EML-05, Luca 05/08) ─────────────
+/** Message-ID delle mail ANCORA NON LETTE (senza \Seen) nella INBOX IMAP.
+ *  Con `limite`, oltre quel numero si prendono solo le più recenti e si
+ *  segnala il troncamento (il chiamante evita di azzerare al buio). */
+export async function nonLetteInbox(a: Account, limite = 800): Promise<{ ids: string[]; troncate: boolean }> {
+    const client = imapClient(a);
+    const out: string[] = [];
+    let troncate = false;
+    await client.connect();
+    try {
+        const lock = await client.getMailboxLock("INBOX");
+        try {
+            let uids = (await client.search({ seen: false }, { uid: true })) || [];
+            if (!Array.isArray(uids)) uids = [];
+            if (uids.length > limite) { troncate = true; uids = uids.slice(-limite); }
+            if (uids.length) {
+                for await (const msg of client.fetch(uids, { uid: true, envelope: true }, { uid: true } as any)) {
+                    const id = (msg.envelope as any)?.messageId;
+                    if (id) out.push(String(id));
+                }
+            }
+        } finally { lock.release(); }
+    } finally { try { await client.logout(); } catch { } }
+    return { ids: out, troncate };
+}
+
+/** Aggiunge o toglie \Seen sull'IMAP per i Message-ID dati: quello che leggi
+ *  (o rimetti da leggere) nel CRM vale anche in webmail, e il riallineamento
+ *  del poll non lo ribalta. Ritorna quanti messaggi ha toccato. */
+export async function flagLetteImap(a: Account, messageIds: string[], lette: boolean): Promise<number> {
+    const ids = messageIds.map((s) => String(s || "").trim()).filter(Boolean);
+    if (!ids.length) return 0;
+    const client = imapClient(a);
+    let fatte = 0;
+    await client.connect();
+    try {
+        const lock = await client.getMailboxLock("INBOX");
+        try {
+            for (const id of ids) {
+                // HEADER cerca per sottostringa: meglio senza parentesi angolari
+                const nudo = id.replace(/^</, "").replace(/>$/, "");
+                if (!nudo) continue;
+                try {
+                    const uids = await client.search({ header: { "message-id": nudo } }, { uid: true });
+                    if (uids && uids.length) {
+                        if (lette) await client.messageFlagsAdd(uids, ["\\Seen"], { uid: true } as any);
+                        else await client.messageFlagsRemove(uids, ["\\Seen"], { uid: true } as any);
+                        fatte += uids.length;
+                    }
+                } catch { /* singolo id saltato */ }
+            }
+        } finally { lock.release(); }
+    } finally { try { await client.logout(); } catch { } }
+    return fatte;
+}
+
 // ── cartelle speciali: Sent (EML-01) e Trash (EML-03) ─────────────────
 // Individuazione: prima lo special-use IMAP, poi i nomi comuni dei server
 // che non lo espongono (cPanel, Outlook, client italiani).

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { leggiNuove, leggiSentNuove, EmailInAtt } from "@/lib/email";
+import { leggiNuove, leggiSentNuove, EmailInAtt, oggettoRadice, pareRisposta, nonLetteInbox } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,6 +18,30 @@ async function clientePerEmail(email: string): Promise<string | null> {
     if (!email) return null;
     const { data } = await supabase.from("clients").select("id").ilike("email", email).limit(1);
     return data && data[0] ? data[0].id : null;
+}
+
+// Conversazione del THREAD (Luca 05/08: «le mail dello stesso mittente devono
+// rimanere separate» — una conversazione per scambio, non per indirizzo):
+// 1) In-Reply-To → conversazione del messaggio citato; 2) oggetto da risposta
+// (Re:/R:/Fwd:) senza header → ultima conversazione dello stesso interlocutore
+// con la stessa radice d'oggetto; 3) altrimenti null = conversazione NUOVA.
+async function convDelThread(accId: string, interlocutore: string, m: { inReplyTo: string | null; subject: string }): Promise<string | null> {
+    if (m.inReplyTo) {
+        const { data } = await supabase.from("email_messages").select("conversation_id")
+            .eq("account_id", accId).eq("message_id", m.inReplyTo).maybeSingle();
+        if (data?.conversation_id) return data.conversation_id;
+    }
+    if (pareRisposta(m.subject)) {
+        const radice = oggettoRadice(m.subject);
+        if (radice) {
+            const { data } = await supabase.from("email_conversations").select("id, subject")
+                .eq("account_id", accId).eq("customer_email", interlocutore)
+                .order("last_message_at", { ascending: false, nullsFirst: false }).limit(15);
+            const hit = (data || []).find((c) => oggettoRadice(c.subject) === radice);
+            if (hit) return hit.id;
+        }
+    }
+    return null;
 }
 
 // allegati -> bucket email-attachments (riusato da INBOX e Sent)
@@ -48,14 +72,13 @@ async function pollAccount(accId: string) {
         const cust = m.fromAddr;
         if (!cust || cust === acc.email_address) continue;   // ignora auto-copie
         const clientId = await clientePerEmail(cust);
-        // upsert conversazione (account + indirizzo cliente)
-        const { data: existing } = await supabase.from("email_conversations").select("id, client_id, customer_name").eq("account_id", accId).eq("customer_email", cust).maybeSingle();
-        let convId: string | undefined;
-        if (existing) {
-            convId = existing.id;
+        // conversazione del THREAD (non più una per mittente — Luca 05/08)
+        let convId: string | undefined = (await convDelThread(accId, cust, m)) || undefined;
+        if (convId) {
+            const { data: existing } = await supabase.from("email_conversations").select("id, client_id, customer_name").eq("id", convId).maybeSingle();
             const patch: Record<string, unknown> = {};
-            if (clientId && !existing.client_id) patch.client_id = clientId;
-            if (m.fromName && !existing.customer_name) patch.customer_name = m.fromName;
+            if (clientId && !existing?.client_id) patch.client_id = clientId;
+            if (m.fromName && !existing?.customer_name) patch.customer_name = m.fromName;
             if (Object.keys(patch).length) await supabase.from("email_conversations").update(patch).eq("id", convId);
         } else {
             const { data: created } = await supabase.from("email_conversations")
@@ -103,15 +126,15 @@ async function pollAccount(accId: string) {
             const dest = m.toFirstAddr;
             if (!dest || dest === acc.email_address) continue;   // niente auto-invii
             const clientId = await clientePerEmail(dest);
-            // conversazione sul PRIMO destinatario (per l'inbox e' il mittente)
-            const { data: existing } = await supabase.from("email_conversations").select("id, client_id, customer_name, last_message_at").eq("account_id", accId).eq("customer_email", dest).maybeSingle();
-            let convId: string | undefined;
+            // conversazione del THREAD sul PRIMO destinatario (Luca 05/08)
+            let convId: string | undefined = (await convDelThread(accId, dest, m)) || undefined;
             let lastAt: string | null = null;
-            if (existing) {
-                convId = existing.id; lastAt = existing.last_message_at;
+            if (convId) {
+                const { data: existing } = await supabase.from("email_conversations").select("id, client_id, customer_name, last_message_at").eq("id", convId).maybeSingle();
+                lastAt = existing?.last_message_at ?? null;
                 const patch: Record<string, unknown> = {};
-                if (clientId && !existing.client_id) patch.client_id = clientId;
-                if (m.toFirstName && !existing.customer_name) patch.customer_name = m.toFirstName;
+                if (clientId && !existing?.client_id) patch.client_id = clientId;
+                if (m.toFirstName && !existing?.customer_name) patch.customer_name = m.toFirstName;
                 if (Object.keys(patch).length) await supabase.from("email_conversations").update(patch).eq("id", convId);
             } else {
                 const { data: created } = await supabase.from("email_conversations")
@@ -140,12 +163,41 @@ async function pollAccount(accId: string) {
         }
     } catch { /* Sent assente o in errore: il poll INBOX resta valido */ }
 
+    // ── EML-05 (Luca 05/08): contatori non lette allineati alla webmail ──
+    // La verità sono i flag \Seen IMAP: si contano le UNSEEN reali in INBOX e
+    // i contatori delle conversazioni si riallineano (Magliana: CRM 63 vs
+    // webmail 12). La lettura nel CRM propaga \Seen via /api/email/seen,
+    // quindi il riallineamento non ribalta ciò che leggi qui.
+    let unreadAllineate = 0;
+    try {
+        const { ids, troncate } = await nonLetteInbox(acc as any);
+        const mappa: Record<string, number> = {};
+        const arr = [...new Set(ids)];
+        for (let i = 0; i < arr.length; i += 100) {
+            const { data } = await supabase.from("email_messages").select("conversation_id")
+                .eq("account_id", accId).in("message_id", arr.slice(i, i + 100));
+            (data || []).forEach((r: { conversation_id: string }) => { mappa[r.conversation_id] = (mappa[r.conversation_id] || 0) + 1; });
+        }
+        // azzera SOLO se la lista UNSEEN è completa (se troncata, niente zeri al buio)
+        if (!troncate) {
+            const { data: aperte } = await supabase.from("email_conversations").select("id, unread")
+                .eq("account_id", accId).gt("unread", 0).limit(1000);
+            for (const c of (aperte || [])) {
+                if (!mappa[c.id]) { await supabase.from("email_conversations").update({ unread: 0 }).eq("id", c.id); unreadAllineate++; }
+            }
+        }
+        for (const [cid, n] of Object.entries(mappa)) {
+            const { count } = await supabase.from("email_conversations").select("id", { count: "exact", head: true }).eq("id", cid).eq("unread", n);
+            if (!count) { await supabase.from("email_conversations").update({ unread: n }).eq("id", cid); unreadAllineate++; }
+        }
+    } catch { /* IMAP momentaneamente giù: si riallinea al giro dopo */ }
+
     await supabase.from("email_accounts").update({
         last_uid: res.lastUid, status: "attiva", last_error: null,
         ...(res.uidValidity ? { inbox_uidvalidity: res.uidValidity } : {}),
         ...patchSent,
     }).eq("id", accId);
-    return { nuovi, inviateImportate, lastUid: res.lastUid };
+    return { nuovi, inviateImportate, unreadAllineate, lastUid: res.lastUid };
 }
 
 export async function POST(request: Request) {

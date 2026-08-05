@@ -223,9 +223,26 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
         };
         load(); const t = setInterval(load, 4000);
         supabase.from("email_conversations").update({ unread: 0 }).eq("id", selConv.id).then(() => { });
+        // EML-05: la lettura vale anche in webmail (\Seen su IMAP) — fuoco e
+        // dimentica: se fallisce, il poll riallinea al giro dopo
+        fetch("/api/email/seen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: selConv.id, seen: true }) }).catch(() => { });
         return () => { alive = false; clearInterval(t); };
     }, [selConv?.id]);
-    useEffect(() => { const el = scrollRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs]);
+    // AUTOSCROLL SOLO QUANDO SERVE (Luca 05/08): prima OGNI refresh dei
+    // messaggi (poll a 4s) riportava in fondo anche mentre leggevi in alto.
+    // Ora: in fondo all'APERTURA del thread; sui refresh solo se sei già lì
+    // (nuovo messaggio mentre guardi la coda), altrimenti lo scroll resta tuo.
+    const scrollConvRef = useRef<string | null>(null);
+    const scrollNMsgs = useRef(0);
+    useEffect(() => {
+        const el = scrollRef.current; if (!el) return;
+        const cambioThread = scrollConvRef.current !== (selConv?.id || null);
+        const eroInFondo = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+        if (cambioThread || (msgs.length > scrollNMsgs.current && eroInFondo)) el.scrollTop = el.scrollHeight;
+        scrollConvRef.current = selConv?.id || null;
+        scrollNMsgs.current = msgs.length;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [msgs, selConv?.id]);
 
     // se cambio cartella/casella, chiudo il thread aperto
     useEffect(() => { setSelConv(null); }, [folder, selAcc]);
@@ -241,7 +258,11 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
     const doTrash = (c: Conv) => { patchConv(c.id, { trashed: true }); if (selConv?.id === c.id) setSelConv(null); };
     const doSpam = (c: Conv, val: boolean) => { patchConv(c.id, { spam: val }); if (val && selConv?.id === c.id) setSelConv(null); };
     const doRestore = (c: Conv) => { patchConv(c.id, { trashed: false, spam: false, archived: false }); };
-    const markUnread = (c: Conv) => { patchConv(c.id, { unread: 1 }); if (selConv?.id === c.id) setSelConv(null); };
+    const markUnread = (c: Conv) => {
+        patchConv(c.id, { unread: 1 }); if (selConv?.id === c.id) setSelConv(null);
+        // EML-05: "segna da leggere" toglie \Seen anche in webmail (ultimo msg)
+        fetch("/api/email/seen", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: c.id, seen: false }) }).catch(() => { });
+    };
     const deleteForever = async (c: Conv) => {
         await supabase.from("email_conversations").delete().eq("id", c.id);
         setConvs(cs => cs.filter(x => x.id !== c.id)); if (selConv?.id === c.id) setSelConv(null);

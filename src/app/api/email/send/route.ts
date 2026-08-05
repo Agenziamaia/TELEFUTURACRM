@@ -28,15 +28,13 @@ export async function POST(request: Request) {
         const { data: acc } = await supabase.from("email_accounts").select("*").eq("id", accId).maybeSingle();
         if (!acc) return NextResponse.json({ error: "casella non trovata" }, { status: 404 });
 
-        // trova/crea conversazione per (casella, destinatario)
+        // una NUOVA composizione apre sempre un THREAD nuovo (Luca 05/08: le
+        // conversazioni sono per scambio, non per indirizzo — le risposte
+        // arrivano qui già con conversationId)
         if (!convId) {
-            const { data: ex } = await supabase.from("email_conversations").select("id").eq("account_id", accId).eq("customer_email", dest).maybeSingle();
-            if (ex) convId = ex.id;
-            else {
-                const { data: cl } = await supabase.from("clients").select("id").ilike("email", dest).limit(1);
-                const { data: created } = await supabase.from("email_conversations").insert({ account_id: accId, customer_email: dest, client_id: cl && cl[0] ? cl[0].id : null, subject: subj }).select("id").single();
-                convId = created?.id;
-            }
+            const { data: cl } = await supabase.from("clients").select("id").ilike("email", dest).limit(1);
+            const { data: created } = await supabase.from("email_conversations").insert({ account_id: accId, customer_email: dest, client_id: cl && cl[0] ? cl[0].id : null, subject: subj }).select("id").single();
+            convId = created?.id;
         }
 
         let mid = "";

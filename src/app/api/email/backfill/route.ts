@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { leggiBloccoStorico, CartellaBackfill, EmailIn, EmailInAtt } from "@/lib/email";
+import { leggiBloccoStorico, CartellaBackfill, EmailIn, EmailInAtt, oggettoRadice } from "@/lib/email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,15 +78,34 @@ async function importaMessaggio(acc: any, m: EmailIn, dir: "in" | "out", trashSe
     if (!cust || cust === acc.email_address) return false;   // auto-copie / auto-invii
     const clientId = await clientePerEmail(cust);
     const nome = dir === "in" ? m.fromName : m.toFirstName;
-    const { data: existing } = await supabase.from("email_conversations").select("id, client_id, customer_name, last_message_at").eq("account_id", acc.id).eq("customer_email", cust).maybeSingle();
+    // THREAD, non mittente (Luca 05/08): 1) In-Reply-To → conversazione del
+    // messaggio citato; 2) stessa radice d'oggetto con lo stesso interlocutore
+    // (QUI sempre, non solo per i "Re:": il backfill risale la cartella dal
+    // più recente, quindi l'originale arriva DOPO la risposta e senza questo
+    // aggancio il thread si spezzerebbe in due); 3) conversazione nuova.
     let convId: string | undefined;
     let lastAt: string | null = null;
-    if (existing) {
-        convId = existing.id; lastAt = existing.last_message_at;
+    if (m.inReplyTo) {
+        const { data: rif } = await supabase.from("email_messages").select("conversation_id")
+            .eq("account_id", acc.id).eq("message_id", m.inReplyTo).maybeSingle();
+        if (rif?.conversation_id) convId = rif.conversation_id;
+    }
+    if (!convId) {
+        const radice = oggettoRadice(m.subject);
+        if (radice) {
+            const { data: cands } = await supabase.from("email_conversations").select("id, subject")
+                .eq("account_id", acc.id).eq("customer_email", cust)
+                .order("last_message_at", { ascending: false, nullsFirst: false }).limit(25);
+            convId = (cands || []).find((c) => oggettoRadice(c.subject) === radice)?.id;
+        }
+    }
+    if (convId) {
+        const { data: existing } = await supabase.from("email_conversations").select("id, client_id, customer_name, last_message_at").eq("id", convId).maybeSingle();
+        lastAt = existing?.last_message_at ?? null;
         // solo riempimenti: aggancio cliente e nome se mancano (retroattivo utile)
         const patch: Record<string, unknown> = {};
-        if (clientId && !existing.client_id) patch.client_id = clientId;
-        if (nome && !existing.customer_name) patch.customer_name = nome;
+        if (clientId && !existing?.client_id) patch.client_id = clientId;
+        if (nome && !existing?.customer_name) patch.customer_name = nome;
         if (Object.keys(patch).length) await supabase.from("email_conversations").update(patch).eq("id", convId);
     } else {
         const { data: created } = await supabase.from("email_conversations")
