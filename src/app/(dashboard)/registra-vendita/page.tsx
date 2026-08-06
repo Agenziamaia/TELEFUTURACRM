@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer,
 import { createPortal } from "react-dom";
 import { ErrorBoundaryClient } from "@/components/ErrorBoundaryClient";
 import Image from "next/image";
+import { Database } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
@@ -6056,11 +6057,18 @@ select.rvIn{cursor:pointer}
           {brandVisibili.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(!_brandEff(b).registra){sT("⛔ "+b.label+" è in sola consultazione per il tuo negozio: la registrazione non è abilitata (Amministrazione → Catalogo → Brand × Negozio).");return;}const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label+(!_brandEff(b).registra?" — solo consultazione":"")} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?b.color+"14":"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(!_brandEff(b).registra?0.35:(turista&&b.id!=="windtre"?0.35:1)),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"var(--tfx15_17_26_880)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)"}}>Manutenzione</div></div>}
             {(()=>{const nBr=(cart.find(g=>g.brandId===b.id)?.items.length)||0;return nBr>0?<span style={{position:"absolute",top:8,right:8,background:b.color,color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800,zIndex:3}}>{nBr}</span>:null;})()}
-            {/* SOLO il logo, grande (Luca 03/08). Loghi ALLARGATI (Luca 07/08):
-                i marchi-scritta guadagnano scala e larghezza; S4 e Dojo (i due
-                tondi) restano com'erano — a quella misura stanno gia' bene */}
-            {(()=>{const tondo=b.id==="energy"||b.id==="dojo";return(
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:tondo?84:88,width:"auto",maxWidth:tondo?"92%":"98%",objectFit:"contain",transform:tondo?"none":"scale(1.14)",transformOrigin:"center"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>);})()}
+            {/* SOLO il logo, grande (Luca 03/08). ZOOM PER-BRAND (Luca 07/08):
+                i PNG hanno margini trasparenti molto diversi (WindTre/TIM/Kena
+                ~60% di vuoto, Fastweb quasi pieno, Kipoint pieno) — le scale
+                sono tarate sulle misure reali per rendere le scritte OMOGENEE.
+                S4 e Dojo (i tondi) restano com'erano; Kipoint renderizza più
+                basso perché il suo file è già tutto contenuto. */}
+            {(()=>{const tondo=b.id==="energy"||b.id==="dojo";
+              const ZOOM={windtre:2.2,tim:2.2,kena:2.2,fastweb:1.9,vodafone:1.7,sky:1.5,iliad:1.14,very:1.14,ho:1.14,kipoint:1};
+              const z=ZOOM[b.id]??1.14;
+              const hh=b.id==="kipoint"?58:(tondo?84:88);
+              return(
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:hh,width:"auto",maxWidth:tondo?"92%":"98%",objectFit:"contain",transform:(tondo||z===1)?"none":"scale("+z+")",transformOrigin:"center"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>);})()}
           </button>)}
           {/* Segnalazione 68: "Prodotti & Marginalita'" non e' piu' una barra a tutta
               larghezza sotto la griglia, ma una casella della griglia accanto ai brand. */}
@@ -6075,7 +6083,8 @@ select.rvIn{cursor:pointer}
             setMargFlow(true);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));
           }} title="Prodotti & Marginalità" style={{padding:"26px 16px",borderRadius:14,border:margFlow?"2px solid #6f42c1":"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:margFlow?"0 0 0 3px rgba(111,66,193,0.25)":"none"}}>
             {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"var(--tf-6f42c1)",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}><span style={{fontSize:52}}>📦</span></div>
+            {/* stessa icona di Ricerca Vendite in nav (Database) — Luca 07/08 */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}><Database style={{width:56,height:56,color:"var(--tf-6f42c1)"}}/></div>
             <div style={{fontWeight:800,fontSize:14,color:"var(--tf-6f42c1)",marginTop:6}}>Prodotti & Marginalità</div>
           </button>
         </div>
