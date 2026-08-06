@@ -435,6 +435,50 @@ function ChatPageInner() {
     if (c) setSelId(c);
   }, []);
 
+  // ── BOZZE PERSISTENTI + ULTIMA CHAT (Luca 06/08) ────────────────────────
+  // Uscire dalla chat per un'altra sezione del CRM e rientrare deve riportare
+  // alla conversazione in cui si stava scrivendo, col testo conservato.
+  // Bozze per-conversazione in localStorage (per utente); l'ultima chat aperta
+  // si ripristina solo se non c'e' un deep-link ?c=.
+  const bozzeKey = meId ? `tf_chat_bozze_${meId}` : null;
+  const leggiBozze = (): Record<string, string> => {
+    if (!bozzeKey) return {};
+    try { return JSON.parse(localStorage.getItem(bozzeKey) || "{}"); } catch { return {}; }
+  };
+  const convCorrente = useRef<string | null>(null);
+  const bozzaAppenaCaricata = useRef(false);
+  useEffect(() => {   // cambio conversazione: carica la bozza della nuova
+    if (convCorrente.current === selId) return;
+    convCorrente.current = selId;
+    bozzaAppenaCaricata.current = true;
+    setReplyTo(null);           // una citazione non puo' seguire in un'altra chat
+    setText(selId ? (leggiBozze()[selId] || "") : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selId]);
+  useEffect(() => {   // write-through: ogni tasto aggiorna la bozza della chat corrente
+    if (bozzaAppenaCaricata.current) { bozzaAppenaCaricata.current = false; return; }
+    if (!bozzeKey || !selId || convCorrente.current !== selId || editMsg) return;
+    try {
+      const b = leggiBozze();
+      if (text.trim()) b[selId] = text; else delete b[selId];
+      localStorage.setItem(bozzeKey, JSON.stringify(b));
+    } catch { /* storage negato: la bozza vive solo in pagina */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, selId, bozzeKey, editMsg]);
+  useEffect(() => {   // memoria dell'ultima chat aperta
+    if (selId && meId) { try { localStorage.setItem(`tf_chat_ultima_${meId}`, String(selId)); } catch { } }
+  }, [selId, meId]);
+  const ripristinoFatto = useRef(false);
+  useEffect(() => {   // rientro in chat: riapri dove si era rimasti
+    if (ripristinoFatto.current || !meId || selId || !inbox.length) return;
+    ripristinoFatto.current = true;
+    if (new URLSearchParams(window.location.search).get("c")) return;
+    try {
+      const ultima = localStorage.getItem(`tf_chat_ultima_${meId}`);
+      if (ultima && (inbox as any[]).some((c) => c.conversation_id === ultima)) setSelId(ultima);
+    } catch { /* niente ripristino */ }
+  }, [meId, inbox, selId]);
+
   const selConv = useMemo(() => inbox.find((c) => c.conversation_id === selId), [inbox, selId]);
 
   const reloadMessages = async (cid) => {
