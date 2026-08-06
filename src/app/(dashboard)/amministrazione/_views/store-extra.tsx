@@ -271,10 +271,12 @@ export function OrariChiusureView() {
                 orario_pausa_fine: n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : "",
                 [campo]: val,
             } as Record<CampoOrario, string>;
+            // in chiave TURNI (Luca 06/08): ap=inizio 1° turno, pi=fine 1° turno,
+            // pf=inizio 2° turno, ch=fine (2° turno se c'è, sennò del 1°)
             const { orario_apertura: ap, orario_chiusura: ch, orario_pausa_inizio: pi, orario_pausa_fine: pf } = cand;
-            if (ch <= ap) { notify("La chiusura è prima dell'apertura"); return; }
-            if ((pi && (pi <= ap || pi >= ch)) || (pf && (pf <= ap || pf >= ch))) { notify("La pausa deve stare dentro l'orario di apertura"); return; }
-            if (pi && pf && pf <= pi) { notify("La fine della pausa è prima dell'inizio"); return; }
+            if (ch <= ap) { notify("La fine dell'orario è prima dell'inizio"); return; }
+            if ((pi && (pi <= ap || pi >= ch)) || (pf && (pf <= ap || pf >= ch))) { notify("I due turni devono stare dentro la giornata (il 2° finisce con l'orario di chiusura)"); return; }
+            if (pi && pf && pf <= pi) { notify("Il 2° turno deve iniziare dopo la fine del 1°"); return; }
         }
         const { error } = await supabase.from("stores").update({ [campo]: val }).eq("name", store);
         if (dbError("Orario negozio", error)) return;
@@ -307,9 +309,10 @@ export function OrariChiusureView() {
     return (
         <div className="space-y-3">
             <p className="text-xs text-slate-500 max-w-2xl">
-                Gli <b className="text-slate-300">orari</b> sono la base dei turni (giornata, mattina, pomeriggio);
-                con l&apos;<b className="text-amber-300">orario spezzato</b> (☕ pausa pranzo) mattina e pomeriggio
-                seguono le due fasce; le <b className="text-rose-300">chiusure straordinarie</b> (ferie estive, lavori…) chiudono il punto
+                Per ogni negozio imposti i <b className="text-slate-300">turni di apertura</b>: un turno unico
+                (es. 09:30–19:30) oppure <b className="text-amber-300">due turni</b> (es. 09:00–13:00 e 16:00–20:00)
+                — è l&apos;orario in cui il negozio è APERTO, senza ragionare di pause. La sezione Turni segue le fasce;
+                le <b className="text-rose-300">chiusure straordinarie</b> (ferie estive, lavori…) chiudono il punto
                 vendita nel periodo indicato: la sezione Turni lo mostra 🔒 e blocca le assegnazioni.
             </p>
             {negozi.map(n => {
@@ -321,25 +324,36 @@ export function OrariChiusureView() {
                 const spezzato = spezzatoUi[n.name] ?? !!(n.orario_pausa_inizio && n.orario_pausa_fine);
                 return (
                     <div key={n.name} className="glass-card p-4 flex items-start gap-4 flex-wrap">
-                        <div className="w-44 shrink-0">
+                        {/* TURNI, non pause (Luca 06/08): imposti gli orari in cui il
+                            negozio è APERTO — turno unico o due turni. A DB non cambia
+                            nulla: 1° turno = apertura→pausa_inizio, 2° = pausa_fine→
+                            chiusura (la sezione Turni continua a leggere le stesse
+                            colonne). */}
+                        <div className="w-52 shrink-0">
                             <p className="text-sm font-bold text-white">🏬 {n.name}</p>
-                            <div className="flex items-center gap-1 mt-1.5 text-[11px] text-slate-400">
+                            <div className="flex items-center gap-1 mt-1.5 text-[11px] text-slate-400"
+                                title={spezzato ? "1° turno di apertura" : "Orario di apertura (turno unico)"}>
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-8 shrink-0">{spezzato ? "1°" : "🕐"}</span>
                                 <input type="time" value={hhmm(n.orario_apertura, "09:30")} onChange={e => salvaOrario(n.name, "orario_apertura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
                                 <span>–</span>
-                                <input type="time" value={hhmm(n.orario_chiusura, "19:30")} onChange={e => salvaOrario(n.name, "orario_chiusura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
+                                {spezzato ? (
+                                    <input type="time" value={n.orario_pausa_inizio ? hhmm(n.orario_pausa_inizio, "") : ""} onChange={e => salvaOrario(n.name, "orario_pausa_inizio", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
+                                ) : (
+                                    <input type="time" value={hhmm(n.orario_chiusura, "19:30")} onChange={e => salvaOrario(n.name, "orario_chiusura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
+                                )}
                             </div>
                             {spezzato ? (
-                                <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-400" title="Pausa pranzo: il negozio è chiuso tra questi orari (mattina = apertura → inizio pausa, pomeriggio = fine pausa → chiusura)">
-                                    <span className="text-xs shrink-0">☕</span>
-                                    <input type="time" value={n.orario_pausa_inizio ? hhmm(n.orario_pausa_inizio, "") : ""} onChange={e => salvaOrario(n.name, "orario_pausa_inizio", e.target.value)} className="glass-input !h-7 !px-1 text-[11px] w-[68px]" />
+                                <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-400" title="2° turno di apertura">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-8 shrink-0">2°</span>
+                                    <input type="time" value={n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : ""} onChange={e => salvaOrario(n.name, "orario_pausa_fine", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
                                     <span>–</span>
-                                    <input type="time" value={n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : ""} onChange={e => salvaOrario(n.name, "orario_pausa_fine", e.target.value)} className="glass-input !h-7 !px-1 text-[11px] w-[68px]" />
-                                    <button onClick={() => rimuoviPausa(n.name)} title="Torna all'orario continuato (toglie la pausa)" className="text-slate-500 hover:text-rose-400 font-bold shrink-0">✕</button>
+                                    <input type="time" value={hhmm(n.orario_chiusura, "19:30")} onChange={e => salvaOrario(n.name, "orario_chiusura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
+                                    <button onClick={() => rimuoviPausa(n.name)} title="Torna al turno unico (il 2° turno sparisce, resta apertura → chiusura)" className="text-slate-500 hover:text-rose-400 font-bold shrink-0">✕</button>
                                 </div>
                             ) : (
                                 <button onClick={() => setSpezzatoUi(p => ({ ...p, [n.name]: true }))}
                                     className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-amber-300 transition-colors">
-                                    ＋ Orario spezzato
+                                    ＋ Aggiungi 2° turno
                                 </button>
                             )}
                         </div>
