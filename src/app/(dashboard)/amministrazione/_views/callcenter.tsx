@@ -53,8 +53,11 @@ const scenIdWa = (label: string) => SCENARI_WA.find((s) => s.label === label)?.i
 // stessi brand cablati della sezione Caller (caller_opzioni non ha la categoria)
 const BRANDS_WA = ["WindTre", "Vodafone", "Fastweb", "Sky", "Energia", "Tim", "Altro"];
 
+// {cognome} RIMOSSO dai chips (Luca 06/08): verso il cliente si usa solo il
+// primo nome — suo e di chi scrive ({caller} = primo nome dell'utente loggato).
+// Il placeholder resta neutralizzato nel motore per i testi vecchi.
 const PLACEHOLDER_WA = [
-    "{nome}", "{cognome}", "{ragione_sociale}", "{brand}", "{obiettivo}",
+    "{nome}", "{ragione_sociale}", "{brand}", "{obiettivo}",
     "{negozio}", "{negozio_pertinenza}", "{data_appuntamento}", "{ora_appuntamento}",
     "{fascia_appuntamento}", "{data_richiamo}", "{fascia_richiamo}", "{caller}",
 ];

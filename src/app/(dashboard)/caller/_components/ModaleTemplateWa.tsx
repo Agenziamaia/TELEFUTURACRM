@@ -67,18 +67,23 @@ function fmtOra(v?: string): string {
     return v.split("T")[1].slice(0, 5);
 }
 
+// SOLO IL NOME, mai il cognome (Luca 06/08): verso il cliente ci si firma col
+// primo nome dell'utente loggato e lo si chiama col suo primo nome — i cognomi
+// non devono comparire in nessun caso nei messaggi preimpostati.
+const primoNome = (s: string) => (s || "").trim().split(/\s+/)[0] || "";
+
 // valori della pratica per i placeholder del corpo modello
 function valoriPlaceholder(call: PraticaWa, callerName: string): Record<string, string> {
     const dataApp = call.dataAppuntamentoNew || call.data_appuntamento;
     const dataRic = call.dataRichiamoNew || call.data_richiamo;
     const negozioApp = call.negozioAppNew || call.negozio_appuntamento;
     return {
-        nome: (call.nome || "").trim(),
-        cognome: (call.cognome || "").trim(),
+        nome: primoNome(call.nome),
+        cognome: "",   // neutralizzato: il cognome del cliente non si scrive mai
         ragione_sociale: (call.ragione_sociale || "").trim(),
         brand: call.brand || "",
         obiettivo: call.obiettivo || "",
-        caller: callerName || call.caller || "",
+        caller: primoNome(callerName || call.caller || ""),
         negozio: negozioApp || call.negozio_pertinenza || call.negozio_provenienza || "",
         negozio_pertinenza: call.negozio_pertinenza || call.negozio_provenienza || "",
         data_appuntamento: fmtData(dataApp),
@@ -104,6 +109,12 @@ function risolvi(corpo: string, vals: Record<string, string>): {
         if (m.index > last) { const t = corpo.slice(last, m.index); parti.push({ t }); testo += t; }
         const v = vals[m[1]];
         if (v) { parti.push({ t: v, ph: "ok" }); testo += v; }
+        else if (m[1] === "cognome") {
+            // cognome NEUTRALIZZATO (Luca 06/08): sparisce dal testo senza
+            // segnalare nulla, mangiandosi anche lo spazio che lo precedeva
+            if (testo.endsWith(" ")) testo = testo.slice(0, -1);
+            if (parti.length && parti[parti.length - 1].t.endsWith(" ")) parti[parti.length - 1].t = parti[parti.length - 1].t.slice(0, -1);
+        }
         else { parti.push({ t: `{${m[1]}}`, ph: "manca" }); mancanti.push(m[1]); testo += `{${m[1]}}`; }
         last = m.index + m[0].length;
     }
