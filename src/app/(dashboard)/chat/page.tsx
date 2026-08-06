@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
 import Link from "next/link";
 import {
   getInbox, listMessages, getParticipants, sendMessage, sendGif, markRead,
@@ -186,6 +187,10 @@ function ChatPageInner() {
   // un'area col tratteggio; in entrambi i casi si passa dall'EDITOR
   // (matita/cerchio/rettangolo/freccia stile WhatsApp) prima di allegare
   const [shotMenu, setShotMenu] = useState(false);
+  // CHT-04 (segnalazione 06/08): terzo bottone del popover — QR per caricare
+  // foto DAL TELEFONO direttamente negli allegati del messaggio (stesso
+  // flusso di Registra Vendita/Disdette: useQrUpload + QrUploadModal)
+  const qrChat = useQrUpload((ricevuti) => setFiles((p: File[]) => [...p, ...ricevuti]));
   const [shotEdit, setShotEdit] = useState<{ src: string; ritaglio: boolean } | null>(null);
   const fareScreenshot = async (area: boolean) => {
     setShotMenu(false);
@@ -1170,6 +1175,8 @@ function ChatPageInner() {
                         className="w-12 h-12 rounded-xl bg-white/5 border-2 border-dashed border-white/30 hover:bg-white/10 flex items-center justify-center">
                         <span className="w-6 h-5 border-2 border-dashed border-slate-300 rounded-sm" />
                       </button>
+                      <button type="button" title="Carica foto dal telefono (QR)" onClick={() => { setShotMenu(false); qrChat.openQr("chat", "foto"); }}
+                        className="w-12 h-12 rounded-xl bg-white/5 border border-white/15 hover:bg-white/10 flex items-center justify-center text-xl">📱</button>
                     </div>
                   )}
                 </span>}
@@ -1462,6 +1469,7 @@ function ChatPageInner() {
       {lightbox && (
         <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />
       )}
+      <QrUploadModal qr={qrChat} hint="Le foto caricate dal telefono si allegano al messaggio in scrittura." />
     </div>
   );
 }
