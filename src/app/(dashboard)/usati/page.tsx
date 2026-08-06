@@ -106,7 +106,7 @@ const STATUS_LIST = [
   { key: "venduto", label: "Venduto", icon: "💸", colorClass: "text-rose-400", bgClass: "bg-rose-500/10", borderClass: "border-rose-500/30" },
   { key: "ko", label: "KO", icon: "❌", colorClass: "text-red-500", bgClass: "bg-red-500/10", borderClass: "border-red-500/30" },
   { key: "smontato", label: "Smontato", icon: "🧩", colorClass: "text-fuchsia-400", bgClass: "bg-fuchsia-500/10", borderClass: "border-fuchsia-500/30" },
-  { key: "muletto", label: "Muletto", icon: "🤝", colorClass: "text-cyan-400", bgClass: "bg-cyan-500/10", borderClass: "border-cyan-500/30" },
+  { key: "muletto", label: "Muletto", icon: "📱", colorClass: "text-cyan-400", bgClass: "bg-cyan-500/10", borderClass: "border-cyan-500/30" },
 ] as const;
 
 const statusMap = Object.fromEntries(STATUS_LIST.map(s => [s.key, s]));
@@ -167,7 +167,7 @@ const KPI_CARDS = [
   { key: "venduto", label: "Venduto", icon: "💸", colorClass: "text-rose-400", bgClass: "bg-rose-500/10", borderClass: "border-rose-500/30" },
   { key: "ko", label: "KO", icon: "❌", colorClass: "text-red-500", bgClass: "bg-red-500/10", borderClass: "border-red-500/30" },
   { key: "smontato", label: "Smontato", icon: "🧩", colorClass: "text-fuchsia-400", bgClass: "bg-fuchsia-500/10", borderClass: "border-fuchsia-500/30" },
-  { key: "muletto", label: "Muletto", icon: "🤝", colorClass: "text-cyan-400", bgClass: "bg-cyan-500/10", borderClass: "border-cyan-500/30" },
+  { key: "muletto", label: "Muletto", icon: "📱", colorClass: "text-cyan-400", bgClass: "bg-cyan-500/10", borderClass: "border-cyan-500/30" },
 ];
 
 // NEGOZI dal DB (useStores)
@@ -790,7 +790,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
             {isAmministrazione && !["venduto", "smontato", "muletto"].includes(dev.status) && (
               <button onClick={rendiMuletto}
                 className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-xs font-semibold hover:bg-cyan-500/20 transition-all">
-                🤝 Rendi muletto (telefono di cortesia)
+                📱 Rendi muletto (telefono di cortesia)
               </button>
             )}
             {/* PASSO INDIETRO (Luca 31/07): correzione errori, solo
