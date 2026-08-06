@@ -527,7 +527,12 @@ export default function RicercaContratto() {
         if (!delTarget || delBusy) return;
         setDelBusy(true); setDelMsg("");
         if (canDeleteDirect) {
-            // gli allegati cadono in CASCADE; le richieste restano per lo storico
+            // NUOVO DISEGNO (Luca 06/08): si elimina SOLO la riga contracts —
+            // la vendita sparisce da RV, Gestione, Tracking e commissioning
+            // futuro. NON si toccano: anagrafica clients, righe
+            // contract_attachments (FK ora ON DELETE SET NULL + client_id,
+            // mig. 20260806010000) né i file nel bucket: i documenti restano
+            // visibili nella scheda cliente. Le richieste restano per lo storico.
             const { error } = await supabase.from("contracts").delete().eq("id", delTarget.id);
             if (error) { setDelMsg("⚠️ Eliminazione non riuscita: " + error.message); setDelBusy(false); return; }
             await supabase.from("contract_change_requests").update({ status: "rejected", review_note: "Contratto eliminato", reviewed_by_name: user?.name || "—", reviewed_at: new Date().toISOString() }).eq("contract_id", delTarget.id).eq("status", "pending");
@@ -1023,13 +1028,25 @@ export default function RicercaContratto() {
     const eliminaAllegato = async (a: Allegato) => {
         if (!selectedContract || attBusy) return;
         setAttBusy(true); setAttMsg(null);
-        // 1) file dallo storage: best-effort (se fallisce resta un orfano nel
-        //    bucket, ma il riferimento a DB — la verità — viene comunque tolto)
-        const path = decodeURIComponent(a.file_url.split("/object/public/contracts/")[1] || "");
-        if (path) { try { await supabase.storage.from("contracts").remove([path]); } catch { /* best-effort */ } }
-        // 2) riferimento sul contratto (riga contract_attachments)
+        // 1) riferimento sul contratto (riga contract_attachments) — PRIMA il
+        //    DB, che è la verità; il file fisico si valuta dopo.
         const { error } = await supabase.from("contract_attachments").delete().eq("id", a.id);
         if (error) { setAttMsg("⚠️ Allegato NON eliminato: " + error.message); setAttBusy(false); return; }
+        // 2) file dallo storage SOLO se nessun'altra riga lo referenzia
+        //    (ref-count, Luca 06/08): col riuso dei documenti lo stesso
+        //    file_url può stare su PIÙ righe (altri contratti del cliente) —
+        //    cancellare il file avrebbe rotto anche quelle. Best-effort: se
+        //    fallisce resta un orfano nel bucket, mai un riferimento rotto.
+        try {
+            const { count, error: cntErr } = await supabase.from("contract_attachments")
+                .select("id", { count: "exact", head: true }).eq("file_url", a.file_url);
+            // verifica 06/08: su errore count è null — senza il check il file
+            // veniva cancellato SENZA conteggio (l'opposto del best-effort)
+            if (!cntErr && count === 0) {
+                const path = decodeURIComponent(a.file_url.split("/object/public/contracts/")[1] || "");
+                if (path) await supabase.storage.from("contracts").remove([path]);
+            }
+        } catch { /* best-effort */ }
         // 3) traccia nella storia del contratto, come le altre modifiche dirette
         try {
             const storia: any[] = Array.isArray(selectedContract.raw?.storia) ? [...(selectedContract.raw.storia as any[])] : [];
@@ -1198,8 +1215,10 @@ export default function RicercaContratto() {
 
     const decideRequest = async (req: any, approve: boolean, note?: string) => {
         setReqBusy(req.id);
-        // Richiesta di CANCELLAZIONE (changes.__delete): approvare = eliminare la
-        // pratica (gli allegati cadono in cascata; la richiesta resta per lo storico).
+        // Richiesta di CANCELLAZIONE (changes.__delete): approvare = eliminare
+        // SOLO la riga contracts (nuovo disegno Luca 06/08) — anagrafica,
+        // allegati e file restano agganciati al cliente (client_id +
+        // FK SET NULL, mig. 20260806010000); la richiesta resta per lo storico.
         if (approve && (req.changes || {}).__delete) {
             const { error: dErr } = await supabase.from("contracts").delete().eq("id", req.contract_id);
             if (dErr) { setReqBusy(null); alert("Contratto NON eliminato: " + dErr.message); return; }
@@ -1347,13 +1366,16 @@ export default function RicercaContratto() {
                                 <span className="font-mono text-indigo-300">{delTarget.id}</span> · <b className="text-white">{delTarget.brand}</b> · {delTarget.prodotto} · {delTarget.cliente || "—"}
                             </div>
                             {canDeleteDirect ? (
-                                <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">Azione definitiva: la pratica sparisce da Ricerca e Tracking insieme ai suoi allegati. Non si può annullare.</p>
+                                <>
+                                    <p className="text-sm text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">Azione definitiva: la vendita sparisce da Ricerca Vendite, Gestione PDA, Tracking PDA e dal commissioning. Non si può annullare.</p>
+                                    <p className="text-xs text-emerald-300/90 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">🗂 Restano conservati: l&apos;anagrafica del cliente e tutti gli allegati (documento d&apos;identità, contratto, altro) — li ritrovi nella scheda cliente.</p>
+                                </>
                             ) : (
                                 <>
                                     <label className="block text-sm font-medium text-slate-300">Motivo dell&apos;eliminazione <span className="text-rose-400">*</span></label>
                                     <textarea className="glass-input w-full min-h-[90px] resize-y text-sm" placeholder="Es. pratica duplicata / inserita per errore…"
                                         value={delMotivo} onChange={e => setDelMotivo(e.target.value)} />
-                                    <p className="text-xs text-slate-500">La pratica sarà eliminata solo dopo l&apos;approvazione dell&apos;amministrazione (arriva anche nel fulmine ⚡).</p>
+                                    <p className="text-xs text-slate-500">La pratica sarà eliminata solo dopo l&apos;approvazione dell&apos;amministrazione (arriva anche nel fulmine ⚡). Anagrafica del cliente e allegati restano comunque conservati nella sua scheda.</p>
                                 </>
                             )}
                             {delMsg && <div className={cn("text-sm font-medium", delMsg.startsWith("✅") ? "text-emerald-400" : "text-rose-300")}>{delMsg}</div>}
@@ -1404,7 +1426,7 @@ export default function RicercaContratto() {
                                     <div className="space-y-1">
                                         {(r.changes || {}).__delete && (
                                             <div className="text-xs font-bold text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2">
-                                                ❌ Richiesta di CANCELLAZIONE della pratica{(r.changes?.__meta?.note) ? ` — motivo: “${r.changes.__meta.note}”` : ""} · approvare = eliminare definitivamente
+                                                ❌ Richiesta di CANCELLAZIONE della pratica{(r.changes?.__meta?.note) ? ` — motivo: “${r.changes.__meta.note}”` : ""} · approvare = eliminare definitivamente la vendita (anagrafica e allegati del cliente restano conservati)
                                             </div>
                                         )}
                                         {!(r.changes || {}).__delete && r.changes?.__meta?.note && (

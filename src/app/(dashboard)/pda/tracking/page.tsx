@@ -885,7 +885,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                       <button
                         type="button"
                         onClick={() => onAskDelete?.(row)}
-                        title="Elimina pratica…"
+                        title="Togli dal Tracking (la vendita resta in Ricerca Vendite)…"
                         className="bg-transparent border border-white/10 rounded-lg px-2 py-1 text-sm cursor-pointer hover:border-red-500 hover:bg-red-500/10 transition-colors"
                       >
                         🗑️
@@ -1480,7 +1480,8 @@ export default function TrackingPdaPage() {
   // 📤 solo le pratiche che HO delegato; ⚡ coda di verifica amministrazione.
   const [onlyDelegate, setOnlyDelegate] = useState(false);
   const [soloDaLavorare, setSoloDaLavorare] = useState(false);
-  // Cestino (Luca 03/08): pratica in attesa di conferma eliminazione.
+  // Cestino (Luca 03/08, ridisegnato 06/08: solo NASCONDI): pratica in attesa
+  // di conferma rimozione dalla vista.
   const [daEliminare, setDaEliminare] = useState<TrackingRow | null>(null);
   const [eliminando, setEliminando] = useState(false);
   // regole del tracking dal DB (mig. 098): senza righe valgono i default in
@@ -1908,21 +1909,16 @@ export default function TrackingPdaPage() {
     setSelected((s) => s && s.id === rowId ? { ...s, delegated_to: toId, delegated_by: toId ? (user?.id ?? null) : null, storia } : s);
   }, [rawList, memberName, user]);
 
-  // Cestino: "riga" = nascondi SOLO dal Tracking (flag tracking_nascosto, la
-  // vendita resta in Ricerca Vendite); "contratto" = DELETE vero, sparisce
-  // ovunque. Scelta nel popup, solo admin/dev.
-  const handleElimina = useCallback(async (row: TrackingRow, modo: "riga" | "contratto") => {
+  // Cestino — NUOVO DISEGNO (Luca 06/08): dal Tracking NON si elimina mai la
+  // vendita. Il cestino NASCONDE la pratica da questa vista (flag
+  // tracking_nascosto): contratto, allegati e Ricerca Vendite non si toccano.
+  // (Prima il popup offriva anche il DELETE vero del contratto: rimosso.)
+  const handleElimina = useCallback(async (row: TrackingRow) => {
     setEliminando(true);
     try {
-      if (modo === "riga") {
-        const { error } = await supabase.from("contracts").update({ tracking_nascosto: true }).eq("id", row.id);
-        if (error) throw error;
-        setRawList((prev) => prev.map((r) => ((r.id as string) === row.id ? { ...r, tracking_nascosto: true } : r)));
-      } else {
-        const { error } = await supabase.from("contracts").delete().eq("id", row.id);
-        if (error) throw error;
-        setRawList((prev) => prev.filter((r) => (r.id as string) !== row.id));
-      }
+      const { error } = await supabase.from("contracts").update({ tracking_nascosto: true }).eq("id", row.id);
+      if (error) throw error;
+      setRawList((prev) => prev.map((r) => ((r.id as string) === row.id ? { ...r, tracking_nascosto: true } : r)));
       setSelected((sel) => (sel && sel.id === row.id ? null : sel));
       setDaEliminare(null);
     } catch (e) {
@@ -2143,7 +2139,8 @@ export default function TrackingPdaPage() {
           </>
         )}
 
-        {/* Popup cestino: riga tracking o intero contratto? */}
+        {/* Popup cestino: NASCONDE dal Tracking, la vendita non si tocca
+            (nuovo disegno eliminazioni, Luca 06/08). */}
         {daEliminare && (
           <div
             className="fixed inset-0 bg-black/60 z-[1200] flex items-center justify-center p-4"
@@ -2154,27 +2151,18 @@ export default function TrackingPdaPage() {
               style={{ background: "var(--tf-0e1526)", boxShadow: "0 18px 50px rgba(0,0,0,.55)" }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="text-lg font-extrabold text-slate-100 mb-1">🗑️ Elimina pratica</div>
+              <div className="text-lg font-extrabold text-slate-100 mb-1">🗑️ Togli dal Tracking PDA</div>
               <div className="text-[13px] text-slate-400 mb-5">
                 {daEliminare.nominativo} — {daEliminare.brand} · {daEliminare.categoria}
               </div>
               <button
                 type="button"
                 disabled={eliminando}
-                onClick={() => handleElimina(daEliminare, "riga")}
+                onClick={() => handleElimina(daEliminare)}
                 className="w-full text-left rounded-xl border border-indigo-500/50 bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors px-4 py-3 mb-2.5 cursor-pointer disabled:opacity-50"
               >
-                <div className="text-sm font-bold text-indigo-200">📡 Solo da Tracking PDA</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">La pratica sparisce da qui ma resta in Ricerca Vendite</div>
-              </button>
-              <button
-                type="button"
-                disabled={eliminando}
-                onClick={() => handleElimina(daEliminare, "contratto")}
-                className="w-full text-left rounded-xl border border-red-500/60 bg-red-500/10 hover:bg-red-500/20 transition-colors px-4 py-3 cursor-pointer disabled:opacity-50"
-              >
-                <div className="text-sm font-bold text-red-300">💥 Elimina l&apos;intero contratto</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">Sparisce da TUTTO il CRM, anche da Ricerca Vendite. Irreversibile.</div>
+                <div className="text-sm font-bold text-indigo-200">📡 Togli da questa sezione</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">La pratica sparisce da questa sezione; la vendita resta in Ricerca Vendite (per eliminarla davvero si passa da lì)</div>
               </button>
               <button
                 type="button"

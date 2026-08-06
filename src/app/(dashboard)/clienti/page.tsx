@@ -129,22 +129,34 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const { user: uAll } = useAuth();
     const { perms: permAll } = useRolePermissions(uAll?.role, uAll?.grade);
     const vedeAllegati = capAllowed(uAll?.role, "/clienti", CAP_CLIENTI_ALLEGATI, permAll);
-    const [docs, setDocs] = useState<{ id: string; file_url: string; file_name: string; contract_id: string; file_type: string | null; created_at: string | null }[]>([]);
+    type DocRiga = { id: string; file_url: string; file_name: string; contract_id: string | null; file_type: string | null; created_at: string | null };
+    const [docs, setDocs] = useState<DocRiga[]>([]);
     // Immagine aperta a schermo (prima si apriva in una scheda nuova).
     const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
 
-    // Documenti caricati: allegati dei contratti (PDA) di questo cliente.
+    // Documenti caricati: allegati del CLIENTE. Nuovo disegno eliminazioni
+    // (Luca 06/08): gli allegati sopravvivono all'eliminazione del contratto
+    // (contract_id va a NULL, client_id li tiene agganciati al cliente — mig.
+    // 20260806010000), quindi non basta più il giro via contratti. Si leggono
+    // ENTRAMBE le strade e si deduplica: per client_id (contratti eliminati
+    // compresi) E per contract_id (righe storiche pre-backfill o inserite da
+    // registra-vendita prima che valorizzi client_id).
     const reloadDocs = async () => {
         const ids = contratti.map((c) => c.id);
-        if (ids.length === 0) { setDocs([]); return; }
-        const { data } = await supabase
-            .from("contract_attachments")
-            .select("id, file_url, file_name, contract_id, file_type, created_at")
-            .in("contract_id", ids)
-            .order("created_at", { ascending: false });
-        setDocs((data ?? []) as any);
+        const raccolti = new Map<string, DocRiga>();
+        const cols = "id, file_url, file_name, contract_id, file_type, created_at";
+        const perCliente = await supabase.from("contract_attachments")
+            .select(cols).eq("client_id", cliente.id);
+        // errore = colonna client_id non ancora migrata: resta la via contratti
+        if (!perCliente.error) ((perCliente.data ?? []) as DocRiga[]).forEach((d) => raccolti.set(d.id, d));
+        if (ids.length > 0) {
+            const { data } = await supabase.from("contract_attachments")
+                .select(cols).in("contract_id", ids);
+            ((data ?? []) as DocRiga[]).forEach((d) => raccolti.set(d.id, d));
+        }
+        setDocs([...raccolti.values()].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))));
     };
-    useEffect(() => { reloadDocs(); /* eslint-disable-next-line */ }, [contratti]);
+    useEffect(() => { reloadDocs(); /* eslint-disable-next-line */ }, [contratti, cliente.id]);
 
     // INTEGRAZIONE DOCUMENTI (Luca 31/07, evoluzione della segnalazione 114):
     // il caricamento dei documenti mancanti dopo la registrazione ora e' una
@@ -168,9 +180,18 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
             const { error: upErr } = await supabase.storage.from("contracts").upload(path, upFile);
             if (upErr) throw upErr;
             const { data: pub } = supabase.storage.from("contracts").getPublicUrl(path);
-            const { error: insErr } = await supabase.from("contract_attachments").insert({
-                contract_id: upContract, file_url: pub.publicUrl, file_name: upFile.name, file_type: upType,
+            // client_id sull'insert (mig. 20260806010000): il documento resta
+            // del cliente anche se un giorno il contratto viene eliminato.
+            let { error: insErr } = await supabase.from("contract_attachments").insert({
+                contract_id: upContract, file_url: pub.publicUrl, file_name: upFile.name, file_type: upType, client_id: cliente.id,
             });
+            if (insErr) {
+                // colonna non ancora migrata: si salva come prima (il backfill
+                // della migrazione aggancerà client_id in seguito)
+                ({ error: insErr } = await supabase.from("contract_attachments").insert({
+                    contract_id: upContract, file_url: pub.publicUrl, file_name: upFile.name, file_type: upType,
+                }));
+            }
             if (insErr) throw insErr;
             setCaricaOpen(false); setUpFile(null); setUpContract(""); setUpType("documento");
             await reloadDocs();
@@ -602,7 +623,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                         )}
                         {docs.length === 0 ? (
                             <div className="bg-white/[0.01] border border-white/5 rounded-2xl p-6 text-center text-xs text-slate-600">
-                                Nessun documento caricato per i contratti di questo cliente.
+                                Nessun documento caricato per questo cliente.
                             </div>
                         ) : (
                             // Richiesta Luca (segnalazione 29): i documenti vanno divisi per
@@ -633,7 +654,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                             <span className="flex-1 min-w-0">
                                                                 <span className="block text-xs text-slate-300 truncate">{d.file_name || "documento"}</span>
                                                                 <span className="block text-[10px] text-slate-600">
-                                                                    {d.created_at ? new Date(d.created_at).toLocaleDateString("it-IT") : "—"} · {d.contract_id}
+                                                                    {d.created_at ? new Date(d.created_at).toLocaleDateString("it-IT") : "—"} · {d.contract_id || "contratto eliminato — documento conservato"}
                                                                 </span>
                                                             </span>
                                                             <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />

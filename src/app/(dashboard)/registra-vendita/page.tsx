@@ -5296,7 +5296,7 @@ function CRM() {
           const _primoId = _tuttiIds[0];
           const attendanceRows = [];
           uploadedFiles.forEach(f => {
-            const aggiungi = (cid) => attendanceRows.push({ contract_id: cid, file_url: f.url, file_name: f.name, file_type: f.type });
+            const aggiungi = (cid) => attendanceRows.push({ contract_id: cid, client_id: contractRows[0]?.client_id || null, file_url: f.url, file_name: f.name, file_type: f.type });
             if (f.type === "documento") _tuttiIds.forEach(aggiungi);
             else if (f.type === "fattura") (_energiaIds.length ? _energiaIds : [_primoId]).forEach(aggiungi);
             else aggiungi((f.rowKey && _ctrIdPerRiga[f.rowKey]) || _primoId);

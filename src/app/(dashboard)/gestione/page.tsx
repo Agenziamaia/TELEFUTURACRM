@@ -138,9 +138,18 @@ export default function GestionePda() {
             uploaded.push({ url: publicUrl, name: f.name, type: f.type || "file" });
         }
         if (uploaded.length) {
-            await supabase.from("contract_attachments").insert(uploaded.map((u) => ({
-                contract_id: integra.id, file_url: u.url, file_name: u.name, file_type: u.type,
+            // client_id sull'insert (mig. 20260806010000): il documento resta del
+            // cliente anche se il contratto un giorno viene eliminato. Se la
+            // colonna non è ancora migrata si salva come prima (backfill poi).
+            const cid = (rawList.find((r) => r.id === integra.id)?.client_id as string | undefined) || null;
+            const { error: attErr } = await supabase.from("contract_attachments").insert(uploaded.map((u) => ({
+                contract_id: integra.id, file_url: u.url, file_name: u.name, file_type: u.type, client_id: cid,
             })));
+            if (attErr) {
+                await supabase.from("contract_attachments").insert(uploaded.map((u) => ({
+                    contract_id: integra.id, file_url: u.url, file_name: u.name, file_type: u.type,
+                })));
+            }
         }
         const stamp = new Date().toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
         const row = rawList.find((r) => r.id === integra.id);
@@ -176,7 +185,7 @@ export default function GestionePda() {
         // Le vendite di Registra Vendita NON c'entrano con questa scrivania.
         const { data, error } = await supabase
             .from("contracts")
-            .select("id, brand, categoria, stato, venditore, negozio, data_registrazione, data, created_at, note, operatore_bo, clients(ragione_sociale, cf_piva, tipo)")
+            .select("id, brand, categoria, stato, venditore, negozio, data_registrazione, data, created_at, note, operatore_bo, nascosta_gestione, client_id, clients(ragione_sociale, cf_piva, tipo)")
             .like("id", "PDA-%")
             .order("created_at", { ascending: false });
         if (error) {
@@ -197,7 +206,9 @@ export default function GestionePda() {
     const uniqueCategorie = useMemo(() => Array.from(new Set(rawList.map(r => (r.categoria as string) || "").filter(Boolean))).sort(), [rawList]);
 
     const filtered = useMemo(() => {
-        let out = rawList;
+        // Cestinate da QUESTA scrivania (nascosta_gestione): fuori dalla vista,
+        // ma la riga contracts resta viva — in Ricerca Vendite non cambia nulla.
+        let out = rawList.filter(r => !r.nascosta_gestione);
         // Outbound: l'agente solo le sue, il direttore tutte quelle del reparto.
         if (isOutbound) out = obNames ? out.filter((r) => obNames.has((r.venditore as string) || "")) : [];
         if (filterProdotto) out = out.filter(r => r.categoria === filterProdotto);
@@ -235,24 +246,21 @@ export default function GestionePda() {
         }
     }, []);
 
-    // CESTINO ADMIN (Luca 03/08): via la pratica PDA — allegati (meta + file
-    // nel bucket) e riga contratto. Doppia conferma inline.
+    // CESTINO ADMIN — NUOVO DISEGNO (Luca 06/08): il cestino qui NON elimina
+    // più niente (prima: file dal bucket + righe contract_attachments + riga
+    // contracts). Ora NASCONDE la pratica dalla sola Gestione PDA con il flag
+    // nascosta_gestione: contratto, allegati e file restano intatti e la
+    // vendita continua a vivere in Ricerca Vendite. Doppia conferma inline.
     const [eliminaId, setEliminaId] = useState<string | null>(null);
     const [eliminando, setEliminando] = useState(false);
     const eliminaPratica = useCallback(async (id: string) => {
         setEliminando(true);
         try {
-            const { data: atts } = await supabase.from("contract_attachments").select("id, file_url").eq("contract_id", id);
-            const paths = ((atts ?? []) as { file_url: string | null }[])
-                .map(a => (a.file_url || "").split("/contracts/").slice(1).join("/contracts/"))
-                .filter(Boolean).map(p => p.startsWith("contracts/") ? p : `contracts/${p}`);
-            if (paths.length) await supabase.storage.from("contracts").remove(paths);
-            await supabase.from("contract_attachments").delete().eq("contract_id", id);
-            const { error } = await supabase.from("contracts").delete().eq("id", id);
+            const { error } = await supabase.from("contracts").update({ nascosta_gestione: true }).eq("id", id);
             if (error) throw error;
-            setRawList(prev => prev.filter(r => r.id !== id));
+            setRawList(prev => prev.map(r => r.id === id ? { ...r, nascosta_gestione: true } : r));
         } catch (e) {
-            setLoadError("Eliminazione non riuscita: " + ((e as Error)?.message || e));
+            setLoadError("Rimozione non riuscita: " + ((e as Error)?.message || e));
         }
         setEliminando(false);
         setEliminaId(null);
@@ -372,14 +380,14 @@ export default function GestionePda() {
                                                 <span className="inline-flex gap-1">
                                                     <button type="button" disabled={eliminando} onClick={() => eliminaPratica(row.id)}
                                                         className="px-2 py-1 rounded bg-rose-600 text-white text-[11px] font-bold disabled:opacity-40"
-                                                        title="Elimina pratica, allegati e file: definitivo">Elimino?</button>
+                                                        title="La pratica sparisce da questa sezione; la vendita resta in Ricerca Vendite">Nascondo? (resta in Ricerca Vendite)</button>
                                                     <button type="button" onClick={() => setEliminaId(null)}
                                                         className="px-1.5 py-1 rounded border border-white/15 text-slate-400 text-[11px]">✕</button>
                                                 </span>
                                             ) : (
                                                 <button type="button" onClick={() => setEliminaId(row.id)}
                                                     className="p-1.5 rounded bg-rose-500/15 text-rose-400 hover:bg-rose-500/30 transition-colors"
-                                                    title="Elimina la pratica (solo admin)">🗑</button>
+                                                    title="Togli la pratica da Gestione PDA — la vendita resta in Ricerca Vendite (solo admin)">🗑</button>
                                             ))}
                                             {readOnly && (row.stato === "Sospeso Mancanza di Documento" ? (
                                                 <button type="button" onClick={() => { setIntegra({ id: row.id }); setIntFiles([]); setIntNote(""); setIntMsg(""); }}
