@@ -5741,20 +5741,16 @@ function CRM() {
             </div>
           ))}
         </div>}
-        {!onlyMarg&&<div style={{background:"var(--tf-w20)",border:"1px solid var(--tf-w60)",borderRadius:10,padding:"12px 16px",marginTop:12,marginBottom:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+        {/* riga riassunto UNICA (segnalazione 06/08): anche in solo-marginalità
+            l'Attribuzione si modifica IN PAGINA (step Allegati del flusso marg,
+            che esiste già) — il vecchio box editabile del carrello stonava
+            graficamente col resto ed è stato allineato al riepilogo compatto */}
+        <div style={{background:"var(--tf-w20)",border:"1px solid var(--tf-w60)",borderRadius:10,padding:"12px 16px",marginTop:12,marginBottom:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
           <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>📎 {attachments.length} allegat{attachments.length===1?"o":"i"}</span>
           <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>🏪 {selVend||"—"} · {selNeg||"—"} · {dataVendita?dataVendita.split("-").reverse().join("/"):"—"}</span>
           <span style={{fontSize:12,color:"var(--tf-94a3b8)",fontWeight:700}}>📝 {notaScelta==="si"&&nota.trim()?"nota inserita":notaScelta?"nessuna nota":"scelta Sì/No da fare"}</span>
           <button onClick={()=>setShowCart(false)} style={{marginLeft:"auto",padding:"7px 14px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-cbd5e1)",fontSize:11,fontWeight:800,cursor:"pointer"}}>✏️ Modifica in pagina</button>
-        </div>}
-        {onlyMarg&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #28a745",marginTop:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-28a745)",marginBottom:14,textTransform:"uppercase"}}>🏪 Attribuzione</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"10px 16px"}}>
-            <DD l="Venditore" r v={selVend} o={v=>setSelVend(v)} vals={venditori} nt="Dal login — editabile"/>
-            <DD l="Negozio" r v={selNeg} o={v=>setSelNeg(v)} vals={negozi} nt="Dal login — editabile"/>
-            <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Giorno <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input type="date" value={dataVendita} onChange={e=>setDataVendita(e.target.value)} style={{width:"100%",padding:"7px 10px",borderRadius:6,border:"1px solid var(--tf-w100)",fontSize:12,boxSizing:"border-box"}}/></div>
-          </div>
-        </div>}
+        </div>
         {dupCellCliente&&<div style={{marginTop:14,padding:"12px 16px",borderRadius:10,background:"rgba(245,158,11,0.10)",border:"1px solid rgba(245,158,11,0.45)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"var(--tf-fbbf24)",marginBottom:8}}>📱 Questo cellulare è già associato a “{dupCellCliente.label}”, un&apos;anagrafica dello STESSO tipo — lo stesso numero può stare solo su una consumer e una business insieme.</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
