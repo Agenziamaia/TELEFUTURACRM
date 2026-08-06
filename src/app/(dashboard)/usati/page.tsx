@@ -36,7 +36,8 @@ import { useSearchParams } from "next/navigation";
 type UsatoStatus =
   | "acquistato" | "in_transito" | "ricevuto" | "in_lavorazione"
   | "pronto" | "invio_in_negozio" | "in_vendita" | "venduto" | "ko"
-  | "smontato";   // dissolto per pezzi di ricambio (Luca 01/08, mig. 128)
+  | "smontato"   // dissolto per pezzi di ricambio (Luca 01/08, mig. 128)
+  | "muletto";   // telefono di cortesia (Luca 06/08): fuori dal flusso di vendita, solo amministrazione
 
 type RicambioState = "in_magazzino" | "da_ordinare" | "ordinato" | "arrivato";
 
@@ -105,6 +106,7 @@ const STATUS_LIST = [
   { key: "venduto", label: "Venduto", icon: "💸", colorClass: "text-rose-400", bgClass: "bg-rose-500/10", borderClass: "border-rose-500/30" },
   { key: "ko", label: "KO", icon: "❌", colorClass: "text-red-500", bgClass: "bg-red-500/10", borderClass: "border-red-500/30" },
   { key: "smontato", label: "Smontato", icon: "🧩", colorClass: "text-fuchsia-400", bgClass: "bg-fuchsia-500/10", borderClass: "border-fuchsia-500/30" },
+  { key: "muletto", label: "Muletto", icon: "🤝", colorClass: "text-cyan-400", bgClass: "bg-cyan-500/10", borderClass: "border-cyan-500/30" },
 ] as const;
 
 const statusMap = Object.fromEntries(STATUS_LIST.map(s => [s.key, s]));
@@ -165,6 +167,7 @@ const KPI_CARDS = [
   { key: "venduto", label: "Venduto", icon: "💸", colorClass: "text-rose-400", bgClass: "bg-rose-500/10", borderClass: "border-rose-500/30" },
   { key: "ko", label: "KO", icon: "❌", colorClass: "text-red-500", bgClass: "bg-red-500/10", borderClass: "border-red-500/30" },
   { key: "smontato", label: "Smontato", icon: "🧩", colorClass: "text-fuchsia-400", bgClass: "bg-fuchsia-500/10", borderClass: "border-fuchsia-500/30" },
+  { key: "muletto", label: "Muletto", icon: "🤝", colorClass: "text-cyan-400", bgClass: "bg-cyan-500/10", borderClass: "border-cyan-500/30" },
 ];
 
 // NEGOZI dal DB (useStores)
@@ -593,7 +596,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
   }, [dev.client_id]);
 
   const s = statusMap[dev.status];
-  const canAdvance = !["venduto", "ko", "smontato"].includes(dev.status);
+  const canAdvance = !["venduto", "ko", "smontato", "muletto"].includes(dev.status);
   const lcIdx = LIFECYCLE.indexOf(dev.status as any);
   const next = canAdvance && lcIdx >= 0 && lcIdx < LIFECYCLE.length - 1 ? LIFECYCLE[lcIdx + 1] : null;
   const needsStore = dev.status === "pronto";
@@ -623,6 +626,13 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
     if (!window.confirm(`Smontare ${dev.model} (${dev.imei}) e usarlo per pezzi di ricambio?\nIl telefono esce dal flusso di vendita ma resta tracciato tra gli Smontati.`)) return;
     persist({ ...dev, status: "smontato", note_tecnico: noteTecnico,
       status_history: { ...dev.status_history, smontato: { date: new Date(), operatore } } });
+  };
+  // MULETTO (Luca 06/08): telefono di cortesia — esce dal flusso di vendita;
+  // stato visibile e amministrabile SOLO dall'amministrazione.
+  const rendiMuletto = () => {
+    if (!window.confirm(`Rendere ${dev.model} (${dev.imei}) un MULETTO (telefono di cortesia)?\nEsce dal flusso di vendita; lo vede solo l'amministrazione.`)) return;
+    persist({ ...dev, status: "muletto", note_tecnico: noteTecnico,
+      status_history: { ...dev.status_history, muletto: { date: new Date(), operatore } } });
   };
   const advanceStatus = () => {
     if (needsStore && !targetStore) return;
@@ -776,16 +786,23 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                 </button>
               )
             )}
+            {/* MULETTO (Luca 06/08): esito di cortesia, SOLO amministrazione */}
+            {isAmministrazione && !["venduto", "smontato", "muletto"].includes(dev.status) && (
+              <button onClick={rendiMuletto}
+                className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 text-xs font-semibold hover:bg-cyan-500/20 transition-all">
+                🤝 Rendi muletto (telefono di cortesia)
+              </button>
+            )}
             {/* PASSO INDIETRO (Luca 31/07): correzione errori, solo
                 amministrativo in su, con conferma esplicita */}
             {/* in FONDO alla colonna con stacco netto (Luca 01/08): attaccata
                 alle selezioni di stato si confondeva con il flusso normale */}
-            {isAmministrazione && (LIFECYCLE.indexOf(dev.status as any) > 0 || ["ko", "venduto", "smontato"].includes(dev.status)) && (
+            {isAmministrazione && (LIFECYCLE.indexOf(dev.status as any) > 0 || ["ko", "venduto", "smontato", "muletto"].includes(dev.status)) && (
               <div className="mt-14 flex flex-col gap-2 border-t-2 border-dashed border-amber-500/20 pt-4 opacity-90">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400/80">↩ Correzione stato (amministrazione)</div>
                 <SelectOpzioni value={indietroSel ? `${statusMap[indietroSel as UsatoStatus]?.icon} ${statusMap[indietroSel as UsatoStatus]?.label}` : ""}
                   onChange={(v) => { const sk = LIFECYCLE.find(k => `${statusMap[k]?.icon} ${statusMap[k]?.label}` === v); setIndietroSel(sk || ""); }}
-                  opzioni={LIFECYCLE.filter((sk) => ["ko", "smontato"].includes(dev.status) ? sk !== "venduto" : LIFECYCLE.indexOf(sk) < LIFECYCLE.indexOf(dev.status as any)).map(sk => `${statusMap[sk]?.icon} ${statusMap[sk]?.label}`)}
+                  opzioni={LIFECYCLE.filter((sk) => ["ko", "smontato", "muletto"].includes(dev.status) ? sk !== "venduto" : LIFECYCLE.indexOf(sk) < LIFECYCLE.indexOf(dev.status as any)).map(sk => `${statusMap[sk]?.icon} ${statusMap[sk]?.label}`)}
                   placeholder="Riporta a…" className="w-full bg-black/40 border border-amber-500/20 rounded-xl px-3 py-2 text-sm text-slate-300 outline-none" />
                 <button onClick={tornaIndietro} disabled={!indietroSel}
                   className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 text-sm font-semibold hover:bg-amber-500/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
@@ -1660,7 +1677,7 @@ function GestioneUsatiInner() {
   const STATI_TRANSITO = ["in_transito", "invio_in_negozio"];
   // amministrazione: tutto TRANNE i venduti (Luca 01/08: la tabella col
   // tempo si sporcherebbe) — si accendono dalla tessera quando servono
-  const PRESET_STATI = isAmminMain ? STATUS_KEYS.filter(k => !['ko', 'smontato'].includes(k)) : [...STATI_NEGOZIO_DEFAULT];
+  const PRESET_STATI = isAmminMain ? STATUS_KEYS.filter(k => !['ko', 'smontato', 'muletto'].includes(k)) : [...STATI_NEGOZIO_DEFAULT];
   const filtriCompleti = ["direttore_commerciale", "direttore_generale", "amministrativo", "admin", "dev"].includes(user?.role || "");
   // "i miei" = TUTTI i negozi visibili dell'utente (user_stores + visibilita' +
   // primary, es. Emanuele su entrambe le Magliana) ESPANSI alla sede fisica:
@@ -1812,6 +1829,9 @@ function GestioneUsatiInner() {
     // (quei telefoni stanno in laboratorio) e mostra solo chi ha ricambi
     // senza prezzo (Luca 01/08)
     if (soloDaPrezzare) return ricambiDaPrezzare(d);
+    // STATI RISERVATI (Luca 06/08): ko, smontato e muletto li vede SOLO
+    // l'amministrazione — per gli altri ruoli spariscono del tutto
+    if (!isAmminMain && ["ko", "smontato", "muletto"].includes(d.status)) return false;
     if (conStato && !selectedStatuses.includes(d.status)) return false;
     if (dateFrom) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) < dateFrom) return false; }
     if (dateTo) { const v = d[dateField as keyof Device] as Date | null; if (!v || isoDate(v) > dateTo) return false; }
@@ -1852,7 +1872,7 @@ function GestioneUsatiInner() {
     const c: Record<string, number> = {};
     STATUS_KEYS.forEach(k => c[k] = 0);
     kpiBase.forEach(d => { c[d.status] = (c[d.status] || 0) + 1; });
-    c._all = kpiBase.filter(d => !["venduto", "ko", "smontato"].includes(d.status)).length;
+    c._all = kpiBase.filter(d => !["venduto", "ko", "smontato", "muletto"].includes(d.status)).length;
     return c;
   }, [kpiBase]);
 
@@ -2172,7 +2192,7 @@ function GestioneUsatiInner() {
         </div>
         <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 px-4 sm:px-6 pb-4">
           <MultiSelect label="Negozio" options={NEGOZI} selected={selectedStores} onChange={setSelectedStores} />
-          <MultiSelect label="Stato" options={STATUS_KEYS} selected={selectedStatuses} onChange={setSelectedStatuses}
+          <MultiSelect label="Stato" options={isAmminMain ? STATUS_KEYS : STATUS_KEYS.filter(k => !["ko", "smontato", "muletto"].includes(k))} selected={selectedStatuses} onChange={setSelectedStatuses}
             renderOpt={o => <span className="flex items-center gap-1.5">{statusMap[o as UsatoStatus]?.icon} {statusMap[o as UsatoStatus]?.label}</span>} />
           <MultiSelect label="Brand" options={brandFiltroOptions} selected={brandFilter} onChange={setBrandFilter} />
           <input type="number" min="0" value={prezzoDa} onChange={e => setPrezzoDa(e.target.value)} placeholder="€ da"
@@ -2198,8 +2218,8 @@ function GestioneUsatiInner() {
         </div>
         {/* KPI Cards — bigger */}
         <div className="px-4 sm:px-6 pb-4">
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-            {KPI_CARDS.map(k => {
+          <div className={cn("grid grid-cols-3 sm:grid-cols-4 gap-3", isAmminMain ? "lg:grid-cols-8" : "lg:grid-cols-5")}>
+            {KPI_CARDS.filter(k => isAmminMain || !["ko", "smontato", "muletto"].includes(k.key)).map(k => {
               const on = k.key === "_all" ? selectedStatuses.length === STATUS_KEYS.length : selectedStatuses.includes(k.key);
               return (
               <button key={k.key} onClick={() => handleKpiClick(k.key)}
