@@ -4873,7 +4873,7 @@ function CRM() {
     gruppi.forEach(g => (g.items || []).forEach(it => {
       const base = String(g.brandId || "") + "::" + _etichettaRiga(it);
       conta[base] = (conta[base] || 0) + 1;
-      rows.push({ key: base + "::" + conta[base], base, nCopia: conta[base], brandId: g.brandId, brandLabel: g.brandLabel, brandIcon: g.brandIcon, brandColor: g.brandColor, isCurrent: !!g.isCurrent, label: _etichettaRiga(it), sky: String(g.brandId || "").toLowerCase() === "sky" });
+      rows.push({ key: base + "::" + conta[base], base, nCopia: conta[base], brandId: g.brandId, brandLabel: g.brandLabel, brandIcon: g.brandIcon, brandColor: g.brandColor, isCurrent: !!g.isCurrent, label: _etichettaRiga(it), sky: String(g.brandId || "").toLowerCase() === "sky", iliad: String(g.brandId || "").toLowerCase() === "iliad" });
     }));
     rows.forEach(r => { r.multi = (conta[r.base] || 0) > 1; });
     return rows;
@@ -4953,7 +4953,8 @@ function CRM() {
     // ECCEZIONE SKY (Luca 04/08): Sky non rilascia il contratto — le righe
     // Sky non lo richiedono mai (la casella resta disponibile, facoltativa).
     righeCarrello().forEach(r => {
-      if (r.sky) return;
+      // Sky e ILIAD (Luca 06/08): il contratto non esiste — mai richiesto
+      if (r.sky || r.iliad) return;
       if (!attachments.some(a => a.type === "contratti" && (a.rowKey || "") === r.key))
         m.push(`📄 contratto per ${r.brandLabel} — ${r.label}${r.multi ? " (n°" + r.nCopia + ")" : ""} (step Allegati)`);
     });
@@ -5676,7 +5677,7 @@ function CRM() {
                 {item.model&&<span style={{fontSize:11,color:"var(--tf-64748b)",marginLeft:6}}>{item.model}</span>}
                 <span style={{fontSize:11,color:"var(--tf-6f42c1)",marginLeft:8}}>x{item.qty||1}</span>
                 {item.auto&&<span style={{fontSize:9,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:5,padding:"1px 6px",marginLeft:8}}>AUTO · {item.autoFrom}</span>}
-                {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"var(--tf-17a2b8)",marginLeft:8}}>prezzo di listino</span>:(item.auto||item.priceRequired||item.linked)?null:(item.importo!=null&&<span style={{fontSize:11,color:"var(--tf-28a745)",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
+                {item.priceLocked?<span style={{fontSize:10,fontWeight:800,color:"var(--tf-17a2b8)",marginLeft:8}}>listino € {Number(item.importo||0).toFixed(2)}{(item.totalMargin!=null||item.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → margine € {Number(item.totalMargin??item.margin).toFixed(2)}</span>:null}</span>:(item.auto||item.priceRequired||item.linked)?null:(item.importo!=null&&<span style={{fontSize:11,color:"var(--tf-28a745)",marginLeft:6,fontWeight:700}}>€ {Number(item.importo).toFixed(2)}</span>)}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 {(item.auto||item.priceRequired||item.linked)&&!item.priceLocked&&<span style={{display:"flex",alignItems:"center",gap:4}}>
@@ -5867,10 +5868,21 @@ select.rvIn{cursor:pointer}
             <div className="cart-stat" style={{flex:1,background:"var(--tf-w120)",borderRadius:8,padding:"6px 0",textAlign:"center"}}><div className="cart-ink" style={{color:"#fff",fontWeight:800,fontSize:18}}>{margItems.length}</div><div style={{color:"var(--tf-w600)",fontSize:9}}>P&M</div></div>
           </div>
           {/* il contatore piu' bello: i SOLDONI del carrello (Luca 03/08) */}
-          {(()=>{const val=margItems.reduce((t,m)=>t+(Number(m.importo)||0)*(Number(m.qty)||1),0);return (
-            <div className="cart-val" style={{marginTop:8,background:"var(--tf-w160)",border:"1px solid var(--tf-w250)",borderRadius:10,padding:"9px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <span style={{color:"var(--tf-w750)",fontSize:11,fontWeight:800,letterSpacing:.6}}>💰 VALORE CARRELLO</span>
-              <span className="cart-valv" style={{color:"#fff",fontWeight:900,fontSize:21}}>€ {val.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          {(()=>{
+            // MARGINE, non prezzo (Luca 06/08): per i telefoni a listino conta
+            // il MARGINE generato (4%), non il costo del telefono — il valore
+            // del carrello e' quello che ci portiamo a casa
+            const contrib=(m)=>{const q=Number(m.qty)||1;const marg=m.totalMargin!=null?Number(m.totalMargin):(m.margin!=null?Number(m.margin):null);return (marg!=null?marg:(Number(m.importo)||0))*q;};
+            const val=margItems.reduce((t,m)=>t+contrib(m),0);
+            const tel=margItems.filter(m=>m.priceLocked&&(m.totalMargin!=null||m.margin!=null));
+            const telListino=tel.reduce((t,m)=>t+(Number(m.importo)||0)*(Number(m.qty)||1),0);
+            return (
+            <div className="cart-val" style={{marginTop:8,background:"var(--tf-w160)",border:"1px solid var(--tf-w250)",borderRadius:10,padding:"9px 14px"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{color:"var(--tf-w750)",fontSize:11,fontWeight:800,letterSpacing:.6}}>💰 VALORE CARRELLO (margine)</span>
+                <span className="cart-valv" style={{color:"#fff",fontWeight:900,fontSize:21}}>€ {val.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+              </div>
+              {tel.length>0&&<div style={{fontSize:10,color:"var(--tf-w600)",fontWeight:700,marginTop:2,textAlign:"right"}}>telefoni a listino € {telListino.toLocaleString("it-IT",{minimumFractionDigits:2,maximumFractionDigits:2})} → il margine è nel valore</div>}
             </div>);})()}
         </div>
         <div style={{padding:14,flex:1}}>
@@ -5896,8 +5908,8 @@ select.rvIn{cursor:pointer}
                 {(expR.marg??true)&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                   {margItems.map((m,mi)=>(
                     <div key={mi} style={{background:"var(--tf-w30)",borderRadius:6,padding:"5px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{m.product}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
-                      {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"var(--tf-17a2b8)"}}>listino</div>
+                      <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{m.product}{m.model&&<span style={{color:"var(--tf-94a3b8)",fontWeight:700}}> · {m.model}</span>}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> x{m.qty||1}</span>{m.auto&&<span style={{fontSize:8,fontWeight:800,color:"var(--tf-6f42c1)",border:"1px solid rgba(111,66,193,.4)",borderRadius:4,padding:"0 4px",marginLeft:5}}>AUTO</span>}</div>
+                      {m.priceLocked?<div style={{fontSize:10,fontWeight:700,color:"var(--tf-17a2b8)",whiteSpace:"nowrap"}}>€ {Number(m.importo||0).toFixed(2)}{(m.totalMargin!=null||m.margin!=null)?<span style={{color:"var(--tf-28a745)"}}> → marg. € {Number(m.totalMargin??m.margin).toFixed(2)}</span>:null}</div>
                       :(m.auto||m.priceRequired||m.linked)?<span onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:3}}>
                         <input type="number" step="0.01" min="0" value={m.importo??""} placeholder="prezzo *"
                           onChange={e=>{const v=e.target.value===""?null:Number(e.target.value);setMargItems(p=>p.map((x,i)=>i===mi?{...x,importo:v}:x))}}
@@ -5935,7 +5947,7 @@ select.rvIn{cursor:pointer}
           {id:"brand",label:margFlow&&!brand?"Marginalità":"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{margFlow&&!brand?"📦":(bObj?bObj.icon:"⚡")}</span>,perc:(brand||margFlow)?100:0,abil:true},
           {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
           {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:23}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
-          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?true:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.sky||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
+          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?true:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.sky||r.iliad||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
           // verde APPENA si flagga Sì o No (Luca 05/08): la scelta completa lo step
           {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:notaScelta?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
         ];
@@ -6378,13 +6390,13 @@ select.rvIn{cursor:pointer}
                   {bd&&bd.logo?<span style={{background:"#fff",borderRadius:8,padding:"2px 8px",display:"inline-flex",alignItems:"center"}}><Image src={bd.logo} alt={r.brandLabel} width={120} height={30} style={{height:20,width:"auto",maxWidth:96,objectFit:"contain"}}/></span>:<span style={{fontSize:13,fontWeight:800,color:"var(--tf-f8fafc)"}}>{r.brandIcon} {r.brandLabel}</span>}
                   <span style={{fontSize:12,fontWeight:800,color:"var(--tf-f8fafc)"}}>{r.label}{r.multi?<span style={{color:"var(--tf-8892b0)",fontWeight:700}}> · n°{r.nCopia}</span>:null}</span>
                   {r.isCurrent&&<span style={{background:"var(--tf-ffd800)",borderRadius:12,padding:"2px 10px",color:"#111",fontSize:9,fontWeight:800}}>IN CORSO</span>}
-                  {r.sky?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>Sky: contratto facoltativo</span>
+                  {r.iliad?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>Iliad: senza contratto</span>:r.sky?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>Sky: contratto facoltativo</span>
                     :(attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key)
                       ?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-34d399)",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.4)",borderRadius:999,padding:"2px 10px"}}>✓ contratto caricato</span>
                       :<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f87171)",background:"rgba(220,53,69,0.10)",border:"1px solid rgba(220,53,69,0.4)",borderRadius:999,padding:"2px 10px"}}>contratto mancante</span>)}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-                  {boxAllegato({l:"Contratto",i:"📄",t:"contratti"},r.key,r.sky?"Sky non rilascia contratti — facoltativo":"obbligatorio per questa offerta")}
+                  {!r.iliad&&boxAllegato({l:"Contratto",i:"📄",t:"contratti"},r.key,r.sky?"Sky non rilascia contratti — facoltativo":"obbligatorio per questa offerta")}
                   {boxAllegato({l:"Altro",i:"📁",t:"altro"},r.key,"facoltativo")}
                 </div>
                 {listaFileAllegati(attachments.map((a,i)=>({a,i})).filter(({a})=>(a.type==="contratti"||a.type==="altro")&&(a.rowKey||"")===r.key))}
