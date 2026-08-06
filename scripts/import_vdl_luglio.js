@@ -109,10 +109,17 @@ function dataUs(s) {   // formati MISTI nel file: "7/3/26" (M/D/YY) ma anche "18
 
     for (const cfg of TABS) {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[cfg.tab], { header: 1, raw: false }).slice(1);
-        for (const r of rows) {
+        const rowsRaw = XLSX.utils.sheet_to_json(wb.Sheets[cfg.tab], { header: 1, raw: true }).slice(1);
+        for (let ri = 0; ri < rows.length; ri++) {
+            const r = rows[ri];
             if (!r) continue;
             const cfRaw = String(r[1] || "").trim().toUpperCase().replace(/\s+/g, "");
-            const num = String(r[2] || "").replace(/\D/g, "");
+            // NUMERO dal valore GREZZO (le celle numeriche col +39 finivano in
+            // notazione scientifica e il testo formattato le troncava: 3.93398E+11)
+            const rawCell = (rowsRaw[ri] || [])[2];
+            let num = typeof rawCell === "number" ? String(Math.round(rawCell)) : String(r[2] || "").replace(/\D/g, "");
+            num = num.replace(/\D/g, "");
+            if (num.length >= 12 && num.startsWith("39")) num = num.slice(2);   // via il prefisso internazionale
             if (cfRaw.length < 6 && num.length < 8) continue;   // riga vuota
             if (num.length < 8) { saltate.senzaNumero++; continue; }                 // regola Luca #3
             const coda = num.slice(-9);
