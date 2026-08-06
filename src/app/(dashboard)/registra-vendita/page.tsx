@@ -499,6 +499,9 @@ const BRANDS = [
   { id: "very", logo: "/very-mobile.png", label: "Very Mobile", short: "VERY", color: "var(--tf-1fa300)", gradient: "linear-gradient(135deg, #137A00 0%, #1FA300 100%)", icon: "🟢", desc: "Mobile", ready: true },
   { id: "ho", logo: "/ho-mobile.png", label: "Ho. Mobile", short: "HO", color: "var(--tf-e6007e)", gradient: "linear-gradient(135deg, #B0005F 0%, #E6007E 100%)", icon: "💗", desc: "Mobile", ready: true },
   { id: "kena", logo: "/kena-mobile-v2.png", label: "Kena Mobile", short: "KENA", color: "var(--tf-f5a623)", gradient: "linear-gradient(135deg, #C77F00 0%, #F5A623 100%)", icon: "🟠", desc: "Mobile", ready: true },
+  // KIPOINT (Luca 06/08): spedizioni e ritiro pacchi — brand a matrice, spento
+  // di default: lo vede solo chi ha la riga in store_brand_rules (Collatina, Libia)
+  { id: "kipoint", logo: "/kipoint.png", label: "Kipoint", short: "KP", color: "#0a58ca", gradient: "linear-gradient(135deg, #043b8f 0%, #0a58ca 100%)", icon: "📦", desc: "Spedizioni e ritiro pacchi", ready: true, matrixOnly: true },
 ];
 // Codici inserimento WindTre. "Garbatella" mancava (richiesta dell'ufficio):
 // era gia' presente nelle liste di Vodafone, Fastweb, Iliad, Sky e Very.
@@ -4395,6 +4398,36 @@ function CRM() {
     setSelVend(p=>p||user.name||"");
     setSelNeg(p=>p||user.negozio||"");
   },[user]);
+  // ── MATRICE BRAND × NEGOZIO (Luca 06/08): il negozio vede/registra solo i
+  // brand concessi da Amministrazione → Catalogo → Brand × Negozio. Senza riga
+  // specifica vale il default del brand (catalog_brands.default_abilitato:
+  // brand storici true, Kipoint false) — così i negozi mai configurati
+  // continuano a vedere tutto tranne i brand "a matrice".
+  const [brandRules,setBrandRules]=useState(null);        // {slugCatalogo:{vede,registra}}
+  const [brandDefaults,setBrandDefaults]=useState(null);  // {slugCatalogo:boolean}
+  useEffect(()=>{let al=true;(async()=>{
+    try{
+      const neg=user?.negozio||"";
+      const [rb,rr]=await Promise.all([
+        supabase.from("catalog_brands").select("id,default_abilitato"),
+        neg?supabase.from("store_brand_rules").select("brand,vede,registra").eq("store",neg):Promise.resolve({data:[]}),
+      ]);
+      if(!al)return;
+      const defs={};((rb&&rb.data)||[]).forEach(r=>{defs[r.id]=r.default_abilitato!==false;});
+      const map={};((rr&&rr.data)||[]).forEach(r=>{map[r.brand]={vede:r.vede!==false,registra:r.registra!==false};});
+      setBrandDefaults(defs);setBrandRules(map);
+    }catch{if(al){setBrandDefaults({});setBrandRules({});}}
+  })();return()=>{al=false};},[user?.negozio]);
+  const _brandEff=(b)=>{
+    const slug=SLUG_CATALOGO[b.id]||b.id;
+    const r=brandRules?brandRules[slug]:null;
+    if(r)return r;
+    // fallback (regole non caricate o brand senza default a DB): i brand
+    // "a matrice" restano nascosti, gli altri liberi come sempre
+    const def=(brandDefaults&&(slug in brandDefaults))?brandDefaults[slug]:!b.matrixOnly;
+    return {vede:def,registra:def};
+  };
+  const brandVisibili=BRANDS.filter(b=>_brandEff(b).vede);
   const [confirmReset,setConfirmReset]=useState(false);
   const [showStep4,setShowStep4]=useState(false);
   // quando il flusso apre i prodotti, la vista segue (qui e NON piu' in alto:
@@ -4646,6 +4679,22 @@ function CRM() {
       // altri brand niente voce auto. Le voci legacy (senza .catalogo) invariate.
       const skipTnpMarg=it.catalogo?.tipo==="Business"&&brandId!=="windtre";
       if(!skipTnpMarg&&tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))push("Telefono TNP (listino)",true,_tnpDaListino(det));
+      // BUNDLE VODAFONE (Luca 06/08): l'opzione "Bundle <importo>" e' a tutti
+      // gli effetti un prodotto in marginalita' — entra nel CARRELLO come voce
+      // auto (non un telefono: resta un bundle) con l'importo esplicito nel
+      // nome dell'opzione × quantita'. Il margine arrivera' da un coefficiente
+      // a catalogo (prossimo cantiere): per ora 0, l'importo intanto si vede.
+      if(brandId==="vodafone"){
+        for(const op of (it.catalogo?.opzioni||[])){
+          if(!/bundle/i.test(String(op?.nome||"")))continue;
+          const mAmt=String(op.nome).match(/(\d+(?:[.,]\d+)?)\s*€?\s*$/);
+          if(!mAmt)continue;
+          const unit=parseFloat(mAmt[1].replace(",","."));
+          if(!(unit>0))continue;
+          const q=Math.max(1,Number(op.quantita||1));
+          push(String(op.nome).trim(),true,{qty:q,price:unit,importo:Math.round(unit*q*100)/100,margin:0,totalMargin:0,priceLocked:true,priceRequired:false,bundle:true});
+        }
+      }
     }
     const kept=prev.filter(m=>!(m.auto&&m.autoFrom===brandLabel));
     // preserva i prezzi già digitati sugli auto identici — match per OCCORRENZA
@@ -5983,7 +6032,7 @@ select.rvIn{cursor:pointer}
       {vistaStep==="brand"&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:20,marginBottom:12}}>
         <div style={{fontSize:12.5,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:14,textTransform:"uppercase"}}>Scegli il brand</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:14}}>
-          {BRANDS.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?b.color+"14":"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(turista&&b.id!=="windtre"?0.35:1),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
+          {brandVisibili.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(!_brandEff(b).registra){sT("⛔ "+b.label+" è in sola consultazione per il tuo negozio: la registrazione non è abilitata (Amministrazione → Catalogo → Brand × Negozio).");return;}const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label+(!_brandEff(b).registra?" — solo consultazione":"")} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?b.color+"14":"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(!_brandEff(b).registra?0.35:(turista&&b.id!=="windtre"?0.35:1)),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"var(--tfx15_17_26_880)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)"}}>Manutenzione</div></div>}
             {(()=>{const nBr=(cart.find(g=>g.brandId===b.id)?.items.length)||0;return nBr>0?<span style={{position:"absolute",top:8,right:8,background:b.color,color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800,zIndex:3}}>{nBr}</span>:null;})()}
             {/* SOLO il logo, grande (Luca 03/08): il nome del brand e' gia' nel logo */}

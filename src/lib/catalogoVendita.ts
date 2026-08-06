@@ -695,6 +695,7 @@ export function risolviCampi(
 export const SLUG_CATALOGO: Record<string, string> = {
     windtre: "windtre", vodafone: "vodafone", fastweb: "fastweb", iliad: "iliad",
     sky: "sky", energy: "s4", dojo: "dojo", tim: "tim", very: "very", ho: "ho", kena: "kena",
+    kipoint: "kipoint",
 };
 
 /** Categoria del catalogo -> macro-categoria canonica (tassonomia.ts), ESPLICITA:
