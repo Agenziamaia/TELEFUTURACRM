@@ -115,7 +115,7 @@ function normalizza(descRaw) {
         for (const x of inserimenti) {
             await db.query(
                 `insert into usati (model, imei, status, sale_price, purchase_price, store, ricambi, note_tecnico, status_history, provenienza_subito, purchase_date, created_at)
-                 values ($1,$2,$3,0,0,null,'[]'::jsonb,$4,$5,false,$6,$6)`,
+                 values ($1,$2,$3,0,0,'Laboratorio','[]'::jsonb,$4,$5,false,$6,$6)`,
                 [x.model, x.imei || null, x.status, x.note,
                  JSON.stringify({ [x.status]: { date: now, operatore: "Import magazzino" } }), now]);
         }
