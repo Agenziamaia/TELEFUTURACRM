@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
 import { Loader2, Paperclip, Trash2, ExternalLink, Upload } from "lucide-react";
 import { notify, dbError } from "./toast";
 import { MoneyInput } from "./money";
@@ -237,6 +238,7 @@ type ChiusuraRow = { id: number; store: string; dal: string; al: string; motivo:
 type NegozioOrariRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null };
 type CampoOrario = "orario_apertura" | "orario_chiusura" | "orario_pausa_inizio" | "orario_pausa_fine";
 export function OrariChiusureView() {
+    const { user } = useAuth();   // firma sulle chiusure (giallo del 06/08: righe senza autore)
     const [negozi, setNegozi] = useState<NegozioOrariRow[]>([]);
     const [chiusure, setChiusure] = useState<ChiusuraRow[]>([]);
     const [loading, setLoading] = useState(true);
@@ -293,7 +295,7 @@ export function OrariChiusureView() {
         const f = nuova[store];
         if (!f?.dal || !f?.al) { notify("Servono le date dal → al"); return; }
         if (f.al < f.dal) { notify("La fine è prima dell'inizio"); return; }
-        const { error } = await supabase.from("chiusure_negozio").insert({ store, dal: f.dal, al: f.al, motivo: (f.motivo || "").trim() });
+        const { error } = await supabase.from("chiusure_negozio").insert({ store, dal: f.dal, al: f.al, motivo: (f.motivo || "").trim(), creato_da: user?.name || null });
         if (dbError("Chiusura straordinaria", error)) return;
         setNuova(p => ({ ...p, [store]: { dal: "", al: "", motivo: "" } }));
         notify("Chiusura registrata ✓", "ok");
