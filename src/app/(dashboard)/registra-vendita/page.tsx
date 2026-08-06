@@ -5043,6 +5043,31 @@ function CRM() {
     const _mm2 = margPriceMissing(margList);
     if(_mm2.length){setShowCart(true);sT("⚠️ Inserisci il prezzo di vendita per: "+_mm2.map(m=>m.product).join(", "));return;}
     const cur = colItems();
+    // MATRICE BRAND×NEGOZIO sull'ATTRIBUZIONE (Luca 07/08): la griglia filtra
+    // sul negozio dell'UTENTE loggato, ma il negozio della vendita si sceglie
+    // ALLA FINE — qui si ricontrolla che il negozio attribuito possa
+    // registrare OGNI brand del carrello (regola esplicita del negozio,
+    // altrimenti default di rete del brand). Doppio livello: griglia = UX,
+    // questa guardia = garanzia.
+    try{
+      const brandsVendita=[...new Set([...cart.map(g=>g.brandId),...((cur.length>0&&brand)?[brand]:[])])].filter(Boolean);
+      if(brandsVendita.length&&selNeg){
+        const [rr,rb]=await Promise.all([
+          supabase.from("store_brand_rules").select("brand,registra").eq("store",selNeg),
+          supabase.from("catalog_brands").select("id,default_abilitato"),
+        ]);
+        const rmap={};((rr&&rr.data)||[]).forEach(r=>{rmap[r.brand]=r.registra!==false;});
+        const dmap={};((rb&&rb.data)||[]).forEach(r=>{dmap[r.id]=r.default_abilitato!==false;});
+        const bloccati=brandsVendita.filter(bid=>{const slug=SLUG_CATALOGO[bid]||bid;
+          return !((slug in rmap)?rmap[slug]:((slug in dmap)?dmap[slug]:true));});
+        if(bloccati.length){
+          const nomi=bloccati.map(bid=>(BRANDS.find(x=>x.id===bid)||{}).label||bid).join(", ");
+          setShowCart(false);setVistaStep("allegati");
+          sT("⛔ Il negozio "+selNeg+" non può registrare "+nomi+" (Amministrazione → Catalogo → Brand × Negozio): cambia il negozio di attribuzione o togli quei prodotti.");
+          return;
+        }
+      }
+    }catch{/* matrice non raggiungibile: la vendita non si blocca per un errore di rete */}
     const fc = [...cart];
     if (cur.length > 0 && bObj) {
       fc.push({
@@ -6031,8 +6056,11 @@ select.rvIn{cursor:pointer}
           {brandVisibili.map(b=><button key={b.id} onClick={()=>{if(!b.ready)return;if(!_brandEff(b).registra){sT("⛔ "+b.label+" è in sola consultazione per il tuo negozio: la registrazione non è abilitata (Amministrazione → Catalogo → Brand × Negozio).");return;}const cliPronto=tipoCliente&&(tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim()));if(b.id===brand){setVistaStep(cliPronto?"prodotti":"cliente");return;}_pickBrand(b);setVistaStep(cliPronto?"prodotti":"cliente");}} title={b.label+(!_brandEff(b).registra?" — solo consultazione":"")} style={{padding:"26px 16px",borderRadius:14,border:b.id===brand?"2px solid "+b.color:"2px solid var(--tf-w60)",background:b.id===brand?b.color+"14":"var(--tf-w20)",cursor:b.ready?"pointer":"default",textAlign:"center",opacity:!b.ready?.6:(!_brandEff(b).registra?0.35:(turista&&b.id!=="windtre"?0.35:1)),position:"relative",overflow:"hidden",transition:"border-color .15s,background .15s"}} onMouseEnter={e=>{if(b.ready&&b.id!==brand){e.currentTarget.style.borderColor=b.color;e.currentTarget.style.background="var(--tf-w50)";}}} onMouseLeave={e=>{if(b.id!==brand){e.currentTarget.style.borderColor="var(--tf-w60)";e.currentTarget.style.background="var(--tf-w20)";}}}>
             {!b.ready&&<div style={{position:"absolute",top:0,left:0,right:0,bottom:0,background:"var(--tfx15_17_26_880)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",zIndex:2}}><div style={{fontSize:22}}>🔧</div><div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)"}}>Manutenzione</div></div>}
             {(()=>{const nBr=(cart.find(g=>g.brandId===b.id)?.items.length)||0;return nBr>0?<span style={{position:"absolute",top:8,right:8,background:b.color,color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800,zIndex:3}}>{nBr}</span>:null;})()}
-            {/* SOLO il logo, grande (Luca 03/08): il nome del brand e' gia' nel logo */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:84,width:"auto",maxWidth:"92%",objectFit:"contain"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>
+            {/* SOLO il logo, grande (Luca 03/08). Loghi ALLARGATI (Luca 07/08):
+                i marchi-scritta guadagnano scala e larghezza; S4 e Dojo (i due
+                tondi) restano com'erano — a quella misura stanno gia' bene */}
+            {(()=>{const tondo=b.id==="energy"||b.id==="dojo";return(
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}>{b.logo?<Image src={b.logo} alt={b.label} width={260} height={88} style={{height:tondo?84:88,width:"auto",maxWidth:tondo?"92%":"98%",objectFit:"contain",transform:tondo?"none":"scale(1.14)",transformOrigin:"center"}}/>:<span style={{fontSize:52}}>{b.icon}</span>}</div>);})()}
           </button>)}
           {/* Segnalazione 68: "Prodotti & Marginalita'" non e' piu' una barra a tutta
               larghezza sotto la griglia, ma una casella della griglia accanto ai brand. */}
