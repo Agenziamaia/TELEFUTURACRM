@@ -4925,7 +4925,9 @@ function CRM() {
   );
   const mancanzeVendita = () => {
     const m = [];
-    if (!attachments.some(a => a.type === "documento")) m.push("🪪 documento del cliente (step Allegati)");
+    // SOLO MARGINALITÀ (Luca 06/08): allegati tutti facoltativi — per un
+    // accessorio spesso non ci sono i dati del cliente
+    if (!(margFlow && !brand) && !attachments.some(a => a.type === "documento")) m.push("🪪 documento del cliente (step Allegati)");
     // CONTRATTO PER OGNI RIGA (Luca 05/08): ogni offerta non-Sky del carrello
     // vuole il SUO upload di contratto, agganciato alla riga (rowKey).
     // ECCEZIONE SKY (Luca 04/08): Sky non rilascia il contratto — le righe
@@ -5913,7 +5915,7 @@ select.rvIn{cursor:pointer}
           {id:"brand",label:margFlow&&!brand?"Marginalità":"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{margFlow&&!brand?"📦":(bObj?bObj.icon:"⚡")}</span>,perc:(brand||margFlow)?100:0,abil:true},
           {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
           {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:23}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
-          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?attachments.length>0:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.sky||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
+          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?true:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.sky||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
           // verde APPENA si flagga Sì o No (Luca 05/08): la scelta completa lo step
           {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:notaScelta?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
         ];
@@ -6329,9 +6331,12 @@ select.rvIn{cursor:pointer}
         {vistaStep==="allegati"&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #17a2b8",marginTop:12}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--tf-17a2b8)",marginBottom:14,textTransform:"uppercase"}}>📎 Allegati</div>
           {(margFlow&&!brand)?(<>
-            {/* flusso P&M senza brand: caselle generiche come prima (nessun contratto brand) */}
+            {/* SOLO MARGINALITÀ (Luca 06/08): niente riquadro Contratto — solo
+                Documento e Altro, ENTRAMBI facoltativi (per un accessorio
+                spesso non ci sono i dati del cliente) */}
+            <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:10}}>Per le vendite di sola marginalità gli allegati sono FACOLTATIVI: carica documento o altro solo se li hai.</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-              {[{l:"Documento",i:"🪪",t:"documento"},{l:"Contratti",i:"📄",t:"contratti"},...(haEnergia?[{l:"Fattura",i:"🧾",t:"fattura"}]:[]),{l:"Altro",i:"📁",t:"altro"}].map(a=>boxAllegato(a))}
+              {[{l:"Documento",i:"🪪",t:"documento"},{l:"Altro",i:"📁",t:"altro"}].map(a=>boxAllegato(a,null,"facoltativo"))}
             </div>
             {listaFileAllegati(attachments.map((a,i)=>({a,i})))}
           </>):(<>
