@@ -427,26 +427,41 @@ export function DebitiView({ gestore }: { gestore: string }) {
  *  (malus_storico, campo venditore) + laboratorio usati (usati_malus,
  *  campo tecnico). Da scalare = tutto cio' che non e' compensato. */
 export function MalusUtenteBox({ nome }: { nome: string }) {
-    const [dati, setDati] = useState<null | { pratiche: number; lab: number; attivi: number; compensati: number }>(null);
+    const [dati, setDati] = useState<null | { pratiche: number; lab: number; disdette: number; attivi: number; compensati: number }>(null);
     useEffect(() => {
         (async () => {
-            const [p, l] = await Promise.all([
+            const [p, l, d] = await Promise.all([
                 supabase.from("malus_storico").select("importo,stato").eq("venditore", nome).limit(500),
                 supabase.from("usati_malus").select("importo,stato").eq("tecnico", nome).limit(500),
+                // disdette (Luca 06/08): 5€/gg oltre i 3gg di franchigia in "da_verificare";
+                // calcolato LIVE dalle date del ciclo (vivo se ancora da verificare,
+                // congelato a verificata_il se conclusa in ritardo)
+                supabase.from("richieste_disdette").select("status,verifica_dal,verificata_il")
+                    .eq("consulente", nome).in("status", ["da_verificare", "conclusa"]).limit(500),
             ]);
             const pr = (p.data ?? []) as { importo: number; stato: string }[];
             const lb = (l.data ?? []) as { importo: number; stato: string }[];
+            const GG = 24 * 60 * 60 * 1000;
+            const dsMalus = ((d.data ?? []) as { status: string; verifica_dal: string | null; verificata_il: string | null }[])
+                .reduce((s2, r) => {
+                    if (!r.verifica_dal) return s2;
+                    const fine = r.status === "conclusa" ? (r.verificata_il ? new Date(r.verificata_il).getTime() : null) : Date.now();
+                    if (fine === null) return s2;
+                    const gg = Math.floor((fine - new Date(r.verifica_dal).getTime()) / GG);
+                    return s2 + Math.max(0, gg - 3) * 5;
+                }, 0);
             const aperti = [...pr, ...lb].filter(r => r.stato !== "compensato");
             setDati({
                 pratiche: pr.filter(r => r.stato !== "compensato").reduce((s2, r) => s2 + Number(r.importo || 0), 0),
                 lab: lb.filter(r => r.stato !== "compensato").reduce((s2, r) => s2 + Number(r.importo || 0), 0),
-                attivi: aperti.length,
+                disdette: dsMalus,
+                attivi: aperti.length + (dsMalus > 0 ? 1 : 0),
                 compensati: pr.length + lb.length - aperti.length,
             });
         })();
     }, [nome]);
     if (!dati) return null;
-    const tot = dati.pratiche + dati.lab;
+    const tot = dati.pratiche + dati.lab + dati.disdette;
     return (
         <a href={`/pda/tracking?malus=${encodeURIComponent(nome)}`} title="Apri il dettaglio dei suoi malus nel Tracking PDA"
             className="block glass-card p-4 rounded-xl border-l-4 border-l-amber-500/70 hover:bg-white/[0.04] transition-colors cursor-pointer">
@@ -458,6 +473,7 @@ export function MalusUtenteBox({ nome }: { nome: string }) {
                 <p className="text-[11px] text-slate-400 mt-1">
                     {dati.pratiche > 0 ? `• pratiche ${eur(dati.pratiche)} ` : ""}
                     {dati.lab > 0 ? `• laboratorio ${eur(dati.lab)} ` : ""}
+                    {dati.disdette > 0 ? `• disdette ${eur(dati.disdette)} ` : ""}
                     {dati.attivi > 0 ? `· ${dati.attivi} episodi attivi` : ""}
                     {dati.compensati > 0 ? ` · ${dati.compensati} gia' compensati` : ""}
                 </p>

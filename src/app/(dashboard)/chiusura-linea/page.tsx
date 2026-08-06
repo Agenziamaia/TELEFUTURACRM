@@ -42,12 +42,45 @@ type Evento = { quando: string; tipo: string; testo: string };
 type ClienteJoin = { nome: string | null; cognome: string | null; ragione_sociale: string | null; cf_piva: string | null; tipo: string | null };
 type Ticket = {
     id: string; client_id: string; consulente: string; negozio: string; brand: string;
-    status: "in_attesa" | "da_integrare" | "gestita";
+    status: "in_attesa" | "da_integrare" | "gestita" | "da_verificare" | "conclusa";
     files: FileRef[]; note_consulente: string; feedback_admin: string;
     is_programmata: boolean; data_programmata: string | null;
     storico: Evento[]; created_at: string; updated_at: string;
+    gestita_il?: string | null; verifica_dal?: string | null; verificata_il?: string | null;
     clients?: ClienteJoin | null;
 };
+
+// ── CICLO DI VERIFICA (Luca 06/08) ───────────────────────────────────────
+// dopo VERIFICA_DOPO_GG dalla gestione la pratica torna al consulente come
+// "da_verificare"; ha FRANCHIGIA_GG per concluderla, poi 5€/giorno di malus.
+const VERIFICA_DOPO_GG = 35;
+const FRANCHIGIA_GG = 3;
+const MALUS_GIORNO = 5;
+const GG = 24 * 60 * 60 * 1000;
+const giorniDa = (iso: string | null | undefined, fino?: string | null) => {
+    if (!iso) return 0;
+    const a = new Date(iso).getTime();
+    const b = fino ? new Date(fino).getTime() : Date.now();
+    return Math.floor((b - a) / GG);
+};
+/** malus maturato: vivo se da_verificare oltre franchigia, congelato alla
+ *  verifica se conclusa in ritardo. 0 in ogni altro caso. */
+const malusDisdetta = (t: Ticket) => {
+    if (t.status === "da_verificare") return Math.max(0, giorniDa(t.verifica_dal) - FRANCHIGIA_GG) * MALUS_GIORNO;
+    if (t.status === "conclusa" && t.verifica_dal && t.verificata_il)
+        return Math.max(0, giorniDa(t.verifica_dal, t.verificata_il) - FRANCHIGIA_GG) * MALUS_GIORNO;
+    return 0;
+};
+
+// upload disdetta → anche in contract_attachments (contract_id null, mig.
+// 20260806030000): così i documenti compaiono nella scheda del cliente
+async function registraAllegatiCliente(clientId: string, files: FileRef[]) {
+    try {
+        await supabase.from("contract_attachments").insert(files.map(f => ({
+            contract_id: null, client_id: clientId, file_url: f.url, file_name: f.name, file_type: "disdetta",
+        })));
+    } catch { /* la disdetta resta valida; il backfill della migrazione riallinea */ }
+}
 
 const oggiYmd = () => {
     const d = new Date();
@@ -77,7 +110,9 @@ function StatusBadge({ status }: { status: Ticket["status"] }) {
     const cfg = {
         in_attesa: { label: "In Attesa", cls: "bg-amber-500/10 text-amber-400 border-amber-500/30", icon: "⏳" },
         da_integrare: { label: "Da Integrare", cls: "bg-rose-500/10 text-rose-400 border-rose-500/30", icon: "⚠️" },
-        gestita: { label: "Gestita", cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", icon: "✅" },
+        gestita: { label: "Gestita", cls: "bg-sky-500/10 text-sky-400 border-sky-500/30", icon: "🕐" },
+        da_verificare: { label: "Da Verificare", cls: "bg-violet-500/10 text-violet-300 border-violet-500/30", icon: "🔍" },
+        conclusa: { label: "Conclusa", cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30", icon: "✅" },
     }[status] || { label: status, cls: "bg-white/5 text-slate-400 border-white/10", icon: "•" };
     return <span className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-wide whitespace-nowrap", cfg.cls)}>{cfg.icon} {cfg.label}</span>;
 }
@@ -178,6 +213,7 @@ function FormInvio({ onInviata, msg }: { onInviata: () => void; msg: (m: string)
                 storico: [evento],
             }).select("id").single();
             if (error) { msg("⚠️ Invio non riuscito: " + error.message); return; }
+            await registraAllegatiCliente(clientId, caricati);
 
             await taskAiDesignati(`✂️ Chiusura linea ${brand}: ${cliSel ? (cliSel.ragione_sociale || `${cliSel.nome || ""} ${cliSel.cognome || ""}`.trim()) : (ana.ragioneSociale || `${ana.nome} ${ana.cognome}`.trim())}${isProg ? ` (programmata al ${dmy(dataProg)})` : ""}`, note.trim() || "Senza note.", user?.name || "", riga?.id as string | undefined);
             msg(`✅ Richiesta ${riga?.id || ""} inviata alla direzione`);
@@ -328,7 +364,8 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
     };
 
     const gestisci = async () => {
-        const ok = await transizione({ status: "gestita" }, { quando: new Date().toISOString(), tipo: "chiusura", testo: "Disdetta completata" });
+        const ok = await transizione({ status: "gestita", gestita_il: new Date().toISOString() },
+            { quando: new Date().toISOString(), tipo: "chiusura", testo: "Disdetta completata" });
         // a gestione avvenuta si spengono le task ⚡ di invio/reintegro di questa DS
         if (ok) {
             try {
@@ -336,6 +373,21 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
                     .update({ done: true, done_by: user?.name || "—", done_at: new Date().toISOString() })
                     .eq("tipo", "chiusura_linea").eq("done", false).eq("link", `/chiusura-linea?ds=${t.id}`);
             } catch { /* al peggio restano chiudibili a mano dal fulmine */ }
+        }
+    };
+
+    // VERIFICA (consulente che l'ha sottomessa, o direzione): da_verificare → conclusa.
+    // Il malus eventualmente maturato si congela alla data di verifica.
+    const concludi = async () => {
+        const mal = malusDisdetta(t);
+        const ok = await transizione({ status: "conclusa", verificata_il: new Date().toISOString() },
+            { quando: new Date().toISOString(), tipo: "verifica", testo: `Disdetta verificata e conclusa${mal > 0 ? ` (malus maturato: ${mal} €)` : ""}` });
+        if (ok) {
+            try {
+                await supabase.from("admin_tasks")
+                    .update({ done: true, done_by: user?.name || "—", done_at: new Date().toISOString() })
+                    .eq("tipo", "chiusura_linea_verifica").eq("done", false).eq("link", `/chiusura-linea?ds=${t.id}`);
+            } catch { /* niente di grave */ }
         }
     };
 
@@ -362,7 +414,10 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
             const ok = await transizione(
                 { status: "in_attesa", feedback_admin: "", files: [...caricati, ...(t.files || [])] },
                 { quando: new Date().toISOString(), tipo: "reintegro", testo: "Nuovo documento caricato per disdetta" });
-            if (ok) await taskAiDesignati(`✂️ Disdetta ${t.id} reintegrata: ${nomeCliente(t)} (${t.brand})`, "Nuovo documento caricato dopo il rigetto.", user?.name || "", t.id);
+            if (ok) {
+                await registraAllegatiCliente(t.client_id, caricati);
+                await taskAiDesignati(`✂️ Disdetta ${t.id} reintegrata: ${nomeCliente(t)} (${t.brand})`, "Nuovo documento caricato dopo il rigetto.", user?.name || "", t.id);
+            }
         } finally { setBusy(false); }
     };
 
@@ -414,6 +469,29 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
                     </div>
                 )}
 
+                {/* VERIFICA (Luca 06/08): dopo 35gg dalla gestione la pratica torna
+                    al consulente; oltre i 3gg di franchigia matura 5€/giorno */}
+                {t.status === "da_verificare" && (puoInviare || direzione) && (
+                    <div className="p-4 rounded-xl border border-violet-500/30 bg-violet-500/5 space-y-3">
+                        <p className="text-[10px] font-bold text-violet-300 uppercase tracking-widest">Verifica finale</p>
+                        <p className="text-sm text-slate-200 leading-relaxed">
+                            Sono passati {VERIFICA_DOPO_GG} giorni dalla gestione: verifica che la linea risulti
+                            effettivamente cessata (niente fatture, niente riattivazioni), poi concludi la pratica.
+                        </p>
+                        {(() => {
+                            const gg = giorniDa(t.verifica_dal);
+                            const mal = malusDisdetta(t);
+                            return mal > 0
+                                ? <p className="text-sm font-bold text-rose-400">⚠️ Malus maturato: {mal} € ({gg} giorni in verifica, franchigia {FRANCHIGIA_GG})</p>
+                                : <p className="text-xs text-slate-400">In verifica da {gg} {gg === 1 ? "giorno" : "giorni"} — senza conclusione entro {FRANCHIGIA_GG} giorni scatta un malus di {MALUS_GIORNO} €/giorno.</p>;
+                        })()}
+                        <button onClick={concludi} className="w-full py-3 rounded-xl bg-emerald-600 text-white font-bold text-xs uppercase tracking-wide hover:brightness-110">✓ Verificata — Concludi</button>
+                    </div>
+                )}
+                {t.status === "conclusa" && malusDisdetta(t) > 0 && (
+                    <p className="text-xs font-bold text-amber-400">Conclusa in ritardo: malus congelato di {malusDisdetta(t)} € a carico di {t.consulente}.</p>
+                )}
+
                 {/* CONSULENTE: reintegro dopo il rigetto (serve la capacita' di invio) */}
                 {!direzione && puoInviare && t.status === "da_integrare" && (
                     <div className="p-4 rounded-xl border border-rose-500/30 bg-rose-500/5 space-y-3">
@@ -439,7 +517,7 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
                 )}
 
                 {/* DIREZIONE: azioni */}
-                {direzione && t.status !== "gestita" && !rigetto && (
+                {direzione && (t.status === "in_attesa" || t.status === "da_integrare") && !rigetto && (
                     <div className="flex gap-3 pt-3 border-t border-white/10">
                         {t.status === "in_attesa" && (
                             <button onClick={() => setRigetto(true)} className="flex-1 py-3 rounded-xl border border-rose-500/50 text-rose-400 font-bold text-xs uppercase tracking-wide hover:bg-rose-500/10">✕ Rigetta</button>
@@ -505,7 +583,7 @@ export default function ChiusuraLineaPage() {
     const presetFatto = useRef(false);
     useEffect(() => {
         if (presetFatto.current || !visLoaded || !permsLoaded || designati === null || !user) return;
-        setFStati(sonoDesignato ? ["in_attesa"] : ["in_attesa", "da_integrare"]);
+        setFStati(sonoDesignato ? ["in_attesa"] : ["in_attesa", "da_integrare", "da_verificare"]);
         presetFatto.current = true;
     }, [visLoaded, permsLoaded, designati, sonoDesignato, user]);
 
@@ -513,10 +591,47 @@ export default function ChiusuraLineaPage() {
         const { data, error } = await supabase.from("richieste_disdette")
             .select("*, clients(nome, cognome, ragione_sociale, cf_piva, tipo)")
             .order("created_at", { ascending: false }).limit(1000);
-        if (!error) setTickets((data ?? []) as Ticket[]);
+        if (!error) {
+            const righe = (data ?? []) as Ticket[];
+            setTickets(righe);
+            promuoviDaVerificare(righe); // lazy, senza attendere: al prossimo load si vede
+        }
         setLoading(false);
     }, []);
     useEffect(() => { load(); }, [load]);
+
+    // PROMOZIONE LAZY (niente cron): le gestite da oltre 35gg passano a
+    // da_verificare e tornano in mano al consulente con task ⚡. La guardia
+    // .eq(status,'gestita') fa vincere un solo client concorrente.
+    const promuoviDaVerificare = async (righe: Ticket[]) => {
+        const limite = new Date(Date.now() - VERIFICA_DOPO_GG * GG).toISOString();
+        const mature = righe.filter(t => t.status === "gestita" && (t.gestita_il || t.updated_at) <= limite);
+        for (const t of mature.slice(0, 20)) {
+            const evento: Evento = { quando: new Date().toISOString(), tipo: "da_verificare", testo: `Trascorsi ${VERIFICA_DOPO_GG} giorni dalla gestione: verifica finale richiesta a ${t.consulente}` };
+            const { data: agg } = await supabase.from("richieste_disdette")
+                .update({ status: "da_verificare", verifica_dal: new Date().toISOString(), storico: [...(t.storico || []), evento], updated_at: new Date().toISOString() })
+                .eq("id", t.id).eq("status", "gestita").select("id");
+            if (!agg?.length) continue; // promossa da un altro client
+            try {
+                const { data: u } = await supabase.from("app_users").select("id").eq("name", t.consulente).limit(1);
+                if (u?.length) {
+                    await supabase.from("admin_tasks").insert({
+                        tipo: "chiusura_linea_verifica",
+                        titolo: `🔍 Verifica disdetta ${t.id}: ${nomeCliente(t)} (${t.brand})`,
+                        dettaglio: `Gestita ${VERIFICA_DOPO_GG} giorni fa: verifica la cessazione e concludi entro ${FRANCHIGIA_GG} giorni (poi ${MALUS_GIORNO} €/giorno di malus).`,
+                        link: `/chiusura-linea?ds=${t.id}`, target_role: "admin",
+                        created_by: "Sistema", target_user_id: u[0].id,
+                    });
+                }
+            } catch { /* la promozione resta valida anche senza task */ }
+        }
+        if (mature.length) {
+            const { data } = await supabase.from("richieste_disdette")
+                .select("*, clients(nome, cognome, ragione_sociale, cf_piva, tipo)")
+                .order("created_at", { ascending: false }).limit(1000);
+            if (data) setTickets(data as Ticket[]);
+        }
+    };
 
     // deep-link dal fulmine: /chiusura-linea?ds=<id> apre il ticket (letto da
     // window.location per non introdurre il boundary Suspense di useSearchParams)
@@ -569,17 +684,21 @@ export default function ChiusuraLineaPage() {
         tot: baseFiltrati.length,
         in_attesa: baseFiltrati.filter(t => t.status === "in_attesa").length,
         da_integrare: baseFiltrati.filter(t => t.status === "da_integrare").length,
+        da_verificare: baseFiltrati.filter(t => t.status === "da_verificare").length,
         gestita: baseFiltrati.filter(t => t.status === "gestita").length,
+        conclusa: baseFiltrati.filter(t => t.status === "conclusa").length,
     }), [baseFiltrati]);
 
-    // tessere cliccabili stile Ordine Merce: "Tutte" azzera, "Gestite" e'
-    // esclusiva (ri-click = preset del ruolo), le altre si flaggano una a una
+    // tessere cliccabili stile Ordine Merce: "Tutte" azzera, "Gestite" e
+    // "Concluse" sono esclusive (ri-click = preset del ruolo), le altre si
+    // flaggano una a una
     const statClick = (key: string) => {
-        const DEF = sonoDesignato ? ["in_attesa"] : ["in_attesa", "da_integrare"];
+        const DEF = sonoDesignato ? ["in_attesa"] : ["in_attesa", "da_integrare", "da_verificare"];
+        const ESCLUSIVE = ["gestita", "conclusa"];
         if (key === "tutte") { setFStati([]); return; }
-        if (key === "gestita") { setFStati(p => (p.length === 1 && p[0] === "gestita") ? DEF : ["gestita"]); return; }
+        if (ESCLUSIVE.includes(key)) { setFStati(p => (p.length === 1 && p[0] === key) ? DEF : [key]); return; }
         setFStati(p => {
-            const base = p.includes("gestita") ? [] : [...p];
+            const base = p.some(s => ESCLUSIVE.includes(s)) ? [] : [...p];
             const i = base.indexOf(key);
             if (i >= 0) base.splice(i, 1); else base.push(key);
             return base;
@@ -590,7 +709,7 @@ export default function ChiusuraLineaPage() {
     // gestite; 2) programmata scaduta/oggi = priorita' assoluta, programmata
     // futura in basso; 3) FIFO su updated_at (le ferme da piu' tempo prima)
     const ordinatiDirezione = useMemo(() => {
-        const peso = (t: Ticket) => (t.status === "gestita" ? 2 : 1);
+        const peso = (t: Ticket) => (t.status === "conclusa" ? 3 : t.status === "gestita" ? 2 : 1);
         const urgenza = (t: Ticket) => {
             if (t.is_programmata) return (t.data_programmata || "") <= oggiYmd() ? 0 : 2;
             return 1;
@@ -602,7 +721,8 @@ export default function ChiusuraLineaPage() {
 
     // ordinamento consulente: i rigetti in cima, poi le piu' recenti
     const ordinatiConsulente = useMemo(() => [...filtrati].sort((a, b) => {
-        const w = (t: Ticket) => (t.status === "da_integrare" ? 0 : 1);
+        // da verificare per primo (c'e' un malus che corre), poi i rigetti
+        const w = (t: Ticket) => (t.status === "da_verificare" ? 0 : t.status === "da_integrare" ? 1 : 2);
         return w(a) - w(b) || String(b.updated_at).localeCompare(String(a.updated_at));
     }), [filtrati]);
 
@@ -611,11 +731,13 @@ export default function ChiusuraLineaPage() {
     // tessere contatore (comuni alle due viste): contano su baseFiltrati, cosi'
     // le gestite nascoste dal preset non "spariscono" — restano a un click
     const tessere = (
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 xl:grid-cols-6 gap-3">
             {[
                 { key: "in_attesa", label: "In Attesa", icon: "⏳", val: conta.in_attesa, attiva: fStati.includes("in_attesa"), on: "border-amber-400/70 bg-amber-500/10", txt: "text-amber-400" },
                 { key: "da_integrare", label: "Da Integrare", icon: "⚠️", val: conta.da_integrare, attiva: fStati.includes("da_integrare"), on: "border-rose-400/70 bg-rose-500/10", txt: "text-rose-400" },
-                { key: "gestita", label: "Gestite", icon: "✅", val: conta.gestita, attiva: fStati.includes("gestita"), on: "border-emerald-400/70 bg-emerald-500/10", txt: "text-emerald-400" },
+                { key: "da_verificare", label: "Da Verificare", icon: "🔍", val: conta.da_verificare, attiva: fStati.includes("da_verificare"), on: "border-violet-400/70 bg-violet-500/10", txt: "text-violet-300" },
+                { key: "gestita", label: "Gestite", icon: "🕐", val: conta.gestita, attiva: fStati.includes("gestita"), on: "border-sky-400/70 bg-sky-500/10", txt: "text-sky-400" },
+                { key: "conclusa", label: "Concluse", icon: "✅", val: conta.conclusa, attiva: fStati.includes("conclusa"), on: "border-emerald-400/70 bg-emerald-500/10", txt: "text-emerald-400" },
                 { key: "tutte", label: "Tutte", icon: "📋", val: conta.tot, attiva: fStati.length === 0, on: "border-indigo-400/70 bg-indigo-500/10", txt: "text-indigo-300" },
             ].map(s => (
                 <button key={s.key} type="button" onClick={() => statClick(s.key)}
@@ -686,7 +808,7 @@ export default function ChiusuraLineaPage() {
                                     </thead>
                                     <tbody>
                                         {ordinatiDirezione.map(t => (
-                                            <tr key={t.id} className={cn("border-t border-white/5", t.status === "gestita" && "opacity-50")}>
+                                            <tr key={t.id} className={cn("border-t border-white/5", (t.status === "gestita" || t.status === "conclusa") && "opacity-50")}>
                                                 <td className="px-4 py-3"><div className="font-bold text-slate-100">{t.id}</div><div className="text-[10px] text-slate-500">{dmy(t.created_at)} · agg. {dmy(t.updated_at)}</div></td>
                                                 <td className="px-4 py-3"><div className="font-semibold text-slate-200">{nomeCliente(t)}</div><div className="text-[10px] text-slate-500">{t.brand} • {t.negozio || "—"} • {t.consulente}</div></td>
                                                 <td className="px-4 py-3"><TipoInvio t={t} /></td>
@@ -710,7 +832,7 @@ export default function ChiusuraLineaPage() {
                             {tessere}
                             <h2 className="text-lg font-bold text-white">{wholeStore ? "Richieste del negozio" : "Le mie richieste"}</h2>
                             {ordinatiConsulente.map(t => (
-                                <div key={t.id} className={cn("glass-card p-4 flex items-center justify-between gap-3 flex-wrap", t.status === "da_integrare" && "border-l-4 border-l-rose-500")}>
+                                <div key={t.id} className={cn("glass-card p-4 flex items-center justify-between gap-3 flex-wrap", t.status === "da_integrare" && "border-l-4 border-l-rose-500", t.status === "da_verificare" && "border-l-4 border-l-violet-500")}>
                                     <div className="flex items-center gap-4 min-w-0">
                                         <div className="w-14 h-11 rounded-lg bg-white/5 flex items-center justify-center text-[10px] font-bold text-slate-400 shrink-0">{t.id}</div>
                                         <div className="min-w-0">
