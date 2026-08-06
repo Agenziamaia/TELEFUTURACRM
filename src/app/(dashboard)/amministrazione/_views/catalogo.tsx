@@ -233,6 +233,54 @@ export function CatalogoView() {
         if (!window.confirm(`Eliminare l'opzione "${k.nome}"?`)) return;
         await run("Eliminazione opzione", () => supabase.from("catalog_opzioni").delete().eq("id", k.id), "Opzione eliminata");
     };
+    // 📋 COPIA OPZIONI DA UN'ALTRA OFFERTA (Luca 06/08): clona il set di
+    // opzioni (nome, gruppo, tipo n°) e DUPLICA le regole campi vendita
+    // legate a (offerta sorgente + opzioni), puntandole alla destinazione —
+    // così una nuova offerta eredita in un click opzioni E campi correlati.
+    const copiaOpzioniDa = async (target: Off, srcId: string) => {
+        const src = offerte.find((x) => x.id === srcId);
+        if (!src) return;
+        const kidsSrc = opzioni.filter((k) => k.offerta_id === src.id);
+        const kidsTgt = opzioni.filter((k) => k.offerta_id === target.id);
+        if (!kidsSrc.length) { notify("L'offerta scelta non ha opzioni"); return; }
+        const giaNomi = new Set(kidsTgt.map((k) => String(k.nome).toLowerCase()));
+        const nuove = kidsSrc.filter((k) => !giaNomi.has(String(k.nome).toLowerCase()));
+        if (!window.confirm(`Copiare le opzioni di "${src.nome}" su "${target.nome}"?\n${nuove.length} opzion${nuove.length === 1 ? "e" : "i"} da aggiungere (${kidsSrc.length - nuove.length} già presenti) + le regole dei campi vendita legate alle opzioni.`)) return;
+        if (nuove.length) {
+            const { error } = await supabase.from("catalog_opzioni").insert(nuove.map((k, i) => ({
+                offerta_id: target.id, nome: k.nome, tipo: k.tipo ?? null,
+                gruppo_singolo: k.gruppo_singolo ?? null, ordine: kidsTgt.length + i, attivo: k.attivo ?? true,
+            })));
+            if (dbError("Copia opzioni", error)) return;
+        }
+        // regole della sorgente con condizione su opzioni → duplicate sul nome della destinazione
+        const conOpz = (c: Record<string, string[]>) => (c.opzioni && c.opzioni.length) || (c.opzioniNon && c.opzioniNon.length);
+        const daDup = regole.filter((r) => {
+            const c = r.condizioni || {};
+            return conOpz(c) && Array.isArray(c.offerta) && c.offerta.includes(src.nome);
+        });
+        let dupN = 0;
+        for (const r of daDup) {
+            const c0 = r.condizioni || {};
+            // niente doppioni: stessa etichetta + stessa condizione opzioni già puntata alla destinazione
+            const esiste = regole.some((x) => {
+                const cx = x.condizioni || {};
+                return x.etichetta === r.etichetta && Array.isArray(cx.offerta) && cx.offerta.includes(target.nome)
+                    && JSON.stringify(cx.opzioni ?? null) === JSON.stringify(c0.opzioni ?? null)
+                    && JSON.stringify(cx.opzioniNon ?? null) === JSON.stringify(c0.opzioniNon ?? null);
+            });
+            if (esiste) continue;
+            const { error } = await supabase.from("catalog_campi_regole").insert({
+                etichetta: r.etichetta, condizioni: { ...c0, offerta: [target.nome] },
+                campi: r.campi, ordine: r.ordine, attivo: r.attivo,
+            });
+            if (dbError("Copia regola campi", error)) return;
+            dupN++;
+        }
+        notify(`✓ Copiate ${nuove.length} opzioni e ${dupN} regole campi da "${src.nome}"`, "ok");
+        await loadBase();
+        await loadBrand(brandSel);
+    };
     const delCategoria = async (c: Cat) => {
         const { count, error } = await supabase.from("catalog_prodotti").select("id", { count: "exact", head: true }).eq("categoria_id", c.id);
         if (dbError("Verifica categoria", error)) return;
@@ -826,6 +874,20 @@ export function CatalogoView() {
                                                         <button onClick={async () => { if (await addRow("catalog_opzioni", { offerta_id: o.id, ordine: kids.length }, newOpz, "Opzione aggiunta")) setNewOpz(""); }}
                                                             className="p-1 rounded-lg bg-white/5 text-slate-300 hover:bg-white/10"><Plus className="w-3.5 h-3.5" /></button>
                                                     </div>
+                                                    {/* 📋 COPIA da un'altra offerta del brand (Luca 06/08):
+                                                        porta opzioni + regole campi vendita correlate */}
+                                                    {(() => {
+                                                        const altre = offerte.filter((x) => x.id !== o.id && opzioni.some((k) => k.offerta_id === x.id));
+                                                        if (!altre.length) return null;
+                                                        return (
+                                                            <select value="" onChange={(e) => { const v = e.target.value; e.target.value = ""; if (v) copiaOpzioniDa(o, v); }}
+                                                                title="Copia le opzioni di un'altra offerta del brand — si portano dietro anche le regole dei campi vendita legate a ogni opzione"
+                                                                className="glass-input text-[10px] rounded-lg py-1 px-1.5 w-full text-slate-400">
+                                                                <option value="">📋 Copia opzioni da…</option>
+                                                                {altre.map((x) => { const pr = prodotti.find((p) => p.id === x.prodotto_id); return <option key={x.id} value={x.id}>{(pr ? pr.nome + " · " : "") + x.nome}</option>; })}
+                                                            </select>
+                                                        );
+                                                    })()}
                                                 </div>
                                             )}
                                         </div>
