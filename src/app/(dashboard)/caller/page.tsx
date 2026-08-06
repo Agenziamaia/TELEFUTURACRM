@@ -687,6 +687,15 @@ function CallerPageInner() {
         // il flusso parte SOLO dal giorno fissato (Luca 31/07): un appuntamento
         // o richiamo per il 3 agosto tiene la pratica FERMA fino al 3 agosto
         if (giornoYmd(rif) > giornoYmd(oggi)) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
+        // IMPORT VDL (Luca 06/08, caso Canale): le pratiche importate partono
+        // subito DA LAVORARE — mai warning né malus — finché nessuno le
+        // ri-esita: al primo esito nuovo (manuale o ponte Aircall, che
+        // appendono sempre una voce di storico) il marcatore scade e la
+        // pratica rientra nelle regole normali. Appuntamenti futuri fermi
+        // fino alla data (check sopra), stati esenti restano esenti.
+        const _st = Array.isArray(c.storico) ? c.storico : [];
+        const _ult = _st.length ? _st[_st.length - 1] : null;
+        if (_ult && _ult.caller === "Import VDL") return { fase: "da_lavorare", giorniMalus: 0, importo: 0, dalMalus: null };
         const operativi = giorniBadge ? (giorniBadge.get(c.caller) || new Set<string>()) : null;
         const fase = faseDi(lavorativiDopo(rif, oggi, operativi), r);
         const dalMalus = fase === "malus" && r.giorni_malus != null ? aggiungiLavorativi(rif, r.giorni_malus, operativi) : null;
