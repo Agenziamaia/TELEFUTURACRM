@@ -4609,8 +4609,16 @@ function CRM() {
   const computeAutoMarg=(prev,brandId,brandLabel,items)=>{
     if(!brandLabel)return prev;
     const adds=[];
-    // niente doppioni: se la stessa voce e' gia' stata aggiunta A MANO dal pannello, l'auto non la duplica
-    const push=(name,locked,extra)=>{if(!adds.some(a=>a.product===name)&&!prev.some(m=>!m.auto&&m.product===name))adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,priceLocked:!!locked,priceRequired:!locked,...(extra||{})})};
+    // UNA VOCE PER OCCORRENZA (bug Luca 06/08, screenshot "Tel. Rate CB" x2):
+    // la chiave era il NOME prodotto, quindi con la multi-vendita la seconda
+    // vendita gemella NON generava la sua voce — due telefoni a rate, UN solo
+    // "Telefono TNP (listino)". Ora ogni vendita spinge la SUA voce (autoKey=
+    // nome#n, n = occorrenza nell'ordine deterministico di colItems), ognuna
+    // coi dati (modello/prezzo/margine) della PROPRIA vendita.
+    const _occ={};
+    // niente doppioni con le voci MANUALI: ogni voce uguale aggiunta A MANO dal
+    // pannello copre UNA occorrenza auto (prima ne copriva tutte: stesso collasso)
+    const push=(name,locked,extra)=>{const n=(_occ[name]=(_occ[name]||0)+1);if(n<=prev.filter(m=>!m.auto&&m.product===name).length)return;adds.push({product:name,productId:"auto",price:0,qty:1,importo:null,margin:0,totalMargin:0,model:null,imei:null,venditore:selVend,negozio:selNeg,date:new Date().toISOString().split("T")[0],auto:true,autoFrom:brandLabel,autoKey:name+"#"+n,priceLocked:!!locked,priceRequired:!locked,...(extra||{})})};
     // TNP dal listino (Luca 05/08): la voce auto entrava nel carrello VUOTA
     // ("Telefono TNP (listino)" e basta) — ora porta modello, prezzo di
     // listino e margine %, e il prezzo popola il valore del carrello.
@@ -4640,8 +4648,20 @@ function CRM() {
       if(!skipTnpMarg&&tnp.some(t=>t&&t!=="no"&&t!=="—"&&t!=="-"))push("Telefono TNP (listino)",true,_tnpDaListino(det));
     }
     const kept=prev.filter(m=>!(m.auto&&m.autoFrom===brandLabel));
-    // preserva i prezzi già digitati sugli auto identici
-    const merged=adds.map(a=>{const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&m.product===a.product);return old?{...a,importo:a.importo!=null?a.importo:old.importo}:a});
+    // preserva i prezzi già digitati sugli auto identici — match per OCCORRENZA
+    // (autoKey); le voci di bozze vecchie senza autoKey valgono come occorrenza #1.
+    // GEMELLE (verifica 06/08): se le occorrenze di un nome CALANO (vendita
+    // eliminata), le superstiti vengono rinumerate e il match posizionale
+    // aggancerebbe il prezzo digitato della vendita SBAGLIATA — in quel caso
+    // per quel nome NIENTE eredità: prezzi freschi, si ridigitano.
+    const _contaNome=(list,pred)=>{const c={};list.forEach(m=>{if(pred(m))c[m.product]=(c[m.product]||0)+1;});return c;};
+    const _nOld=_contaNome(prev,m=>m.auto&&m.autoFrom===brandLabel);
+    const _nNew=_contaNome(adds,()=>true);
+    const merged=adds.map(a=>{
+      if((_nNew[a.product]||0)<(_nOld[a.product]||0))return a;   // calo: no eredità
+      const old=prev.find(m=>m.auto&&m.autoFrom===brandLabel&&(m.autoKey||m.product+"#1")===a.autoKey);
+      return old?{...a,importo:a.importo!=null?a.importo:old.importo}:a;
+    });
     return adds.length||kept.length!==prev.length?[...kept,...merged]:prev;
   };
   // Blocca il salvataggio se manca il prezzo di vendita: voci AUTO obbligatorie
