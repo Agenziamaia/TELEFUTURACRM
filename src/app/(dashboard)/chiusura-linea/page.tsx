@@ -563,6 +563,7 @@ export default function ChiusuraLineaPage() {
     const [fDal, setFDal] = useState("");
     const [fAl, setFAl] = useState("");
     const [fStati, setFStati] = useState<string[]>([]);   // [] = tutti gli stati
+    const [fMalus, setFMalus] = useState(false);           // tessera 💸: solo pratiche con malus maturato
     const [toast, setToast] = useState("");
     const msg = (m: string) => { setToast(m); setTimeout(() => setToast(""), 5000); };
 
@@ -676,9 +677,11 @@ export default function ChiusuraLineaPage() {
         return out;
     }, [visibili, q, fBrands, fNegozi, fUtenti, fDal, fAl]);
 
-    const filtrati = useMemo(
-        () => (fStati.length ? baseFiltrati.filter(t => fStati.includes(t.status)) : baseFiltrati),
-        [baseFiltrati, fStati]);
+    const filtrati = useMemo(() => {
+        let out = fStati.length ? baseFiltrati.filter(t => fStati.includes(t.status)) : baseFiltrati;
+        if (fMalus) out = out.filter(t => malusDisdetta(t) > 0);
+        return out;
+    }, [baseFiltrati, fStati, fMalus]);
 
     const conta = useMemo(() => ({
         tot: baseFiltrati.length,
@@ -687,6 +690,8 @@ export default function ChiusuraLineaPage() {
         da_verificare: baseFiltrati.filter(t => t.status === "da_verificare").length,
         gestita: baseFiltrati.filter(t => t.status === "gestita").length,
         conclusa: baseFiltrati.filter(t => t.status === "conclusa").length,
+        malusEur: baseFiltrati.reduce((s2, t) => s2 + malusDisdetta(t), 0),
+        malusN: baseFiltrati.filter(t => malusDisdetta(t) > 0).length,
     }), [baseFiltrati]);
 
     // tessere cliccabili stile Ordine Merce: "Tutte" azzera, "Gestite" e
@@ -695,7 +700,8 @@ export default function ChiusuraLineaPage() {
     const statClick = (key: string) => {
         const DEF = sonoDesignato ? ["in_attesa"] : ["in_attesa", "da_integrare", "da_verificare"];
         const ESCLUSIVE = ["gestita", "conclusa"];
-        if (key === "tutte") { setFStati([]); return; }
+        if (key === "malus") { setFMalus(v => !v); return; }
+        if (key === "tutte") { setFStati([]); setFMalus(false); return; }
         if (ESCLUSIVE.includes(key)) { setFStati(p => (p.length === 1 && p[0] === key) ? DEF : [key]); return; }
         setFStati(p => {
             const base = p.some(s => ESCLUSIVE.includes(s)) ? [] : [...p];
@@ -731,13 +737,16 @@ export default function ChiusuraLineaPage() {
     // tessere contatore (comuni alle due viste): contano su baseFiltrati, cosi'
     // le gestite nascoste dal preset non "spariscono" — restano a un click
     const tessere = (
-        <div className="grid grid-cols-2 xl:grid-cols-6 gap-3">
+        /* griglia FLUIDA (segnalazione 06/08): auto-fit invece delle colonne
+           fisse — con 7 tessere su schermi stretti andava tutto schiacciato */
+        <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(148px,1fr))]">
             {[
                 { key: "in_attesa", label: "In Attesa", icon: "⏳", val: conta.in_attesa, attiva: fStati.includes("in_attesa"), on: "border-amber-400/70 bg-amber-500/10", txt: "text-amber-400" },
                 { key: "da_integrare", label: "Da Integrare", icon: "⚠️", val: conta.da_integrare, attiva: fStati.includes("da_integrare"), on: "border-rose-400/70 bg-rose-500/10", txt: "text-rose-400" },
                 { key: "da_verificare", label: "Da Verificare", icon: "🔍", val: conta.da_verificare, attiva: fStati.includes("da_verificare"), on: "border-violet-400/70 bg-violet-500/10", txt: "text-violet-300" },
                 { key: "gestita", label: "Gestite", icon: "🕐", val: conta.gestita, attiva: fStati.includes("gestita"), on: "border-sky-400/70 bg-sky-500/10", txt: "text-sky-400" },
                 { key: "conclusa", label: "Concluse", icon: "✅", val: conta.conclusa, attiva: fStati.includes("conclusa"), on: "border-emerald-400/70 bg-emerald-500/10", txt: "text-emerald-400" },
+                { key: "malus", label: "Malus", icon: "💸", val: (Math.round(conta.malusEur * 100) / 100) + " €", attiva: fMalus, on: "border-orange-400/70 bg-orange-500/10", txt: "text-orange-400", sub: conta.malusN ? conta.malusN + (conta.malusN === 1 ? " pratica" : " pratiche") : "nessuna pratica" },
                 { key: "tutte", label: "Tutte", icon: "📋", val: conta.tot, attiva: fStati.length === 0, on: "border-indigo-400/70 bg-indigo-500/10", txt: "text-indigo-300" },
             ].map(s => (
                 <button key={s.key} type="button" onClick={() => statClick(s.key)}
@@ -749,6 +758,7 @@ export default function ChiusuraLineaPage() {
                         <span className="text-lg opacity-70">{s.icon}</span>
                     </div>
                     <div className={cn("text-2xl font-black mt-0.5", s.txt)}>{s.val}</div>
+                    {"sub" in s && s.sub ? <div className="text-[10px] text-slate-500 mt-0.5">{s.sub}</div> : null}
                 </button>
             ))}
         </div>
@@ -796,7 +806,7 @@ export default function ChiusuraLineaPage() {
                         {tessere}
                         <div className="glass-card overflow-hidden">
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left text-xs">
+                                <table className="w-full min-w-[680px] text-left text-xs">
                                     <thead>
                                         <tr className="bg-white/[0.02] text-slate-500 text-[10px] uppercase tracking-widest">
                                             <th className="px-4 py-3">ID / Invio</th>
@@ -812,7 +822,7 @@ export default function ChiusuraLineaPage() {
                                                 <td className="px-4 py-3"><div className="font-bold text-slate-100">{t.id}</div><div className="text-[10px] text-slate-500">{dmy(t.created_at)} · agg. {dmy(t.updated_at)}</div></td>
                                                 <td className="px-4 py-3"><div className="font-semibold text-slate-200">{nomeCliente(t)}</div><div className="text-[10px] text-slate-500">{t.brand} • {t.negozio || "—"} • {t.consulente}</div></td>
                                                 <td className="px-4 py-3"><TipoInvio t={t} /></td>
-                                                <td className="px-4 py-3 text-center"><StatusBadge status={t.status} /></td>
+                                                <td className="px-4 py-3 text-center"><StatusBadge status={t.status} />{malusDisdetta(t) > 0 && <div className="text-[10px] font-extrabold text-orange-400 mt-1">💸 malus {malusDisdetta(t)} €</div>}</td>
                                                 <td className="px-4 py-3 text-right">
                                                     <button onClick={() => setSel(t)} className="px-3 py-1.5 rounded-lg border border-indigo-400/60 text-indigo-300 text-[11px] font-bold hover:bg-indigo-500/10">Apri Ticket</button>
                                                 </td>
@@ -843,6 +853,7 @@ export default function ChiusuraLineaPage() {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-3 shrink-0">
+                                        {malusDisdetta(t) > 0 && <span className="text-[10px] font-extrabold text-orange-400">💸 {malusDisdetta(t)} €</span>}
                                         <StatusBadge status={t.status} />
                                         <button onClick={() => setSel(t)} className="px-3 py-1.5 rounded-lg border border-white/20 text-slate-300 text-[11px] font-bold hover:bg-white/5">Dettagli</button>
                                     </div>
