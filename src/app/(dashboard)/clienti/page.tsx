@@ -701,6 +701,31 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                     const fileCat = new Set<string>();
                                     perBrand.forEach((pm) => pm.forEach((fl) => fl.forEach((f) => fileCat.add(f.key))));
                                     const aperta = !!openCat[cat.id];
+                                    // card file riusabile (stesso markup in vista piatta e brand→mesi)
+                                    const cardFile = (f: DocFile, sub: string) => {
+                                        const isImmagine = /^image\//i.test(f.tipo || "") || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(f.nome || "");
+                                        const contenuto = (
+                                            <>
+                                                <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
+                                                <span className="flex-1 min-w-0">
+                                                    <span className="block text-xs text-slate-300 truncate">{f.nome}</span>
+                                                    {sub ? <span className="block text-[10px] text-slate-600 truncate">{sub}</span> : null}
+                                                </span>
+                                                <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
+                                            </>
+                                        );
+                                        const cls = "flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group text-left w-full";
+                                        return isImmagine
+                                            ? <button key={f.key} type="button" className={cls} onClick={() => setLightbox({ src: f.url, alt: f.nome })}>{contenuto}</button>
+                                            : <a key={f.key} href={f.url} target="_blank" rel="noreferrer" className={cls}>{contenuto}</a>;
+                                    };
+                                    // DOCUMENTI D'IDENTITÀ (Luca 08/08): niente livello brand né mesi —
+                                    // apri la categoria e vedi i file del cliente. Il brand distingue
+                                    // solo i CONTRATTI (le altre categorie tengono brand→mesi).
+                                    const catPiatta = cat.id === "documento";
+                                    const filePiatti = catPiatta
+                                        ? [...new Map([...perBrand.values()].flatMap((pm) => [...pm.values()].flat()).map((f) => [f.key, f])).values()]
+                                        : [];
                                     return (
                                         <div key={cat.id} className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden">
                                             <button type="button" onClick={() => setOpenCat((o) => ({ ...o, [cat.id]: !o[cat.id] }))}
@@ -712,7 +737,14 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 </span>
                                                 <span className="text-[10px] text-slate-600">{fileCat.size} file</span>
                                             </button>
-                                            {aperta && (
+                                            {aperta && catPiatta && (
+                                                <div className="px-3 pb-3">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {filePiatti.map((f) => cardFile(f, ""))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {aperta && !catPiatta && (
                                                 <div className="px-3 pb-3 space-y-2">
                                                     {[...perBrand.entries()].map(([brand, perMese]) => {
                                                         const bKey = cat.id + "|" + brand;
@@ -746,33 +778,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                                         )}
                                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                                                             {(perMese.get(meseAttivo) || []).map((f) => {
-                                                                                // Le immagini si aprono qui sopra invece che in una scheda nuova.
-                                                                                const isImmagine = /^image\//i.test(f.tipo || "")
-                                                                                    || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(f.nome || "");
-                                                                                const sub = f.pratiche.length === 0
+                                                                                const sub = (f.pratiche.length === 0
                                                                                     ? "contratto eliminato — documento conservato"
-                                                                                    : f.pratiche.length === 1 ? f.pratiche[0] : `su ${f.pratiche.length} pratiche della vendita`;
-                                                                                const contenuto = (
-                                                                                    <>
-                                                                                        <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
-                                                                                        <span className="flex-1 min-w-0">
-                                                                                            <span className="block text-xs text-slate-300 truncate">{f.nome}</span>
-                                                                                            <span className="block text-[10px] text-slate-600 truncate">{labelMeseDoc(meseAttivo)} · {sub}</span>
-                                                                                        </span>
-                                                                                        <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
-                                                                                    </>
-                                                                                );
-                                                                                const cls = "flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group text-left w-full";
-                                                                                return isImmagine ? (
-                                                                                    <button key={f.key} type="button" className={cls}
-                                                                                        onClick={() => setLightbox({ src: f.url, alt: f.nome })}>
-                                                                                        {contenuto}
-                                                                                    </button>
-                                                                                ) : (
-                                                                                    <a key={f.key} href={f.url} target="_blank" rel="noreferrer" className={cls}>
-                                                                                        {contenuto}
-                                                                                    </a>
-                                                                                );
+                                                                                    : f.pratiche.length === 1 ? f.pratiche[0] : `su ${f.pratiche.length} pratiche della vendita`);
+                                                                                return cardFile(f, `${labelMeseDoc(meseAttivo)} · ${sub}`);
                                                                             })}
                                                                         </div>
                                                                     </div>
@@ -1626,6 +1635,30 @@ export default function ClientiPage() {
             <div className="flex-1 overflow-y-auto p-4 md:p-8">
                 <div className="max-w-7xl mx-auto space-y-6">
 
+                    {/* PULSANTONI TIPO CLIENTE (Luca 08/08): sopra la ricerca, solo
+                        emoji — 👥 tutti · 👤 consumer · 🏢 business · 🌍 turisti.
+                        Il filtro Tipo esce dai Filtri Avanzati e vive qui. */}
+                    <div className="flex justify-center gap-3">
+                        {([
+                            { t: "tutti", emoji: "👥", titolo: "Tutti i clienti" },
+                            { t: "consumer", emoji: "👤", titolo: "Consumer" },
+                            { t: "business", emoji: "🏢", titolo: "Business" },
+                            { t: "turista", emoji: "🌍", titolo: "Turisti" },
+                        ] as const).map(({ t, emoji, titolo }) => (
+                            <button
+                                key={t}
+                                onClick={() => { setFilterTipo(t); setCurrentPage(1); }}
+                                title={titolo} aria-label={titolo}
+                                className={`w-16 h-16 rounded-2xl border flex items-center justify-center text-3xl transition-all ${filterTipo === t
+                                    ? "bg-violet-500/20 border-violet-500/50 shadow-lg shadow-violet-500/10 scale-105"
+                                    : "bg-white/5 border-white/10 grayscale opacity-60 hover:opacity-100 hover:grayscale-0"
+                                    }`}
+                            >
+                                {emoji}
+                            </button>
+                        ))}
+                    </div>
+
                     {/* TOP CONTROLS */}
                     <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
                         {/* Quick Search */}
@@ -1671,24 +1704,8 @@ export default function ClientiPage() {
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                {/* Tipo Cliente Toggle */}
-                                <div className="lg:col-span-4 flex flex-col gap-2 mb-2">
-                                    <span className="text-xs font-medium text-slate-400">Tipo Cliente</span>
-                                    <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 w-max">
-                                        {(["tutti", "consumer", "business", "turista"] as const).map((t) => (
-                                            <button
-                                                key={t}
-                                                onClick={() => { setFilterTipo(t); setCurrentPage(1); }}
-                                                className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition-all duration-200 ${filterTipo === t
-                                                    ? "bg-violet-500/20 text-violet-300 border border-violet-500/20 shadow-lg shadow-violet-500/5"
-                                                    : "text-slate-400 hover:text-white"
-                                                    }`}
-                                            >
-                                                {t === "turista" ? "🌍 turisti" : t}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
+                                {/* Il Tipo Cliente è ora nei pulsantoni emoji sopra la ricerca
+                                    (Luca 08/08) — qui restano solo i filtri per dato specifico. */}
 
                                 {/* Filtri "gestito da": due campi NORMALI come gli altri, multi-
                                     selezione nello stile unificato (Luca 30/07). */}
