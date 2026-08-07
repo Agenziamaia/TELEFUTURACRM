@@ -19,7 +19,7 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors,
+    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Presentation,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -119,6 +119,8 @@ export const NAVIGATION: NavEntry[] = [
     // Conto economico per punto vendita (cantiere 07/08): replica del foglio
     // 'Costi & Ricavi' — direzione; altri ruoli concedibili dalla matrice Permessi
     { type: "link", name: "Conto Economico", href: "/conto-economico", icon: Euro, roles: ADMINS },
+    // Deck builder riunioni (fase 0-1): archivio deck + renderer + Presenta
+    { type: "link", name: "Riunioni", href: "/riunioni", icon: Presentation, roles: ADMINS },
     {
         type: "hub",
         name: "Gare",
