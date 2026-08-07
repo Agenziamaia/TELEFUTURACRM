@@ -288,6 +288,13 @@ function ComunicazioniInner() {
     // ESITI cliccabili (Luca 31/07, mig. 116): risposte a scelta del creatore
     const [fEsiti, setFEsiti] = useState<string[]>([]);
     const [fEsitoNuovo, setFEsitoNuovo] = useState("");
+    // esiti EFFETTIVI = chips + l'eventuale testo ancora nell'input (mai
+    // scartare in silenzio quello che l'utente ha scritto — caso Luca 07/08:
+    // esito digitato senza Invio/+ → pubblicato con esiti null)
+    const esitiEffettivi = () => {
+        const v = fEsitoNuovo.trim();
+        return v && !fEsiti.includes(v) ? [...fEsiti, v] : fEsiti;
+    };
     const aggiungiEsito = () => {
         const v = fEsitoNuovo.trim();
         if (!v || fEsiti.includes(v)) { setFEsitoNuovo(""); return; }
@@ -410,7 +417,7 @@ function ComunicazioniInner() {
             target_stores: fTutti || !fNegozi.length ? null : fNegozi,
             target_users: fTutti || !idsTarget.length ? null : idsTarget,
             target_brands: fTutti || !fBrand.length ? null : fBrand,
-            esiti: fEsiti.length ? fEsiti : null,
+            esiti: esitiEffettivi().length ? esitiEffettivi() : null,
             created_by: user?.id || null,
             created_by_name: user?.name || null,
             date_display: dataDisplayOggi(),
@@ -969,6 +976,7 @@ function ComunicazioniInner() {
                                 <p className="text-[11px] text-slate-500 mt-1">Se li imposti, il destinatario risponde cliccandone uno (che vale come conferma) e tu vedi chi ha scelto cosa nel dettaglio ricevute.</p>
                                 <div className="flex gap-2 mt-2">
                                     <input value={fEsitoNuovo} onChange={(e) => setFEsitoNuovo(e.target.value)}
+                                        onBlur={aggiungiEsito}
                                         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); aggiungiEsito(); } }}
                                         className={inputStyle} placeholder="Scrivi un esito e premi Invio…" />
                                     <button type="button" onClick={aggiungiEsito}
@@ -1038,7 +1046,7 @@ function ComunicazioniInner() {
                                                 <div className="relative flex items-center justify-between gap-2 flex-wrap px-5 py-3.5 border-t border-white/10 bg-black/20">
                                                     <span className="px-2 py-1 rounded-lg text-[11px] text-slate-500">Più tardi</span>
                                                     <div className="flex items-center justify-end gap-2 flex-wrap">
-                                                        {fEsiti.length ? fEsiti.map((e) => (
+                                                        {esitiEffettivi().length ? esitiEffettivi().map((e) => (
                                                             <span key={e} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold">{e}</span>
                                                         )) : <span className="px-5 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold">✓ Ho letto e confermo</span>}
                                                     </div>
@@ -1067,9 +1075,9 @@ function ComunicazioniInner() {
                                                     <div className="flex-1 min-w-0">
                                                         <h3 className={cn(tg.titoloCard, "text-white")}>{tg.prefisso}{titolo}</h3>
                                                         <p className="text-sm text-slate-500">{firma}</p>
-                                                        {fEsiti.length > 0 && (
+                                                        {esitiEffettivi().length > 0 && (
                                                             <div className="flex items-center gap-2 flex-wrap mt-2">
-                                                                {fEsiti.map((e) => (
+                                                                {esitiEffettivi().map((e) => (
                                                                     <span key={e} className="px-3 py-1 rounded-full border border-sky-500/40 bg-sky-500/10 text-sky-200 text-xs font-bold">{e}</span>
                                                                 ))}
                                                             </div>
