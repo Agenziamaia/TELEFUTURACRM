@@ -146,6 +146,26 @@ export function MarginalitaView() {
         return { voci: items.length, withCost, linked: items.filter((i) => i.brand).length };
     }, [items]);
 
+    // Coefficiente BUNDLE Vodafone (Luca 07/08: «dev'essere legato al pannello
+    // amministrativo»): ce_parametri 'bundle_coeff_default' — a DB è una
+    // frazione (0.60), qui si amministra in %. Lo consuma Registra Vendita
+    // (margine della voce bundle = importo × coefficiente).
+    const [bundlePct, setBundlePct] = useState<string>("");
+    const [bundleSalvo, setBundleSalvo] = useState(false);
+    useEffect(() => {
+        supabase.from("ce_parametri").select("valore_num").eq("chiave", "bundle_coeff_default").is("month", null)
+            .then(({ data }) => { const v = data?.[0]?.valore_num; if (v != null) setBundlePct(String(Math.round(Number(v) * 10000) / 100).replace(".", ",")); });
+    }, []);
+    const salvaBundle = async () => {
+        const pct = Number(String(bundlePct).replace(",", "."));
+        if (!Number.isFinite(pct) || pct < 0 || pct > 100) { notify("Percentuale non valida: serve un numero tra 0 e 100", "error"); return; }
+        setBundleSalvo(true);
+        const { error } = await supabase.from("ce_parametri").update({ valore_num: pct / 100, updated_at: new Date().toISOString() })
+            .eq("chiave", "bundle_coeff_default").is("month", null);
+        if (!dbError("Salvataggio coefficiente bundle", error)) notify(`Coefficiente bundle: ${String(pct).replace(".", ",")}% — vale per le nuove vendite`, "ok");
+        setBundleSalvo(false);
+    };
+
     if (loading)
         return (
             <div className="flex justify-center py-16 text-slate-400">
@@ -177,6 +197,24 @@ export function MarginalitaView() {
                 <p className="text-xs text-slate-400 whitespace-nowrap">
                     {totali.voci} voci · {totali.withCost} con margine definito · {totali.linked} legate a brand
                 </p>
+            </div>
+
+            {/* Parametri trasversali (Luca 07/08): il coefficiente bundle si
+                amministra QUI, non a codice né via DB */}
+            <div className="glass-panel p-3.5 flex flex-wrap items-center gap-3">
+                <span className="text-sm font-bold text-white">🎁 Coefficiente bundle Vodafone</span>
+                <span className="text-xs text-slate-500 flex-1 min-w-[220px]">
+                    quota del valore del bundle che diventa marginalità: margine = importo del bundle × coefficiente
+                </span>
+                <div className="flex items-center gap-1.5">
+                    <input value={bundlePct} onChange={(e) => setBundlePct(e.target.value)}
+                        className="w-20 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-white text-right outline-none focus:border-indigo-400" />
+                    <span className="text-sm text-slate-400">%</span>
+                    <button onClick={salvaBundle} disabled={bundleSalvo}
+                        className="ml-1 px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white text-xs font-semibold">
+                        Salva
+                    </button>
+                </div>
             </div>
 
             {cats.map((c) => {

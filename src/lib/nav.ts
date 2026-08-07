@@ -116,9 +116,9 @@ export const NAVIGATION: NavEntry[] = [
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
     { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
     { type: "link", name: "Assistente AI", href: "/assistente", icon: Sparkles, roles: MANAGERS },
-    // Conto economico per punto vendita (cantiere 07/08): replica del foglio
-    // 'Costi & Ricavi' — direzione; altri ruoli concedibili dalla matrice Permessi
-    { type: "link", name: "Conto Economico", href: "/conto-economico", icon: Euro, roles: ADMINS },
+    // Conto economico per PV: sezione RIMOSSA su direttiva Luca 07/08 — si
+    // rifà da capo (grafica CRM) DOPO che avrà dato compensi/soglie/target/
+    // bonus/malus per operatore; le tabelle ce_* a DB restano dormienti.
     // Deck builder riunioni (fase 0-1): archivio deck + renderer + Presenta
     { type: "link", name: "Riunioni", href: "/riunioni", icon: Presentation, roles: ADMINS },
     {
