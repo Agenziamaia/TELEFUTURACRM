@@ -132,6 +132,16 @@ function fmtVal(v: unknown): string {
     if (v === null || v === undefined || v === "") return "—";
     if (typeof v === "boolean") return v ? "Si" : "No";
     if (typeof v === "object") return JSON.stringify(v);
+    // stringhe JSON di OPZIONI (contract::opzioni nelle richieste/riepiloghi):
+    // mai JSON grezzo a schermo, chi approva deve capire cosa cambia
+    if (typeof v === "string" && v.startsWith("[")) {
+        try {
+            const a = JSON.parse(v);
+            if (Array.isArray(a) && a.every((o) => o && typeof o === "object" && "nome" in o)) {
+                return a.length ? a.map((o: { nome?: string; quantita?: number | null }) => String(o.nome || "") + (o.quantita && Number(o.quantita) > 1 ? ` ×${o.quantita}` : "")).join(", ") : "—";
+            }
+        } catch { /* non era il JSON delle opzioni */ }
+    }
     return String(v);
 }
 
@@ -936,6 +946,9 @@ export default function RicercaContratto() {
             if (v !== null && typeof v === "object") return; // oggetti annidati: sola lettura
             vals[`dettagli::${k}`] = v == null ? "" : String(v);
         });
+        // OPZIONI contrattualizzate (Luca 07/08): jsonb → JSON canonico,
+        // l'editor dedicato vive in "Dati del contratto"
+        vals["contract::opzioni"] = JSON.stringify(Array.isArray(row.raw?.opzioni) ? row.raw.opzioni : []);
         setEditValues(vals);
         setReqNote("");
         setReqMsg(null);
@@ -949,6 +962,7 @@ export default function RicercaContratto() {
     const originalOf = (row: ContrattoRow, key: string): unknown => {
         const i = key.indexOf("::");
         const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract" && field === "opzioni") return JSON.stringify(Array.isArray(row.raw?.opzioni) ? row.raw.opzioni : []);
         if (scope === "contract") return row.raw?.[field];
         if (scope === "client") return row.client?.[field];
         return (row.raw?.dettagli as Record<string, unknown> | undefined)?.[field];
@@ -957,6 +971,7 @@ export default function RicercaContratto() {
     const labelOf = (key: string): string => {
         const i = key.indexOf("::");
         const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract" && field === "opzioni") return "Opzioni";
         if (scope === "contract") return CONTRACT_FIELDS.find(f => f.key === field)?.label || field;
         if (scope === "client") return (CLIENT_FIELDS.find(f => f.key === field)?.label || field) + " (cliente)";
         // RIC-03: la categoria fine viaggia come chiave dei dettagli ma nel
@@ -1103,11 +1118,26 @@ export default function RicercaContratto() {
         let detTouched = false;
         const storia: any[] = Array.isArray(c.storia) ? [...c.storia] : [];
         const stamp = new Date().toISOString();
+        const leggibiliOpz = (x: unknown): string => {
+            try { const a = JSON.parse(String(x || "[]")); return Array.isArray(a) && a.length ? a.map((o: { nome?: string; quantita?: number | null }) => String(o.nome || "") + (o.quantita && Number(o.quantita) > 1 ? " ×" + o.quantita : "")).join(", ") : "—"; } catch { return "—"; }
+        };
         Object.entries(changes || {}).forEach(([k, raw]) => {
             if (k.startsWith("__")) return;   // "__meta" = motivazione, non un campo
             const v = raw as { da: any; a: any; label?: string };
             const i = k.indexOf("::");
             const scope = k.slice(0, i), field = k.slice(i + 2);
+            if (scope === "contract" && field === "opzioni") {
+                // OPZIONI (Luca 07/08): viaggiano come JSON canonico → jsonb;
+                // si risincronizza anche la stringa dei dettagli (formato del
+                // Registra) e la storia resta leggibile, mai JSON grezzo
+                let arr: { nome: string; quantita: number | null }[] = [];
+                try { const px = JSON.parse(String(v.a || "[]")); if (Array.isArray(px)) arr = px; } catch { arr = []; }
+                contractPatch.opzioni = arr;
+                det["Opzioni"] = arr.map(o => o.nome + (o.quantita && Number(o.quantita) > 1 ? ` (${o.quantita})` : "")).join(", ");
+                detTouched = true;
+                storia.push({ at: stamp, user: firmaStoria, campo: "Opzioni", da: leggibiliOpz(v.da), a: leggibiliOpz(v.a) });
+                return;
+            }
             if (scope === "contract") contractPatch[field] = v.a === "" ? null : v.a;
             else if (scope === "client") clientPatch[field] = v.a === "" ? null : v.a;
             else if (scope === "dettagli") { det[field] = coerceLike(det[field], String(v.a)); detTouched = true; }
@@ -1839,7 +1869,10 @@ export default function RicercaContratto() {
                 // inserimento (sta nel box Dati contratto) e la categoria di
                 // catalogo (RIC-03: governata dalla tendina Categoria, mai piu'
                 // testo libero — un refuso rompeva il filtro della pagina).
-                const detEditable = det.filter(([k, v]) => k !== codInsKey && k !== "categoria_catalogo" && (v === null || typeof v !== "object"));
+                // le OPZIONI non sono un dettaglio: vivono in "Dati del contratto"
+                // (editor dedicato); "Offerta" e "menu_brand" sono doppioni di
+                // campi gia' governati altrove (Luca 07/08)
+                const detEditable = det.filter(([k, v]) => k !== codInsKey && k !== "categoria_catalogo" && k !== "Opzioni" && k !== "Offerta" && k !== "menu_brand" && (v === null || typeof v !== "object"));
                 const detReadonly = det.filter(([, v]) => v !== null && typeof v === "object");
                 // SOLO le richieste di QUESTO contratto (prima contava tutte le pendenti)
                 const pendingForThis = contractReqs.filter(r => r.status === "pending" && r.contract_id === row.id);
@@ -1906,6 +1939,16 @@ export default function RicercaContratto() {
                             const offs = catalogoModale.offByProd[v] || [];
                             if (next["contract::offerta"] && !offs.includes(next["contract::offerta"])) next["contract::offerta"] = "";
                         }
+                        // offerta cambiata (diretta o a cascata) → le opzioni non
+                        // le appartengono piu': si riparte pulite; ma se si RITORNA
+                        // all'offerta originale si riseminano quelle salvate (senza
+                        // questo, un giro categoria-e-ritorno svuotava le opzioni
+                        // in silenzio — verifica avversaria 07/08)
+                        if (next["contract::offerta"] !== prev["contract::offerta"]) {
+                            next["contract::opzioni"] = next["contract::offerta"] === String(row.raw?.offerta ?? "")
+                                ? JSON.stringify(Array.isArray(row.raw?.opzioni) ? row.raw.opzioni : [])
+                                : "[]";
+                        }
                         return next;
                     });
                 };
@@ -1959,6 +2002,88 @@ export default function RicercaContratto() {
                                     autoComplete="off" name={`f-${k}`} data-lpignore="true"
                                     onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))} />
                             )}
+                        </div>
+                    );
+                };
+
+                // ── OPZIONI CONTRATTUALIZZATE (Luca 07/08): editor in "Dati del
+                //    contratto" — le opzioni vanno in GARA, non sono un dettaglio.
+                //    Regole del Registra replicate: gruppo ¹ mutuamente esclusivo,
+                //    tetto condiviso Bundle+Accessori ≤ 3, quantità sui vincolati;
+                //    le opzioni salvate fuori catalogo restano visibili e rimovibili.
+                const _ropKasko = (n: string) => /kasko/i.test(n);
+                const _ropBundle = (n: string) => !_ropKasko(n) && /bundle/i.test(n);
+                const _ropAcc = (n: string) => !_ropKasko(n) && /accessori/i.test(n);
+                const MAX_OPZ_VINC = 3;
+                const opzSel = ((): { nome: string; quantita: number | null }[] => {
+                    try { const a = JSON.parse(editValues["contract::opzioni"] || "[]"); return Array.isArray(a) ? a : []; } catch { return []; }
+                })();
+                const opzWrite = (arr: { nome: string; quantita: number | null }[]) =>
+                    setEditValues(prev => ({ ...prev, ["contract::opzioni"]: JSON.stringify(arr) }));
+                const opzQta = (o: { quantita: number | null }) => Math.max(1, Number(o.quantita || 1));
+                const opzVinc = opzSel.filter(o => _ropBundle(o.nome) || _ropAcc(o.nome)).reduce((sm, o) => sm + opzQta(o), 0);
+                const renderOpzioni = () => {
+                    if (detailMode === "view" || isMarg) {
+                        const inRichiesta = pendingKeys.includes("contract::opzioni");
+                        return (
+                            <div className={cn("sm:col-span-2 lg:col-span-3", inRichiesta && "rounded-lg ring-2 ring-amber-400/60 bg-amber-400/10 px-2 py-1.5 -mx-2")}>
+                                <span className="text-[11px] uppercase tracking-wider text-slate-500">Opzioni{inRichiesta && <span className="ml-1.5 text-amber-300 font-bold normal-case">· modifica richiesta</span>}</span>
+                                <p className="text-white text-sm break-words">{fmtOpzioni(row.raw?.opzioni)}</p>
+                            </div>
+                        );
+                    }
+                    const off = editValues["contract::offerta"] || "";
+                    const meta = catalogoModale?.opzMetaByOff?.[off] || [];
+                    const fuoriCat = opzSel.filter(o => !meta.some(m => m.nome === o.nome)).map(o => ({ nome: o.nome, tipo: null as string | null, gruppo: null as string | null }));
+                    const tutte = [...meta, ...fuoriCat];
+                    const changed = editValues["contract::opzioni"] !== String(originalOf(row, "contract::opzioni") ?? "[]");
+                    const toggle = (m: { nome: string; tipo: string | null; gruppo: string | null }) => {
+                        const on = opzSel.some(o => o.nome === m.nome);
+                        if (on) { opzWrite(opzSel.filter(o => o.nome !== m.nome)); return; }
+                        if ((_ropBundle(m.nome) || _ropAcc(m.nome)) && opzVinc >= MAX_OPZ_VINC) return;
+                        let next = opzSel;
+                        if (m.gruppo) { const stesse = new Set(tutte.filter(x => x.gruppo === m.gruppo).map(x => x.nome)); next = next.filter(o => !stesse.has(o.nome)); }
+                        opzWrite([...next, { nome: m.nome, quantita: (m.tipo === "numero" || _ropBundle(m.nome) || _ropAcc(m.nome)) ? 1 : null }]);
+                    };
+                    const setQta = (nome: string, q: number) => {
+                        const cur = opzSel.find(o => o.nome === nome); if (!cur) return;
+                        let n = Math.max(1, q || 1);
+                        if (_ropBundle(nome) || _ropAcc(nome)) { const altre = opzVinc - opzQta(cur); n = Math.max(1, Math.min(n, MAX_OPZ_VINC - altre)); }
+                        opzWrite(opzSel.map(o => o.nome === nome ? { ...o, quantita: n } : o));
+                    };
+                    const haVinc = tutte.some(m => _ropBundle(m.nome) || _ropAcc(m.nome));
+                    return (
+                        <div className={cn("sm:col-span-2 lg:col-span-3", changed && "rounded-lg ring-1 ring-amber-400/50 bg-amber-400/5 p-2 -m-2")}>
+                            <span className="text-[11px] uppercase tracking-wider text-slate-500">
+                                Opzioni{haVinc && <span className={cn("normal-case font-bold ml-1.5", opzVinc >= MAX_OPZ_VINC ? "text-amber-300" : "text-slate-500")}>Bundle+Accessori: {opzVinc}/{MAX_OPZ_VINC}</span>}
+                            </span>
+                            {tutte.length === 0 ? (
+                                <p className="text-xs text-slate-500 mt-1">{off ? "L'offerta non ha opzioni a catalogo." : "Scegli prima l'offerta: le opzioni arrivano dal catalogo."}</p>
+                            ) : (
+                                <div className="flex flex-wrap gap-2 mt-1.5">
+                                    {tutte.map(m => {
+                                        const sel = opzSel.find(o => o.nome === m.nome);
+                                        const bloccata = !sel && (_ropBundle(m.nome) || _ropAcc(m.nome)) && opzVinc >= MAX_OPZ_VINC;
+                                        return (
+                                            <span key={m.nome} className="inline-flex items-center gap-1.5">
+                                                <button type="button" onClick={() => toggle(m)} disabled={bloccata}
+                                                    title={bloccata ? `Massimo ${MAX_OPZ_VINC} elementi tra Bundle e Accessori` : undefined}
+                                                    className={cn("px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors",
+                                                        sel ? "border-indigo-400/70 bg-indigo-500/20 text-white" : "border-white/15 bg-white/5 text-slate-400 hover:bg-white/10",
+                                                        bloccata && "opacity-35 cursor-not-allowed")}>
+                                                    {sel ? "✓ " : ""}{m.nome}{m.gruppo ? " ¹" : ""}
+                                                </button>
+                                                {sel && sel.quantita != null && (
+                                                    <input type="number" min={1} value={opzQta(sel)}
+                                                        onChange={e => setQta(m.nome, parseInt(e.target.value || "1", 10) || 1)}
+                                                        className="w-14 glass-input text-xs text-right" />
+                                                )}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            <p className="text-[10px] text-slate-600 mt-1.5">Le opzioni vanno in gara e nei compensi. Le voci di marginalità già nate dalla vendita (es. bundle) NON si ricalcolano da qui.</p>
                         </div>
                     );
                 };
@@ -2083,12 +2208,17 @@ export default function RicercaContratto() {
                                                     ? renderField("dettagli::categoria_catalogo", "Categoria")
                                                     : renderField("contract::" + f.key, f.label, f.kind)
                                             ))}
-                                            {/* RIC-03: opzioni della vendita (jsonb dal catalogo) in sola
-                                                lettura — prima non comparivano da nessuna parte. */}
-                                            <div>
-                                                <span className="text-[11px] uppercase tracking-wider text-slate-500">Opzioni</span>
-                                                <p className="text-white text-sm break-words">{fmtOpzioni(row.raw?.opzioni)}</p>
-                                            </div>
+                                            {/* OPZIONI (Luca 07/08): parte integrante del contratto —
+                                                editor a chips col catalogo dell'offerta, quantita' e
+                                                tetto Bundle+Accessori come nel Registra. */}
+                                            {renderOpzioni()}
+                                        </div>)}
+
+                                    {SectionC("campi", "🧾", "Campi vendita",
+                                        detEditable.length ? `${detEditable.length} campi` : "nessun campo",
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {detEditable.length === 0 && <p className="text-sm text-slate-500 sm:col-span-2 lg:col-span-3">Nessun campo vendita su questa pratica.</p>}
+                                            {detEditable.map(([k]) => renderField("dettagli::" + k, k))}
                                         </div>)}
 
                                     {SectionC("allegati", "📎", "Allegati",
@@ -2155,7 +2285,7 @@ export default function RicercaContratto() {
                                             {/* Segnalazione 67/71: codice inserimento modificabile a
                                                 tendina (chiave nei dettagli, varia per brand). */}
                                             {renderField("dettagli::" + codInsKey, "Codice inserimento")}
-                                            {detEditable.map(([k]) => renderField("dettagli::" + k, k))}
+                                            {/* i CAMPI VENDITA sono nella sezione 🧾 dedicata (Luca 07/08) */}
                                             {detReadonly.map(([k, v]) => (
                                                 <div key={k} className="sm:col-span-2 lg:col-span-3">
                                                     <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>

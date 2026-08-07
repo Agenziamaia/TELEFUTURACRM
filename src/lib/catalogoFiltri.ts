@@ -29,6 +29,9 @@ export type CatFiltro = {
     offsByCat: Record<string, string[]>;
     /** opzioni per NOME offerta */
     opzByOff: Record<string, string[]>;
+    /** opzioni COMPLETE per NOME offerta (nome, tipo, gruppo esclusivo) —
+     *  servono all'editor opzioni del modale di Ricerca Vendite (Luca 07/08) */
+    opzMetaByOff: Record<string, { nome: string; tipo: string | null; gruppo: string | null }[]>;
 };
 
 export type MargArticolo = { name: string; kind: string };
@@ -77,14 +80,20 @@ export async function loadCatalogoBrand(slug: string, opts?: { fresh?: boolean }
         const ro = await supabase.from("catalog_offerte").select("id, prodotto_id, nome").in("prodotto_id", prods.map((x) => x.id));
         offs = (ro.data ?? []) as { id: string; prodotto_id: string; nome: string }[];
         if (offs.length) {
-            const rz = await supabase.from("catalog_opzioni").select("offerta_id, nome").in("offerta_id", offs.map((o) => o.id));
-            opzs = (rz.data ?? []) as { offerta_id: string; nome: string }[];
+            const rz = await supabase.from("catalog_opzioni").select("offerta_id, nome, tipo, gruppo_singolo, ordine").order("ordine").in("offerta_id", offs.map((o) => o.id));
+            opzs = (rz.data ?? []) as { offerta_id: string; nome: string; tipo?: string | null; gruppo_singolo?: string | null }[];
         }
     }
     // opzioni per NOME offerta (la stessa offerta può vivere in più categorie)
     const offNomeById: Record<string, string> = {}; offs.forEach((o) => { offNomeById[o.id] = o.nome; });
     const opzByOff: Record<string, string[]> = {};
-    opzs.forEach((z) => { const on = offNomeById[z.offerta_id]; if (!on) return; (opzByOff[on] = opzByOff[on] || []).push(z.nome); });
+    const opzMetaByOff: CatFiltro["opzMetaByOff"] = {};
+    opzs.forEach((z) => {
+        const on = offNomeById[z.offerta_id]; if (!on) return;
+        (opzByOff[on] = opzByOff[on] || []).push(z.nome);
+        const meta = (opzMetaByOff[on] = opzMetaByOff[on] || []);
+        if (!meta.some((m) => m.nome === z.nome)) meta.push({ nome: z.nome, tipo: (z as { tipo?: string | null }).tipo ?? null, gruppo: (z as { gruppo_singolo?: string | null }).gruppo_singolo ?? null });
+    });
     Object.keys(opzByOff).forEach((k) => { opzByOff[k] = Array.from(new Set(opzByOff[k])).sort(); });
     const nomeById: Record<string, string> = {}; prods.forEach((x) => { nomeById[x.id] = x.nome; });
     const offByProd: Record<string, string[]> = {};
@@ -100,7 +109,7 @@ export async function loadCatalogoBrand(slug: string, opts?: { fresh?: boolean }
         const ids = new Set(suoiProds.map((p) => p.id));
         offsByCat[c.nome] = Array.from(new Set(offs.filter((o) => ids.has(o.prodotto_id)).map((o) => o.nome))).sort();
     });
-    const t: CatFiltro = { slug, prodNames: Array.from(new Set(prods.map((x) => x.nome))).sort(), offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat, offsByCat, opzByOff };
+    const t: CatFiltro = { slug, prodNames: Array.from(new Set(prods.map((x) => x.nome))).sort(), offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat, offsByCat, opzByOff, opzMetaByOff };
     _catFiltro[slug] = t;
     return t;
 }
