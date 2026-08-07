@@ -16,6 +16,7 @@ import {
   listDirectory, addParticipants, removeParticipant, searchMyMessages,
 } from "@/lib/chat";
 import type { ChatMessage, ChatSearchHit, DirUser } from "@/lib/chat";
+import { leggiAllegatiBozza, salvaAllegatiBozza, cancellaAllegatiBozza, pulisciBozzeAllegatiVecchie } from "@/lib/chatAllegatiBozza";
 import { roleLabel, seesAllStores, seesWholeStore } from "@/lib/roles";
 import { usePresence } from "@/context/PresenceContext";
 import { NewChatModal } from "./_components/NewChatModal";
@@ -463,12 +464,27 @@ function ChatPageInner() {
   };
   const convCorrente = useRef<string | null>(null);
   const bozzaAppenaCaricata = useRef(false);
+  const allegatiAppenaCaricati = useRef(false);
   useEffect(() => {   // cambio conversazione: carica la bozza della nuova
     if (convCorrente.current === selId) return;
     convCorrente.current = selId;
     bozzaAppenaCaricata.current = true;
     setReplyTo(null);           // una citazione non puo' seguire in un'altra chat
     setText(selId ? (leggiBozze()[selId] || "") : "");
+    // ALLEGATI della bozza (Luca 07/08: "se avevo messo allegati me li
+    // cancella"): azzera quelli della chat precedente (non devono migrare di
+    // conversazione) e ricarica da IndexedDB quelli della nuova — con guardia
+    // anti-race sul selId al ritorno della promise
+    allegatiAppenaCaricati.current = true;
+    setFiles([]);
+    if (selId && meId) {
+      const perConv = selId;
+      leggiAllegatiBozza(String(meId), perConv).then((f) => {
+        if (convCorrente.current !== perConv || !f.length) return;
+        allegatiAppenaCaricati.current = true;
+        setFiles(f);
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selId]);
   useEffect(() => {   // write-through: ogni tasto aggiorna la bozza della chat corrente
@@ -481,6 +497,15 @@ function ChatPageInner() {
     } catch { /* storage negato: la bozza vive solo in pagina */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, selId, bozzeKey, editMsg]);
+  useEffect(() => {   // write-through ALLEGATI (speculare al testo; copre input, drop, paste, screenshot, QR)
+    if (allegatiAppenaCaricati.current) { allegatiAppenaCaricati.current = false; return; }
+    if (!meId || !selId || convCorrente.current !== selId) return;
+    const perConv = selId;
+    if ((files as File[]).length) salvaAllegatiBozza(String(meId), perConv, files as File[]);
+    else cancellaAllegatiBozza(String(meId), perConv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files, selId, meId]);
+  useEffect(() => { if (meId) pulisciBozzeAllegatiVecchie(String(meId)); }, [meId]);
   useEffect(() => {   // memoria dell'ultima chat aperta
     if (selId && meId) { try { localStorage.setItem(`tf_chat_ultima_${meId}`, String(selId)); } catch { } }
   }, [selId, meId]);
@@ -628,6 +653,7 @@ function ChatPageInner() {
     try {
       await sendMessage(selId, meId, text.trim(), files, refs, replyTo?.id ?? null);
       setText(""); setFiles([]); setRefs([]); setMention(null); setMentionRows([]); setReplyTo(null);
+      if (meId && selId) cancellaAllegatiBozza(String(meId), selId);
       await reloadMessages(selId);
     }
     catch (e) { console.error("chat send failed", e); alert("Invio non riuscito: " + (e?.message || e)); }
