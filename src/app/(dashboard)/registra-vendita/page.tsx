@@ -3200,6 +3200,33 @@ const mobiliAgganciabili=(cats,sales,cart,brandId)=>{
   const visti=new Set();
   return out.filter(m=>{const k=m.codice+"|"+m.numero;if(visti.has(k))return false;visti.add(k);return true;});
 };
+// ── BUNDLE / ACCESSORI / KASKO (Luca 07/08, segnalazione collaboratore) ────
+// Tetto CONDIVISO: (somma quantità Bundle) + (quantità Accessori) ≤ 3 — al
+// raggiungimento il 4° elemento si blocca. Il Kasko è FUORI dal tetto.
+// Ogni unità genera il suo campo nei Dati Contratto: "Codice bundle N" /
+// "Imei Accessorio N" / "Seriale Kasko" (obbligatori, numerazione progressiva).
+const MAX_BUNDLE_ACC=3;
+const _opzKasko=(n)=>/kasko/i.test(n);
+const _opzBundle=(n)=>!_opzKasko(n)&&/bundle/i.test(n);
+const _opzAccessorio=(n)=>!_opzKasko(n)&&/accessori/i.test(n);
+const _qtaOpz=(v)=>v===true?1:Math.max(1,parseInt(v,10)||1);
+const contaVincolate=(opz)=>{let t=0;Object.keys(opz||{}).forEach(k=>{if(!opz[k])return;if(_opzBundle(k)||_opzAccessorio(k))t+=_qtaOpz(opz[k]);});return t;};
+const campiDinamiciOpzioni=(opz)=>{
+  const out=[];let nB=0,nA=0,kasko=false;
+  Object.keys(opz||{}).forEach(k=>{
+    if(!opz[k])return;
+    if(_opzKasko(k)){kasko=true;return;}
+    if(_opzBundle(k))nB+=_qtaOpz(opz[k]);
+    else if(_opzAccessorio(k))nA+=_qtaOpz(opz[k]);
+  });
+  for(let i=1;i<=nB;i++)out.push({nome:"Codice bundle "+i,tipo:"testo",nota:"",conferma:false});
+  for(let i=1;i<=nA;i++)out.push({nome:"Imei Accessorio "+i,tipo:"testo",nota:"",conferma:false});
+  if(kasko)out.push({nome:"Seriale Kasko",tipo:"testo",nota:"",conferma:false});
+  return out;
+};
+// campi base + dinamici, senza doppioni (una regola a DB potrebbe già definirli)
+const campiConOpzioni=(base,opz)=>{const noti=new Set(base.map(c=>c.nome));return [...base,...campiDinamiciOpzioni(opz).filter(c=>!noti.has(c.nome))];};
+
 const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
   const f=sd.fields||{};
   const off=f["Offerta"]||"";
@@ -3211,10 +3238,15 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
   const pickOff=(v)=>{setF("Offerta",v);setF("__opzioni",{});};
   const togOpz=(o)=>{const cur=!!opz[o.nome];const next={...opz};
     if(cur){delete next[o.nome];}
-    else{if(o.gruppo){(offSel?offSel.opzioni:[]).forEach(x=>{if(x.gruppo===o.gruppo)delete next[x.nome];});}
+    else{
+      // TETTO 3 condiviso Bundle+Accessori (il Kasko non conta)
+      if((_opzBundle(o.nome)||_opzAccessorio(o.nome))&&contaVincolate(opz)>=MAX_BUNDLE_ACC)return;
+      if(o.gruppo){(offSel?offSel.opzioni:[]).forEach(x=>{if(x.gruppo===o.gruppo)delete next[x.nome];});}
       next[o.nome]=o.tipo==="numero"?1:true;}
     setF("__opzioni",next);};
-  const campi=risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,off,attive);
+  const _vinc=contaVincolate(opz);
+  const _haVincolabili=(offSel?offSel.opzioni:[]).some(o=>_opzBundle(o.nome)||_opzAccessorio(o.nome));
+  const campi=campiConOpzioni(risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,off,attive),opz);
   // RV-05: la tendina "Operatore GNP" si lega a f["GNP"] SOLO se tra i campi c'e'
   // davvero il campo GNP Si'/No (fisso VFB, mig. 152); quando arriva dall'OPZIONE
   // GNP del catalogo (W3/VF/FW/Sky) deve comparire sempre ed essere obbligatoria.
@@ -3234,12 +3266,16 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
     )}
     {offSel&&offSel.opzioni.length>0&&(
       <div style={{marginTop:10}}>
-        <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Opzioni <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{offSel.opzioni.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span></div>
+        <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Opzioni <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(facoltative{offSel.opzioni.some(o=>o.gruppo)?" · ¹ una sola per gruppo":""})</span>{_haVincolabili&&<span style={{fontWeight:700,color:_vinc>=MAX_BUNDLE_ACC?"var(--tf-fbbf24)":"var(--tf-64748b)",marginLeft:8}}>Bundle+Accessori: {_vinc}/{MAX_BUNDLE_ACC}</span>}</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {offSel.opzioni.map(o=>{const on=!!opz[o.nome];return(
+          {offSel.opzioni.map(o=>{const on=!!opz[o.nome];
+            const bloccata=!on&&(_opzBundle(o.nome)||_opzAccessorio(o.nome))&&_vinc>=MAX_BUNDLE_ACC;
+            return(
             <span key={o.nome} style={{display:"inline-flex",alignItems:"center",gap:6}}>
-              <button onClick={()=>togOpz(o)} className={on?"opz-on":undefined} style={{padding:"6px 12px",borderRadius:999,cursor:"pointer",border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
-              {on&&o.tipo==="numero"&&<input type="number" min="1" value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{const q=Math.max(1,parseInt(e.target.value||"1",10)||1);setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",fontSize:12,background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>}
+              <button onClick={()=>togOpz(o)} disabled={bloccata} title={bloccata?"Massimo "+MAX_BUNDLE_ACC+" elementi tra Bundle e Accessori":undefined} className={on?"opz-on":undefined} style={{padding:"6px 12px",borderRadius:999,cursor:bloccata?"not-allowed":"pointer",opacity:bloccata?0.35:1,border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
+              {on&&o.tipo==="numero"&&<input type="number" min="1" max={(_opzBundle(o.nome)||_opzAccessorio(o.nome))?(MAX_BUNDLE_ACC-(_vinc-_qtaOpz(opz[o.nome]))):undefined} value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{let q=Math.max(1,parseInt(e.target.value||"1",10)||1);
+                if(_opzBundle(o.nome)||_opzAccessorio(o.nome)){const altre=_vinc-_qtaOpz(opz[o.nome]);q=Math.max(1,Math.min(q,MAX_BUNDLE_ACC-altre));}
+                setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",fontSize:12,background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>}
             </span>);})}
         </div>
       </div>
@@ -3308,7 +3344,7 @@ const subComplete=(sub,d)=>{
     if((sub.catOfferte||[]).length&&!_NE(f["Offerta"]))return false;
     const _opz=f.__opzioni||{};
     const _att=Object.keys(_opz).filter(k=>_opz[k]);
-    const _campi=risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,f["Offerta"]||"",_att);
+    const _campi=campiConOpzioni(risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,f["Offerta"]||"",_att),_opz);
     for(const cmp of _campi){
       if(cmp.nome==="Codice Inserimento"){if(!_NE(f[cmp.nome])&&!_NE(_sesRef.v))return false;}
       else if(/^operatore gnp$/i.test(cmp.nome)){
@@ -4533,7 +4569,7 @@ function CRM() {
       if(attive.length)det["Opzioni"]=attive.map(k=>opz[k]===true?k:k+" ("+opz[k]+")").join(", ");
       if(/\bMNP\b/i.test(sub.catProdotto))det["MNP"]="Sì";
       if(sub.catCategoria==="Telefono a Rate")det["Tipo TNP"]=/finanziato/i.test(sub.catProdotto)?"Finanziamento":"Rata";
-      risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,f["Offerta"]||"",attive).forEach(cmp=>{
+      campiConOpzioni(risolviCampi(sub.catBrand,sub.catTipo,sub.catCategoria,sub.catProdotto,f["Offerta"]||"",attive),opz).forEach(cmp=>{
         const raw=f[cmp.nome];
         if(cmp.nome==="Codice Inserimento")det["Cod.Ins."]=raw||sesCode||"";
         else if(cmp.nome==="Seriale SIM (ICCID)")det["ICCID"]=raw||"";
@@ -6063,7 +6099,7 @@ select.rvIn{cursor:pointer}
                 S4 e Dojo (i tondi) restano com'erano; Kipoint renderizza più
                 basso perché il suo file è già tutto contenuto. */}
             {(()=>{const tondo=b.id==="energy"||b.id==="dojo";
-              const ZOOM={windtre:2.2,tim:2.2,kena:2.2,fastweb:1.9,vodafone:1.7,sky:1.5,iliad:1.14,very:1.14,ho:1.14,kipoint:1};
+              const ZOOM={windtre:2.0,tim:2.2,kena:2.2,fastweb:1.9,vodafone:1.7,sky:1.35,iliad:1.14,very:1.14,ho:1.14,kipoint:1};
               const z=ZOOM[b.id]??1.14;
               const hh=b.id==="kipoint"?58:(tondo?84:88);
               return(
