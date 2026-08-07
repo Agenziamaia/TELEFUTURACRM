@@ -393,8 +393,18 @@ function DettaglioTicket({ t, direzione, puoInviare, onClose, onAggiornata, msg 
 
     const rigetta = async () => {
         if (!motivo.trim()) { msg("⚠️ Scrivi la motivazione del rigetto"); return; }
-        await transizione({ status: "da_integrare", feedback_admin: motivo.trim() },
+        const ok = await transizione({ status: "da_integrare", feedback_admin: motivo.trim() },
             { quando: new Date().toISOString(), tipo: "rigetto", testo: `Disdetta bloccata dalla Direzione (Motivo: ${motivo.trim()})` });
+        // BUG segnalato dal dir. commerciale (07/08): il rigetto NON spegneva la
+        // task ⚡ del designato — la direzione la sua parte l'ha fatta, la palla
+        // passa al consulente; al reintegro parte una task nuova.
+        if (ok) {
+            try {
+                await supabase.from("admin_tasks")
+                    .update({ done: true, done_by: user?.name || "—", done_at: new Date().toISOString() })
+                    .eq("tipo", "chiusura_linea").eq("done", false).eq("link", `/chiusura-linea?ds=${t.id}`);
+            } catch { /* al peggio si chiude a mano dal fulmine */ }
+        }
     };
 
     const reintegra = async () => {
