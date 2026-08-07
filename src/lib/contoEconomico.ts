@@ -189,8 +189,13 @@ export async function computeContoEconomico(mese: string, opts?: { dettagli?: bo
                 if (bundle) margine = importoRaw * bundleCoeff;
                 else {
                     const regime = regimeVoce(String(det["product"] ?? c.prodotto ?? ""), pannello);
-                    if (regime) margine = margineUnitario(regime, price || (qty ? importoRaw / qty : 0)) * qty;
-                    else if (importoRaw) senzaRegime.add(String(det["product"] ?? c.prodotto ?? "?"));
+                    // prezzo UNITARIO: dettagli.price può contenere il TOTALE
+                    // (RV lo valorizza con l'importo digitato) — si divide per qty,
+                    // così pct/cost non vengono moltiplicati due volte
+                    if (regime) {
+                        const unit = qty > 0 ? importoRaw / qty : (price || 0);
+                        margine = margineUnitario(regime, unit) * qty;
+                    } else if (importoRaw) senzaRegime.add(String(det["product"] ?? c.prodotto ?? "?"));
                 }
             }
             if (acc) {
