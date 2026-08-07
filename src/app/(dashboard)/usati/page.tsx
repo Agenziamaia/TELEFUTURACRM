@@ -1821,10 +1821,13 @@ function GestioneUsatiInner() {
   const ricambiDaPrezzare = useCallback((d: Device) =>
     d.ricambi.some(r => !r.cost || r.cost <= 0) && !["venduto", "ko"].includes(d.status), []);
   const passaFiltri = useCallback((d: Device, conStato = true) => {
-    // nelle fasi di lavorazione il telefono e' del LABORATORIO, non di un
-    // negozio (Luca 01/08 sera): il filtro negozi non lo vincola — entra ed
-    // esce solo con gli stati (chip o "Mostra magazzino")
-    if (!inLaboratorio(d) && !selectedStores.includes(d.store)) return false;
+    // nelle fasi di lavorazione il telefono e' del LABORATORIO — ma il bypass
+    // del filtro negozi vale SOLO per chi il laboratorio lo lavora davvero
+    // (fix Luca 07/08: a uno store manager la tessera "Totale" sommava i
+    // telefoni in transito/lavorazione di TUTTA la rete); per gli altri il
+    // telefono resta intestato al negozio di ORIGINE e segue il perimetro —
+    // per il globale c'e' "Mostra tutti"
+    if (!(inLaboratorio(d) && lavoraLabMain) && !selectedStores.includes(d.store)) return false;
     // vista amministrazione "ricambi da prezzare": ignora il filtro stato
     // (quei telefoni stanno in laboratorio) e mostra solo chi ha ricambi
     // senza prezzo (Luca 01/08)
