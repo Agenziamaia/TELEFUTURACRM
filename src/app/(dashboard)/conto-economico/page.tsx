@@ -27,7 +27,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, CE_SECTION, CAP_CE_GESTISCE } from "@/lib/capabilities";
 import { computeContoEconomico, CE_VOCI_STRUTTURA, type CeDataset, type CeNegozio, type CeVoceStruttura } from "@/lib/contoEconomico";
-import { Loader2, Pencil, ChevronLeft, ChevronRight, X, Copy } from "lucide-react";
+import { SelectOpzioni } from "@/components/SelectPersona";
+import { Loader2, Pencil, ChevronLeft, ChevronRight, X, Copy, Trash2, BadgeEuro } from "lucide-react";
 
 const BG = "var(--tf-0d1424)";     // fondo tabella e celle sticky (bianco sul tema chiaro)
 const BG2 = "var(--tf-0e1526)";    // fondo overlay/dettaglio
@@ -64,12 +65,150 @@ function CellaNum({ v, forte, colore }: { v: number; forte?: boolean; colore?: b
     return <td className={`px-2 py-1.5 text-right tabular-nums whitespace-nowrap ${forte ? "font-bold " : ""}${cls}`}>{fmt(v)}</td>;
 }
 
+// etichette brand come le scrive contracts.brand (per il listino compensi).
+// NIENTE Kipoint: i suoi € vivono nella voce marginalità generata alla vendita
+// (una regola compenso lo conterebbe DUE volte — verifica avversaria F4/F5).
+const BRAND_ETICHETTE = ["WindTre", "Vodafone", "Sky", "Fastweb", "Iliad", "S4", "TIM", "Very Mobile", "Ho. Mobile", "Kena Mobile", "Dojo"] as const;
+type CompensoRiga = {
+    id: string; brand: string; tipo_cliente: string | null; categoria: string | null;
+    prodotto: string | null; offerta: string | null; opzione: string | null;
+    compenso: number; regime: string; mese_da: string | null; mese_a: string | null;
+    attivo: boolean; note: string | null;
+};
+
 function RigaSezione({ label, cls, negozi }: { label: string; cls: string; negozi: CeNegozio[] }) {
     return (
         <tr className={cls + " text-xs uppercase tracking-wide"}>
             <td className="px-3 py-1 font-bold sticky left-0 z-10" style={{ background: BG }}>{label}</td>
             <td colSpan={negozi.length + 1} />
         </tr>
+    );
+}
+
+/** Listino compensi brand (mig. 189): CRUD della direzione. Match gerarchico:
+ *  la riga più specifica vince; i campi vuoti valgono "qualsiasi". */
+function CompensiModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+    const [righe, setRighe] = useState<CompensoRiga[]>([]);
+    const [caricamento, setCaricamento] = useState(true);
+    const [err, setErr] = useState<string | null>(null);
+    const [fBrand, setFBrand] = useState("");
+    const vuota = { brand: "", tipo_cliente: "", categoria: "", prodotto: "", offerta: "", opzione: "", compenso: "", mese_da: "", mese_a: "", note: "" };
+    const [nuova, setNuova] = useState({ ...vuota });
+    const [salvo, setSalvo] = useState(false);
+
+    const ricarica = useCallback(async () => {
+        setCaricamento(true);
+        const { data, error } = await supabase.from("ce_compensi_brand").select("*")
+            .order("brand").order("created_at", { ascending: false });
+        if (error) setErr(error.message);
+        setRighe((data as CompensoRiga[]) || []);
+        setCaricamento(false);
+    }, []);
+    useEffect(() => { ricarica(); }, [ricarica]);
+
+    const aggiungi = async () => {
+        if (!nuova.brand.trim() || !nuova.compenso.trim()) { setErr("Brand e compenso sono obbligatori."); return; }
+        const valore = parseImporto(nuova.compenso);
+        // niente "zero silenzioso": un compenso illeggibile o nullo non diventa una regola a 0 €
+        if (!(valore > 0)) { setErr(`Compenso non valido: "${nuova.compenso}" — scrivi un numero maggiore di zero (es. 110 o 7,10).`); return; }
+        setSalvo(true); setErr(null);
+        const pulisci = (s: string) => (s.trim() ? s.trim() : null);
+        const { error } = await supabase.from("ce_compensi_brand").insert({
+            brand: nuova.brand.trim(),
+            tipo_cliente: pulisci(nuova.tipo_cliente), categoria: pulisci(nuova.categoria),
+            prodotto: pulisci(nuova.prodotto), offerta: pulisci(nuova.offerta), opzione: pulisci(nuova.opzione),
+            compenso: valore,
+            mese_da: nuova.mese_da ? `${nuova.mese_da}-01` : null,
+            mese_a: nuova.mese_a ? `${nuova.mese_a}-01` : null,
+            note: pulisci(nuova.note),
+        });
+        if (error) setErr(error.message);
+        else { setNuova({ ...vuota, brand: nuova.brand }); await ricarica(); onChanged(); }
+        setSalvo(false);
+    };
+    const commuta = async (r: CompensoRiga) => {
+        const { error } = await supabase.from("ce_compensi_brand").update({ attivo: !r.attivo, updated_at: new Date().toISOString() }).eq("id", r.id);
+        if (error) setErr(error.message); else { await ricarica(); onChanged(); }
+    };
+    const elimina = async (r: CompensoRiga) => {
+        if (!confirm(`Eliminare la regola ${r.brand} (€ ${r.compenso})?`)) return;
+        const { error } = await supabase.from("ce_compensi_brand").delete().eq("id", r.id);
+        if (error) setErr(error.message); else { await ricarica(); onChanged(); }
+    };
+
+    const visibili = fBrand ? righe.filter(r => r.brand === fBrand) : righe;
+    const inCls = "rounded bg-white/10 border border-white/15 px-2 py-1 text-sm text-white focus:border-indigo-400 outline-none";
+    return (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.6)" }} onClick={onClose}>
+            <div className="rounded-xl border border-white/15 w-full max-w-5xl max-h-[86vh] overflow-auto" style={{ background: BG2 }} onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 sticky top-0 z-10" style={{ background: BG2 }}>
+                    <div className="font-bold">💶 Listino compensi brand</div>
+                    <button onClick={onClose} className="p-1 rounded hover:bg-white/10"><X size={16} /></button>
+                </div>
+                <div className="px-4 py-3 text-xs text-slate-400">
+                    Ogni vendita brand prende il compenso della regola PIÙ SPECIFICA che combacia (brand → tipo cliente → categoria → prodotto → offerta → opzione);
+                    i campi vuoti valgono &quot;qualsiasi&quot;. Le vendite senza regola restano &quot;a pezzi&quot; nel conto economico (mai zero silenzioso).
+                    Ai cambi di lettera NON si modifica la riga: si chiude con &quot;fino a&quot; e se ne apre una nuova.
+                </div>
+                {err && <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-red-500/15 border border-red-400/30 text-red-300 text-sm">{err}</div>}
+                <div className="px-4 pb-3 flex flex-wrap items-end gap-2">
+                    <div className="w-40"><div className="text-[10px] text-slate-500 mb-0.5">Brand *</div>
+                        <SelectOpzioni value={nuova.brand} onChange={v => setNuova(n => ({ ...n, brand: v }))} opzioni={BRAND_ETICHETTE} placeholder="Brand…" /></div>
+                    <div className="w-32"><div className="text-[10px] text-slate-500 mb-0.5">Tipo cliente</div>
+                        <SelectOpzioni value={nuova.tipo_cliente} onChange={v => setNuova(n => ({ ...n, tipo_cliente: v }))} opzioni={["Consumer", "Business"]} placeholder="qualsiasi" /></div>
+                    {(["categoria", "prodotto", "offerta", "opzione"] as const).map(f => (
+                        <div key={f} className="w-36"><div className="text-[10px] text-slate-500 mb-0.5">{f[0].toUpperCase() + f.slice(1)}</div>
+                            <input value={nuova[f]} onChange={e => setNuova(n => ({ ...n, [f]: e.target.value }))} placeholder="qualsiasi" className={inCls + " w-full"} /></div>
+                    ))}
+                    <div className="w-24"><div className="text-[10px] text-slate-500 mb-0.5">Compenso € *</div>
+                        <input value={nuova.compenso} onChange={e => setNuova(n => ({ ...n, compenso: e.target.value }))} className={inCls + " w-full text-right"} /></div>
+                    <div><div className="text-[10px] text-slate-500 mb-0.5">Da (mese)</div>
+                        <input type="month" value={nuova.mese_da} onChange={e => setNuova(n => ({ ...n, mese_da: e.target.value }))} className={inCls} /></div>
+                    <div><div className="text-[10px] text-slate-500 mb-0.5">Fino a</div>
+                        <input type="month" value={nuova.mese_a} onChange={e => setNuova(n => ({ ...n, mese_a: e.target.value }))} className={inCls} /></div>
+                    <div className="flex-1 min-w-[120px]"><div className="text-[10px] text-slate-500 mb-0.5">Note</div>
+                        <input value={nuova.note} onChange={e => setNuova(n => ({ ...n, note: e.target.value }))} className={inCls + " w-full"} /></div>
+                    <button onClick={aggiungi} disabled={salvo} className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white disabled:opacity-50">＋ Aggiungi</button>
+                </div>
+                <div className="px-4 pb-2 flex items-center gap-2 text-xs text-slate-400">
+                    <span>{righe.length} regole</span>
+                    <div className="w-40"><SelectOpzioni value={fBrand} onChange={setFBrand} opzioni={BRAND_ETICHETTE} placeholder="Filtra brand…" /></div>
+                </div>
+                {caricamento ? (
+                    <div className="flex items-center gap-2 text-slate-400 py-8 justify-center"><Loader2 className="animate-spin" size={16} /> Carico…</div>
+                ) : (
+                    <table className="w-full text-xs mb-2">
+                        <thead><tr className="text-slate-400 border-b border-white/10">
+                            <th className="px-4 py-1.5 text-left">Brand</th><th className="px-2 py-1.5 text-left">Tipo</th>
+                            <th className="px-2 py-1.5 text-left">Categoria</th><th className="px-2 py-1.5 text-left">Prodotto</th>
+                            <th className="px-2 py-1.5 text-left">Offerta</th><th className="px-2 py-1.5 text-left">Opzione</th>
+                            <th className="px-2 py-1.5 text-right">€</th><th className="px-2 py-1.5 text-left">Validità</th>
+                            <th className="px-2 py-1.5 text-left">Note</th><th className="px-2 py-1.5" />
+                        </tr></thead>
+                        <tbody>
+                            {visibili.map(r => (
+                                <tr key={r.id} className={`border-b border-white/5 ${r.attivo ? "" : "opacity-40"}`}>
+                                    <td className="px-4 py-1.5 font-semibold">{r.brand}</td>
+                                    <td className="px-2 py-1.5">{r.tipo_cliente || "—"}</td>
+                                    <td className="px-2 py-1.5">{r.categoria || "—"}</td>
+                                    <td className="px-2 py-1.5">{r.prodotto || "—"}</td>
+                                    <td className="px-2 py-1.5">{r.offerta || "—"}</td>
+                                    <td className="px-2 py-1.5">{r.opzione || "—"}</td>
+                                    <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmt(Number(r.compenso))}</td>
+                                    <td className="px-2 py-1.5 text-slate-400 whitespace-nowrap">{(r.mese_da || "…").slice(0, 7)} → {(r.mese_a || "…").slice(0, 7)}</td>
+                                    <td className="px-2 py-1.5 text-slate-400">{r.note || ""}</td>
+                                    <td className="px-2 py-1.5 whitespace-nowrap text-right">
+                                        <button onClick={() => commuta(r)} title={r.attivo ? "Disattiva" : "Riattiva"} className="px-1.5 py-0.5 rounded hover:bg-white/10">{r.attivo ? "🟢" : "⚪"}</button>
+                                        <button onClick={() => elimina(r)} title="Elimina" className="px-1.5 py-0.5 rounded hover:bg-white/10 text-red-400"><Trash2 size={13} /></button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {!visibili.length && <tr><td colSpan={10} className="px-4 py-6 text-center text-slate-500">Nessuna regola{fBrand ? ` per ${fBrand}` : ""} — aggiungi la prima qui sopra.</td></tr>}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        </div>
     );
 }
 
@@ -88,6 +227,7 @@ export default function ContoEconomicoPage() {
     const [bozzaReparto, setBozzaReparto] = useState("");
     const [salvo, setSalvo] = useState(false);
     const [drill, setDrill] = useState<string | null>(null);
+    const [showCompensi, setShowCompensi] = useState(false);
 
     const carica = useCallback(async (): Promise<CeDataset | null> => {
         setLoading(true); setErrore(null);
@@ -220,9 +360,14 @@ export default function ContoEconomicoPage() {
                     <button onClick={() => setMese(m => spostaMese(m, 1))} className="p-1.5 rounded hover:bg-white/10"><ChevronRight size={18} /></button>
                 </div>
                 {gestisce && !edit && !loading && (
-                    <button onClick={entraEdit} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white">
-                        <Pencil size={14} /> Modifica costi
-                    </button>
+                    <>
+                        <button onClick={() => setShowCompensi(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-semibold">
+                            <BadgeEuro size={14} /> Compensi
+                        </button>
+                        <button onClick={entraEdit} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold text-white">
+                            <Pencil size={14} /> Modifica costi
+                        </button>
+                    </>
                 )}
                 {gestisce && edit && (
                     <div className="flex items-center gap-2">
@@ -397,6 +542,8 @@ export default function ContoEconomicoPage() {
                     )}
                 </>
             )}
+
+            {showCompensi && <CompensiModal onClose={() => setShowCompensi(false)} onChanged={() => { carica(); }} />}
 
             {/* drill-down marginalità (fondo SOLIDO via variabile tema: mai vetro sugli overlay) */}
             {drillNegozio && (

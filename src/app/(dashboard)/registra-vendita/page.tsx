@@ -996,6 +996,31 @@ const caricaListini = () => {
     .catch(() => { _listiniTutti = []; return _listiniTutti; });
   return _listiniAttesa;
 };
+// ── VALORI CONTO ECONOMICO (cantiere 07/08): coefficiente bundle Vodafone
+//    (ce_parametri 'bundle_coeff_default', frazione es. 0.60) + tariffe Kipoint
+//    (catalog_valori per offerta/dimensione). Cache di modulo come i listini.
+let _ceBundleCoeff = null, _ceTariffe = null, _ceValoriAttesa = null;
+const caricaCeValori = () => {
+  if (_ceValoriAttesa) return _ceValoriAttesa;
+  _ceValoriAttesa = Promise.all([
+    supabase.from("ce_parametri").select("valore_num").eq("chiave", "bundle_coeff_default").is("month", null),
+    supabase.from("catalog_valori").select("prezzo, margine_tipo, margine_valore, opzione:catalog_opzioni(nome, offerta:catalog_offerte(nome)), offerta_diretta:catalog_offerte(nome)").eq("attivo", true),
+  ]).then(([p, v]) => {
+    _ceBundleCoeff = Number(p.data?.[0]?.valore_num ?? 0.60);
+    _ceTariffe = v.data || [];
+    return true;
+  }).catch(() => { _ceBundleCoeff = 0.60; _ceTariffe = []; return true; });
+  return _ceValoriAttesa;
+};
+const _tariffaKipoint = (offertaNome, dimNome) => {
+  if (!_ceTariffe) return null;
+  const nrm = (s) => String(s || "").trim().toLowerCase();
+  if (dimNome) {
+    const r = _ceTariffe.find(t => t.opzione && nrm(t.opzione.nome) === nrm(dimNome) && nrm(t.opzione.offerta?.nome) === nrm(offertaNome));
+    if (r) return r;
+  }
+  return _ceTariffe.find(t => t.offerta_diretta && nrm(t.offerta_diretta.nome) === nrm(offertaNome)) || null;
+};
 const listinoPerModello = async (modello) => {
   const k = chiaveListino(modello);
   if (!k || String(modello || "").toUpperCase().startsWith("ALTRO")) return [];
@@ -4663,8 +4688,10 @@ function CRM() {
       // BUNDLE VODAFONE (Luca 06/08): l'opzione "Bundle <importo>" e' a tutti
       // gli effetti un prodotto in marginalita' — entra nel CARRELLO come voce
       // auto (non un telefono: resta un bundle) con l'importo esplicito nel
-      // nome dell'opzione × quantita'. Il margine arrivera' da un coefficiente
-      // a catalogo (prossimo cantiere): per ora 0, l'importo intanto si vede.
+      // nome dell'opzione × quantita'. MARGINE = importo × coefficiente
+      // (ce_parametri 'bundle_coeff_default', come il 'Bundel Systema' del
+      // foglio Costi & Ricavi — cantiere CE 07/08); cache fredda → 0 e il
+      // ricalcolo live lo aggiorna appena il coefficiente arriva.
       if(brandId==="vodafone"){
         for(const op of (it.catalogo?.opzioni||[])){
           if(!/bundle/i.test(String(op?.nome||"")))continue;
@@ -4673,8 +4700,24 @@ function CRM() {
           const unit=parseFloat(mAmt[1].replace(",","."));
           if(!(unit>0))continue;
           const q=Math.max(1,Number(op.quantita||1));
-          push(String(op.nome).trim(),true,{qty:q,price:unit,importo:Math.round(unit*q*100)/100,margin:0,totalMargin:0,priceLocked:true,priceRequired:false,bundle:true});
+          const coeff=_ceBundleCoeff??0;
+          push(String(op.nome).trim(),true,{qty:q,price:unit,importo:Math.round(unit*q*100)/100,margin:Math.round(unit*coeff*100)/100,totalMargin:Math.round(unit*q*coeff*100)/100,priceLocked:true,priceRequired:false,bundle:true});
         }
+      }
+      // KIPOINT (cantiere CE 07/08): spedizioni/ritiri = servizi che vivono in
+      // MARGINALITA'. Tariffa da catalog_valori (offerta + dimensione scelta);
+      // senza tariffa la voce chiede l'importo al negozio e il margine
+      // arrivera' col listino tariffe (file di Luca).
+      if(brandId==="kipoint"){
+        const off=String(it.catalogo?.offerta||it.catalogo?.prodotto||"Kipoint").trim();
+        const dim=(it.catalogo?.opzioni||[]).map(o=>String(o?.nome||"")).find(n=>/^dimensione\s/i.test(n))||null;
+        const nome=("Kipoint "+off+(dim?" — "+dim.replace(/^dimensione\s*/i,""):"")).trim();
+        const t=_tariffaKipoint(off,dim);
+        if(t&&t.prezzo!=null){
+          const pz=Number(t.prezzo)||0;
+          const mg=t.margine_tipo==="fisso"?Number(t.margine_valore||0):t.margine_tipo==="percent"?Math.round(pz*Number(t.margine_valore||0))/100:0;
+          push(nome,true,{price:pz,importo:pz,margin:mg,totalMargin:mg,priceLocked:true,priceRequired:false});
+        } else push(nome,false);
       }
     }
     const kept=prev.filter(m=>!(m.auto&&m.autoFrom===brandLabel));
@@ -4704,6 +4747,8 @@ function CRM() {
     setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems()));
     // cache listini fredda: si carica e si ricalcola (il TNP prende il prezzo)
     if(!_listiniTutti)caricaListini().then(()=>{ setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); });
+    // valori CE freddi: coefficiente bundle e tariffe Kipoint, poi ricalcolo
+    if(_ceBundleCoeff==null)caricaCeValori().then(()=>{ setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); });
   },[sales,skyS,brand]); // eslint-disable-line react-hooks/exhaustive-deps
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
 

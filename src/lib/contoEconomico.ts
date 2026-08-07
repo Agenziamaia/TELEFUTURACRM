@@ -78,6 +78,7 @@ export interface CeDataset {
         calcolato_il: string; live: true; prospect_metodo: "lineare"; prospect_fattore: number;
         costo_reparto_telefonico: number; bundle_coeff: number;
         copertura_vendite_dal: string | null; voci_senza_regime: string[];
+        compensi: { valorizzati: number; non_valorizzati: number; conflitti: number };
     };
 }
 
@@ -114,21 +115,23 @@ export async function computeContoEconomico(mese: string, opts?: { dettagli?: bo
     const ultimo = `${mese}-31`;
     const warnings: string[] = [];
 
-    const [stores, costiRes, appRes, parRes, margItemsRes, contrattiRes] = await Promise.all([
+    const [stores, costiRes, appRes, parRes, margItemsRes, contrattiRes, compensiRes] = await Promise.all([
         supabase.from("stores").select("name, is_ufficio"),
         supabase.from("ce_costi_mensili").select("store_root, voce, importo").eq("month", primo),
         supabase.from("ce_telefonico_appuntamenti").select("store_root, appuntamenti").eq("month", primo),
         supabase.from("ce_parametri").select("chiave, month, valore_num"),
         supabase.from("marg_items").select("name, cost_mode, company_cost, margin_percent").eq("active", true),
-        caricaTutte<{ id: string; brand: string; negozio: string | null; venditore: string | null; data: string; prodotto: string | null; dettagli: Record<string, unknown> | null; nascosta_gestione: boolean | null }>(
+        caricaTutte<{ id: string; brand: string; negozio: string | null; venditore: string | null; data: string; prodotto: string | null; tipo_cliente: string | null; categoria: string | null; offerta: string | null; opzioni: { nome?: string; quantita?: number | null }[] | null; dettagli: Record<string, unknown> | null; nascosta_gestione: boolean | null }>(
             (from, to) => supabase.from("contracts")
-                .select("id, brand, negozio, venditore, data, prodotto, dettagli, nascosta_gestione")
+                .select("id, brand, negozio, venditore, data, prodotto, tipo_cliente, categoria, offerta, opzioni, dettagli, nascosta_gestione")
                 .gte("data", primo).lte("data", ultimo)
                 .or("is_demo.is.null,is_demo.eq.false")
                 .order("id").range(from, to)),
+        supabase.from("ce_compensi_brand").select("*").eq("attivo", true),
     ]);
 
     if (contrattiRes.error) warnings.push(`Lettura contratti incompleta: ${contrattiRes.error.message || "errore"}`);
+    if (compensiRes.error) warnings.push(`Lettura listino compensi FALLITA (${compensiRes.error.message || "errore"}): ricavi brand a 0 per errore tecnico, non per listino vuoto.`);
     const contratti = (contrattiRes.data || []).filter(c => c.nascosta_gestione !== true);
     const pannello: MargPannelloItem[] = (margItemsRes.data as MargPannelloItem[]) || [];
 
@@ -142,6 +145,49 @@ export async function computeContoEconomico(mese: string, opts?: { dettagli?: bo
     };
     const costoReparto = par("telefonico_costo_reparto", 11400);
     const bundleCoeff = par("bundle_coeff_default", 0.60);   // frazione (0.60 = 60%)
+
+    // ── LISTINO COMPENSI BRAND (mig. 189): match gerarchico, il più specifico
+    //    vince; niente match = bucket "non valorizzato", MAI zero silenzioso.
+    type CompensoRow = {
+        id: string; brand: string; tipo_cliente: string | null; categoria: string | null;
+        prodotto: string | null; offerta: string | null; opzione: string | null;
+        compenso: number; regime: string; mese_da: string | null; mese_a: string | null;
+    };
+    const compensi = ((compensiRes.data || []) as CompensoRow[])
+        .filter(r => r.regime === "fisso")
+        .filter(r => (!r.mese_da || r.mese_da <= primo) && (!r.mese_a || r.mese_a >= primo));
+    const normTx = (s: unknown) => String(s ?? "").trim().toLowerCase();
+    const compensiPerBrand = new Map<string, CompensoRow[]>();
+    compensi.forEach(r => {
+        const k = _brandKey(r.brand);
+        if (!compensiPerBrand.has(k)) compensiPerBrand.set(k, []);
+        compensiPerBrand.get(k)!.push(r);
+    });
+    let compValorizzati = 0, compNonValorizzati = 0, compConflitti = 0;
+    const risolviCompenso = (c: { brand: string; tipo_cliente: string | null; categoria: string | null; prodotto: string | null; offerta: string | null; opzioni: { nome?: string; quantita?: number | null }[] | null }): number | null => {
+        const cand = compensiPerBrand.get(_brandKey(c.brand));
+        if (!cand?.length) return null;
+        const opz = Array.isArray(c.opzioni) ? c.opzioni : [];
+        let best: { row: CompensoRow; score: number; qty: number }[] = [];
+        for (const r of cand) {
+            let score = 0;
+            if (r.tipo_cliente != null) { if (normTx(r.tipo_cliente) !== normTx(c.tipo_cliente)) continue; score++; }
+            if (r.categoria != null) { if (normTx(r.categoria) !== normTx(c.categoria)) continue; score++; }
+            if (r.prodotto != null) { if (normTx(r.prodotto) !== normTx(c.prodotto)) continue; score++; }
+            if (r.offerta != null) { if (normTx(r.offerta) !== normTx(c.offerta)) continue; score++; }
+            let qty = 1;
+            if (r.opzione != null) {
+                const trovata = opz.find(o => normTx(o?.nome) === normTx(r.opzione));
+                if (!trovata) continue;
+                score++; qty = Math.max(1, Number(trovata.quantita || 1));
+            }
+            if (!best.length || score > best[0].score) best = [{ row: r, score, qty }];
+            else if (score === best[0].score) best.push({ row: r, score, qty });
+        }
+        if (!best.length) return null;
+        if (best.length > 1 && new Set(best.map(b => Number(b.row.compenso))).size > 1) compConflitti++;
+        return Number(best[0].row.compenso) * best[0].qty;
+    };
 
     // radici: negozi veri (uffici esclusi) + le 12 colonne canoniche
     const radici: string[] = [...CE_ROOTS_ORDINE];
@@ -206,10 +252,17 @@ export async function computeContoEconomico(mese: string, opts?: { dettagli?: bo
                 });
             } else if (fm) { fm.marginalita += ricavo; fm.marginalita_margine += margine; fm.pratiche++; }
         } else {
-            // riga brand: pezzi subito, € dal listino compensi (fase 4)
+            // riga brand: pezzi sempre; € dal listino compensi (match gerarchico).
+            // KIPOINT ESCLUSO dal listino: i suoi € vivono già nella voce
+            // marginalità generata alla vendita (una regola qui = doppio conteggio).
             const riga = rigaBrand(c.brand);
-            if (acc) { acc.pezzi[riga]++; pezziBrandTot++; }
-            else if (fm) fm.pratiche++;
+            const kipoint = _brandKey(c.brand) === "kipoint";
+            const compenso = kipoint ? null : risolviCompenso(c);
+            if (!kipoint) { if (compenso != null) compValorizzati++; else compNonValorizzati++; }
+            if (acc) {
+                acc.pezzi[riga]++; pezziBrandTot++;
+                if (compenso != null) acc.ricaviBrand[riga] += compenso;
+            } else if (fm) fm.pratiche++;
         }
         if (!dentro) fuori.set(radice || "(vuoto)", fm!);
     }
@@ -265,8 +318,12 @@ export async function computeContoEconomico(mese: string, opts?: { dettagli?: bo
         };
     });
 
-    if (pezziBrandTot > 0) warnings.push(
-        `Ricavi brand non ancora valorizzati: ${pezziBrandTot} contratti del mese contati a pezzi, compensi in arrivo col listino (fase 4).`);
+    if (compNonValorizzati > 0) warnings.push(
+        compValorizzati > 0
+            ? `Compensi brand: ${compValorizzati} contratti valorizzati dal listino, ${compNonValorizzati} SENZA regola (contati solo a pezzi) — completare il listino compensi.`
+            : `Ricavi brand non ancora valorizzati: ${pezziBrandTot} contratti del mese contati a pezzi — compilare il listino compensi (💶 in pagina).`);
+    if (compConflitti > 0) warnings.push(
+        `Listino compensi: ${compConflitti} contratti con regole in CONFLITTO a pari specificità e importi diversi — rivedere il listino.`);
     if (minData && minData > primo && mese === "2026-07") warnings.push(
         `Copertura parziale: vendite a CRM solo dal ${minData} (il gestionale è partito a fine luglio).`);
     const fuoriArr = [...fuori.entries()].map(([negozio, v]) => ({
@@ -295,6 +352,7 @@ export async function computeContoEconomico(mese: string, opts?: { dettagli?: bo
             prospect_metodo: "lineare", prospect_fattore: fattore,
             costo_reparto_telefonico: costoReparto, bundle_coeff: bundleCoeff,
             copertura_vendite_dal: minData, voci_senza_regime: [...senzaRegime],
+            compensi: { valorizzati: compValorizzati, non_valorizzati: compNonValorizzati, conflitti: compConflitti },
         },
     };
 }
