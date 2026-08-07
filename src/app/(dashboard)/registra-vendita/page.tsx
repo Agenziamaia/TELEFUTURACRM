@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect, memo, useContext, useRef, useReducer,
 import { createPortal } from "react-dom";
 import { ErrorBoundaryClient } from "@/components/ErrorBoundaryClient";
 import Image from "next/image";
-import { Database } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
@@ -6083,8 +6082,9 @@ select.rvIn{cursor:pointer}
             setMargFlow(true);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));
           }} title="Prodotti & Marginalità" style={{padding:"26px 16px",borderRadius:14,border:margFlow?"2px solid #6f42c1":"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:margFlow?"0 0 0 3px rgba(111,66,193,0.25)":"none"}}>
             {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"var(--tf-6f42c1)",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
-            {/* stessa icona di Ricerca Vendite in nav (Database) — Luca 07/08 */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}><Database style={{width:56,height:56,color:"var(--tf-6f42c1)"}}/></div>
+            {/* stesso simbolo della tessera Marginalità di Ricerca Vendite: 💰
+                (correzione Luca 07/08 — avevo messo il Database del menu) */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:88}}><span style={{fontSize:52}}>💰</span></div>
             <div style={{fontWeight:800,fontSize:14,color:"var(--tf-6f42c1)",marginTop:6}}>Prodotti & Marginalità</div>
           </button>
         </div>
