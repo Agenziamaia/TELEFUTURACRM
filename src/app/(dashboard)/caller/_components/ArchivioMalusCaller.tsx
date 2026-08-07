@@ -71,7 +71,8 @@ export function ArchivioMalusCaller({
     const carica = useCallback(() => {
         // soloCaller (Luca 31/07, come il tracking PDA): il caller vede SOLO il
         // proprio storico — in corso, attivi e compensati
-        let q = supabase.from("caller_malus").select("*").order("created_at", { ascending: false }).limit(500);
+        // esclude i tombstone (malus annullati dal match vendita, mig. 192)
+        let q = supabase.from("caller_malus").select("*").or("eliminato.is.null,eliminato.eq.false").order("created_at", { ascending: false }).limit(500);
         if (soloCaller) q = q.eq("caller", soloCaller);
         q.then(({ data, error }) => {
             if (error) setErrore(error.message);

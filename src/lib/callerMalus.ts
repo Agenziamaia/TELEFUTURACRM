@@ -143,7 +143,9 @@ export async function sincronizzaMalusCaller(
     pratiche: { id: string; stato: string; caller: string; fase: FaseCaller; giorniMalus: number; malusGiorno: number; dalMalus: Date | null }[],
 ): Promise<EpisodioCaller[]> {
     try {
-        const { data, error } = await supabase.from("caller_malus").select("*").order("dal", { ascending: false });
+        // i tombstone (eliminato=true) sono malus ANNULLATI dal match/backfill:
+        // fuori dalla sync e dall'archivio (cantiere match 08/08, mig. 192)
+        const { data, error } = await supabase.from("caller_malus").select("*").or("eliminato.is.null,eliminato.eq.false").order("dal", { ascending: false });
         if (error) return [];   // mig. 119 non ancora applicata
         const episodi = (data ?? []) as EpisodioCaller[];
         const oggi = ymd(new Date());

@@ -6,6 +6,7 @@ import { ErrorBoundaryClient } from "@/components/ErrorBoundaryClient";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { MARG_PRODUCTS_LEGACY } from "@/lib/margMargini";
+import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento, appuntamentiPerCF } from "@/lib/matchAppuntamento";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
@@ -4349,6 +4350,17 @@ function CRM() {
   const [clienteFound,setClienteFound]=useState(false);
   const [lookupDone,setLookupDone]=useState(false);
   const [lookupBusy,setLookupBusy]=useState(false);
+  // MATCH APPUNTAMENTO (cantiere 08/08): avviso quando il CF cercato ha un
+  // appuntamento aperto preso da un caller — la vendita lo attivera' al salvataggio.
+  const [apptAvviso,setApptAvviso]=useState(null);
+  const verificaAppuntamentoBanner=async(cf,cfRef)=>{
+    try{
+      if(!cf&&!cfRef){setApptAvviso(null);return;}
+      const apps=await appuntamentiPerCF(cf||"",cfRef||"");
+      const aperto=apps.find(a=>!["attivato","ko","annullato"].includes(String(a.status||"")));
+      setApptAvviso(aperto?{da:aperto.created_by||"un caller",data:aperto.date,store:aperto.store}:null);
+    }catch{setApptAvviso(null);}
+  };
   const [showAna,setShowAna]=useState(false);
   const [ana,setAna]=useState({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
   // FLAG TURISTA (03/08, mig. 140): cliente di passaggio SENZA CF italiano.
@@ -5435,6 +5447,17 @@ function CRM() {
             .in("id", docRiuso.docs.map(d => d.id));
           if (archErr) console.error("Archivio documenti scaduti error:", archErr);
         }
+        // MATCH APPUNTAMENTO (cantiere 08/08): se questa vendita chiude un
+        // appuntamento del call center (stesso CF, entro 30gg dalla data
+        // fissata, stessa sede) lo ATTIVA e collega pratica caller + annulla il
+        // malus. Non blocca MAI il salvataggio (la vendita e' gia' a DB).
+        try {
+          const _ctrDaMatch = contractRows.filter(r => String(r.id).startsWith("CTR-")).map(r => r.id);
+          if (_ctrDaMatch.length && (ana.cf || ana.cfRef)) {
+            const appM = await trovaAppuntamentoDaAgganciare(ana.cf, ana.cfRef || null, selNeg, dateStr);
+            if (appM) await agganciaVenditaAppuntamento(appM.id, _ctrDaMatch, user?.name || selVend || "match");
+          }
+        } catch (e) { console.error("[MATCH-APP]", e); }
       }
 
       // scarico magazzino usati: i telefoni scelti dal magazzino passano a
@@ -5594,6 +5617,7 @@ function CRM() {
     if(c.tipo==="business"&&tipoCliente!=="business")setTipoCliente("business");
     if(c.tipo==="consumer"&&tipoCliente!=="privato")setTipoCliente("privato");
     setTurista(!!c.turista&&c.tipo!=="business");
+    verificaAppuntamentoBanner(c.cf_piva,c.cf_ref);
   };
   const doLookup=async()=>{
     const v=(lookupValue||"").trim();
@@ -5611,6 +5635,8 @@ function CRM() {
         setClienteFound(false);
         setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:/^[A-Z0-9]{11,16}$/.test(v.replace(/\s+/g,""))?v.replace(/\s+/g,""):"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
         setTurista(false);
+        // il cliente non e' a sistema ma il CF potrebbe avere un appuntamento
+        verificaAppuntamentoBanner(v.replace(/\s+/g,""),"");
         return;
       }
       applicaCliente(c);
@@ -6184,6 +6210,7 @@ select.rvIn{cursor:pointer}
             </div>
           )}
           {lookupDone&&(clienteFound?<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-28a745)"}}>✅ Cliente trovato in anagrafica</div>:<div style={{marginTop:10,background:"rgba(245,158,11,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-f59e0b)"}}>⚠ Cliente non presente in anagrafica — compila i dati a mano (bastano nome, cognome e cellulare)</div>)}
+          {apptAvviso&&<div style={{marginTop:8,background:"rgba(99,102,241,0.14)",border:"1px solid rgba(99,102,241,0.4)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-a5b4fc)",fontWeight:600}}>📞 Questo cliente ha un appuntamento aperto preso da {apptAvviso.da}{apptAvviso.data?` (fissato per il ${apptAvviso.data})`:""}{apptAvviso.store?` · ${apptAvviso.store}`:""} — registrando la vendita l&apos;appuntamento verrà attivato e il merito assegnato al caller.</div>}
         </div>}
       </div>}
 
