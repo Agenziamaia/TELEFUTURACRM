@@ -3212,7 +3212,9 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
       // TETTO 3 condiviso Bundle+Accessori (il Kasko non conta)
       if((_opzBundle(o.nome)||_opzAccessorio(o.nome))&&contaVincolate(opz)>=MAX_BUNDLE_ACC)return;
       if(o.gruppo){(offSel?offSel.opzioni:[]).forEach(x=>{if(x.gruppo===o.gruppo)delete next[x.nome];});}
-      next[o.nome]=o.tipo==="numero"?1:true;}
+      // Bundle e Accessori hanno SEMPRE la quantità (Luca 07/08, Regola 1):
+      // il contatore appare anche se l'opzione a catalogo non è tipo "numero"
+      next[o.nome]=(o.tipo==="numero"||_opzBundle(o.nome)||_opzAccessorio(o.nome))?1:true;}
     setF("__opzioni",next);};
   const _vinc=contaVincolate(opz);
   const _haVincolabili=(offSel?offSel.opzioni:[]).some(o=>_opzBundle(o.nome)||_opzAccessorio(o.nome));
@@ -3243,7 +3245,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
             return(
             <span key={o.nome} style={{display:"inline-flex",alignItems:"center",gap:6}}>
               <button onClick={()=>togOpz(o)} disabled={bloccata} title={bloccata?"Massimo "+MAX_BUNDLE_ACC+" elementi tra Bundle e Accessori":undefined} className={on?"opz-on":undefined} style={{padding:"6px 12px",borderRadius:999,cursor:bloccata?"not-allowed":"pointer",opacity:bloccata?0.35:1,border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
-              {on&&o.tipo==="numero"&&<input type="number" min="1" max={(_opzBundle(o.nome)||_opzAccessorio(o.nome))?(MAX_BUNDLE_ACC-(_vinc-_qtaOpz(opz[o.nome]))):undefined} value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{let q=Math.max(1,parseInt(e.target.value||"1",10)||1);
+              {on&&(o.tipo==="numero"||_opzBundle(o.nome)||_opzAccessorio(o.nome))&&<input type="number" min="1" max={(_opzBundle(o.nome)||_opzAccessorio(o.nome))?(MAX_BUNDLE_ACC-(_vinc-_qtaOpz(opz[o.nome]))):undefined} value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{let q=Math.max(1,parseInt(e.target.value||"1",10)||1);
                 if(_opzBundle(o.nome)||_opzAccessorio(o.nome)){const altre=_vinc-_qtaOpz(opz[o.nome]);q=Math.max(1,Math.min(q,MAX_BUNDLE_ACC-altre));}
                 setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",fontSize:12,background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>}
             </span>);})}
@@ -4677,8 +4679,20 @@ function CRM() {
     }catch(e){console.error("[TNP-LISTINO]",e);return null;}};   // mai far sparire la voce per un dato storto
     for(const it of (items||[])){
       const macro=String(it.macro||"").toUpperCase();const sub=String(it.sub||"");
-      if(/sostituzione\s*sim/i.test(sub)){if(AUTO_SOST[brandId])push(AUTO_SOST[brandId]);}
-      else if(macro.includes("MOBILE")&&!/\bcb\b/i.test(sub)&&AUTO_SIM[brandId])push(AUTO_SIM[brandId]);
+      // SIM VODAFONE = PRODOTTO DI MAGAZZINO GIUSTO (Luca 07/08, fiscalità):
+      // Business → SEMPRE "Sost Vodafone" (anche sul FISSO, che prima non
+      // scaricava nulla); Consumer → Fisso e Sostituzione SIM scaricano
+      // "Sim Vodafone" (la sostituzione consumer prima scaricava la Sost).
+      const _vfBiz=brandId==="vodafone"&&it.catalogo?.tipo==="Business";
+      if(/sostituzione\s*sim/i.test(sub)){
+        if(brandId==="vodafone")push(_vfBiz?"Sost Vodafone":"Sim Vodafone");
+        else if(AUTO_SOST[brandId])push(AUTO_SOST[brandId]);
+      }
+      else if(macro.includes("MOBILE")&&!/\bcb\b/i.test(sub)){
+        if(brandId==="vodafone")push(_vfBiz?"Sost Vodafone":"Sim Vodafone");
+        else if(AUTO_SIM[brandId])push(AUTO_SIM[brandId]);
+      }
+      else if(brandId==="vodafone"&&macro.includes("FISSO"))push(_vfBiz?"Sost Vodafone":"Sim Vodafone");
       const det=it.details||{};
       const tnp=[det["Tipo TNP"],det.tnpTipo,det.cbTnpTipo].map(v=>String(v||"").trim().toLowerCase());
       // RV-03: telefono a rate BUSINESS a marginalita' SOLO su WindTre — per gli
@@ -5973,7 +5987,11 @@ select.rvIn{cursor:pointer}
             // MARGINE, non prezzo (Luca 06/08): per i telefoni a listino conta
             // il MARGINE generato (4%), non il costo del telefono — il valore
             // del carrello e' quello che ci portiamo a casa
-            const contrib=(m)=>{const q=Number(m.qty)||1;const marg=m.totalMargin!=null?Number(m.totalMargin):(m.margin!=null?Number(m.margin):null);return (marg!=null?marg:(Number(m.importo)||0))*q;};
+            // VALORE CARRELLO (fix Luca 07/08, bundle 2°/3° "×10"): totalMargin
+            // e importo sono GIÀ totali (unità × qtà) — moltiplicare ancora per
+            // la quantità elevava al quadrato (3 bundle → ×9). Solo il margin
+            // unitario va moltiplicato per la qtà.
+            const contrib=(m)=>{if(m.totalMargin!=null)return Number(m.totalMargin);const q=Number(m.qty)||1;if(m.margin!=null)return Number(m.margin)*q;return Number(m.importo)||0;};
             const val=margItems.reduce((t,m)=>t+contrib(m),0);
             const tel=margItems.filter(m=>m.priceLocked&&(m.totalMargin!=null||m.margin!=null));
             const telListino=tel.reduce((t,m)=>t+(Number(m.importo)||0)*(Number(m.qty)||1),0);
