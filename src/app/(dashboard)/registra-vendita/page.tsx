@@ -5386,18 +5386,23 @@ function CRM() {
         // ALLEGATI PER CONTRATTO (Luca 05/08): prima TUTTI gli allegati
         // finivano sul primo contratto del carrello. Ora:
         //  - documento d'identita' (caricato o riusato): replicato su OGNI
-        //    contratto della vendita (stesso file_url, una riga per contratto)
-        //    cosi' ogni contratto e' completo nel modale di Ricerca Vendite;
+        //    PRATICA BRAND (righe CTR-) della vendita — stesso file_url, una
+        //    riga per contratto, cosi' ogni pratica e' completa nel modale di
+        //    Ricerca Vendite. MAI sulle voci marginalita' EXT- (caso D'Atria
+        //    07/08: 4 documenti × 5 righe = 23 allegati in scheda cliente);
+        //    senza righe CTR (solo marginalita' nel carrello brand) fallback
+        //    su tutte, altrimenti il documento resterebbe orfano;
         //  - contratto/altro: sulla riga corrispondente via rowKey; se la
         //    riga non esiste piu' (orfano) fallback sul primo contratto;
         //  - fattura (energia): sui contratti energia, o primo se non ce ne sono.
         if (uploadedFiles.length > 0) {
           const _tuttiIds = contractRows.map(r => r.id);
+          const _ctrIds = _tuttiIds.filter(id => String(id).startsWith("CTR-"));
           const _primoId = _tuttiIds[0];
           const attendanceRows = [];
           uploadedFiles.forEach(f => {
             const aggiungi = (cid) => attendanceRows.push({ contract_id: cid, client_id: contractRows[0]?.client_id || null, file_url: f.url, file_name: f.name, file_type: f.type });
-            if (f.type === "documento") _tuttiIds.forEach(aggiungi);
+            if (f.type === "documento") (_ctrIds.length ? _ctrIds : _tuttiIds).forEach(aggiungi);
             else if (f.type === "fattura") (_energiaIds.length ? _energiaIds : [_primoId]).forEach(aggiungi);
             else aggiungi((f.rowKey && _ctrIdPerRiga[f.rowKey]) || _primoId);
           });

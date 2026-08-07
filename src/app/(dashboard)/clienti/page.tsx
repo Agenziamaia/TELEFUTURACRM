@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
-import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
+import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, ChevronDown, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
 import { seesWholeStore, seesAllStores } from "@/lib/roles";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
@@ -157,6 +157,68 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         setDocs([...raccolti.values()].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))));
     };
     useEffect(() => { reloadDocs(); /* eslint-disable-next-line */ }, [contratti, cliente.id]);
+
+    // ── DOCUMENTI A MENU (Luca 07/08): categoria → BRAND → MESI, con DEDUP
+    //    per file. Il documento d'identità viene replicato su ogni pratica
+    //    della vendita (righe contract_attachments distinte, STESSO file —
+    //    caso D'Atria: 4 file sembravano 20): qui un file = UNA card,
+    //    attribuita ai brand delle sue pratiche CTR-; i file agganciati solo
+    //    a voci marginalità stanno sotto "Marginalità", quelli di contratti
+    //    eliminati sotto "Conservati".
+    const [openCat, setOpenCat] = useState<Record<string, boolean>>({});
+    const [openBrand, setOpenBrand] = useState<Record<string, boolean>>({});
+    const [meseSel, setMeseSel] = useState<Record<string, string>>({});
+    type DocFile = { key: string; nome: string; url: string; tipo: string | null; pratiche: string[] };
+    const alberoDocs = useMemo(() => {
+        const infoCtr = new Map<string, { brand: string; data: string | null }>();
+        contratti.forEach((c) => infoCtr.set(c.id, { brand: c.brand || "—", data: c.data || null }));
+        const meseDi = (creato: string | null, ctrData: string | null) => {
+            const m = (ctrData || creato || "").slice(0, 7);
+            return /^\d{4}-\d{2}$/.test(m) ? m : "—";
+        };
+        // raggruppo per categoria e poi per file_url (dedup delle repliche)
+        const filePerCat = new Map<string, Map<string, DocRiga[]>>();
+        docs.forEach((d) => {
+            const cat = CATEGORIE_DOC.find((c) => c.match(d.file_type))?.id || "altro";
+            if (!filePerCat.has(cat)) filePerCat.set(cat, new Map());
+            const m = filePerCat.get(cat)!;
+            if (!m.has(d.file_url)) m.set(d.file_url, []);
+            m.get(d.file_url)!.push(d);
+        });
+        // albero: categoria → brand → mese (YYYY-MM) → file
+        const albero = new Map<string, Map<string, Map<string, DocFile[]>>>();
+        filePerCat.forEach((files, cat) => {
+            files.forEach((righe, url) => {
+                const ctrRighe = righe.filter((r) => r.contract_id?.startsWith("CTR-") && infoCtr.has(r.contract_id));
+                const extRighe = righe.filter((r) => r.contract_id?.startsWith("EXT-") && infoCtr.has(r.contract_id));
+                const dest = new Map<string, string>();   // brand → mese
+                if (ctrRighe.length) ctrRighe.forEach((r) => { const i = infoCtr.get(r.contract_id as string)!; if (!dest.has(i.brand)) dest.set(i.brand, meseDi(r.created_at, i.data)); });
+                else if (extRighe.length) { const i = infoCtr.get(extRighe[0].contract_id as string)!; dest.set("Marginalità", meseDi(extRighe[0].created_at, i.data)); }
+                else dest.set("Conservati", meseDi(righe[0].created_at, null));
+                const file: DocFile = {
+                    key: cat + "|" + url, nome: righe[0].file_name || "documento", url, tipo: righe[0].file_type,
+                    // solo pratiche ESISTENTI: gli id di contratti eliminati non si mostrano
+                    pratiche: [...new Set(righe.map((r) => r.contract_id).filter((id) => id && infoCtr.has(id)))] as string[],
+                };
+                dest.forEach((mese, brand) => {
+                    if (!albero.has(cat)) albero.set(cat, new Map());
+                    const perBrand = albero.get(cat)!;
+                    if (!perBrand.has(brand)) perBrand.set(brand, new Map());
+                    const perMese = perBrand.get(brand)!;
+                    if (!perMese.has(mese)) perMese.set(mese, []);
+                    perMese.get(mese)!.push(file);
+                });
+            });
+        });
+        return albero;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [docs, contratti]);
+    const labelMeseDoc = (m: string) => {
+        if (!/^\d{4}-\d{2}$/.test(m)) return "Senza data";
+        const [y, mm] = m.split("-").map(Number);
+        const s = new Date(y, mm - 1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+        return s.charAt(0).toUpperCase() + s.slice(1);
+    };
 
     // INTEGRAZIONE DOCUMENTI (Luca 31/07, evoluzione della segnalazione 114):
     // il caricamento dei documenti mancanti dopo la registrazione ora e' una
@@ -442,7 +504,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                     {/* ───────── COLONNA DESTRA: schede ───────── */}
                     <div className="glass-card flex flex-col min-h-[440px]">
                         <div className="flex border-b border-white/5 px-3 shrink-0">
-                            {[{ id: "timeline", label: "Timeline 360°", icon: "⏳" }, { id: "contratti", label: `Contratti (${contratti.length})`, icon: "📄" }, ...(vedeAllegati ? [{ id: "documenti", label: `Documenti (${docs.length})`, icon: "📎" }] : [])].map(t => (
+                            {/* il badge conta i FILE veri, non le righe replicate sulle pratiche (dedup per file_url) */}
+                            {[{ id: "timeline", label: "Timeline 360°", icon: "⏳" }, { id: "contratti", label: `Contratti (${contratti.length})`, icon: "📄" }, ...(vedeAllegati ? [{ id: "documenti", label: `Documenti (${new Set(docs.map(d => d.file_url)).size})`, icon: "📎" }] : [])].map(t => (
                                 <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
                                     className={`px-4 py-3.5 text-[13px] font-semibold flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab === t.id ? "border-indigo-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
                                     <span>{t.icon}</span> {t.label}
@@ -626,53 +689,99 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 Nessun documento caricato per questo cliente.
                             </div>
                         ) : (
-                            // Richiesta Luca (segnalazione 29): i documenti vanno divisi per
-                            // categoria di caricamento, con la data. La categoria e' quella
-                            // scelta allo Step 5 della registrazione (file_type); quelli senza
-                            // categoria finiscono in "Altro", come chiesto.
-                            <div className="space-y-4">
+                            // MENU A TRE LIVELLI (Luca 07/08): ogni categoria è un menù che si
+                            // scoppia/nasconde; dentro, la selezione del BRAND (se il cliente ha
+                            // pratiche di più brand) e poi la divisione per MESI: un click sul
+                            // mese e compaiono i file di quel mese. Un file = UNA card anche se
+                            // la vendita l'ha agganciato a più pratiche (dedup per file).
+                            <div className="space-y-3">
                                 {CATEGORIE_DOC.map((cat) => {
-                                    const items = docs.filter((d) => (cat.match(d.file_type)));
-                                    if (items.length === 0) return null;
+                                    const perBrand = alberoDocs.get(cat.id);
+                                    if (!perBrand || perBrand.size === 0) return null;
+                                    const fileCat = new Set<string>();
+                                    perBrand.forEach((pm) => pm.forEach((fl) => fl.forEach((f) => fileCat.add(f.key))));
+                                    const aperta = !!openCat[cat.id];
                                     return (
-                                        <div key={cat.id}>
-                                            <div className="flex items-center gap-2 mb-2">
+                                        <div key={cat.id} className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden">
+                                            <button type="button" onClick={() => setOpenCat((o) => ({ ...o, [cat.id]: !o[cat.id] }))}
+                                                className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-white/[0.03] transition-colors">
+                                                {aperta ? <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />}
                                                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded"
                                                     style={{ color: cat.color, background: cat.color + "1f", border: "1px solid " + cat.color + "44" }}>
                                                     {cat.label}
                                                 </span>
-                                                <span className="text-[10px] text-slate-600">{items.length} file</span>
-                                            </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                {items.map((d) => {
-                                                    // Le immagini si aprono qui sopra invece che in una scheda nuova.
-                                                    const isImmagine = /^image\//i.test(d.file_type || "")
-                                                        || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(d.file_name || "");
-                                                    const contenuto = (
-                                                        <>
-                                                            <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
-                                                            <span className="flex-1 min-w-0">
-                                                                <span className="block text-xs text-slate-300 truncate">{d.file_name || "documento"}</span>
-                                                                <span className="block text-[10px] text-slate-600">
-                                                                    {d.created_at ? new Date(d.created_at).toLocaleDateString("it-IT") : "—"} · {d.contract_id || "contratto eliminato — documento conservato"}
-                                                                </span>
-                                                            </span>
-                                                            <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
-                                                        </>
-                                                    );
-                                                    const cls = "flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group text-left w-full";
-                                                    return isImmagine ? (
-                                                        <button key={d.id} type="button" className={cls}
-                                                            onClick={() => setLightbox({ src: d.file_url, alt: d.file_name || "" })}>
-                                                            {contenuto}
-                                                        </button>
-                                                    ) : (
-                                                        <a key={d.id} href={d.file_url} target="_blank" rel="noreferrer" className={cls}>
-                                                            {contenuto}
-                                                        </a>
-                                                    );
-                                                })}
-                                            </div>
+                                                <span className="text-[10px] text-slate-600">{fileCat.size} file</span>
+                                            </button>
+                                            {aperta && (
+                                                <div className="px-3 pb-3 space-y-2">
+                                                    {[...perBrand.entries()].map(([brand, perMese]) => {
+                                                        const bKey = cat.id + "|" + brand;
+                                                        const bAperta = openBrand[bKey] ?? perBrand.size === 1;
+                                                        const mesi = [...perMese.keys()].sort().reverse();
+                                                        const meseAttivo = meseSel[bKey] && perMese.has(meseSel[bKey]) ? meseSel[bKey] : mesi[0];
+                                                        const nBrand = new Set([...perMese.values()].flat().map((f) => f.key)).size;
+                                                        const logo = TRK_BRAND_LOGOS[trkBrandKey(brand)];
+                                                        return (
+                                                            <div key={brand} className="border border-white/5 rounded-xl overflow-hidden">
+                                                                <button type="button" onClick={() => setOpenBrand((o) => ({ ...o, [bKey]: !bAperta }))}
+                                                                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors">
+                                                                    {bAperta ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                                                                    {logo ? <img src={logo} alt={brand} className="w-5 h-5 object-contain shrink-0" /> : null}
+                                                                    <span className="text-xs font-bold text-slate-200">
+                                                                        {brand === "Conservati" ? "Contratti eliminati — documenti conservati" : brand}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-slate-600">{nBrand} file</span>
+                                                                </button>
+                                                                {bAperta && (
+                                                                    <div className="px-3 pb-3 space-y-2">
+                                                                        {mesi.length > 1 && (
+                                                                            <div className="flex flex-wrap gap-1.5">
+                                                                                {mesi.map((m) => (
+                                                                                    <button key={m} type="button" onClick={() => setMeseSel((s) => ({ ...s, [bKey]: m }))}
+                                                                                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${m === meseAttivo ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300 font-semibold" : "bg-white/[0.02] border-white/10 text-slate-400 hover:bg-white/[0.05]"}`}>
+                                                                                        {labelMeseDoc(m)} · {new Set((perMese.get(m) || []).map((f) => f.key)).size}
+                                                                                    </button>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                            {(perMese.get(meseAttivo) || []).map((f) => {
+                                                                                // Le immagini si aprono qui sopra invece che in una scheda nuova.
+                                                                                const isImmagine = /^image\//i.test(f.tipo || "")
+                                                                                    || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(f.nome || "");
+                                                                                const sub = f.pratiche.length === 0
+                                                                                    ? "contratto eliminato — documento conservato"
+                                                                                    : f.pratiche.length === 1 ? f.pratiche[0] : `su ${f.pratiche.length} pratiche della vendita`;
+                                                                                const contenuto = (
+                                                                                    <>
+                                                                                        <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
+                                                                                        <span className="flex-1 min-w-0">
+                                                                                            <span className="block text-xs text-slate-300 truncate">{f.nome}</span>
+                                                                                            <span className="block text-[10px] text-slate-600 truncate">{labelMeseDoc(meseAttivo)} · {sub}</span>
+                                                                                        </span>
+                                                                                        <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
+                                                                                    </>
+                                                                                );
+                                                                                const cls = "flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group text-left w-full";
+                                                                                return isImmagine ? (
+                                                                                    <button key={f.key} type="button" className={cls}
+                                                                                        onClick={() => setLightbox({ src: f.url, alt: f.nome })}>
+                                                                                        {contenuto}
+                                                                                    </button>
+                                                                                ) : (
+                                                                                    <a key={f.key} href={f.url} target="_blank" rel="noreferrer" className={cls}>
+                                                                                        {contenuto}
+                                                                                    </a>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
