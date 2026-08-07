@@ -445,4 +445,28 @@ export const CAP_CALENDARIO_TASK: CapGroupChoice = {
     },
 };
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
+// ─── CONTO ECONOMICO per punto vendita (cantiere 07/08) ──────────────────────
+// La VISIBILITÀ della pagina resta al menu (nav.ts + matrice Permessi); qui le
+// due capacità di comportamento, come da piano deck builder (gestisce=direzione
+// · presenta registrata subito per la regia riunioni).
+export const CE_SECTION = "/conto-economico";
+export const CAP_CE_GESTISCE: CapDef = {
+    id: "gestisce",
+    label: "Gestisce costi e parametri",
+    desc: "Modifica le voci di costo mensili dei negozi, gli appuntamenti del telefonico e il costo del reparto; in futuro congela gli snapshot del mese.",
+    default: (r) => ["admin", "dev", "direttore_generale"].includes(r),
+};
+export const CAP_CE_PRESENTA: CapDef = {
+    id: "presenta",
+    label: "Presenta in riunione",
+    desc: "Riservata alla regia delle riunioni (deck builder): potrà avviare la modalità presentazione dei deck costruiti sul conto economico.",
+    default: (r) => ["admin", "dev", "direttore_generale"].includes(r),
+};
+export const CAP_CONTO_ECONOMICO: CapGroupFlags = {
+    mode: "flags",
+    section: CE_SECTION,
+    sectionLabel: "Conto Economico",
+    caps: [CAP_CE_GESTISCE, CAP_CE_PRESENTA],
+};
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_CONTO_ECONOMICO];
