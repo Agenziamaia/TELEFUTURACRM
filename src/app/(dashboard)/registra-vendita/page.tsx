@@ -3212,14 +3212,18 @@ const _opzAccessorio=(n)=>!_opzKasko(n)&&/accessori/i.test(n);
 const _qtaOpz=(v)=>v===true?1:Math.max(1,parseInt(v,10)||1);
 const contaVincolate=(opz)=>{let t=0;Object.keys(opz||{}).forEach(k=>{if(!opz[k])return;if(_opzBundle(k)||_opzAccessorio(k))t+=_qtaOpz(opz[k]);});return t;};
 const campiDinamiciOpzioni=(opz)=>{
-  const out=[];let nB=0,nA=0,kasko=false;
+  const out=[];let nA=0,kasko=false;
   Object.keys(opz||{}).forEach(k=>{
     if(!opz[k])return;
     if(_opzKasko(k)){kasko=true;return;}
-    if(_opzBundle(k))nB+=_qtaOpz(opz[k]);
+    if(_opzBundle(k)){
+      // ETICHETTA PARLANTE (correzione Luca 07/08): il campo dice QUALE bundle —
+      // "Codice Bundle 99.99"; più unità dello stesso tipo → "(1)", "(2)", …
+      const q=_qtaOpz(opz[k]);
+      for(let i=1;i<=q;i++)out.push({nome:"Codice "+k+(q>1?" ("+i+")":""),tipo:"testo",nota:"",conferma:false});
+    }
     else if(_opzAccessorio(k))nA+=_qtaOpz(opz[k]);
   });
-  for(let i=1;i<=nB;i++)out.push({nome:"Codice bundle "+i,tipo:"testo",nota:"",conferma:false});
   for(let i=1;i<=nA;i++)out.push({nome:"Imei Accessorio "+i,tipo:"testo",nota:"",conferma:false});
   if(kasko)out.push({nome:"Seriale Kasko",tipo:"testo",nota:"",conferma:false});
   return out;
