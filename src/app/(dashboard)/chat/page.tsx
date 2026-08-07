@@ -358,6 +358,15 @@ function ChatPageInner() {
   // Segnalazione 74: messaggio a cui si sta rispondendo (stile WhatsApp).
   const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  // Luca 07/08: il box di scrittura CRESCE VERSO L'ALTO con le righe (stile
+  // WhatsApp) fino a ~9 righe, poi scorre dentro; si ritira quando si cancella
+  const autoGrowComposer = () => {
+    const el = composerRef.current; if (!el) return;
+    const MAX = 220;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, MAX) + "px";
+    el.style.overflowY = el.scrollHeight > MAX ? "auto" : "hidden";
+  };
   // Luca 04/08: rispondere (doppio click o bottone) deve portare il cursore
   // DRITTO nel campo di scrittura — prima si partiva a scrivere nel vuoto.
   const rispondiA = (m: ChatMessage) => {
@@ -369,6 +378,8 @@ function ChatPageInner() {
   useEffect(() => {
     if (selId) requestAnimationFrame(() => composerRef.current?.focus());
   }, [selId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { autoGrowComposer(); }, [text]);
   // Immagine aperta a schermo (prima si apriva in una scheda nuova).
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const [files, setFiles] = useState([]);
@@ -1249,7 +1260,7 @@ function ChatPageInner() {
                     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
                   }}
                   rows={1} placeholder="Scrivi un messaggio…  (@ per taggare cliente, contratto o appuntamento)"
-                  className="glass-input flex-1 resize-none max-h-32 py-2.5" />
+                  className="glass-input flex-1 resize-none py-2.5" style={{ maxHeight: 220 }} />
                 <button onClick={onSend} disabled={sending || (!text.trim() && files.length === 0 && refs.length === 0)}
                   className="p-2.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed">
                   <Send className="w-5 h-5" />
