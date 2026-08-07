@@ -1075,14 +1075,17 @@ function ComunicazioniInner() {
                                                     <div className="flex-1 min-w-0">
                                                         <h3 className={cn(tg.titoloCard, "text-white")}>{tg.prefisso}{titolo}</h3>
                                                         <p className="text-sm text-slate-500">{firma}</p>
+                                                        <p className={cn("mt-2.5 leading-relaxed whitespace-pre-wrap", tg.s === "piccola" ? "text-sm text-slate-300" : tg.corpoCard)}>{testo}</p>
+                                                        {/* esiti DOPO il testo (fix Luca 08/08: nell'anteprima
+                                                            comparivano prima del testo; al destinatario invece
+                                                            arrivano in coda, come nella card bacheca reale) */}
                                                         {esitiEffettivi().length > 0 && (
-                                                            <div className="flex items-center gap-2 flex-wrap mt-2">
+                                                            <div className="flex items-center gap-2 flex-wrap mt-3">
                                                                 {esitiEffettivi().map((e) => (
                                                                     <span key={e} className="px-3 py-1 rounded-full border border-sky-500/40 bg-sky-500/10 text-sky-200 text-xs font-bold">{e}</span>
                                                                 ))}
                                                             </div>
                                                         )}
-                                                        <p className={cn("mt-2.5 leading-relaxed whitespace-pre-wrap", tg.s === "piccola" ? "text-sm text-slate-300" : tg.corpoCard)}>{testo}</p>
                                                     </div>
                                                 </div>
                                             </div>
