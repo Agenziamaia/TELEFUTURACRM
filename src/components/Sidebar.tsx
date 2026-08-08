@@ -134,7 +134,14 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
             .on("postgres_changes", { event: "INSERT", schema: "public", table: "comunicazioni" }, conta)
             .on("postgres_changes", { event: "*", schema: "public", table: "comunicazioni_ricevute", filter: `user_id=eq.${user.id}` }, conta)
             .subscribe();
-        return () => { vivo = false; clearInterval(t); supabase.removeChannel(ch); };
+        // ROBUSTEZZA (Luca 08/08): la campanella si aggiornava solo a navigazione,
+        // ogni 5' o via realtime; restando sulla pagina Comunicazioni non si
+        // azzerava dopo la lettura. La pagina emette "com-letta" a ogni lettura →
+        // ricontiamo subito, anche se il realtime non arriva. (+ mig. 196 mette
+        // comunicazioni_ricevute nella publication realtime.)
+        const onLetta = () => conta();
+        window.addEventListener("com-letta", onLetta);
+        return () => { vivo = false; clearInterval(t); supabase.removeChannel(ch); window.removeEventListener("com-letta", onLetta); };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, pathname]);
     // override per ruolo dal DB (Amministrazione → Permessi); default = codice

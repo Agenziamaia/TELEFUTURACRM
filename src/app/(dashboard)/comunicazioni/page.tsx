@@ -222,6 +222,9 @@ function ComunicazioniInner() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify([...s]));
         } catch { /* ignore */ }
         setLocalRead((p) => new Set(p).add(comId));
+        // avvisa la campanella in sidebar di ricontare subito (fix Luca 08/08:
+        // restando su questa pagina il realtime non bastava ad azzerarla)
+        try { window.dispatchEvent(new Event("com-letta")); } catch { /* ssr */ }
     }, [user?.id, user?.name, mieRicevute, list]);
 
     // DEEP-LINK dalla home (BAC-01): /comunicazioni?apri=<id> apre la card,
