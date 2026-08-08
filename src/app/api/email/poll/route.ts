@@ -58,14 +58,24 @@ async function caricaAllegati(convId: string, list: EmailInAtt[]): Promise<any[]
     return atts;
 }
 
-async function pollAccount(accId: string) {
+async function pollAccountRaw(accId: string) {
     const { data: acc } = await supabase.from("email_accounts").select("*").eq("id", accId).maybeSingle();
     if (!acc) return { error: "account non trovato" };
     let res: any;
     try { res = await leggiNuove(acc as any, 30); }
     catch (e: any) {
-        await supabase.from("email_accounts").update({ status: "errore", last_error: String(e?.message || e).slice(0, 300) }).eq("id", accId);
-        return { error: e?.message || String(e) };
+        // Solo un fallimento di AUTENTICAZIONE (password cambiata sul server)
+        // rende la casella davvero "da ricollegare". Errori transitori — troppe
+        // connessioni IMAP simultanee sulla stessa casella (cPanel ne consente
+        // poche), timeout, rete giù — NON devono ribaltare la riga condivisa a
+        // status="errore": la casella è vista da più utenti (direttore
+        // commerciale + negozio) e una collisione temporanea la faceva risultare
+        // "disconnessa" a TUTTI (Luca 08/08). Lasciamo lo stato com'è e si
+        // riprova al giro dopo. Vedi anche il lock/debounce per-casella sotto.
+        if (e?.authenticationFailed) {
+            await supabase.from("email_accounts").update({ status: "errore", last_error: String(e?.message || e).slice(0, 300) }).eq("id", accId);
+        }
+        return { error: e?.message || String(e), transient: !e?.authenticationFailed };
     }
     let nuovi = 0;
     for (const m of res.messages) {
@@ -214,6 +224,31 @@ async function pollAccount(accId: string) {
     return { nuovi, inviateImportate, unreadAllineate, lastUid: res.lastUid };
 }
 
+// DEDUP PER-CASELLA (Luca 08/08): la stessa casella è vista da più utenti (es.
+// direttore commerciale + il negozio). Ognuno lancia il poll all'apertura, al
+// ritorno sul tab e ogni 45s; il cron VPS aggiunge un altro giro. Due login
+// IMAP simultanei sulla STESSA casella cPanel = "too many connections" e la riga
+// condivisa finiva status="errore" -> a tutti "disconnessa". Qui: un solo poll
+// per volta per casella, e debounce sui poll ravvicinati. In-memory come il lock
+// esistente (pm2 istanza singola). Il refresh MANUALE passa force e bypassa il
+// debounce (ma resta serializzato dall'in-flight lock).
+const pollInCorso = new Set<string>();
+const ultimoPoll = new Map<string, number>();
+const POLL_DEBOUNCE_MS = 25000;
+
+async function pollAccount(accId: string, force = false): Promise<any> {
+    // in-flight: MAI due poll insieme sulla stessa casella (vale anche col force,
+    // così il refresh manuale non si accavalla col giro automatico né col cron).
+    if (pollInCorso.has(accId)) return { skipped: "poll già in corso su questa casella" };
+    // debounce: i poll ravvicinati di utenti diversi collassano in uno solo. Il
+    // force (refresh manuale) salta il debounce ma resta serializzato dall'in-flight.
+    if (!force && Date.now() - (ultimoPoll.get(accId) || 0) < POLL_DEBOUNCE_MS) return { skipped: "casella aggiornata da poco" };
+    // check→add senza await in mezzo: atomico nel singolo processo Node (come pollTutteInCorso).
+    pollInCorso.add(accId);
+    try { return await pollAccountRaw(accId); }
+    finally { pollInCorso.delete(accId); ultimoPoll.set(accId, Date.now()); }
+}
+
 // LOCK anti-sovrapposizione (05/08): il giro completo può superare il timeout
 // del proxy — nginx risponde 504 ma il lavoro prosegue; senza lucchetto il cron
 // rilancia e i giri si accavallano sulle stesse caselle. Uno alla volta.
@@ -222,7 +257,7 @@ let pollTutteInCorso = false;
 export async function POST(request: Request) {
     try {
         const b = await request.json().catch(() => ({}));
-        if (b?.accountId) return NextResponse.json(await pollAccount(b.accountId));
+        if (b?.accountId) return NextResponse.json(await pollAccount(b.accountId, b?.force === true));
         if (pollTutteInCorso) return NextResponse.json({ ok: true, skipped: "giro precedente ancora in corso" });
         pollTutteInCorso = true;
         try {
