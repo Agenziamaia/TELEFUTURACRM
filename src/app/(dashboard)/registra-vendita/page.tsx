@@ -4857,6 +4857,19 @@ function CRM() {
     setAttachments(prev => prev.filter(a => !a.reused));
     setDocRiuso(p => ({ ...p, fase: "esito", esito: "scaduti", check: false }));
   };
+  // MOD-14 (Luca 08/08): due esiti in più oltre a validi/scaduti.
+  // ALTRO documento (tipo diverso, ENTRAMBI validi): si carica il nuovo e i
+  // vecchi RESTANO validi in parallelo (nessuna archiviazione al submit).
+  const docAltro = () => {
+    setAttachments(prev => prev.filter(a => !a.reused));
+    setDocRiuso(p => ({ ...p, fase: "esito", esito: "altro", check: false }));
+  };
+  // SMARRITO: i vecchi vanno nello storico come "smarriti" (non vecchi), tolti
+  // dalla disponibilità; l'amministrativo li vede marcati. Si carica il nuovo.
+  const docSmarrito = () => {
+    setAttachments(prev => prev.filter(a => !a.reused));
+    setDocRiuso(p => ({ ...p, fase: "esito", esito: "smarrito", check: false }));
+  };
   const docRiusoReset = () => {
     setAttachments(prev => prev.filter(a => !a.reused));
     setDocRiuso(p => ({ ...p, fase: "trovati", esito: null, check: false }));
@@ -4869,6 +4882,8 @@ function CRM() {
     const dotAttivo = fase === "trovati" ? 0 : (fase === "esito" ? 2 : 1);
     const doneOk = fase === "esito" && docRiuso.esito === "validi";
     const doneExp = fase === "esito" && docRiuso.esito === "scaduti";
+    const doneAltro = fase === "esito" && docRiuso.esito === "altro";
+    const doneSmarrito = fase === "esito" && docRiuso.esito === "smarrito";
     const thumb = (d, h) => {
       const mime = _mimeDaNome(d.name || d.url);
       return mime.startsWith("image/")
@@ -4921,7 +4936,11 @@ function CRM() {
           <div style={{ fontSize: 12, fontWeight: 800, color: "var(--tf-f8fafc)", marginBottom: 8 }}>Come li vedi?</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button type="button" onClick={() => setDocRiuso(p => ({ ...p, fase: "conferma", esito: null }))} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-28a745)", background: "rgba(40,167,69,0.12)", color: "var(--tf-28a745)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>✅ Validi e leggibili</button>
+            {/* MOD-14: altro documento valido (si archiviano ENTRAMBI) */}
+            <button type="button" onClick={docAltro} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-38bdf8)", background: "rgba(56,189,248,0.12)", color: "var(--tf-38bdf8)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>📄 Ha un altro documento (entrambi validi)</button>
             <button type="button" onClick={docScaduti} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-f59e0b)", background: "rgba(245,158,11,0.12)", color: "var(--tf-f59e0b)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>⏰ Scaduti o da sostituire</button>
+            {/* MOD-14: smarrito (storico "smarrito", tolto dalla disponibilità) */}
+            <button type="button" onClick={docSmarrito} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-f87171)", background: "rgba(248,113,113,0.12)", color: "var(--tf-f87171)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>🔴 Smarrito</button>
           </div>
         </div>}
         {fase === "conferma" && <div style={{ animation: "docRiusoIn .25s ease both" }}>
@@ -4952,6 +4971,32 @@ function CRM() {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             {docRiuso.docs.map(d => <span key={d.id} style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-64748b)", background: "var(--tf-w30)", border: "1px solid var(--tf-w60)", borderRadius: 999, padding: "4px 10px", textDecoration: "line-through" }}>🗄️ {d.name}</span>)}
+          </div>
+          <button type="button" onClick={docRiusoReset} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>↩︎ Cambia scelta</button>
+        </div>}
+        {/* MOD-14: ALTRO documento — si carica il nuovo, i vecchi restano VALIDI (parallelo) */}
+        {doneAltro && <div style={{ animation: "docRiusoIn .25s ease both" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--tf-38bdf8)", marginBottom: 4 }}>📄 Due documenti validi in parallelo.</div>
+          <div style={{ fontSize: 11, color: "var(--tf-8892b0)", marginBottom: 10 }}>Carica il NUOVO documento nella casella 🪪 Documento qui sotto: al salvataggio resteranno validi <b>sia quelli in archivio sia il nuovo</b> (niente sostituzione).</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ width: 12, height: 12, borderRadius: "50%", background: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-w100)", display: "inline-block" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-8892b0)" }}>{_nuoviDocCaricati > 0 ? `✅ ${_nuoviDocCaricati} nuovo/i caricato/i — resteranno affiancati ai precedenti` : "In attesa del nuovo documento…"}</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {docRiuso.docs.map(d => <span key={d.id} style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-38bdf8)", background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.4)", borderRadius: 999, padding: "4px 10px" }}>📎 {d.name} (resta valido)</span>)}
+          </div>
+          <button type="button" onClick={docRiusoReset} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>↩︎ Cambia scelta</button>
+        </div>}
+        {/* MOD-14: SMARRITO — i vecchi diventano "smarriti" (storico), tolti dai validi */}
+        {doneSmarrito && <div style={{ animation: "docRiusoIn .25s ease both" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--tf-f87171)", marginBottom: 4 }}>🔴 Documento segnato come smarrito.</div>
+          <div style={{ fontSize: 11, color: "var(--tf-8892b0)", marginBottom: 10 }}>Carica il NUOVO documento qui sotto. Al salvataggio i vecchi passano a <b>smarrito</b> nello storico: tolti dalla disponibilità, resta traccia visibile all&apos;amministrazione (non &quot;vecchi&quot; ma smarriti).</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ width: 12, height: 12, borderRadius: "50%", background: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-w100)", display: "inline-block" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-8892b0)" }}>{_nuoviDocCaricati > 0 ? `✅ ${_nuoviDocCaricati} nuovo/i caricato/i` : "In attesa del nuovo documento…"}</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {docRiuso.docs.map(d => <span key={d.id} style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-f87171)", background: "rgba(248,113,113,0.10)", border: "1px solid rgba(248,113,113,0.4)", borderRadius: 999, padding: "4px 10px" }}>🔴 {d.name} (smarrito)</span>)}
           </div>
           <button type="button" onClick={docRiusoReset} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>↩︎ Cambia scelta</button>
         </div>}
@@ -5451,16 +5496,19 @@ function CRM() {
           if (attErr) console.error("Attachment Meta Error:", attErr);
         }
 
-        // DOCUMENTI SCADUTI → ARCHIVIO (Luca 05/08): le righe vecchie passano a
-        // file_type='documento_archiviato' SOLO quando la vendita con i NUOVI
-        // documenti e' realmente salvata (qui). Da questo momento le viste che
-        // filtrano 'documento' non le contano piu': validi solo i nuovi.
-        // Idempotente: un retry riscrive lo stesso valore sulle stesse righe.
-        if (docRiuso && docRiuso.esito === "scaduti" && (docRiuso.docs || []).length && uploadedFiles.some(f => f.type === "documento")) {
+        // DOCUMENTI — ESITO RIUSO (Luca 05/08 + MOD-14 08/08): al salvataggio
+        // della vendita coi NUOVI documenti, le righe vecchie cambiano stato in
+        // base all'esito scelto in verifica. SOLO se sono stati davvero caricati
+        // nuovi documenti. Idempotente. 'altro' = restano validi (niente update):
+        //   · scaduti  → documento_archiviato (vecchio, fuori dai validi)
+        //   · smarrito → documento_smarrito  (fuori dai validi, visibile ad admin)
+        //   · altro    → nessuna modifica: i vecchi restano validi in parallelo
+        if (docRiuso && (docRiuso.esito === "scaduti" || docRiuso.esito === "smarrito") && (docRiuso.docs || []).length && uploadedFiles.some(f => f.type === "documento")) {
+          const nuovoType = docRiuso.esito === "smarrito" ? "documento_smarrito" : "documento_archiviato";
           const { error: archErr } = await supabase.from("contract_attachments")
-            .update({ file_type: "documento_archiviato" })
+            .update({ file_type: nuovoType })
             .in("id", docRiuso.docs.map(d => d.id));
-          if (archErr) console.error("Archivio documenti scaduti error:", archErr);
+          if (archErr) console.error("Aggiornamento stato documenti riuso error:", archErr);
         }
         // MATCH APPUNTAMENTO (cantiere 08/08): se questa vendita chiude un
         // appuntamento del call center (stesso CF, entro 30gg dalla data

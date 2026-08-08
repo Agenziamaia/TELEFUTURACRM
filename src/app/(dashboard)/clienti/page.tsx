@@ -119,7 +119,11 @@ const CATEGORIE_DOC = [
     { id: "contratti", label: "Contratti", color: "var(--tf-a78bfa)", match: (t: string | null) => (t || "").toLowerCase() === "contratti" },
     // Segnalazione 84: bollette del vecchio operatore sui contratti energia.
     { id: "fattura", label: "Fatture", color: "var(--tf-fbbf24)", match: (t: string | null) => (t || "").toLowerCase() === "fattura" },
-    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura"].includes((t || "").toLowerCase()) },
+    // MOD-14 (Luca 08/08): documenti smarriti e archiviati/scaduti — fuori dai
+    // validi, visibili SOLO all'amministrazione (adminOnly) con etichetta chiara.
+    { id: "smarrito", label: "🔴 Smarriti", color: "var(--tf-f87171)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_smarrito" },
+    { id: "archiviato", label: "🗄️ Archiviati/scaduti", color: "var(--tf-94a3b8)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_archiviato" },
+    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura", "documento_smarrito", "documento_archiviato"].includes((t || "").toLowerCase()) },
 ];
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
@@ -129,6 +133,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     const { user: uAll } = useAuth();
     const { perms: permAll } = useRolePermissions(uAll?.role, uAll?.grade);
     const vedeAllegati = capAllowed(uAll?.role, "/clienti", CAP_CLIENTI_ALLEGATI, permAll);
+    // smarriti/archiviati (MOD-14) visibili SOLO all'amministrazione
+    const isAdminDoc = ["admin", "dev", "direttore_generale", "amministrativo"].includes(String(uAll?.role || ""));
     type DocRiga = { id: string; file_url: string; file_name: string; contract_id: string | null; file_type: string | null; created_at: string | null };
     const [docs, setDocs] = useState<DocRiga[]>([]);
     // Immagine aperta a schermo (prima si apriva in una scheda nuova).
@@ -373,7 +379,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         ...vociChiamate,
         // solo i caricamenti nei giorni SENZA visita: gli altri vivono dentro
         // la voce del negozio (esperienza unica del cliente, Luca 04/08)
-        ...docs.filter((d) => d.created_at && !giorniVisita.has(String(d.created_at).slice(0, 10)))
+        ...docs.filter((d) => d.created_at && !giorniVisita.has(String(d.created_at).slice(0, 10))
+            // smarriti/archiviati fuori dalla timeline per i non-admin (MOD-14)
+            && (isAdminDoc || !CATEGORIE_DOC.find((c) => c.match(d.file_type))?.adminOnly))
             .map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "var(--tf-f59e0b)", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
         ...eventiDisdette.filter((e) => e.when),
     ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
@@ -504,8 +512,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                     {/* ───────── COLONNA DESTRA: schede ───────── */}
                     <div className="glass-card flex flex-col min-h-[440px]">
                         <div className="flex border-b border-white/5 px-3 shrink-0">
-                            {/* il badge conta i FILE veri, non le righe replicate sulle pratiche (dedup per file_url) */}
-                            {[{ id: "timeline", label: "Timeline 360°", icon: "⏳" }, { id: "contratti", label: `Contratti (${contratti.length})`, icon: "📄" }, ...(vedeAllegati ? [{ id: "documenti", label: `Documenti (${new Set(docs.map(d => d.file_url)).size})`, icon: "📎" }] : [])].map(t => (
+                            {/* il badge conta i FILE veri (dedup per file_url), e SOLO quelli
+                                visibili: smarriti/archiviati contano solo per l'amministrazione (MOD-14) */}
+                            {[{ id: "timeline", label: "Timeline 360°", icon: "⏳" }, { id: "contratti", label: `Contratti (${contratti.length})`, icon: "📄" }, ...(vedeAllegati ? [{ id: "documenti", label: `Documenti (${new Set(docs.filter(d => isAdminDoc || !CATEGORIE_DOC.find(c => c.match(d.file_type))?.adminOnly).map(d => d.file_url)).size})`, icon: "📎" }] : [])].map(t => (
                                 <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
                                     className={`px-4 py-3.5 text-[13px] font-semibold flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab === t.id ? "border-indigo-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
                                     <span>{t.icon}</span> {t.label}
@@ -696,6 +705,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             // la vendita l'ha agganciato a più pratiche (dedup per file).
                             <div className="space-y-3">
                                 {CATEGORIE_DOC.map((cat) => {
+                                    // categorie smarriti/archiviati SOLO all'amministrazione (MOD-14)
+                                    if ((cat as { adminOnly?: boolean }).adminOnly && !isAdminDoc) return null;
                                     const perBrand = alberoDocs.get(cat.id);
                                     if (!perBrand || perBrand.size === 0) return null;
                                     const fileCat = new Set<string>();
