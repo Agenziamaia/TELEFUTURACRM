@@ -1646,34 +1646,33 @@ export default function ClientiPage() {
             <div className="flex-1 overflow-y-auto p-4 md:p-8">
                 <div className="max-w-7xl mx-auto space-y-6">
 
-                    {/* PULSANTONI TIPO CLIENTE (Luca 08/08): sopra la ricerca, solo
-                        emoji — 👥 tutti · 👤 consumer · 🏢 business · 🌍 turisti.
-                        Il filtro Tipo esce dai Filtri Avanzati e vive qui. */}
-                    <div className="flex justify-center gap-3">
-                        {([
-                            { t: "tutti", emoji: "👥", titolo: "Tutti i clienti" },
-                            { t: "consumer", emoji: "👤", titolo: "Consumer" },
-                            { t: "business", emoji: "🏢", titolo: "Business" },
-                            { t: "turista", emoji: "🌍", titolo: "Turisti" },
-                        ] as const).map(({ t, emoji, titolo }) => (
-                            <button
-                                key={t}
-                                onClick={() => { setFilterTipo(t); setCurrentPage(1); }}
-                                title={titolo} aria-label={titolo}
-                                className={`w-16 h-16 rounded-2xl border flex items-center justify-center text-3xl transition-all ${filterTipo === t
-                                    ? "bg-violet-500/20 border-violet-500/50 shadow-lg shadow-violet-500/10 scale-105"
-                                    : "bg-white/5 border-white/10 grayscale opacity-60 hover:opacity-100 hover:grayscale-0"
-                                    }`}
-                            >
-                                {emoji}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* TOP CONTROLS */}
-                    <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+                    {/* TOP CONTROLS — pulsantini tipo cliente + ricerca + filtri
+                        sulla STESSA riga (Luca 08/08: più piccoli, allineati alla
+                        casella di ricerca, tabella più in alto) */}
+                    <div className="flex flex-col md:flex-row gap-3 justify-between items-center">
+                        {/* Tipo cliente: solo emoji, altezza = casella ricerca */}
+                        <div className="flex gap-1.5 shrink-0">
+                            {([
+                                { t: "tutti", emoji: "👥", titolo: "Tutti i clienti" },
+                                { t: "consumer", emoji: "👤", titolo: "Consumer" },
+                                { t: "business", emoji: "🏢", titolo: "Business" },
+                                { t: "turista", emoji: "🌍", titolo: "Turisti" },
+                            ] as const).map(({ t, emoji, titolo }) => (
+                                <button
+                                    key={t}
+                                    onClick={() => { setFilterTipo(t); setCurrentPage(1); }}
+                                    title={titolo} aria-label={titolo}
+                                    className={`w-11 h-11 rounded-xl border flex items-center justify-center text-lg transition-all ${filterTipo === t
+                                        ? "bg-violet-500/20 border-violet-500/50 shadow shadow-violet-500/10"
+                                        : "bg-white/5 border-white/10 grayscale opacity-60 hover:opacity-100 hover:grayscale-0"
+                                        }`}
+                                >
+                                    {emoji}
+                                </button>
+                            ))}
+                        </div>
                         {/* Quick Search */}
-                        <div className="relative w-full md:w-96 group">
+                        <div className="relative w-full md:flex-1 md:max-w-md group">
                             <input
                                 type="text"
                                 placeholder="Cerca per nome, email, cellulare, CF..."
