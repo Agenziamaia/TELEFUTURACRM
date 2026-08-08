@@ -4464,6 +4464,10 @@ function CRM() {
   };
   const brandVisibili=BRANDS.filter(b=>_brandEff(b).vede);
   const [confirmReset,setConfirmReset]=useState(false);
+  // MOD-2b (Luca 08/08): conferma "nessuna opzione da collegare?" quando si mette
+  // in carrello un'offerta che HA opzioni disponibili ma non ne ha scelta nessuna.
+  // {offerte:string[], after:fn|null} mentre il popup è aperto; null = chiuso.
+  const [confirmNoOpz,setConfirmNoOpz]=useState(null);
   const [showStep4,setShowStep4]=useState(false);
   // quando il flusso apre i prodotti, la vista segue (qui e NON piu' in alto:
   // le dipendenze dell'effect si valutano subito → showStep4 deve esistere)
@@ -4616,11 +4620,31 @@ function CRM() {
   const hasIncomplete=(()=>{let bad=false;cats.forEach(g=>{(sales[g.id]||[]).forEach((row,si)=>{if(!row)return;g.subs.forEach(s=>{const d=row[s.id];if(d&&d.active){const b=subBadge(d,dupCheck,s,_reqMissing(g.id+"-"+si+"-"+s.id));if(b&&b.st!=="ok")bad=true;}});});});return bad;})();
   const skyIncomplete=false; // Sky ora passa dal flusso catalogo (macchinario skyS dormiente)
   const blockSaveAll=blockSave||hasIncomplete||skyIncomplete;
-  const addCart=()=>{
+  // MOD-2b: offerte del brand corrente che HANNO opzioni a catalogo ma per cui il
+  // venditore non ne ha collegata NESSUNA (nomi unici, per il popup di conferma).
+  const _offerteSenzaOpzioni=()=>{
+    const out=[];
+    cats.forEach(g=>{(sales[g.id]||[]).forEach(row=>{if(!row)return;g.subs.forEach(s=>{
+      if(!s.isCatalogo)return;
+      const d=row[s.id];if(!(d&&d.active))return;
+      const f=d.fields||{};const offName=f["Offerta"]||"";if(!offName)return;
+      const offSel=(s.catOfferte||[]).find(o=>o.nome===offName);
+      if(!offSel||!(offSel.opzioni||[]).length)return;   // offerta senza opzioni a catalogo → niente conferma
+      const opz=f.__opzioni||{};
+      if(Object.keys(opz).filter(k=>opz[k]).length===0&&out.indexOf(offName)<0)out.push(offName);
+    });});});
+    return out;
+  };
+  const addCart=(after,skipOpz)=>{
     const items=colItems();
     if(blockSaveAll){sT(hasIncomplete?"⚠ Ci sono prodotti Incompleti: completali prima di salvare":(hasDupPodPdr?"⚠ POD/PDR duplicato: correggi prima di salvare":(hasDupCodContr?"⚠ Codice contratto duplicato: correggi prima di salvare":"⚠ Numero/ICCID non valido: correggi prima di salvare")));return;}
+    // MOD-2b (Luca 08/08): prima di mettere in carrello, se c'è un'offerta con
+    // opzioni disponibili ma nessuna collegata, chiedi conferma. Il commit vero
+    // (e la navigazione "after") avviene solo dopo il sì (addCart(after,true)).
+    if(!skipOpz){const senza=_offerteSenzaOpzioni();if(senza.length){setConfirmNoOpz({offerte:senza,after:after||null});return;}}
     if(items.length>0&&bObj){const snap={sales:JSON.parse(JSON.stringify(sales)),sesCode,skyS:JSON.parse(JSON.stringify(skyS))};setCart(p=>[...p,{brandId:brand,brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items,sv:snap}]);setMargItems(p=>computeAutoMarg(p,brand,bObj.label,items));sT("✅ "+items.length+" prodotti "+bObj.label)}
     setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setBrand(null);
+    if(after)after();
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
   const rmCG=idx=>setCart(p=>p.filter((_,i)=>i!==idx));
@@ -5839,6 +5863,28 @@ function CRM() {
     </div>
   );
 
+  // MOD-2b: conferma "nessuna opzione da collegare?" — condivisa da form e carrello
+  // come confirmResetModal. Il sì rilancia addCart saltando il check (skipOpz=true)
+  // e riesegue la navigazione "after" salvata all'apertura del popup.
+  const confirmNoOpzModal = confirmNoOpz && (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirmNoOpz(null)}}>
+      <div style={{background:"var(--tf-0e1526)",border:"1px solid var(--tf-w120)",borderRadius:16,padding:"28px 30px",width:"min(460px,92vw)",boxShadow:"0 18px 50px rgba(0,0,0,.55)",textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:10}}>🧩</div>
+        <div style={{fontSize:17,fontWeight:800,color:"var(--tf-f8fafc)",marginBottom:6}}>Nessuna opzione da collegare?</div>
+        <div style={{fontSize:14,color:"var(--tf-8892b0)",marginBottom:14,lineHeight:1.5}}>
+          {(confirmNoOpz.offerte||[]).length>1?"Queste offerte hanno":"Questa offerta ha"} opzioni disponibili, ma non ne {(confirmNoOpz.offerte||[]).length>1?"hai collegata nessuna":"hai collegata nessuna"}:
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",marginBottom:20}}>
+          {(confirmNoOpz.offerte||[]).map(n=><span key={n} style={{padding:"6px 12px",borderRadius:999,border:"1px solid var(--tf-w150)",background:"var(--tf-w30)",color:"var(--tf-c4b5fd)",fontSize:12,fontWeight:700}}>{n}</span>)}
+        </div>
+        <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+          <button onClick={()=>setConfirmNoOpz(null)} style={{padding:"11px 24px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:700,cursor:"pointer"}}>No, torno a collegarle</button>
+          <button onClick={()=>{const a=confirmNoOpz&&confirmNoOpz.after;setConfirmNoOpz(null);addCart(a,true);}} style={{padding:"11px 24px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#1f8a3a)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>Sì, prosegui senza opzioni</button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ═══════════ CART ═══════════
   if(showCart){
     const curI=colItems();const allG=[...cart];
@@ -5933,7 +5979,7 @@ function CRM() {
           <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
           {/* #124: reset TOTALE del form disponibile anche nel carrello */}
           <button onClick={()=>setConfirmReset(true)} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
-          {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
+          {!onlyMarg&&<button onClick={()=>{const nav=()=>{setBrand(null);setShowCart(false);};if(brand&&colItems().length>0){addCart(nav);}else{nav();}}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
           {onlyMarg&&<button onClick={()=>setShowMargSave(true)} style={{padding:"12px 36px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
           {!onlyMarg&&(()=>{const _m=mancanzeVendita();const _ok=tp>0&&!submitting&&_m.length===0;
             // col gate non superato il bottone RESTA cliccabile (Luca 04/08):
@@ -6029,7 +6075,7 @@ function CRM() {
           </div>
         </div>}
         {/* #124: popup di conferma reset anche dentro il carrello */}
-        {confirmResetModal}
+        {confirmResetModal}{confirmNoOpzModal}
       </div>
     );
     return cartContent;
@@ -6721,12 +6767,12 @@ select.rvIn{cursor:pointer}
               VERO resta nel riepilogo) e compare SOLO dopo la scelta Sì/No
               sulle note. Apre il RIEPILOGO (caso Damiano 04/08: col ritorno
               alla griglia brand la registrazione finale non partiva mai). */}
-          {brand&&vistaStep==="note"&&notaScelta&&<button onClick={()=>{addCart();setVistaStep("brand");setShowCart(true);}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>🛒 Vai al carrello →</button>}
+          {brand&&vistaStep==="note"&&notaScelta&&<button onClick={()=>{addCart(()=>{setVistaStep("brand");setShowCart(true);});}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>🛒 Vai al carrello →</button>}
         </div>
       </div>}
 
       {/* ── CONFIRM RESET POPUP (condiviso, #124) ────────────────────────── */}
-      {confirmResetModal}
+      {confirmResetModal}{confirmNoOpzModal}
 
       {/* ── VF QTY MODAL OVERLAY ─────────────────────────────────────────── */}
       {vfQtyModal&&(
