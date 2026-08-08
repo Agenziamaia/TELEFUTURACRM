@@ -16,7 +16,7 @@ import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK } from "@/lib/capabilities";
-import { fasciaLabel } from "@/lib/fasce";
+import { fasciaLabel, fasciaStart, eFascia } from "@/lib/fasce";
 import { RicercaCliente } from "@/components/RicercaCliente";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto).
@@ -383,6 +383,13 @@ export default function Calendario() {
     const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
     const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
 
+    // MOD-8 (Luca 08/08): il negozio esita un appuntamento come "Da richiamare" →
+    // fissa il giorno → si genera un appuntamento telefonico (type "richiamo") al
+    // caller che l'aveva fissato e la pratica torna nella sua coda del call center.
+    const [richiamoNegozio, setRichiamoNegozio] = useState<{ date: string; fascia: string; time: string }>({ date: "", fascia: "mattina", time: "" });
+    const [richiamoNegozioBusy, setRichiamoNegozioBusy] = useState(false);
+    const [richiamoNegozioEsito, setRichiamoNegozioEsito] = useState<string | null>(null);
+
     // Agenda blocks (agent-only); blocked dates prevent telephone team from booking
     const [agendaBlocks, setAgendaBlocks] = useState<AgendaBlock[]>([]);
     const [showBlockAgendaModal, setShowBlockAgendaModal] = useState(false);
@@ -604,6 +611,106 @@ export default function Calendario() {
         const d = esitoDef(status, tipo);
         return (d && PALETTE[d.colore]) || (STATUS_COLORS as Record<string, string>)[status] || PALETTE.slate;
     };
+    // ── MOD-8 (Luca 08/08): genera l'appuntamento telefonico al call center dopo
+    // che il negozio ha esitato l'appuntamento fisico come "Da richiamare".
+    // Crea (o aggiorna, se già esiste) un evento type "richiamo" nel calendario
+    // intestato a chi aveva fissato l'appuntamento, e riporta la pratica collegata
+    // nella coda del caller (calls.stato = "Da richiamare" + data_richiamo).
+    async function generaRichiamoDaNegozio() {
+        const a = selectedAppointment;
+        if (!a) return;
+        if (!richiamoNegozio.date) { setRichiamoNegozioEsito("⚠️ Scegli il giorno del richiamo."); return; }
+        setRichiamoNegozioBusy(true);
+        setRichiamoNegozioEsito(null);
+        try {
+            const fasciaR = eFascia(richiamoNegozio.fascia) ? richiamoNegozio.fascia : null;
+            const oraTecnica = fasciaR ? fasciaStart(fasciaR)! : (richiamoNegozio.time || "10:00").slice(0, 5);
+            const provenienza = `Richiamo richiesto dal negozio${a.store ? ` (${a.store})` : ""} dopo l'appuntamento del ${new Date(a.date + "T12:00:00").toLocaleDateString("it-IT")}`;
+
+            // Pratiche del call center collegate a questo appuntamento fisico. Un
+            // business con più contratti può avere più righe sullo stesso
+            // appointment_id (matchAppuntamento) → le requeue tutte.
+            const { data: linkRows } = await supabase
+                .from("calls")
+                .select("id, caller, richiamo_event_id")
+                .eq("appointment_id", a.id);
+            const calls = (linkRows as { id: string; caller?: string | null; richiamo_event_id?: number | null }[] | null) || [];
+            // dedup: se una delle pratiche ha già un evento richiamo, riusa quello
+            const existingEvt = calls.find(c => c.richiamo_event_id)?.richiamo_event_id || null;
+            // intestatario = il caller che lavorava la pratica; ripiego su chi ha
+            // fissato l'appuntamento (per gli walk-in senza call collegata).
+            const intestatario = calls.find(c => c.caller)?.caller || a.createdBy || "";
+
+            const payload: Record<string, unknown> = {
+                date: richiamoNegozio.date,
+                time: oraTecnica,
+                fascia: fasciaR,
+                type: "richiamo",
+                store: null,
+                agente: "",
+                customer_name: a.customerName,
+                customer_phone: a.customerPhone,
+                cf_piva: a.cfPiva || null,
+                notes: [provenienza, a.esitoNote].filter(Boolean).join(" — "),
+                status: "scheduled",
+                created_by: intestatario,
+            };
+            const { fascia: _fx, ...payloadLegacy } = payload;   // fallback pre-mig. 118
+
+            let eventId = existingEvt;
+            if (existingEvt) {
+                let { error } = await supabase.from("appointments").update(payload).eq("id", existingEvt);
+                if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(payloadLegacy).eq("id", existingEvt));
+                if (error) throw error;
+            } else {
+                let { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+                if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert(payloadLegacy).select("id").single());
+                if (error) throw error;
+                eventId = (ins as { id: number } | null)?.id ?? null;
+            }
+
+            // Rimetti OGNI pratica collegata nella coda del suo caller. Se l'update
+            // fallisce NON è un successo: va segnalato (bug: prima era silenziato).
+            let inCoda = 0;
+            let requeueErr: string | null = null;
+            for (const c of calls) {
+                const upd: Record<string, unknown> = { stato: "Da richiamare", data_richiamo: richiamoNegozio.date, fascia_richiamo: fasciaR };
+                if (eventId) upd.richiamo_event_id = eventId;
+                let { error } = await supabase.from("calls").update(upd).eq("id", c.id);
+                if (error && /column/i.test(error.message || "")) {
+                    const { fascia_richiamo: _f, richiamo_event_id: _r, ...legacy } = upd;
+                    ({ error } = await supabase.from("calls").update(legacy).eq("id", c.id));
+                }
+                if (error) requeueErr = error.message; else inCoda++;
+            }
+
+            // aggiorna la vista locale del calendario con l'evento richiamo
+            if (eventId) {
+                const nuovo: Appointment = {
+                    id: eventId, date: richiamoNegozio.date, time: oraTecnica, fascia: fasciaR || undefined,
+                    type: "richiamo", agente: "", store: undefined,
+                    customerName: a.customerName, customerPhone: a.customerPhone, cfPiva: a.cfPiva,
+                    notes: String(payload.notes || ""), status: "scheduled", createdBy: intestatario,
+                };
+                setAppointments(prev => prev.some(x => x.id === eventId) ? prev.map(x => x.id === eventId ? { ...x, ...nuovo } : x) : [...prev, nuovo]);
+            }
+
+            const quando = `${new Date(richiamoNegozio.date + "T12:00:00").toLocaleDateString("it-IT")}${fasciaR ? ` · ${fasciaLabel(fasciaR)}` : ""}`;
+            const noNumero = !String(a.customerPhone || "").trim() ? " ⚠️ Il cliente non ha un numero in scheda: il caller lo recupera dall'anagrafica." : "";
+            if (calls.length === 0) {
+                setRichiamoNegozioEsito(`✅ Richiamo fissato per il ${quando} in calendario per ${intestatario || "il call center"}. Nessuna pratica del centralino era collegata a questo appuntamento, quindi non compare nella coda chiamate.${noNumero}`);
+            } else if (requeueErr) {
+                setRichiamoNegozioEsito(`⚠️ Evento creato, ma ${calls.length - inCoda} pratica/e NON è tornata nella coda del caller: ${requeueErr}`);
+            } else {
+                setRichiamoNegozioEsito(`✅ Richiamo fissato per il ${quando}. La pratica è tornata nella coda di ${intestatario || "il call center"}.${noNumero}`);
+            }
+        } catch (e) {
+            setRichiamoNegozioEsito("❌ Errore: " + ((e as Error).message || "richiamo non creato"));
+        } finally {
+            setRichiamoNegozioBusy(false);
+        }
+    }
+
     // filtro esiti appuntamenti: unione negozio+domicilio, senza doppioni
     const esitiFiltroAppt = (() => {
         const visti = new Set<string>();
@@ -2412,6 +2519,9 @@ export default function Calendario() {
                                         await supabase.from("appointments").update({ status: s }).eq("id", selectedAppointment.id);
                                         setAppointments(prev => prev.map(a => a.id === selectedAppointment.id ? { ...a, status: s } : a));
                                         setSelectedAppointment({ ...selectedAppointment, status: s });
+                                        // MOD-8: quando si sceglie "Da richiamare" apparecchia il pannello richiamo
+                                        setRichiamoNegozioEsito(null);
+                                        if (s === "da_richiamare") setRichiamoNegozio({ date: "", fascia: "mattina", time: "" });
                                     }}
                                 >
                                     {(() => {
@@ -2442,6 +2552,46 @@ export default function Calendario() {
                                         setSelectedAppointment({ ...selectedAppointment, esitoNote: v });
                                     }}
                                 />
+
+                                {/* MOD-8: negozio → "Da richiamare" → fissa il giorno → richiamo al call center */}
+                                {selectedAppointment.status === "da_richiamare" && selectedAppointment.type !== "richiamo" && (
+                                    <div className="mt-2 p-3 rounded-xl bg-pink-500/10 border border-pink-500/30 space-y-2">
+                                        <p className="text-[11px] font-semibold text-pink-200 flex items-center gap-1.5">
+                                            <Phone className="w-3.5 h-3.5" /> Genera l&apos;appuntamento telefonico per il call center
+                                        </p>
+                                        <p className="text-[11px] text-slate-400 leading-snug">
+                                            Fissa quando il cliente va ricontattato: si crea un richiamo intestato a
+                                            {selectedAppointment.createdBy ? ` ${selectedAppointment.createdBy}` : " chi ha fissato l'appuntamento"} e, se la pratica è collegata, torna nella coda del centralino.
+                                        </p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-[10px] text-slate-500 mb-1">Giorno *</label>
+                                                <input type="date" className="glass-input w-full text-xs"
+                                                    value={richiamoNegozio.date}
+                                                    onChange={e => setRichiamoNegozio(p => ({ ...p, date: e.target.value }))} />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] text-slate-500 mb-1">Fascia</label>
+                                                <select className="glass-input w-full text-xs"
+                                                    value={richiamoNegozio.fascia}
+                                                    onChange={e => setRichiamoNegozio(p => ({ ...p, fascia: e.target.value }))}>
+                                                    <option value="mattina">🌅 Mattina (10:00–13:00)</option>
+                                                    <option value="pomeriggio">🌇 Pomeriggio (16:00–19:30)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <button type="button" disabled={richiamoNegozioBusy || !richiamoNegozio.date}
+                                            onClick={generaRichiamoDaNegozio}
+                                            className="w-full py-2 rounded-lg bg-pink-500/20 border border-pink-500/40 text-pink-200 text-xs font-medium hover:bg-pink-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                                            {richiamoNegozioBusy ? "Creazione…" : "📞 Genera richiamo per il call center"}
+                                        </button>
+                                        {richiamoNegozioEsito && (
+                                            <p className={cn("text-[11px] leading-snug", richiamoNegozioEsito.startsWith("✅") ? "text-emerald-300" : richiamoNegozioEsito.startsWith("⚠️") ? "text-amber-300" : "text-red-300")}>
+                                                {richiamoNegozioEsito}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
