@@ -946,6 +946,56 @@ export default function RicercaContratto() {
     // resetta a ogni apertura da openContract).
     const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({});
     const toggleSec = (id: string) => setOpenSecs(p => ({ ...p, [id]: !p[id] }));
+    // SPOSTA CONTRATTO AD ALTRO CLIENTE (Luca 08/08, caso Butnaru/Fei): quando
+    // la vendita è registrata sulla scheda cliente sbagliata, si cambia il
+    // client_id invece di forzare il CF (che è univoco). Solo modifica diretta.
+    const [spostaOpen, setSpostaOpen] = useState(false);
+    const [spostaQuery, setSpostaQuery] = useState("");
+    const [spostaHits, setSpostaHits] = useState<{ id: string; nome: string; cognome: string; ragione_sociale: string; cf_piva: string; cellulare: string }[]>([]);
+    const [spostaBusy, setSpostaBusy] = useState(false);
+    useEffect(() => {
+        const q = spostaQuery.trim();
+        if (!spostaOpen || q.length < 3) { setSpostaHits([]); return; }
+        let vivo = true;
+        const t = setTimeout(async () => {
+            const like = `%${q}%`;
+            const { data } = await supabase.from("clients")
+                .select("id, nome, cognome, ragione_sociale, cf_piva, cellulare")
+                .or(`cf_piva.ilike.${like},nome.ilike.${like},cognome.ilike.${like},ragione_sociale.ilike.${like},cellulare.ilike.${like}`)
+                .limit(8);
+            if (vivo) setSpostaHits((data as typeof spostaHits) || []);
+        }, 250);
+        return () => { vivo = false; clearTimeout(t); };
+    }, [spostaQuery, spostaOpen]);
+    const spostaContrattoA = async (nuovo: { id: string; nome: string; cognome: string; ragione_sociale: string }) => {
+        if (!selectedContract || spostaBusy) return;
+        const nomeNuovo = nuovo.ragione_sociale || `${nuovo.nome || ""} ${nuovo.cognome || ""}`.trim() || nuovo.id;
+        const vecchioClient = selectedContract.raw?.client_id as string | undefined;
+        const dataV = selectedContract.raw?.data as string | undefined;
+        if (!vecchioClient) { alert("Il contratto non ha un cliente collegato: impossibile spostare."); return; }
+        // Sposta TUTTE le righe della STESSA vendita (stesso cliente + stessa
+        // data): CTR + marginalità EXT insieme, così la vendita non si spacca
+        // (caso Butnaru/Fei). Le altre vendite dello stesso cliente (date diverse)
+        // NON si toccano.
+        const { data: righeV } = await supabase.from("contracts").select("id, storia, brand").eq("client_id", vecchioClient).eq("data", dataV || selectedContract.data_registrazione || "");
+        const righe = (righeV || []) as { id: string; storia: unknown; brand: string }[];
+        const n = righe.length || 1;
+        if (!window.confirm(`Spostare questa vendita (${n} rig${n === 1 ? "a" : "he"}: contratto + eventuali marginalità dello stesso giorno) dal cliente «${selectedContract.cliente}» al cliente «${nomeNuovo}»?\nI dati restano invariati, cambia solo la scheda cliente.`)) return;
+        setSpostaBusy(true);
+        try {
+            const stamp = new Date().toISOString();
+            for (const rg of (righe.length ? righe : [{ id: selectedContract.id, storia: [], brand: "" }])) {
+                const storia = Array.isArray(rg.storia) ? [...rg.storia] : [];
+                storia.push({ at: stamp, user: user?.name || "—", campo: "Cliente", da: selectedContract.cliente, a: nomeNuovo });
+                const { error } = await supabase.from("contracts").update({ client_id: nuovo.id, storia }).eq("id", rg.id);
+                if (error) { alert(`Spostamento riga ${rg.id} NON riuscito: ${error.message}`); setSpostaBusy(false); return; }
+            }
+            setSpostaOpen(false); setSpostaQuery(""); setSpostaHits([]);
+            setSelectedContract(null);
+            await fetchData();
+        } catch (e) { alert("Errore: " + (e instanceof Error ? e.message : "riprova")); }
+        setSpostaBusy(false);
+    };
     const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
         const vals: Record<string, string> = {};
         CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
@@ -957,6 +1007,7 @@ export default function RicercaContratto() {
         // OPZIONI contrattualizzate (Luca 07/08): jsonb → JSON canonico,
         // l'editor dedicato vive in "Dati del contratto"
         vals["contract::opzioni"] = JSON.stringify(Array.isArray(row.raw?.opzioni) ? row.raw.opzioni : []);
+        setSpostaOpen(false); setSpostaQuery(""); setSpostaHits([]);   // reset pannello sposta
         setEditValues(vals);
         setReqNote("");
         setReqMsg(null);
@@ -2213,6 +2264,14 @@ export default function RicercaContratto() {
                                             <Edit className="w-3.5 h-3.5" /> Modifica
                                         </button>
                                     )}
+                                    {/* SPOSTA a un altro cliente (Luca 08/08): solo modifica diretta,
+                                        per correggere una vendita intestata alla scheda sbagliata */}
+                                    {detailMode === "edit" && modificaDiretta && !isMarg && (
+                                        <button onClick={() => setSpostaOpen(v => !v)}
+                                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 flex items-center gap-1.5">
+                                            🔀 Sposta cliente
+                                        </button>
+                                    )}
                                     {detailMode === "edit" && (
                                         <button onClick={() => openContract(row, "view")}
                                             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/5 text-slate-300 hover:bg-white/10">
@@ -2226,6 +2285,31 @@ export default function RicercaContratto() {
                             </div>
 
                             <div className="p-6 overflow-y-auto space-y-6">
+                                {/* SPOSTA CONTRATTO AD ALTRO CLIENTE (Luca 08/08) */}
+                                {spostaOpen && detailMode === "edit" && modificaDiretta && (
+                                    <div className="rounded-xl border border-amber-400/40 bg-amber-400/[0.06] p-4 space-y-3">
+                                        <div className="text-sm font-bold text-amber-200">🔀 Sposta a un altro cliente</div>
+                                        <p className="text-xs text-slate-400">Cerca la scheda cliente giusta (CF, nome o cellulare): il contratto <b className="text-slate-200">{row.id}</b> verrà intestato a quella scheda. I dati del contratto restano invariati.</p>
+                                        <input value={spostaQuery} onChange={e => setSpostaQuery(e.target.value)} autoFocus
+                                            placeholder="CF, nome, cognome o cellulare…" className="glass-input w-full text-sm" />
+                                        <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                                            {spostaQuery.trim().length < 3 ? <p className="text-[11px] text-slate-500">Scrivi almeno 3 caratteri.</p>
+                                                : spostaHits.length === 0 ? <p className="text-[11px] text-slate-500">Nessun cliente trovato.</p>
+                                                    : spostaHits.filter(h => h.id !== row.raw?.client_id).map(h => {
+                                                        const nome = h.ragione_sociale || `${h.nome || ""} ${h.cognome || ""}`.trim() || "—";
+                                                        return (
+                                                            <button key={h.id} disabled={spostaBusy} onClick={() => spostaContrattoA(h)}
+                                                                className="w-full flex items-center gap-2 text-left rounded-lg bg-white/[0.03] border border-white/10 px-3 py-2 hover:bg-white/[0.07] hover:border-amber-400/40 disabled:opacity-50">
+                                                                <span className="text-xs font-semibold text-slate-100 truncate flex-1">{nome}</span>
+                                                                <span className="text-[10px] font-mono text-slate-400">{h.cf_piva || "senza CF"}</span>
+                                                                {h.cellulare && <span className="text-[10px] text-slate-500">· {h.cellulare}</span>}
+                                                                <span className="text-[10px] font-bold text-amber-300">sposta →</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                        </div>
+                                    </div>
+                                )}
                                 {reqMsg && (
                                     <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{reqMsg}</div>
                                 )}

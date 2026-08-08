@@ -1412,7 +1412,10 @@ function CallerPageInner() {
             }
             await creaAnagraficaSeManca(editCall);
             await assorbiPraticheGemelle(editCall, editCall.id);
-            if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
+            // MOD-10 (Luca 08/08): "Appuntamento telefonico" NON va sul calendario —
+            // resta pratica del call center e segue il flusso classico giorni/malus
+            // sulla data fissata (data_richiamo, salvata sopra). "Da richiamare" sì.
+            if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew && editCall.statoNew !== "Appuntamento telefonico") {
                 await sincronizzaRichiamo({ ...original, ...editCall }, editCall.id, editCall.dataRichiamoNew);
             }
             if (APP_STATI.includes(editCall.statoNew)) {
