@@ -2406,7 +2406,11 @@ export default function Calendario() {
                                     }}
                                 >
                                     {(() => {
-                                        const scelte = esitiPer(selectedAppointment.type);
+                                        // "attivato"/"attivato_diverso_negozio" NON sono selezionabili a
+                                        // mano dal negozio (Luca 08/08): arrivano SOLO dal match con una
+                                        // vendita registrata. Il valore corrente resta visibile.
+                                        const BLOCCATI = ["attivato", "attivato_diverso_negozio"];
+                                        const scelte = esitiPer(selectedAppointment.type).filter((x) => !BLOCCATI.includes(x.chiave));
                                         const cur = selectedAppointment.status;
                                         const conCorrente = scelte.some((x) => x.chiave === cur)
                                             ? scelte
@@ -2416,6 +2420,7 @@ export default function Calendario() {
                                         ));
                                     })()}
                                 </select>
+                                <p className="text-[11px] text-slate-500">L&apos;esito «Attivato» si imposta da solo quando la vendita del cliente viene registrata (match automatico) — non è più selezionabile a mano.</p>
                                 <textarea
                                     className="glass-input w-full resize-none text-xs"
                                     rows={2}

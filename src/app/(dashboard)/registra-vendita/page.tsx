@@ -6,7 +6,8 @@ import { ErrorBoundaryClient } from "@/components/ErrorBoundaryClient";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { MARG_PRODUCTS_LEGACY } from "@/lib/margMargini";
-import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento, appuntamentiPerCF } from "@/lib/matchAppuntamento";
+import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento, appuntamentiPerCF, venditoreLavoraIn } from "@/lib/matchAppuntamento";
+import { storeRoot as _storeRoot } from "@/lib/storeRoot";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
@@ -4357,9 +4358,23 @@ function CRM() {
     try{
       if(!cf&&!cfRef){setApptAvviso(null);return;}
       const apps=await appuntamentiPerCF(cf||"",cfRef||"");
-      const aperto=apps.find(a=>!["attivato","ko","annullato"].includes(String(a.status||"")));
+      const aperto=apps.find(a=>!["attivato","attivato_diverso_negozio","ko","annullato"].includes(String(a.status||"")));
       setApptAvviso(aperto?{da:aperto.created_by||"un caller",data:aperto.date,store:aperto.store}:null);
     }catch{setApptAvviso(null);}
+  };
+  // POPUP decisionale (Luca 08/08): quando la vendita chiude un appuntamento
+  // dello STESSO negozio, si CHIEDE al venditore se associarla (l'appuntamento
+  // puo' essere vecchio). {app, contractIds, firma}. Il caso "altro negozio" e'
+  // automatico (attivato_diverso_negozio, nessuna cooperation) senza popup.
+  const [matchPending,setMatchPending]=useState(null);
+  const [matchBusy,setMatchBusy]=useState(false);
+  const confermaMatch=async(assoc)=>{
+    const mp=matchPending; if(!mp)return;
+    if(!assoc){setMatchPending(null);return;}
+    setMatchBusy(true);
+    try{ await agganciaVenditaAppuntamento(mp.app.id, mp.contractIds, mp.firma, true); }
+    catch(e){ console.error("[MATCH-APP]",e); }
+    setMatchBusy(false); setMatchPending(null);
   };
   const [showAna,setShowAna]=useState(false);
   const [ana,setAna]=useState({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
@@ -5449,13 +5464,25 @@ function CRM() {
         }
         // MATCH APPUNTAMENTO (cantiere 08/08): se questa vendita chiude un
         // appuntamento del call center (stesso CF, entro 30gg dalla data
-        // fissata, stessa sede) lo ATTIVA e collega pratica caller + annulla il
-        // malus. Non blocca MAI il salvataggio (la vendita e' gia' a DB).
+        // fissata) lo aggancia. STESSO negozio + venditore che ci lavora →
+        // POPUP: il venditore decide se associare (cooperation al caller).
+        // ALTRO negozio → automatico "attivato_diverso_negozio" (visibilita',
+        // niente cooperation). Non blocca MAI il salvataggio.
         try {
           const _ctrDaMatch = contractRows.filter(r => String(r.id).startsWith("CTR-")).map(r => r.id);
           if (_ctrDaMatch.length && (ana.cf || ana.cfRef)) {
-            const appM = await trovaAppuntamentoDaAgganciare(ana.cf, ana.cfRef || null, selNeg, dateStr);
-            if (appM) await agganciaVenditaAppuntamento(appM.id, _ctrDaMatch, user?.name || selVend || "match");
+            const cand = await trovaAppuntamentoDaAgganciare(ana.cf, ana.cfRef || null, selNeg, dateStr);
+            if (cand) {
+              const radiceApp = cand.appuntamento.store ? _storeRoot(cand.appuntamento.store) : null;
+              const vendOk = !radiceApp || await venditoreLavoraIn(selVend || user?.name || null, radiceApp);
+              if (cand.stessoNegozio && vendOk) {
+                // stesso negozio: chiedo al venditore (popup dopo il reset)
+                setMatchPending({ app: cand.appuntamento, contractIds: _ctrDaMatch, firma: user?.name || selVend || "match" });
+              } else {
+                // altro negozio: attivato ma senza cooperation, in automatico
+                await agganciaVenditaAppuntamento(cand.appuntamento.id, _ctrDaMatch, user?.name || selVend || "match", false);
+              }
+            }
           }
         } catch (e) { console.error("[MATCH-APP]", e); }
       }
@@ -6075,6 +6102,25 @@ select.rvIn{cursor:pointer}
       </div>
       {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"var(--tf-ffd800)",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
       {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"var(--tf-28a745)",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
+      {/* POPUP MATCH APPUNTAMENTO (Luca 08/08): centrale, decisione esplicita —
+          "Sì, associa" grande, "No" piccolo a destra (stile "Più tardi"). */}
+      {matchPending&&createPortal(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",zIndex:12000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
+          <div style={{background:"var(--tf-0e1526)",border:"1px solid rgba(99,102,241,0.4)",borderRadius:16,maxWidth:480,width:"100%",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:40,textAlign:"center",marginBottom:8}}>📞</div>
+            <div style={{fontSize:18,fontWeight:800,color:"var(--tf-f8fafc)",textAlign:"center",marginBottom:10}}>Appuntamento del call center</div>
+            <div style={{fontSize:14,lineHeight:1.55,color:"var(--tf-cbd5e1)",textAlign:"center",marginBottom:20}}>
+              Questo cliente aveva un appuntamento preso da <b style={{color:"#fff"}}>{matchPending.app.created_by||"un caller"}</b>
+              {matchPending.app.date?<> per il <b style={{color:"#fff"}}>{matchPending.app.date}</b></>:null}
+              {matchPending.app.store?<> ({matchPending.app.store})</>:null}.<br/>
+              Vuoi <b style={{color:"var(--tf-a5b4fc)"}}>associare questa vendita</b> all&apos;appuntamento? Risulterà <b>attivato</b> e la cooperation andrà al caller.
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <button onClick={()=>confermaMatch(true)} disabled={matchBusy} style={{flex:1,padding:"13px 0",borderRadius:12,border:"none",background:"linear-gradient(135deg,#6366f1,#4f46e5)",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",opacity:matchBusy?0.6:1}}>{matchBusy?"Associo…":"✓ Sì, associa"}</button>
+              <button onClick={()=>confermaMatch(false)} disabled={matchBusy} style={{padding:"13px 16px",borderRadius:12,border:"none",background:"transparent",color:"var(--tf-8892b0)",fontSize:13,fontWeight:600,cursor:"pointer"}}>No</button>
+            </div>
+          </div>
+        </div>, document.body)}
       {/* titolo in alto a sinistra + contenuto a tutta pagina, come Ricerca Vendite (Luca 03/08) */}
       <div style={{marginBottom:18}}>
         <h1 style={{fontSize:28,fontWeight:800,color:"var(--tf-f8fafc)",margin:0,letterSpacing:-0.3}}>Registra Vendita</h1>
