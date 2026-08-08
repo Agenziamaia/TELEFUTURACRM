@@ -283,9 +283,32 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                 )}
             </div>
 
+            {/* IBRIDO (MOD-11, Luca 08/08): chi timbra E supervisiona vede una
+                barra di timbratura COMPATTA — stessa logica/stato della card
+                grande (nessun doppio stato del turno) — così i pannelli team
+                prendono tutta la larghezza. La card grande resta a chi SOLO timbra. */}
+            {puoTimbrare && vistaTeam && (
+                <div className="glass-panel p-4 flex items-center gap-4 flex-wrap border-l-4 border-l-indigo-500">
+                    <div className="flex items-center gap-2">
+                        <div className={cn("w-2.5 h-2.5 rounded-full animate-pulse", status === "running" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : status === "paused" ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" : "bg-slate-600")} />
+                        <span className="text-sm font-bold text-white uppercase tracking-tight">{labelStatus}</span>
+                    </div>
+                    <div className="text-2xl font-black text-white tabular-nums tracking-tighter">
+                        {Math.floor(todaySeconds / 3600).toString().padStart(2, "0")}:{String(Math.floor(todaySeconds / 60) % 60).padStart(2, "0")}<span className="text-base text-slate-400">:{String(todaySeconds % 60).padStart(2, "0")}</span>
+                    </div>
+                    {activeShift?.started_at && <span className="text-[11px] font-bold text-slate-400">Entrata {new Date(activeShift.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>}
+                    <div className="flex items-center gap-2 ml-auto">
+                        {canStart && <button onClick={handleStart} disabled={loading} className="h-10 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs tracking-wide transition-all active:scale-95 disabled:opacity-50">▶ Inizia turno</button>}
+                        {canPause && <button onClick={handlePause} className="h-10 px-4 rounded-xl bg-amber-500/20 text-amber-500 border border-amber-500/30 hover:bg-amber-500/30 font-bold text-xs tracking-wide transition-all active:scale-95">⏸ Pausa</button>}
+                        {canResume && <button onClick={handleResume} className="h-10 px-4 rounded-xl bg-emerald-500 text-white font-bold text-xs tracking-wide transition-all active:scale-95">▶ Riprendi</button>}
+                        {canStop && <button onClick={handleStop} className="h-10 px-4 rounded-xl bg-rose-500 text-white font-bold text-xs tracking-wide transition-all active:scale-95">■ Fine turno</button>}
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                {/* Badge Action Card — solo call center */}
-                {puoTimbrare && <div className="xl:col-span-4 glass-card p-8 flex flex-col items-center text-center relative overflow-hidden group">
+                {/* Badge Action Card grande — solo chi timbra e NON supervisiona */}
+                {puoTimbrare && !vistaTeam && <div className="xl:col-span-4 glass-card p-8 flex flex-col items-center text-center relative overflow-hidden group">
                     {/* Decorative background logo icon */}
                     <Clock className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 text-white/5 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700" />
 
@@ -372,7 +395,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                 </div>}
 
                 {/* Dashboard admin/Team View: senza card timbratura occupa TUTTA la larghezza */}
-                <div className={cn(puoTimbrare ? "xl:col-span-8" : "xl:col-span-12", "flex flex-col gap-6 min-w-0")}>
+                <div className={cn((puoTimbrare && !vistaTeam) ? "xl:col-span-8" : "xl:col-span-12", "flex flex-col gap-6 min-w-0")}>
                     {vistaTeam ? (
                         <>
                             <BadgeAdminDashboard onRefresh={async () => { await fetchActiveShift(); await fetchTeamStats(); }} />
