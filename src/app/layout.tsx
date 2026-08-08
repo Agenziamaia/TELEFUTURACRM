@@ -37,7 +37,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="it" suppressHydrationWarning>
-      <body className="antialiased font-sans bg-[#0f111a] text-white">
+      <body className="antialiased font-sans bg-[#0f111a] text-white" suppressHydrationWarning>
         {/* TEMA (Luca 29/07): applicato PRIMA del primo paint — senza questo
             script chi usa il tema chiaro vedrebbe un lampo scuro a ogni pagina. */}
         <script dangerouslySetInnerHTML={{ __html: `try{if(localStorage.getItem("crm_theme")==="chiaro")document.documentElement.classList.add("light");var f=(localStorage.getItem("tf_fs")||"").split(",");if(f[0]&&f[0]!=="0")document.documentElement.setAttribute("data-fs-sm",f[0]);if(f[1]&&f[1]!=="0")document.documentElement.setAttribute("data-fs-lg",f[1])}catch(e){}` }} />
