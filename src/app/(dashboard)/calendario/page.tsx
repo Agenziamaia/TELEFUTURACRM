@@ -2351,10 +2351,19 @@ export default function Calendario() {
                         </div>
                         <div className="space-y-3 text-sm">
                             <div className="flex items-center justify-between">
+                                {/* badge per TUTTI i tipi (Luca 08/08): prima era binario
+                                    incoming/else → i richiami risultavano "Outbound" (bug di vista;
+                                    a DB il type è corretto = 'richiamo', 0 outgoing) */}
                                 <span className={cn("px-3 py-1 rounded-full border text-xs font-medium",
-                                    selectedAppointment.type === "incoming" ? "bg-blue-500/15 border-blue-500/30 text-blue-400" : "bg-amber-500/15 border-amber-500/30 text-amber-400"
+                                    selectedAppointment.type === "incoming" ? "bg-blue-500/15 border-blue-500/30 text-blue-400" :
+                                        selectedAppointment.type === "richiamo" ? "bg-pink-500/15 border-pink-500/30 text-pink-300" :
+                                            selectedAppointment.type === "self_generated" ? "bg-purple-500/15 border-purple-500/30 text-purple-300" :
+                                                "bg-amber-500/15 border-amber-500/30 text-amber-400"
                                 )}>
-                                    {selectedAppointment.type === "incoming" ? "🏪 Inbound — cliente viene in store" : "🚗 Outbound — agente va dal cliente"}
+                                    {selectedAppointment.type === "incoming" ? "🏪 Inbound — cliente viene in store" :
+                                        selectedAppointment.type === "richiamo" ? "☎️ Richiamo telefonico — call center" :
+                                            selectedAppointment.type === "self_generated" ? "🧑‍💼 Auto-generato — agente" :
+                                                "🚗 Outbound — agente va dal cliente"}
                                 </span>
                                 <span className={cn("px-2.5 py-1 rounded-full border text-xs font-medium", esitoClasse(selectedAppointment.status, selectedAppointment.type))}>
                                     {esitoLabel(selectedAppointment.status, selectedAppointment.type)}
@@ -2377,7 +2386,7 @@ export default function Calendario() {
                                             className="px-2 py-0.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-xs shrink-0">🗺 Maps</a>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />{selectedAppointment.type === "incoming" && selectedAppointment.store ? `Punto vendita: ${selectedAppointment.store}` : `Agente: ${selectedAppointment.agente || "—"}`}</div>
+                                <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />{selectedAppointment.type === "incoming" && selectedAppointment.store ? `Punto vendita: ${selectedAppointment.store}` : selectedAppointment.type === "richiamo" ? `Call center: ${selectedAppointment.createdBy || selectedAppointment.agente || "—"}` : `Agente: ${selectedAppointment.agente || "—"}`}</div>
                                 {/* Operatore che ha preso l'appuntamento, a prima vista (Luca 30/07). */}
                                 {selectedAppointment.createdBy && (
                                     <div className="flex items-center gap-2 text-violet-300 text-sm font-medium">
