@@ -16,6 +16,7 @@ import { roleLabel, seesWholeStore, BRAND_COLORS } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { caricaTutte } from "@/lib/fetchTutte";
+import { cn } from "@/utils";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import {
   FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
