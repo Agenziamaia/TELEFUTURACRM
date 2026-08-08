@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
 import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
+import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { useActiveStores } from "@/lib/org";
 import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
 import { caricaTutte } from "@/lib/fetchTutte";
@@ -420,6 +421,13 @@ export default function RicercaContratto() {
     // /ricerca-vendite?id=<id> apre il dettaglio del contratto.
     // Segnalazione 75: il contratto cercato puo' non essere nella pagina caricata,
     // quindi filtro subito per quell'id: cosi' c'e' di sicuro e il dettaglio si apre.
+    // MOD-1b (Luca 08/08): carico le regole campi vendita a DB così il modale
+    // può ricalcolare i campi che le OPZIONI si portano dietro (senza, userebbe
+    // solo il fallback statico). Stessa fonte del pannello Catalogo / Registra.
+    useEffect(() => {
+        supabase.from("catalog_campi_regole").select("*").order("ordine")
+            .then(({ data }) => { if (data) impostaRegoleCampi(data as Parameters<typeof impostaRegoleCampi>[0]); });
+    }, []);
     const deepLinked = useRef(false);
     useEffect(() => {
         const id = new URLSearchParams(window.location.search).get("id");
@@ -1170,8 +1178,24 @@ export default function RicercaContratto() {
         const { error: cErr } = await supabase.from("contracts").update(contractPatch).eq("id", contractId);
         if (cErr) return "Modifica NON applicata al contratto: " + cErr.message;
         if (Object.keys(clientPatch).length > 0 && c.client_id) {
+            // CF/P.IVA è UNIVOCO: se il nuovo codice è già di un altro cliente
+            // l'update fallirebbe con l'errore SQL grezzo (uq_clients_cf_piva).
+            // Messaggio CHIARO che guida alla soluzione (Luca 08/08, caso
+            // Butnaru/Fei): non due clienti con lo stesso CF.
+            if (clientPatch.cf_piva) {
+                const { data: gia } = await supabase.from("clients")
+                    .select("id, nome, cognome, ragione_sociale").ilike("cf_piva", String(clientPatch.cf_piva)).neq("id", c.client_id).limit(1);
+                if (gia && gia[0]) {
+                    const g = gia[0] as { nome?: string; cognome?: string; ragione_sociale?: string };
+                    const chi = g.ragione_sociale || `${g.nome || ""} ${g.cognome || ""}`.trim() || "un altro cliente";
+                    return `Il codice fiscale ${clientPatch.cf_piva} è già registrato sul cliente «${chi}»: non può stare su due schede. Se è la stessa persona, unite le due anagrafiche; se il contratto è intestato al cliente sbagliato, spostatelo alla scheda giusta (campo Cliente) invece di cambiare il CF.`;
+                }
+            }
             const { error: clErr } = await supabase.from("clients").update(clientPatch).eq("id", c.client_id);
-            if (clErr) return "Modifica NON applicata al cliente: " + clErr.message;
+            if (clErr) {
+                if (/uq_clients_cf_piva|duplicate key/i.test(clErr.message)) return `Il codice fiscale ${clientPatch.cf_piva || ""} è già registrato su un altro cliente: non può stare su due schede. Unite le anagrafiche o spostate il contratto alla scheda giusta.`;
+                return "Modifica NON applicata al cliente: " + clErr.message;
+            }
         }
         return null;
     };
@@ -2018,10 +2042,54 @@ export default function RicercaContratto() {
                 const opzSel = ((): { nome: string; quantita: number | null }[] => {
                     try { const a = JSON.parse(editValues["contract::opzioni"] || "[]"); return Array.isArray(a) ? a : []; } catch { return []; }
                 })();
-                const opzWrite = (arr: { nome: string; quantita: number | null }[]) =>
+                const opzWrite = (arr: { nome: string; quantita: number | null }[]) => {
                     setEditValues(prev => ({ ...prev, ["contract::opzioni"]: JSON.stringify(arr) }));
+                    // toccando le opzioni apro la sezione Campi vendita: se l'opzione
+                    // aggiunta richiede campi nuovi, il venditore li vede e li compila (MOD-1b)
+                    setOpenSecs(p => ({ ...p, campi: true }));
+                };
                 const opzQta = (o: { quantita: number | null }) => Math.max(1, Number(o.quantita || 1));
                 const opzVinc = opzSel.filter(o => _ropBundle(o.nome) || _ropAcc(o.nome)).reduce((sm, o) => sm + opzQta(o), 0);
+
+                // ── MOD-1b (Luca 08/08): i CAMPI VENDITA che le OPZIONI si portano
+                //    dietro. Le regole del catalogo (catalog_campi_regole con
+                //    condizione opzioni) + i campi dinamici Bundle/Accessori/Kasko
+                //    (Codice Bundle N / Imei Accessorio N / Seriale Kasko) danno i
+                //    campi ATTESI per l'offerta+opzioni; quelli NON ancora nei
+                //    dettagli sono i "campi da compilare" — la sezione 🧾 li mostra
+                //    e si apre da sola per suggerirli.
+                const _norm = (s: string) => String(s || "").trim().toLowerCase();
+                const campiDinamiciDaOpzioni = (): string[] => {
+                    const out: string[] = []; let nAcc = 0; let kasko = false;
+                    opzSel.forEach(o => {
+                        if (_ropKasko(o.nome)) { kasko = true; return; }
+                        if (_ropBundle(o.nome)) { const q = opzQta(o); for (let i = 1; i <= q; i++) out.push("Codice " + o.nome + (q > 1 ? " (" + i + ")" : "")); }
+                        else if (_ropAcc(o.nome)) nAcc += opzQta(o);
+                    });
+                    for (let i = 1; i <= nAcc; i++) out.push("Imei Accessorio " + i);
+                    if (kasko) out.push("Seriale Kasko");
+                    return out;
+                };
+                const campiAttesi: string[] = (isMarg || detailMode === "view") ? [] : (() => {
+                    const slug = LABEL_SLUG[String(editBrand || row.brand)] || String(editBrand || row.brand || "").toLowerCase();
+                    const tipoCli = _norm(String(row.client?.tipo ?? "")) === "business" ? "Business" : "Consumer";
+                    const cat = String(editValues["dettagli::categoria_catalogo"] || (row.raw?.dettagli as Record<string, unknown> | undefined)?.categoria_catalogo || row.raw?.categoria || "");
+                    const prod = String(editValues["contract::prodotto"] || row.prodotto || "");
+                    const off = String(editValues["contract::offerta"] || "");
+                    const attive = opzSel.map(o => String(o.nome));
+                    const base = risolviCampi(slug, tipoCli, cat, prod, off, attive).map(c => c.nome);
+                    return Array.from(new Set([...base, ...campiDinamiciDaOpzioni()]));
+                })();
+                // campi già presenti nei dettagli (qualunque forma) → non "mancanti".
+                // Il Registra RINOMINA alcune chiavi al salvataggio (registra-vendita
+                // ~4573): "Seriale SIM (ICCID)"→"ICCID", "Codice Inserimento"→"Cod.Ins."
+                // — vanno normalizzate o un campo compilato risulterebbe mancante
+                // (falso positivo + rischio chiave doppia al ri-salvataggio).
+                const _RENAME_DET: Record<string, string> = { "Seriale SIM (ICCID)": "ICCID", "Codice Inserimento": "Cod.Ins." };
+                const _detNomi = new Set(det.map(([k]) => k));
+                const _presente = (n: string) => _detNomi.has(n) || _detNomi.has(_RENAME_DET[n] || " ");
+                const campiMancanti = campiAttesi.filter(n => n && !_presente(n) && n !== "Codice Inserimento" && n !== "Offerta" && n !== "Seriale SIM (ICCID)");
+
                 const renderOpzioni = () => {
                     if (detailMode === "view" || isMarg) {
                         const inRichiesta = pendingKeys.includes("contract::opzioni");
@@ -2215,10 +2283,20 @@ export default function RicercaContratto() {
                                         </div>)}
 
                                     {SectionC("campi", "🧾", "Campi vendita",
-                                        detEditable.length ? `${detEditable.length} campi` : "nessun campo",
+                                        campiMancanti.length ? `${detEditable.length} campi · ${campiMancanti.length} da compilare` : (detEditable.length ? `${detEditable.length} campi` : "nessun campo"),
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                            {detEditable.length === 0 && <p className="text-sm text-slate-500 sm:col-span-2 lg:col-span-3">Nessun campo vendita su questa pratica.</p>}
+                                            {detEditable.length === 0 && campiMancanti.length === 0 && <p className="text-sm text-slate-500 sm:col-span-2 lg:col-span-3">Nessun campo vendita su questa pratica.</p>}
                                             {detEditable.map(([k]) => renderField("dettagli::" + k, k))}
+                                            {/* MOD-1b: i campi che le OPZIONI scelte si portano dietro e
+                                                che non sono ancora compilati — evidenziati, da riempire */}
+                                            {campiMancanti.length > 0 && detailMode === "edit" && (
+                                                <div className="sm:col-span-2 lg:col-span-3 rounded-lg border border-amber-400/40 bg-amber-400/[0.06] p-3">
+                                                    <div className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-2">⚠ Campi richiesti dalle opzioni — da compilare</div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        {campiMancanti.map((k) => renderField("dettagli::" + k, k))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>)}
 
                                     {SectionC("allegati", "📎", "Allegati",

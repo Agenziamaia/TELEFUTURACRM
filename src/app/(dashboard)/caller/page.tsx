@@ -766,8 +766,13 @@ function CallerPageInner() {
         // non si portano avanti: vivono solo nello storico del cliente
         if (c.assorbita_da) return false;
         if (!isDirector && c.caller !== currentCaller) return false;
-        // le ATTIVATE escono dal lavoro corrente (default); il toggle le rimostra
-        if (!mostraAttivate && /^attivat/i.test(String(c.stato || ""))) return false;
+        // ATTIVATE (Luca 08/08): di default escono dal lavoro; col toggle acceso
+        // vedo SOLO le attivate (le altre spariscono per differenza), poi filtro
+        // per periodo/consulente. Un consulente vede già solo le sue (riga sopra).
+        {
+            const isAtt = /^attivat/i.test(String(c.stato || ""));
+            if (mostraAttivate ? !isAtt : isAtt) return false;
+        }
         if (soloDaEsitare && !c.da_esitare) return false;
         if (!ignoraFase && faseFilter && faseInfo(c).fase !== faseFilter) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
