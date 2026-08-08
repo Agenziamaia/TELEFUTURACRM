@@ -1,6 +1,7 @@
 "use client";
 
-import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon, KeyRound } from "lucide-react";
+import { Search, ScanLine, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon, KeyRound } from "lucide-react";
+import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
 import { useTema } from "@/lib/theme";
 import { UrgentTasks } from "@/components/UrgentTasks";
 import { useRouter, usePathname } from "next/navigation";
@@ -133,17 +134,22 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
         router.push(`/ricerca-vendite?id=${encodeURIComponent(h.contractId)}`);
     };
 
-    // ─── Schermo intero ───
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    useEffect(() => {
-        const onFs = () => setIsFullscreen(!!document.fullscreenElement);
-        document.addEventListener("fullscreenchange", onFs);
-        return () => document.removeEventListener("fullscreenchange", onFs);
-    }, []);
-    const toggleFullscreen = () => {
-        if (document.fullscreenElement) document.exitFullscreen?.();
-        else document.documentElement.requestFullscreen?.();
+    // ─── DropZone: trasferimento volatile telefono → PC via QR (MOD-12, Luca
+    //     08/08). Rimpiazza il vecchio tasto "schermo intero". Riusa la stessa
+    //     infrastruttura QR di Registra Vendita/Chat/Usati (useQrUpload +
+    //     /m/u/<token>): il telefono carica foto/scansioni, qui i File arrivati
+    //     vengono SCARICATI sul PC (nessuna copia resta nel CRM: è volatile).
+    const scaricaSulPc = (file: File) => {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement("a");
+        a.href = url; a.download = file.name || "file";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
     };
+    const dropzone = useQrUpload((files) => {
+        // download sfalsati: alcuni browser bloccano i download multipli simultanei
+        files.forEach((f, i) => setTimeout(() => scaricaSulPc(f), i * 400));
+    });
 
     // ─── Comunicazioni: pallino sulle nuove ───
     // Non esiste una tabella "letto/non letto": si tiene l'ultima apertura per
@@ -337,14 +343,18 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                 >
                     {tema === "chiaro" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
                 </button>
-                {/* Il tasto schermo intero non faceva nulla: ora entra ed esce davvero. */}
+                {/* DropZone (MOD-12): un QR volatile per portare foto/scansioni dal
+                    telefono a QUESTO PC (si scaricano in locale, niente resta nel CRM). */}
                 <button
-                    onClick={toggleFullscreen}
-                    title={isFullscreen ? "Esci da schermo intero" : "Schermo intero"}
+                    onClick={() => dropzone.openQr("dropzone", "doc")}
+                    title="Trasferisci dal telefono (QR): foto e scansioni si scaricano su questo PC"
                     className="text-slate-400 hover:text-white transition-colors"
                 >
-                    <Maximize className="h-5 w-5" />
+                    <ScanLine className="h-5 w-5" />
                 </button>
+                <QrUploadModal qr={dropzone}
+                    hint="Inquadra il QR col telefono e carica foto o una scansione PDF: il file si scarica su questo computer."
+                    esito={(n) => `${n} file scaricat${n === 1 ? "o" : "i"} su questo PC.`} />
                 {/* La campanella = COMUNICAZIONI; le cose DA FARE stanno nella ⚡
                     Task urgenti qui accanto (es. nuovo utente da completare). */}
                 <UrgentTasks />

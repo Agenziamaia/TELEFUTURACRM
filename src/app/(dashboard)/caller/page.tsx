@@ -1764,9 +1764,8 @@ function CallerPageInner() {
     // ── vista BADGE dell'hub (spostata da Collaboratori) ──
     if (hubTab === "badge") return (
         <div className="h-full flex flex-col overflow-y-auto">
-            <div className="flex-none px-8 pt-6 pb-2 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex-none px-8 pt-6 pb-2 flex items-center gap-3 flex-wrap">
                 {hubPills}
-                <h1 className="text-xl font-black text-white tracking-tight">🕒 Badge — presenze e timbrature</h1>
             </div>
             <div className="flex-1 p-4 md:p-8 pt-2">
                 <div className="max-w-7xl mx-auto">
