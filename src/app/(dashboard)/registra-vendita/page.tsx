@@ -5557,6 +5557,28 @@ function CRM() {
             }
           }
         } catch (e) { console.error("[MATCH-APP]", e); }
+
+        // MOD-17 (Luca 08/08): con "Voce Casa" (WindTre) viene consegnato un
+        // telefono FWA di cui ora si registra l'IMEI. NON è una rata: va
+        // scaricato dal magazzino e poi va verificata la nota di credito. Creo
+        // un promemoria di back office come admin_tasks "di pack" (target_role
+        // admin, target_user_id null): compare da solo nel ⚡ Task urgenti del
+        // pack direzionale e si chiude col bottone "✓ Fatta". Non blocca MAI la
+        // vendita (try/catch, come gli altri side-effect).
+        try {
+          const _fwa = contractRows.filter(r => r.brand === "WindTre" && r.offerta === "Voce Casa" && r.dettagli && r.dettagli.IMEI);
+          if (_fwa.length) {
+            const _nomeCli = (ana.ragioneSociale || `${ana.nome || ""} ${ana.cognome || ""}`.trim() || "cliente").trim();
+            await supabase.from("admin_tasks").insert(_fwa.map(r => ({
+              tipo: "fwa_magazzino",
+              titolo: `📦 Telefono FWA da scaricare — ${_nomeCli} (IMEI ${r.dettagli.IMEI})`,
+              dettaglio: `Voce Casa: scarica il telefono FWA dal magazzino e verifica la nota di credito. Vendita ${r.id}${selNeg ? " · " + selNeg : ""}.`,
+              link: `/ricerca-vendite?id=${r.id}`,
+              target_role: "admin",
+              created_by: user?.name || selVend || "Sistema",
+            })));
+          }
+        } catch (e) { console.error("[FWA-TASK]", e); }
       }
 
       // scarico magazzino usati: i telefoni scelti dal magazzino passano a
