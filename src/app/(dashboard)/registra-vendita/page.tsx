@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { MARG_PRODUCTS_LEGACY } from "@/lib/margMargini";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
+import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
@@ -4880,6 +4881,19 @@ function CRM() {
   // due clic nello stesso tick leggerebbero entrambi lo stato ancora a false.
   const submitLock = useRef(false);
   const [submitting, setSubmitting] = useState(false);
+  // POS: dati per il modale Incasso & Scontrino (si apre a vendita registrata).
+  const [scontrino, setScontrino] = useState<ScontrinoData | null>(null);
+  // Voci del carrello candidate allo scontrino (prezzate). Reparto/va_in_scontrino
+  // li decide il server da marg_items; qui passiamo tutte le righe con prezzo.
+  const buildScontrinoItems = (list) => (list || [])
+    .map((mi) => ({
+      productId: mi.productId || null,
+      description: mi.product,
+      unitPrice: (mi.importo != null ? mi.importo : mi.price),
+      qty: mi.qty || 1,
+    }))
+    .filter((x) => x.unitPrice != null && x.unitPrice !== "" && Number(x.unitPrice) >= 0);
+  const chiudiScontrino = () => { setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); };
   // Univocita' cellulare (regola Luca): se il numero e' di un ALTRO cliente si
   // sceglie se spostarlo qui o cambiarlo — stessa logica della sezione Clienti.
   const [dupCellCliente, setDupCellCliente] = useState<{ id: string; label: string } | null>(null);
@@ -5379,9 +5393,17 @@ function CRM() {
 
       setUploading(false);
       sT(`✅ Salvato! ${fc.length} brand, ${contractRows.length} prodotti in totale`);
-      // Il blocco resta attivo fino al reset: altrimenti nei 2 secondi di attesa
-      // il carrello e' ancora pieno e un altro clic risalverebbe tutto.
-      setTimeout(() => { fullReset(); submitLock.current = false; setSubmitting(false); }, 2000);
+      // POS: se ci sono voci prezzate, apri Incasso & Scontrino (il reset avviene
+      // alla chiusura del modale, chiudiScontrino). Altrimenti reset come prima.
+      // Il blocco resta attivo fino al reset: altrimenti il carrello e' ancora
+      // pieno e un altro clic risalverebbe tutto.
+      const _scRows = buildScontrinoItems(margList);
+      if (_scRows.length) {
+        setScontrino({ items: _scRows, negozio: selNeg });
+        setSubmitting(false); // submitLock resta attivo finché il modale non chiude
+      } else {
+        setTimeout(() => { fullReset(); submitLock.current = false; setSubmitting(false); }, 2000);
+      }
       return true;
     } catch (err) {
       setUploading(false);
@@ -5494,8 +5516,11 @@ function CRM() {
       setMargSaveForm({...MARG_FORM_VUOTO});
       setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
       setShowMargSave(false);
-      fullReset();
       showToast(`Vendita salvata! ${rows.length} prodott${rows.length===1?"o":"i"} registrat${rows.length===1?"o":"i"}`);
+      // POS: apri Incasso & Scontrino sulle voci prezzate; fullReset alla chiusura.
+      const _scRows = buildScontrinoItems(margItems);
+      if (_scRows.length) setScontrino({ items: _scRows, negozio: selNeg });
+      else fullReset();
     }catch(e){
       showToast("Errore salvataggio: "+(e?.message||"riprova"));
     }finally{setMargSaving(false);}
@@ -5778,6 +5803,7 @@ function CRM() {
             title={_m.length?"Portami allo step mancante — completa: "+_m.join(" · "):""}
             style={{padding:"12px 36px",borderRadius:10,border:_m.length&&tp>0?"1.5px solid rgba(245,158,11,0.7)":"none",background:_ok?"linear-gradient(135deg,#28a745,#20c997)":(_m.length&&tp>0?"rgba(245,158,11,0.15)":"var(--tf-w100)"),color:_m.length&&tp>0?"var(--tf-fbbf24)":"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?"🔒 Completa gli step per salvare →":`💾 Salva contratto (${tp})`}</button>;})()}
         </div>
+        <ScontrinoCassa data={scontrino} onDone={chiudiScontrino} />
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,color:"var(--tf-f8fafc)",marginBottom:4}}>💾 Salva Vendita Prodotti</div>

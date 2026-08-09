@@ -16,6 +16,25 @@ import { MoneyInput } from "./money";
 const BRAND_OPTIONS = ["WindTre", "Vodafone", "Fastweb", "Iliad", "Sky", "S4", "TIM", "Very Mobile", "Ho. Mobile", "Kena Mobile", "Dojo"];
 const VAT_OPTIONS = [22, 10, 4, 0];
 
+/* REPARTI del registratore telematico (RT). Il reparto DECIDE l'IVA/natura sul
+   documento fiscale — non è una semplice %. Mappa standard Telefutura (dagli
+   schermi SuiteMobile): va CONFERMATA su Programmazione→Reparti del RT del
+   negozio (la tabella può differire tra le stampanti .50 e .219).
+   La direzione (Luca) assegna il reparto per voce. */
+const REPARTI: { n: number; label: string }[] = [
+    { n: 1, label: "Non soggetta (N2)" },
+    { n: 2, label: "IVA 22%" },
+    { n: 3, label: "IVA 4%" },
+    { n: 4, label: "Regime margine (N5)" },
+    { n: 5, label: "Esclusa (N1)" },
+    { n: 6, label: "IVA 4% (2)" },
+    { n: 7, label: "Usato · reg. margine" },
+    { n: 8, label: "C/VOD · non sogg." },
+    { n: 9, label: "Non imponibile (N3)" },
+    { n: 10, label: "Esente VOD · non sogg." },
+    ...Array.from({ length: 30 }, (_, k) => ({ n: k + 11, label: `Reparto ${k + 11}` })),
+];
+
 /* CAT-03: set curato di emoji per le icone di voci e categorie (le storiche di
    Registra Vendita + generiche); in piu' campo libero per qualsiasi emoji. */
 const EMOJI_SET = [
@@ -89,6 +108,8 @@ interface MargItem {
     active: boolean;
     sort_order: number;
     icon: string | null;
+    va_in_scontrino: boolean;
+    reparto: number | null;
 }
 
 export function MarginalitaView() {
@@ -233,10 +254,12 @@ function CatItems({ catId, items, onChange }: { catId: string; items: MargItem[]
                 <span className="flex-1">Voce</span>
                 <span className="w-32">Brand</span>
                 <span className="w-16 text-center">IVA</span>
+                <span className="w-36 text-center">Reparto</span>
                 <span className="w-28">Regime</span>
                 <span className="w-28 text-right">Costo / %</span>
                 <span className="w-28 text-right">Prezzo default</span>
                 <span className="w-28 text-right">Visibile (gare)</span>
+                <span className="w-14 text-center">Scontr.</span>
                 <span className="w-14 text-center">Auto</span>
                 <span className="w-6"></span>
             </div>
@@ -264,6 +287,7 @@ function ItemRow({ r, onChange }: { r: MargItem; onChange: () => void }) {
             company_cost: x.company_cost, margin_percent: x.margin_percent,
             default_price: x.default_price, visible_value: x.visible_value,
             auto_link: x.auto_link, active: x.active, icon: x.icon,
+            va_in_scontrino: x.va_in_scontrino, reparto: x.reparto,
         }).eq("id", r.id);
         if (!dbError("Salvataggio voce", error)) onChange();
     };
@@ -285,6 +309,15 @@ function ItemRow({ r, onChange }: { r: MargItem; onChange: () => void }) {
             <select value={f.vat_rate} onChange={(e) => { const v = Number(e.target.value); setF({ ...f, vat_rate: v }); save({ vat_rate: v }); }} className="glass-input w-16 py-1 text-[11px] text-center" title="Aliquota IVA">
                 {VAT_OPTIONS.map((v) => <option key={v} value={v}>{v}%</option>)}
             </select>
+            <select
+                value={f.reparto ?? ""}
+                onChange={(e) => { const v = e.target.value ? Number(e.target.value) : null; setF({ ...f, reparto: v }); save({ reparto: v }); }}
+                className={cn("glass-input w-36 py-1 text-[11px]", f.reparto == null && (f.va_in_scontrino ?? true) && "ring-1 ring-amber-400/60")}
+                title="Reparto fiscale del registratore telematico — DECIDE l'IVA/natura sul documento. Verifica su Programmazione→Reparti del RT del negozio."
+            >
+                <option value="">— reparto —</option>
+                {REPARTI.map((rp) => <option key={rp.n} value={rp.n}>{rp.n} · {rp.label}</option>)}
+            </select>
             <select value={f.cost_mode} onChange={(e) => { setF({ ...f, cost_mode: e.target.value }); save({ cost_mode: e.target.value }); }} className="glass-input w-28 py-1 text-[11px]" title="Regime margine">
                 <option value="costo_fisso">costo fisso</option>
                 <option value="percent_margine">% margine</option>
@@ -299,6 +332,13 @@ function ItemRow({ r, onChange }: { r: MargItem; onChange: () => void }) {
             )}
             <MoneyInput value={f.default_price} onChange={(v) => setF({ ...f, default_price: v })} onCommit={() => save()} wrapClass="w-28" className="py-1 text-sm" title="Prezzo proposto (vuoto = libero)" placeholder="libero" />
             <MoneyInput value={f.visible_value} onChange={(v) => setF({ ...f, visible_value: v })} onCommit={() => save()} wrapClass="w-28" className="py-1 text-sm" title="Valore visibile ai collaboratori (per gare)" placeholder="visibile" />
+            <button
+                onClick={() => { const v = !(f.va_in_scontrino ?? true); setF({ ...f, va_in_scontrino: v }); save({ va_in_scontrino: v }); }}
+                className={cn("w-14 py-1 rounded-full border text-[9px] font-bold flex items-center justify-center gap-0.5", (f.va_in_scontrino ?? true) ? "bg-sky-500/15 text-sky-300 border-sky-500/25" : "text-slate-600 border-white/10")}
+                title="La voce va stampata sullo scontrino fiscale (RT)"
+            >
+                🧾 {(f.va_in_scontrino ?? true) ? "sì" : "no"}
+            </button>
             <button
                 onClick={() => { const v = !f.auto_link; setF({ ...f, auto_link: v }); save({ auto_link: v }); }}
                 className={cn("w-14 py-1 rounded-full border text-[9px] font-bold flex items-center justify-center gap-0.5", f.auto_link ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25" : "text-slate-600 border-white/10")}
