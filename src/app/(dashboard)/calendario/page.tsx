@@ -354,7 +354,7 @@ export default function Calendario() {
     const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
     const [selectedMeeting, setSelectedMeeting] = useState<CalendarMeeting | null>(null);
     const [showMeetingDetailModal, setShowMeetingDetailModal] = useState(false);
-    const [showSearchDrawer, setShowSearchDrawer] = useState(false);
+    // MOD-26: il pannello ricerca dedicato non esiste più — i filtri sono unificati
     // pannello elenco TASK ARRETRATE (Luca 04/08, riporto stile Google)
     const [showArretrate, setShowArretrate] = useState(false);
     // filtri del MODALE arretrate (Luca 05/08): solo per chi vede task altrui
@@ -537,9 +537,6 @@ export default function Calendario() {
 
     // Search Filters State
     const [searchQuery, setSearchQuery] = useState("");
-    const [searchCfPiva, setSearchCfPiva] = useState("");
-    const [searchPhone, setSearchPhone] = useState("");
-    const [searchAgent, setSearchAgent] = useState("");
     const [searchDateFrom, setSearchDateFrom] = useState("");
     const [searchDateTo, setSearchDateTo] = useState("");
 
@@ -1299,15 +1296,16 @@ export default function Calendario() {
     };
 
     // Search result chronological list (includes RBAC store-based filtering implicitly from visibleAppointments)
+    // MOD-26 (Luca 10/08): ricerca UNIFICATA — un solo campo che matcha nome,
+    // CF/P.IVA o cellulare (via i tre campi separati del vecchio pannello)
     const searchResults = visibleAppointments.filter(a => {
-        // Apply Name / Ragione Sociale (case-insensitive)
-        if (searchQuery && !a.customerName.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-        // Apply CF / PIVA
-        if (searchCfPiva && !(a.cfPiva && a.cfPiva.toLowerCase().includes(searchCfPiva.toLowerCase()))) return false;
-        // Apply Phone
-        if (searchPhone && !a.customerPhone.includes(searchPhone)) return false;
-        // Apply Agent (Admin only filter)
-        if (isCallCenter && searchAgent && searchAgent !== "Tutti gli agenti" && a.agente !== searchAgent) return false;
+        if (searchQuery) {
+            const q = searchQuery.trim().toLowerCase();
+            const hit = a.customerName.toLowerCase().includes(q)
+                || (a.cfPiva && a.cfPiva.toLowerCase().includes(q))
+                || (a.customerPhone && a.customerPhone.includes(searchQuery.trim()));
+            if (!hit) return false;
+        }
         const from = parseSearchDate(searchDateFrom);
         const to = parseSearchDate(searchDateTo);
         if (from && a.date < from) return false;
@@ -1388,18 +1386,8 @@ export default function Calendario() {
                     </p>
                 </div>
                 <div className="flex gap-3">
-                    <button
-                        onClick={() => setShowSearchDrawer(!showSearchDrawer)}
-                        className={cn(
-                            "h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border",
-                            showSearchDrawer
-                                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/50 shadow-indigo-500/20"
-                                : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
-                        )}
-                    >
-                        <Search className="w-4 h-4" />
-                        Cerca appuntamenti
-                    </button>
+                    {/* MOD-26: via il bottone "Cerca appuntamenti" — la ricerca
+                        vive nei filtri unificati qui sotto */}
                     {tasksArretrate.length > 0 && (
                         <button
                             onClick={() => setShowArretrate(v => !v)}
@@ -1452,82 +1440,91 @@ export default function Calendario() {
                 </div>
             </div>
 
-            {/* Filtri negozio/consulente MULTI-SELEZIONE (Luca 05/08): compaiono
-                a chiunque veda più negozi o più consulenti — direttore CC coi
-                caller, direttore commerciale multi-negozio, non solo la
-                direzione. Ogni tendina appare solo se la sua platea è plurale. */}
-            {puoFiltrareCal && (
-                <div className="mb-6 flex flex-col md:flex-row gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                    {mostraFiltroNegozio && <div className="flex-1">
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Punto Vendita</label>
-                        <FiltroMulti
-                            values={filterStores}
-                            onChange={setFilterStores}
-                            opzioni={negoziOpzioni}
-                            etichettaTutti="Tutti i punti vendita"
+            {/* ── FILTRI UNIFICATI (MOD-26, Luca 10/08): ricerca cliente, periodo,
+                esiti, punti vendita/consulenti e categorie raccolti in UN
+                pannello compatto — via il vecchio pannello "Cerca appuntamenti". ── */}
+            <div className="mb-6 p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-3">
+                {/* riga 1: ricerca + periodo + esiti + pulisci */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="relative flex-1 min-w-[220px] max-w-md">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                        <input
+                            type="text"
+                            placeholder="Cerca cliente: nome, CF/P.IVA o cellulare…"
+                            className="glass-input w-full text-sm h-9 pl-9"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
                         />
-                    </div>}
-                    {mostraFiltroConsulente && <div className="flex-1">
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Consulente</label>
-                        <FiltroMulti
-                            values={filterAgents}
-                            onChange={setFilterAgents}
-                            opzioni={consulentiOpzioni}
-                            etichettaTutti="Tutti i consulenti"
-                        />
-                    </div>}
-                    {isCallCenter && <div className="flex-1">
-                        {/* chi ha PRENOTATO l'appuntamento, non l'incaricato */}
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Fissato da</label>
-                        <FiltroMulti
-                            values={filterCreatedBys}
-                            onChange={setFilterCreatedBys}
-                            opzioni={fissatoDaOpzioni}
-                            etichettaTutti="Chiunque"
-                        />
-                    </div>}
-                </div>
-            )}
-
-            {/* Outcome Filters (appointments & tasks) */}
-            <div className="mb-4 flex flex-col md:flex-row gap-3">
-                <div className="flex-1 max-w-xs">
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
-                        Filtro esito appuntamenti
-                    </label>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] uppercase font-bold text-slate-500">dal</span>
+                        <DatePickerInput id="da_data_appuntamento" value={searchDateFrom} onChange={setSearchDateFrom} placeholder="—" />
+                        <span className="text-[10px] uppercase font-bold text-slate-500">al</span>
+                        <DatePickerInput id="a_data_appuntamento" value={searchDateTo} onChange={setSearchDateTo} placeholder="—" />
+                    </div>
                     <select
-                        className="glass-input w-full text-sm"
+                        className="glass-input text-sm h-9 w-auto min-w-[170px]"
                         value={appointmentOutcomeFilter}
                         onChange={(e) => setAppointmentOutcomeFilter(e.target.value as AppointmentStatus | "")}
+                        title="Filtro esito appuntamenti"
                     >
-                        <option value="">Tutti gli esiti</option>
+                        <option value="">Esito app. — tutti</option>
                         {esitiFiltroAppt.map((s) => (
-                            <option key={s.chiave} value={s.chiave}>
-                                {s.etichetta}
-                            </option>
+                            <option key={s.chiave} value={s.chiave}>{s.etichetta}</option>
                         ))}
                     </select>
-                </div>
-                <div className="flex-1 max-w-xs">
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
-                        Filtro esito task
-                    </label>
                     <select
-                        className="glass-input w-full text-sm"
+                        className="glass-input text-sm h-9 w-auto min-w-[150px]"
                         value={taskOutcomeFilter}
                         onChange={(e) => setTaskOutcomeFilter(e.target.value as TaskStatus | "")}
+                        title="Filtro esito task"
                     >
-                        <option value="">Tutti gli stati</option>
+                        <option value="">Task — tutte</option>
                         {esitiPer("task").map((s) => (
                             <option key={s.chiave} value={s.chiave}>{s.etichetta}</option>
                         ))}
                     </select>
+                    {(searchQuery || searchDateFrom || searchDateTo || appointmentOutcomeFilter || taskOutcomeFilter) && (
+                        <button
+                            type="button"
+                            onClick={() => { setSearchQuery(""); setSearchDateFrom(""); setSearchDateTo(""); setAppointmentOutcomeFilter("" as AppointmentStatus | ""); setTaskOutcomeFilter("" as TaskStatus | ""); }}
+                            className="h-9 text-xs px-3 rounded-lg text-slate-400 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
+                        >
+                            ✕ Pulisci
+                        </button>
+                    )}
                 </div>
-            </div>
-
-            {/* Filtro CATEGORIE — i "pallini" del calendario, ora in alto e cliccabili
-                (per tutti i ruoli): click = mostra solo le categorie selezionate. */}
-            <div className="mb-6 flex flex-wrap items-center gap-2">
+                {/* riga 2: punti vendita / consulenti / fissato da (solo platee plurali) */}
+                {puoFiltrareCal && (mostraFiltroNegozio || mostraFiltroConsulente || isCallCenter) && (
+                    <div className="flex flex-wrap gap-2.5">
+                        {mostraFiltroNegozio && <div className="flex-1 min-w-[200px] max-w-sm" title="Punti vendita">
+                            <FiltroMulti
+                                values={filterStores}
+                                onChange={setFilterStores}
+                                opzioni={negoziOpzioni}
+                                etichettaTutti="Tutti i punti vendita"
+                            />
+                        </div>}
+                        {mostraFiltroConsulente && <div className="flex-1 min-w-[200px] max-w-sm" title="Consulenti">
+                            <FiltroMulti
+                                values={filterAgents}
+                                onChange={setFilterAgents}
+                                opzioni={consulentiOpzioni}
+                                etichettaTutti="Tutti i consulenti"
+                            />
+                        </div>}
+                        {isCallCenter && <div className="flex-1 min-w-[200px] max-w-sm" title="Chi ha fissato l'appuntamento">
+                            <FiltroMulti
+                                values={filterCreatedBys}
+                                onChange={setFilterCreatedBys}
+                                opzioni={fissatoDaOpzioni}
+                                etichettaTutti="Fissato da: chiunque"
+                            />
+                        </div>}
+                    </div>
+                )}
+                {/* riga 3: categorie (i "pallini" cliccabili) */}
+                <div className="flex flex-wrap items-center gap-2">
                 {([
                     ["incoming", "Inbound", "bg-blue-400", "border-blue-500/40 bg-blue-500/15 text-blue-200"],
                     ["outgoing", "Outbound", "bg-amber-400", "border-amber-500/40 bg-amber-500/15 text-amber-200"],
@@ -1566,97 +1563,15 @@ export default function Calendario() {
                         <Lock className="w-3 h-3 text-amber-400" /> Giorno bloccato
                     </span>
                 )}
+                </div>
             </div>
 
-            {/* Advanced Search Drawer */}
-            {showSearchDrawer && (
+            {/* MOD-26: RISULTATI di ricerca — compaiono da soli quando la
+                ricerca unificata (testo o periodo) è attiva */}
+            {(searchQuery.trim() !== "" || searchDateFrom !== "" || searchDateTo !== "") && (
                 <div className="glass-card mb-6 p-6 animate-in slide-in-from-top-4 fade-in duration-200">
-                    <h3 className="text-lg font-medium text-white mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
-                        <Search className="w-5 h-5 text-indigo-400" />
-                        Filtri di ricerca
-                    </h3>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {/* 1. Nome / Ragione Sociale */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Nome o Ragione Sociale</label>
-                            <input
-                                type="text"
-                                placeholder="Es. Mario Rossi"
-                                className="glass-input w-full"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
-                        </div>
-
-                        {/* 2. CF / PIVA */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Codice Fiscale / P.IVA</label>
-                            <input
-                                type="text"
-                                placeholder="Inserisci CF o P.IVA"
-                                className="glass-input w-full"
-                                value={searchCfPiva}
-                                onChange={(e) => setSearchCfPiva(e.target.value)}
-                            />
-                        </div>
-
-                        {/* 3. Cellulare */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Numero di cellulare</label>
-                            <input
-                                type="number"
-                                placeholder="Es. 3331234567"
-                                className="glass-input w-full"
-                                value={searchPhone}
-                                onChange={(e) => setSearchPhone(e.target.value)}
-                            />
-                        </div>
-
-                        {/* 4. Agente (Admin Only) */}
-                        {isCallCenter ? (
-                            <div>
-                                <label className="block text-sm font-bold text-indigo-300 mb-2">Consulente</label>
-                                <SelectPersona
-                                    className="glass-input w-full border-indigo-500/30 focus:border-indigo-500/50"
-                                    value={searchAgent}
-                                    onChange={setSearchAgent}
-                                    opzioni={agents}
-                                    placeholder="Tutti — scrivi per filtrare"
-                                />
-                            </div>
-                        ) : (
-                            // Space preserver for layout on non-admin
-                            <div className="hidden lg:block"></div>
-                        )}
-
-                        {/* Date Ranges */}
-                        <div className="md:col-span-2 lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-white/5 mt-2">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-2">Da data appuntamento</label>
-                                <DatePickerInput id="da_data_appuntamento" value={searchDateFrom} onChange={setSearchDateFrom} placeholder="Seleziona data" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-2">A data appuntamento</label>
-                                <DatePickerInput id="a_data_appuntamento" value={searchDateTo} onChange={setSearchDateTo} placeholder="Seleziona data" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mt-6 flex gap-3">
-                        <button type="button" onClick={() => setShowSearchDrawer(false)} className="primary-btn h-10 px-6 text-sm">Cerca</button>
-                        <button
-                            type="button"
-                            onClick={() => setShowSearchDrawer(false)}
-                            className="h-10 px-6 rounded-lg font-medium bg-white/5 text-slate-300 hover:bg-white/10 transition-colors text-sm"
-                        >
-                            Annulla
-                        </button>
-                    </div>
-
-                    {/* Temporary mockup of chronological results inside the drawer */}
-                    <div className="mt-8 pt-6 border-t border-white/10">
-                        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Risultati di ricerca</h4>
+                    <div>
+                        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Risultati di ricerca ({searchResults.length})</h4>
                         <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
                             {searchResults.map(appt => (
                                 <div key={appt.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors gap-4">
