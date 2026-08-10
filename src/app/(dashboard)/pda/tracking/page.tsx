@@ -19,6 +19,7 @@ import {
 } from "./trackingConstants";
 import {
   getStatiNegozioPerCategoria,
+  getStatiNegozioTutte,
   getStatoN,
   getStatoA,
   getCat,
@@ -426,10 +427,10 @@ function FilterBar({
     // Solo gli esiti delle categorie realmente presenti: entrano gli stati Sky
     // (prima assenti), escono quelli delle categorie morte (PDA-01).
     pools = [
-      ...categorie.flatMap((cat) => getStatiNegozioPerCategoria(cat.id)),
+      ...categorie.flatMap((cat) => getStatiNegozioTutte(cat.id)),
     ];
   } else {
-    pools = catSel.flatMap((cid) => getStatiNegozioPerCategoria(cid));
+    pools = catSel.flatMap((cid) => getStatiNegozioTutte(cid));
   }
   const seen = new Set<string>();
   const statiDisponibili = pools.filter((s) => {
@@ -1066,7 +1067,7 @@ function Drawer({
   };
 
   // esiti admin AMMINISTRABILI per categoria (10/08): dal pannello, fallback hardcoded
-  const statiAdmin = getStatiAdminPerCategoria(row.categoria);
+  const statiAdmin = getStatiAdminPerCategoria(row.categoria, row.brand);
 
   return (
     <div
@@ -1261,7 +1262,7 @@ function Drawer({
                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Esito negozio</div>
               </div>
               <div className="flex flex-wrap gap-2 mb-3.5">
-                {getStatiNegozioPerCategoria(row.categoria).map((s) => {
+                {getStatiNegozioPerCategoria(row.categoria, row.brand).map((s) => {
                   const sel = editStatoN === s.id;
                   return (
                     <button
@@ -1671,7 +1672,7 @@ export default function TrackingPdaPage() {
         statoNegozio: perCat[c] ?? (
           (c === "sky" && base.categoria === "fisso" && (perCat["fisso"] === "attivato" || (!perCat["fisso"] && base.statoNegozio === "attivato")))
             ? "attivo_sky"
-            : ((base.statoNegozio && getStatiNegozioPerCategoria(c).some((s) => s.id === base.statoNegozio)) ? base.statoNegozio : "nuovo")),
+            : ((base.statoNegozio && getStatiNegozioPerCategoria(c, base.brand).some((s) => s.id === base.statoNegozio)) ? base.statoNegozio : "nuovo")),
       }));
     });
     return out;
@@ -1764,9 +1765,9 @@ export default function TrackingPdaPage() {
   const baseVisibile = useMemo(() => data.filter((row) => {
     if (row.tracking_nascosto) return false;
     if (soloDaLavorare) {
-      if (!esitoCompletato(row.statoNegozio, row.categoria)) return false;
-      if (esitoAdminDefinitivo(row.statoAdmin, row.categoria) || row.statoAdmin === "non_conforme") return false;
-    } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria) && row.statoAdmin !== "non_conforme") return false;
+      if (!esitoCompletato(row.statoNegozio, row.categoria, row.brand)) return false;
+      if (esitoAdminDefinitivo(row.statoAdmin, row.categoria, row.brand) || row.statoAdmin === "non_conforme") return false;
+    } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
     if (onlyMine && row.delegated_to !== user?.id) return false;
     if (onlyDelegate && row.delegated_by !== user?.id) return false;
     return true;
@@ -1817,7 +1818,7 @@ export default function TrackingPdaPage() {
     if (next.length === catSel.length) return;
     setCatSel(next);
     if (next.length === 0) { setStatoSel([]); return; }
-    const validi = new Set(next.flatMap((cid) => getStatiNegozioPerCategoria(cid).map((s) => s.id)));
+    const validi = new Set(next.flatMap((cid) => getStatiNegozioTutte(cid).map((s) => s.id)));
     setStatoSel((prev) => {
       const sNext = prev.filter((id) => validi.has(id));
       return sNext.length === prev.length ? prev : sNext;
@@ -1833,9 +1834,9 @@ export default function TrackingPdaPage() {
       // aspettano ancora l'esito definitivo dell'admin — bypassa la regola
       // che nasconde le completate, altrimenti la coda sarebbe invisibile.
       if (soloDaLavorare) {
-        if (!esitoCompletato(row.statoNegozio, row.categoria)) return false;
-        if (esitoAdminDefinitivo(row.statoAdmin, row.categoria) || row.statoAdmin === "non_conforme") return false;
-      } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria) && row.statoAdmin !== "non_conforme") return false;
+        if (!esitoCompletato(row.statoNegozio, row.categoria, row.brand)) return false;
+        if (esitoAdminDefinitivo(row.statoAdmin, row.categoria, row.brand) || row.statoAdmin === "non_conforme") return false;
+      } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
       if (onlyMine && row.delegated_to !== user?.id) return false; // "delegate a me"
       if (onlyDelegate && row.delegated_by !== user?.id) return false; // "delegate DA me"
       if (kpiFilter !== null) {
@@ -1894,7 +1895,7 @@ export default function TrackingPdaPage() {
       if (row.tracking_nascosto) return false;
       // Esito definitivo del negozio = pratica completata = sparisce da sola.
       // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
-      if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria) && row.statoAdmin !== "non_conforme") return false;
+      if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (utentiSel.length > 0 && !utentiSel.includes(row.venditore)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;

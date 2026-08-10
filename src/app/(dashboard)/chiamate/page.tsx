@@ -59,6 +59,9 @@ export default function RegistroChiamatePage() {
     const [fDirezione, setFDirezione] = useState("");
     const [fEsito, setFEsito] = useState("");
     const [fNegozio, setFNegozio] = useState("");
+    // FILTRO PERIODO (Luca 10/08): bottoni grandi sopra il registro, "Oggi"
+    // preflaggato all'ingresso; vale solo sul registro (la coda resta integrale)
+    const [fPeriodo, setFPeriodo] = useState("oggi");
     const [ricerca, setRicerca] = useState("");
     const [visibili, setVisibili] = useState(50);
     // chiamata espansa: l'audio si apre SOLO qui (vista compatta per tutti)
@@ -126,10 +129,27 @@ export default function RegistroChiamatePage() {
         !!e.started_at && e.started_at >= GO_LIVE;
     const nCoda = useMemo(() => eventi.filter(inCoda).length, [eventi]);
 
+    // finestre del filtro periodo: [da, a) in ora locale, settimana da lunedì
+    const rangePeriodo = (id: string): [Date, Date] | null => {
+        const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+        const d = (n: number) => { const x = new Date(oggi); x.setDate(x.getDate() + n); return x; };
+        const lun = d(-((oggi.getDay() + 6) % 7));
+        const m0 = new Date(oggi.getFullYear(), oggi.getMonth(), 1);
+        if (id === "oggi") return [oggi, d(1)];
+        if (id === "ieri") return [d(-1), oggi];
+        if (id === "sett") return [lun, d(1)];
+        if (id === "sett_scorsa") { const l = new Date(lun); l.setDate(l.getDate() - 7); return [l, lun]; }
+        if (id === "mese") return [m0, d(1)];
+        if (id === "mese_scorso") return [new Date(oggi.getFullYear(), oggi.getMonth() - 1, 1), m0];
+        return null;
+    };
+
     const filtrate = useMemo(() => {
         const cifre = ricerca.replace(/\D/g, "");
+        const rp = tab === "tutte" ? rangePeriodo(fPeriodo) : null;
         return eventi.filter((e) => {
             if (tab === "coda" && !inCoda(e)) return false;
+            if (rp) { const t = new Date(String(e.started_at || "")); if (isNaN(t.getTime()) || t < rp[0] || t >= rp[1]) return false; }
             if (fDirezione === "In entrata" && e.direction !== "inbound") return false;
             if (fDirezione === "In uscita" && e.direction !== "outbound") return false;
             if (fEsito === "Risposte" && e.missed) return false;
@@ -139,7 +159,7 @@ export default function RegistroChiamatePage() {
             if (cifre.length >= 3 && !String(e.cliente_num || "").replace(/\D/g, "").includes(cifre)) return false;
             return true;
         });
-    }, [eventi, tab, fDirezione, fEsito, fNegozio, ricerca]);
+    }, [eventi, tab, fDirezione, fEsito, fNegozio, ricerca, fPeriodo]);
 
     const quando = (iso: unknown) => { const d = new Date(String(iso || "")); return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("it-IT") + " " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }); };
     const durata = (sec: unknown) => { const n = Number(sec) || 0; return n ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}` : "—"; };
@@ -214,6 +234,21 @@ export default function RegistroChiamatePage() {
                             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-emerald-400 transition-colors" />
                         </div>
                     </div>
+
+                    {/* PERIODO (Luca 10/08): bottoni grandi, Oggi preflaggato; sulla
+                        coda non si applica (il backlog resta sempre integrale) */}
+                    {tab === "tutte" && (
+                        <div className="flex flex-wrap gap-2">
+                            {[["oggi", "📅 Oggi"], ["ieri", "Ieri"], ["sett", "Questa settimana"], ["sett_scorsa", "Settimana scorsa"], ["mese", "Questo mese"], ["mese_scorso", "Mese scorso"], ["tutte", "Tutte"]].map(([id, label]) => (
+                                <button key={id} onClick={() => { setFPeriodo(id); setVisibili(50); }}
+                                    className={`px-4 py-2.5 rounded-xl border text-sm font-bold transition-all ${fPeriodo === id
+                                        ? "border-emerald-400/70 bg-emerald-500/15 text-emerald-300 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]"
+                                        : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25 hover:text-white"}`}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="space-y-1">

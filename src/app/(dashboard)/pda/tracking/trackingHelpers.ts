@@ -97,7 +97,24 @@ export interface EsitoTracking {
   // (segnalazione Luca 10/08: anche l'amministrativo ha esiti per categoria,
   // col flag "definitiva" che chiude il cerchio della pratica)
   lato?: string | null;
+  // OPERATORE (Luca 10/08): NULL = lista generale della categoria; valorizzato
+  // (es. 'windtre') = lista specifica che, se esiste, VINCE per quel brand.
+  // Pensato per il fisso, dove gli esiti cambiano da operatore a operatore.
+  brand?: string | null;
 }
+/** chiave-mappa: "fisso" (generale) oppure "fisso§windtre" (per operatore) */
+export const brandEsitiKey = (b: string | null | undefined) =>
+  String(b || "").trim().toLowerCase().replace(/\s+/g, "");
+const _kb = (categoria: string, brand?: string | null) => {
+  const b = brandEsitiKey(brand);
+  return b ? categoria + "§" + b : categoria;
+};
+/** lista per categoria+brand: prima la lista dell'operatore, poi la generale */
+const _lista = (map: Map<string, EsitoTracking[]> | null, categoria: string, brand?: string | null) => {
+  if (!map) return undefined;
+  if (brandEsitiKey(brand)) { const b = map.get(_kb(categoria, brand)); if (b && b.length) return b; }
+  return map.get(categoria);
+};
 let ESITI_DB: Map<string, EsitoTracking[]> | null = null;
 let ESITI_ADMIN_DB: Map<string, EsitoTracking[]> | null = null;
 export function impostaEsitiTracking(rows: EsitoTracking[] | null | undefined) {
@@ -106,9 +123,10 @@ export function impostaEsitiTracking(rows: EsitoTracking[] | null | undefined) {
   const ma = new Map<string, EsitoTracking[]>();
   [...rows].sort((a, b) => a.ordine - b.ordine).forEach((r) => {
     const dest = r.lato === "admin" ? ma : m;
-    const l = dest.get(r.categoria) || [];
+    const k = _kb(r.categoria, r.brand);
+    const l = dest.get(k) || [];
     l.push(r);
-    dest.set(r.categoria, l);
+    dest.set(k, l);
   });
   ESITI_DB = m.size ? m : null;
   ESITI_ADMIN_DB = ma.size ? ma : null;
@@ -137,19 +155,37 @@ export function getStatiNegozioBase(categoria: string) {
   return STATI_NEGOZIO;
 }
 
-export function getStatiNegozioPerCategoria(categoria: string) {
-  const db = ESITI_DB?.get(categoria);
+export function getStatiNegozioPerCategoria(categoria: string, brand?: string | null) {
+  const db = _lista(ESITI_DB, categoria, brand);
   if (db) return db.filter((e) => e.attiva).map(daEsito);
   return getStatiNegozioBase(categoria);
 }
 
+/** TUTTE le chiavi della categoria (generale + ogni operatore, senza doppioni):
+ *  serve ai pool dei filtri, che devono conoscere anche gli esiti per-brand. */
+export function getStatiNegozioTutte(categoria: string) {
+  if (!ESITI_DB) return getStatiNegozioBase(categoria);
+  const out: { id: string; label: string; color: string; bg: string }[] = [];
+  const visti = new Set<string>();
+  for (const [k, lista] of ESITI_DB) {
+    if (k !== categoria && !k.startsWith(categoria + "§")) continue;
+    lista.forEach((e) => { if (e.attiva && !visti.has(e.chiave)) { visti.add(e.chiave); out.push(daEsito(e)); } });
+  }
+  return out.length ? out : getStatiNegozioBase(categoria);
+}
+
 /** Esito "fine processo" (flag amministrabile): pilota il filtro Mostra
  *  completate, la coda di verifica amministrazione e lo stop del malus. */
-export function esitoCompletato(statoNegozio: string, categoria: string): boolean {
-  const db = ESITI_DB?.get(categoria);
+export function esitoCompletato(statoNegozio: string, categoria: string, brand?: string | null): boolean {
+  const db = _lista(ESITI_DB, categoria, brand);
   if (db) {
     const hit = db.find((e) => e.chiave === statoNegozio);
     if (hit) return hit.completata;
+    // chiave non censita nella lista dell'operatore: prova la generale
+    if (brandEsitiKey(brand)) {
+      const gen = ESITI_DB?.get(categoria)?.find((e) => e.chiave === statoNegozio);
+      if (gen) return gen.completata;
+    }
     // chiave storica non piu' censita per la categoria: vale il default storico
   }
   return (STATI_COMPLETATI[categoria] || ["attivato"]).includes(statoNegozio);
@@ -169,27 +205,29 @@ export function getStatoA(id: string) {
 }
 
 /** Esiti della VERIFICA AMMINISTRATIVA per categoria (DB, fallback hardcoded). */
-export function getStatiAdminPerCategoria(categoria: string) {
-  const db = ESITI_ADMIN_DB?.get(categoria);
+export function getStatiAdminPerCategoria(categoria: string, brand?: string | null) {
+  const db = _lista(ESITI_ADMIN_DB, categoria, brand);
   if (db) return db.filter((e) => e.attiva).map(daEsito);
   return categoria === "finanziamento" ? STATI_ADMIN_FINANZIAMENTO : STATI_ADMIN;
 }
 
 /** MALUS €/gg dell'esito ADMIN corrente (es. Non Conforme): dal pannello,
  *  per categoria. NULL/0 = nessun malus amministrativo. */
-export function malusAdminGiorno(statoAdmin: string, categoria: string): number {
-  const db = ESITI_ADMIN_DB?.get(categoria);
-  const hit = db?.find((e) => e.chiave === statoAdmin);
+export function malusAdminGiorno(statoAdmin: string, categoria: string, brand?: string | null): number {
+  const db = _lista(ESITI_ADMIN_DB, categoria, brand);
+  const hit = db?.find((e) => e.chiave === statoAdmin)
+    || (brandEsitiKey(brand) ? ESITI_ADMIN_DB?.get(categoria)?.find((e) => e.chiave === statoAdmin) : undefined);
   const v = Number(hit?.malus_giorno);
   return isFinite(v) && v > 0 ? v : 0;
 }
 
 /** Esito admin DEFINITIVO (flag amministrabile): chiude il cerchio della
  *  pratica — esce dalla coda ⚡ Da lavorare della verifica amministrazione. */
-export function esitoAdminDefinitivo(statoAdmin: string, categoria: string): boolean {
-  const db = ESITI_ADMIN_DB?.get(categoria);
+export function esitoAdminDefinitivo(statoAdmin: string, categoria: string, brand?: string | null): boolean {
+  const db = _lista(ESITI_ADMIN_DB, categoria, brand);
   if (db) {
-    const hit = db.find((e) => e.chiave === statoAdmin);
+    const hit = db.find((e) => e.chiave === statoAdmin)
+      || (brandEsitiKey(brand) ? ESITI_ADMIN_DB?.get(categoria)?.find((e) => e.chiave === statoAdmin) : undefined);
     if (hit) return hit.completata;
   }
   return ["confermato", "pagato", "stornato", "ripagato"].includes(statoAdmin);
@@ -232,10 +270,10 @@ export const STATI_COMPLETATI: Record<string, string[]> = {
  * (Segnalazione Lorenzo 03/08/2026: le pratiche esitate "annullato"/KO restavano
  * in 🔴 Malus all'infinito, "come se dovessimo dare un altro esito".)
  */
-export function fermaMalus(statoNegozio: string, categoria: string): boolean {
+export function fermaMalus(statoNegozio: string, categoria: string, brand?: string | null): boolean {
   // MOD-28: la nozione di "completata" e' il flag amministrabile a DB
   // (fallback: STATI_COMPLETATI storico) — unica fonte anche per i filtri.
-  if (esitoCompletato(statoNegozio, categoria)) return true;
+  if (esitoCompletato(statoNegozio, categoria, brand)) return true;
   return statoContrattoDa(statoNegozio) === "Annullato" || statoNegozio === "recesso_info_errate";
 }
 
@@ -289,10 +327,10 @@ const _hit = (soglia: number | null | undefined, valore: number | null) =>
 function livelloRegole(row: TrackingRow): 0 | 1 | 2 | 3 {
   // MALUS AMMINISTRATIVO (10/08): se l'esito admin corrente ha un €/gg (es.
   // Non Conforme) la pratica e' in MALUS anche se il negozio l'aveva completata
-  if (malusAdminGiorno(row.statoAdmin, row.categoria) > 0) return 3;
+  if (malusAdminGiorno(row.statoAdmin, row.categoria, row.brand) > 0) return 3;
   // Pratica con esito definitivo (completata OPPURE annullata/KO/recesso): non
   // c'e' altro esito da dare, la maturazione si ferma e la pratica esce da malus.
-  if (fermaMalus(row.statoNegozio, row.categoria)) return 0;
+  if (fermaMalus(row.statoNegozio, row.categoria, row.brand)) return 0;
   const m = misure(row);
   const r = regolaDi(row.categoria);
   let speciale: 0 | 1 | 2 | 3 = 0;
@@ -335,7 +373,7 @@ export function calcolaMalus(row: TrackingRow): number {
   const m = misure(row);
   // malus AMMINISTRATIVO: €/gg dell'esito admin × giorni lavorativi
   // dall'ultimo aggiornamento (l'evento admin riparte il conteggio)
-  const mAdm = malusAdminGiorno(row.statoAdmin, row.categoria);
+  const mAdm = malusAdminGiorno(row.statoAdmin, row.categoria, row.brand);
   if (mAdm > 0) return Math.round(Math.max(1, m.ggAgg) * mAdm * 100) / 100;
   const r = regolaDi(row.categoria);
   if (!r) return 0;

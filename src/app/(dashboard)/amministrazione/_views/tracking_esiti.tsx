@@ -18,7 +18,18 @@ type Esito = {
     colore: string; bg: string; ordine: number; attiva: boolean; completata: boolean;
     lato?: string | null;   // 'negozio' | 'admin' (verifica amministrativa)
     malus_giorno?: number | null;   // €/gg dell'esito admin (es. Non Conforme)
+    brand?: string | null;  // NULL = generale; es. 'windtre' = solo per quell'operatore (fisso)
 };
+
+// ESITI PER OPERATORE (Luca 10/08): solo il FISSO cambia esiti da operatore a
+// operatore — chips cliccabili nel riquadro; la lista di un operatore, se
+// esiste, VINCE sulla generale per le sue pratiche nel Tracking.
+const OPERATORI_FISSO = [
+    { id: "windtre", label: "WindTre" }, { id: "vodafone", label: "Vodafone" },
+    { id: "fastweb", label: "Fastweb" }, { id: "sky", label: "Sky" },
+    { id: "tim", label: "TIM" }, { id: "iliad", label: "Iliad" },
+];
+const normBrand = (b: string | null | undefined) => String(b || "").trim().toLowerCase().replace(/\s+/g, "");
 
 // coppie colore/sfondo gia' in uso sui badge del Tracking: il pallino cicla qui
 const PALETTE: { colore: string; bg: string }[] = [
@@ -56,6 +67,8 @@ export function TrackingEsitiView() {
     const [delId, setDelId] = useState<string | null>(null);
     const [editId, setEditId] = useState<string | null>(null);
     const [editVal, setEditVal] = useState("");
+    // operatore selezionato nel riquadro FISSO ("" = esiti generali)
+    const [brandFisso, setBrandFisso] = useState("");
 
     const carica = useCallback(async () => {
         const { data, error } = await supabase.from("tracking_esiti").select("*").order("ordine");
@@ -65,18 +78,33 @@ export function TrackingEsitiView() {
     }, []);
     useEffect(() => { carica(); }, [carica]);
 
+    const brandDi = (categoria: string) => (categoria === "fisso" ? brandFisso : "");
     const aggiungi = async (categoria: string) => {
         const etichetta = (nuova[categoria] || "").trim();
         if (!etichetta) return;
-        const lista = righe.filter((r) => r.categoria === categoria && (r.lato || "negozio") === lato);
+        const b = brandDi(categoria);
+        const lista = righe.filter((r) => r.categoria === categoria && (r.lato || "negozio") === lato && normBrand(r.brand) === b);
         let chiave = slugDi(etichetta);
         while (lista.some((r) => r.chiave === chiave)) chiave += "_2";
         const maxOrd = Math.max(0, ...lista.map((r) => r.ordine));
         const { error } = await supabase.from("tracking_esiti").insert({
-            categoria, chiave, etichetta, colore: PALETTE[0].colore, bg: PALETTE[0].bg, ordine: maxOrd + 10, lato,
+            categoria, chiave, etichetta, colore: PALETTE[0].colore, bg: PALETTE[0].bg, ordine: maxOrd + 10, lato, brand: b || null,
         });
         if (error) { setErr(error.message); return; }
         setNuova((p) => ({ ...p, [categoria]: "" }));
+        carica();
+    };
+    // primo click su un operatore senza lista: si parte COPIANDO gli esiti
+    // generali, cosi' il Tracking resta allineato (stesse chiavi) e da li' si
+    // personalizza — aggiungendo, spegnendo o rinominando
+    const clonaGenerale = async (b: string) => {
+        const gen = righe.filter((r) => r.categoria === "fisso" && (r.lato || "negozio") === lato && !normBrand(r.brand));
+        if (!gen.length) { setErr("Nessun esito generale del fisso da copiare"); return; }
+        const { error } = await supabase.from("tracking_esiti").insert(gen.map((r) => ({
+            categoria: "fisso", chiave: r.chiave, etichetta: r.etichetta, colore: r.colore, bg: r.bg,
+            ordine: r.ordine, attiva: r.attiva, completata: r.completata, lato, malus_giorno: r.malus_giorno ?? null, brand: b,
+        })));
+        if (error) { setErr(error.message); return; }
         carica();
     };
     const salvaRinomina = async (r: Esito) => {
@@ -114,7 +142,7 @@ export function TrackingEsitiView() {
         carica();
     };
     const sposta = async (r: Esito, dir: -1 | 1) => {
-        const lista = righe.filter((x) => x.categoria === r.categoria && (x.lato || "negozio") === (r.lato || "negozio")).sort((a, b) => a.ordine - b.ordine);
+        const lista = righe.filter((x) => x.categoria === r.categoria && (x.lato || "negozio") === (r.lato || "negozio") && normBrand(x.brand) === normBrand(r.brand)).sort((a, b) => a.ordine - b.ordine);
         const i = lista.findIndex((x) => x.id === r.id);
         const altro = lista[i + dir];
         if (!altro) return;
@@ -158,14 +186,43 @@ export function TrackingEsitiView() {
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
                 {CATEGORIE_PANNELLO.map((cat) => {
-                    const voci = righe.filter((r) => r.categoria === cat.id && (r.lato || "negozio") === lato).sort((a, b) => a.ordine - b.ordine);
+                    const bSel = cat.id === "fisso" ? brandFisso : "";
+                    const voci = righe.filter((r) => r.categoria === cat.id && (r.lato || "negozio") === lato && normBrand(r.brand) === bSel).sort((a, b) => a.ordine - b.ordine);
+                    // operatori con una lista propria (nel lato corrente) + quelli predefiniti
+                    const conLista = new Set(righe.filter((r) => r.categoria === "fisso" && (r.lato || "negozio") === lato && normBrand(r.brand)).map((r) => normBrand(r.brand)));
+                    const opFisso = [...OPERATORI_FISSO, ...[...conLista].filter((b) => !OPERATORI_FISSO.some((o) => o.id === b)).map((b) => ({ id: b, label: b }))];
                     return (
                         <div key={cat.id} className="glass-panel p-5">
                             <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: cat.color }} />
                                 {cat.label} <span className="text-slate-500 font-normal">· {voci.filter((v) => v.attiva).length} attive</span>
+                                {cat.id === "fisso" && brandFisso && <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-sky-500/15 border border-sky-500/40 text-sky-300">{(OPERATORI_FISSO.find((o) => o.id === brandFisso)?.label) || brandFisso}</span>}
                             </h3>
                             <p className="text-[11px] text-slate-500 mt-0.5 mb-3">{cat.desc}</p>
+                            {cat.id === "fisso" && (
+                                <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                                    <button onClick={() => setBrandFisso("")}
+                                        className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors ${!brandFisso ? "border-indigo-400/70 bg-indigo-500/15 text-white" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25"}`}>
+                                        🌐 Generale
+                                    </button>
+                                    {opFisso.map((o) => (
+                                        <button key={o.id} onClick={() => setBrandFisso(o.id)}
+                                            title={conLista.has(o.id) ? `${o.label}: esiti personalizzati` : `${o.label}: usa gli esiti generali (clicca per personalizzare)`}
+                                            className={`text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors ${brandFisso === o.id ? "border-sky-400/70 bg-sky-500/15 text-white" : conLista.has(o.id) ? "border-sky-500/30 bg-sky-500/[0.06] text-sky-300/80 hover:border-sky-400/60" : "border-white/10 bg-white/[0.04] text-slate-500 hover:border-white/25"}`}>
+                                            {o.label}{conLista.has(o.id) ? " ●" : ""}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {cat.id === "fisso" && brandFisso && voci.length === 0 && (
+                                <div className="mb-3 p-3 rounded-xl bg-sky-500/[0.07] border border-sky-500/25 text-[12px] text-sky-200/90 space-y-2">
+                                    <div>Le pratiche <b>{(OPERATORI_FISSO.find((o) => o.id === brandFisso)?.label) || brandFisso}</b> oggi usano gli <b>esiti generali</b> del fisso. Per dargli esiti propri si parte da una copia della lista generale, che poi personalizzi (rinomina, spegni, aggiungi): le chiavi restano allineate e il Tracking non perde gli stati gia&apos; dati.</div>
+                                    <button onClick={() => clonaGenerale(brandFisso)}
+                                        className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[12px] font-bold">
+                                        🧬 Crea gli esiti di {(OPERATORI_FISSO.find((o) => o.id === brandFisso)?.label) || brandFisso} (copia dai generali)
+                                    </button>
+                                </div>
+                            )}
                             <div className="space-y-1">
                                 {voci.map((r, i) => (
                                     <div key={r.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border ${r.attiva ? "border-white/8 bg-white/[0.02]" : "border-white/5 bg-transparent opacity-50"}`}>
