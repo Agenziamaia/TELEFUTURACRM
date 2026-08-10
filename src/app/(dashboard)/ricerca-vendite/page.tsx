@@ -795,7 +795,6 @@ export default function RicercaContratto() {
         if (filterCliente) {
             const safe = filterCliente.trim().replace(/[",()]/g, "");
             if (safe) {
-                const term = `%${safe}%`;
                 // Segnalazione 36. Prima: .or("clients.nome.ilike.…") — PostgREST
                 // legge "clients" come colonna e "nome" come operatore, e risponde
                 // 400 PGRST100 "failed to parse logic tree". Le condizioni su una
@@ -804,10 +803,19 @@ export default function RicercaContratto() {
                 // C.F. o P.IVA" ma cf_piva NON era tra le colonne cercate — il
                 // filtro per codice fiscale non trovava mai nulla. Aggiunti
                 // cf_piva e il referente business (nome_ref/cognome_ref).
-                query = query.or(
-                    `nome.ilike.${term},cognome.ilike.${term},ragione_sociale.ilike.${term},cf_piva.ilike.${term},nome_ref.ilike.${term},cognome_ref.ilike.${term}`,
-                    { referencedTable: "clients" }
-                );
+                // FILTRO INTELLIGENTE (Luca 10/08): "Mario Rossi" non trovava
+                // nulla perché la stringa intera non sta né in nome né in
+                // cognome. Ora si spezza in PAROLE e ognuna deve combaciare con
+                // uno dei campi (gli .or ripetuti sulla stessa tabella vanno in
+                // AND) — nome+cognome funziona in qualsiasi ordine.
+                const tokens = safe.split(/\s+/).filter(Boolean).slice(0, 6);
+                for (const tk of tokens) {
+                    const term = `%${tk}%`;
+                    query = query.or(
+                        `nome.ilike.${term},cognome.ilike.${term},ragione_sociale.ilike.${term},cf_piva.ilike.${term},nome_ref.ilike.${term},cognome_ref.ilike.${term}`,
+                        { referencedTable: "clients" }
+                    );
+                }
             }
         }
 
