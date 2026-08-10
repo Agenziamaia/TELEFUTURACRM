@@ -16,6 +16,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { SelectPersona } from "@/components/SelectPersona";
 
+type Allegato = { url: string; name: string };
 type Voce = {
     id: string; tipo: "update" | "sospeso" | "task"; titolo: string;
     dettaglio: string | null; domanda: string | null; link: string | null;
@@ -24,7 +25,41 @@ type Voce = {
     creato_il: string; verificato_il: string | null; verificato_da: string | null;
     delegato_a: string | null; delegato_nome: string | null;
     segnalazione_delegato: string | null; segnalato_da: string | null;
+    allegati?: Allegato[] | null;
 };
+
+// MOD-42: allegati (screenshot!) su task, proposte, segnalazioni e approvazioni
+// — upload sul bucket contracts (path verifiche/), stesso giro delle comunicazioni
+function AllegatiPicker({ value, onChange }: { value: Allegato[]; onChange: (v: Allegato[]) => void }) {
+    const [caricando, setCaricando] = useState(false);
+    const carica = async (files: FileList | null) => {
+        if (!files?.length || caricando) return;
+        setCaricando(true);
+        try {
+            for (const f of Array.from(files)) {
+                const path = `verifiche/${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${f.name.replace(/[^\w.\-]/g, "_")}`;
+                const { error } = await supabase.storage.from("contracts").upload(path, f);
+                if (error) continue;
+                const { data: pu } = supabase.storage.from("contracts").getPublicUrl(path);
+                onChange([...value, { url: pu.publicUrl, name: f.name }]);
+            }
+        } finally { setCaricando(false); }
+    };
+    return (
+        <div className="flex items-center gap-2 flex-wrap">
+            <label className={`px-3 py-1.5 rounded-lg border border-white/15 text-slate-300 text-xs font-bold cursor-pointer hover:bg-white/5 ${caricando ? "opacity-50 pointer-events-none" : ""}`}>
+                📎 {caricando ? "Carico…" : "Allega file"}
+                <input type="file" multiple className="hidden" onChange={(e) => { carica(e.target.files); e.target.value = ""; }} />
+            </label>
+            {value.map((a) => (
+                <span key={a.url} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/15 bg-white/[0.04] text-slate-200 text-xs">
+                    📎 {a.name}
+                    <button type="button" onClick={() => onChange(value.filter((x) => x.url !== a.url))} className="text-slate-500 hover:text-white text-[10px]">✕</button>
+                </span>
+            ))}
+        </div>
+    );
+}
 
 const fmtQuando = (s: string | null) => {
     if (!s) return "";
@@ -34,17 +69,18 @@ const fmtQuando = (s: string | null) => {
 
 // MOD-39/40: form "nuova task / proponi modifica" — componente TOP-LEVEL con
 // stato suo (mai annidato nel componente pagina: perderebbe il focus).
-function FormNuova({ titolo, sotto, bottone, onInvia }: { titolo: string; sotto: string; bottone: string; onInvia: (tit: string, det: string) => Promise<void> }) {
+function FormNuova({ titolo, sotto, bottone, onInvia }: { titolo: string; sotto: string; bottone: string; onInvia: (tit: string, det: string, allegati: Allegato[]) => Promise<void> }) {
     const [aperto, setAperto] = useState(false);
     const [tit, setTit] = useState("");
     const [det, setDet] = useState("");
+    const [alleg, setAlleg] = useState<Allegato[]>([]);
     const [inCorso, setInCorso] = useState(false);
     const invia = async () => {
         if (!tit.trim() || inCorso) return;
         setInCorso(true);
-        await onInvia(tit.trim(), det.trim());
+        await onInvia(tit.trim(), det.trim(), alleg);
         setInCorso(false);
-        setTit(""); setDet(""); setAperto(false);
+        setTit(""); setDet(""); setAlleg([]); setAperto(false);
     };
     if (!aperto) return (
         <button onClick={() => setAperto(true)}
@@ -61,6 +97,7 @@ function FormNuova({ titolo, sotto, bottone, onInvia }: { titolo: string; sotto:
             <textarea value={det} onChange={(e) => setDet(e.target.value)} rows={3}
                 placeholder="Descrivi bene cosa serve (più dettagli dai, meglio viene): pagina interessata, comportamento atteso, esempi…"
                 className="glass-input w-full text-sm !h-auto py-2 resize-y" />
+            <AllegatiPicker value={alleg} onChange={setAlleg} />
             <div className="flex gap-2">
                 <button onClick={invia} disabled={inCorso || !tit.trim()}
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold disabled:opacity-40">
@@ -96,6 +133,16 @@ function CardVoce({ v, children }: { v: Voce; children?: React.ReactNode }) {
             </div>
             {v.dettaglio && <p className="text-[13px] text-slate-300 leading-relaxed">{v.dettaglio}</p>}
             {v.domanda && <p className="text-[13px] text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">❓ {v.domanda}</p>}
+            {Array.isArray(v.allegati) && v.allegati.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                    {v.allegati.map((a) => (
+                        <a key={a.url} href={a.url} target="_blank" rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-sky-500/30 bg-sky-500/10 text-sky-200 text-xs font-semibold hover:bg-sky-500/20">
+                            📎 {a.name}
+                        </a>
+                    ))}
+                </div>
+            )}
             {children}
         </div>
     );
@@ -108,6 +155,7 @@ export default function VerifichePage() {
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState<string | null>(null);
     const [bozze, setBozze] = useState<Record<string, string>>({});
+    const [bozzeAll, setBozzeAll] = useState<Record<string, Allegato[]>>({});
     const [busy, setBusy] = useState<string | null>(null);
     const [mostraChiuse, setMostraChiuse] = useState(false);
     const [segnalaId, setSegnalaId] = useState<string | null>(null);
@@ -136,22 +184,28 @@ export default function VerifichePage() {
         await supabase.from("dev_updates").update(payload).eq("id", id);
         setBusy(null);
         setBozze((p) => ({ ...p, [id]: "" }));
+        setBozzeAll((p) => ({ ...p, [id]: [] }));
         setSegnalaId(null);
         carica();
+    };
+    // allegati nuovi della voce + quelli già presenti (per segnala/approva)
+    const conAllegati = (v: Voce) => {
+        const nuovi = bozzeAll[v.id] || [];
+        return nuovi.length ? { allegati: [...(v.allegati || []), ...nuovi] } : {};
     };
     const verifica = (v: Voce) => aggiorna(v.id, { stato: "verificata", verificato_il: new Date().toISOString(), verificato_da: user?.name || "admin" });
     const rispondi = (v: Voce) => { const r = (bozze[v.id] || "").trim(); if (r) aggiorna(v.id, { risposta: r, stato: "risposta_data" }); };
     // admin: "da sistemare" diretto a Claude
-    const segnalaAdmin = (v: Voce) => { const r = (bozze[v.id] || "").trim(); if (r) aggiorna(v.id, { risposta: r, stato: "da_sistemare" }); };
+    const segnalaAdmin = (v: Voce) => { const r = (bozze[v.id] || "").trim(); if (r) aggiorna(v.id, { risposta: r, stato: "da_sistemare", ...conAllegati(v) }); };
     // delegato: la segnalazione TORNA all'admin, mai a Claude
     const segnalaDelegato = (v: Voce) => {
         const r = (bozze[v.id] || "").trim();
-        if (r) aggiorna(v.id, { segnalazione_delegato: r, segnalato_da: user?.name || "delegato", stato: "segnalazione_delegato" });
+        if (r) aggiorna(v.id, { segnalazione_delegato: r, segnalato_da: user?.name || "delegato", stato: "segnalazione_delegato", ...conAllegati(v) });
     };
     // admin approva la segnalazione del delegato (eventualmente corretta) → Claude
     const inoltra = (v: Voce) => {
         const r = (bozze[v.id] ?? v.segnalazione_delegato ?? "").trim();
-        if (r) aggiorna(v.id, { risposta: r, stato: "da_sistemare" });
+        if (r) aggiorna(v.id, { risposta: r, stato: "da_sistemare", ...conAllegati(v) });
     };
     const delega = (v: Voce, uid: string) => {
         const u = utenti.find((x) => x.id === uid);
@@ -159,16 +213,16 @@ export default function VerifichePage() {
     };
     // MOD-39: task dell'ADMIN → dritta in carico a Claude ('da_sistemare')
     const oggiSessione = new Date().toLocaleDateString("it-IT");
-    const creaTaskAdmin = async (tit: string, det: string) => {
-        await supabase.from("dev_updates").insert({ tipo: "task", titolo: tit, dettaglio: det || null, stato: "da_sistemare", risposta: det || tit, sessione: oggiSessione });
+    const creaTaskAdmin = async (tit: string, det: string, alleg: Allegato[]) => {
+        await supabase.from("dev_updates").insert({ tipo: "task", titolo: tit, dettaglio: det || null, stato: "da_sistemare", risposta: det || tit, sessione: oggiSessione, allegati: alleg });
         carica();
     };
     // MOD-40: PROPOSTA del delegato → passa da Luca ('segnalazione_delegato')
-    const proponiTask = async (tit: string, det: string) => {
+    const proponiTask = async (tit: string, det: string, alleg: Allegato[]) => {
         await supabase.from("dev_updates").insert({
             tipo: "task", titolo: tit, dettaglio: det || null, stato: "segnalazione_delegato",
             segnalazione_delegato: det || tit, segnalato_da: user?.name || "collaboratore",
-            delegato_a: user?.id || null, delegato_nome: user?.name || null, sessione: oggiSessione,
+            delegato_a: user?.id || null, delegato_nome: user?.name || null, sessione: oggiSessione, allegati: alleg,
         });
         carica();
     };
@@ -230,6 +284,7 @@ export default function VerifichePage() {
                                 <textarea value={bozze[v.id] ?? v.segnalazione_delegato ?? ""} onChange={(e) => setBozze((p) => ({ ...p, [v.id]: e.target.value }))}
                                     rows={2} className="glass-input w-full text-sm !h-auto py-2 resize-y"
                                     placeholder="Correggi o riscrivi il testo prima di inoltrarlo…" />
+                                <AllegatiPicker value={bozzeAll[v.id] || []} onChange={(a) => setBozzeAll((p) => ({ ...p, [v.id]: a }))} />
                                 <div className="flex gap-2 flex-wrap">
                                     <button onClick={() => inoltra(v)} disabled={busy === v.id}
                                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-bold disabled:opacity-50">
@@ -309,14 +364,17 @@ export default function VerifichePage() {
                                 ))}
                             </div>
                             {segnalaId === v.id && (
-                                <div className="flex gap-2 items-start pt-1">
-                                    <textarea value={bozze[v.id] || ""} onChange={(e) => setBozze((p) => ({ ...p, [v.id]: e.target.value }))}
-                                        placeholder={isAdmin ? "Scrivi cosa non va o cosa manca: Claude lo sistema alla prossima sessione…" : "Scrivi cosa non va: la segnalazione arriva all'amministrazione…"} rows={2} autoFocus
-                                        className="glass-input flex-1 text-sm !h-auto py-2 resize-y" />
-                                    <button onClick={() => (isAdmin ? segnalaAdmin(v) : segnalaDelegato(v))} disabled={busy === v.id || !(bozze[v.id] || "").trim()}
-                                        className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-bold disabled:opacity-40">
-                                        <Send className="w-4 h-4" /> {isAdmin ? "Segnala" : "Invia all'amministrazione"}
-                                    </button>
+                                <div className="space-y-2 pt-1">
+                                    <div className="flex gap-2 items-start">
+                                        <textarea value={bozze[v.id] || ""} onChange={(e) => setBozze((p) => ({ ...p, [v.id]: e.target.value }))}
+                                            placeholder={isAdmin ? "Scrivi cosa non va o cosa manca: Claude lo sistema alla prossima sessione…" : "Scrivi cosa non va: la segnalazione arriva all'amministrazione…"} rows={2} autoFocus
+                                            className="glass-input flex-1 text-sm !h-auto py-2 resize-y" />
+                                        <button onClick={() => (isAdmin ? segnalaAdmin(v) : segnalaDelegato(v))} disabled={busy === v.id || !(bozze[v.id] || "").trim()}
+                                            className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-bold disabled:opacity-40">
+                                            <Send className="w-4 h-4" /> {isAdmin ? "Segnala" : "Invia all'amministrazione"}
+                                        </button>
+                                    </div>
+                                    <AllegatiPicker value={bozzeAll[v.id] || []} onChange={(a) => setBozzeAll((p) => ({ ...p, [v.id]: a }))} />
                                 </div>
                             )}
                         </CardVoce>
