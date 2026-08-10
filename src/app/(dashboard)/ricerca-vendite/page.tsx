@@ -609,7 +609,10 @@ export default function RicercaContratto() {
         }
         if (!soloSlug) { setCatalogoBrand(null); return; }
         let alive = true;
-        loadCatalogoBrand(soloSlug).then((t) => { if (alive) setCatalogoBrand(t); });
+        // FRESH sempre (Luca 10/08): la cache in memoria congelava il flag
+        // attivo/spento — riaccendevi un'offerta dal pannello e qui restava ⛔
+        // finché non ricaricavi la pagina. Due query leggere a ogni tessera.
+        loadCatalogoBrand(soloSlug, { fresh: true }).then((t) => { if (alive) setCatalogoBrand(t); });
         return () => { alive = false; };
     }, [soloSlug]); // eslint-disable-line react-hooks/exhaustive-deps
     // CONSEGUENZIALITÀ (Luca 28/07): le offerte seguono i prodotti scelti; senza
