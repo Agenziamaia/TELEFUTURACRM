@@ -258,6 +258,9 @@ export function vaInTracking(r: {
  * Le categorie non mobile restano una riga sola.
  */
 export function righeTracking(categoria: CategoriaId, controlli: ControlloId[]): string[] {
+    // MARGINALITÀ FINANZIATA (10/08): macro "extra" ma nel Tracking va
+    // lavorata come pratica di Finanziamento (unica riga)
+    if (categoria === "extra" && controlli.includes("finanziamento")) return ["finanziamento"];
     if (categoria !== "mobile") return [categoria];
     const out: string[] = [];
     if (controlli.includes("finanziamento")) out.push("finanziamento");

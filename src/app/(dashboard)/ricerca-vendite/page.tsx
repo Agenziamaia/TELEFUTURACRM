@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation, FileText, ChevronDown } from "lucide-react";
@@ -619,6 +619,12 @@ export default function RicercaContratto() {
     // prodotti ma con una categoria, seguono i prodotti di quella categoria —
     // e comunque si restringono alle offerte DELLA categoria (la stessa offerta
     // può esistere sia in Wallet sia in Ric. Auto).
+    // TIPO CLIENTE nella cascata (Luca 10/08): "Fisso" esiste sia Consumer sia
+    // Business con lo stesso nome — senza questo taglio le offerte business
+    // finivano nella tendina anche col filtro Consumer attivo
+    const _tipoOk = useCallback((tipi?: string[]) =>
+        !filterTipoCliente?.length || (tipi || []).some((t) => filterTipoCliente.includes(t)),
+        [filterTipoCliente]);
     const offerteDisponibili = useMemo(() => {
         if (!catalogoBrand) return [];
         // RIC-06: categorie/prodotti sono insiemi (null = tutto selezionato =
@@ -627,9 +633,9 @@ export default function RicercaContratto() {
             : filterCategorie?.length ? filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || [])
             : null;
         // le SPENTE scendono in fondo (Luca 10/08): sopra restano le vive
-        const ordina = (arr: string[]) => [...arr].sort((a, b) =>
+        const ordina = (arr: string[]) => arr.filter((o) => _tipoOk(catalogoBrand.offTipi?.[o])).sort((a, b) =>
             (catalogoBrand.offSpenta?.[a] ? 1 : 0) - (catalogoBrand.offSpenta?.[b] ? 1 : 0) || a.localeCompare(b));
-        if (!base) return ordina(catalogoBrand.offNames);
+        if (!base) return ordina([...catalogoBrand.offNames]);
         let set = new Set<string>();
         base.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
         if (filterCategorie?.length) {
@@ -637,7 +643,7 @@ export default function RicercaContratto() {
             set = new Set(Array.from(set).filter((o) => s2.has(o)));
         }
         return ordina(Array.from(set));
-    }, [catalogoBrand, filterProdotti, filterCategorie]);
+    }, [catalogoBrand, filterProdotti, filterCategorie, _tipoOk]);
     // etichette ⛔ per le offerte spente nella tendina (il VALORE resta il nome
     // pulito: i filtri e lo storico non cambiano)
     const offEtichette = useMemo(() => {
@@ -1859,7 +1865,7 @@ export default function RicercaContratto() {
                             values={filterCategorie} disabled={soloMarg}
                             testoDisabilitato="Per la Marginalità: riga sotto"
                             onChange={(v) => { setFilterCategorie(v); setFilterProdotti(null); setFilterOfferte(null); setFilterOpzioni(null); }}
-                            opzioni={catalogoBrand ? catalogoBrand.catNames : catNomiAll}
+                            opzioni={catalogoBrand ? catalogoBrand.catNames.filter((cn) => (catalogoBrand.prodsByCat[cn] || []).some((pn) => _tipoOk(catalogoBrand.prodTipi?.[pn]))) : catNomiAll}
                             etichettaTutti="Tutte le categorie"
                             className="glass-input w-full text-sm"
                         />
@@ -1873,7 +1879,7 @@ export default function RicercaContratto() {
                             con checkbox, default tutto selezionato. */}
                         <FiltroMulti
                             values={filterProdotti} onChange={setFilterProdotti}
-                            opzioni={catalogoBrand ? (filterCategorie?.length ? Array.from(new Set(filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || []))) : catalogoBrand.prodNames) : []}
+                            opzioni={catalogoBrand ? (filterCategorie?.length ? Array.from(new Set(filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || []))) : catalogoBrand.prodNames).filter((pn) => _tipoOk(catalogoBrand.prodTipi?.[pn])) : []}
                             disabled={!catalogoBrand}
                             testoDisabilitato="Seleziona un solo brand dalle tessere"
                             etichettaTutti="Tutti i prodotti"
