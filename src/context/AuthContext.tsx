@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { routeBases, effectiveAllowed, groupKey, groupByLabel } from "@/lib/nav";
+import { roleGradeKey } from "@/lib/usePermissions";
 import { loadRoleDefs } from "@/lib/useRoles";
 import type { RoleId } from "@/lib/roles";
 
@@ -155,17 +156,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [routePerms, setRoutePerms] = useState<Map<string, boolean> | null>(null);
     useEffect(() => {
         const role = user?.role;
+        const grade = user?.grade;
         if (!role || role === "admin" || role === "dev") { setRoutePerms(new Map()); return; }
         let vivo = true;
-        supabase.from("role_permissions").select("perm_key,allowed").eq("role", role)
+        // ANCHE le eccezioni di grado ("ruolo@grado", vedi usePermissions): senza,
+        // un permesso concesso al solo grado (es. store_manager senior → Catalogo)
+        // apriva la voce in sidebar ma questo blocco rimbalzava in home (bug 10/08)
+        const chiavi = grade ? [role, roleGradeKey(role, grade)] : [role];
+        supabase.from("role_permissions").select("role,perm_key,allowed").in("role", chiavi)
             .then(({ data, error }) => {
                 if (!vivo) return;
                 const m = new Map<string, boolean>();
-                if (!error) (data ?? []).forEach((r: { perm_key: string; allowed: boolean }) => m.set(r.perm_key, r.allowed));
+                if (!error) {
+                    const rows = (data ?? []) as { role: string; perm_key: string; allowed: boolean }[];
+                    rows.filter((r) => r.role === role).forEach((r) => m.set(r.perm_key, r.allowed));
+                    if (grade) rows.filter((r) => r.role === roleGradeKey(role, grade)).forEach((r) => m.set(r.perm_key, r.allowed));
+                }
                 setRoutePerms(m);
             });
         return () => { vivo = false; };
-    }, [user?.role]);
+    }, [user?.role, user?.grade]);
     useEffect(() => {
         if (!user || !routePerms) return;
         if (user.role === "admin" || user.role === "dev") return;

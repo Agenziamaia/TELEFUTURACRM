@@ -213,7 +213,7 @@ function AmministrazioneInner() {
     }, [sez, router]);
     // GATING DAI PERMESSI (nav.ts + role_permissions): ogni sezione dell'hub e
     // ogni funzione di Utenti si concede una a una dalla pagina Permessi.
-    const { perms } = useRolePermissions(user?.role, user?.grade);
+    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade);
     // ruoli FUSI codice+DB: i ruoli creati da UI compaiono in filtri e form
     const { roles: allRoles } = useRoles();
     const hubAmm = hubByHref("/amministrazione")!;
@@ -291,9 +291,16 @@ function AmministrazioneInner() {
         setLoading(false);
     }, []);
 
+    // L'anagrafica (utenti con costi + negozi) serve SOLO alle sezioni Utenti e
+    // Costi: chi entra per altre sezioni (es. Catalogo, permesso 10/08 anche a
+    // gradi non-sede) non la scarica affatto.
+    const serveAnagrafica = sezOk("utenti") || costiVisibile;
     useEffect(() => {
-        fetchAll();
-    }, [fetchAll]);
+        if (!permsLoaded) return;
+        if (serveAnagrafica) fetchAll();
+        else setLoading(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fetchAll, permsLoaded, serveAnagrafica]);
 
     const filteredUsers = useMemo(() => {
         return users.filter((u) => {
@@ -324,16 +331,27 @@ function AmministrazioneInner() {
         return map;
     }, [filteredUsers]);
 
-    // amministrativo e direttore_generale entrano per la SOLA sezione Utenti
-    // (sezioniVisibili sopra); tutti gli altri ruoli restano fuori.
-    if (user && !["admin", "dev", "amministrativo", "direttore_generale"].includes(user.role)) {
-        return (
-            <div className="glass-panel p-10 text-center max-w-lg mx-auto mt-10">
-                <Shield className="w-10 h-10 text-rose-400 mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-white">Accesso riservato</h2>
-                <p className="text-slate-400 mt-2">Solo l&apos;Admin può accedere all&apos;Amministrazione.</p>
-            </div>
-        );
+    // L'ingresso segue i PERMESSI (pagina Permessi, per ruolo o grado), non una
+    // lista fissa di ruoli: chi ha almeno una sezione concessa entra e vede solo
+    // quella (bug 10/08: lo store manager senior col Catalogo abilitato veniva
+    // respinto). Finché i permessi non sono arrivati: spinner, non porta in faccia.
+    if (user && !["admin", "dev"].includes(user.role)) {
+        if (!permsLoaded) {
+            return (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                </div>
+            );
+        }
+        if (sezioniVisibili.length === 0) {
+            return (
+                <div className="glass-panel p-10 text-center max-w-lg mx-auto mt-10">
+                    <Shield className="w-10 h-10 text-rose-400 mx-auto mb-4" />
+                    <h2 className="text-xl font-bold text-white">Accesso riservato</h2>
+                    <p className="text-slate-400 mt-2">Nessuna sezione dell&apos;Amministrazione è abilitata per il tuo ruolo.</p>
+                </div>
+            );
+        }
     }
 
     return (
