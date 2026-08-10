@@ -262,8 +262,10 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
     const mVal=p.type==="fixed"?(p.fixedMargin||0):p.type==="pct"?(pVal*(p.pctMargin||0)/100):p.type==="cost"?(pVal-(p.companyCost||0)):0;
     if(p.needsImei){
       // SOLO telefoni scelti dal magazzino (Luca 31/07): niente IMEI a mano.
-      const units=usatoUnits.filter(u=>u.usatoId).map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId,prezzo:(u.prezzo!=null&&String(u.prezzo).trim()!=="")?(parseFloat(String(u.prezzo).replace(",","."))||null):null}));
+      const units=usatoUnits.filter(u=>u.usatoId).map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId,prezzo:(u.prezzo!=null&&String(u.prezzo).trim()!=="")?(parseFloat(String(u.prezzo).replace(",","."))||null):null,finanziato:u.finanziato||null,rate:u.finanziato==="si"?(parseInt(u.rate)||null):null}));
       if(units.length===0)return;
+      // MOD-44: la scelta finanziamento e' OBBLIGATORIA (e con Si' servono le rate)
+      if(usatoUnits.some(u=>u.usatoId&&(!u.finanziato||(u.finanziato==="si"&&!(parseInt(u.rate)>0)))))return;
       const _im=units.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
       if(new Set(_im).size!==_im.length)return;
       const q=units.length||1;
@@ -276,6 +278,8 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
   const _usImeis=usatoUnits.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
   const hasDupImei=!!(selProd&&selProd.needsImei)&&(new Set(_usImeis).size!==_usImeis.length);
   const unitMissing=!!(selProd&&selProd.needsImei)&&!usatoUnits.some(u=>u.usatoId);
+  // MOD-44: gate finanziamento (scelta obbligatoria; Si' → rate)
+  const finMissing=!!(selProd&&selProd.needsImei)&&usatoUnits.some(u=>u.usatoId&&(!u.finanziato||(u.finanziato==="si"&&!(parseInt(u.rate)>0))));
   return(<div style={inline?{width:"100%"}:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
     {!inline&&<style>{`@keyframes margSlideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>}
     <div style={inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:760,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
@@ -366,10 +370,35 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
                       </div>
                       <button onClick={()=>clearUnit(i)} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✕ cambia</button>
                     </div>
-                    <div style={{marginTop:8}}>
-                      <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Prezzo di VENDITA €</div>
-                      <input value={u.prezzo??""} onChange={e=>setUnit(i,"prezzo",e.target.value)} type="number" min="0" step="0.01" placeholder="es. 199"
-                        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(u.prezzo??"").trim()===""?"2px solid #fd7e14":"1px solid var(--tf-w100)",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
+                    {/* MOD-44 (Luca 10/08): prezzo RISTRETTO + "Finanziato?" a destra
+                        nello stesso quadrato; con Sì e' obbligatorio il n. rate */}
+                    <div style={{marginTop:8,display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
+                      <div style={{width:150}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Prezzo di VENDITA €</div>
+                        <input value={u.prezzo??""} onChange={e=>setUnit(i,"prezzo",e.target.value)} type="number" min="0" step="0.01" placeholder="es. 199"
+                          style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(u.prezzo??"").trim()===""?"2px solid #fd7e14":"1px solid var(--tf-w100)",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Ha fatto un FINANZIAMENTO? <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+                        <div style={{display:"flex",gap:6}}>
+                          {["si","no"].map(v=>(
+                            <button key={v} type="button" onClick={()=>setUnit(i,"finanziato",v)}
+                              style={{padding:"8px 18px",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",
+                                border:u.finanziato===v?(v==="si"?"2px solid #f59e0b":"2px solid #28a745"):(!u.finanziato?"2px solid #fd7e14":"1px solid var(--tf-w100)"),
+                                background:u.finanziato===v?(v==="si"?"rgba(245,158,11,0.18)":"rgba(40,167,69,0.15)"):"var(--tf-w30)",
+                                color:u.finanziato===v?(v==="si"?"#fbbf24":"#4ade80"):"var(--tf-8892b0)"}}>
+                              {v==="si"?"Sì":"No"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {u.finanziato==="si"&&(
+                        <div style={{width:110}}>
+                          <div style={{fontSize:10,fontWeight:700,color:"var(--tf-fbbf24)",marginBottom:3}}>N. RATE <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+                          <input value={u.rate??""} onChange={e=>setUnit(i,"rate",e.target.value.replace(/\D/g,"").slice(0,3))} type="number" min="1" placeholder="es. 24"
+                            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:!(parseInt(u.rate)>0)?"2px solid #fd7e14":"2px solid #f59e0b",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ):(
@@ -396,9 +425,10 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
             <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:importoMissing?"2px solid #dc3545":"1px solid var(--tf-w100)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
             {selProd.isTelCash&&<div style={{fontSize:10,color:"var(--tf-28a745)",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>}
           {hasDupImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Sono presenti IMEI duplicati: correggili per registrare</div>}
-          {unitMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(253,126,20,0.12)",border:"1px solid #fdd3ad",color:"var(--tf-fd7e14)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Seleziona il telefono dal magazzino usati: si vendono solo dispositivi presenti a magazzino</div>}
-          {importoMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
-          <button onClick={handleAdd} disabled={hasDupImei||importoMissing} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:(hasDupImei||importoMissing)?"var(--tf-cfcfcf)":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:(hasDupImei||importoMissing)?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
+          {/* MOD-44: via i banner ridondanti del flusso usato — la card unità
+              guida gia' (bordi arancio sui campi mancanti) */}
+          {importoMissing&&!selProd.needsImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
+          <button onClick={handleAdd} disabled={hasDupImei||importoMissing||unitMissing||finMissing} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:(hasDupImei||importoMissing||unitMissing||finMissing)?"var(--tf-cfcfcf)":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:(hasDupImei||importoMissing||unitMissing||finMissing)?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
         </div>)}
       </div>
     </div>
@@ -5589,7 +5619,7 @@ function CRM() {
       });
 
       margList.forEach(mi => {
-        contractRows.push({
+        contractRows.push(_margRigaFin({
           id: `EXT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
           client_id: clientId,
           data: dateStr,
@@ -5611,7 +5641,7 @@ function CRM() {
           data_attivazione: dateStr,   // compilata subito: e' la data di registrazione (Luca)
           dettagli: { product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei, units: Array.isArray(mi.units) ? mi.units : null },
           is_demo: false
-        });
+        }, mi));
       });
 
       // Promemoria di Step 7 -> task in calendario (tabella gia' esistente).
@@ -5724,11 +5754,35 @@ function CRM() {
   // marginalita' venduta senza brand andava persa. Ora crea le righe EXT-
   // come fa handleSubmit per il ramo con brand.
   const [margSaving,setMargSaving]=useState(false);
+  // ── MOD-44 (Luca 10/08): vendita USATO con FINANZIAMENTO ──
+  // La riga marginalità della vendita usato con unità finanziate diventa una
+  // PRATICA DI FINANZIAMENTO nel Tracking PDA: brand "Prodotti e Marginalità"
+  // (non inizia per "Marginal" → passa il perimetro vaInTracking), macro
+  // mobile + controllo finanziamento → riga Finanziamento; nasce "Nuovo"
+  // (da lavorare), non gia' attiva.
+  const _usatoFinanziato=(mi)=>mi&&mi.productId==="vendita_usato"&&Array.isArray(mi.units)&&mi.units.some(u=>u&&u.finanziato==="si");
+  const _margRigaFin=(riga,mi)=>{
+    if(!_usatoFinanziato(mi))return riga;
+    const rate=mi.units.filter(u=>u&&u.finanziato==="si").map(u=>u.rate).filter(Boolean);
+    return {...riga,
+      brand:"Prodotti e Marginalità",categoria_macro:"mobile",controlli:["finanziamento"],
+      stato:"Nuovo",stato_negozio:"nuovo",data_attivazione:null,
+      dettagli:{...riga.dettagli,"Finanziato":"Sì","N. Rate":rate.join(", ")||null},
+    };
+  };
   const saveMargOnly=async()=>{
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
     if(margSaving)return;
     const anon=margSaveForm.anonimo;
+    // MOD-44: con un USATO FINANZIATO servono anagrafica VERA (niente vendita
+    // anonima) e allegati documento + contratto obbligatori
+    const _conFin=margItems.some(_usatoFinanziato);
+    if(_conFin){
+      if(anon){sT("⚠️ Usato con finanziamento: serve l'anagrafica completa del cliente (niente vendita anonima)");return;}
+      if(!attachments.some(a=>a.type==="documento")){sT("⚠️ Usato con finanziamento: carica il DOCUMENTO del cliente nello step Allegati");setVistaStep("allegati");return;}
+      if(!attachments.some(a=>a.type==="contratti")){sT("⚠️ Usato con finanziamento: carica il CONTRATTO di finanziamento nello step Allegati");setVistaStep("allegati");return;}
+    }
     if(!anon&&!margCliSel){
       const f=margSaveForm;
       // REFERENTE OBBLIGATORIO per le business anche qui (Luca 01/08): questo
@@ -5805,7 +5859,7 @@ function CRM() {
         },{onConflict:"id"});
         if(ce)throw ce;
       }
-      const rows=margItems.map(mi=>({
+      const rows=margItems.map(mi=>_margRigaFin({
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
         client_id:clientId,data:dateStr,brand:"Marginalità",categoria:"Marginalità",categoria_macro:"extra",controlli:[],
         // Segnalazione 52: le vendite a marginalita' sono brand Extra, quindi
@@ -5815,9 +5869,31 @@ function CRM() {
         codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:dateStr,
         dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei,units:Array.isArray(mi.units)?mi.units:null},
         is_demo:false,
-      }));
+      },mi));
       const {error}=await supabase.from("contracts").insert(rows);
       if(error)throw error;
+      // MOD-44: allegati della vendita marginalità — con FINANZIAMENTO sono
+      // gia' stati verificati obbligatori; si caricano e si agganciano alla
+      // pratica di finanziamento (o alla prima riga)
+      try{
+        const praticaFin=rows.find(r=>Array.isArray(r.controlli)&&r.controlli.includes("finanziamento"));
+        const targetId=(praticaFin||rows[0])?.id;
+        if(targetId&&attachments.length){
+          const attRows=[];
+          for(const att of attachments){
+            let url=att.reused?att.url:null;
+            if(!url&&att.file){
+              const ext=(att.name.split(".").pop()||"bin").toLowerCase();
+              const path=`${clientId}/${clientId}_${Date.now()}_${Math.random().toString(36).slice(2,7)}.${ext}`;
+              const {error:eUp}=await supabase.storage.from("contracts").upload(path,att.file);
+              if(eUp)continue;
+              url=supabase.storage.from("contracts").getPublicUrl(path).data.publicUrl;
+            }
+            if(url)attRows.push({contract_id:targetId,client_id:clientId,file_url:url,file_name:att.name,file_type:att.type});
+          }
+          if(attRows.length)await supabase.from("contract_attachments").insert(attRows);
+        }
+      }catch{/* allegati best-effort: la vendita e' gia' salva */}
       await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend);
       setMargSaveForm({...MARG_FORM_VUOTO});
       setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
@@ -6808,7 +6884,10 @@ select.rvIn{cursor:pointer}
                 spesso non ci sono i dati del cliente) */}
             <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:10}}>Per le vendite di sola marginalità gli allegati sono FACOLTATIVI: carica documento o altro solo se li hai.</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-              {[{l:"Documento",i:"🪪",t:"documento"},{l:"Altro",i:"📁",t:"altro"}].map(a=>boxAllegato(a,null,"facoltativo"))}
+              {(margItems.some(_usatoFinanziato)
+                ? [{l:"Documento",i:"🪪",t:"documento",n:"OBBLIGATORIO per il finanziamento"},{l:"Contratto",i:"📄",t:"contratti",n:"OBBLIGATORIO per il finanziamento"},{l:"Altro",i:"📁",t:"altro",n:"facoltativo"}]
+                : [{l:"Documento",i:"🪪",t:"documento",n:"facoltativo"},{l:"Altro",i:"📁",t:"altro",n:"facoltativo"}]
+              ).map(a=>boxAllegato(a,null,a.n))}
             </div>
             {listaFileAllegati(attachments.map((a,i)=>({a,i})))}
           </>):(<>
