@@ -9,7 +9,7 @@
 // il localStorage resta solo come eredita' del vecchio "letto" locale.
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Bell, Info, AlertTriangle, CheckCircle2, Plus, Eye, X, Trash2 , Rocket, Bomb } from "lucide-react";
+import { Bell, Info, AlertTriangle, CheckCircle2, Plus, Eye, X, Trash2 , Rocket, Bomb, Flame } from "lucide-react";
 import { cn } from "@/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
@@ -17,7 +17,7 @@ import { useRolePermissions } from "@/lib/usePermissions";
 import { capAllowed, ruoliDestinatariComunicazioni, destinatarioSoloAmbito, CAP_COM_CREA, CAP_COMUNICAZIONI } from "@/lib/capabilities";
 import { ROLES, BRANDS } from "@/lib/roles";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati, sincronizzaRispostaRiunione } from "@/lib/comunicazioniTarget";
-import { Confetti, EsplosioneBomba, SfondoComunicazione, fondoComunicazione, stileTaglia } from "@/components/ComunicazioniPopup";
+import { Confetti, EsplosioneBomba, SfondoComunicazione, fondoComunicazione, stileTaglia, SprintStart, RazzoUpdate, ImpulsoOnde } from "@/components/ComunicazioniPopup";
 import { EditorRicco, sanificaHtml } from "@/components/EditorRicco";
 import { SelectMulti, SelectOpzioni } from "@/components/SelectPersona";
 import { useStores } from "@/lib/org";
@@ -75,6 +75,8 @@ const getTypeStyles = (type: string) => {
         case "update": return { icon: Rocket, color: "text-violet-400", bg: "bg-violet-500/10", border: "border-violet-500/30" };
         // NOVITA' (04/08, mig. 159): la bomba 💣 arancio che esplode alla prima apertura
         case "novita": return { icon: Bomb, color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/40" };
+        // SPRINT (MOD-19, 10/08): la carica 🔥 oro — countdown + frase dal calderone
+        case "sprint": return { icon: Flame, color: "text-amber-300", bg: "bg-amber-400/10", border: "border-amber-400/40" };
         default: return { icon: Info, color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/20" };
     }
 };
@@ -113,15 +115,22 @@ function ComunicazioniInner() {
     const [aperte, setAperte] = useState<Set<number>>(new Set());
     const [festa, setFesta] = useState<number | null>(null);   // coriandoli sulle buone notizie
     const [bomba, setBomba] = useState<number | null>(null);   // 💣 esplosione sulle novita' (one-shot)
+    // MOD-19: effetto scenico a TUTTA PAGINA anche per sprint/update/warning
+    // alla prima apertura (Info resta circoscritta alla card)
+    const [scenico, setScenico] = useState<{ id: number; t: string } | null>(null);
     // filtro del dettaglio ricevute (03/08): chips cliccabili sui contatori
     const [dettFiltro, setDettFiltro] = useState<"tutti" | "apparse" | "confermate" | "rinviate" | "mai">("tutti");
 
     const fetchAll = useCallback(async () => {
-        // select a scalare: completa (mig. 116, con esiti) → estesa (112) → legacy
-        const completa = await supabase
+        // select a scalare: v190 (sprint_frase, MOD-19) → completa (mig. 116) → estesa (112) → legacy
+        const v190 = await supabase
+            .from("comunicazioni")
+            .select("id, title, date_display, type, content, content_html, kind, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, allegati, size, created_by, created_by_name, created_at, sprint_frase")
+            .order("created_at", { ascending: false });
+        const completa = v190.error ? await supabase
             .from("comunicazioni")
             .select("id, title, date_display, type, content, content_html, kind, target_roles, target_stores, target_users, target_brands, esiti, meeting_id, allegati, size, created_by, created_by_name, created_at")
-            .order("created_at", { ascending: false });
+            .order("created_at", { ascending: false }) : v190;
         const esteso = completa.error ? await supabase
             .from("comunicazioni")
             .select("id, title, date_display, type, content, kind, target_roles, target_stores, target_users, target_brands, created_by, created_by_name, created_at")
@@ -263,7 +272,29 @@ function ComunicazioniInner() {
     const [formOpen, setFormOpen] = useState(false);
     const [fTitle, setFTitle] = useState("");
     const [fContent, setFContent] = useState("");
-    const [fType, setFType] = useState<"info" | "novita" | "warning" | "success" | "update">("info");
+    const [fType, setFType] = useState<"info" | "novita" | "warning" | "success" | "update" | "sprint">("info");
+    // MOD-19: gestione del CALDERONE frasi sprint (aggiungi/modifica/spegni)
+    const [frasiOpen, setFrasiOpen] = useState(false);
+    const [frasi, setFrasi] = useState<{ id: string; testo: string; attivo: boolean; usi: number }[]>([]);
+    const [fraseNuova, setFraseNuova] = useState("");
+    const [frasiErr, setFrasiErr] = useState<string | null>(null);
+    const caricaFrasi = async () => {
+        const { data, error: fe } = await supabase.from("sprint_frasi").select("id, testo, attivo, usi").order("usi", { ascending: true }).order("testo");
+        if (fe) { setFrasiErr("Calderone non disponibile: manca la migrazione sprint (apply_mig_sprint.js)."); setFrasi([]); return; }
+        setFrasiErr(null);
+        setFrasi(((data ?? []) as { id: string; testo: string; attivo: boolean; usi: number }[]));
+    };
+    const aggiungiFrase = async () => {
+        const t = fraseNuova.trim();
+        if (!t) return;
+        const { error: fe } = await supabase.from("sprint_frasi").insert({ testo: t });
+        if (fe) { setFrasiErr(/duplicate/i.test(fe.message) ? "Frase già nel calderone." : fe.message); return; }
+        setFraseNuova(""); setFrasiErr(null); caricaFrasi();
+    };
+    const salvaFrase = async (id: string, patch: { testo?: string; attivo?: boolean }) => {
+        await supabase.from("sprint_frasi").update(patch).eq("id", id);
+        setFrasi((p) => p.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+    };
     // EDITOR (03/08, mig. 147; taglie v2 mig. 158): dimensione, allegati, emoji rapide
     const [fSize, setFSize] = useState<"piccola" | "normale" | "grande">("piccola");
     const [fAllegati, setFAllegati] = useState<{ url: string; name: string }[]>([]);
@@ -408,7 +439,28 @@ function ComunicazioniInner() {
             }
         }
         const idsTarget = [...new Set([...idsPersone, ...idsAmbito])];
+        // MOD-19: tipo SPRINT → si pesca la frase dal CALDERONE (la meno usata,
+        // spareggio: uso più vecchio), si CONGELA sulla comunicazione (tutti
+        // vedono la stessa) e si aggiorna usi/ultimo_uso: mai ripetuta finché
+        // il giro non si esaurisce, poi si riparte dalle meno recenti.
+        let sprintFrase: string | null = null;
+        if (fType === "sprint") {
+            try {
+                const { data: fr } = await supabase.from("sprint_frasi")
+                    .select("id, testo, usi").eq("attivo", true)
+                    .order("usi", { ascending: true })
+                    .order("ultimo_uso", { ascending: true, nullsFirst: true })
+                    .limit(1);
+                if (fr && fr[0]) {
+                    sprintFrase = fr[0].testo;
+                    await supabase.from("sprint_frasi")
+                        .update({ usi: (Number(fr[0].usi) || 0) + 1, ultimo_uso: new Date().toISOString() })
+                        .eq("id", fr[0].id);
+                }
+            } catch { /* calderone non migrato: comunicazione senza frase */ }
+        }
         const { error: e } = await supabase.from("comunicazioni").insert({
+            ...(sprintFrase ? { sprint_frase: sprintFrase } : {}),
             title: fTitle.trim(),
             content: fContent.trim(),
             content_html: fContent.trim() && fContentHtml.trim() ? fContentHtml : null,
@@ -651,6 +703,14 @@ function ComunicazioniInner() {
                                         try { vista = !!localStorage.getItem(k); if (!vista) localStorage.setItem(k, new Date().toISOString()); } catch { /* one-shot solo di sessione */ }
                                         if (!vista) { setBomba(com.id); setTimeout(() => setBomba(null), 3000); }
                                     }
+                                    // MOD-19: scenico a tutta pagina anche per sprint/update/warning
+                                    // (una volta per utente+comunicazione, come la bomba)
+                                    if (apre && (com.type === "sprint" || com.type === "update" || com.type === "warning") && user?.id) {
+                                        const k2 = `fx_visto_${user.id}_${com.id}`;
+                                        let vista2 = false;
+                                        try { vista2 = !!localStorage.getItem(k2); if (!vista2) localStorage.setItem(k2, new Date().toISOString()); } catch { /* di sessione */ }
+                                        if (!vista2) { setScenico({ id: com.id, t: com.type }); setTimeout(() => setScenico(null), com.type === "sprint" ? 4200 : com.type === "update" ? 3600 : 1800); }
+                                    }
                                     if (apre && !read) scriviRicevuta(com.id, false);   // APRIRE = leggere
                                 }}
                                 onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !isPopup && !aperte.has(com.id)) { setAperte((p) => new Set(p).add(com.id)); if (!read) scriviRicevuta(com.id, false); } }}
@@ -661,6 +721,7 @@ function ComunicazioniInner() {
                                     com.type === "success" && "bg-gradient-to-br from-emerald-500/[0.08] via-transparent to-fuchsia-500/[0.07]",
                                     com.type === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent",
                                     com.type === "novita" && "bg-gradient-to-br from-orange-500/[0.10] via-transparent to-red-500/[0.07]",
+                                    com.type === "sprint" && "border border-amber-400/40 bg-gradient-to-br from-amber-400/[0.10] via-transparent to-yellow-500/[0.07]",
                                     !collassata && com.type === "warning" && "anim-bordo-rosso"
                                 )}
                             >
@@ -672,8 +733,12 @@ function ComunicazioniInner() {
                                 {com.type === "update" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.07] rotate-12 pointer-events-none select-none">🚀</span>}
                                 {com.type === "warning" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.07] rotate-12 pointer-events-none select-none">🚨</span>}
                                 {com.type === "novita" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.08] rotate-12 pointer-events-none select-none">💣</span>}
+                                {com.type === "sprint" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[90px] opacity-[0.09] rotate-12 pointer-events-none select-none">🔥</span>}
                                 {festa === com.id && <Confetti />}
                                 {bomba === com.id && <EsplosioneBomba />}
+                                {scenico?.id === com.id && scenico.t === "sprint" && <SprintStart />}
+                                {scenico?.id === com.id && scenico.t === "update" && <RazzoUpdate />}
+                                {scenico?.id === com.id && scenico.t === "warning" && <ImpulsoOnde tipo="warning" />}
                                 {/* z-10 (COM-04): il wrapper `relative` del contenuto qui sotto
                                     viene dopo nel DOM e copriva cestino e badge — i click sul
                                     Trash2 finivano sulla card che si apriva/chiudeva */}
@@ -716,6 +781,9 @@ function ComunicazioniInner() {
                                             {com.type === "novita" && (
                                                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/40">💣 Novità</span>
                                             )}
+                                            {com.type === "sprint" && (
+                                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/40">🔥 Sprint</span>
+                                            )}
                                             {com.type === "success" && (
                                                 <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">🎉 Buona notizia</span>
                                             )}
@@ -735,6 +803,12 @@ function ComunicazioniInner() {
                                                 </span>
                                             )}
                                         </div>
+                                        {/* MOD-19: la frase del calderone in testa al messaggio Sprint */}
+                                        {!collassata && com.type === "sprint" && (com as { sprint_frase?: string | null }).sprint_frase && (
+                                            <div className="mt-3 text-base font-black" style={{ color: "#fde047", textShadow: "0 0 16px rgba(251,191,36,.6)" }}>
+                                                🔥 {(com as { sprint_frase?: string | null }).sprint_frase}
+                                            </div>
+                                        )}
                                         {collassata ? (
                                             <p className="text-xs text-slate-500 mt-2 italic select-none">▾ Clicca per leggere il contenuto{com.esiti?.length ? " e rispondere" : ""}</p>
                                         ) : (
@@ -938,7 +1012,7 @@ function ComunicazioniInner() {
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aspetto</label>
                                 <div className="flex gap-2 mt-2">
-                                    {([["info", "ℹ️ Info"], ["novita", "💣 Novità"], ["update", "🚀 Update"], ["warning", "🚨 Urgente"], ["success", "🎉 Buone notizie"]] as const).map(([t, l]) => (
+                                    {([["info", "ℹ️ Info"], ["novita", "💣 Novità"], ["update", "🚀 Update"], ["warning", "🚨 Urgente"], ["success", "🎉 Buone notizie"], ["sprint", "🔥 Sprint"]] as const).map(([t, l]) => (
                                         <button key={t} type="button" onClick={() => setFType(t)}
                                             className={cn("px-3.5 py-1.5 rounded-full border text-sm transition-all",
                                                 fType === t ? "border-violet-500 bg-violet-500/10 text-white" : "border-white/10 text-slate-400 hover:border-white/25")}>
@@ -946,6 +1020,57 @@ function ComunicazioniInner() {
                                         </button>
                                     ))}
                                 </div>
+                                {/* MOD-19: la frase motivazionale dello Sprint viene pescata
+                                    da sola dal CALDERONE (mai ripetuta) alla pubblicazione */}
+                                {fType === "sprint" && (
+                                    <div className="mt-2 flex items-center gap-2 flex-wrap text-[11px] text-amber-300/90">
+                                        <span>🔥 La frase motivazionale si pesca da sola dal calderone (mai ripetuta) e appare sopra la comunicazione.</span>
+                                        <button type="button" onClick={() => { setFrasiOpen(true); caricaFrasi(); }}
+                                            className="px-2.5 py-1 rounded-lg border border-amber-400/40 bg-amber-400/10 text-amber-200 font-bold hover:bg-amber-400/20">
+                                            Gestisci il calderone
+                                        </button>
+                                    </div>
+                                )}
+                                {/* MOD-19: pannello CALDERONE — lista, attiva/spegni, modifica, aggiungi */}
+                                {frasiOpen && (
+                                    <div className="fixed inset-0 bg-black/70 z-[1300] flex items-center justify-center p-4" onClick={() => setFrasiOpen(false)} role="dialog" aria-modal="true">
+                                        <div className="bg-[#12141f] border border-amber-400/30 rounded-2xl w-[min(720px,94vw)] max-h-[85vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                                            <div className="flex items-center justify-between py-4 px-5 border-b border-white/10">
+                                                <div>
+                                                    <h3 className="text-base font-bold text-white">🔥 Calderone frasi Sprint</h3>
+                                                    <p className="text-[11px] text-slate-500 mt-0.5">Ordinate dalle meno usate (le prossime a uscire). Spegnere ≠ cancellare: la frase resta ma non esce più.</p>
+                                                </div>
+                                                <button type="button" onClick={() => setFrasiOpen(false)} className="text-slate-500 hover:text-white"><X className="w-5 h-5" /></button>
+                                            </div>
+                                            <div className="p-5 flex gap-2 border-b border-white/5">
+                                                <input value={fraseNuova} onChange={(e) => setFraseNuova(e.target.value)}
+                                                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); aggiungiFrase(); } }}
+                                                    placeholder="Nuova frase motivazionale… (Invio per aggiungere)"
+                                                    className="flex-1 bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-sm py-2 px-3 outline-none" />
+                                                <button type="button" onClick={aggiungiFrase}
+                                                    className="px-4 rounded-lg border border-amber-400/40 bg-amber-400/10 text-amber-200 text-sm font-bold hover:bg-amber-400/20">＋ Aggiungi</button>
+                                            </div>
+                                            {frasiErr && <div className="mx-5 mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">{frasiErr}</div>}
+                                            <div className="flex-1 overflow-y-auto p-5 space-y-1.5">
+                                                {frasi.map((f) => (
+                                                    <div key={f.id} className={cn("flex items-center gap-2.5 rounded-lg border px-3 py-2", f.attivo ? "bg-white/[0.03] border-white/10" : "bg-white/[0.01] border-white/5 opacity-50")}>
+                                                        <input defaultValue={f.testo}
+                                                            onBlur={(e) => { const t = e.target.value.trim(); if (t && t !== f.testo) salvaFrase(f.id, { testo: t }); }}
+                                                            className="flex-1 bg-transparent border-0 outline-none text-sm text-slate-100 min-w-0" />
+                                                        <span className="text-[10px] text-slate-500 shrink-0 font-mono" title="Quante volte è uscita">{f.usi}×</span>
+                                                        <button type="button" onClick={() => salvaFrase(f.id, { attivo: !f.attivo })}
+                                                            title={f.attivo ? "Spegni: non esce più" : "Riaccendi"}
+                                                            className={cn("text-[10px] font-bold px-2 py-1 rounded shrink-0 border", f.attivo ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30" : "text-slate-400 bg-white/5 border-white/10")}>
+                                                            {f.attivo ? "attiva" : "spenta"}
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                                {!frasi.length && !frasiErr && <p className="text-sm text-slate-500 text-center py-6">Calderone vuoto.</p>}
+                                            </div>
+                                            <div className="py-3 px-5 border-t border-white/10 text-[11px] text-slate-500">{frasi.filter((f) => f.attivo).length} frasi attive · {frasi.length} totali</div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dimensione</label>
@@ -1013,7 +1138,9 @@ function ComunicazioniInner() {
                                                     ? { color: "var(--tf-a78bfa)", bg: "rgba(139,92,246,.12)", border: "rgba(139,92,246,.40)", Icona: Rocket }
                                                     : fType === "novita"
                                                         ? { color: "var(--tf-fb923c)", bg: "rgba(251,146,60,.12)", border: "rgba(249,115,22,.40)", Icona: Bomb }
-                                                        : { color: "var(--tf-60a5fa)", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
+                                                        : fType === "sprint"
+                                                            ? { color: "var(--tf-fbbf24)", bg: "rgba(251,191,36,.12)", border: "rgba(245,158,11,.50)", Icona: Flame }
+                                                            : { color: "var(--tf-60a5fa)", bg: "rgba(96,165,250,.12)", border: "rgba(96,165,250,.35)", Icona: Info };
                                         const tg = stileTaglia(fSize);
                                         const titolo = fTitle.trim() || "Titolo della comunicazione";
                                         const testoPuro = fContent.trim() || "Il testo che scrivi sopra comparirà qui.";
@@ -1061,7 +1188,9 @@ function ComunicazioniInner() {
                                                 fType === "warning" && "border border-rose-500/30 bg-gradient-to-br from-rose-500/[0.08] to-transparent anim-bordo-rosso",
                                                 fType === "success" && "bg-gradient-to-br from-emerald-500/[0.08] via-transparent to-fuchsia-500/[0.07]",
                                                 fType === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent",
-                                                fType === "novita" && "bg-gradient-to-br from-orange-500/[0.10] via-transparent to-red-500/[0.07]")}>
+                                                fType === "novita" && "bg-gradient-to-br from-orange-500/[0.10] via-transparent to-red-500/[0.07]",
+                                                fType === "sprint" && "border border-amber-400/40 bg-gradient-to-br from-amber-400/[0.10] via-transparent to-yellow-500/[0.07]")}>
+                                                {fType === "sprint" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.09] rotate-12 select-none">🔥</span>}
                                                 {fType === "success" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.08] rotate-12 select-none">🎉</span>}
                                                 {fType === "update" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.07] rotate-12 select-none">🚀</span>}
                                                 {fType === "warning" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.07] rotate-12 select-none">🚨</span>}
