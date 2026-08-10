@@ -18,7 +18,9 @@ UPDATE public.catalog_brands SET contratto_richiesto = 'assente'
   WHERE id = 'iliad' AND contratto_richiesto IS NULL;          -- Iliad: il contratto non esiste (Luca 06/08)
 UPDATE public.catalog_brands SET contratto_richiesto = 'facoltativo'
   WHERE id = 'sky' AND contratto_richiesto IS NULL;            -- Sky non rilascia contratti (Luca 04/08)
-UPDATE public.catalog_categorie SET contratto_richiesto = 'assente'
+-- "Assicurazioni" NON e' una categoria: e' un PRODOTTO (W3 Consumer+Business,
+-- dentro Multi-Servizi) — la regola vive a livello prodotto (fix 10/08 sera)
+UPDATE public.catalog_prodotti SET contratto_richiesto = 'assente'
   WHERE lower(nome) LIKE '%assicura%' AND contratto_richiesto IS NULL; -- assicurazioni senza contratto (Luca 10/08)
 
 NOTIFY pgrst, 'reload schema';
