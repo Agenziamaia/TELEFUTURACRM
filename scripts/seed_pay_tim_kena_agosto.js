@@ -92,7 +92,7 @@ const KENA = {
     await client.query("begin");
     try {
       for (const t of ["pay_righe", "pay_soglie", "pay_piste"])
-        await client.query(`delete from ${t} where brand=$1 and month=$2`, [T.brand, MONTH]);
+        await client.query(`delete from ${t} where brand=$1 and month=$2 and lato='ragazzi'`, [T.brand, MONTH]);
       for (const p of T.piste)
         await client.query(
           `insert into pay_piste (brand, month, chiave, nome, um, ordine) values ($1,$2,$3,$4,$5,$6)`,

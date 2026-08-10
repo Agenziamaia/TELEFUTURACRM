@@ -43,6 +43,7 @@ export type ContrattoPay = {
     categoria: string | null; prodotto: string | null; offerta: string | null;
     nascosta_gestione: boolean | null;
     cod_ins: string | null;                     // codice inserimento (dettagli "Cod.Ins.")
+    provenienza: string | null;                 // dettagli "Operatore di Provenienza"
 };
 
 /** contracts.brand (etichetta "WindTre"/"Very Mobile") → catalog_brands.id */
@@ -196,10 +197,12 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
         // ("Mobile") e non basta alle righe pay ancorate alla categoria.
         const catCat = d["categoria_catalogo"];
         const { dettagli: _d, ...resto } = r;
+        const prov = d["Operatore di Provenienza"];
         return {
             ...resto,
             categoria: catCat ? String(catCat) : r.categoria,
             cod_ins: cod == null ? null : String(cod),
+            provenienza: prov == null ? null : String(prov),
         };
     }).filter(produzioneValidaGare);
 }
@@ -244,20 +247,20 @@ export const CONTESTI_LABEL: Record<string, string> = {
  */
 export async function caricaContrattiContesto(
     contesto: string, monthISO: string, prefixAltriBrand?: string,
-): Promise<{ contratti: ContrattoPay[]; nonAllocate: number }> {
-    const fonti: string[] =
-        contesto === "vodafone" ? ["Vodafone", "Fastweb"] :
-        contesto === "fastweb" ? ["Fastweb"] : [];
-    if (!fonti.length)
-        return { contratti: await caricaContrattiMese(prefixAltriBrand || contesto, monthISO), nonAllocate: 0 };
-    const tutti = (await Promise.all(fonti.map(p => caricaContrattiMese(p, monthISO)))).flat();
-    let nonAllocate = 0;
+): Promise<{ contratti: ContrattoPay[]; nonAllocate: number; escluseVodafone: number }> {
+    const prefix = contesto === "vodafone" ? "Vodafone" : contesto === "fastweb" ? "Fastweb" : (prefixAltriBrand || contesto);
+    const tutti = await caricaContrattiMese(prefix, monthISO);
+    let escluseVodafone = 0;
     const contratti = tutti.filter(c => {
-        const ctx = contestoVfFw(brandIdDaLabel(c.brand), c.cod_ins, c.negozio);
-        if (ctx === null) nonAllocate++;
-        return ctx === contesto;
+        // REGOLE LETTERE (agosto): Fastweb T2 — MNP/OLO di provenienza
+        // VODAFONE fuori da target e compenso; lettera A Vodafone Store —
+        // MNP di provenienza Vodafone/Fastweb/Ho. escluse (mobile).
+        const prov = String(c.provenienza || "");
+        if (contesto === "fastweb" && /vodafone/i.test(prov)) { escluseVodafone++; return false; }
+        if (contesto === "vodafone" && /mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(prov)) { escluseVodafone++; return false; }
+        return contestoVfFw(brandIdDaLabel(c.brand), c.cod_ins, c.negozio) === contesto;
     });
-    return { contratti, nonAllocate };
+    return { contratti, nonAllocate: 0, escluseVodafone };
 }
 
 export type AvanzamentoPista = {

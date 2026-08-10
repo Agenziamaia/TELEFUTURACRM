@@ -130,6 +130,10 @@ const BF = [
 ];
 for (const b of BF)
   R.push(["business_fisso", b.g, "Business", "Fisso", b.prod, b.off, b.punti, 65, b.tiers]);
+// ---------- DOLCE VITA (lettera A, tab 1.2): contano in soglia mobile
+// (0,2 / 0,4 / 0,5 con cap 30 per POS — cap non modellato) e NON pagano.
+for (const [off, pDV] of [["Dolce Vita Start 14.95", 0.2], ["Dolce Vita Pro 19.95", 0.4], ["Dolce Vita Ultra 24.95", 0.5], ["Dolce Vita Plus 24.95", 0.5]])
+  R.push(["mobile", "Dolce Vita (" + pDV + " pt, no pay)", "Consumer", null, null, off, pDV, 0, [0, 0, 0, 0, 0, 0]]);
 
 // ---------- GETTONI dalle Tabelle 2.1 + 3.1 (screenshot Luca 10/08 sera):
 // CB, opzioni e telefoni a rate — importi FLAT (gettone=true, fuori pista),
@@ -182,7 +186,7 @@ const G = [
   await client.query("begin");
   try {
     for (const t of ["pay_righe", "pay_soglie", "pay_piste"])
-      await client.query(`delete from ${t} where brand=$1 and month=$2`, [BRAND, MONTH]);
+      await client.query(`delete from ${t} where brand=$1 and month=$2 and lato='ragazzi'`, [BRAND, MONTH]);
     for (const p of PISTE)
       await client.query(
         `insert into pay_piste (brand, month, chiave, nome, um, ordine) values ($1,$2,$3,$4,'punti',$5)`,
@@ -213,7 +217,7 @@ const G = [
   console.log(`OK — piste ${await n("pay_piste")} (attese 5) · soglie ${await n("pay_soglie")} (attese 27) · righe ${await n("pay_righe")} (attese ${R.length + G.length})`);
   // verifica aggancio catalogo: ogni riga con offerta deve esistere nell'albero
   const orfane = (await client.query(`
-    select r.nome, r.offerta from pay_righe r where r.brand=$1 and r.month=$2 and r.offerta is not null
+    select r.nome, r.offerta from pay_righe r where r.brand=$1 and r.month=$2 and r.lato='ragazzi' and r.offerta is not null
     and not exists (
       select 1 from catalog_offerte o
       join catalog_prodotti p on p.id = o.prodotto_id

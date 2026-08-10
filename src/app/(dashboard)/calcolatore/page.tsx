@@ -67,6 +67,7 @@ export default function CalcolatorePage() {
     const [avz, setAvz] = useState<Avanzamento | null>(null);
     const [caricaTab, setCaricaTab] = useState(false);
     const [nonAlloc, setNonAlloc] = useState(0);
+    const [escluseVf, setEscluseVf] = useState(0);
 
     // contesto lettera di gara (solo VF/FW ne hanno due)
     const [ctx, setCtx] = useState<string | null>(null);
@@ -116,9 +117,9 @@ export default function CalcolatorePage() {
             setTab(t);
             if (t) {
                 const bm = BRANDS.find(b => b.id === brand);
-                const { contratti, nonAllocate } = await caricaContrattiContesto(ctxKey, monthISO, bm?.prefix);
+                const { contratti, nonAllocate, escluseVodafone } = await caricaContrattiContesto(ctxKey, monthISO, bm?.prefix);
                 if (!vivo) return;
-                setNonAlloc(nonAllocate);
+                setNonAlloc(nonAllocate); setEscluseVf(escluseVodafone);
                 setAvz(calcolaAvanzamento(t, contratti));
             }
             setCaricaTab(false);
@@ -376,6 +377,11 @@ export default function CalcolatorePage() {
                             {nonAlloc > 0 && (
                                 <div className="text-[11px] text-amber-400/80 mt-1">
                                     {nonAlloc} vendite VF/FW con codice non riconducibile a una lettera
+                                </div>
+                            )}
+                            {escluseVf > 0 && (
+                                <div className="text-[11px] text-slate-500 mt-1">
+                                    ➖ {escluseVf} MNP/OLO da Vodafone escluse (regola lettera: né target né compenso)
                                 </div>
                             )}
                         </div>

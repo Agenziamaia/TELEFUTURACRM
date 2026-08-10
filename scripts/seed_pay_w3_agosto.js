@@ -139,7 +139,7 @@ for (const [off, importo] of ASS)
   await client.query("begin");
   try {
     for (const t of ["pay_righe", "pay_soglie", "pay_piste"])
-      await client.query(`delete from ${t} where brand=$1 and month=$2`, [BRAND, MONTH]);
+      await client.query(`delete from ${t} where brand=$1 and month=$2 and lato='ragazzi'`, [BRAND, MONTH]);
     for (const p of PISTE)
       await client.query(
         `insert into pay_piste (brand, month, chiave, nome, um, ordine) values ($1,$2,$3,$4,'punti',$5)`,
