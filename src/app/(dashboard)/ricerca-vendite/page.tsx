@@ -954,6 +954,10 @@ export default function RicercaContratto() {
     const [spostaQuery, setSpostaQuery] = useState("");
     const [spostaHits, setSpostaHits] = useState<{ id: string; nome: string; cognome: string; ragione_sociale: string; cf_piva: string; cellulare: string }[]>([]);
     const [spostaBusy, setSpostaBusy] = useState(false);
+    // VENDITA MISTA (Luca 10/08): quando la vendita da spostare ha più righe,
+    // si SCEGLIE cosa spostare (spunte) — il "tutto insieme" cieco trascinava
+    // anche prodotti di un'altra persona (caso sost. SIM Butnaru → Fei).
+    const [pickerSposta, setPickerSposta] = useState<null | { target: string; righe: { id: string; etichetta: string; sub: string; sel: boolean }[]; done: (ids: string[] | null) => void }>(null);
     useEffect(() => {
         const q = spostaQuery.trim();
         if (!spostaOpen || q.length < 3) { setSpostaHits([]); return; }
@@ -980,9 +984,26 @@ export default function RicercaContratto() {
         if (!c || !(c as any).client_id) return { ok: false, msg: "Il contratto non ha un cliente collegato: impossibile spostare." };
         const vc = (c as any).clients as { nome?: string; cognome?: string; ragione_sociale?: string } | null;
         const vecchioNome = vc ? (vc.ragione_sociale || `${vc.nome || ""} ${vc.cognome || ""}`.trim()) : "—";
-        const { data: righeV } = await supabase.from("contracts").select("id, storia").eq("client_id", (c as any).client_id).eq("data", (c as any).data || "");
-        const righe = ((righeV || []) as { id: string; storia: unknown }[]);
-        const daSpostare = righe.length ? righe : [{ id: contractId, storia: [] as unknown }];
+        const { data: righeV } = await supabase.from("contracts").select("id, storia, brand, prodotto, offerta").eq("client_id", (c as any).client_id).eq("data", (c as any).data || "");
+        const righe = ((righeV || []) as { id: string; storia: unknown; brand?: string | null; prodotto?: string | null; offerta?: string | null }[]);
+        let daSpostare: { id: string; storia: unknown }[] = righe.length ? righe : [{ id: contractId, storia: [] as unknown }];
+        // Più righe nella stessa vendita → l'operatore SCEGLIE cosa spostare
+        // (default: tutte spuntate). Le righe non spuntate restano dove sono.
+        if (righe.length > 1) {
+            const scelte = await new Promise<string[] | null>(done => setPickerSposta({
+                target: nuovo.etichetta,
+                righe: righe.map(r => ({
+                    id: r.id,
+                    etichetta: [r.prodotto, r.offerta].filter(Boolean).join(" · ") || r.brand || r.id,
+                    sub: r.id + (r.brand ? " · " + r.brand : ""),
+                    sel: true,
+                })),
+                done,
+            }));
+            setPickerSposta(null);
+            if (!scelte || !scelte.length) return { ok: false, msg: "Spostamento annullato." };
+            daSpostare = righe.filter(r => scelte.includes(r.id));
+        }
         const stamp = new Date().toISOString();
         for (const rg of daSpostare) {
             const storia = Array.isArray(rg.storia) ? [...rg.storia] : [];
@@ -2641,6 +2662,37 @@ export default function RicercaContratto() {
                     </div>
                 );
             })()}
+            {/* PICKER righe da spostare (vendita mista, Luca 10/08) — portal sul
+                body: deve funzionare sia dal modale sia dal pannello richieste */}
+            {pickerSposta && createPortal(
+                <div className="fixed inset-0 z-[6000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+                    onClick={e => { if (e.target === e.currentTarget) pickerSposta.done(null); }}>
+                    <div className="w-full max-w-md rounded-2xl border border-amber-400/40 bg-[#0e1526] p-6 shadow-2xl">
+                        <h3 className="text-base font-bold text-white mb-1">Cosa sposto su «{pickerSposta.target}»?</h3>
+                        <p className="text-xs text-slate-400 mb-4">Questa vendita ha più righe. Togli la spunta a ciò che deve <b className="text-slate-200">RESTARE sul cliente attuale</b> (es. prodotti di un'altra persona registrati nella stessa vendita).</p>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {pickerSposta.righe.map((r, i) => (
+                                <label key={r.id} className="flex items-center gap-2.5 rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 cursor-pointer hover:bg-white/[0.07]">
+                                    <input type="checkbox" checked={r.sel} className="accent-amber-400"
+                                        onChange={() => setPickerSposta(p => p ? { ...p, righe: p.righe.map((x, xi) => xi === i ? { ...x, sel: !x.sel } : x) } : p)} />
+                                    <span className="min-w-0">
+                                        <span className="block text-sm font-semibold text-slate-100 truncate">{r.etichetta}</span>
+                                        <span className="block text-[10px] font-mono text-slate-500 truncate">{r.sub}</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="flex justify-end gap-2.5 mt-5">
+                            <button onClick={() => pickerSposta.done(null)}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-300 border border-white/15 hover:bg-white/5">Annulla</button>
+                            <button onClick={() => pickerSposta.done(pickerSposta.righe.filter(r => r.sel).map(r => r.id))}
+                                disabled={!pickerSposta.righe.some(r => r.sel)}
+                                className="px-4 py-2 rounded-xl text-sm font-bold text-black bg-amber-400 hover:bg-amber-300 disabled:opacity-40">
+                                Sposta {pickerSposta.righe.filter(r => r.sel).length} rig{pickerSposta.righe.filter(r => r.sel).length === 1 ? "a" : "he"} →
+                            </button>
+                        </div>
+                    </div>
+                </div>, document.body)}
         </div>
     );
 }
