@@ -796,15 +796,18 @@ function UserForm({
     // l'email Aircall coincide con quella dell'utente.
     const [aircallUsers, setAircallUsers] = useState<{ id: number; name: string; email: string | null }[] | null>(null);
     const [aircallErr, setAircallErr] = useState("");
-    useEffect(() => {
-        let vivo = true;
+    // la lista arriva LIVE dall'API Aircall a ogni apertura del form (una nuova
+    // utenza compare da sola alla prossima apertura); il bottone 🔄 la ricarica
+    // al volo senza chiudere (domanda Luca 10/08)
+    const caricaAircall = useCallback(() => {
+        setAircallUsers(null);
+        setAircallErr("");
         fetch("/api/aircall/users").then((r) => r.json()).then((j) => {
-            if (!vivo) return;
             if (j?.ok) setAircallUsers(j.users || []);
             else { setAircallUsers([]); setAircallErr(j?.error || "Aircall non raggiungibile"); }
-        }).catch((e) => { if (vivo) { setAircallUsers([]); setAircallErr(e instanceof Error ? e.message : String(e)); } });
-        return () => { vivo = false; };
+        }).catch((e) => { setAircallUsers([]); setAircallErr(e instanceof Error ? e.message : String(e)); });
     }, []);
+    useEffect(() => { caricaAircall(); }, [caricaAircall]);
     useEffect(() => {
         if (!aircallUsers?.length) return;
         setF((p) => {
@@ -1000,18 +1003,24 @@ function UserForm({
                             del call center e il click-to-call. Preselezionata per
                             email; si auto-aggancia comunque alla prima chiamata. */}
                         <Field label="Utenza Aircall">
-                            <select className="glass-input w-full" value={f.aircall_user_id ?? ""}
-                                onChange={(e) => set("aircall_user_id", e.target.value ? Number(e.target.value) : null)}>
-                                <option value="">{aircallUsers === null ? "Carico da Aircall…" : "— Non collegata —"}</option>
-                                {f.aircall_user_id && aircallUsers !== null && !aircallUsers.some((u) => u.id === f.aircall_user_id) && (
-                                    <option value={f.aircall_user_id}>Utenza attuale (id {f.aircall_user_id} — non più su Aircall?)</option>
-                                )}
-                                {(aircallUsers ?? []).map((u) => (
-                                    <option key={u.id} value={u.id}>{u.name}{u.email ? ` · ${u.email}` : ""}</option>
-                                ))}
-                            </select>
+                            <div className="flex gap-1.5">
+                                <select className="glass-input w-full" value={f.aircall_user_id ?? ""}
+                                    onChange={(e) => set("aircall_user_id", e.target.value ? Number(e.target.value) : null)}>
+                                    <option value="">{aircallUsers === null ? "Carico da Aircall…" : "— Non collegata —"}</option>
+                                    {f.aircall_user_id && aircallUsers !== null && !aircallUsers.some((u) => u.id === f.aircall_user_id) && (
+                                        <option value={f.aircall_user_id}>Utenza attuale (id {f.aircall_user_id} — non più su Aircall?)</option>
+                                    )}
+                                    {(aircallUsers ?? []).map((u) => (
+                                        <option key={u.id} value={u.id}>{u.name}{u.email ? ` · ${u.email}` : ""}</option>
+                                    ))}
+                                </select>
+                                <button type="button" onClick={caricaAircall} title="Ricarica la lista da Aircall (es. utenza appena creata)"
+                                    className="shrink-0 px-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10">
+                                    <RotateCw className={`w-4 h-4${aircallUsers === null ? " animate-spin" : ""}`} />
+                                </button>
+                            </div>
                             {aircallErr && <p className="text-[11px] text-rose-400 mt-1">Aircall: {aircallErr}</p>}
-                            {!aircallErr && <p className="text-[11px] text-slate-500 mt-1">Collega le chiamate Aircall a questo utente (call center e click-to-call).</p>}
+                            {!aircallErr && <p className="text-[11px] text-slate-500 mt-1">Lista LIVE da Aircall a ogni apertura (🔄 per ricaricarla subito). Comunque un nuovo caller si aggancia da solo alla prima chiamata, se l&apos;email coincide.</p>}
                         </Field>
                     </div>
 
@@ -1292,6 +1301,9 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
     const oggiIso = new Date().toISOString().slice(0, 10);
     const [azione, setAzione] = useState<null | "licenzia" | "sospendi">(null);
     const [dataAzione, setDataAzione] = useState<string>(oggiIso);
+    // blocco accesso (segnalazione Luca 10/08): con data futura scelgo se
+    // bloccare l'accesso DA SUBITO o solo DALLA data di licenziamento
+    const [bloccaSubito, setBloccaSubito] = useState(false);
     const [azioneBusy, setAzioneBusy] = useState(false);
     const aggiornaStato = async (payload: Record<string, unknown>) => {
         if (azioneBusy) return false;
@@ -1304,8 +1316,11 @@ function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClo
     };
     const eseguiAzione = async () => {
         const d = dataAzione || oggiIso;
+        // licenziamento: la DATA è il record storico (può anche essere passata);
+        // il BLOCCO accesso scatta subito se d<=oggi o se Luca sceglie
+        // "blocca subito", altrimenti entra in vigore alla data
         const payload = azione === "licenzia"
-            ? (d <= oggiIso
+            ? (d <= oggiIso || bloccaSubito
                 ? { status: "licenziato", active: false, data_licenziamento: d, sospeso_dal: null }
                 : { data_licenziamento: d })
             : { sospeso_dal: d };
@@ -1652,11 +1667,11 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                 ) : (<>
                                     {!u.sospeso_dal && (
                                         <button onClick={() => { setDataAzione(oggiIso); setAzione("sospendi"); }}
-                                            className="w-full py-3.5 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-black uppercase tracking-widest transition-colors">
+                                            className="w-full py-3.5 rounded-xl bg-orange-500 hover:bg-orange-400 text-white text-sm font-black uppercase tracking-widest transition-colors">
                                             ⏸️ Sospendi
                                         </button>
                                     )}
-                                    <button onClick={() => { setDataAzione(oggiIso); setAzione("licenzia"); }}
+                                    <button onClick={() => { setDataAzione(oggiIso); setBloccaSubito(false); setAzione("licenzia"); }}
                                         className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-black uppercase tracking-widest transition-colors">
                                         🔴 Licenzia
                                     </button>
@@ -1678,15 +1693,27 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                                 : "Il sospeso non può accedere al CRM finché non lo riattivi (l'utenza e i dati restano intatti). Con la data di OGGI è sospeso subito; con una data futura la sospensione parte da quel giorno."}
                                         </p>
                                         <label className="block text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1">
-                                            {azione === "licenzia" ? "Data licenziamento" : "Sospeso dal"}
+                                            {azione === "licenzia" ? "Data licenziamento (fa da registro: può anche essere passata)" : "Sospeso dal"}
                                         </label>
-                                        <input type="date" min={oggiIso} value={dataAzione} onChange={(e) => setDataAzione(e.target.value)}
+                                        <input type="date" min={azione === "sospendi" ? oggiIso : undefined} value={dataAzione} onChange={(e) => setDataAzione(e.target.value)}
                                             className="glass-input w-full mb-4" />
+                                        {/* con data FUTURA scegli quando scatta il blocco accesso */}
+                                        {azione === "licenzia" && dataAzione > oggiIso && (
+                                            <div className="mb-4 space-y-1.5">
+                                                <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Blocco accesso al CRM</p>
+                                                {([[false, `⏳ Dalla data del licenziamento (${new Date(dataAzione + "T00:00").toLocaleDateString("it-IT")})`], [true, "🔒 Da subito (resta licenziato in data " + new Date(dataAzione + "T00:00").toLocaleDateString("it-IT") + ")"]] as [boolean, string][]).map(([v, l]) => (
+                                                    <label key={String(v)} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                                                        <input type="radio" name="bloccoAccesso" checked={bloccaSubito === v} onChange={() => setBloccaSubito(v)} className="accent-rose-500" />
+                                                        {l}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
                                         <div className="flex gap-2">
                                             <button onClick={eseguiAzione} disabled={azioneBusy || !dataAzione}
-                                                className={`flex-1 py-3 rounded-xl text-white text-sm font-black transition-colors disabled:opacity-50 ${azione === "licenzia" ? "bg-rose-600 hover:bg-rose-500" : "bg-orange-700 hover:bg-orange-600"}`}>
+                                                className={`flex-1 py-3 rounded-xl text-white text-sm font-black transition-colors disabled:opacity-50 ${azione === "licenzia" ? "bg-rose-600 hover:bg-rose-500" : "bg-orange-500 hover:bg-orange-400"}`}>
                                                 {azioneBusy ? "…" : dataAzione > oggiIso
-                                                    ? (azione === "licenzia" ? "📅 Programma il licenziamento" : "📅 Programma la sospensione")
+                                                    ? (azione === "licenzia" ? (bloccaSubito ? "🔴 Licenzia e blocca subito" : "📅 Programma il licenziamento") : "📅 Programma la sospensione")
                                                     : (azione === "licenzia" ? "🔴 Licenzia subito" : "⏸️ Sospendi subito")}
                                             </button>
                                             <button onClick={() => setAzione(null)} disabled={azioneBusy}

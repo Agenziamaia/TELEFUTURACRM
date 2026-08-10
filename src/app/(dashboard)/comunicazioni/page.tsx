@@ -589,6 +589,17 @@ function ComunicazioniInner() {
                     <p className="text-slate-400">Avvisi e aggiornamenti importanti dal back office</p>
                 </div>
                 <div className="flex items-center gap-2.5">
+                    {/* CALDERONE in bella vista (segnalazione Luca 10/08: "non vedo
+                        il pannello" — stava solo dentro il form col tipo Sprint) */}
+                    {canCreate && (
+                        <button
+                            type="button"
+                            onClick={() => { setFrasiOpen(true); caricaFrasi(); }}
+                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-400/40 bg-amber-400/10 hover:bg-amber-400/20 text-amber-200 text-sm font-bold transition-colors"
+                        >
+                            🔥 Calderone Sprint
+                        </button>
+                    )}
                     {canCreate && (
                         <button
                             type="button"
@@ -975,6 +986,46 @@ function ComunicazioniInner() {
             )}
 
             {/* ─── Modale creazione ─── */}
+            {/* CALDERONE a livello pagina (10/08): si apre dal bottone in testata, senza passare dal form */}
+            {frasiOpen && (
+                <div className="fixed inset-0 bg-black/70 z-[1300] flex items-center justify-center p-4" onClick={() => setFrasiOpen(false)} role="dialog" aria-modal="true">
+                    <div className="bg-[#12141f] border border-amber-400/30 rounded-2xl w-[min(720px,94vw)] max-h-[85vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between py-4 px-5 border-b border-white/10">
+                            <div>
+                                <h3 className="text-base font-bold text-white">🔥 Calderone frasi Sprint</h3>
+                                <p className="text-[11px] text-slate-500 mt-0.5">Ordinate dalle meno usate (le prossime a uscire). Spegnere ≠ cancellare: la frase resta ma non esce più.</p>
+                            </div>
+                            <button type="button" onClick={() => setFrasiOpen(false)} className="text-slate-500 hover:text-white"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-5 flex gap-2 border-b border-white/5">
+                            <input value={fraseNuova} onChange={(e) => setFraseNuova(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); aggiungiFrase(); } }}
+                                placeholder="Nuova frase motivazionale… (Invio per aggiungere)"
+                                className="flex-1 bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-sm py-2 px-3 outline-none" />
+                            <button type="button" onClick={aggiungiFrase}
+                                className="px-4 rounded-lg border border-amber-400/40 bg-amber-400/10 text-amber-200 text-sm font-bold hover:bg-amber-400/20">＋ Aggiungi</button>
+                        </div>
+                        {frasiErr && <div className="mx-5 mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">{frasiErr}</div>}
+                        <div className="flex-1 overflow-y-auto p-5 space-y-1.5">
+                            {frasi.map((f) => (
+                                <div key={f.id} className={cn("flex items-center gap-2.5 rounded-lg border px-3 py-2", f.attivo ? "bg-white/[0.03] border-white/10" : "bg-white/[0.01] border-white/5 opacity-50")}>
+                                    <input defaultValue={f.testo}
+                                        onBlur={(e) => { const t = e.target.value.trim(); if (t && t !== f.testo) salvaFrase(f.id, { testo: t }); }}
+                                        className="flex-1 bg-transparent border-0 outline-none text-sm text-slate-100 min-w-0" />
+                                    <span className="text-[10px] text-slate-500 shrink-0 font-mono" title="Quante volte è uscita">{f.usi}×</span>
+                                    <button type="button" onClick={() => salvaFrase(f.id, { attivo: !f.attivo })}
+                                        title={f.attivo ? "Spegni: non esce più" : "Riaccendi"}
+                                        className={cn("text-[10px] font-bold px-2 py-1 rounded shrink-0 border", f.attivo ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30" : "text-slate-400 bg-white/5 border-white/10")}>
+                                        {f.attivo ? "attiva" : "spenta"}
+                                    </button>
+                                </div>
+                            ))}
+                            {!frasi.length && !frasiErr && <p className="text-sm text-slate-500 text-center py-6">Calderone vuoto.</p>}
+                        </div>
+                        <div className="py-3 px-5 border-t border-white/10 text-[11px] text-slate-500">{frasi.filter((f) => f.attivo).length} frasi attive · {frasi.length} totali</div>
+                    </div>
+                </div>
+            )}
             {formOpen && (
                 <div className="fixed inset-0 bg-black/70 z-[1200] flex items-center justify-center p-4" onClick={() => setFormOpen(false)} role="dialog" aria-modal="true">
                     <div className="bg-[#12141f] border border-white/10 rounded-2xl w-[min(1500px,96vw)] h-[92vh] shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
@@ -1035,45 +1086,6 @@ function ComunicazioniInner() {
                                     </div>
                                 )}
                                 {/* MOD-19: pannello CALDERONE — lista, attiva/spegni, modifica, aggiungi */}
-                                {frasiOpen && (
-                                    <div className="fixed inset-0 bg-black/70 z-[1300] flex items-center justify-center p-4" onClick={() => setFrasiOpen(false)} role="dialog" aria-modal="true">
-                                        <div className="bg-[#12141f] border border-amber-400/30 rounded-2xl w-[min(720px,94vw)] max-h-[85vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                                            <div className="flex items-center justify-between py-4 px-5 border-b border-white/10">
-                                                <div>
-                                                    <h3 className="text-base font-bold text-white">🔥 Calderone frasi Sprint</h3>
-                                                    <p className="text-[11px] text-slate-500 mt-0.5">Ordinate dalle meno usate (le prossime a uscire). Spegnere ≠ cancellare: la frase resta ma non esce più.</p>
-                                                </div>
-                                                <button type="button" onClick={() => setFrasiOpen(false)} className="text-slate-500 hover:text-white"><X className="w-5 h-5" /></button>
-                                            </div>
-                                            <div className="p-5 flex gap-2 border-b border-white/5">
-                                                <input value={fraseNuova} onChange={(e) => setFraseNuova(e.target.value)}
-                                                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); aggiungiFrase(); } }}
-                                                    placeholder="Nuova frase motivazionale… (Invio per aggiungere)"
-                                                    className="flex-1 bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-sm py-2 px-3 outline-none" />
-                                                <button type="button" onClick={aggiungiFrase}
-                                                    className="px-4 rounded-lg border border-amber-400/40 bg-amber-400/10 text-amber-200 text-sm font-bold hover:bg-amber-400/20">＋ Aggiungi</button>
-                                            </div>
-                                            {frasiErr && <div className="mx-5 mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">{frasiErr}</div>}
-                                            <div className="flex-1 overflow-y-auto p-5 space-y-1.5">
-                                                {frasi.map((f) => (
-                                                    <div key={f.id} className={cn("flex items-center gap-2.5 rounded-lg border px-3 py-2", f.attivo ? "bg-white/[0.03] border-white/10" : "bg-white/[0.01] border-white/5 opacity-50")}>
-                                                        <input defaultValue={f.testo}
-                                                            onBlur={(e) => { const t = e.target.value.trim(); if (t && t !== f.testo) salvaFrase(f.id, { testo: t }); }}
-                                                            className="flex-1 bg-transparent border-0 outline-none text-sm text-slate-100 min-w-0" />
-                                                        <span className="text-[10px] text-slate-500 shrink-0 font-mono" title="Quante volte è uscita">{f.usi}×</span>
-                                                        <button type="button" onClick={() => salvaFrase(f.id, { attivo: !f.attivo })}
-                                                            title={f.attivo ? "Spegni: non esce più" : "Riaccendi"}
-                                                            className={cn("text-[10px] font-bold px-2 py-1 rounded shrink-0 border", f.attivo ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30" : "text-slate-400 bg-white/5 border-white/10")}>
-                                                            {f.attivo ? "attiva" : "spenta"}
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                                {!frasi.length && !frasiErr && <p className="text-sm text-slate-500 text-center py-6">Calderone vuoto.</p>}
-                                            </div>
-                                            <div className="py-3 px-5 border-t border-white/10 text-[11px] text-slate-500">{frasi.filter((f) => f.attivo).length} frasi attive · {frasi.length} totali</div>
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dimensione</label>

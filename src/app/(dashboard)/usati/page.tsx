@@ -740,7 +740,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                 )}
               </div>
             )}
-            <div className="mt-4"><StatusTimeline currentStatus={dev.status} history={dev.status_history} storeAcquisto={isAmministrazione ? dev.store_acquisto : null} /></div>
+            <div className="mt-4"><StatusTimeline currentStatus={dev.status} history={dev.status_history} storeAcquisto={isAmministrazione ? (dev.store_acquisto || "📦 importato") : null} /></div>
             {canAdvance && !puoMuovere(dev, user, lavoraLab, mieiNegozi) && (
               <div className="mt-4 text-[11px] text-slate-500 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5">
                 🔒 {faseGestitaDa(dev)}
@@ -872,7 +872,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                     ))}
                   </>
                 )}
-                {([...(vedeCosti ? [["Acquisto", fmtEur(dev.purchase_price), false] as [string, string, boolean]] : []), ...(isAmministrazione ? [["Negozio d'acquisto", dev.store_acquisto || "—", false] as [string, string, boolean]] : []), ["Destinazione", dev.target_store || "", false], ["Grado", dev.grado_usura || "", false], ["Data Acquisto", fmtDate(dev.purchase_date), false], ["Data Reg.", fmtDate(dev.created_at), false], ["Registrato da", dev.venditore || dev.status_history.acquistato?.operatore || "—", false]] as [string, string, boolean][]).map(([l, v, mono]) => (
+                {([...(vedeCosti ? [["Acquisto", fmtEur(dev.purchase_price), false] as [string, string, boolean]] : []), ...(isAmministrazione ? [["Negozio d'acquisto", dev.store_acquisto || "📦 Importato", false] as [string, string, boolean]] : []), ["Destinazione", dev.target_store || "", false], ["Grado", dev.grado_usura || "", false], ["Data Acquisto", fmtDate(dev.purchase_date), false], ["Data Reg.", fmtDate(dev.created_at), false], ["Registrato da", dev.venditore || dev.status_history.acquistato?.operatore || "—", false]] as [string, string, boolean][]).map(([l, v, mono]) => (
                   <div key={l}>
                     <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">{l}</div>
                     <div className={cn("text-sm text-white font-medium", mono && "font-mono")}>{v}</div>
@@ -1856,7 +1856,7 @@ function GestioneUsatiInner() {
     if (prezzoA && (d.sale_price || 0) > (parseFloat(prezzoA) || Infinity)) return false;
     if (ricambiFilter.length > 0) { if (!d.ricambi.some(r => ricambiFilter.includes(r.stato))) return false; }
     // MOD-34: negozio d'ACQUISTO (vuoto = tutti) — regge ai movimenti
-    if (selectedStoreAcq.length > 0 && !selectedStoreAcq.includes(d.store_acquisto || "— sconosciuto")) return false;
+    if (selectedStoreAcq.length > 0 && !selectedStoreAcq.includes(d.store_acquisto || "📦 Importato")) return false;
     return true;
   }, [selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter, mieiAttivo, lavoraLabMain, soloDaPrezzare, ricambiDaPrezzare, selectedStoreAcq]);
   const filtered = useMemo(() => devices.filter(d => passaFiltri(d)), [devices, passaFiltri]);
@@ -2237,7 +2237,7 @@ function GestioneUsatiInner() {
               legge store_acquisto, che non cambia coi movimenti */}
           {isAmminMain && (
             <MultiSelect label="Negozio acquisto"
-              options={Array.from(new Set(devices.map(d => d.store_acquisto || "— sconosciuto"))).sort()}
+              options={Array.from(new Set(devices.map(d => d.store_acquisto || "📦 Importato"))).sort()}
               selected={selectedStoreAcq} onChange={setSelectedStoreAcq} />
           )}
           <button onClick={resetFilters} className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 hover:bg-white/10 transition-all">
