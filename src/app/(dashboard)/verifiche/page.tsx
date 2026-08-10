@@ -15,6 +15,7 @@ import { ClipboardCheck, ExternalLink, Loader2, Send, UserRound, X } from "lucid
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { SelectPersona } from "@/components/SelectPersona";
+import { FiltroMulti } from "@/components/FiltroMulti";
 import { effectiveAllowed } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
 
@@ -62,6 +63,21 @@ function AllegatiPicker({ value, onChange }: { value: Allegato[]; onChange: (v: 
         </div>
     );
 }
+
+// SEZIONE del gestionale ricavata dal link della voce (filtro archivio, 10/08)
+const SEZIONI_LABEL: Record<string, string> = {
+    "pda/tracking": "Tracking PDA", "pda/invia": "Invia PDA", "caller": "Call Center",
+    "registra-vendita": "Registra Vendita", "ricerca-vendite": "Ricerca Vendite",
+    "comunicazioni": "Comunicazioni", "amministrazione": "Amministrazione",
+    "verifiche": "Verifiche", "password-v2": "Password", "usati": "Usati",
+    "clienti": "Clienti", "calendario": "Calendario", "chiamate": "Registro Chiamate",
+    "chat": "Chat", "whatsapp": "WhatsApp", "gare": "Gare", "collaboratori": "Collaboratori",
+};
+const sezioneDi = (link: string | null): string => {
+    if (!link || link.startsWith("http")) return "—";
+    const path = link.split("?")[0].replace(/^\//, "");
+    return SEZIONI_LABEL[path] || SEZIONI_LABEL[path.split("/")[0]] || (path.split("/")[0] || "—");
+};
 
 const fmtQuando = (s: string | null) => {
     if (!s) return "";
@@ -160,6 +176,11 @@ export default function VerifichePage() {
     const [bozzeAll, setBozzeAll] = useState<Record<string, Allegato[]>>({});
     const [busy, setBusy] = useState<string | null>(null);
     const [mostraChiuse, setMostraChiuse] = useState(false);
+    // ARCHIVIO ricercabile (Luca 10/08): parola, periodo, sezione (dal link)
+    const [arcTesto, setArcTesto] = useState("");
+    const [arcDal, setArcDal] = useState("");
+    const [arcAl, setArcAl] = useState("");
+    const [arcSezioni, setArcSezioni] = useState<string[] | null>(null);
     const [segnalaId, setSegnalaId] = useState<string | null>(null);
     // rifiuto di una PROPOSTA con nota facoltativa (Luca 10/08): la nota resta
     // nello storico della voce, visibile anche a chi l'ha proposta
@@ -202,6 +223,8 @@ export default function VerifichePage() {
         return nuovi.length ? { allegati: [...(v.allegati || []), ...nuovi] } : {};
     };
     const verifica = (v: Voce) => aggiorna(v.id, { stato: "verificata", verificato_il: new Date().toISOString(), verificato_da: user?.name || "admin" });
+    // ↩ RIAPRI una voce chiusa per errore (Luca 10/08): torna "da verificare"
+    const riapri = (v: Voce) => aggiorna(v.id, { stato: "da_verificare", verificato_il: null, verificato_da: null });
     const rispondi = (v: Voce) => { const r = (bozze[v.id] || "").trim(); if (r) aggiorna(v.id, { risposta: r, stato: "risposta_data" }); };
     // admin: "da sistemare" diretto a Claude
     const segnalaAdmin = (v: Voce) => { const r = (bozze[v.id] || "").trim(); if (r) aggiorna(v.id, { risposta: r, stato: "da_sistemare", ...conAllegati(v) }); };
@@ -251,6 +274,20 @@ export default function VerifichePage() {
     const daApprovare = useMemo(() => mie.filter((v) => v.stato === "segnalazione_delegato"), [mie]);
     const daSistemare = useMemo(() => mie.filter((v) => v.stato === "da_sistemare"), [mie]);
     const chiuse = useMemo(() => mie.filter((v) => v.stato === "verificata"), [mie]);
+    const sezioniDisponibili = useMemo(() => Array.from(new Set(chiuse.map((v) => sezioneDi(v.link)))).sort(), [chiuse]);
+    const chiuseFiltrate = useMemo(() => chiuse.filter((v) => {
+        if (arcSezioni !== null && !arcSezioni.includes(sezioneDi(v.link))) return false;
+        const rif = v.verificato_il || v.creato_il;
+        if (arcDal && (!rif || rif.slice(0, 10) < arcDal)) return false;
+        if (arcAl && (!rif || rif.slice(0, 10) > arcAl)) return false;
+        if (arcTesto.trim()) {
+            const q = arcTesto.trim().toLowerCase();
+            const hay = `${v.titolo} ${v.dettaglio || ""} ${v.risposta || ""} ${v.segnalazione_delegato || ""}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    }), [chiuse, arcSezioni, arcDal, arcAl, arcTesto]);
+    const filtriArchivioAttivi = arcTesto.trim() !== "" || arcDal !== "" || arcAl !== "" || arcSezioni !== null;
 
     // MOD-43: l'accesso si CONCEDE dai permessi (/verifiche: grado senior o
     // singole persone) — chi ha deleghe ricevute entra comunque
@@ -457,17 +494,61 @@ export default function VerifichePage() {
                     </section>
                 )}
 
-                {/* ── storico chiuse ── */}
+                {/* ── storico chiuse: ARCHIVIO ricercabile con riapertura (10/08) ── */}
                 <section className="space-y-3">
                     <button onClick={() => setMostraChiuse((x) => !x)} className="text-sm font-bold text-slate-500 uppercase tracking-widest hover:text-slate-300">
-                        ✅ Verificate e chiuse · {chiuse.length} {mostraChiuse ? "▾" : "▸"}
+                        ✅ Verificate e chiuse · {chiuse.length} {(mostraChiuse || filtriArchivioAttivi) ? "▾" : "▸"}
                     </button>
-                    {mostraChiuse && chiuse.map((v) => (
-                        <div key={v.id} className="glass-panel p-3 opacity-70">
-                            <div className="text-sm text-slate-300 font-semibold">{v.titolo}</div>
-                            <div className="text-[11px] text-slate-500">verificata {fmtQuando(v.verificato_il)}{v.verificato_da ? ` da ${v.verificato_da}` : ""}{v.risposta ? ` · nota: ${v.risposta}` : ""}</div>
+                    {(mostraChiuse || filtriArchivioAttivi) && (<>
+                        <div className="glass-panel p-3 flex flex-wrap items-end gap-3">
+                            <div className="flex-1 min-w-[220px]">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cerca</label>
+                                <input value={arcTesto} onChange={(e) => setArcTesto(e.target.value)} placeholder="Parola nel titolo, dettaglio o nota…"
+                                    className="glass-input w-full mt-1 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dal</label>
+                                <input type="date" value={arcDal} onChange={(e) => setArcDal(e.target.value)} className="glass-input block mt-1 text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Al</label>
+                                <input type="date" value={arcAl} onChange={(e) => setArcAl(e.target.value)} className="glass-input block mt-1 text-sm" />
+                            </div>
+                            <div className="min-w-[200px]">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sezione</label>
+                                <FiltroMulti values={arcSezioni} onChange={setArcSezioni} opzioni={sezioniDisponibili}
+                                    etichettaTutti="Tutte le sezioni" className="glass-input w-full mt-1 text-sm" />
+                            </div>
+                            {filtriArchivioAttivi && (
+                                <button onClick={() => { setArcTesto(""); setArcDal(""); setArcAl(""); setArcSezioni(null); }}
+                                    className="px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-white/5 border border-white/10">✕ Azzera</button>
+                            )}
+                            <span className="text-xs text-slate-500 ml-auto">{chiuseFiltrate.length} su {chiuse.length}</span>
                         </div>
-                    ))}
+                        {chiuseFiltrate.map((v) => (
+                            <div key={v.id} className="glass-panel p-3 opacity-80 hover:opacity-100 transition-opacity">
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="text-sm text-slate-300 font-semibold">
+                                            {v.tipo === "task" && <span className="mr-1.5 text-[10px] font-black uppercase text-indigo-300/80 bg-indigo-500/10 border border-indigo-500/30 rounded-full px-2 py-0.5 align-middle">📥 task</span>}
+                                            {v.titolo}
+                                        </div>
+                                        <div className="text-[11px] text-slate-500 mt-0.5">
+                                            <span className="text-sky-300/80 font-bold">{sezioneDi(v.link)}</span> · verificata {fmtQuando(v.verificato_il)}{v.verificato_da ? ` da ${v.verificato_da}` : ""}{v.risposta ? ` · nota: ${v.risposta}` : ""}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        {v.link && <a href={v.link} target={v.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer"
+                                            className="text-xs font-bold text-sky-300 hover:text-sky-200 px-2.5 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30">Apri</a>}
+                                        <button onClick={() => riapri(v)} disabled={busy === v.id}
+                                            title="Chiusa per errore? Torna tra le 'da verificare'"
+                                            className="text-xs font-bold text-amber-300 hover:text-amber-200 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 disabled:opacity-50">↩ Riapri</button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        {chiuseFiltrate.length === 0 && <p className="text-sm text-slate-600 px-1">Nessuna voce corrisponde ai filtri.</p>}
+                    </>)}
                 </section>
             </>)}
         </div>
