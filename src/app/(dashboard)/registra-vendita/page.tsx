@@ -7,6 +7,7 @@ import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { MARG_PRODUCTS_LEGACY } from "@/lib/margMargini";
 import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento, appuntamentiPerCF, venditoreLavoraIn } from "@/lib/matchAppuntamento";
+import { registraContrattoBrands, registraContrattoAlbero, contrattoRichiestoPer } from "@/lib/contrattoAllegato";
 import { storeRoot as _storeRoot } from "@/lib/storeRoot";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef, vaInTracking } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
@@ -4493,6 +4494,9 @@ function CRM() {
         offs=ro.data||[];
       }
       const t={categorie:rc.data||[],prodotti:prods,offerte:offs};
+      // MOD-31: registro della regola "contratto richiesto" (colonne del
+      // catalogo, risolte offerta→prodotto→categoria→brand allo step Allegati)
+      registraContrattoAlbero(slug,t.categorie,prods,offs);
       _catCacheRef.current[slug]=t;
       if(al)setCatTree(t);
     }catch(e){if(al){setCatTree({categorie:[],prodotti:[],offerte:[]});sT("⚠️ Catalogo non raggiungibile: "+String((e&&e.message)||e));}}})();
@@ -4521,10 +4525,14 @@ function CRM() {
     try{
       const neg=user?.negozio||"";
       const [rb,rr]=await Promise.all([
-        supabase.from("catalog_brands").select("id,default_abilitato"),
+        // select * (non colonne puntuali): cosi' contratto_richiesto arriva
+        // quando la migrazione MOD-31 c'e', senza rompere la query quando manca
+        supabase.from("catalog_brands").select("*"),
         neg?supabase.from("store_brand_rules").select("brand,vede,registra").eq("store",neg):Promise.resolve({data:[]}),
       ]);
       if(!al)return;
+      // MOD-31: regola contratto a livello BRAND nel registro condiviso
+      registraContrattoBrands((rb&&rb.data)||[]);
       const defs={};((rb&&rb.data)||[]).forEach(r=>{defs[r.id]=r.default_abilitato!==false;});
       const map={};((rr&&rr.data)||[]).forEach(r=>{map[r.brand]={vede:r.vede!==false,registra:r.registra!==false};});
       setBrandDefaults(defs);setBrandRules(map);
@@ -5146,6 +5154,13 @@ function CRM() {
   // La stessa enumerazione gira nel submit per mappare riga -> contract_id
   // senza ambiguita' (l'id contratto e' generato lato client PRIMA dell'insert).
   const _etichettaRiga = (it) => String((it && it.catalogo && it.catalogo.offerta) || (it && it.sub) || "prodotto");
+  // MOD-32: identificativi che legano due righe alla STESSA pratica (telefono
+  // a rate agganciato al mobile: codice contratto/numero copiati; W3 CB
+  // agganciato al cambio offerta: cellulare/cod. cliente). Prefix-match sui
+  // nomi campo cosi' valgono anche le varianti ("Cellulare CB", ...).
+  const _identRiga = (det) => Object.keys(det || {})
+    .filter(k => /^(codice contratto|cod\.? ?cliente|numero di cellulare|numero definitivo|numero provvisorio|cellulare)/i.test(k))
+    .map(k => String(det[k] || "").trim()).filter(v => v.length >= 5);
   const righeCarrello = () => {
     const gruppi = [...cart];
     const curI = colItems();
@@ -5154,8 +5169,30 @@ function CRM() {
     gruppi.forEach(g => (g.items || []).forEach(it => {
       const base = String(g.brandId || "") + "::" + _etichettaRiga(it);
       conta[base] = (conta[base] || 0) + 1;
-      rows.push({ key: base + "::" + conta[base], base, nCopia: conta[base], brandId: g.brandId, brandLabel: g.brandLabel, brandIcon: g.brandIcon, brandColor: g.brandColor, isCurrent: !!g.isCurrent, label: _etichettaRiga(it), sky: String(g.brandId || "").toLowerCase() === "sky", iliad: String(g.brandId || "").toLowerCase() === "iliad" });
+      const slug = SLUG_CATALOGO[g.brandId] || String(g.brandId || "").toLowerCase();
+      const cat = (it && it.catalogo) || null;
+      rows.push({
+        key: base + "::" + conta[base], base, nCopia: conta[base], brandId: g.brandId, brandLabel: g.brandLabel,
+        brandIcon: g.brandIcon, brandColor: g.brandColor, isCurrent: !!g.isCurrent, label: _etichettaRiga(it),
+        // MOD-31: stato del contratto dal CATALOGO (offerta→prodotto→categoria→
+        // brand; fallback storico: iliad assente, sky facoltativo)
+        contratto: contrattoRichiestoPer(slug, cat ? cat.tipo : "", cat ? cat.categoria : "", cat ? cat.prodotto : "", cat ? cat.offerta : ""),
+        _cat: cat, _det: (it && it.details) || {},
+      });
     }));
+    // MOD-32: telefono a rate AGGANCIATO a un'altra riga dello stesso brand
+    // (identificativo condiviso) = vendita unica → il contratto lo porta la
+    // riga principale, qui non si chiede
+    rows.forEach(r => {
+      if (r.contratto === "assente") return;
+      if (!/telefono a rate/i.test((r._cat && r._cat.categoria) || "")) return;
+      const miei = _identRiga(r._det);
+      if (!miei.length) return;
+      const agganciata = rows.some(o => o !== r && o.brandId === r.brandId
+        && !/telefono a rate/i.test((o._cat && o._cat.categoria) || "")
+        && _identRiga(o._det).some(v => miei.includes(v)));
+      if (agganciata) r.contratto = "associato";
+    });
     rows.forEach(r => { r.multi = (conta[r.base] || 0) > 1; });
     return rows;
   };
@@ -5234,8 +5271,9 @@ function CRM() {
     // ECCEZIONE SKY (Luca 04/08): Sky non rilascia il contratto — le righe
     // Sky non lo richiedono mai (la casella resta disponibile, facoltativa).
     righeCarrello().forEach(r => {
-      // Sky e ILIAD (Luca 06/08): il contratto non esiste — mai richiesto
-      if (r.sky || r.iliad) return;
+      // MOD-31/32: blocca SOLO gli obbligatori — facoltativo/assente/associato
+      // (vendita agganciata: contratto unico sulla riga principale) non fermano
+      if (r.contratto !== "obbligatorio") return;
       if (!attachments.some(a => a.type === "contratti" && (a.rowKey || "") === r.key))
         m.push(`📄 contratto per ${r.brandLabel} — ${r.label}${r.multi ? " (n°" + r.nCopia + ")" : ""} (step Allegati)`);
     });
@@ -6336,7 +6374,7 @@ select.rvIn{cursor:pointer}
           {id:"brand",label:margFlow&&!brand?"Marginalità":"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{margFlow&&!brand?"📦":(bObj?bObj.icon:"⚡")}</span>,perc:(brand||margFlow)?100:0,abil:true},
           {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
           {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:23}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
-          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?true:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.sky||r.iliad||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
+          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?true:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.contratto!=="obbligatorio"||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
           // verde APPENA si flagga Sì o No (Luca 05/08): la scelta completa lo step
           {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:notaScelta?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
         ];
@@ -6792,13 +6830,18 @@ select.rvIn{cursor:pointer}
                   {bd&&bd.logo?<span style={{background:"#fff",borderRadius:8,padding:"2px 8px",display:"inline-flex",alignItems:"center"}}><Image src={bd.logo} alt={r.brandLabel} width={120} height={30} style={{height:20,width:"auto",maxWidth:96,objectFit:"contain"}}/></span>:<span style={{fontSize:13,fontWeight:800,color:"var(--tf-f8fafc)"}}>{r.brandIcon} {r.brandLabel}</span>}
                   <span style={{fontSize:12,fontWeight:800,color:"var(--tf-f8fafc)"}}>{r.label}{r.multi?<span style={{color:"var(--tf-8892b0)",fontWeight:700}}> · n°{r.nCopia}</span>:null}</span>
                   {r.isCurrent&&<span style={{background:"var(--tf-ffd800)",borderRadius:12,padding:"2px 10px",color:"#111",fontSize:9,fontWeight:800}}>IN CORSO</span>}
-                  {r.iliad?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>Iliad: senza contratto</span>:r.sky?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>Sky: contratto facoltativo</span>
+                  {/* MOD-31/32: badge dallo stato risolto (catalogo + aggancio) */}
+                  {r.contratto==="assente"?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>senza contratto</span>
+                    :r.contratto==="associato"?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-c4b5fd)",background:"rgba(111,66,193,0.14)",border:"1px solid rgba(111,66,193,0.5)",borderRadius:999,padding:"2px 10px"}}>📎 vendita agganciata: contratto unico</span>
+                    :r.contratto==="facoltativo"?(attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key)
+                      ?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-34d399)",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.4)",borderRadius:999,padding:"2px 10px"}}>✓ contratto caricato</span>
+                      :<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>contratto facoltativo</span>)
                     :(attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key)
                       ?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-34d399)",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.4)",borderRadius:999,padding:"2px 10px"}}>✓ contratto caricato</span>
                       :<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f87171)",background:"rgba(220,53,69,0.10)",border:"1px solid rgba(220,53,69,0.4)",borderRadius:999,padding:"2px 10px"}}>contratto mancante</span>)}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-                  {!r.iliad&&boxAllegato({l:"Contratto",i:"📄",t:"contratti"},r.key,r.sky?"Sky non rilascia contratti — facoltativo":"obbligatorio per questa offerta")}
+                  {r.contratto!=="assente"&&r.contratto!=="associato"&&boxAllegato({l:"Contratto",i:"📄",t:"contratti"},r.key,r.contratto==="facoltativo"?"facoltativo per questa offerta":"obbligatorio per questa offerta")}
                   {boxAllegato({l:"Altro",i:"📁",t:"altro"},r.key,"facoltativo")}
                 </div>
                 {listaFileAllegati(attachments.map((a,i)=>({a,i})).filter(({a})=>(a.type==="contratti"||a.type==="altro")&&(a.rowKey||"")===r.key))}
