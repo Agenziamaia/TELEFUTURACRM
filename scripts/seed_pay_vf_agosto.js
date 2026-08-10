@@ -81,9 +81,13 @@ for (const m of MOB) {
 }
 // ---------- FISSO CONSUMER — BroadBand (prodotto "Fisso", 3 varianti per taglia) + FWA
 const FIX = [
-  { g: "Casa Start", offs: ["Casa Start Conv", "Casa Start Lock In", "Casa Start Mass Market"], punti: 1, base: 50, tiers: [65, 75, 90, 115, 140, 175], prod: "Fisso" },
-  { g: "Casa Pro", offs: ["Casa Pro Conv", "Casa Pro Lock In", "Casa Pro Mass Market"], punti: 2, base: 50, tiers: [85, 100, 120, 150, 180, 215], prod: "Fisso" },
-  { g: "Casa Ultra", offs: ["Casa Ultra Conv", "Casa Ultra Lock In", "Casa Ultra Mass Market"], punti: 3, base: 50, tiers: [100, 120, 145, 180, 215, 255], prod: "Fisso" },
+  // 10/08: VF ha semplificato il commissioning — le varianti Conv/Lock In/
+  // Mass Market NON esistono più (migrazione migra_vf_casa.js: storico e
+  // catalogo riportati ai 3 nomi semplici). Un rilancio del seed deve
+  // produrre SOLO questi.
+  { g: "Casa Start", offs: ["Casa Start"], punti: 1, base: 50, tiers: [65, 75, 90, 115, 140, 175], prod: "Fisso" },
+  { g: "Casa Pro", offs: ["Casa Pro"], punti: 2, base: 50, tiers: [85, 100, 120, 150, 180, 215], prod: "Fisso" },
+  { g: "Casa Ultra", offs: ["Casa Ultra"], punti: 3, base: 50, tiers: [100, 120, 145, 180, 215, 255], prod: "Fisso" },
   { g: "Casa FWA Light", offs: ["Casa FWA Light"], punti: 1, base: 25, tiers: [55, 65, 80, 105, 130, 165], prod: "FWA" },
   { g: "Casa FWA Start", offs: ["Casa FWA Start"], punti: 1, base: 25, tiers: [65, 75, 90, 115, 140, 175], prod: "FWA" },
   { g: "Casa FWA Pro", offs: ["Casa FWA Pro"], punti: 2, base: 25, tiers: [85, 100, 120, 150, 180, 215], prod: "FWA" },
