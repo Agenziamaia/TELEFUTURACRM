@@ -34,8 +34,12 @@ const num = (v: string): number => {
     return Number.isFinite(n) ? n : 0;
 };
 
-export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda }: {
+export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto }: {
     ctx: string; mese: string; lato: "ragazzi" | "azienda"; colore: string; vaiAzienda?: () => void;
+    // true quando il tabellare di questo lato non esiste (e non è nemmeno un
+    // ragazzi derivato dall'azienda): la pagina Gare mostra allora lo schema
+    // gare precedente da solo, senza far sparire i dati già impostati (Luca 11/08)
+    onVuoto?: (v: boolean) => void;
 }) {
     const monthISO = `${mese}-01`;
     const [piste, setPiste] = useState<Pista[]>([]);
@@ -56,6 +60,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda }: {
             supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
         ]);
         setAziendaEsiste((az.count || 0) > 0);
+        onVuoto?.(!(p.data || []).length && !(lato === "ragazzi" && (az.count || 0) > 0));
         if (dbError("Caricamento tabellare", p.error || s.error || r.error)) { setCarico(false); return; }
         setPiste((p.data || []) as Pista[]);
         setSoglie(((s.data || []) as Soglia[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })));
@@ -66,6 +71,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda }: {
         setRighe(rr);
         setOrig(new Map(rr.map(x => [x.id, JSON.stringify(x)])));
         setCarico(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ctx, monthISO, lato]);
     useEffect(() => { load(); }, [load]);
 

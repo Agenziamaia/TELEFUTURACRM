@@ -66,6 +66,7 @@ function GareInner() {
     const go = (b?: string, l?: string) => router.push(b ? `/gare?brand=${b}${l ? `&lato=${l}` : ""}` : "/gare");
     const [month, setMonth] = useState(currentMonthKey());
     const [vecchioSchema, setVecchioSchema] = useState(false);   // schema gare pre-tabellari, a richiesta
+    const [tabVuoto, setTabVuoto] = useState(false);   // tabellare assente → lo schema precedente si mostra da solo
     const rag = brand ? RAGAZZI_GARA[brand.id] : null;
     const GestIcon = gestione?.icon;
 
@@ -215,14 +216,16 @@ function GareInner() {
                         <>
                             <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
                                 ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}
-                                vaiAzienda={() => go(brand.id, "azienda")} />
-                            <button onClick={() => setVecchioSchema(v => !v)}
-                                className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
-                                {vecchioSchema ? "▾ Nascondi lo schema gare precedente" : "▸ Mostra lo schema gare precedente"}
-                            </button>
+                                vaiAzienda={() => go(brand.id, "azienda")} onVuoto={setTabVuoto} />
+                            {!tabVuoto && (
+                                <button onClick={() => setVecchioSchema(v => !v)}
+                                    className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+                                    {vecchioSchema ? "▾ Nascondi lo schema gare precedente" : "▸ Mostra lo schema gare precedente"}
+                                </button>
+                            )}
                         </>
                     ) : null}
-                    {(!PAY_CTX[brand.id] || vecchioSchema) && (
+                    {(!PAY_CTX[brand.id] || vecchioSchema || tabVuoto) && (
                         lato === "azienda" ? (
                             <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
                         ) : rag ? (
