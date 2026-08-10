@@ -294,23 +294,62 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // CHIAMATE del cliente (call_events, già agganciate per client_id): voce
     // compatta per giorno+direzione+interlocutore; il click porta allo storico
     // chiamate della scheda (player e dettagli stanno LÀ, la timeline resta leggera).
-    const [chiamateTml, setChiamateTml] = useState<{ id: string; direction: string | null; negozio: string | null; agente_nome: string | null; started_at: string | null }[]>([]);
+    const [chiamateTml, setChiamateTml] = useState<{ id: string; direction: string | null; negozio: string | null; agente_nome: string | null; started_at: string | null; call_id: string | null }[]>([]);
     useEffect(() => {
         (async () => {
             const { data } = await supabase.from("call_events")
-                .select("id, direction, negozio, agente_nome, started_at")
+                .select("id, direction, negozio, agente_nome, started_at, call_id")
                 .eq("client_id", cliente.id)
                 .order("started_at", { ascending: false }).limit(200);
             setChiamateTml((data ?? []) as never);
         })();
     }, [cliente.id]);
+    // MOD-21 (Luca 10/08): la chiamata del call center si ESPANDE e mostra
+    // l'appuntamento fissato da quella pratica — come la visita coi contratti.
+    // Catena a due salti: call_events.call_id → calls.appointment_id (o il
+    // richiamo_event_id per gli appuntamenti telefonici) → appointments.
+    type ApptTml = { id: number; date: string | null; time: string | null; store: string | null; status: string | null; created_by: string | null; esito_note: string | null; type: string | null };
+    const [apptDiCall, setApptDiCall] = useState<Record<string, ApptTml>>({});
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            const callIds = [...new Set(chiamateTml.map((e) => e.call_id).filter(Boolean))] as string[];
+            if (!callIds.length) { if (alive) setApptDiCall({}); return; }
+            const { data: prat } = await supabase.from("calls").select("id, appointment_id, richiamo_event_id").in("id", callIds);
+            const mapCallApp: Record<string, number> = {};
+            (prat || []).forEach((p: { id: string; appointment_id: number | string | null; richiamo_event_id: number | string | null }) => {
+                const aid = Number(p.appointment_id || p.richiamo_event_id || 0);
+                if (aid) mapCallApp[p.id] = aid;
+            });
+            const apptIds = [...new Set(Object.values(mapCallApp))];
+            if (!apptIds.length) { if (alive) setApptDiCall({}); return; }
+            const { data: apps } = await supabase.from("appointments").select("id, date, time, store, status, created_by, esito_note, type").in("id", apptIds);
+            const perId: Record<number, ApptTml> = {};
+            ((apps || []) as ApptTml[]).forEach((a) => { perId[Number(a.id)] = a; });
+            const out: Record<string, ApptTml> = {};
+            Object.entries(mapCallApp).forEach(([cid, aid]) => { if (perId[aid]) out[cid] = perId[aid]; });
+            if (alive) setApptDiCall(out);
+        })();
+        return () => { alive = false; };
+    }, [chiamateTml]);
+    // stato appuntamento → etichetta/colore (sottoinsieme del calendario)
+    const APP_STATO: Record<string, { label: string; cls: string }> = {
+        scheduled: { label: "Programmato", cls: "bg-sky-500/10 border-sky-500/20 text-sky-300" },
+        in_gestione: { label: "In gestione", cls: "bg-amber-500/10 border-amber-500/20 text-amber-300" },
+        attivato: { label: "Attivato", cls: "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" },
+        attivato_diverso_negozio: { label: "Attivato (altro negozio)", cls: "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" },
+        ko: { label: "KO", cls: "bg-rose-500/10 border-rose-500/20 text-rose-300" },
+        annullato: { label: "Annullato", cls: "bg-slate-500/10 border-slate-500/20 text-slate-300" },
+        da_richiamare: { label: "Da richiamare", cls: "bg-amber-500/10 border-amber-500/20 text-amber-300" },
+        da_rifissare: { label: "Da rifissare", cls: "bg-amber-500/10 border-amber-500/20 text-amber-300" },
+    };
     // giorni-contratto espansi inline (stato locale: nessuna navigazione)
     const [gruppiAperti, setGruppiAperti] = useState<Record<string, boolean>>({});
 
     // Voce della timeline: "semplice" (documenti/disdette), con `contratti`
     // (giorno+negozio espandibile inline) o con `apreStorico` (chiamate → click
     // sullo storico chiamate della scheda).
-    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number };
+    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number; appuntamenti?: ApptTml[] };
     const isMarg = (b?: string | null) => /marginal|extra/i.test(b || "");
 
     // CONTRATTI raggruppati per giorno+negozio: "è andato in negozio e ha
@@ -353,25 +392,31 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // CHIAMATE per giorno: inbound = "Ha chiamato <negozio|Call Center>",
     // outbound = "Chiamato da …" (negozio dalla colonna negozio; null con
     // agente = Call Center). Più chiamate stesso giorno = una voce col contatore.
-    const gruppiChiamate = new Map<string, { when: string; dir: "in" | "out"; chi: string; n: number }>();
+    const gruppiChiamate = new Map<string, { when: string; dir: "in" | "out"; chi: string; n: number; callIds: string[] }>();
     chiamateTml.filter((e) => e.started_at).forEach((e) => {
         const chi = (e.negozio || "").trim() || (e.agente_nome ? "Call Center" : "Telefutura");
         const dir: "in" | "out" = e.direction === "inbound" ? "in" : "out";
         const k = String(e.started_at).slice(0, 10) + "|" + dir + "|" + chi;
         const g = gruppiChiamate.get(k);
-        if (g) { g.n += 1; if (String(e.started_at) > g.when) g.when = String(e.started_at); }
-        else gruppiChiamate.set(k, { when: String(e.started_at), dir, chi, n: 1 });
+        if (g) { g.n += 1; if (String(e.started_at) > g.when) g.when = String(e.started_at); if (e.call_id && !g.callIds.includes(e.call_id)) g.callIds.push(e.call_id); }
+        else gruppiChiamate.set(k, { when: String(e.started_at), dir, chi, n: 1, callIds: e.call_id ? [e.call_id] : [] });
     });
-    const vociChiamate: VoceTimeline[] = [...gruppiChiamate.entries()].map(([k, g]) => ({
-        key: "t" + k, when: g.when,
-        color: g.dir === "in" ? "var(--tf-22c55e)" : "var(--tf-a78bfa)",
-        icon: g.dir === "in" ? "📥" : "📤",
-        title: g.dir === "in" ? `Ha chiamato ${g.chi}` : `Chiamato da ${g.chi}`,
-        desc: g.n === 1
-            ? new Date(g.when).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
-            : `${g.n} chiamate`,
-        stato: null, apreStorico: true,
-    }));
+    const vociChiamate: VoceTimeline[] = [...gruppiChiamate.entries()].map(([k, g]) => {
+        // MOD-21: appuntamenti fissati dalle pratiche di queste chiamate —
+        // si mostrano ESPANDENDO la voce (freccia), come i contratti del giorno
+        const appts: ApptTml[] = []; const vistiApp = new Set<number>();
+        g.callIds.forEach((cid) => { const a = apptDiCall[cid]; if (a && !vistiApp.has(Number(a.id))) { vistiApp.add(Number(a.id)); appts.push(a); } });
+        return {
+            key: "t" + k, when: g.when,
+            color: g.dir === "in" ? "var(--tf-22c55e)" : "var(--tf-a78bfa)",
+            icon: g.dir === "in" ? "📥" : "📤",
+            title: g.dir === "in" ? `Ha chiamato ${g.chi}` : `Chiamato da ${g.chi}`,
+            desc: (g.n === 1
+                ? new Date(g.when).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
+                : `${g.n} chiamate`) + (appts.length ? " · 📅 appuntamento fissato" : ""),
+            stato: null, apreStorico: true, appuntamenti: appts.length ? appts : undefined,
+        };
+    });
 
     // Timeline 360°: eventi REALI (contratti + chiamate + documenti + disdette), in ordine.
     const timeline: VoceTimeline[] = [
@@ -531,17 +576,19 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             <div className="absolute left-[19px] top-2 bottom-2 w-px bg-white/5" />
                             <div className="space-y-6">
                                 {timeline.map(ev => {
-                                    const cliccabile = !!ev.contratti || !!ev.apreStorico;
-                                    const aperta = !!ev.contratti && !!gruppiAperti[ev.key];
+                                    // MOD-21: espandibile anche la CHIAMATA con appuntamento dentro
+                                    const espandibile = !!ev.contratti || !!(ev.appuntamenti && ev.appuntamenti.length);
+                                    const cliccabile = espandibile || !!ev.apreStorico;
+                                    const aperta = espandibile && !!gruppiAperti[ev.key];
                                     return (
                                         <div key={ev.key} className="relative">
                                             <div role={cliccabile ? "button" : undefined} tabIndex={cliccabile ? 0 : undefined}
                                                 onClick={() => {
-                                                    if (ev.contratti) setGruppiAperti((p) => ({ ...p, [ev.key]: !p[ev.key] }));
+                                                    if (espandibile) setGruppiAperti((p) => ({ ...p, [ev.key]: !p[ev.key] }));
                                                     else if (ev.apreStorico) setShowStorico(true);
                                                 }}
                                                 onKeyDown={(e) => { if (cliccabile && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
-                                                title={ev.contratti ? (aperta ? "Chiudi i contratti del giorno" : "Mostra i contratti del giorno") : ev.apreStorico ? "Apri lo storico chiamate" : undefined}
+                                                title={ev.contratti ? (aperta ? "Chiudi i contratti del giorno" : "Mostra i contratti del giorno") : (ev.appuntamenti && ev.appuntamenti.length) ? (aperta ? "Chiudi il dettaglio" : "Mostra l'appuntamento fissato") : ev.apreStorico ? "Apri lo storico chiamate" : undefined}
                                                 className={`flex gap-4 relative ${cliccabile ? "cursor-pointer group/tml rounded-xl -mx-2 px-2 py-1 -my-1 hover:bg-white/[0.03] transition-colors" : ""}`}>
                                                 {/* color-mix: le tinte stanno nei CSS var del tema (chiaro incluso) */}
                                                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-base shrink-0 z-10"
@@ -550,8 +597,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                     <div className="flex items-center justify-between gap-2">
                                                         <h4 className="text-sm font-semibold text-slate-100 flex items-center gap-1.5 min-w-0">
                                                             <span className="truncate">{ev.title}</span>
-                                                            {ev.contratti && <span className="text-slate-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
-                                                            {ev.apreStorico && <span className="text-[11px] font-bold text-violet-300 opacity-0 group-hover/tml:opacity-100 transition-opacity shrink-0">→ storico</span>}
+                                                            {(ev.contratti || (ev.appuntamenti && ev.appuntamenti.length)) && <span className="text-slate-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
+                                                            {ev.apreStorico && !(ev.appuntamenti && ev.appuntamenti.length) && <span className="text-[11px] font-bold text-violet-300 opacity-0 group-hover/tml:opacity-100 transition-opacity shrink-0">→ storico</span>}
                                                         </h4>
                                                         <span className="text-[11px] text-slate-500 shrink-0">{new Date(ev.when).toLocaleDateString("it-IT")}</span>
                                                     </div>
@@ -563,7 +610,31 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 dettaglio contratto (stesso deep link della tab Contratti) */}
                                             {aperta && (
                                                 <div className="ml-14 mt-2 space-y-1.5">
-                                                    {ev.contratti!.map((c) => {
+                                                    {/* MOD-21: l'APPUNTAMENTO fissato dalla chiamata del call center */}
+                                                    {(ev.appuntamenti || []).map((a) => {
+                                                        const st = APP_STATO[a.status || ""] || { label: a.status || "—", cls: "bg-slate-500/10 border-slate-500/20 text-slate-300" };
+                                                        return (
+                                                            <div key={"app" + a.id} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5">
+                                                                <span className="w-5 h-5 flex items-center justify-center text-sm shrink-0">📅</span>
+                                                                <span className="flex-1 min-w-0">
+                                                                    <span className="block text-xs font-semibold text-slate-100 truncate">
+                                                                        Appuntamento{a.type === "richiamo" ? " telefonico" : ""} {a.date ? new Date(a.date + "T00:00:00").toLocaleDateString("it-IT") : "—"}{a.time ? ` · ${a.time}` : ""}{a.store ? ` — ${a.store}` : ""}
+                                                                    </span>
+                                                                    <span className="block text-[10px] text-slate-500 truncate">{a.created_by ? `Fissato da ${a.created_by} (call center)` : "Fissato dal call center"}{a.esito_note ? ` · ${a.esito_note}` : ""}</span>
+                                                                </span>
+                                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 border ${st.cls}`}>{st.label}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    {ev.apreStorico && (
+                                                        <button onClick={() => setShowStorico(true)} title="Apri lo storico chiamate"
+                                                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-violet-500/30 text-left transition-all">
+                                                            <span className="w-5 h-5 flex items-center justify-center text-sm shrink-0">📞</span>
+                                                            <span className="flex-1 text-xs font-semibold text-slate-300">Apri lo storico chiamate</span>
+                                                            <ExternalLink className="w-3 h-3 text-slate-600 shrink-0" />
+                                                        </button>
+                                                    )}
+                                                    {(ev.contratti || []).map((c) => {
                                                         const logo = TRK_BRAND_LOGOS[trkBrandKey(c.brand || "")];
                                                         return (
                                                             <button key={c.id} onClick={() => openContract(c.id)} title="Apri il dettaglio del contratto"

@@ -4943,11 +4943,15 @@ function CRM() {
           .select("id,file_url,file_name,created_at")
           .in("contract_id", ids).eq("file_type", "documento")
           .order("created_at", { ascending: false }).limit(40);
-        // i piu' recenti vincono; dedup per nome file (lo stesso documento
-        // riagganciato su piu' vendite = una sola card)
+        // i piu' recenti vincono; dedup per URL (fix Luca 10/08, caso
+        // CLBNNA63T67A662A): lo STESSO file riagganciato su piu' vendite ha lo
+        // stesso file_url → una sola card. Prima si deduplicava per NOME file e
+        // fronte+retro con lo stesso nome (es. "documento-1.jpg" da due sessioni
+        // QR) collassavano in una card sola: il retro spariva dalla proposta,
+        // dal riaggancio E dall'archiviazione con esito scaduti/smarrito.
         const visti = {}; const docs = [];
         (atts || []).forEach(a => {
-          const k = String(a.file_name || a.file_url).trim().toLowerCase();
+          const k = String(a.file_url || a.id).trim();
           if (visti[k]) return; visti[k] = true;
           docs.push({ id: a.id, url: a.file_url, name: a.file_name || "documento", created: a.created_at });
         });
