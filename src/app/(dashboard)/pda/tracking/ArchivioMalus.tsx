@@ -10,6 +10,7 @@
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { SelectPersona } from "@/components/SelectPersona";
+import { FiltroMulti } from "@/components/FiltroMulti";
 import { getCat, regolaDi, fermaMalus } from "./trackingHelpers";
 import { type EpisodioMalus, totaliEpisodi, formatDataIt } from "./malusStorico";
 
@@ -58,10 +59,11 @@ export function ArchivioMalus({
   const [venditoreSel, setVenditoreSel] = useState(venditoreIniziale || "");
   const [search, setSearch] = useState("");
   // MOD-24 (Luca 10/08): filtri periodo/categoria/negozio + sort sulle colonne
+  // categoria/negozio = FiltroMulti STANDARD del CRM (null = tutto, come ovunque)
   const [dataDa, setDataDa] = useState("");
   const [dataA, setDataA] = useState("");
-  const [categoriaSel, setCategoriaSel] = useState("");
-  const [negozioSel, setNegozioSel] = useState("");
+  const [categoriaSel, setCategoriaSel] = useState<string[] | null>(null);
+  const [negozioSel, setNegozioSel] = useState<string[] | null>(null);
   const [sortKey, setSortKey] = useState<"nominativo" | "categoria" | "brand" | "negozio" | "venditore" | "data_inizio" | "data_fine" | "giorni" | "importo" | "stato" | "">("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [confermaId, setConfermaId] = useState<string | null>(null);
@@ -80,8 +82,8 @@ export function ArchivioMalus({
       if (venditoreSel && (e.venditore || "—") !== venditoreSel) return false;
       if (dataDa && (e.data_inizio || "") < dataDa) return false;
       if (dataA && (e.data_inizio || "") > dataA) return false;
-      if (categoriaSel && (e.categoria || "—") !== categoriaSel) return false;
-      if (negozioSel && (e.negozio || "—") !== negozioSel) return false;
+      if (categoriaSel !== null && !categoriaSel.includes(e.categoria || "—")) return false;
+      if (negozioSel !== null && !negozioSel.includes(e.negozio || "—")) return false;
       if (q) {
         const match = [e.nominativo, e.venditore, e.negozio, e.brand, e.categoria]
           .some((v) => (v || "").toLowerCase().includes(q));
@@ -272,8 +274,8 @@ export function ArchivioMalus({
                   tabIndex={0}
                   onClick={() => setStatoSel(c.id)}
                   onKeyDown={(e) => e.key === "Enter" && setStatoSel(c.id)}
-                  className="rounded-xl border p-3.5 cursor-pointer select-none transition-all"
-                  style={{ background: active ? c.color + "22" : "var(--tf-1e293b)", borderColor: active ? c.color : "var(--tf-334155)" }}
+                  className={"rounded-xl border p-3.5 cursor-pointer select-none transition-all" + (active ? "" : " bg-white/[0.03] border-white/10 hover:bg-white/[0.06]")}
+                  style={active ? { background: c.color + "22", borderColor: c.color } : undefined}
                 >
                   <div className="text-xl font-bold" style={{ color: c.color }}>{eur(c.val)}</div>
                   <div className="text-[11px] mt-0.5 font-medium" style={{ color: active ? c.color : "var(--tf-94a3b8)" }}>
@@ -294,7 +296,7 @@ export function ArchivioMalus({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Cerca per cliente, venditore, negozio, brand…"
-                className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 pl-9 outline-none w-full box-border"
+                className="glass-input w-full text-sm pl-9"
               />
             </div>
             {venditori.length > 1 && (
@@ -308,28 +310,25 @@ export function ArchivioMalus({
                 />
               </div>
             )}
-            {/* MOD-24: periodo (sul giorno di inizio malus) + categoria + punto vendita */}
+            {/* MOD-24: periodo (sul giorno di inizio malus) + categoria + punto
+                vendita — tendine FiltroMulti STANDARD del CRM (multi-selezione) */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-slate-500 font-semibold">Periodo</span>
+              <span className="text-[10px] uppercase font-bold text-slate-500">Periodo</span>
               <input type="date" value={dataDa} onChange={(e) => setDataDa(e.target.value)} title="Dal giorno di inizio"
-                className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[12px] py-1.5 px-2 outline-none" />
+                className="glass-input text-sm py-2" />
               <span className="text-slate-600 text-xs">→</span>
               <input type="date" value={dataA} onChange={(e) => setDataA(e.target.value)} title="Al giorno di inizio"
-                className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[12px] py-1.5 px-2 outline-none" />
+                className="glass-input text-sm py-2" />
             </div>
-            <select value={categoriaSel} onChange={(e) => setCategoriaSel(e.target.value)}
-              className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none min-w-[150px]">
-              <option value="">Tutte le categorie</option>
-              {categorie.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select value={negozioSel} onChange={(e) => setNegozioSel(e.target.value)}
-              className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none min-w-[150px]">
-              <option value="">Tutti i negozi</option>
-              {negozi.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-            {(dataDa || dataA || categoriaSel || negozioSel) && (
-              <button type="button" onClick={() => { setDataDa(""); setDataA(""); setCategoriaSel(""); setNegozioSel(""); }}
-                className="text-[11px] font-bold text-slate-400 hover:text-white border border-white/10 rounded-lg py-2 px-3 bg-white/[0.03]">
+            <div className="min-w-[190px]">
+              <FiltroMulti values={categoriaSel} onChange={setCategoriaSel} opzioni={categorie} etichettaTutti="Tutte le categorie" />
+            </div>
+            <div className="min-w-[190px]">
+              <FiltroMulti values={negozioSel} onChange={setNegozioSel} opzioni={negozi} etichettaTutti="Tutti i punti vendita" />
+            </div>
+            {(dataDa || dataA || categoriaSel !== null || negozioSel !== null) && (
+              <button type="button" onClick={() => { setDataDa(""); setDataA(""); setCategoriaSel(null); setNegozioSel(null); }}
+                className="text-[11px] font-bold text-slate-400 hover:text-white border border-white/10 rounded-lg py-2 px-3 bg-white/[0.03] hover:bg-white/[0.06]">
                 ✕ Pulisci filtri
               </button>
             )}

@@ -227,7 +227,10 @@ INSERT INTO public.sprint_frasi (testo) VALUES
   ('Più veloce del "ci penso", più forte del "vedremo".'),
   ('L''ultimo chilometro decide la corsa: spingi.'),
   ('Fatti sentire: il target ha paura del rumore.'),
-  ('Da qui alla vetta è tutta volata: DAJE!')
+  ('Da qui alla vetta è tutta volata: DAJE!'),
+  ('Chi arriva primo, sceglie il premio.'),
+  ('La costanza spaventa il target più del talento.'),
+  ('Accendi il negozio: oggi si fa la storia.')
 ON CONFLICT (testo) DO NOTHING;
 
 NOTIFY pgrst, 'reload schema';
