@@ -14,9 +14,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClipboardCheck, ExternalLink, Loader2, Send, UserRound, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { SelectPersona } from "@/components/SelectPersona";
 
 type Voce = {
-    id: string; tipo: "update" | "sospeso"; titolo: string;
+    id: string; tipo: "update" | "sospeso" | "task"; titolo: string;
     dettaglio: string | null; domanda: string | null; link: string | null;
     stato: "da_verificare" | "risposta_data" | "da_sistemare" | "segnalazione_delegato" | "verificata";
     risposta: string | null; sessione: string | null;
@@ -30,6 +31,75 @@ const fmtQuando = (s: string | null) => {
     const d = new Date(s);
     return isNaN(d.getTime()) ? "" : d.toLocaleDateString("it-IT") + " " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 };
+
+// MOD-39/40: form "nuova task / proponi modifica" — componente TOP-LEVEL con
+// stato suo (mai annidato nel componente pagina: perderebbe il focus).
+function FormNuova({ titolo, sotto, bottone, onInvia }: { titolo: string; sotto: string; bottone: string; onInvia: (tit: string, det: string) => Promise<void> }) {
+    const [aperto, setAperto] = useState(false);
+    const [tit, setTit] = useState("");
+    const [det, setDet] = useState("");
+    const [inCorso, setInCorso] = useState(false);
+    const invia = async () => {
+        if (!tit.trim() || inCorso) return;
+        setInCorso(true);
+        await onInvia(tit.trim(), det.trim());
+        setInCorso(false);
+        setTit(""); setDet(""); setAperto(false);
+    };
+    if (!aperto) return (
+        <button onClick={() => setAperto(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold">
+            ➕ {titolo}
+        </button>
+    );
+    return (
+        <div className="glass-panel p-4 space-y-2">
+            <div className="text-sm font-bold text-white">➕ {titolo}</div>
+            <p className="text-[11px] text-slate-500">{sotto}</p>
+            <input value={tit} onChange={(e) => setTit(e.target.value)} placeholder="Titolo breve…" autoFocus
+                className="glass-input w-full text-sm" />
+            <textarea value={det} onChange={(e) => setDet(e.target.value)} rows={3}
+                placeholder="Descrivi bene cosa serve (più dettagli dai, meglio viene): pagina interessata, comportamento atteso, esempi…"
+                className="glass-input w-full text-sm !h-auto py-2 resize-y" />
+            <div className="flex gap-2">
+                <button onClick={invia} disabled={inCorso || !tit.trim()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold disabled:opacity-40">
+                    <Send className="w-4 h-4" /> {bottone}
+                </button>
+                <button onClick={() => setAperto(false)} disabled={inCorso}
+                    className="px-4 py-2 rounded-xl bg-white/[0.06] hover:bg-white/10 text-slate-300 text-sm font-bold">Annulla</button>
+            </div>
+        </div>
+    );
+}
+
+// FIX 10/08 (Luca: "scrive al contrario"): la Card deve stare FUORI dal
+// componente pagina — definita dentro, React la ricreava a ogni tasto e la
+// textarea si smontava/rimontava perdendo il cursore (che tornava all'inizio).
+function CardVoce({ v, children }: { v: Voce; children?: React.ReactNode }) {
+    return (
+        <div className="glass-panel p-4 space-y-2">
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="text-sm font-bold text-white">
+                        {v.tipo === "task" && <span className="mr-1.5 text-[10px] font-black uppercase text-indigo-300 bg-indigo-500/10 border border-indigo-500/40 rounded-full px-2 py-0.5 align-middle">📥 task</span>}
+                        {v.titolo}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">sessione {v.sessione || "—"} · {fmtQuando(v.creato_il)}{v.tipo === "task" && v.segnalato_da ? <span className="text-violet-300"> · proposta da {v.segnalato_da}</span> : null}</div>
+                </div>
+                {v.link && (
+                    <a href={v.link} target={v.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer"
+                        className="shrink-0 inline-flex items-center gap-1 text-xs font-bold text-sky-300 hover:text-sky-200 px-2.5 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30">
+                        Apri <ExternalLink className="w-3 h-3" />
+                    </a>
+                )}
+            </div>
+            {v.dettaglio && <p className="text-[13px] text-slate-300 leading-relaxed">{v.dettaglio}</p>}
+            {v.domanda && <p className="text-[13px] text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">❓ {v.domanda}</p>}
+            {children}
+        </div>
+    );
+}
 
 export default function VerifichePage() {
     const { user } = useAuth();
@@ -87,42 +157,39 @@ export default function VerifichePage() {
         const u = utenti.find((x) => x.id === uid);
         aggiorna(v.id, { delegato_a: uid || null, delegato_nome: u?.full_name || null });
     };
+    // MOD-39: task dell'ADMIN → dritta in carico a Claude ('da_sistemare')
+    const oggiSessione = new Date().toLocaleDateString("it-IT");
+    const creaTaskAdmin = async (tit: string, det: string) => {
+        await supabase.from("dev_updates").insert({ tipo: "task", titolo: tit, dettaglio: det || null, stato: "da_sistemare", risposta: det || tit, sessione: oggiSessione });
+        carica();
+    };
+    // MOD-40: PROPOSTA del delegato → passa da Luca ('segnalazione_delegato')
+    const proponiTask = async (tit: string, det: string) => {
+        await supabase.from("dev_updates").insert({
+            tipo: "task", titolo: tit, dettaglio: det || null, stato: "segnalazione_delegato",
+            segnalazione_delegato: det || tit, segnalato_da: user?.name || "collaboratore",
+            delegato_a: user?.id || null, delegato_nome: user?.name || null, sessione: oggiSessione,
+        });
+        carica();
+    };
 
     // il DELEGATO vede solo le voci sue; l'admin tutto
     const mie = useMemo(() => isAdmin ? voci : voci.filter((v) => v.delegato_a === user?.id), [voci, isAdmin, user?.id]);
     const sospesi = useMemo(() => mie.filter((v) => v.tipo === "sospeso" && v.stato === "da_verificare"), [mie]);
     const risposte = useMemo(() => mie.filter((v) => v.tipo === "sospeso" && v.stato === "risposta_data"), [mie]);
     const daVerificare = useMemo(() => mie.filter((v) => v.tipo === "update" && v.stato === "da_verificare"), [mie]);
+    // colonna SINISTRA = da verificare tue; colonna DESTRA (admin) = delegate
+    const daVerificareMie = useMemo(() => isAdmin ? daVerificare.filter((v) => !v.delegato_a) : daVerificare, [daVerificare, isAdmin]);
+    const delegateAperte = useMemo(() => isAdmin ? daVerificare.filter((v) => !!v.delegato_a) : [], [daVerificare, isAdmin]);
     const daApprovare = useMemo(() => mie.filter((v) => v.stato === "segnalazione_delegato"), [mie]);
     const daSistemare = useMemo(() => mie.filter((v) => v.stato === "da_sistemare"), [mie]);
     const chiuse = useMemo(() => mie.filter((v) => v.stato === "verificata"), [mie]);
 
-    if (user && !isAdmin && !loading && mie.length === 0) {
-        return <div className="glass-panel p-10 text-center max-w-lg mx-auto mt-10 text-slate-400">Nessuna verifica ti è stata delegata.</div>;
-    }
-
-    const Card = ({ v, children }: { v: Voce; children?: React.ReactNode }) => (
-        <div className="glass-panel p-4 space-y-2">
-            <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                    <div className="text-sm font-bold text-white">{v.titolo}</div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">sessione {v.sessione || "—"} · {fmtQuando(v.creato_il)}</div>
-                </div>
-                {v.link && (
-                    <a href={v.link} target={v.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer"
-                        className="shrink-0 inline-flex items-center gap-1 text-xs font-bold text-sky-300 hover:text-sky-200 px-2.5 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30">
-                        Apri <ExternalLink className="w-3 h-3" />
-                    </a>
-                )}
-            </div>
-            {v.dettaglio && <p className="text-[13px] text-slate-300 leading-relaxed">{v.dettaglio}</p>}
-            {v.domanda && <p className="text-[13px] text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">❓ {v.domanda}</p>}
-            {children}
-        </div>
-    );
+    // MOD-40: il non-admin entra comunque — anche senza deleghe puo' PROPORRE
+    // una modifica all'amministrazione (il form qui sotto)
 
     return (
-        <div className="space-y-6 max-w-4xl">
+        <div className="space-y-6 max-w-[1500px]">
             <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
                     <ClipboardCheck className="w-5 h-5 text-emerald-400" />
@@ -141,27 +208,39 @@ export default function VerifichePage() {
             {loading ? (
                 <div className="flex items-center justify-center py-16 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /></div>
             ) : (<>
+                {/* ── NUOVA TASK (MOD-39/40): l'admin la manda dritta a Claude;
+                    il collaboratore la PROPONE e passa dall'approvazione admin ── */}
+                {isAdmin ? (
+                    <FormNuova titolo="Nuova task per Claude"
+                        sotto="La scrivi qui in qualsiasi momento (anche da telefono): Claude la legge alla prossima sessione, la svolge e la sposta tra gli update 'da verificare' con la nota di cosa ha fatto."
+                        bottone="Aggiungi la task" onInvia={creaTaskAdmin} />
+                ) : (
+                    <FormNuova titolo="Proponi una modifica"
+                        sotto="La proposta arriva all'amministrazione: se la conferma, viene lavorata da Claude (resta firmata col tuo nome)."
+                        bottone="Invia la proposta" onInvia={proponiTask} />
+                )}
+
                 {/* ── ADMIN: segnalazioni del DELEGATO da approvare ── */}
                 {isAdmin && daApprovare.length > 0 && (
                     <section className="space-y-3">
                         <h2 className="text-sm font-bold text-violet-300 uppercase tracking-widest">📨 Segnalazioni del delegato — decidi tu <span className="text-slate-500 font-normal normal-case">· {daApprovare.length}</span></h2>
                         {daApprovare.map((v) => (
-                            <Card key={v.id} v={v}>
-                                <p className="text-[13px] text-violet-200 bg-violet-500/10 border border-violet-500/40 rounded-lg px-3 py-2">👤 <b>{v.segnalato_da || v.delegato_nome}</b> segnala: «{v.segnalazione_delegato}»</p>
+                            <CardVoce key={v.id} v={v}>
+                                <p className="text-[13px] text-violet-200 bg-violet-500/10 border border-violet-500/40 rounded-lg px-3 py-2">👤 <b>{v.segnalato_da || v.delegato_nome}</b> {v.tipo === "task" ? "propone" : "segnala"}: «{v.segnalazione_delegato}»</p>
                                 <textarea value={bozze[v.id] ?? v.segnalazione_delegato ?? ""} onChange={(e) => setBozze((p) => ({ ...p, [v.id]: e.target.value }))}
                                     rows={2} className="glass-input w-full text-sm !h-auto py-2 resize-y"
-                                    placeholder="Correggi o riscrivi la segnalazione prima di inoltrarla…" />
+                                    placeholder="Correggi o riscrivi il testo prima di inoltrarlo…" />
                                 <div className="flex gap-2 flex-wrap">
                                     <button onClick={() => inoltra(v)} disabled={busy === v.id}
                                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-bold disabled:opacity-50">
-                                        <Send className="w-4 h-4" /> Inoltra a Claude (da sistemare)
+                                        <Send className="w-4 h-4" /> {v.tipo === "task" ? "Conferma e invia a Claude" : "Inoltra a Claude (da sistemare)"}
                                     </button>
                                     <button onClick={() => verifica(v)} disabled={busy === v.id}
                                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-50">
-                                        ✓ Chiudi come verificata
+                                        {v.tipo === "task" ? "✕ Rifiuta" : "✓ Chiudi come verificata"}
                                     </button>
                                 </div>
-                            </Card>
+                            </CardVoce>
                         ))}
                     </section>
                 )}
@@ -172,7 +251,7 @@ export default function VerifichePage() {
                         <h2 className="text-sm font-bold text-amber-300 uppercase tracking-widest">❓ In sospeso — mi serve una tua risposta <span className="text-slate-500 font-normal normal-case">· {sospesi.length}</span></h2>
                         {sospesi.length === 0 && <p className="text-sm text-slate-600 px-1">Niente in sospeso 🎉</p>}
                         {sospesi.map((v) => (
-                            <Card key={v.id} v={v}>
+                            <CardVoce key={v.id} v={v}>
                                 <div className="flex gap-2 items-start">
                                     <textarea value={bozze[v.id] || ""} onChange={(e) => setBozze((p) => ({ ...p, [v.id]: e.target.value }))}
                                         placeholder="Scrivi qui la risposta…" rows={2}
@@ -182,27 +261,29 @@ export default function VerifichePage() {
                                         <Send className="w-4 h-4" /> Invia
                                     </button>
                                 </div>
-                            </Card>
+                            </CardVoce>
                         ))}
                         {risposte.length > 0 && (
                             <div className="space-y-2">
                                 <p className="text-xs text-slate-500 px-1">Risposte date (in attesa che le lavori Claude):</p>
                                 {risposte.map((v) => (
-                                    <Card key={v.id} v={v}>
+                                    <CardVoce key={v.id} v={v}>
                                         <p className="text-[13px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">💬 {v.risposta}</p>
-                                    </Card>
+                                    </CardVoce>
                                 ))}
                             </div>
                         )}
                     </section>
                 )}
 
-                {/* ── UPDATE da verificare ── */}
-                <section className="space-y-3">
-                    <h2 className="text-sm font-bold text-sky-300 uppercase tracking-widest">🕐 {isAdmin ? "Update da verificare" : "Verifiche delegate a te"} <span className="text-slate-500 font-normal normal-case">· {daVerificare.length}</span></h2>
-                    {daVerificare.length === 0 && <p className="text-sm text-slate-600 px-1">Tutto verificato ✓</p>}
-                    {daVerificare.map((v) => (
-                        <Card key={v.id} v={v}>
+                {/* ── UPDATE: colonna sinistra = da verificare, colonna destra
+                    (admin) = DELEGATE in attesa del collaboratore (Luca 10/08:
+                    "mettimi le delegate alla destra, c'è tantissimo spazio") ── */}
+                {(() => {
+                    // funzione di render (MAI componente annidato: perderebbe il
+                    // focus della textarea a ogni tasto — lezione 'scrive al contrario')
+                    const cardUpdate = (v: Voce) => (
+                        <CardVoce key={v.id} v={v}>
                             <div className="flex gap-2 flex-wrap items-center">
                                 <button onClick={() => verifica(v)} disabled={busy === v.id}
                                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-50">
@@ -212,18 +293,19 @@ export default function VerifichePage() {
                                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-bold disabled:opacity-50">
                                     ⚠️ {isAdmin ? "Da sistemare" : "Segnala"}
                                 </button>
-                                {/* DELEGA (solo admin): tendina utente + badge/revoca */}
+                                {/* DELEGA (solo admin): tendina standard CRM + badge/revoca */}
                                 {isAdmin && (v.delegato_a ? (
                                     <span className="inline-flex items-center gap-1.5 text-xs font-bold text-violet-300 bg-violet-500/10 border border-violet-500/40 rounded-full px-3 py-1.5">
                                         <UserRound className="w-3.5 h-3.5" /> delegata a {v.delegato_nome}
                                         <button onClick={() => delega(v, "")} title="Revoca la delega" className="text-slate-500 hover:text-white"><X className="w-3.5 h-3.5" /></button>
                                     </span>
                                 ) : (
-                                    <select value="" onChange={(e) => { if (e.target.value) delega(v, e.target.value); }}
-                                        className="glass-input !h-9 text-xs w-auto pr-7" title="Delega questa verifica a un collaboratore">
-                                        <option value="">👤 Delega a…</option>
-                                        {utenti.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-                                    </select>
+                                    <span className="w-56">
+                                        <SelectPersona value="" placeholder="👤 Delega a…"
+                                            opzioni={utenti.map((u) => u.full_name)}
+                                            onChange={(nome: string) => { const u = utenti.find((x) => x.full_name === nome); if (u) delega(v, u.id); }}
+                                            className="glass-input w-full !h-9 text-xs" />
+                                    </span>
                                 ))}
                             </div>
                             {segnalaId === v.id && (
@@ -237,30 +319,46 @@ export default function VerifichePage() {
                                     </button>
                                 </div>
                             )}
-                        </Card>
-                    ))}
-                    {/* delegato: le sue segnalazioni in attesa dell'admin */}
-                    {!isAdmin && daApprovare.length > 0 && (
-                        <div className="space-y-2">
-                            <p className="text-xs text-slate-500 px-1">Segnalazioni inviate (in attesa dell&apos;amministrazione):</p>
-                            {daApprovare.map((v) => (
-                                <Card key={v.id} v={v}>
-                                    <p className="text-[13px] text-violet-200 bg-violet-500/10 border border-violet-500/40 rounded-lg px-3 py-2">📨 «{v.segnalazione_delegato}»</p>
-                                </Card>
-                            ))}
+                        </CardVoce>
+                    );
+                    return (
+                        <div className={isAdmin ? "grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" : ""}>
+                            <section className="space-y-3">
+                                <h2 className="text-sm font-bold text-sky-300 uppercase tracking-widest">🕐 {isAdmin ? "Update da verificare" : "Verifiche delegate a te"} <span className="text-slate-500 font-normal normal-case">· {daVerificareMie.length}</span></h2>
+                                {daVerificareMie.length === 0 && <p className="text-sm text-slate-600 px-1">Tutto verificato ✓</p>}
+                                {daVerificareMie.map(cardUpdate)}
+                                {/* delegato: le sue segnalazioni in attesa dell'admin */}
+                                {!isAdmin && daApprovare.length > 0 && (
+                                    <div className="space-y-2">
+                                        <p className="text-xs text-slate-500 px-1">Segnalazioni inviate (in attesa dell&apos;amministrazione):</p>
+                                        {daApprovare.map((v) => (
+                                            <CardVoce key={v.id} v={v}>
+                                                <p className="text-[13px] text-violet-200 bg-violet-500/10 border border-violet-500/40 rounded-lg px-3 py-2">📨 «{v.segnalazione_delegato}»</p>
+                                            </CardVoce>
+                                        ))}
+                                    </div>
+                                )}
+                            </section>
+                            {isAdmin && (
+                                <section className="space-y-3">
+                                    <h2 className="text-sm font-bold text-violet-300 uppercase tracking-widest">👤 Delegate — in attesa del collaboratore <span className="text-slate-500 font-normal normal-case">· {delegateAperte.length}</span></h2>
+                                    {delegateAperte.length === 0 && <p className="text-sm text-slate-600 px-1">Nessuna verifica delegata al momento: usa &quot;👤 Delega a…&quot; su una card a sinistra.</p>}
+                                    {delegateAperte.map(cardUpdate)}
+                                </section>
+                            )}
                         </div>
-                    )}
-                </section>
+                    );
+                })()}
 
                 {/* ── segnalate DA SISTEMARE (in carico a Claude) ── */}
                 {isAdmin && daSistemare.length > 0 && (
                     <section className="space-y-3">
                         <h2 className="text-sm font-bold text-orange-300 uppercase tracking-widest">🛠️ Da sistemare — in carico a Claude <span className="text-slate-500 font-normal normal-case">· {daSistemare.length}</span></h2>
                         {daSistemare.map((v) => (
-                            <Card key={v.id} v={v}>
+                            <CardVoce key={v.id} v={v}>
                                 <p className="text-[13px] text-orange-200 bg-orange-500/10 border border-orange-500/40 rounded-lg px-3 py-2">⚠️ {v.risposta}</p>
                                 <p className="text-[11px] text-slate-500">Claude la lavora alla prossima sessione e la rimette qui &quot;da verificare&quot; con la nota di cosa ha corretto.</p>
-                            </Card>
+                            </CardVoce>
                         ))}
                     </section>
                 )}
