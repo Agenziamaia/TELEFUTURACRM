@@ -5,9 +5,11 @@
 // fotografia delle liste storiche). La CHIAVE nasce col seed o dall'etichetta
 // alla creazione e poi NON si tocca: e' il valore scritto sulle pratiche
 // (stato_negozio / stati_categoria), rinominare cambia solo la resa a schermo.
-// Il flag COMPLETATA marca il "fine processo": la pratica sparisce dalla
-// lista attiva, entra nella coda "⚡ Da lavorare" della verifica
-// amministrazione e ferma la maturazione del malus.
+// Il flag a DB si chiama `completata` ma a schermo e' "🏁 Esito definitivo"
+// (Luca 10/08, stessa parola sui due lati): lato negozio = fine della
+// lavorazione del negozio (la pratica sparisce dalla lista attiva, entra
+// nella coda "⚡ Da lavorare" della verifica amministrazione e ferma il
+// malus); lato admin = chiude completamente il cerchio della pratica.
 import { useCallback, useEffect, useState } from "react";
 import { Radar, Plus, ChevronUp, ChevronDown } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
@@ -53,9 +55,12 @@ const PALETTE: { colore: string; bg: string }[] = [
 const slugDi = (s: string) => s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "esito";
 
-// nel Tracking le pratiche TV viaggiano come "sky" (rimappate): la colonna TV
-// non ha esiti suoi e qui non compare
-const CATEGORIE_PANNELLO = CATEGORIE.filter((c) => c.id !== "tv");
+// Qui compaiono SOLO le categorie che il Tracking produce davvero (Luca 10/08):
+// "tv" viaggia come "sky"; "mobile" non esiste come riga — il mobile business
+// diventa "piva", MNP e finanziamento hanno righe proprie; digitale,
+// multi_servizi e pos sono fuori dal perimetro (vaInTracking).
+const CATEGORIE_TRACCIATE = new Set(["mnp", "finanziamento", "fisso", "energia", "sky", "piva"]);
+const CATEGORIE_PANNELLO = CATEGORIE.filter((c) => CATEGORIE_TRACCIATE.has(c.id));
 
 export function TrackingEsitiView() {
     // DUE LATI (Luca 10/08): esiti del NEGOZIO e della VERIFICA AMMINISTRATIVA
@@ -163,8 +168,8 @@ export function TrackingEsitiView() {
                     <h2 className="text-xl font-bold text-white">Tracking PDA — esiti per categoria</h2>
                     <p className="text-sm text-slate-400">
                         {lato === "negozio"
-                            ? <>Gli esiti che il NEGOZIO sceglie sulle pratiche. Il flag <b className="text-emerald-400">🏁 completata</b> = fine del processo: la pratica sparisce dalla lista attiva, entra nella coda di verifica amministrazione (⚡ Da lavorare) e ferma il malus.</>
-                            : <>Gli esiti della VERIFICA AMMINISTRATIVA. Il flag <b className="text-emerald-400">🏁 definitiva</b> = chiude completamente il cerchio della pratica: esce dalla coda ⚡ Da lavorare (Non Conforme resta speciale: la riapre).</>}
+                            ? <>Gli esiti che il NEGOZIO sceglie sulle pratiche. Il flag <b className="text-emerald-400">🏁 Esito definitivo</b> = la lavorazione del negozio è finita: la pratica sparisce dalla lista attiva, entra nella coda di verifica amministrazione (⚡ Da lavorare) e ferma il malus.</>
+                            : <>Gli esiti della VERIFICA AMMINISTRATIVA. Il flag <b className="text-emerald-400">🏁 Esito definitivo</b> = chiude completamente il cerchio: nessuna lavorazione resta, né al negozio né all&apos;amministrazione (Non Conforme resta speciale: la riapre).</>}
                     </p>
                 </div>
             </div>
@@ -230,7 +235,7 @@ export function TrackingEsitiView() {
                             {lato === "admin" && voci.length > 0 && (
                                 <div className="flex items-center justify-end gap-2 pr-2.5 mb-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">
                                     <span className="w-[84px] text-center" title="Malus in euro per ogni giorno lavorativo in cui la pratica resta in questo esito (vuoto = nessun malus)">Malus €/giorno</span>
-                                    <span className="w-[88px] text-center">Definitiva</span>
+                                    <span className="w-[118px] text-center">Esito definitivo</span>
                                     <span className="w-9 text-center">Attiva</span>
                                     <span className="w-7" />
                                 </div>
@@ -282,12 +287,12 @@ export function TrackingEsitiView() {
                                         )}
                                         <button onClick={() => toggleCompletata(r)}
                                             title={lato === "admin"
-                                                ? (r.completata ? "DEFINITIVA: chiude il cerchio della pratica (esce dalla coda ⚡ Da lavorare) — clicca per toglierlo" : "Clicca per marcare questo esito come DEFINITIVO (chiude il cerchio)")
-                                                : (r.completata ? "Fine processo: la pratica esce dalla lista attiva ed entra nella coda di verifica amministrazione — clicca per toglierlo" : "Clicca per marcare questo esito come FINE DEL PROCESSO (completata)")}
+                                                ? (r.completata ? "ESITO DEFINITIVO: chiude completamente il cerchio della pratica, nessuna lavorazione resta (esce dalla coda ⚡ Da lavorare) — clicca per toglierlo" : "Clicca per marcare questo esito come DEFINITIVO (chiude la pratica)")
+                                                : (r.completata ? "ESITO DEFINITIVO: la lavorazione del negozio è finita — la pratica esce dalla lista attiva ed entra nella coda di verifica amministrazione — clicca per toglierlo" : "Clicca per marcare questo esito come DEFINITIVO (fine della lavorazione del negozio)")}
                                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 transition-colors ${r.completata
                                                 ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300"
                                                 : "bg-transparent border-white/10 text-slate-600 hover:text-slate-300"}`}>
-                                            🏁 {lato === "admin" ? "definitiva" : "completata"}
+                                            🏁 Esito definitivo
                                         </button>
                                         <button onClick={() => toggleAttiva(r)} title={r.attiva ? "Attiva — clicca per spegnerla" : "Spenta — clicca per riattivarla"}
                                             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${r.attiva ? "bg-emerald-500/70" : "bg-white/10"}`}>
@@ -299,7 +304,7 @@ export function TrackingEsitiView() {
                                                 <button onClick={() => setDelId(null)} className="text-[10px] px-1.5 py-1 rounded-md text-slate-400">✕</button>
                                             </span>
                                         ) : (
-                                            <button onClick={() => setDelId(r.id)} title="Elimina la voce (le pratiche storiche mantengono la chiave)"
+                                            <button onClick={() => setDelId(r.id)} title="Elimina la voce — ATTENZIONE: le pratiche già esitate restano con la chiave vecchia, orfana. Per cambiare nome usa la rinomina (clic sul nome); per ritirarla senza perdere lo storico spegni l'interruttore"
                                                 className="p-1 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 shrink-0">🗑</button>
                                         )}
                                     </div>
