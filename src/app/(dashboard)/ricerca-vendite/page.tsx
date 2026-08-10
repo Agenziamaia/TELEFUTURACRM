@@ -232,7 +232,10 @@ function FiltroMulti({ values, onChange, opzioni, className = "", disabled = fal
     const visuale = (o: string) => etichette?.[o] ?? o;
     const spuntata = (o: string) => tutte || (values as string[]).includes(o);
     const toggle = (o: string) => {
-        if (values === null) { onChange(opzioni.filter((x) => x !== o)); return; } // dal "tutto" si toglie la prima voce
+        // Luca 10/08: dallo stato "tutte" il click ELEGGE la voce a unico
+        // filtro attivo (prima la toglieva dall'insieme — controintuitivo);
+        // con un sottoinsieme già scelto resta il toggle classico
+        if (values === null) { onChange([o]); return; }
         const next = values.includes(o) ? values.filter((x) => x !== o) : [...values, o];
         onChange(opzioni.length > 0 && opzioni.every((x) => next.includes(x)) ? null : next);
     };
@@ -620,15 +623,25 @@ export default function RicercaContratto() {
         const base = filterProdotti?.length ? filterProdotti
             : filterCategorie?.length ? filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || [])
             : null;
-        if (!base) return catalogoBrand.offNames;
+        // le SPENTE scendono in fondo (Luca 10/08): sopra restano le vive
+        const ordina = (arr: string[]) => [...arr].sort((a, b) =>
+            (catalogoBrand.offSpenta?.[a] ? 1 : 0) - (catalogoBrand.offSpenta?.[b] ? 1 : 0) || a.localeCompare(b));
+        if (!base) return ordina(catalogoBrand.offNames);
         let set = new Set<string>();
         base.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
         if (filterCategorie?.length) {
             const s2 = new Set(filterCategorie.flatMap((c) => catalogoBrand.offsByCat[c] || []));
             set = new Set(Array.from(set).filter((o) => s2.has(o)));
         }
-        return Array.from(set).sort();
+        return ordina(Array.from(set));
     }, [catalogoBrand, filterProdotti, filterCategorie]);
+    // etichette ⛔ per le offerte spente nella tendina (il VALORE resta il nome
+    // pulito: i filtri e lo storico non cambiano)
+    const offEtichette = useMemo(() => {
+        const out: Record<string, string> = {};
+        offerteDisponibili.forEach((o) => { if (catalogoBrand?.offSpenta?.[o]) out[o] = o + " · ⛔ spenta"; });
+        return out;
+    }, [offerteDisponibili, catalogoBrand]);
     // le OPZIONI si sbloccano con almeno un'offerta scelta: unione delle loro
     const opzioniDisponibili = useMemo(() => {
         if (!catalogoBrand || !filterOfferte?.length) return [];
@@ -1872,6 +1885,7 @@ export default function RicercaContratto() {
                         <FiltroMulti
                             values={filterOfferte} onChange={setFilterOfferte}
                             opzioni={offerteDisponibili}
+                            etichette={offEtichette}
                             disabled={!catalogoBrand}
                             testoDisabilitato="Seleziona un solo brand dalle tessere"
                             etichettaTutti="Tutte le offerte"

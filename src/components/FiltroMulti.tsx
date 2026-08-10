@@ -60,7 +60,10 @@ export function FiltroMulti({ values, onChange, opzioni, className = "", disable
     const visuale = (o: string) => etichette?.[o] ?? o;
     const spuntata = (o: string) => tutte || (values as string[]).includes(o);
     const toggle = (o: string) => {
-        if (values === null) { onChange(opzioni.filter((x) => x !== o)); return; } // dal "tutto" si toglie la prima voce
+        // Luca 10/08: dallo stato "tutte" il click ELEGGE la voce a unico
+        // filtro attivo (prima la toglieva dall'insieme — controintuitivo);
+        // con un sottoinsieme già scelto resta il toggle classico
+        if (values === null) { onChange([o]); return; }
         const next = values.includes(o) ? values.filter((x) => x !== o) : [...values, o];
         onChange(opzioni.length > 0 && opzioni.every((x) => next.includes(x)) ? null : next);
     };
