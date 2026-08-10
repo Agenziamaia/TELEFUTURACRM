@@ -2059,7 +2059,9 @@ export default function TrackingPdaPage() {
                 title="Le pratiche con esito definitivo del negozio spariscono da sole: attiva per rivederle"
                 className={"px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors " + (mostraCompletate ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-400 hover:bg-white/5")}
               >
-                {mostraCompletate ? "✓" : "✅"} Mostra completate
+                {/* spento = casella VUOTA (10/08: la ✅ verde da spento sembrava
+                    un toggle acceso e ha ingannato tutti, me compreso) */}
+                {mostraCompletate ? "✓" : "☐"} Mostra completate
               </button>
             </div>
             <p className="text-slate-400 text-sm">Monitoraggio pratiche: esito negozio, esito admin, storico e malus</p>

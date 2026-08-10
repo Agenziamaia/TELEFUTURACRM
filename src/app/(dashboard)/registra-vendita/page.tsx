@@ -4297,6 +4297,10 @@ function CRM() {
   // P&M come un BRAND (Luca 03/08): step Prodotti a piena pagina, non più
   // il foglietto dal basso. margFlow = flusso marginalità attivo.
   const [margFlow,setMargFlow]=useState(false);
+  // MOD-44c (Luca 10/08): anche la marginalità PASSA dallo step Cliente.
+  // Lo skip è una scelta esplicita (popup CRM) e viene TRACCIATA sulla vendita.
+  const [margSkipCli,setMargSkipCli]=useState(false);
+  const [margSkipPopup,setMargSkipPopup]=useState(false);
   const [margEditItem,setMargEditItem]=useState(null);
   const [showMargList,setShowMargList]=useState(false);
   const [showMargSection,setShowMargSection]=useState(false);
@@ -5795,38 +5799,40 @@ function CRM() {
   const _anaStep2Ok=()=>((ana.cf||"").trim().length>=11)
     &&((((ana.nome||"").trim()&&(ana.cognome||"").trim()))||(ana.ragioneSociale||"").trim())
     &&(ana.cellulare||"").trim().length>0;
+  // MOD-44c: per la marginalità SENZA finanziamento basta anche UN solo dato
+  // identificativo (solo nome, solo cognome, solo CF o ragione sociale)
+  const margMinOk=!!((ana.nome||"").trim()||(ana.cognome||"").trim()||(ana.cf||"").trim()||(ana.ragioneSociale||"").trim());
   const saveMargOnly=async()=>{
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
     if(margSaving)return;
-    const anon=margSaveForm.anonimo;
-    // MOD-44: con un USATO FINANZIATO servono anagrafica VERA (niente vendita
-    // anonima) e allegati documento + contratto obbligatori
+    // MOD-44c: i dati cliente vengono SOLO dallo step Cliente; "anonimo" = skip
+    // esplicito confermato dal popup (tracciato sulla vendita)
+    const anon=margSkipCli;
+    // MOD-44: con un USATO FINANZIATO servono anagrafica VERA (niente skip)
+    // e allegati documento + contratto obbligatori
     const _conFin=margItems.some(_usatoFinanziato);
     if(_conFin){
-      if(anon){sT("⚠️ Usato con finanziamento: serve l'anagrafica completa del cliente (niente vendita anonima)");return;}
-      if(!attachments.some(a=>a.type==="documento")){sT("⚠️ Usato con finanziamento: carica il DOCUMENTO del cliente nello step Allegati");setVistaStep("allegati");return;}
-      if(!attachments.some(a=>a.type==="contratti")){sT("⚠️ Usato con finanziamento: carica il CONTRATTO di finanziamento nello step Allegati");setVistaStep("allegati");return;}
+      if(anon){setShowMargSave(false);setMargSkipCli(false);setVistaStep("cliente");setShowAna(true);sT("💳 Usato con finanziamento: i dati del cliente sono OBBLIGATORI, non si possono saltare — compilali nello step Cliente");return;}
       if(!margCliSel&&!_anaStep2Ok()){
         setShowMargSave(false);setVistaStep("cliente");setShowAna(true);
         sT("💳 Usato con finanziamento: compila l'anagrafica del cliente nello step Cliente (CF, nome/ragione sociale e cellulare), poi torna a salvare");
         return;
       }
+      if(!attachments.some(a=>a.type==="documento")){sT("⚠️ Usato con finanziamento: carica il DOCUMENTO del cliente nello step Allegati");setShowMargSave(false);setVistaStep("allegati");return;}
+      if(!attachments.some(a=>a.type==="contratti")){sT("⚠️ Usato con finanziamento: carica il CONTRATTO di finanziamento nello step Allegati");setShowMargSave(false);setVistaStep("allegati");return;}
     }
     if(!anon&&!margCliSel){
-      const f=_conFin?_anaComeForm():margSaveForm;
-      // REFERENTE OBBLIGATORIO per le business anche qui (Luca 01/08): questo
-      // percorso chiedeva solo ragione sociale e telefono, ed era la porta da
-      // cui nascevano business senza referente. E niente return silenzioso:
-      // si dice COSA manca.
-      const cfRefM=(f.cfRef||"").trim().toUpperCase().replace(/\s+/g,"");
-      const miss=f.tipo==="business"
-        ?[!f.ragioneSociale.trim()&&"Ragione Sociale",!f.nomeRef.trim()&&"Nome Referente",!f.cognomeRef.trim()&&"Cognome Referente",
-          // CF referente obbligatorio anche qui (03/08, mig. 139)
-          (!cfRefM||!/^[A-Z0-9]{16}$/.test(cfRefM))&&"CF Referente (16 caratteri)",
-          !f.tel.trim()&&"Cellulare"].filter(Boolean)
-        :[!f.nome.trim()&&"Nome",!f.cognome.trim()&&"Cognome",!f.tel.trim()&&"Cellulare"].filter(Boolean);
-      if(miss.length){showToast("⚠️ Campi obbligatori mancanti: "+miss.join(", "));return;}
+      const f=_anaComeForm();
+      // MOD-44c: basta UN dato identificativo (anche solo nome, solo cognome o
+      // solo CF) — senza nulla si torna allo step Cliente, dove al limite si
+      // salta in modo esplicito e tracciato
+      const haId=!!(f.nome.trim()||f.cognome.trim()||f.cf.trim()||f.ragioneSociale.trim());
+      if(!haId){
+        setShowMargSave(false);setVistaStep("cliente");setShowAna(true);
+        sT("👤 Compila almeno un dato del cliente nello step Cliente (basta anche solo nome, cognome o CF) — oppure salta da lì in modo esplicito");
+        return;
+      }
       // Bug indirizzo (Luca 04/08): via facoltativa, ma se compilata il civico va messo
       if(f.via.trim()&&civicoMancante(f.via)){showToast("⚠️ Nell'indirizzo manca il numero civico (es. \"Via Roma 12\"): aggiungilo o lascia il campo vuoto");return;}
     }
@@ -5849,8 +5855,8 @@ function CRM() {
         // stessa logica del flusso brand: CF = match certo; senza CF si
         // riconosce solo con telefono + nome (o ragione sociale); univocita'
         // cellulare; il merge non cancella i dati gia' salvati (segn. 40)
-        // MOD-44b: col finanziamento i dati sono quelli dello STEP CLIENTE
-        const f=_conFin?_anaComeForm():margSaveForm;
+        // MOD-44c: i dati sono SEMPRE quelli dello STEP CLIENTE
+        const f=_anaComeForm();
         const business=f.tipo==="business";
         const cfPiva=(f.cf||"").trim();
         const tel=f.tel.trim();
@@ -5898,7 +5904,8 @@ function CRM() {
         // salvataggio scriveva "Nuovo" fisso e non valorizzava l'esito negozio.
         prodotto:mi.product,stato:"Attivo",stato_negozio:"attivato",venditore:mi.vendor||selVend,negozio:mi.store||selNeg,
         codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:dateStr,
-        dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei,units:Array.isArray(mi.units)?mi.units:null},
+        // MOD-44c: lo skip dei dati cliente resta TRACCIATO sulla vendita
+        dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei,units:Array.isArray(mi.units)?mi.units:null,...(anon?{"Anagrafica saltata":"Sì","Saltata da":selVend||""}:{})},
         is_demo:false,
       },mi));
       const {error}=await supabase.from("contracts").insert(rows);
@@ -5928,6 +5935,7 @@ function CRM() {
       await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend);
       setMargSaveForm({...MARG_FORM_VUOTO});
       setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
+      setMargSkipCli(false);
       setShowMargSave(false);
       fullReset();
       showToast(`Vendita salvata! ${rows.length} prodott${rows.length===1?"o":"i"} registrat${rows.length===1?"o":"i"}`);
@@ -6250,11 +6258,17 @@ function CRM() {
                 </div>
               ))}
             </div>
-            <label style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,cursor:"pointer",background:"rgba(0,114,198,0.10)",borderRadius:8,padding:"10px 14px"}}>
-              <input type="checkbox" checked={margSaveForm.anonimo} onChange={e=>setMargSaveForm(p=>({...p,anonimo:e.target.checked}))} style={{width:18,height:18,cursor:"pointer"}}/>
-              <div><div style={{fontWeight:700,fontSize:13,color:"var(--tf-f8fafc)"}}>Vendi senza dati cliente</div><div style={{fontSize:11,color:"var(--tf-64748b)"}}>Salta nome, cognome e telefono</div></div>
-            </label>
-            {!margSaveForm.anonimo&&(margCliSel?(
+            {/* MOD-44c: i dati cliente vivono nello STEP CLIENTE — qui solo il
+                riepilogo; per modificarli si torna allo step 2 */}
+            {margSkipCli?(
+              <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"1px dashed rgba(245,158,11,0.6)",background:"rgba(245,158,11,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:800,color:"var(--tf-fbbf24)"}}>🚫 Vendita senza dati cliente</div>
+                  <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>Skip scelto nello step Cliente — viene registrato sulla vendita</div>
+                </div>
+                <button onClick={()=>{setShowMargSave(false);setVistaStep("cliente");}} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>👤 Aggiungi dati</button>
+              </div>
+            ):(margCliSel?(
               <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"2px solid #28a745",background:"rgba(40,167,69,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
                 <div>
                   <div style={{fontSize:13,fontWeight:800,color:"var(--tf-e2e8f0)"}}>✓ {margCliLabel(margCliSel)}</div>
@@ -6262,61 +6276,29 @@ function CRM() {
                 </div>
                 <button onClick={()=>setMargCliSel(null)} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✕ cambia</button>
               </div>
-            ):(
-              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
-                <div>
-                  <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Cerca cliente (cognome, nome, cellulare o CF)</div>
-                  <input value={margCliCerca} onChange={e=>setMargCliCerca(e.target.value)} placeholder="Es. Rossi Mario, 339…, RSSMRA…" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/>
-                  {margCliHits.length>0&&<div style={{marginTop:6,borderRadius:8,border:"1px solid var(--tf-w80)",overflow:"hidden"}}>
-                    {margCliHits.map(c=>(
-                      <button key={c.id} onClick={()=>{setMargCliSel(c);setMargCliHits([]);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",border:"none",borderBottom:"1px solid var(--tf-w50)",background:"var(--tf-w20)",cursor:"pointer"}}>
-                        <span style={{fontSize:13,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{margCliLabel(c)}</span>
-                        <span style={{fontSize:11,color:"var(--tf-8892b0)",marginLeft:8}}>{[c.cf_piva,c.cellulare].filter(Boolean).join(" • ")}</span>
-                      </button>
-                    ))}
-                  </div>}
-                  {margCliCerca.trim().length>=3&&margCliHits.length===0&&<div style={{fontSize:10,color:"var(--tf-fd7e14)",fontWeight:700,marginTop:4}}>Nessuna anagrafica trovata: compila i campi sotto per crearla.</div>}
+            ):((()=>{
+              // riepilogo dei dati compilati nello STEP CLIENTE (MOD-44c)
+              const f=_anaComeForm();
+              const nomeCli=(f.ragioneSociale||`${f.nome} ${f.cognome}`.trim()||f.cf||"").trim();
+              const sub=[f.cf,f.tel].filter(Boolean).join(" • ");
+              return nomeCli?(
+                <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"2px solid #28a745",background:"rgba(40,167,69,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:800,color:"var(--tf-e2e8f0)"}}>✓ {nomeCli}</div>
+                    <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>{sub||"dati dallo step Cliente"}</div>
+                  </div>
+                  <button onClick={()=>{setShowMargSave(false);setVistaStep("cliente");setShowAna(true);}} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button>
                 </div>
-                <div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)",textTransform:"uppercase"}}>Oppure crea una nuova anagrafica</div>
-                <div style={{display:"flex",gap:8}}>
-                  {[["privato","👤 Privato"],["business","🏢 Business"]].map(([k,l])=>(
-                    <button key={k} onClick={()=>setMargSaveForm(p=>({...p,tipo:k}))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",border:margSaveForm.tipo===k?"2px solid #6f42c1":"1px solid var(--tf-w100)",background:margSaveForm.tipo===k?"rgba(111,66,193,0.15)":"var(--tf-w30)",color:margSaveForm.tipo===k?"var(--tf-a78bfa)":"var(--tf-8892b0)"}}>{l}</button>
-                  ))}
+              ):(
+                <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"1px dashed rgba(245,158,11,0.6)",background:"rgba(245,158,11,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:800,color:"var(--tf-fbbf24)"}}>⚠️ Nessun dato cliente</div>
+                    <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>Compila lo step Cliente (basta anche solo nome, cognome o CF) o salta da lì</div>
+                  </div>
+                  <button onClick={()=>{setShowMargSave(false);setVistaStep("cliente");setShowAna(true);}} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>👤 Compila</button>
                 </div>
-                {margSaveForm.tipo==="business"?(
-                  <>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Ragione Sociale <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.ragioneSociale} onChange={e=>setMargSaveForm(p=>({...p,ragioneSociale:e.target.value}))} placeholder="Es. Rossi S.r.l." style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>P.IVA / CF</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. 01234567890" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
-                    <div style={{display:"flex",gap:10}}>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Nome Referente <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.nomeRef} onChange={e=>setMargSaveForm(p=>({...p,nomeRef:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Cognome Referente <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.cognomeRef} onChange={e=>setMargSaveForm(p=>({...p,cognomeRef:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                    </div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>CF Referente <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.cfRef} onChange={e=>setMargSaveForm(p=>({...p,cfRef:e.target.value.toUpperCase().replace(/\s+/g,"")}))} maxLength={16} placeholder="Es. RSSMRA80A01H501B" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Telefono Fisso</div><input value={margSaveForm.fisso} onChange={e=>setMargSaveForm(p=>({...p,fisso:e.target.value.replace(/\D/g,"").slice(0,11)}))} placeholder="Es. 061234567 (facoltativo)" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                  </>
-                ):(
-                  <>
-                    <div style={{display:"flex",gap:10}}>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Nome <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.nome} onChange={e=>setMargSaveForm(p=>({...p,nome:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Cognome <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.cognome} onChange={e=>setMargSaveForm(p=>({...p,cognome:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                    </div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Codice Fiscale</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. RSSMRA80A01H501U" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
-                  </>
-                )}
-                <div style={{display:"flex",gap:10}}>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Telefono <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.tel} onChange={e=>setMargSaveForm(p=>({...p,tel:e.target.value}))} placeholder="Es. 3391234567" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Email</div><input value={margSaveForm.email} onChange={e=>setMargSaveForm(p=>({...p,email:e.target.value}))} placeholder="Es. mario@mail.it" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                </div>
-                <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{margSaveForm.tipo==="business"?"Indirizzo sede":"Indirizzo di residenza"}</div>
-                  <IndirizzoAutocomplete value={margSaveForm.via} onChange={v=>setMargSaveForm(p=>({...p,via:v}))}
-                    onPick={s=>setMargSaveForm(p=>({...p,via:s.indirizzo,cap:s.cap||p.cap,citta:s.citta||p.citta}))}
-                    placeholder="Via e civico: scegli dalla lista" className="glass-input rounded-lg py-2 w-full"/></div>
-                <div style={{display:"flex",gap:10}}>
-                  <div style={{width:110}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>CAP</div><input value={margSaveForm.cap} onChange={e=>setMargSaveForm(p=>({...p,cap:e.target.value.replace(/\D/g,"").slice(0,5)}))} placeholder="00100" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Città</div><input value={margSaveForm.citta} onChange={e=>setMargSaveForm(p=>({...p,citta:e.target.value}))} placeholder="Es. Roma" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                </div>
-              </div>
-            ))}
+              );
+            })()))}
             <div style={{display:"flex",gap:10,marginTop:4}}>
               <button onClick={chiudiMargSave} style={{flex:1,padding:"11px 0",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:13,fontWeight:700,cursor:"pointer"}}>← Annulla</button>
               <button onClick={saveMargOnly} disabled={margSaving} style={{flex:1,padding:"11px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#218838)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>{margSaving?"Salvataggio...":"✅ Salva vendita"}</button>
@@ -6478,15 +6460,18 @@ select.rvIn{cursor:pointer}
           indietro/avanti passa SOLO da qui — niente piu' righe riassunto. */}
       {(()=>{
         const anagOk=tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim());
-        const percCliente=!tipoCliente?0:(anagOk?100:50);
+        // MOD-44c: in marginalità lo step Cliente e' OBBLIGATORIO (dati minimi
+        // o skip esplicito) — prodotti/allegati/note si sbloccano solo dopo
+        const margCliOk=margMinOk||margSkipCli;
+        const percCliente=(margFlow&&!brand)?(margCliOk?100:(tipoCliente?50:0)):(!tipoCliente?0:(anagOk?100:50));
         const cAtt=bObj?bC:"var(--tf-6366f1)";
         const STEPS=[
           {id:"brand",label:margFlow&&!brand?"Marginalità":"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{margFlow&&!brand?"📦":(bObj?bObj.icon:"⚡")}</span>,perc:(brand||margFlow)?100:0,abil:true},
-          {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
-          {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:23}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
-          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?true:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.contratto!=="obbligatorio"||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
+          {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand||(margFlow&&!brand)},
+          {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:23}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand&&margCliOk)||!!(showAna&&showStep4)},
+          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?true:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.contratto!=="obbligatorio"||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand&&margCliOk)||!!(showAna&&showStep4)},
           // verde APPENA si flagga Sì o No (Luca 05/08): la scelta completa lo step
-          {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:notaScelta?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
+          {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:notaScelta?100:0,abil:(margFlow&&!brand&&margCliOk)||!!(showAna&&showStep4),opz:true},
         ];
         const _doneCount=STEPS.filter(s=>s.perc>=100).length;
         const _railPct=Math.min(100,(_doneCount/(STEPS.length-1))*100);
@@ -6546,7 +6531,9 @@ select.rvIn{cursor:pointer}
             if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: passando a Prodotti & Marginalità la perdi.\n\nContinuare?"))return;
             setBrand(null);setSales({});setSesCode("");setShowStep4(false);setShowAna(false);setCambioBrand(false);
             setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);
-            setMargFlow(true);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));
+            // MOD-44c (Luca 10/08): anche la marginalità passa dallo step
+            // Cliente — niente salto diretto ai prodotti
+            setMargFlow(true);setVistaStep("cliente");setStepVisti(pv=>({...pv,prodotti:true}));
           }} title="Prodotti & Marginalità" style={{padding:"26px 16px",borderRadius:14,border:margFlow?"2px solid #6f42c1":"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:margFlow?"0 0 0 3px rgba(111,66,193,0.25)":"none"}}>
             {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"var(--tf-6f42c1)",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
             {/* stesso simbolo della tessera Marginalità di Ricerca Vendite: 💰
@@ -6558,8 +6545,11 @@ select.rvIn{cursor:pointer}
       </div>}
 
 
-      {vistaStep==="cliente"&&brand&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
+      {vistaStep==="cliente"&&(brand||(margFlow&&!brand))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
         <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:12,textTransform:"uppercase"}}>👥 Cliente — tipo e ricerca</div>
+        {margFlow&&!brand&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:8,background:"rgba(111,66,193,0.10)",border:"1px dashed rgba(111,66,193,0.5)",fontSize:12,color:"var(--tf-a78bfa)",fontWeight:600}}>
+          💰 Vendita a marginalità: bastano anche <b>solo nome</b>, <b>solo cognome</b> o <b>solo il CF</b>. Se il cliente non vuole lasciare nulla puoi saltare, ma la scelta viene registrata.
+        </div>}
         <div style={{display:"flex",gap:12,marginBottom:tipoCliente?16:0}}>
           {(brand==="very"||brand==="ho"||brand==="kena"?["privato"]:["privato","business"]).map(t=><button key={t} onClick={()=>{setTipoCliente(t);setShowAna(false);setClienteFound(false);setLookupValue("");setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setShowStep4(false)}} style={{flex:1,padding:12,borderRadius:10,border:tipoCliente===t?"2px solid #6f42c1":"2px solid var(--tf-w60)",background:tipoCliente===t?"rgba(111,66,193,0.12)":"var(--tf-w40)",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22,marginBottom:2}}>{t==="privato"?"👤":"🏢"}</div><div style={{fontWeight:700,fontSize:14,color:tipoCliente===t?"var(--tf-6f42c1)":"var(--tf-f8fafc)"}}>{t==="privato"?"Privato":"Business"}</div></button>)}
         </div>
@@ -6604,6 +6594,31 @@ select.rvIn{cursor:pointer}
           {lookupDone&&(clienteFound?<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-28a745)"}}>✅ Cliente trovato in anagrafica</div>:<div style={{marginTop:10,background:"rgba(245,158,11,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-f59e0b)"}}>⚠ Cliente non presente in anagrafica — compila i dati a mano (bastano nome, cognome e cellulare)</div>)}
           {apptAvviso&&<div style={{marginTop:8,background:"rgba(99,102,241,0.14)",border:"1px solid rgba(99,102,241,0.4)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-a5b4fc)",fontWeight:600}}>📞 Questo cliente ha un appuntamento aperto preso da {apptAvviso.da}{apptAvviso.data?` (fissato per il ${apptAvviso.data})`:""}{apptAvviso.store?` · ${apptAvviso.store}`:""} — registrando la vendita l&apos;appuntamento verrà attivato e il merito assegnato al caller.</div>}
         </div>}
+        {/* MOD-44c: navigazione dello step Cliente in MARGINALITÀ — avanti coi
+            dati minimi oppure skip esplicito col popup (tracciato) */}
+        {margFlow&&!brand&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,paddingTop:12,borderTop:"1px solid var(--tf-w60)",gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <button onClick={()=>setVistaStep("brand")} style={{padding:"9px 18px",borderRadius:8,border:"1px solid var(--tf-w140)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>← Indietro</button>
+            <button onClick={()=>setMargSkipPopup(true)} style={{padding:"9px 18px",borderRadius:8,border:"1px dashed rgba(245,158,11,0.6)",background:margSkipCli?"rgba(245,158,11,0.15)":"var(--tf-w20)",color:"var(--tf-fbbf24)",fontSize:12,fontWeight:700,cursor:"pointer"}}>🚫 Salta dati cliente{margSkipCli?" ✓":""}</button>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            {!margMinOk&&!margSkipCli&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Inserisci almeno un dato (nome, cognome o CF) o salta</span>}
+            <button disabled={!margMinOk&&!margSkipCli} onClick={()=>{if(margMinOk)setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:(!margMinOk&&!margSkipCli)?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:(!margMinOk&&!margSkipCli)?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:(!margMinOk&&!margSkipCli)?"not-allowed":"pointer"}}>Avanti → Prodotti</button>
+          </div>
+        </div>}
+      </div>}
+      {/* MOD-44c: popup CRM (non di Chrome) di conferma skip dati cliente */}
+      {margSkipPopup&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2100,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
+        <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:440,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.35)",margin:"0 16px"}}>
+          <div style={{fontSize:34,textAlign:"center",marginBottom:8}}>⚠️</div>
+          <div style={{fontWeight:800,fontSize:16,color:"var(--tf-f8fafc)",textAlign:"center",marginBottom:8}}>Vuoi davvero saltare i dati del cliente?</div>
+          <div style={{fontSize:13,color:"var(--tf-cbd5e1)",lineHeight:1.5,marginBottom:6}}>Saltare i dati <b style={{color:"var(--tf-fbbf24)"}}>inciderà sul commissioning</b> in termini di bonus. I dati del cliente sono importanti per le attività di marketing e per lo storico: basta anche <b>solo il nome</b>, <b>solo il cognome</b> o <b>solo il CF</b>.</div>
+          <div style={{fontSize:11.5,color:"var(--tf-8892b0)",marginBottom:16}}>Lo skip viene registrato sulla vendita con il nome del venditore.</div>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setMargSkipPopup(false)} style={{flex:1.4,padding:"11px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#218838)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>← Torna ai dati</button>
+            <button onClick={()=>{setMargSkipCli(true);setMargSkipPopup(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{flex:1,padding:"11px 0",borderRadius:10,border:"1px solid rgba(220,53,69,0.6)",background:"rgba(220,53,69,0.12)",color:"var(--tf-f87171)",fontSize:13,fontWeight:800,cursor:"pointer"}}>Salta comunque</button>
+          </div>
+        </div>
       </div>}
 
 
@@ -6637,8 +6652,16 @@ select.rvIn{cursor:pointer}
             <button onClick={()=>setConfirmReset(true)} style={{padding:"9px 18px",borderRadius:8,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Obbligatori: {anaMissing.join(", ")}</span>}
-            <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"var(--tf-w80)":"linear-gradient(135deg,#2E75B6,#1B3A5C)",color:anaMissing.length>0?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
+            {/* MOD-44c: in marginalità niente campi obbligatori — basta un dato */}
+            {margFlow&&!brand
+              ?<>
+                {!margMinOk&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Basta anche solo nome, cognome o CF</span>}
+                <button disabled={!margMinOk} onClick={()=>{if(!margMinOk)return;setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:!margMinOk?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:!margMinOk?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:!margMinOk?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti → Prodotti</button>
+              </>
+              :<>
+                {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Obbligatori: {anaMissing.join(", ")}</span>}
+                <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"var(--tf-w80)":"linear-gradient(135deg,#2E75B6,#1B3A5C)",color:anaMissing.length>0?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
+              </>}
           </div>
         </div>
       </div>}
@@ -7013,7 +7036,8 @@ select.rvIn{cursor:pointer}
 
       {["prodotti","allegati","note"].includes(vistaStep)&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>{const PREV={prodotti:(margFlow&&!brand)?"brand":"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
+          {/* MOD-44c: anche in marginalità l'indietro dai prodotti passa dal Cliente */}
+          <button onClick={()=>{const PREV={prodotti:"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
           <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
