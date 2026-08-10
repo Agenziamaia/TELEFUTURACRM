@@ -228,6 +228,12 @@ export default function CalcolatorePage() {
                     <TriangleAlert size={18} /> Nessun tabellare caricato per {(ctxKey && CONTESTI_LABEL[ctxKey]) || meta?.label} · {mese}: il pay non è calcolabile finché non si caricano piste, soglie e righe.
                 </div>
             )}
+            {brand && tab?.derivato && (
+                <div className="glass-panel rounded-2xl px-4 py-2.5 mb-5 text-[12px] text-slate-400">
+                    🧮 Tabellare ragazzi <b className="text-slate-200">derivato dal lato azienda</b> con la &quot;% ai ragazzi&quot; di ogni pista
+                    ({tab.piste.map(p => `${p.nome} ${p.perc_ragazzi ?? 100}%`).join(" · ")}) — si regola da Amministrazione → Tabellari Gare.
+                </div>
+            )}
 
             <div className="grid gap-5" style={{ gridTemplateColumns: "minmax(0,1fr) 360px" }}>
                 <div className="min-w-0">

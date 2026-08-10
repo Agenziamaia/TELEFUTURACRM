@@ -155,10 +155,8 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Direzione Inserimento", sez: "direzione", icon: Compass, roles: ["admin", "dev"] },
         ],
     },
-    // CALCOLATORE $$$ (cantiere GARE 10/08): registra-vendita riassunto che
-    // dice il commissioning di una vendita alla soglia scelta (pay tabellare).
-    // Per ora admin/dev: si apre ai ragazzi quando arriva la vista gare.
-    { type: "link", name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
+    // (il Calcolatore $$$ vive SOPRA, sotto il gruppo Negozio — il doppione
+    // che stava qui è stato rimosso su segnalazione di Luca 11/08)
     {
         type: "hub",
         name: "Amministrazione",

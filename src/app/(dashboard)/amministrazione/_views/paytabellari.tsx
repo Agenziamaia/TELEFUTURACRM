@@ -13,7 +13,7 @@ import { Copy, Plus, Save, Trash2, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { dbError, notify } from "./toast";
 
-type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number };
+type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number; perc_ragazzi: number | null };
 type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; soglia_a: number | null };
 type Riga = {
     id: string; pista: string | null; nome: string;
@@ -56,6 +56,10 @@ export function PayTabellariView() {
     const meta = CONTESTI.find(c => c.key === ctx);
     const colore = meta?.colore || "#6366f1";
 
+    // lato: 'ragazzi' = quello che paga il motore · 'azienda' = le lettere vere.
+    // Un brand con SOLO il lato azienda deriva il ragazzi a % (perc_ragazzi).
+    const [lato, setLato] = useState<"ragazzi" | "azienda">("ragazzi");
+    const [aziendaEsiste, setAziendaEsiste] = useState(false);
     const [piste, setPiste] = useState<Pista[]>([]);
     const [soglie, setSoglie] = useState<Soglia[]>([]);          // copia editabile
     const [soglieDirty, setSoglieDirty] = useState<Set<string>>(new Set());   // per pista
@@ -66,11 +70,13 @@ export function PayTabellariView() {
 
     const load = useCallback(async () => {
         setCarico(true); setSoglieDirty(new Set()); setNuovaRigaPer(null);
-        const [p, s, r] = await Promise.all([
-            supabase.from("pay_piste").select("id, chiave, nome, um, ordine").eq("brand", ctx).eq("month", monthISO).order("ordine"),
-            supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", monthISO).order("tier"),
-            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).order("ordine").limit(1000),
+        const [p, s, r, az] = await Promise.all([
+            supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
+            supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("tier"),
+            supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
+            supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
         ]);
+        setAziendaEsiste((az.count || 0) > 0);
         if (dbError("Caricamento tabellare", p.error || s.error || r.error)) { setCarico(false); return; }
         setPiste((p.data || []) as Pista[]);
         setSoglie(((s.data || []) as Soglia[]).map(x => ({ ...x, soglia_da: Number(x.soglia_da), soglia_a: x.soglia_a == null ? null : Number(x.soglia_a) })));
@@ -81,7 +87,7 @@ export function PayTabellariView() {
         setRighe(rr);
         setOrig(new Map(rr.map(x => [x.id, JSON.stringify(x)])));
         setCarico(false);
-    }, [ctx, monthISO]);
+    }, [ctx, monthISO, lato]);
     useEffect(() => { load(); }, [load]);
 
     // ── SOGLIE: si edita solo il "da"; il fino-a si ricalcola a catena
@@ -106,14 +112,24 @@ export function PayTabellariView() {
         const scala = soglieDi(pista);
         for (let i = 0; i < scala.length - 1; i++)
             if (scala[i + 1].soglia_da <= scala[i].soglia_da) { notify(`S${i + 2} deve partire dopo S${i + 1}`); return; }
-        const del = await supabase.from("pay_soglie").delete().eq("brand", ctx).eq("month", monthISO).eq("pista", pista);
+        const del = await supabase.from("pay_soglie").delete().eq("brand", ctx).eq("month", monthISO).eq("pista", pista).eq("lato", lato);
         if (dbError("Salvataggio soglie", del.error)) return;
         const ins = await supabase.from("pay_soglie").insert(scala.map((s, i) => ({
-            brand: ctx, month: monthISO, pista, tier: i + 1,
+            brand: ctx, month: monthISO, pista, tier: i + 1, lato,
             soglia_da: s.soglia_da, soglia_a: i < scala.length - 1 ? scala[i + 1].soglia_da - 1 : null,
         })));
         if (dbError("Salvataggio soglie", ins.error)) return;
         notify("Soglie salvate ✓", "ok"); load();
+    };
+
+    // ── % AI RAGAZZI (solo lato azienda): il ragazzi derivato usa questa quota
+    const [percDraft, setPercDraft] = useState<Record<string, string>>({});
+    const salvaPerc = async (p: Pista) => {
+        const v = percDraft[p.id];
+        const n = v === "" || v == null ? null : Number(String(v).replace(",", "."));
+        const { error } = await supabase.from("pay_piste").update({ perc_ragazzi: n }).eq("id", p.id);
+        if (dbError("Salvataggio %", error)) return;
+        notify("% ai ragazzi salvata ✓", "ok"); load();
     };
 
     // ── RIGHE
@@ -140,14 +156,14 @@ export function PayTabellariView() {
     const copiaMese = async () => {
         const prev = `${mesePrec(mese)}-01`;
         const [p, s, r] = await Promise.all([
-            supabase.from("pay_piste").select("chiave, nome, um, ordine").eq("brand", ctx).eq("month", prev),
-            supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", prev),
-            supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).limit(1000),
+            supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi").eq("brand", ctx).eq("month", prev).eq("lato", lato),
+            supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", prev).eq("lato", lato),
+            supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
         if (!p.data?.length) { notify(`Nessun tabellare ${meta?.label} su ${mesePrec(mese)}`); return; }
-        const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO })));
-        const e2 = (s.data?.length ? await supabase.from("pay_soglie").insert(s.data.map(x => ({ ...x, brand: ctx, month: monthISO }))) : { error: null });
-        const e3 = (r.data?.length ? await supabase.from("pay_righe").insert(r.data.map(x => ({ ...x, brand: ctx, month: monthISO }))) : { error: null });
+        const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato })));
+        const e2 = (s.data?.length ? await supabase.from("pay_soglie").insert(s.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
+        const e3 = (r.data?.length ? await supabase.from("pay_righe").insert(r.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
         if (dbError("Copia mese", e1.error || e2.error || e3.error)) return;
         notify(`Copiato da ${mesePrec(mese)} ✓ — ora ritocca soglie e importi`, "ok"); load();
     };
@@ -181,13 +197,31 @@ export function PayTabellariView() {
                 ))}
             </div>
 
+            {/* lato: ragazzi (paga il motore) vs azienda (le lettere vere) */}
+            <div className="flex gap-2 flex-wrap items-center mb-5">
+                {(["ragazzi", "azienda"] as const).map(l => (
+                    <button key={l} onClick={() => setLato(l)}
+                        className={`px-3 py-1.5 rounded-xl text-sm font-semibold border ${lato === l ? "border-indigo-400 text-white bg-indigo-500/30" : "border-white/10 text-slate-400 bg-white/[0.04]"}`}>
+                        {l === "ragazzi" ? "🧑‍💼 Ragazzi" : "🏢 Azienda"}
+                    </button>
+                ))}
+                {lato === "azienda" && <span className="text-[11px] text-slate-500">le lettere di gara vere; se un brand non ha il lato ragazzi, il ragazzi si DERIVA da qui con la "% ai ragazzi"</span>}
+            </div>
+
             {carico ? <div className="text-slate-400 text-sm">Carico…</div> : !piste.length ? (
+                lato === "ragazzi" && aziendaEsiste ? (
+                    <div className="glass-panel rounded-2xl p-6 text-center">
+                        <div className="text-slate-300 mb-2">Il lato ragazzi di {meta?.label} · {mese} è <b>DERIVATO dal lato azienda</b> con la &quot;% ai ragazzi&quot; di ogni pista.</div>
+                        <button onClick={() => setLato("azienda")} className="px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: colore }}>🏢 Lavora sul lato azienda</button>
+                    </div>
+                ) : (
                 <div className="glass-panel rounded-2xl p-6 text-center">
-                    <div className="text-slate-300 mb-3">Nessun tabellare {meta?.label} su {mese}.</div>
+                    <div className="text-slate-300 mb-3">Nessun tabellare {meta?.label} ({lato}) su {mese}.</div>
                     <button onClick={copiaMese} className="px-4 py-2 rounded-xl text-sm font-semibold text-white inline-flex items-center gap-2" style={{ background: colore }}>
                         <Copy size={15} /> Copia da {mesePrec(mese)} e ritocca
                     </button>
                 </div>
+                )
             ) : (
                 <div className="space-y-5">
                     {/* SOGLIE per pista */}
@@ -204,6 +238,15 @@ export function PayTabellariView() {
                                                 <input value={s.soglia_da} onChange={e => setDa(p.chiave, s.tier, e.target.value)} className={inputCls + " ml-1"} />
                                             </label>
                                         ))}
+                                        {lato === "azienda" && (
+                                            <label className="text-[11px] text-amber-300/90 ml-2">% ai ragazzi
+                                                <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
+                                                    onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                                    className={inputCls + " ml-1 w-16"} placeholder="100" />
+                                                {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
+                                                    <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                            </label>
+                                        )}
                                         <button onClick={() => addSoglia(p.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
                                         <button onClick={() => dropSoglia(p.chiave)} className="text-slate-500 hover:text-red-400" title="Togli l'ultima soglia"><Trash2 size={14} /></button>
                                         {soglieDirty.has(p.chiave) && (
@@ -228,7 +271,7 @@ export function PayTabellariView() {
                                     <div className="text-[11px] uppercase tracking-wider text-slate-400">Righe · {p.nome} ({rr.length})</div>
                                     <button onClick={() => setNuovaRigaPer(nuovaRigaPer === p.chiave ? null : p.chiave)} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Riga</button>
                                 </div>
-                                {nuovaRigaPer === p.chiave && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={p.chiave} nTiers={nTiers} dopo={() => { setNuovaRigaPer(null); load(); }} />}
+                                {nuovaRigaPer === p.chiave && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={p.chiave} nTiers={nTiers} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} />}
                                 {rr.map(r => <RigaEd key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
                                 {!rr.length && <div className="text-slate-500 text-sm">Nessuna riga su questa pista.</div>}
                             </div>
@@ -241,7 +284,7 @@ export function PayTabellariView() {
                             <div className="text-[11px] uppercase tracking-wider text-slate-400">💰 Gettoni — pagano sempre, senza soglia ({gettoni.length})</div>
                             <button onClick={() => setNuovaRigaPer(nuovaRigaPer === "__gettoni" ? null : "__gettoni")} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Gettone</button>
                         </div>
-                        {nuovaRigaPer === "__gettoni" && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={null} nTiers={0} dopo={() => { setNuovaRigaPer(null); load(); }} />}
+                        {nuovaRigaPer === "__gettoni" && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={null} nTiers={0} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} />}
                         {gettoni.map(r => <RigaEd key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
                         {!gettoni.length && <div className="text-slate-500 text-sm">Nessun gettone.</div>}
                     </div>
@@ -289,8 +332,8 @@ function RigaEd({ r, nTiers, isDirty, onUp, onSalva, onElimina }: {
 }
 
 // Form nuova riga: aggancio per NOME al catalogo (campo vuoto = jolly)
-function NuovaRiga({ ctx, monthISO, pista, nTiers, dopo }: {
-    ctx: string; monthISO: string; pista: string | null; nTiers: number; dopo: () => void;
+function NuovaRiga({ ctx, monthISO, pista, nTiers, lato, dopo }: {
+    ctx: string; monthISO: string; pista: string | null; nTiers: number; lato: string; dopo: () => void;
 }) {
     const [nome, setNome] = useState("");
     const [tc, setTc] = useState<string | null>(null);
@@ -302,7 +345,7 @@ function NuovaRiga({ ctx, monthISO, pista, nTiers, dopo }: {
     const salva = async () => {
         if (!nome.trim()) { notify("Dai un nome alla riga"); return; }
         const { error } = await supabase.from("pay_righe").insert({
-            brand: ctx, month: monthISO, pista, nome: nome.trim(),
+            brand: ctx, month: monthISO, pista, lato, nome: nome.trim(),
             tipo_cliente: tc, categoria: cat.trim() || null, prodotto: prod.trim() || null, offerta: off.trim() || null,
             brand_vendita: bv, punti: pista ? Number(punti.replace(",", ".")) || 0 : 0,
             pay_base: base === "" ? null : Number(base.replace(",", ".")) || 0,

@@ -23,7 +23,7 @@
 import { supabase } from "@/lib/supabaseClient";
 import { caricaTutte } from "@/lib/fetchTutte";
 
-export type PayPista = { chiave: string; nome: string; um: string; ordine: number };
+export type PayPista = { chiave: string; nome: string; um: string; ordine: number; perc_ragazzi?: number | null };
 export type PaySoglia = { pista: string; tier: number; soglia_da: number; soglia_a: number | null };
 export type PayRiga = {
     id: string; pista: string | null; nome: string;
@@ -33,7 +33,9 @@ export type PayRiga = {
     punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
 };
-export type Tabellare = { brand: string; month: string; piste: PayPista[]; soglie: PaySoglia[]; righe: PayRiga[] };
+// derivato: il lato ragazzi non esiste a DB — è il lato AZIENDA scalato con
+// pay_piste.perc_ragazzi (Luca 11/08: es. Fastweb mobile 60%, fisso 70%).
+export type Tabellare = { brand: string; month: string; piste: PayPista[]; soglie: PaySoglia[]; righe: PayRiga[]; derivato?: boolean };
 
 export type ContrattoPay = {
     id: string; brand: string | null; negozio: string | null; venditore: string | null;
@@ -70,12 +72,12 @@ export function estremiMese(monthISO: string): { primo: string; ultimo: string }
     return { primo: `${y}-${mm}-01`, ultimo: `${y}-${mm}-${String(fine).padStart(2, "0")}` };
 }
 
-export async function caricaTabellare(brand: string, monthISO: string): Promise<Tabellare | null> {
+async function caricaTabellareLato(brand: string, monthISO: string, lato: string): Promise<Tabellare | null> {
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
-        supabase.from("pay_piste").select("chiave, nome, um, ordine").eq("brand", brand).eq("month", monthISO).order("ordine"),
-        supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).order("tier"),
+        supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
+        supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier"),
         supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
-            .eq("brand", brand).eq("month", monthISO).eq("attivo", true).order("ordine").limit(1000),
+            .eq("brand", brand).eq("month", monthISO).eq("lato", lato).eq("attivo", true).order("ordine").limit(1000),
     ]);
     const piste = (pisteRes.data || []) as PayPista[];
     if (!piste.length) return null;
@@ -94,6 +96,34 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
         righe: ((righeRes.data || []) as Record<string, unknown>[]).map(norm),
     };
 }
+
+/**
+ * Tabellare RAGAZZI di un brand/mese. Se a DB c'è solo il lato AZIENDA (la
+ * lettera vera), il ragazzi si DERIVA scalando base e tiers di ogni riga con
+ * la percentuale della SUA pista (pay_piste.perc_ragazzi; righe fuori pista
+ * = gettoni non scalati). Cambi la lettera o le % dal pannello → il ragazzi
+ * si aggiorna da solo.
+ */
+export async function caricaTabellare(brand: string, monthISO: string): Promise<Tabellare | null> {
+    const ragazzi = await caricaTabellareLato(brand, monthISO, "ragazzi");
+    if (ragazzi) return ragazzi;
+    const azienda = await caricaTabellareLato(brand, monthISO, "azienda");
+    if (!azienda) return null;
+    const percDi = new Map(azienda.piste.map(p => [p.chiave, p.perc_ragazzi == null ? 100 : Number(p.perc_ragazzi)]));
+    const scala = (v: number | null, pista: string | null) =>
+        v == null ? null : Math.round(v * ((pista ? percDi.get(pista) ?? 100 : 100) / 100) * 100) / 100;
+    return {
+        ...azienda, derivato: true,
+        righe: azienda.righe.map(r => ({
+            ...r,
+            pay_base: scala(r.pay_base, r.pista),
+            pay_tiers: r.pay_tiers.map(v => scala(v, r.pista) as number),
+        })),
+    };
+}
+
+/** Tabellare AZIENDA così com'è (per il pannello e le analisi lato azienda). */
+export const caricaTabellareAzienda = (brand: string, monthISO: string) => caricaTabellareLato(brand, monthISO, "azienda");
 
 const eq = (a: unknown, b: unknown) =>
     String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
@@ -192,19 +222,18 @@ const CTX_VF_T1 = ["acilia", "baleniere", "castani", "merulana"];
 const CTX_FW_T2 = ["donna", "magliana", "garbatella", "promontori"];
 
 export function contestoVfFw(brandId: string | null, codice: string | null, negozio?: string | null): string | null {
-    if (brandId === "vodafone") return "vodafone";   // lato ragazzi: sempre lettera A
-    if (brandId !== "fastweb") return brandId;
-    const ref = String(codice || "").trim().toLowerCase() || String(negozio || "").trim().toLowerCase();
-    if (!ref) return null;
-    if (CTX_VF_T1.some(x => ref.startsWith(x))) return "vodafone";
-    if (CTX_FW_T2.some(x => ref.startsWith(x))) return "fastweb";
-    return null;
+    // LATO RAGAZZI (11/08): ogni brand paga col SUO tabellare — Vodafone
+    // sempre lettera A, Fastweb sempre tabellare Fastweb. Lo split T1/T2 coi
+    // codici (CTX_* qui sotto) servirà al lato AZIENDA, cantiere sui PDF.
+    return brandId;
 }
+export const CTX_CODICI_T1 = CTX_VF_T1;
+export const CTX_CODICI_FW_T2 = CTX_FW_T2;
 
 /** Etichette leggibili dei contesti pay. */
 export const CONTESTI_LABEL: Record<string, string> = {
-    vodafone: "Vodafone · lettera A (tutte le attivazioni VF + il Fastweb dei VS)",
-    fastweb: "Fastweb · T2 (multibrand)",
+    vodafone: "Vodafone · lettera A (lato ragazzi vale per tutte le attivazioni VF)",
+    fastweb: "Fastweb (lato ragazzi: tutte le attivazioni FW; MNP/OLO da Vodafone escluse)",
 };
 
 /**

@@ -60,10 +60,13 @@ const R = [
   ["sky", "3P 35,90 (Cinema)", "Consumer", "Fisso", "3P", "Sky TV + Sky Cinema + Sky Fibra a 35,90€", 3, [270, 300, 310, 400], null],
   ["sky", "3P 35,90 (Sport)", "Consumer", "Fisso", "3P", "Sky TV + Sky Sport + Sky Fibra a 35,90€", 3, [270, 300, 310, 400], null],
   ["sky", "3P 35,90 (legacy 35,80)", "Consumer", "Fisso", "3P 35,80", null, 3, [270, 300, 310, 400], "prodotto legacy"],
-  // ── MOBILE: conta in soglia (piano Sky: MNP e no-MNP Ric.Auto 0,5; ricarica
-  //    pura 0 — nei contracts non distinguibile), pay ragazzi DA DEFINIRE.
-  ["sky", "Sky Mobile MNP", "Consumer", null, "Mobile MNP", null, 0.5, [], "conta 0,5 punti in soglia (piano Sky); pay ragazzi da definire"],
-  ["sky", "Sky Mobile GA", "Consumer", null, "Mobile GA", null, 0.5, [], "conta 0,5 punti in soglia (piano Sky); pay ragazzi da definire — la ricarica pura varrebbe 0"],
+  // ── MOBILE (Luca 11/08: "prendilo dalla lettera GOLD, varia per tipologia"):
+  //    MNP = valori GOLD soglie 1-4 (vale con ric. automatica O pura);
+  //    GA Ric. Automatica = GOLD soglie 1-4; GA ricarica pura (Wallet) = 3€
+  //    flat. Punti piano Sky: MNP e GA-Ric.Auto 0,5 · ricarica pura 0.
+  ["sky", "Sky Mobile MNP", "Consumer", null, "Mobile MNP", null, 0.5, [10, 32, 34, 36], "pay dalla lettera GOLD (soglie 1-4); vale con ricarica automatica o pura"],
+  ["sky", "Sky Mobile GA · Ric. Automatica", "Consumer", "Mobile Ric. Auto", "Mobile GA", null, 0.5, [21, 22, 24, 25], "pay dalla lettera GOLD (soglie 1-4)"],
+  ["sky", "Sky Mobile GA · Ricarica pura", "Consumer", "Mobile Wallet", "Mobile GA", null, 0, [3, 3, 3, 3], "GOLD: 3€ flat; non porta punti in soglia"],
 ];
 
 (async () => {
