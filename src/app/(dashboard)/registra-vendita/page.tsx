@@ -1023,6 +1023,20 @@ const _tariffaKipoint = (offertaNome, dimNome) => {
   }
   return _ceTariffe.find(t => t.offerta_diretta && nrm(t.offerta_diretta.nome) === nrm(offertaNome)) || null;
 };
+// MOD-15: tariffa di UNA OPZIONE kipoint (servizio/assicurazione/supplemento).
+// SOLO match per opzione — niente fallback sull'offerta come _tariffaKipoint,
+// altrimenti un'opzione senza listino erediterebbe il prezzo della fascia.
+const _tariffaKipointOpz = (offertaNome, opzNome) => {
+  if (!_ceTariffe) return null;
+  const nrm = (s) => String(s || "").trim().toLowerCase();
+  return _ceTariffe.find(t => t.opzione && nrm(t.opzione.nome) === nrm(opzNome) && nrm(t.opzione.offerta?.nome) === nrm(offertaNome)) || null;
+};
+// MOD-15: range di peso codificato nel NOME offerta ("TBASE 0-2 kg" → {0,2}).
+// Data-driven: le fasce arrivano dal catalogo, niente soglie cablate.
+const _fasciaKg = (nome) => {
+  const m = String(nome || "").match(/(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)\s*kg/i);
+  return m ? { min: parseFloat(m[1].replace(",", ".")), max: parseFloat(m[2].replace(",", ".")) } : null;
+};
 const listinoPerModello = async (modello) => {
   const k = chiaveListino(modello);
   if (!k || String(modello || "").toUpperCase().startsWith("ALTRO")) return [];
@@ -3227,7 +3241,53 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
   const hasCampoGnp=campi.some(c=>/^gnp$/i.test(c.nome));
   const pageBrand=sub.catBrand==="s4"?"energy":sub.catBrand;
   const codici=_codiciDi(pageBrand);
+  // MOD-15 (Luca 10/08): SIMULATORE PESO VOLUMETRICO per le spedizioni Kipoint
+  // a fasce di peso (offerte "TBASE a-b kg"). pesoTassabile = max(pesoReale,
+  // h×l×p/6000) → seleziona la fascia con setF DIRETTO (non pickOff: azzererebbe
+  // le opzioni già scelte — i nomi opzione sono identici su tutte le fasce).
+  const fasceKg=offerte.map(o=>({o,r:_fasciaKg(o.nome)})).filter(x=>x.r).sort((a,b)=>a.r.min-b.r.min);
+  const isKipointSped=sub.catBrand==="kipoint"&&sub.catCategoria==="Spedizioni"&&fasceKg.length>=2;
+  const _spNum=(x)=>{const v=parseFloat(String(x??"").replace(",","."));return isFinite(v)&&v>0?v:null;};
+  const sp=f.__sped||{};
+  const _spVol=(()=>{const h=_spNum(sp.h),l=_spNum(sp.l),p=_spNum(sp.p);return (h&&l&&p)?h*l*p/6000:null;})();
+  const _spTass=(()=>{const kg=_spNum(sp.kg);return (_spVol!=null||kg!=null)?Math.max(_spVol||0,kg||0):null;})();
+  const _spOltre=isKipointSped&&_spTass!=null&&fasceKg.length>0&&_spTass>fasceKg[fasceKg.length-1].r.max;
+  const upSped=(k,v)=>{
+    const nx={...sp,[k]:v};setF("__sped",nx);
+    const h=_spNum(nx.h),l=_spNum(nx.l),p=_spNum(nx.p),kg=_spNum(nx.kg);
+    const vol=(h&&l&&p)?h*l*p/6000:null;
+    const tass=(vol!=null||kg!=null)?Math.max(vol||0,kg||0):null;
+    if(tass==null||!fasceKg.length)return;
+    const last=fasceKg[fasceKg.length-1];
+    const hit=fasceKg.find(x=>tass>=x.r.min&&tass<x.r.max)||((tass>=last.r.min&&tass<=last.r.max)?last:null);
+    if(hit){
+      setF("Offerta",hit.o.nome);
+      setF("Peso tassabile (kg)",String(Math.round(tass*100)/100));
+      if(kg)setF("Peso reale (kg)",String(kg));
+      if(h&&l&&p)setF("Dimensioni (cm)",h+"×"+l+"×"+p);
+    }
+  };
   return (<div>
+    {isKipointSped&&(
+      <div style={{marginTop:6,padding:"10px 12px",background:"rgba(10,88,202,0.08)",borderRadius:8,border:"1px dashed rgba(10,88,202,0.55)"}}>
+        <div style={{fontSize:12,fontWeight:700,color:"var(--tf-60a5fa)",marginBottom:6}}>⚖️ Simulatore peso volumetrico <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(H×L×P ÷ 6000 vs peso reale: vince il maggiore)</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(70px,1fr))",gap:"8px 12px",maxWidth:520}}>
+          <TF l="Altezza (cm)" v={sp.h||""} o={v=>upSped("h",v)} p="es. 30"/>
+          <TF l="Larghezza (cm)" v={sp.l||""} o={v=>upSped("l",v)} p="es. 40"/>
+          <TF l="Profondità (cm)" v={sp.p||""} o={v=>upSped("p",v)} p="es. 20"/>
+          <TF l="Peso reale (kg)" v={sp.kg||""} o={v=>upSped("kg",v)} p="es. 3,5"/>
+        </div>
+        {_spTass!=null&&(
+          <div style={{marginTop:8,fontSize:12,fontWeight:700,color:_spOltre?"var(--tf-fbbf24)":"var(--tf-34d399)"}}>
+            {_spVol!=null&&<span>Volumetrico {Math.round(_spVol*100)/100} kg · </span>}
+            Tassabile <span style={{fontSize:14}}>{Math.round(_spTass*100)/100} kg</span>
+            {_spOltre
+              ? <span> — ⚠️ oltre l'ultima fascia ({fasceKg[fasceKg.length-1].r.max} kg): spedizione a preventivo</span>
+              : off?<span> → {off}</span>:null}
+          </div>
+        )}
+      </div>
+    )}
     {offerte.length>0&&(
       /* Bottoni fino a 14 offerte, tendina oltre (Luca 10/08: VF privato GA/MNP
          Wallet e GA Ric. Auto hanno 13-14 offerte e devono mostrare i bottoni
@@ -3301,6 +3361,14 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
                 )}
               </div>
             );
+            // MOD-15: l'indirizzo del destinatario esige il NUMERO CIVICO —
+            // avviso qui + blocco vero in subComplete (civicoMancante)
+            if(/^indirizzo destinatario$/i.test(cmp.nome))return (
+              <div key={cmp.nome}>
+                <TF l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p="Via Roma 12"/>
+                {_NE(f[cmp.nome])&&civicoMancante(String(f[cmp.nome]))&&<div style={{fontSize:10,color:"var(--tf-fbbf24)",marginTop:2}}>⚠️ Manca il numero civico (es. "Via Roma 12")</div>}
+              </div>
+            );
             return <TF key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p={cmp.nota||""}/>;
           })}
         </div>
@@ -3331,6 +3399,12 @@ const subComplete=(sub,d)=>{
         if((!_hasG||(f["GNP"]||"")==="Sì")&&!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;
       }
       else if(!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;
+    }
+    // MOD-15: spedizioni Kipoint — l'indirizzo del destinatario senza numero
+    // civico tiene la vendita "Incompleta" (stesso criterio del cliente)
+    if(sub.catBrand==="kipoint"&&sub.catCategoria==="Spedizioni"){
+      const _ind=f["Indirizzo Destinatario"];
+      if(_NE(_ind)&&civicoMancante(String(_ind)))return false;
     }
     return true;
   }
@@ -4786,6 +4860,21 @@ function CRM() {
           const mg=t.margine_tipo==="fisso"?Number(t.margine_valore||0):t.margine_tipo==="percent"?Math.round(pz*Number(t.margine_valore||0))/100:0;
           push(nome,true,{price:pz,importo:pz,margin:mg,totalMargin:mg,priceLocked:true,priceRequired:false});
         } else push(nome,false);
+        // MOD-15 (Luca 10/08): OGNI opzione kipoint è un costo AGGIUNTIVO —
+        // una voce prezzata per ciascuna (servizi, assicurazione, RFS, SCS).
+        // Tariffa SOLO per match opzione (niente fallback fascia); le vecchie
+        // "Dimensione XS-XL" restano dentro la voce principale come prima.
+        for(const _op of (it.catalogo?.opzioni||[])){
+          const _n=String(_op?.nome||"").trim();
+          if(!_n||/^dimensione\s/i.test(_n))continue;
+          const _t=_tariffaKipointOpz(off,_n);
+          const _nomeOpz=("Kipoint "+_n).trim();
+          if(_t&&_t.prezzo!=null){
+            const _pz=Number(_t.prezzo)||0;
+            const _mg=_t.margine_tipo==="fisso"?Number(_t.margine_valore||0):_t.margine_tipo==="percent"?Math.round(_pz*Number(_t.margine_valore||0))/100:0;
+            push(_nomeOpz,true,{price:_pz,importo:_pz,margin:_mg,totalMargin:_mg,priceLocked:true,priceRequired:false});
+          } else push(_nomeOpz,false);
+        }
       }
     }
     const kept=prev.filter(m=>!(m.auto&&m.autoFrom===brandLabel));
