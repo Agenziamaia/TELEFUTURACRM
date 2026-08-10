@@ -222,14 +222,20 @@ export function vaInTracking(r: {
 }): boolean {
     const b = String(r.brand || "").trim().toLowerCase();
     const p = String(r.prodotto || "").trim().toLowerCase();
-    if (b === "extra" || b.startsWith("marginal") || /sost/.test(p)) return false;
-    if (b.startsWith("very")) return false;
-    const macro = String(r.categoria_macro || "").toLowerCase()
-        || categoriaDi(r.brand as string, r.categoria as string, r.prodotto as string);
-    if (["cb", "multi_servizi", "pos", "extra", "digitale"].includes(macro)) return false;
     const ctrl = (Array.isArray(r.controlli) && r.controlli.length)
         ? (r.controlli as string[])
         : controlliDi((r.dettagli as Record<string, unknown>) || {});
+    // MARGINALITÀ FINANZIATA (Luca 10/08): la vendita usato con finanziamento
+    // resta brand "Marginalità" (Ricerca Vendite e analytics NON cambiano), ma
+    // la sua pratica di finanziamento SI lavora nel Tracking — unica eccezione
+    // al perimetro. (Prima si usava il brand-ponte "Prodotti e Marginalità",
+    // che pero' duplicava la tessera in Ricerca Vendite.)
+    const margFinanziata = b.startsWith("marginal") && ctrl.includes("finanziamento");
+    if ((b === "extra" || b.startsWith("marginal") || /sost/.test(p)) && !margFinanziata) return false;
+    if (b.startsWith("very")) return false;
+    const macro = String(r.categoria_macro || "").toLowerCase()
+        || categoriaDi(r.brand as string, r.categoria as string, r.prodotto as string);
+    if (["cb", "multi_servizi", "pos", "extra", "digitale"].includes(macro) && !margFinanziata) return false;
     const business = String(r.tipo_cliente || "").toLowerCase() === "business";
     // cintura: il NOME prodotto ("Mobile MNP", "Finanziato CB") è un segnale
     // autoritativo anche quando dettagli e controlli tacciono (righe legacy)

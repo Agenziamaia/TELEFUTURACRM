@@ -5783,7 +5783,9 @@ function CRM() {
     if(!_usatoFinanziato(mi))return riga;
     const rate=mi.units.filter(u=>u&&u.finanziato==="si").map(u=>u.rate).filter(Boolean);
     return {...riga,
-      brand:"Prodotti e Marginalità",categoria_macro:"mobile",controlli:["finanziamento"],
+      // brand INVARIATO "Marginalità" (Luca 10/08: niente tessera doppia in
+      // Ricerca Vendite) — nel Tracking entra per l'eccezione margFinanziata
+      brand:"Marginalità",categoria_macro:"mobile",controlli:["finanziamento"],
       stato:"Nuovo",stato_negozio:"nuovo",data_attivazione:null,
       dettagli:{...riga.dettagli,"Finanziato":"Sì","N. Rate":rate.join(", ")||null},
     };
