@@ -127,7 +127,7 @@ function Slide({ b, presenta }: { b: Blocco; presenta?: boolean }) {
 
 export default function RiunioniPage() {
     const { user } = useAuth();
-    const { perms } = useRolePermissions(user?.role, user?.grade);
+    const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const gestisce = capAllowed(user?.role, RIUNIONI_SECTION, CAP_RIUNIONI_GESTISCE, perms);
     const puoPresentare = capAllowed(user?.role, RIUNIONI_SECTION, CAP_RIUNIONI_PRESENTA, perms);
 

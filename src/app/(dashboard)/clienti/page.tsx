@@ -131,7 +131,7 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // Capacita' "Allegati del cliente" (ingranaggio Clienti in Permessi): senza,
     // la sezione Documenti/PDA non compare proprio.
     const { user: uAll } = useAuth();
-    const { perms: permAll } = useRolePermissions(uAll?.role, uAll?.grade);
+    const { perms: permAll } = useRolePermissions(uAll?.role, uAll?.grade, uAll?.id);
     const vedeAllegati = capAllowed(uAll?.role, "/clienti", CAP_CLIENTI_ALLEGATI, permAll);
     // smarriti/archiviati (MOD-14) visibili SOLO all'amministrazione
     const isAdminDoc = ["admin", "dev", "direttore_generale", "amministrativo"].includes(String(uAll?.role || ""));
@@ -1347,7 +1347,7 @@ export default function ClientiPage() {
     // Amministrazione → Utenti → Permessi): "tutti" | "negozi" | "propri".
     // I default replicano il comportamento storico; la visibilità TOTALE a
     // livello utente (seesAllVis) non viene mai ristretta dallo scope di ruolo.
-    const { perms: capPerms } = useRolePermissions(role);
+    const { perms: capPerms } = useRolePermissions(role, user?.grade, user?.id);
     // ── VISIBILITÀ CLIENTI: FONTE UNICA condivisa con Registra Vendita
     //    (src/lib/clientiVisibili — Luca 28/07: mai più logiche divergenti).
     const scopeClienti = capChoice(role, CAP_CLIENTI, capPerms);
@@ -2196,7 +2196,7 @@ function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; c
     // verificato a DB), qui si evita di mostrare un player che risponderebbe
     // 403. Lo storico SENZA audio resta visibile a chi vede il cliente.
     const { user: uStorico } = useAuth();
-    const { perms: permsStorico } = useRolePermissions(uStorico?.role, uStorico?.grade);
+    const { perms: permsStorico } = useRolePermissions(uStorico?.role, uStorico?.grade, uStorico?.id);
     const puoAudio = puoAscoltareRegistrazioni(uStorico?.role, permsStorico);
     const [eventi, setEventi] = useState<Record<string, unknown>[]>([]);
     const [pratiche, setPratiche] = useState<Record<string, unknown>[]>([]);

@@ -145,7 +145,7 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, pathname]);
     // override per ruolo dal DB (Amministrazione → Permessi); default = codice
-    const { perms } = useRolePermissions(user?.role, user?.grade);
+    const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const vede = (href: string, roles: string[], group?: string) => effectiveAllowed(user?.role, href, roles, perms, group);
     const feriePendenti = useFeriePendenti(user?.id, user?.role);
 
@@ -404,7 +404,7 @@ function HubSubnav({ hub, onNavigate }: { hub: NavHub; onNavigate?: () => void }
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const { user } = useAuth();
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    const { perms } = useRolePermissions(user?.role, user?.grade);
+    const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
     // Le sezioni interne dell'hub seguono i permessi (default: roles del child,
     // o quelli dell'hub se il child non li dichiara) — amministrabili una a una.
     // Una voce "esplodi" (mini-hub Costi) resta visibile se ALMENO UNA delle

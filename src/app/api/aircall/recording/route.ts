@@ -32,11 +32,13 @@ export async function GET(request: Request) {
         if (!u || u.active === false) {
             return NextResponse.json({ error: "Utente non riconosciuto o disattivato" }, { status: 403 });
         }
-        const chiavi = u.grade ? [u.role, `${u.role}@${u.grade}`] : [u.role];
+        // ruolo + eccezione di grado + eccezione PERSONALE (user:<id>, MOD-29)
+        const chiavi = [u.role, `user:${uid}`];
+        if (u.grade) chiavi.push(`${u.role}@${u.grade}`);
         const { data: righe } = await supabase.from("role_permissions")
             .select("role, perm_key, allowed").in("role", chiavi)
             .eq("perm_key", capKey("/clienti", CAP_CLIENTI_REGISTRAZIONI.id));
-        if (!puoAscoltareRegistrazioniServer(u.role, u.grade, (righe ?? []) as { role: string; perm_key: string; allowed: boolean }[])) {
+        if (!puoAscoltareRegistrazioniServer(u.role, u.grade, (righe ?? []) as { role: string; perm_key: string; allowed: boolean }[], uid)) {
             return NextResponse.json({ error: "Non hai il permesso di ascoltare le registrazioni (si abilita da Amministrazione → Permessi)" }, { status: 403 });
         }
         const info = await aircallGet(`/calls/${id}`);

@@ -48,7 +48,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     // amministrabili da Amministrazione → Utenti → Permessi). Default storici:
     // timbra = area call center; supervisione = ruoli manageriali tranne il
     // Back Office/Caller, che timbra come un caller.
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const puoTimbrare = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TIMBRA, capPerms);
     const vistaTeam = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TEAM, capPerms);
     const status: "off" | "running" | "paused" = !activeShift ? "off" : activeShift.pause_started_at ? "paused" : "running";
@@ -425,7 +425,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
 
 function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
     const { user } = useAuth();   // serve per il tasto "Esporta ore" (segn.83)
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const [shifts, setShifts] = useState<ShiftRow[]>([]);
     const [filterPerson, setFilterPerson] = useState("");
     const [filterStore, setFilterStore] = useState("");
@@ -798,7 +798,7 @@ function StoricoPersonale({ nome, parte = "tutto" }: { nome: string; parte?: "kp
 
 function PresenzeAdmin() {
     const { user } = useAuth();
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     // Correzione ED eliminazione turni dalla ROTELLINA (Luca 05/08, cap
     // corregge_turni): prima cancellare era solo-admin (25/07) e correggere
     // era codice fisso "amministrativo in su" — ora un interruttore unico.
@@ -1245,7 +1245,7 @@ function TimelineTurnoModal({ shift, onClose }: { shift: ShiftRow; onClose: () =
     Si mostra solo a chi ha la capacita' di timbratura (cap timbra). */
 export function BadgeWidget() {
     const { user } = useAuth();
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const puoTimbrare = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TIMBRA, capPerms);
     const [shift, setShift] = useState<ShiftRow | null>(null);
     const [sec, setSec] = useState(0);

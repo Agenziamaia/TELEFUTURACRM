@@ -92,7 +92,7 @@ function dataDisplayOggi(): string {
 function ComunicazioniInner() {
     const { user } = useAuth();
     const role = user?.role || "";
-    const { perms } = useRolePermissions(role, user?.grade);
+    const { perms } = useRolePermissions(role, user?.grade, user?.id);
     const canCreate = capAllowed(role, CAP_COMUNICAZIONI.section, CAP_COM_CREA, perms);
     const destinatariPossibili = ruoliDestinatariComunicazioni(role, perms);
     // ambito del mittente (negozi assegnati + visibilità + sede): serve a

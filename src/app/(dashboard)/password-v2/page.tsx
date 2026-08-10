@@ -102,7 +102,7 @@ export default function PasswordV2Page() {
     // (pannello Permessi + default nav, eccezioni di grado incluse) — mai un
     // elenco di ruoli cablato qui: le abilitazioni date dal pannello restavano
     // fuori dalla porta (caso store specialist/senior, Luca 04/08).
-    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade);
+    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
     const navPwd = routeBases().find((r) => r.base === CAP_PASSWORD.section)?.items[0];
     const grpPwd = navPwd?.group ? groupByLabel(navPwd.group) : undefined;
     const isAllowed = !!user && !!navPwd

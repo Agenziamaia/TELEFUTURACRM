@@ -70,23 +70,25 @@ export function puoAscoltareRegistrazioni(role: string | null | undefined, perms
 }
 
 /** Variante SERVER pura per il proxy registrazioni: riceve le righe di
- *  role_permissions già lette a DB (role e role@grade) e replica la semantica
- *  di capAllowed — l'eccezione di grado vince sulla riga di ruolo, nessuna
- *  riga = default della capability. admin/dev: come sul client
- *  (useRolePermissions non carica righe) valgono SEMPRE i default. */
+ *  role_permissions già lette a DB (role, role@grade e user:<id> — MOD-29) e
+ *  replica la semantica di capAllowed — l'eccezione personale vince su quella
+ *  di grado, che vince sulla riga di ruolo; nessuna riga = default della
+ *  capability. admin/dev: come sul client (useRolePermissions non carica
+ *  righe) valgono SEMPRE i default. */
 export function puoAscoltareRegistrazioniServer(
     role: string | null | undefined,
     grade: string | null | undefined,
     righe: { role: string; perm_key: string; allowed: boolean }[],
+    userId?: string | null,
 ): boolean {
     if (!role) return false;
     const m: PermMap = new Map();
     if (role !== "admin" && role !== "dev") {
         const chiave = capKey("/clienti", CAP_CLIENTI_REGISTRAZIONI.id);
-        // prima la riga di ruolo, poi l'eccezione di grado SOPRA (stesso ordine
-        // di fusione di useRolePermissions)
+        // stesso ordine di fusione di useRolePermissions: ruolo → grado → utente
         righe.filter((r) => r.role === role && r.perm_key === chiave).forEach((r) => m.set(r.perm_key, r.allowed));
         if (grade) righe.filter((r) => r.role === `${role}@${grade}` && r.perm_key === chiave).forEach((r) => m.set(r.perm_key, r.allowed));
+        if (userId) righe.filter((r) => r.role === `user:${userId}` && r.perm_key === chiave).forEach((r) => m.set(r.perm_key, r.allowed));
     }
     return capAllowed(role, "/clienti", CAP_CLIENTI_REGISTRAZIONI, m);
 }

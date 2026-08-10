@@ -49,7 +49,7 @@ export default function RegistroChiamatePage() {
     const NEGOZI = useStores();
     // AUDIO a capability (cap:/clienti:ascolta_registrazioni, Luca 04/08):
     // amministrabile dalla rotellina Clienti; il registro resta visibile a tutti
-    const { perms } = useRolePermissions(user?.role, user?.grade);
+    const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const puoAudio = puoAscoltareRegistrazioni(user?.role, perms);
 
     const [eventi, setEventi] = useState<EventoChiamata[]>([]);

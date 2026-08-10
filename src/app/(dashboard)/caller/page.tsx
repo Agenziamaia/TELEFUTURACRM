@@ -437,7 +437,7 @@ function CallerPageInner() {
     // ── hub Call Center: sezione corrente + pillole + visibilita' Badge ──
     const searchParams = useSearchParams();
     const hubTab = searchParams.get("tab") === "badge" ? "badge" : "caller";
-    const { perms: hubPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: hubPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const badgeVisibile = effectiveAllowed(user?.role, "/caller?tab=badge", EVERYONE, hubPerms, "Call Center");
     // AUDIO delle registrazioni a capability (cap:/clienti:ascolta_registrazioni,
     // Luca 04/08): senza permesso il player nello storico voce non compare —

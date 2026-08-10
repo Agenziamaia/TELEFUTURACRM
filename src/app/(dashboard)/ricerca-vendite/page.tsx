@@ -371,6 +371,10 @@ export default function RicercaContratto() {
     //    Le liste arrivano da catalog_* (incluse le voci spente: lo storico
     //    le contiene), non piu' dai distinct dello storico.
     const [filterCategorie, setFilterCategorie] = useState<string[] | null>(null);
+    // MOD-30 (Luca 10/08): tipologia cliente PRIMA della categoria. Filtra su
+    // contracts.tipo_cliente ('Consumer'/'Business' — backfill 10/08 dal
+    // clients.tipo per le righe storiche nate senza).
+    const [filterTipoCliente, setFilterTipoCliente] = useState<string[] | null>(null);
     const [filterOfferte, setFilterOfferte] = useState<string[] | null>(null);
     // OPZIONI (Luca 28/07): quarto anello della catena — si sbloccano dopo
     // l'offerta; multi, match sul jsonb contracts.opzioni [{nome,quantita}]:
@@ -524,7 +528,7 @@ export default function RicercaContratto() {
     // ruolo (nulla cambia per nessuno); la modalità di SALVATAGGIO segue
     // comunque la capacità, il cui default fotografa la regola di Luca 04/08:
     // amministrativo in su diretta, il resto con autorizzazione.
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const modRicerca = capChoice(user?.role, CAP_RICERCA_MODIFICA, capPerms);
     // LA ROTELLINA COMANDA SEMPRE (Luca 04/08 sera): niente perimetri storici
     // "a rotellina vergine" — il caso store specialist ha mostrato il paradosso:
@@ -753,6 +757,9 @@ export default function RicercaContratto() {
         // (Luca 28/07): dettagli->>categoria_catalogo copre il 100% dello
         // storico dopo il backfill (regola pagamento per i mobile vecchi).
         if (filterCategorie !== null && !soloMarg) query = query.in("dettagli->>categoria_catalogo", filterCategorie);
+        // MOD-30: tipologia cliente (Consumer/Business) — la Marginalità non ha
+        // tipo cliente, per lei il filtro resta spento come la categoria
+        if (filterTipoCliente !== null && !soloMarg) query = query.in("tipo_cliente", filterTipoCliente);
         // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
         // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
         if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
@@ -864,7 +871,7 @@ export default function RicercaContratto() {
             setFacetCounts(m);
         }, 300);
         return () => clearTimeout(timer);
-    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterOpzioni), kMulti(filterCategorie), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, daDataAttivazione, aDataAttivazione, Array.from(selBrands).join("|"), kMulti(margTipi), kMulti(margArticoli), (margListino ?? []).length, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterOpzioni), kMulti(filterCategorie), kMulti(filterTipoCliente), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, daDataAttivazione, aDataAttivazione, Array.from(selBrands).join("|"), kMulti(margTipi), kMulti(margArticoli), (margListino ?? []).length, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
     // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
@@ -874,13 +881,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni)]);
+    }, [kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterTipoCliente), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni)]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni), (margListino ?? []).length, catalogoBrand?.slug ?? ""]);
+    }, [page, visKey, visReady, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterTipoCliente), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni), (margListino ?? []).length, catalogoBrand?.slug ?? ""]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -1804,7 +1811,20 @@ export default function RicercaContratto() {
 
                 {/* FILA CATALOGO (Luca 28/07): categoria → prodotto → offerta → opzioni
                     su una riga tutta loro — sono filtri in successione. */}
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mt-6 pt-6 border-t border-white/5">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mt-6 pt-6 border-t border-white/5">
+                    {/* 4-ante. Tipo cliente (MOD-30, Luca 10/08): PRIMA della categoria. */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Tipo cliente</label>
+                        <FiltroMulti
+                            values={filterTipoCliente} disabled={soloMarg}
+                            testoDisabilitato="La Marginalità non ha tipo cliente"
+                            onChange={setFilterTipoCliente}
+                            opzioni={["Consumer", "Business"]}
+                            etichettaTutti="Tutti i tipi"
+                            className="glass-input w-full text-sm"
+                        />
+                    </div>
+
                     {/* 4-bis. Categoria (dal catalogo): sempre in fila — con la sola
                         Marginalità si spegne (per lei c'è la riga sotto). */}
                     <div>
@@ -1915,7 +1935,7 @@ export default function RicercaContratto() {
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditori(null); setFilterCodice(""); setFilterBrand(""); setFilterProdotti(null); setFilterCategorie(null); setFilterOfferte(null); setFilterOpzioni(null); setMargTipi(null); setMargArticoli(null); setFilterNegozi(null); setFilterCodiciIns(null); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditori(null); setFilterCodice(""); setFilterBrand(""); setFilterProdotti(null); setFilterCategorie(null); setFilterTipoCliente(null); setFilterOfferte(null); setFilterOpzioni(null); setMargTipi(null); setMargArticoli(null); setFilterNegozi(null); setFilterCodiciIns(null); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportExcel}>
                         Scarica Excel
                     </button>

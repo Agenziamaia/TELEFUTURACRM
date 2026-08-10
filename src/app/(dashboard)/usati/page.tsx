@@ -516,7 +516,7 @@ function RicambioRow({ r, idx, onUpdate, onRemove, puoGestire, puoAmministrare, 
 function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; onClose: () => void; onSave: (d: Device) => void; onDeleted: (id: number) => void }) {
   const NEGOZI = useStores();
   const { user } = useAuth();
-  const { perms } = useRolePermissions(user?.role, user?.grade);
+  const { perms } = useRolePermissions(user?.role, user?.grade, user?.id);
   // capacita' dalla rotellina Gestione Usato (Luca 31/07)
   const lavoraLab = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_LAVORA, perms) && (user?.role !== "tecnico" || user?.grade === "tecnico_senior");
   const vedeCosti = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_COSTI, perms);
@@ -1653,7 +1653,7 @@ function GestioneUsatiInner() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { perms: permsMain } = useRolePermissions(user?.role, user?.grade);
+  const { perms: permsMain } = useRolePermissions(user?.role, user?.grade, user?.id);
   // capacita' COSTI (Luca 31/07): senza, il prezzo di acquisto sparisce da
   // tabella, card mobile e bonifici (che espongono gli importi)
   const vedeCosti = capAllowed(user?.role, CAP_USATO.section, CAP_USATO_COSTI, permsMain);

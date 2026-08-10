@@ -799,7 +799,7 @@ export default function Calendario() {
     // Scelte: tutti / call_center / negozio / propri (fallback). I default
     // fotografano il codice storico: admin+direzione+amministrazione = tutti,
     // direttore_cc = call_center, il resto = negozio.
-    const { perms: calPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: calPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const vistaCal = capChoice(user?.role, CAP_CALENDARIO_VISTA, calPerms);
     // VISIBILITÀ TASK SEPARATA (Luca 05/08): «oggi è legata a quella del
     // calendario ma devono essere due cose diverse» — rotellina "Calendario —

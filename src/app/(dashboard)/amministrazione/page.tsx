@@ -216,7 +216,7 @@ function AmministrazioneInner() {
     }, [sez, router]);
     // GATING DAI PERMESSI (nav.ts + role_permissions): ogni sezione dell'hub e
     // ogni funzione di Utenti si concede una a una dalla pagina Permessi.
-    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade);
+    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
     // ruoli FUSI codice+DB: i ruoli creati da UI compaiono in filtri e form
     const { roles: allRoles } = useRoles();
     const hubAmm = hubByHref("/amministrazione")!;
