@@ -205,6 +205,8 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
             // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
             { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
+            // Tabellari pay delle GARE (Luca 10/08): soglie e importi per brand/mese
+            { name: "Tabellari Gare", sez: "paytabellari", icon: Trophy, roles: ["admin", "dev"] },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

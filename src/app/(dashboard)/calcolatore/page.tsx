@@ -11,8 +11,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Calculator, ChevronDown, Loader2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import {
-    Avanzamento, PayRiga, Tabellare,
-    calcolaAvanzamento, caricaContrattiMese, caricaTabellare, matchRigaTabellare, payPerRiga, sostituzioneSim,
+    Avanzamento, CONTESTI_LABEL, PayRiga, Tabellare,
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, matchRigaTabellare, payPerRiga, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
@@ -31,6 +31,20 @@ const BRANDS: { id: string; label: string; logo: string; color: string; zoom: nu
     { id: "kena", label: "Kena", logo: "/kena-mobile-v2.png", color: "#F5A623", zoom: 2.2, prefix: "Kena" },
     { id: "s4", label: "S4", logo: "/energy - Copy.png", color: "#28A745", zoom: 1, prefix: "S4" },
 ];
+
+// CONTESTI VF/FW (mappa Luca 10/08): due lettere di gara per brand — la
+// scelta commuta tabellare e avanzamento; l'allocazione delle vendite segue
+// il CODICE DI INSERIMENTO (contestoVfFw in lib/commissioning).
+const CONTESTI_BRAND: Record<string, { key: string; label: string }[]> = {
+    vodafone: [
+        { key: "vodafone", label: "🅰️ Vodafone Store · T1" },
+        { key: "vodafone_vnd", label: "🏬 VND multibrand · T2" },
+    ],
+    fastweb: [
+        { key: "fastweb", label: "🏬 Multibrand · T2" },
+        { key: "vodafone", label: "🅰️ Sui Vodafone Store · T1 (lettera A VS)" },
+    ],
+};
 
 const meseCorrente = () => {
     const d = new Date();
@@ -55,6 +69,12 @@ export default function CalcolatorePage() {
     const [tab, setTab] = useState<Tabellare | null>(null);
     const [avz, setAvz] = useState<Avanzamento | null>(null);
     const [caricaTab, setCaricaTab] = useState(false);
+    const [nonAlloc, setNonAlloc] = useState(0);
+
+    // contesto lettera di gara (solo VF/FW ne hanno due)
+    const [ctx, setCtx] = useState<string | null>(null);
+    const ctxOpzioni = brand ? CONTESTI_BRAND[brand] || null : null;
+    const ctxKey = ctxOpzioni ? (ctx || ctxOpzioni[0].key) : brand;
 
     // selezione
     const [tipoCli, setTipoCli] = useState<string | null>(null);
@@ -67,7 +87,7 @@ export default function CalcolatorePage() {
     useEffect(() => {
         if (!brand) return;
         let vivo = true;
-        setCaricaCat(true); setTab(null); setAvz(null);
+        setCaricaCat(true); setCtx(null);
         setTipoCli(null); setCatId(null); setProdId(null); setOffId(null); setTierSel(null);
         (async () => {
             const [cRes, pRes] = await Promise.all([
@@ -85,24 +105,37 @@ export default function CalcolatorePage() {
             setOffs(((oRes.data || []) as Off[]).filter(o => o.attivo !== false));
             setCaricaCat(false);
         })();
+        return () => { vivo = false; };
+    }, [brand, monthISO]);
+
+    // tabellare + avanzamento seguono il CONTESTO (lettera di gara), non il brand
+    useEffect(() => {
+        if (!brand || !ctxKey) return;
+        let vivo = true;
+        setCaricaTab(true); setTab(null); setAvz(null); setNonAlloc(0); setTierSel(null);
         (async () => {
-            setCaricaTab(true);
-            const t = await caricaTabellare(brand, monthISO);
+            const t = await caricaTabellare(ctxKey, monthISO);
             if (!vivo) return;
             setTab(t);
             if (t) {
                 const bm = BRANDS.find(b => b.id === brand);
-                const contratti = await caricaContrattiMese(bm?.prefix || brand, monthISO);
+                const { contratti, nonAllocate } = await caricaContrattiContesto(ctxKey, monthISO, bm?.prefix);
                 if (!vivo) return;
+                setNonAlloc(nonAllocate);
                 setAvz(calcolaAvanzamento(t, contratti));
             }
             setCaricaTab(false);
         })();
         return () => { vivo = false; };
-    }, [brand, monthISO]);
+    }, [brand, ctxKey, monthISO]);
 
     // albero derivato
-    const tipiCliente = useMemo(() => [...new Set(prods.map(p => p.tipo_cliente).filter(Boolean))], [prods]);
+    // ordine FISSO: prima Consumer poi Business (segnalazione Luca 10/08 — l'ordine
+    // del catalogo variava da brand a brand)
+    const tipiCliente = useMemo(() =>
+        [...new Set(prods.map(p => p.tipo_cliente).filter(Boolean))]
+            .sort((a, b) => (a === "Consumer" ? -1 : b === "Consumer" ? 1 : a.localeCompare(b))),
+    [prods]);
     const prodsTipo = useMemo(() => prods.filter(p => !tipoCli || p.tipo_cliente === tipoCli), [prods, tipoCli]);
     const catsVisibili = useMemo(() => {
         const conProd = new Set(prodsTipo.map(p => p.categoria_id));
@@ -122,8 +155,8 @@ export default function CalcolatorePage() {
         if (!tab || !offSel || !prodSel || !catSel) return null;
         return matchRigaTabellare(tab.righe, {
             tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: offSel.nome,
-        });
-    }, [tab, offSel, prodSel, catSel]);
+        }, brand);
+    }, [tab, offSel, prodSel, catSel, brand]);
 
     const scalaRiga = useMemo(() =>
         (tab && riga?.pista) ? tab.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
@@ -140,11 +173,11 @@ export default function CalcolatorePage() {
             const p = prods.find(x => x.id === o.prodotto_id); if (!p) continue;
             const c = cats.find(x => x.id === p.categoria_id); if (!c) continue;
             if (sostituzioneSim({ categoria: c.nome, prodotto: p.nome })) continue;   // escluse per regola, non scoperture
-            const r = matchRigaTabellare(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome });
+            const r = matchRigaTabellare(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome }, brand);
             if (!r) out.push({ tipo: p.tipo_cliente, cat: c.nome, prod: p.nome, off: o.nome });
         }
         return out;
-    }, [tab, offs, prods, cats]);
+    }, [tab, offs, prods, cats, brand]);
 
     const Pill = ({ on, children, onClick, colore }: { on: boolean; children: React.ReactNode; onClick: () => void; colore?: string }) => (
         <button onClick={onClick}
@@ -178,13 +211,24 @@ export default function CalcolatorePage() {
                 })}
             </div>
 
+            {/* ①-bis LETTERA DI GARA (contesti T1/T2 di Vodafone e Fastweb) */}
+            {brand && ctxOpzioni && (
+                <div className="flex gap-2 flex-wrap items-center mb-5">
+                    <span className="text-[11px] uppercase tracking-wider text-slate-400 mr-1">Lettera di gara</span>
+                    {ctxOpzioni.map(o => (
+                        <Pill key={o.key} on={ctxKey === o.key} onClick={() => setCtx(o.key)}>{o.label}</Pill>
+                    ))}
+                    <span className="text-[11px] text-slate-500">l&apos;attivazione si alloca col codice di inserimento</span>
+                </div>
+            )}
+
             {brand && (caricaCat || caricaTab) && (
                 <div className="flex items-center gap-2 text-slate-400 text-sm mb-4"><Loader2 className="animate-spin" size={16} /> Carico catalogo e tabellare…</div>
             )}
 
             {brand && !caricaTab && !tab && (
                 <div className="glass-panel rounded-2xl p-4 mb-5 border border-amber-500/40 text-amber-200 text-sm flex items-center gap-2">
-                    <TriangleAlert size={18} /> Nessun tabellare caricato per {meta?.label} · {mese}: il pay non è calcolabile finché non si caricano piste, soglie e righe.
+                    <TriangleAlert size={18} /> Nessun tabellare caricato per {(ctxKey && CONTESTI_LABEL[ctxKey]) || meta?.label} · {mese}: il pay non è calcolabile finché non si caricano piste, soglie e righe.
                 </div>
             )}
 
@@ -222,7 +266,7 @@ export default function CalcolatorePage() {
                                 <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))" }}>
                                     {offsProd.map(o => {
                                         const on = offId === o.id;
-                                        const r = tab && catSel && prodSel ? matchRigaTabellare(tab.righe, { tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: o.nome }) : null;
+                                        const r = tab && catSel && prodSel ? matchRigaTabellare(tab.righe, { tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: o.nome }, brand) : null;
                                         return (
                                             <button key={o.id} onClick={() => { setOffId(o.id); setTierSel(null); }}
                                                 className="rounded-xl px-3 py-3 text-sm font-semibold text-left border transition"
@@ -302,7 +346,8 @@ export default function CalcolatorePage() {
                 <div className="space-y-4">
                     {tab && (
                         <div className="glass-panel rounded-2xl p-5">
-                            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">Avanzamento rete · {mese}</div>
+                            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Avanzamento rete · {mese}</div>
+                            {ctxKey && CONTESTI_LABEL[ctxKey] && <div className="text-[11px] text-slate-500 mb-3">{CONTESTI_LABEL[ctxKey]}</div>}
                             {!avz ? <div className="text-slate-500 text-sm">Calcolo…</div> : tab.piste.map(p => {
                                 const a = avz.piste[p.chiave]; if (!a) return null;
                                 const target = a.prossima?.soglia_da ?? a.soglia?.soglia_da ?? 0;
@@ -323,6 +368,11 @@ export default function CalcolatorePage() {
                             {avz && avz.scartati.length > 0 && (
                                 <div className="text-[11px] text-amber-400/80 mt-2">
                                     {avz.scartati.reduce((s, x) => s + x.n, 0)} vendite del mese senza riga pay (non contate)
+                                </div>
+                            )}
+                            {nonAlloc > 0 && (
+                                <div className="text-[11px] text-amber-400/80 mt-1">
+                                    {nonAlloc} vendite VF/FW con codice non riconducibile a una lettera
                                 </div>
                             )}
                         </div>

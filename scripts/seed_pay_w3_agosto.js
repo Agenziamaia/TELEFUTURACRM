@@ -33,8 +33,10 @@ const PISTE = [
   { chiave: "fisso", nome: "Fisso", ordine: 2 },
 ];
 const SOGLIE = {
-  mobile: [[560, 809], [810, 939], [940, null]],   // DA CONFERMARE per agosto
-  fisso: [[255, 329], [330, 399], [400, null]],    // DA CONFERMARE per agosto
+  // soglie RAGAZZI dallo screenshot di Luca 10/08 sera (valori di LUGLIO —
+  // agosto si ritocca dal pannello Amministrazione → Tabellari Gare)
+  mobile: [[550, 809], [810, 939], [940, null]],
+  fisso: [[210, 329], [330, 399], [400, null]],
 };
 
 // [pista, nome, tipo_cliente, categoria, prodotto, offerta, punti, base(gettone), tiers, gettone]
@@ -154,6 +156,8 @@ for (const [off, importo] of ASS)
                                 punti, pay_base, pay_tiers, gettone, note, ordine)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [BRAND, MONTH, pista, nome, tc, cat, prod, off, punti, base, tiers, gettone, note, ord++]);
+    // contesti VF/FW (mig 20260811110000): niente righe con brand_vendita NULL
+    await client.query("update pay_righe set brand_vendita = brand where brand=$1 and month=$2 and brand_vendita is null", [BRAND, MONTH]);
     await client.query("commit");
   } catch (e) { await client.query("rollback"); console.error("FAIL:", e.message); process.exit(1); }
   const n = async (t) => (await client.query(`select count(*) n from ${t} where brand=$1 and month=$2`, [BRAND, MONTH])).rows[0].n;

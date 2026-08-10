@@ -30,6 +30,9 @@ const PISTE = [
   { chiave: "fisso", nome: "Fisso", ordine: 2 },
   { chiave: "business_mobile", nome: "Business Mobile", ordine: 3 },
   { chiave: "business_fisso", nome: "Business Fisso", ordine: 4 },
+  // Soluzioni Digitali: pista+soglie qui (prima nel seed energia FW, che il
+  // rilancio di QUESTO seed cancellava); righe in attesa del mapping fasce A-D.
+  { chiave: "soluzioni_digitali", nome: "Soluzioni Digitali", ordine: 5 },
 ];
 
 const SOGLIE = {
@@ -37,6 +40,7 @@ const SOGLIE = {
   fisso: [[155, 200], [201, 261], [262, 331], [332, 399], [400, 456], [457, null]],
   business_mobile: [[53, 81], [82, 124], [125, 165], [166, 209], [210, 352], [353, null]],
   business_fisso: [[19, 25], [26, 37], [38, 54], [55, 75], [76, 96], [97, null]],
+  soluzioni_digitali: [[19, 23], [24, 34], [35, null]],
 };
 
 // righe: [pista, nome, tipo_cliente, categoria, prodotto, offerte[], punti, base, tiers]
@@ -201,10 +205,12 @@ const G = [
                                 punti, pay_base, pay_tiers, gettone, note, ordine)
          values ($1,$2,null,$3,$4,$5,$6,$7,0,$8,'{}',true,$9,$10)`,
         [BRAND, MONTH, nome, tc, cat, prod, off, importo, note, ord++]);
+    // contesti VF/FW (mig 20260811110000): niente righe con brand_vendita NULL
+    await client.query("update pay_righe set brand_vendita = brand where brand=$1 and month=$2 and brand_vendita is null", [BRAND, MONTH]);
     await client.query("commit");
   } catch (e) { await client.query("rollback"); console.error("FAIL:", e.message); process.exit(1); }
   const n = async (t) => (await client.query(`select count(*) n from ${t} where brand=$1 and month=$2`, [BRAND, MONTH])).rows[0].n;
-  console.log(`OK — piste ${await n("pay_piste")} (attese 4) · soglie ${await n("pay_soglie")} (attese 24) · righe ${await n("pay_righe")} (attese ${R.length + G.length})`);
+  console.log(`OK — piste ${await n("pay_piste")} (attese 5) · soglie ${await n("pay_soglie")} (attese 27) · righe ${await n("pay_righe")} (attese ${R.length + G.length})`);
   // verifica aggancio catalogo: ogni riga con offerta deve esistere nell'albero
   const orfane = (await client.query(`
     select r.nome, r.offerta from pay_righe r where r.brand=$1 and r.month=$2 and r.offerta is not null

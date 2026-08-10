@@ -29,6 +29,7 @@ export type PayRiga = {
     id: string; pista: string | null; nome: string;
     tipo_cliente: string | null; categoria: string | null; prodotto: string | null;
     offerta: string | null; opzione: string | null;
+    brand_vendita: string | null;               // NULL = qualsiasi brand di vendita
     punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
 };
@@ -39,6 +40,7 @@ export type ContrattoPay = {
     data: string | null; stato: string | null; tipo_cliente: string | null;
     categoria: string | null; prodotto: string | null; offerta: string | null;
     nascosta_gestione: boolean | null;
+    cod_ins: string | null;                     // codice inserimento (dettagli "Cod.Ins.")
 };
 
 /** contracts.brand (etichetta "WindTre"/"Very Mobile") → catalog_brands.id */
@@ -72,7 +74,7 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
         supabase.from("pay_piste").select("chiave, nome, um, ordine").eq("brand", brand).eq("month", monthISO).order("ordine"),
         supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).order("tier"),
-        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
             .eq("brand", brand).eq("month", monthISO).eq("attivo", true).order("ordine").limit(1000),
     ]);
     const piste = (pisteRes.data || []) as PayPista[];
@@ -100,15 +102,20 @@ const eq = (a: unknown, b: unknown) =>
  * Match gerarchico: la riga vale se OGNI suo campo non-null coincide col
  * contratto; vince quella con più campi valorizzati (più specifica), a
  * parità la prima per ordine. Nessun match = nessun commissioning (scopertura).
+ * brandVendita: brand della VENDITA (catalog_brands.id) — nei contesti misti
+ * (lettera A VS che paga anche i pezzi Fastweb) le righe con brand_vendita
+ * valorizzato valgono SOLO per quel brand (VF e FW condividono nomi offerta).
  */
 export function matchRigaTabellare(
     righe: PayRiga[],
     c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null },
+    brandVendita?: string | null,
 ): PayRiga | null {
     let best: PayRiga | null = null;
     let bestScore = -1;
     for (const r of righe) {
         if (!r.attivo) continue;
+        if (r.brand_vendita && brandVendita && !eq(r.brand_vendita, brandVendita)) continue;
         let score = 0;
         if (r.tipo_cliente != null) { if (!eq(r.tipo_cliente, c.tipo_cliente)) continue; score++; }
         if (r.categoria != null) { if (!eq(r.categoria, c.categoria)) continue; score++; }
@@ -143,14 +150,87 @@ export function produzioneValidaGare(c: ContrattoPay): boolean {
 /** Contratti del brand nel mese (demo escluse in query, tetto 1000 superato). */
 export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: string): Promise<ContrattoPay[]> {
     const { primo, ultimo } = estremiMese(monthISO);
-    const { data } = await caricaTutte<ContrattoPay>((from, to) =>
+    type Raw = ContrattoPay & { dettagli?: Record<string, unknown> | null };
+    const { data } = await caricaTutte<Raw>((from, to) =>
         supabase.from("contracts")
-            .select("id, brand, negozio, venditore, data, stato, tipo_cliente, categoria, prodotto, offerta, nascosta_gestione")
+            .select("id, brand, negozio, venditore, data, stato, tipo_cliente, categoria, prodotto, offerta, nascosta_gestione, dettagli")
             .ilike("brand", `${brandLabelPrefix}%`)
             .gte("data", primo).lte("data", ultimo)
             .or("is_demo.is.null,is_demo.eq.false")
-            .order("id").range(from, to));
-    return (data || []).filter(produzioneValidaGare);
+            .order("id").range(from, to) as unknown as PromiseLike<{ data: Raw[] | null; error: { message?: string } | null }>);
+    return (data || []).map(r => {
+        const d = (r.dettagli || {}) as Record<string, unknown>;
+        const cod = d["Cod.Ins."] ?? d["Codice Inserimento"] ?? null;
+        // categoria_catalogo (flusso catalogo): la categoria VERA del catalogo
+        // ("Mobile Ric. Auto"/"Mobile Wallet") — la colonna porta la macro
+        // ("Mobile") e non basta alle righe pay ancorate alla categoria.
+        const catCat = d["categoria_catalogo"];
+        const { dettagli: _d, ...resto } = r;
+        return {
+            ...resto,
+            categoria: catCat ? String(catCat) : r.categoria,
+            cod_ins: cod == null ? null : String(cod),
+        };
+    }).filter(produzioneValidaGare);
+}
+
+/**
+ * CONTESTI VF/FW (mappa di Luca 10/08, "dropzone (1).pdf"): Vodafone e
+ * Fastweb hanno DUE lettere di gara ciascuno — T1 = Telefutura (Vodafone
+ * Store), T2 = Telefutura 2 (multibrand VND). L'attivazione si ALLOCA col
+ * CODICE DI INSERIMENTO (il negozio del codice, non quello di attribuzione):
+ *   - VF codici Acilia/Baleniere/Castani/Merulana  → "vodafone" (lettera A VS)
+ *   - VF codici Donna/Magliana/Collatina/Garbatella → "vodafone_vnd" (T2)
+ *   - FW codici dei 4 VS → "vodafone" (FW sui Vodafone Store ricade nella
+ *     lettera A e nel commissioning VS)
+ *   - FW codici Donna/Magliana/Garbatella/Promontori → "fastweb" (T2)
+ * Le chiavi contesto SONO le chiavi brand delle tabelle pay. Codice assente →
+ * ripiego sul negozio di attribuzione (prima parola); irriconoscibile → null.
+ */
+const CTX_VF_T1 = ["acilia", "baleniere", "castani", "merulana"];
+const CTX_VF_T2 = ["donna", "magliana", "collatina", "garbatella"];
+const CTX_FW_T2 = ["donna", "magliana", "garbatella", "promontori"];
+
+export function contestoVfFw(brandId: string | null, codice: string | null, negozio?: string | null): string | null {
+    if (brandId !== "vodafone" && brandId !== "fastweb") return brandId;
+    const ref = String(codice || "").trim().toLowerCase() || String(negozio || "").trim().toLowerCase();
+    if (!ref) return null;
+    if (CTX_VF_T1.some(x => ref.startsWith(x))) return "vodafone";
+    if (brandId === "vodafone" && CTX_VF_T2.some(x => ref.startsWith(x))) return "vodafone_vnd";
+    if (brandId === "fastweb" && CTX_FW_T2.some(x => ref.startsWith(x))) return "fastweb";
+    return null;
+}
+
+/** Etichette leggibili dei contesti pay. */
+export const CONTESTI_LABEL: Record<string, string> = {
+    vodafone: "Vodafone Store · T1 (lettera A, include il Fastweb dei VS)",
+    vodafone_vnd: "Vodafone VND · T2 (multibrand)",
+    fastweb: "Fastweb · T2 (multibrand)",
+};
+
+/**
+ * Contratti del MESE che allocano nel contesto pay richiesto. Per i contesti
+ * VF/FW carica i brand coinvolti e smista col codice inserimento; per gli
+ * altri brand equivale a caricaContrattiMese. nonAllocate = vendite VF/FW
+ * del perimetro senza codice/negozio riconducibile a un contesto.
+ */
+export async function caricaContrattiContesto(
+    contesto: string, monthISO: string, prefixAltriBrand?: string,
+): Promise<{ contratti: ContrattoPay[]; nonAllocate: number }> {
+    const fonti: string[] =
+        contesto === "vodafone" ? ["Vodafone", "Fastweb"] :
+        contesto === "vodafone_vnd" ? ["Vodafone"] :
+        contesto === "fastweb" ? ["Fastweb"] : [];
+    if (!fonti.length)
+        return { contratti: await caricaContrattiMese(prefixAltriBrand || contesto, monthISO), nonAllocate: 0 };
+    const tutti = (await Promise.all(fonti.map(p => caricaContrattiMese(p, monthISO)))).flat();
+    let nonAllocate = 0;
+    const contratti = tutti.filter(c => {
+        const ctx = contestoVfFw(brandIdDaLabel(c.brand), c.cod_ins, c.negozio);
+        if (ctx === null) nonAllocate++;
+        return ctx === contesto;
+    });
+    return { contratti, nonAllocate };
 }
 
 export type AvanzamentoPista = {
@@ -173,7 +253,7 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
     const scartatiMap = new Map<string, { categoria: string | null; prodotto: string | null; offerta: string | null; n: number }>();
     let contati = 0;
     for (const c of contratti) {
-        const riga = matchRigaTabellare(tab.righe, c);
+        const riga = matchRigaTabellare(tab.righe, c, brandIdDaLabel(c.brand));
         if (!riga) {
             const k = `${c.categoria}|${c.prodotto}|${c.offerta}`;
             const e = scartatiMap.get(k) || { categoria: c.categoria, prodotto: c.prodotto, offerta: c.offerta, n: 0 };

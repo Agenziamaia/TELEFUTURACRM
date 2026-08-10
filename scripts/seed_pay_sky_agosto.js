@@ -35,9 +35,12 @@ const MONTH = "2026-08-01";
 const PISTE = [
   { chiave: "sky", nome: "Punti Sky", ordine: 1 },
 ];
-// Soglie punti del piano GOLD (S1 parte da zero: si paga dal 1° pezzo).
+// SOGLIE RAGAZZI (screenshot Luca 10/08 sera, valori di LUGLIO — agosto le
+// ritocca dal pannello Amministrazione → Tabellari Gare): S1 da 170 · S2 da
+// 190 · S3 da 245 · S4 da 786. Unita' PUNTI coi pesi GOLD (DA CONFERMARE:
+// punti o pezzi? e sotto i 170 punti si paga qualcosa?).
 const SOGLIE = {
-  sky: [[0, 199], [200, 299], [300, 399], [400, null]],
+  sky: [[170, 189], [190, 244], [245, 785], [786, null]],
 };
 
 // [pista, nome, tipo_cliente, categoria, prodotto, offerta, punti, base, tiers, note]
@@ -85,6 +88,8 @@ const R = [
                                 punti, pay_base, pay_tiers, gettone, note, ordine)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,null,$10,false,$11,$12)`,
         [BRAND, MONTH, pista, nome, tc, cat, prod, off, punti, tiers, note, ord++]);
+    // contesti VF/FW (mig 20260811110000): niente righe con brand_vendita NULL
+    await client.query("update pay_righe set brand_vendita = brand where brand=$1 and month=$2 and brand_vendita is null", [BRAND, MONTH]);
     await client.query("commit");
   } catch (e) { await client.query("rollback"); console.error("FAIL:", e.message); process.exit(1); }
   const n = async (t) => (await client.query(`select count(*) n from ${t} where brand=$1 and month=$2`, [BRAND, MONTH])).rows[0].n;
