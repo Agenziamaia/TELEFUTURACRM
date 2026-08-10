@@ -214,13 +214,13 @@ export default function VerifichePage() {
     // MOD-39: task dell'ADMIN → dritta in carico a Claude ('da_sistemare')
     const oggiSessione = new Date().toLocaleDateString("it-IT");
     const creaTaskAdmin = async (tit: string, det: string, alleg: Allegato[]) => {
-        await supabase.from("dev_updates").insert({ tipo: "task", titolo: tit, dettaglio: det || null, stato: "da_sistemare", risposta: det || tit, sessione: oggiSessione, allegati: alleg });
+        await supabase.from("dev_updates").insert({ tipo: "task", titolo: tit, dettaglio: det || null, stato: "da_sistemare", sessione: oggiSessione, allegati: alleg });
         carica();
     };
     // MOD-40: PROPOSTA del delegato → passa da Luca ('segnalazione_delegato')
     const proponiTask = async (tit: string, det: string, alleg: Allegato[]) => {
         await supabase.from("dev_updates").insert({
-            tipo: "task", titolo: tit, dettaglio: det || null, stato: "segnalazione_delegato",
+            tipo: "task", titolo: tit, dettaglio: null, stato: "segnalazione_delegato",
             segnalazione_delegato: det || tit, segnalato_da: user?.name || "collaboratore",
             delegato_a: user?.id || null, delegato_nome: user?.name || null, sessione: oggiSessione, allegati: alleg,
         });
@@ -414,7 +414,7 @@ export default function VerifichePage() {
                         <h2 className="text-sm font-bold text-orange-300 uppercase tracking-widest">🛠️ Da sistemare — in carico a Claude <span className="text-slate-500 font-normal normal-case">· {daSistemare.length}</span></h2>
                         {daSistemare.map((v) => (
                             <CardVoce key={v.id} v={v}>
-                                <p className="text-[13px] text-orange-200 bg-orange-500/10 border border-orange-500/40 rounded-lg px-3 py-2">⚠️ {v.risposta}</p>
+                                {v.risposta && v.risposta !== v.dettaglio && <p className="text-[13px] text-orange-200 bg-orange-500/10 border border-orange-500/40 rounded-lg px-3 py-2">⚠️ {v.risposta}</p>}
                                 <p className="text-[11px] text-slate-500">Claude la lavora alla prossima sessione e la rimette qui &quot;da verificare&quot; con la nota di cosa ha corretto.</p>
                             </CardVoce>
                         ))}
