@@ -1366,6 +1366,47 @@ export default function Calendario() {
         setBlockAgendaForm({ mode: "single", startDate: "", endDate: "", note: "" });
     };
 
+    // ── SYNC ESITO NEGOZIO → PRATICA CALLER (fix 10/08, caso Greco/41
+    // "Attivato Anomalia"): prima l'esito scelto qui NON toccava mai la
+    // pratica calls — il caller non lo vedeva e lo storico non lo registrava.
+    // Ora: SEMPRE una voce di storico sulla pratica collegata; per gli esiti
+    // definitivi si aggiorna anche calls.stato (mappa condivisa). Best-effort:
+    // il calendario resta comunque la fonte dell'esito.
+    const STATO_CALL_DA_ESITO: Record<string, string> = {
+        attivato: "Attivato",
+        attivato_diverso_negozio: "Attivato Altro Negozio",
+        ko: "Andato Non Interessato",
+        no_show: "Non andato",
+        annullato: "Annullato",
+    };
+    const sincronizzaEsitoSuPratica = async (apptId: number | string, daLabel: string, aLabel: string, chiaveEsito: string) => {
+        try {
+            const { data: pratiche } = await supabase.from("calls").select("id, stato, storico").eq("appointment_id", apptId);
+            for (const p of (pratiche || []) as { id: string; stato: string | null; storico: unknown[] | null }[]) {
+                const storico = Array.isArray(p.storico) ? [...p.storico] : [];
+                storico.push({
+                    data: new Date().toISOString(), caller: user?.name || "Negozio",
+                    campo: "Esito negozio", da: daLabel, a: aLabel,
+                    dettagli: { origine: "calendario", esito: chiaveEsito },
+                });
+                const nuovo = STATO_CALL_DA_ESITO[chiaveEsito];
+                const upd: Record<string, unknown> = { storico };
+                if (nuovo && p.stato !== nuovo) upd.stato = nuovo;
+                await supabase.from("calls").update(upd).eq("id", p.id);
+            }
+        } catch { /* best-effort */ }
+    };
+    const notaNegozioSuPratica = async (apptId: number | string, testo: string) => {
+        try {
+            const { data: pratiche } = await supabase.from("calls").select("id, storico").eq("appointment_id", apptId);
+            for (const p of (pratiche || []) as { id: string; storico: unknown[] | null }[]) {
+                const storico = Array.isArray(p.storico) ? [...p.storico] : [];
+                storico.push({ data: new Date().toISOString(), caller: user?.name || "Negozio", campo: "Nota negozio", da: "", a: testo, dettagli: { origine: "calendario" } });
+                await supabase.from("calls").update({ storico }).eq("id", p.id);
+            }
+        } catch { /* best-effort */ }
+    };
+
     return (
         <div className="w-full">
             <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -2431,7 +2472,13 @@ export default function Calendario() {
                                     value={selectedAppointment.status}
                                     onChange={async e => {
                                         const s = e.target.value as AppointmentStatus;
+                                        const prima = selectedAppointment.status;
                                         await supabase.from("appointments").update({ status: s }).eq("id", selectedAppointment.id);
+                                        // fix 10/08: l'esito del negozio arriva ANCHE sulla pratica
+                                        // caller (storico sempre + stato per gli esiti definitivi)
+                                        sincronizzaEsitoSuPratica(selectedAppointment.id,
+                                            esitoLabel(prima, selectedAppointment.type),
+                                            esitoLabel(s, selectedAppointment.type), s);
                                         setAppointments(prev => prev.map(a => a.id === selectedAppointment.id ? { ...a, status: s } : a));
                                         setSelectedAppointment({ ...selectedAppointment, status: s });
                                         // MOD-8: quando si sceglie "Da richiamare" apparecchia il pannello richiamo
@@ -2465,6 +2512,11 @@ export default function Calendario() {
                                         await supabase.from("appointments").update({ esito_note: v }).eq("id", selectedAppointment.id);
                                         setAppointments(prev => prev.map(a => a.id === selectedAppointment.id ? { ...a, esitoNote: v } : a));
                                         setSelectedAppointment({ ...selectedAppointment, esitoNote: v });
+                                    }}
+                                    onBlur={e => {
+                                        // fix 10/08: la nota esito finisce anche nello storico della pratica
+                                        const v = e.target.value.trim();
+                                        if (v) notaNegozioSuPratica(selectedAppointment.id, v);
                                     }}
                                 />
 

@@ -586,6 +586,37 @@ function CallerPageInner() {
         }
     };
 
+    // ── ESITO DEL NEGOZIO visibile QUI (fix 10/08, caso Greco/41 anomalie):
+    // la fonte unica dell'esito appuntamento è appointments.status — badge in
+    // lista + box nel dettaglio pratica, così caller e negozio vedono la
+    // stessa verità. Caricato a lotti per gli appointment_id delle pratiche.
+    const [esitiNegozio, setEsitiNegozio] = useState<Record<string, { status: string; esito_note: string | null; date: string | null; store: string | null }>>({});
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const ids = [...new Set(calls.map((c) => (c as { appointment_id?: number | string | null }).appointment_id).filter(Boolean))] as (number | string)[];
+            if (!ids.length) { if (vivo) setEsitiNegozio({}); return; }
+            const out: Record<string, { status: string; esito_note: string | null; date: string | null; store: string | null }> = {};
+            for (let i = 0; i < ids.length; i += 200) {
+                const { data } = await supabase.from("appointments").select("id, status, esito_note, date, store").in("id", ids.slice(i, i + 200));
+                ((data || []) as { id: number | string; status: string; esito_note: string | null; date: string | null; store: string | null }[])
+                    .forEach((a) => { out[String(a.id)] = a; });
+            }
+            if (vivo) setEsitiNegozio(out);
+        })();
+        return () => { vivo = false; };
+    }, [calls]);
+    const ESITO_NEG_LBL: Record<string, { l: string; cls: string }> = {
+        attivato: { l: "ATTIVATO dal negozio", cls: "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" },
+        attivato_diverso_negozio: { l: "ATTIVATO (altro negozio)", cls: "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" },
+        ko: { l: "KO dal negozio", cls: "bg-rose-500/10 border-rose-500/40 text-rose-300" },
+        annullato: { l: "Annullato dal negozio", cls: "bg-slate-500/10 border-slate-500/40 text-slate-300" },
+        no_show: { l: "Non presentato", cls: "bg-amber-500/10 border-amber-500/40 text-amber-300" },
+        in_gestione: { l: "In gestione al negozio", cls: "bg-amber-500/10 border-amber-500/40 text-amber-300" },
+        da_richiamare: { l: "Da richiamare (negozio)", cls: "bg-pink-500/10 border-pink-500/40 text-pink-300" },
+        da_rifissare: { l: "Da rifissare (negozio)", cls: "bg-amber-500/10 border-amber-500/40 text-amber-300" },
+    };
+
     const fetchListe = async () => {
         const { data, error } = await supabase
             .from("liste")
@@ -1024,7 +1055,9 @@ function CallerPageInner() {
             customer_phone: numeroNazionale(c.cellulare || c.numero) || c.cellulare || c.numero || "",
             cf_piva: c.cf || c.piva || null,
             notes: ["Fissato dal call center", c.note].filter(Boolean).join(" — "),
-            status: "scheduled",
+            // FIX 10/08 (buco #5, caso Greco): "scheduled" viaggia SOLO
+            // nell'INSERT — l'UPDATE di un ri-esito del caller NON deve più
+            // cancellare in silenzio l'esito già dato dal negozio sul calendario.
             created_by: c.caller || currentCaller,
         };
         const { data: linked } = await supabase.from("calls").select("appointment_id").eq("id", callId).maybeSingle();
@@ -1036,8 +1069,8 @@ function CallerPageInner() {
             if (error) alert("Appuntamento in calendario NON aggiornato: " + error.message);
             return;
         }
-        let { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
-        if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert(payloadLegacy).select("id").single());
+        let { data: ins, error } = await supabase.from("appointments").insert({ ...payload, status: "scheduled" }).select("id").single();
+        if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert({ ...payloadLegacy, status: "scheduled" }).select("id").single());
         if (error) { alert("Appuntamento NON portato in calendario: " + error.message); return; }
         if (ins?.id) {
             const { error: linkErr } = await supabase.from("calls").update({ appointment_id: ins.id }).eq("id", callId);
@@ -1347,6 +1380,15 @@ function CallerPageInner() {
                 ? editCall.negozio_provenienza
                 : editCall.negozio_pertinenza;
             if (!String(pertinenza || "").trim()) { alert("NEGOZIO DI PERTINENZA obbligatorio (anche se non risponde): è il punto vendita congruo per il cliente — serve ai richiami per sapere dove mandarlo."); return; }
+            // GUARDIA ANTI-CONTRADDIZIONE (fix 10/08, caso Greco): appuntamento
+            // GIÀ ATTIVATO dal negozio → niente "Attivato Anomalia" sopra.
+            {
+                const enG = esitiNegozio[String((editCall as { appointment_id?: number | string | null }).appointment_id ?? "")];
+                if (enG && /^attivato/.test(enG.status) && /anomal/i.test(editCall.statoNew || "")) {
+                    alert("Questo appuntamento risulta GIÀ ATTIVATO dal punto vendita: la pratica va segnata «Attivato» (o si aggancia da sola alla vendita col match) — non «Attivato Anomalia». Se c'è un problema vero, segnalalo al direttore.");
+                    return;
+                }
+            }
             const original = calls.find(c => c.id === editCall.id);
             if (!original) return;
             const newStorico: StoricoEntry[] = [
@@ -2151,6 +2193,7 @@ function CallerPageInner() {
                                                 {/* COLONNA APPUNTAMENTO (03/08): la data si vede da fuori;
                                                     vuota quando lo stato non prevede una data */}
                                                 <td className="px-4 py-3 whitespace-nowrap">
+                                                    <div className="flex flex-col items-start gap-1">
                                                     {APP_STATI.includes(c.stato) && c.data_appuntamento ? (
                                                         <span title={`Appuntamento del ${formatDate(c.data_appuntamento)}${eFascia(c.fascia_appuntamento) ? ` · ${fasciaLabel(c.fascia_appuntamento)}` : ""}${c.negozio_appuntamento ? ` · ${c.negozio_appuntamento}` : ""}`}
                                                             className="px-2 py-1 rounded-full text-[11px] font-bold border bg-purple-500/10 border-purple-500/40 text-purple-300">
@@ -2162,6 +2205,18 @@ function CallerPageInner() {
                                                             ⏰ {formatDateShort(c.data_richiamo)}{c.fascia_richiamo === "mattina" ? " ☀️" : c.fascia_richiamo === "pomeriggio" ? " 🌇" : ""}
                                                         </span>
                                                     ) : null}
+                                                    {/* fix 10/08: l'ESITO DEL NEGOZIO si vede anche qui */}
+                                                    {(() => {
+                                                        const en = esitiNegozio[String((c as { appointment_id?: number | string | null }).appointment_id ?? "")];
+                                                        if (!en || en.status === "scheduled" || !ESITO_NEG_LBL[en.status]) return null;
+                                                        return (
+                                                            <span title={en.esito_note || "Esito del punto vendita"}
+                                                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${ESITO_NEG_LBL[en.status].cls}`}>
+                                                                🏬 {ESITO_NEG_LBL[en.status].l}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                    </div>
                                                 </td>
                                                 {/* CESTINO in coda, dopo l'Appuntamento (Luca 03/08) */}
                                                 <td className="px-2 py-3 text-right whitespace-nowrap">
@@ -2866,6 +2921,20 @@ function CallerPageInner() {
                                         </>
                                     )}
 
+                                    {/* fix 10/08: box ESITO DEL NEGOZIO — la stessa verità del calendario */}
+                                    {(() => {
+                                        const en = esitiNegozio[String((editCall as { appointment_id?: number | string | null }).appointment_id ?? "")];
+                                        if (!en || en.status === "scheduled") return null;
+                                        const lb = ESITO_NEG_LBL[en.status] || { l: en.status, cls: "bg-slate-500/10 border-slate-500/40 text-slate-300" };
+                                        return (
+                                            <div className="p-3 rounded-xl border border-white/10 bg-white/[0.03] flex items-center gap-2.5 flex-wrap">
+                                                <span className="text-lg">🏬</span>
+                                                <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${lb.cls}`}>{lb.l}</span>
+                                                <span className="text-[11px] text-slate-400">Esito del punto vendita sull&apos;appuntamento{en.date ? ` del ${formatDateShort(en.date)}` : ""}{en.store ? ` — ${en.store}` : ""}</span>
+                                                {en.esito_note && <span className="w-full text-[11px] text-slate-400 italic">&ldquo;{en.esito_note}&rdquo;</span>}
+                                            </div>
+                                        );
+                                    })()}
                                     <SectionTitle>Aggiorna Stato</SectionTitle>
                                     <div className="p-4 bg-black/20 border border-white/5 rounded-xl space-y-3">
                                         <div className="flex items-center gap-3">
