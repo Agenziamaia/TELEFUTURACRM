@@ -20,6 +20,7 @@ import { codiciPerBrand } from "@/lib/codiciInserimento";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, CAP_RICERCA_MODIFICA } from "@/lib/capabilities";
+import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento } from "@/lib/matchAppuntamento";
 
 interface ContrattoRow {
     id: string;
@@ -967,32 +968,66 @@ export default function RicercaContratto() {
         }, 250);
         return () => { vivo = false; clearTimeout(t); };
     }, [spostaQuery, spostaOpen]);
+    // NUCLEO RIUSABILE (10/08): sposta TUTTE le righe della stessa vendita
+    // (stesso cliente + stessa data: CTR + marginalità EXT insieme) sulla
+    // scheda del cliente giusto, POI ritenta il MATCH APPUNTAMENTO col CF
+    // della scheda nuova: al submit non era potuto scattare (il CF era quello
+    // sbagliato) e senza questo la vendita spostata restava orfana
+    // dell'appuntamento e il caller perdeva la cooperation (caso Butnaru/Fei).
+    // Usato dal bottone 🔀 Sposta cliente E dal flusso guidato di approvazione.
+    const spostaVenditaSuCliente = async (contractId: string, nuovo: { id: string; etichetta: string }, firma: string): Promise<{ ok: boolean; msg: string }> => {
+        const { data: c } = await supabase.from("contracts").select("id, client_id, data, negozio, clients(nome, cognome, ragione_sociale)").eq("id", contractId).single();
+        if (!c || !(c as any).client_id) return { ok: false, msg: "Il contratto non ha un cliente collegato: impossibile spostare." };
+        const vc = (c as any).clients as { nome?: string; cognome?: string; ragione_sociale?: string } | null;
+        const vecchioNome = vc ? (vc.ragione_sociale || `${vc.nome || ""} ${vc.cognome || ""}`.trim()) : "—";
+        const { data: righeV } = await supabase.from("contracts").select("id, storia").eq("client_id", (c as any).client_id).eq("data", (c as any).data || "");
+        const righe = ((righeV || []) as { id: string; storia: unknown }[]);
+        const daSpostare = righe.length ? righe : [{ id: contractId, storia: [] as unknown }];
+        const stamp = new Date().toISOString();
+        for (const rg of daSpostare) {
+            const storia = Array.isArray(rg.storia) ? [...rg.storia] : [];
+            storia.push({ at: stamp, user: firma, campo: "Cliente", da: vecchioNome, a: nuovo.etichetta });
+            const { error } = await supabase.from("contracts").update({ client_id: nuovo.id, storia }).eq("id", rg.id);
+            if (error) return { ok: false, msg: `Spostamento riga ${rg.id} NON riuscito: ${error.message}` };
+        }
+        let msg = `Vendita spostata su «${nuovo.etichetta}» (${daSpostare.length} rig${daSpostare.length === 1 ? "a" : "he"}).`;
+        // ── RETRO-MATCH appuntamento sul CF della scheda giusta ──
+        try {
+            const { data: nc } = await supabase.from("clients").select("cf_piva, cf_ref").eq("id", nuovo.id).maybeSingle();
+            const cfN = (nc as { cf_piva?: string | null; cf_ref?: string | null } | null)?.cf_piva || "";
+            if (cfN) {
+                const cand = await trovaAppuntamentoDaAgganciare(cfN, (nc as any)?.cf_ref || null, (c as any).negozio || null, (c as any).data || "");
+                if (cand) {
+                    const a = cand.appuntamento;
+                    const ids = daSpostare.map(r => r.id);
+                    if (cand.stessoNegozio) {
+                        const okCoop = window.confirm(`📞 «${nuovo.etichetta}» ha un appuntamento APERTO del call center (${a.created_by || "caller"}, ${a.date || ""}${a.store ? " — " + a.store : ""}).\n\nAgganciare questa vendita? L'appuntamento diventa ATTIVATO e la cooperation va al caller.`);
+                        if (okCoop) {
+                            const ok = await agganciaVenditaAppuntamento(a.id, ids, firma, true);
+                            msg += ok ? ` Appuntamento del ${a.date || "—"} ATTIVATO con cooperation a ${a.created_by || "caller"}.` : " ⚠️ Aggancio all'appuntamento NON riuscito (riprova dal calendario).";
+                        }
+                    } else {
+                        const ok = await agganciaVenditaAppuntamento(a.id, ids, firma, false);
+                        msg += ok ? ` Appuntamento del ${a.date || "—"} segnato attivato (altro negozio).` : " ⚠️ Aggancio all'appuntamento NON riuscito.";
+                    }
+                }
+            }
+        } catch { /* retro-match best-effort: lo spostamento resta valido */ }
+        return { ok: true, msg };
+    };
     const spostaContrattoA = async (nuovo: { id: string; nome: string; cognome: string; ragione_sociale: string }) => {
         if (!selectedContract || spostaBusy) return;
         const nomeNuovo = nuovo.ragione_sociale || `${nuovo.nome || ""} ${nuovo.cognome || ""}`.trim() || nuovo.id;
-        const vecchioClient = selectedContract.raw?.client_id as string | undefined;
-        const dataV = selectedContract.raw?.data as string | undefined;
-        if (!vecchioClient) { alert("Il contratto non ha un cliente collegato: impossibile spostare."); return; }
-        // Sposta TUTTE le righe della STESSA vendita (stesso cliente + stessa
-        // data): CTR + marginalità EXT insieme, così la vendita non si spacca
-        // (caso Butnaru/Fei). Le altre vendite dello stesso cliente (date diverse)
-        // NON si toccano.
-        const { data: righeV } = await supabase.from("contracts").select("id, storia, brand").eq("client_id", vecchioClient).eq("data", dataV || selectedContract.data_registrazione || "");
-        const righe = (righeV || []) as { id: string; storia: unknown; brand: string }[];
-        const n = righe.length || 1;
-        if (!window.confirm(`Spostare questa vendita (${n} rig${n === 1 ? "a" : "he"}: contratto + eventuali marginalità dello stesso giorno) dal cliente «${selectedContract.cliente}» al cliente «${nomeNuovo}»?\nI dati restano invariati, cambia solo la scheda cliente.`)) return;
+        if (!selectedContract.raw?.client_id) { alert("Il contratto non ha un cliente collegato: impossibile spostare."); return; }
+        if (!window.confirm(`Spostare questa vendita (contratto + eventuali marginalità dello stesso giorno) dal cliente «${selectedContract.cliente}» al cliente «${nomeNuovo}»?\nI dati restano invariati, cambia solo la scheda cliente.`)) return;
         setSpostaBusy(true);
         try {
-            const stamp = new Date().toISOString();
-            for (const rg of (righe.length ? righe : [{ id: selectedContract.id, storia: [], brand: "" }])) {
-                const storia = Array.isArray(rg.storia) ? [...rg.storia] : [];
-                storia.push({ at: stamp, user: user?.name || "—", campo: "Cliente", da: selectedContract.cliente, a: nomeNuovo });
-                const { error } = await supabase.from("contracts").update({ client_id: nuovo.id, storia }).eq("id", rg.id);
-                if (error) { alert(`Spostamento riga ${rg.id} NON riuscito: ${error.message}`); setSpostaBusy(false); return; }
-            }
+            const r = await spostaVenditaSuCliente(selectedContract.id, { id: nuovo.id, etichetta: nomeNuovo }, user?.name || "—");
+            if (!r.ok) { alert(r.msg); setSpostaBusy(false); return; }
             setSpostaOpen(false); setSpostaQuery(""); setSpostaHits([]);
             setSelectedContract(null);
             await fetchData();
+            alert("✅ " + r.msg);
         } catch (e) { alert("Errore: " + (e instanceof Error ? e.message : "riprova")); }
         setSpostaBusy(false);
     };
@@ -1168,7 +1203,11 @@ export default function RicercaContratto() {
     // `firmaStoria` è chi compare nelle righe di storia. Ritorna null se tutto
     // ok, altrimenti il messaggio d'errore da mostrare (niente resta "a metà"
     // senza che si veda — segnalazione 32).
-    const applicaCambiamenti = async (contractId: string, changes: Record<string, any>, firmaStoria: string): Promise<string | null> => {
+    // Ritorno: null = ok · string = errore · {cfConflitto} = il CF richiesto
+    // appartiene GIÀ a un altro cliente → il chiamante offre lo spostamento
+    // guidato della vendita su quella scheda (10/08, caso Butnaru/Fei v2).
+    type EsitoApplica = string | { cfConflitto: { id: string; nome: string; cf: string } } | null;
+    const applicaCambiamenti = async (contractId: string, changes: Record<string, any>, firmaStoria: string): Promise<EsitoApplica> => {
         const { data: c } = await supabase.from("contracts").select("*").eq("id", contractId).single();
         if (!c) return "Contratto " + contractId + " non trovato.";
         const contractPatch: Record<string, unknown> = {};
@@ -1226,25 +1265,26 @@ export default function RicercaContratto() {
         }
         if (detTouched) contractPatch.dettagli = det;
         contractPatch.storia = storia;
+        // GUARDIA CF PRIMA DI OGNI SCRITTURA (fix 10/08): prima stava DOPO
+        // l'update del contratto → applicazione PARZIALE (campi contratto
+        // scritti, cliente no) e righe di storia duplicate a ogni ritentativo.
+        // Ora il conflitto ferma tutto in anticipo e torna STRUTTURATO, così
+        // il chiamante può proporre lo spostamento guidato della vendita.
+        if (Object.keys(clientPatch).length > 0 && c.client_id && clientPatch.cf_piva) {
+            const { data: gia } = await supabase.from("clients")
+                .select("id, nome, cognome, ragione_sociale").ilike("cf_piva", String(clientPatch.cf_piva)).neq("id", c.client_id).limit(1);
+            if (gia && gia[0]) {
+                const g = gia[0] as { id: string; nome?: string; cognome?: string; ragione_sociale?: string };
+                const chi = g.ragione_sociale || `${g.nome || ""} ${g.cognome || ""}`.trim() || "un altro cliente";
+                return { cfConflitto: { id: g.id, nome: chi, cf: String(clientPatch.cf_piva) } };
+            }
+        }
         const { error: cErr } = await supabase.from("contracts").update(contractPatch).eq("id", contractId);
         if (cErr) return "Modifica NON applicata al contratto: " + cErr.message;
         if (Object.keys(clientPatch).length > 0 && c.client_id) {
-            // CF/P.IVA è UNIVOCO: se il nuovo codice è già di un altro cliente
-            // l'update fallirebbe con l'errore SQL grezzo (uq_clients_cf_piva).
-            // Messaggio CHIARO che guida alla soluzione (Luca 08/08, caso
-            // Butnaru/Fei): non due clienti con lo stesso CF.
-            if (clientPatch.cf_piva) {
-                const { data: gia } = await supabase.from("clients")
-                    .select("id, nome, cognome, ragione_sociale").ilike("cf_piva", String(clientPatch.cf_piva)).neq("id", c.client_id).limit(1);
-                if (gia && gia[0]) {
-                    const g = gia[0] as { nome?: string; cognome?: string; ragione_sociale?: string };
-                    const chi = g.ragione_sociale || `${g.nome || ""} ${g.cognome || ""}`.trim() || "un altro cliente";
-                    return `Il codice fiscale ${clientPatch.cf_piva} è già registrato sul cliente «${chi}»: non può stare su due schede. Se è la stessa persona, unite le due anagrafiche; se il contratto è intestato al cliente sbagliato, spostatelo alla scheda giusta (campo Cliente) invece di cambiare il CF.`;
-                }
-            }
             const { error: clErr } = await supabase.from("clients").update(clientPatch).eq("id", c.client_id);
             if (clErr) {
-                if (/uq_clients_cf_piva|duplicate key/i.test(clErr.message)) return `Il codice fiscale ${clientPatch.cf_piva || ""} è già registrato su un altro cliente: non può stare su due schede. Unite le anagrafiche o spostate il contratto alla scheda giusta.`;
+                if (/uq_clients_cf_piva|duplicate key/i.test(clErr.message)) return `Il codice fiscale ${clientPatch.cf_piva || ""} è già registrato su un altro cliente: non può stare su due schede. Spostate il contratto alla scheda giusta (bottone 🔀 Sposta cliente).`;
                 return "Modifica NON applicata al cliente: " + clErr.message;
             }
         }
@@ -1295,7 +1335,21 @@ export default function RicercaContratto() {
         setSaving(true);
         const esito = await applicaCambiamenti(selectedContract.id, pendingChanges,
             `${user?.name || "—"} (modifica diretta)`);
-        if (esito) { setSaving(false); setReqMsg(esito); return; }
+        if (esito && typeof esito === "object" && "cfConflitto" in esito) {
+            // stesso flusso guidato dell'approvazione: qui l'admin è già nel
+            // modale, quindi in alternativa può usare il bottone 🔀 Sposta cliente
+            const g = esito.cfConflitto;
+            setSaving(false);
+            const okSposta = window.confirm(
+                `Il codice fiscale ${g.cf} appartiene già a «${g.nome}»: non può stare su due schede.\n\n` +
+                `OK = SPOSTA questa vendita sulla scheda di «${g.nome}» (CF invariato).\nAnnulla = non fare nulla.`);
+            if (!okSposta) { setReqMsg(`CF già di «${g.nome}»: nessuna modifica applicata. In alternativa usa 🔀 Sposta cliente.`); return; }
+            const sp = await spostaVenditaSuCliente(selectedContract.id, { id: g.id, etichetta: g.nome }, user?.name || "—");
+            setReqMsg((sp.ok ? "✅ " : "") + sp.msg);
+            if (sp.ok) { setDetailMode("view"); setSelectedContract(null); await fetchData(); }
+            return;
+        }
+        if (esito) { setSaving(false); setReqMsg(esito as string); return; }
         const payload: Record<string, unknown> = { ...pendingChanges };
         if (reqNote.trim()) payload.__meta = { note: reqNote.trim() };
         const { error: tErr } = await supabase.from("contract_change_requests").insert({
@@ -1332,9 +1386,45 @@ export default function RicercaContratto() {
             // RIC-04: stessa applicazione del salvataggio diretto (funzione
             // unica applicaCambiamenti). Se qualcosa va storto la richiesta
             // resta in attesa (gli errori non venivano letti — segnalazione 32).
-            const esito = await applicaCambiamenti(req.contract_id, req.changes || {},
-                `${req.requested_by_name || "—"} → approvata da ${user?.name || "—"}`);
-            if (esito) { setReqBusy(null); alert(esito); return; }
+            const firma = `${req.requested_by_name || "—"} → approvata da ${user?.name || "—"}`;
+            let esito = await applicaCambiamenti(req.contract_id, req.changes || {}, firma);
+            // ── FLUSSO GUIDATO CF DUPLICATO (10/08, caso Butnaru/Fei) ──
+            // La richiesta "cambia CF" in realtà significa quasi sempre "la
+            // vendita è intestata al cliente sbagliato". Invece del vicolo
+            // cieco: proponiamo di SPOSTARE la vendita sulla scheda giusta,
+            // poi riapplichiamo il resto della richiesta su quella scheda
+            // (il CF a quel punto coincide e passa da solo).
+            if (esito && typeof esito === "object" && "cfConflitto" in esito) {
+                const g = esito.cfConflitto;
+                const okSposta = window.confirm(
+                    `Il codice fiscale ${g.cf} appartiene già a «${g.nome}»: non può stare su due schede.\n\n` +
+                    `Questa richiesta in realtà dice che la vendita è intestata al cliente SBAGLIATO.\n\n` +
+                    `OK = SPOSTA la vendita (contratto + marginalità dello stesso giorno) sulla scheda di «${g.nome}» e applica le altre correzioni lì.\n` +
+                    `Annulla = non fare nulla (la richiesta resta in attesa).`);
+                if (!okSposta) { setReqBusy(null); return; }
+                const sp = await spostaVenditaSuCliente(req.contract_id, { id: g.id, etichetta: g.nome }, firma);
+                if (!sp.ok) { setReqBusy(null); alert(sp.msg); return; }
+                // riapplica la richiesta sulla scheda giusta: il cf_piva ora
+                // coincide col cliente puntato → nessun conflitto; gli altri
+                // campi (contratto/dettagli/cliente) vengono applicati normalmente
+                esito = await applicaCambiamenti(req.contract_id, req.changes || {}, firma);
+                if (esito && typeof esito === "string") { setReqBusy(null); alert("Vendita spostata, ma il resto della richiesta non è passato: " + esito); return; }
+                await supabase.from("contract_change_requests").update({
+                    status: "approved",
+                    reviewed_by: user?.id || null,
+                    reviewed_by_name: user?.name || "—",
+                    reviewed_at: new Date().toISOString(),
+                    review_note: `Gestita SPOSTANDO la vendita sulla scheda di «${g.nome}» (CF invariato). ${sp.msg}${note ? " · " + note : ""}`,
+                }).eq("id", req.id);
+                setReqBusy(null);
+                await loadChangeReqs();
+                await fetchData();
+                await ricaricaAperto(req.contract_id);
+                setReqMsg("✅ " + sp.msg);
+                alert("✅ " + sp.msg);
+                return;
+            }
+            if (esito) { setReqBusy(null); alert(esito as string); return; }
         }
         const { error: rErr } = await supabase.from("contract_change_requests").update({
             status: approve ? "approved" : "rejected",
