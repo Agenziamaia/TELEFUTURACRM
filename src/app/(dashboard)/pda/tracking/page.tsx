@@ -928,16 +928,19 @@ function Drawer({
   onDelegate,
   delegatoNome = null,
   episodiMalus = [],
+  scartaRef,
 }: {
   row: TrackingRow;
   onClose: () => void;
-  onUpdate: (updated: TrackingRow) => void;
+  onUpdate: (updated: TrackingRow, opts?: { salvaFollowup?: boolean }) => void;
   members?: { id: string; full_name: string }[];
   canDelegate?: boolean;
   canEditAdmin?: boolean;
   onDelegate?: (rowId: string, toId: string | null) => void;
   delegatoNome?: string | null;
   episodiMalus?: EpisodioMalus[];
+  // cestino: la pratica sta sparendo dalla vista → la bozza si butta, non si salva
+  scartaRef?: { current: boolean };
 }) {
   // nome VERO di chi modifica nello storico (Luca 02/08): niente piu'
   // "Venditore"/"Amministrazione" generici
@@ -966,54 +969,80 @@ function Drawer({
     );
   };
 
-  const salva = (origine: "negozio" | "admin") => {
-    const oggi = new Date().toLocaleDateString("it-IT");
-    const nuovaStoria = [...row.storia];
+  // MOD-27 (Luca 10/08): via i bottoni Salva — le modifiche restano in BOZZA
+  // qui dentro e si scrivono DA SOLE quando si chiude la sezione (cambio tab),
+  // si cambia pratica o si chiude la scheda: un esito cliccato per sbaglio e
+  // corretto al volo NON intasa lo storico. I refs sono la fonte del commit di
+  // chiusura: durante l'unmount lo stato React non e' piu' leggibile.
+  const staged = useRef({ statoN: row.statoNegozio, statoA: row.statoAdmin, notaN: "", notaA: "", fu: followup });
+  useEffect(() => { staged.current = { statoN: editStatoN, statoA: editStatoA, notaN: notaNegozio, notaA: notaAdmin, fu: followup }; });
+  // baseline = ultimo valore COMMITTATO (parte dal dato a DB): il confronto con
+  // la bozza decide se c'e' davvero qualcosa da salvare
+  const baseN = useRef(row.statoNegozio);
+  const baseA = useRef(row.statoAdmin);
+  const baseFu = useRef(JSON.stringify(row.followup ?? []));
+  // storia accumulata, inclusi i commit non ancora tornati dal giro DB→prop; se
+  // il prop si allunga per altre vie (es. evento delega) vince il piu' ricco
+  const storiaRef = useRef<StoriaEvent[]>(row.storia);
+  useEffect(() => { if (row.storia.length > storiaRef.current.length) storiaRef.current = row.storia; }, [row.storia]);
 
-    if (origine === "negozio") {
-      if (editStatoN !== row.statoNegozio) {
-        nuovaStoria.push({
-          data: oggi,
-          tipo: "stato_negozio",
-          testo: "Esito negozio aggiornato: " + getStatoN(editStatoN).label,
-          utente: nomeUtente,
-          ruolo: "negozio",
-        });
+  const commit = (origine?: "negozio" | "admin") => {
+    const s = staged.current;
+    const oggi = new Date().toLocaleDateString("it-IT");
+    const eventi: StoriaEvent[] = [];
+    let dirty = false;
+    let salvaFollowup = false;
+    if (origine !== "admin") {
+      const nota = s.notaN.trim();
+      const fuJson = JSON.stringify(s.fu);
+      const cambioFu = row.categoria === "piva" && fuJson !== baseFu.current;
+      if (s.statoN !== baseN.current) {
+        eventi.push({ data: oggi, tipo: "stato_negozio", testo: "Esito negozio aggiornato: " + getStatoN(s.statoN).label, utente: nomeUtente, ruolo: "negozio" });
       }
-      if (notaNegozio.trim()) {
-        nuovaStoria.push({
-          data: oggi,
-          tipo: "nota_negozio",
-          testo: notaNegozio.trim(),
-          utente: nomeUtente,
-          ruolo: "negozio",
-        });
+      if (nota) {
+        eventi.push({ data: oggi, tipo: "nota_negozio", testo: nota, utente: nomeUtente, ruolo: "negozio" });
       }
-      onUpdate({ ...row, statoNegozio: editStatoN, storia: nuovaStoria });
-      setNotaNegozio("");
-    } else {
-      if (editStatoA !== row.statoAdmin) {
-        nuovaStoria.push({
-          data: oggi,
-          tipo: "stato_admin",
-          testo: "Esito admin aggiornato: " + getStatoA(editStatoA).label,
-          utente: nomeUtente,
-          ruolo: "admin",
-        });
+      if (s.statoN !== baseN.current || nota || cambioFu) {
+        dirty = true;
+        salvaFollowup = cambioFu;
+        baseN.current = s.statoN;
+        baseFu.current = fuJson;
+        s.notaN = "";
+        setNotaNegozio("");
       }
-      if (notaAdmin.trim()) {
-        nuovaStoria.push({
-          data: oggi,
-          tipo: "nota_admin",
-          testo: notaAdmin.trim(),
-          utente: nomeUtente,
-          ruolo: "admin",
-        });
-      }
-      onUpdate({ ...row, statoAdmin: editStatoA, storia: nuovaStoria });
-      setNotaAdmin("");
     }
+    if (origine !== "negozio") {
+      const nota = s.notaA.trim();
+      if (s.statoA !== baseA.current) {
+        eventi.push({ data: oggi, tipo: "stato_admin", testo: "Esito admin aggiornato: " + getStatoA(s.statoA).label, utente: nomeUtente, ruolo: "admin" });
+      }
+      if (nota) {
+        eventi.push({ data: oggi, tipo: "nota_admin", testo: nota, utente: nomeUtente, ruolo: "admin" });
+      }
+      if (s.statoA !== baseA.current || nota) {
+        dirty = true;
+        baseA.current = s.statoA;
+        s.notaA = "";
+        setNotaAdmin("");
+      }
+    }
+    if (!dirty) return;
+    const nuovaStoria = [...storiaRef.current, ...eventi];
+    storiaRef.current = nuovaStoria;
+    onUpdate({ ...row, statoNegozio: baseN.current, statoAdmin: baseA.current, followup: s.fu, storia: nuovaStoria }, { salvaFollowup });
   };
+  // il commit di chiusura (unmount: ✕, cambio pratica, navigazione) passa da un
+  // ref cosi' legge sempre la versione corrente della funzione
+  const commitRef = useRef(commit);
+  useEffect(() => { commitRef.current = commit; });
+  useEffect(() => {
+    if (scartaRef) scartaRef.current = false;
+    return () => {
+      if (scartaRef?.current) { scartaRef.current = false; return; }
+      commitRef.current();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const labelStyle = "text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1";
   const valStyle = "text-[13px] text-slate-200";
@@ -1089,7 +1118,14 @@ function Drawer({
               <button
                 key={tab}
                 type="button"
-                onClick={() => setActiveTab(tab)}
+                onClick={() => {
+                  // MOD-27: lasciare la sezione = salvarla (se c'e' una bozza)
+                  if (tab !== activeTab) {
+                    if (activeTab === "negozio") commit("negozio");
+                    if (activeTab === "admin") commit("admin");
+                  }
+                  setActiveTab(tab);
+                }}
                 className="py-2 px-4 bg-transparent border-none border-b-2 cursor-pointer transition-all text-[13px] font-normal"
                 style={{
                   borderBottomColor: active ? "var(--tf-6366f1)" : "transparent",
@@ -1262,13 +1298,10 @@ function Drawer({
                 placeholder="Nota negozio (es: cliente contattato…)"
                 className="w-full min-h-[68px] bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] p-2.5 resize-y outline-none box-border mb-2.5"
               />
-              <button
-                type="button"
-                onClick={() => salva("negozio")}
-                className="w-full bg-indigo-600 border-none rounded-lg text-white text-[13px] font-semibold py-2 px-5 cursor-pointer"
-              >
-                Salva esito negozio
-              </button>
+              {/* MOD-27: niente bottone — vedi commit() qui sopra */}
+              <p className="text-[11px] text-slate-500 text-center">
+                💾 Si salva da solo quando cambi sezione o pratica, o chiudi questa scheda.
+              </p>
             </div>
           </div>
         )}
@@ -1313,14 +1346,10 @@ function Drawer({
               placeholder="Nota amministrazione…"
               className="w-full min-h-[68px] bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] p-2.5 resize-y outline-none box-border mb-2.5"
             />
-            <button
-              type="button"
-              onClick={() => salva("admin")}
-              className="w-full bg-purple-600 border-none rounded-lg text-white text-[13px] font-semibold py-2 px-5 cursor-pointer"
-            >
-              Salva verifica amministrazione
-            </button>
-
+            {/* MOD-27: niente bottone — vedi commit() qui sopra */}
+            <p className="text-[11px] text-slate-500 text-center">
+              💾 Si salva da solo quando cambi sezione o pratica, o chiudi questa scheda.
+            </p>
           </div>
         )}
 
@@ -1468,6 +1497,11 @@ export default function TrackingPdaPage() {
   const [negozioSel, setNegozioSel] = useState<string>("");
 
   const [selected, setSelected] = useState<TrackingRow | null>(null);
+  // MOD-27: specchio di `selected` per i callback con deps [] + flag "butta la
+  // bozza" letto dal Drawer all'unmount (solo per il cestino)
+  const selectedRef = useRef<TrackingRow | null>(null);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+  const scartaCommitRef = useRef(false);
   // STORICO MALUS (30/07, mig. 103): episodi persistiti + vista archivio.
   const [episodi, setEpisodi] = useState<EpisodioMalus[]>([]);
   const [malusErr, setMalusErr] = useState<string | null>(null);
@@ -1918,6 +1952,9 @@ export default function TrackingPdaPage() {
     try {
       const { error } = await supabase.from("contracts").update({ tracking_nascosto: true }).eq("id", row.id);
       if (error) throw error;
+      // MOD-27: la pratica sparisce dalla vista — l'eventuale bozza nel drawer
+      // NON va committata (scriverebbe storico su una pratica appena nascosta)
+      if (selectedRef.current && selectedRef.current.id === row.id) scartaCommitRef.current = true;
       setRawList((prev) => prev.map((r) => ((r.id as string) === row.id ? { ...r, tracking_nascosto: true } : r)));
       setSelected((sel) => (sel && sel.id === row.id ? null : sel));
       setDaEliminare(null);
@@ -1943,7 +1980,7 @@ export default function TrackingPdaPage() {
   }, [rawList, memberName, user]);
 
   const handleUpdate = useCallback(
-    async (updated: TrackingRow) => {
+    async (updated: TrackingRow, opts?: { salvaFollowup?: boolean }) => {
       // Segnalazioni 37 e 38: lo stato lavorato qui deve comparire subito in
       // Ricerca Contratto, e la data di attivazione si popola quando la pratica
       // diventa davvero attiva (prima veniva scritta all'inserimento).
@@ -1956,7 +1993,7 @@ export default function TrackingPdaPage() {
       // questo callback ha deps [] e nel suo closure `rawList` e' quello del primo
       // render (vuoto), quindi il merge partiva da {} e CANCELLAVA le altre categorie
       // gia' salvate (corruzione della riga sorella allo "Salva esito negozio").
-      const { data: _cur } = await supabase.from("contracts").select("stati_categoria").eq("id", updated.id).maybeSingle();
+      const { data: _cur } = await supabase.from("contracts").select("stati_categoria, dettagli").eq("id", updated.id).maybeSingle();
       const attuali = ((_cur?.stati_categoria as Record<string, string>) || {});
       const nuoviStati = { ...attuali, [cat]: updated.statoNegozio };
 
@@ -1974,6 +2011,11 @@ export default function TrackingPdaPage() {
         stati_categoria: nuoviStati,
       };
       if (!rigaEspansa) payload.stato_negozio = updated.statoNegozio;
+      // MOD-27: i follow-up P.IVA (cliente irreperibile) vivono in dettagli —
+      // prima non venivano MAI persistiti; si scrivono solo quando cambiano
+      if (opts?.salvaFollowup) {
+        payload.dettagli = { ...((_cur?.dettagli as Record<string, unknown>) || {}), followup: updated.followup || [] };
+      }
       // La data di attivazione NON si tocca qui: viene compilata alla
       // registrazione ed e' quella la data buona (indicazione di Luca, che
       // annulla la segnalazione 38). Qui si propaga solo lo stato.
@@ -1985,7 +2027,10 @@ export default function TrackingPdaPage() {
       setRawList((prev) =>
         prev.map((r) => ((r.id as string) === updated.id ? { ...r, ...payload } : r))
       );
-      setSelected(updated);
+      // MOD-27: il commit puo' arrivare dal drawer della pratica PRECEDENTE
+      // (unmount al cambio pratica): la selezione si aggiorna solo se e' ancora
+      // la stessa riga, altrimenti si riaprirebbe la scheda vecchia
+      setSelected((sel) => sel && sel.id === updated.id && sel.categoria === updated.categoria ? updated : sel);
     },
     []
   );
@@ -2191,9 +2236,15 @@ export default function TrackingPdaPage() {
         )}
 
         {selected && (
-          <Drawer row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate}
+          /* MOD-27: il key RIMONTA il drawer a ogni cambio pratica — senza,
+             React riusava l'istanza e la bozza (stato/note) della pratica
+             precedente "traslocava" sulla nuova; l'unmount della vecchia
+             istanza fa anche il commit automatico della sua bozza */
+          <Drawer key={selected.rowKey || `${selected.id}#${selected.categoria}`}
+            row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate}
             members={members} canDelegate={canDelegate} canEditAdmin={canEditAdmin} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)}
-            episodiMalus={episodiPerRiga.get(`${selected.id}#${selected.categoria}`) || []} />
+            episodiMalus={episodiPerRiga.get(`${selected.id}#${selected.categoria}`) || []}
+            scartaRef={scartaCommitRef} />
         )}
       </div>
     </div>
