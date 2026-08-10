@@ -7,6 +7,8 @@ import { UrgentTasks } from "@/components/UrgentTasks";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel, seesAllStores } from "@/lib/roles";
+import { effectiveAllowed } from "@/lib/nav";
+import { useRolePermissions } from "@/lib/usePermissions";
 import { supabase } from "@/lib/supabaseClient";
 import { useRoles } from "@/lib/useRoles";
 import { cn } from "@/utils";
@@ -43,6 +45,10 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
     // se ne ha). Aggiornato a ogni navigazione; select difensivo.
     const [verificheAperte, setVerificheAperte] = useState(0);
     const isAdminVer = ["admin", "dev"].includes(user?.role || "");
+    // MOD-43 (Luca 10/08): la sezione si CONCEDE dai permessi (/verifiche) —
+    // per grado (store_manager@senior) o per persona (user:<id>), come Francesco
+    const { perms: permsVer } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const puoVerifiche = isAdminVer || effectiveAllowed(user?.role, "/verifiche", ["admin", "dev"], permsVer);
     useEffect(() => {
         if (!user?.id) { setVerificheAperte(0); return; }
         let vivo = true;
@@ -352,7 +358,7 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                 {/* VERIFICHE (MOD-36/38, Luca 10/08, "momentaneo"): admin — il
                     recap degli update da esitare + sospesi; un utente DELEGATO
                     vede il bottone solo se ha verifiche assegnate. */}
-                {(isAdminVer || verificheAperte > 0) && (
+                {(puoVerifiche || verificheAperte > 0) && (
                     <button
                         onClick={() => router.push("/verifiche")}
                         title="Verifiche — update da esitare e questioni in sospeso"

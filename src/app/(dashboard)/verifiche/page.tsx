@@ -15,6 +15,8 @@ import { ClipboardCheck, ExternalLink, Loader2, Send, UserRound, X } from "lucid
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { SelectPersona } from "@/components/SelectPersona";
+import { effectiveAllowed } from "@/lib/nav";
+import { useRolePermissions } from "@/lib/usePermissions";
 
 type Allegato = { url: string; name: string };
 type Voce = {
@@ -248,8 +250,13 @@ export default function VerifichePage() {
     const daSistemare = useMemo(() => mie.filter((v) => v.stato === "da_sistemare"), [mie]);
     const chiuse = useMemo(() => mie.filter((v) => v.stato === "verificata"), [mie]);
 
-    // MOD-40: il non-admin entra comunque — anche senza deleghe puo' PROPORRE
-    // una modifica all'amministrazione (il form qui sotto)
+    // MOD-43: l'accesso si CONCEDE dai permessi (/verifiche: grado senior o
+    // singole persone) — chi ha deleghe ricevute entra comunque
+    const { perms: permsPagina, loaded: permsPronti } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const abilitato = isAdmin || effectiveAllowed(user?.role, "/verifiche", ["admin", "dev"], permsPagina) || mie.length > 0;
+    if (user && !loading && permsPronti && !abilitato) {
+        return <div className="glass-panel p-10 text-center max-w-lg mx-auto mt-10 text-slate-400">Sezione non abilitata per il tuo utente.</div>;
+    }
 
     return (
         <div className="space-y-6 max-w-[1500px]">

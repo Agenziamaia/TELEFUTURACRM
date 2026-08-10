@@ -11,9 +11,11 @@
  *    altrove, ma la cooperation NON sale (non è giusto). Automatico.
  *
  * REGOLE: ponte = CF (clients.cf_piva ↔ appointments.cf_piva/referente_cf; lato
- * pratiche calls.cf/piva), normalizzati upper/trim; finestra = vendita tra la
- * data appuntamento fissata e +30gg (appointments.date è già l'ultima data
- * fissata); solo appuntamenti veri (type != 'richiamo'), non ko/annullato.
+ * pratiche calls.cf/piva), normalizzati upper/trim; finestra (Luca 10/08) =
+ * vendita tra la DATA DELLA CHIAMATA (created_at: quando il caller ha fissato)
+ * e +30gg dalla data fissata (appointments.date, già l'ultima) — l'anticipo
+ * conta, prima della chiamata no; solo appuntamenti veri (type != 'richiamo');
+ * ko/annullato si RIAPRONO se il CF si attiva in finestra.
  * Tutto lato client (anon) come il resto dell'app; la sicurezza sposterà queste
  * scritture dietro auth server.
  */
@@ -29,6 +31,7 @@ const addGiorni = (ymd: string, n: number) => { const [y, m, d] = ymd.split("-")
 export type AppuntamentoMatch = {
     id: number; date: string | null; store: string | null; status: string | null;
     created_by: string | null; type: string | null; customer_name: string | null;
+    created_at: string | null;
 };
 
 /** Appuntamenti VERI (non richiami) aperti di un CF — per il banner e per il match.
@@ -39,7 +42,7 @@ export async function appuntamentiPerCF(cf: string, referenteCf?: string): Promi
     const ors = chiavi.flatMap(k => [`cf_piva.ilike.${k}`, `referente_cf.ilike.${k}`]).join(",");
     const { data } = await supabase
         .from("appointments")
-        .select("id, date, store, status, created_by, type, cf_piva, referente_cf, customer_name")
+        .select("id, date, store, status, created_by, type, cf_piva, referente_cf, customer_name, created_at")
         .neq("type", "richiamo")
         .or(ors)
         .order("date", { ascending: false })
@@ -62,14 +65,20 @@ export async function trovaAppuntamentoDaAgganciare(
     if (!dv) return null;
     const radiceVendita = negozioVendita ? storeRoot(negozioVendita) : null;
     // già attivato* = non si ri-tocca (evita che una seconda vendita in altro
-    // negozio declassi una cooperation già assegnata) — oltre a ko/annullato
-    const CHIUSI = new Set(["ko", "annullato", "attivato", "attivato_diverso_negozio"]);
+    // negozio declassi una cooperation già assegnata). KO/ANNULLATO invece si
+    // RIAPRONO (decisione Luca 10/08 via Verifiche): se il CF si attiva dentro
+    // la finestra, la cooperation sale comunque.
+    const CHIUSI = new Set(["attivato", "attivato_diverso_negozio"]);
     const cand = (await appuntamentiPerCF(cf, referenteCf || undefined))
         .filter(a => {
             if (a.status && CHIUSI.has(a.status)) return false;
             const ad = soloData(a.date);
             if (!ad) return false;
-            return dv >= ad && dv <= addGiorni(ad, FINESTRA_GG);   // vendita nella finestra
+            // FINESTRA (regola Luca 10/08): dalla DATA DELLA CHIAMATA (quando il
+            // caller ha fissato l'appuntamento) a +30gg dalla data fissata — il
+            // cliente che si presenta IN ANTICIPO conta, prima della chiamata no.
+            const dallaChiamata = soloData(a.created_at) || ad;
+            return dv >= dallaChiamata && dv <= addGiorni(ad, FINESTRA_GG);
         })
         .sort((x, y) => String(y.date).localeCompare(String(x.date)));
     const a = cand[0];
