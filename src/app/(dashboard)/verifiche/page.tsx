@@ -159,6 +159,10 @@ export default function VerifichePage() {
     const [busy, setBusy] = useState<string | null>(null);
     const [mostraChiuse, setMostraChiuse] = useState(false);
     const [segnalaId, setSegnalaId] = useState<string | null>(null);
+    // rifiuto di una PROPOSTA con nota facoltativa (Luca 10/08): la nota resta
+    // nello storico della voce, visibile anche a chi l'ha proposta
+    const [rifiutoId, setRifiutoId] = useState<string | null>(null);
+    const [noteRifiuto, setNoteRifiuto] = useState<Record<string, string>>({});
     // utenti attivi per la tendina di delega (solo admin)
     const [utenti, setUtenti] = useState<{ id: string; full_name: string }[]>([]);
 
@@ -201,6 +205,11 @@ export default function VerifichePage() {
     const segnalaDelegato = (v: Voce) => {
         const r = (bozze[v.id] || "").trim();
         if (r) aggiorna(v.id, { segnalazione_delegato: r, segnalato_da: user?.name || "delegato", stato: "segnalazione_delegato", ...conAllegati(v) });
+    };
+    const rifiuta = (v: Voce) => {
+        const nota = (noteRifiuto[v.id] || "").trim();
+        setRifiutoId(null);
+        aggiorna(v.id, { stato: "verificata", verificato_il: new Date().toISOString(), verificato_da: user?.name || "admin", risposta: nota ? `Rifiutata: ${nota}` : "Rifiutata" });
     };
     // admin approva la segnalazione del delegato (eventualmente corretta) → Claude
     const inoltra = (v: Voce) => {
@@ -287,14 +296,32 @@ export default function VerifichePage() {
                                 <AllegatiPicker value={bozzeAll[v.id] || []} onChange={(a) => setBozzeAll((p) => ({ ...p, [v.id]: a }))} />
                                 <div className="flex gap-2 flex-wrap">
                                     <button onClick={() => inoltra(v)} disabled={busy === v.id}
-                                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-bold disabled:opacity-50">
-                                        <Send className="w-4 h-4" /> {v.tipo === "task" ? "Conferma e invia a Claude" : "Inoltra a Claude (da sistemare)"}
+                                        className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-sm font-bold disabled:opacity-50 ${v.tipo === "task" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-orange-700 hover:bg-orange-600"}`}>
+                                        <Send className="w-4 h-4" /> {v.tipo === "task" ? "✓ Conferma e invia a Claude" : "Inoltra a Claude (da sistemare)"}
                                     </button>
-                                    <button onClick={() => verifica(v)} disabled={busy === v.id}
-                                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-50">
-                                        {v.tipo === "task" ? "✕ Rifiuta" : "✓ Chiudi come verificata"}
-                                    </button>
+                                    {v.tipo === "task" ? (
+                                        <button onClick={() => setRifiutoId(rifiutoId === v.id ? null : v.id)} disabled={busy === v.id}
+                                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold disabled:opacity-50">
+                                            ✕ Rifiuta
+                                        </button>
+                                    ) : (
+                                        <button onClick={() => verifica(v)} disabled={busy === v.id}
+                                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-50">
+                                            ✓ Chiudi come verificata
+                                        </button>
+                                    )}
                                 </div>
+                                {rifiutoId === v.id && (
+                                    <div className="flex gap-2 items-start pt-1">
+                                        <textarea value={noteRifiuto[v.id] || ""} onChange={(e) => setNoteRifiuto((p) => ({ ...p, [v.id]: e.target.value }))}
+                                            placeholder="Nota per chi ha proposto (facoltativa): perché la rifiuti…" rows={2} autoFocus
+                                            className="glass-input flex-1 text-sm !h-auto py-2 resize-y" />
+                                        <button onClick={() => rifiuta(v)} disabled={busy === v.id}
+                                            className="shrink-0 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold disabled:opacity-50">
+                                            ✕ Conferma rifiuto
+                                        </button>
+                                    </div>
+                                )}
                             </CardVoce>
                         ))}
                     </section>
