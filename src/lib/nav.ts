@@ -19,7 +19,7 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Presentation, Radar,
+    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Presentation, Radar, Calculator,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -150,6 +150,10 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Direzione Inserimento", sez: "direzione", icon: Compass, roles: ["admin", "dev"] },
         ],
     },
+    // CALCOLATORE $$$ (cantiere GARE 10/08): registra-vendita riassunto che
+    // dice il commissioning di una vendita alla soglia scelta (pay tabellare).
+    // Per ora admin/dev: si apre ai ragazzi quando arriva la vista gare.
+    { type: "link", name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
     {
         type: "hub",
         name: "Amministrazione",
