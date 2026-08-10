@@ -223,6 +223,16 @@ export function TrackingEsitiView() {
                                     </button>
                                 </div>
                             )}
+                            {/* INTESTAZIONE colonne lato admin (Luca 10/08: il campo
+                                €/gg da solo non era intuibile) */}
+                            {lato === "admin" && voci.length > 0 && (
+                                <div className="flex items-center justify-end gap-2 pr-2.5 mb-1 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                                    <span className="w-[84px] text-center" title="Malus in euro per ogni giorno lavorativo in cui la pratica resta in questo esito (vuoto = nessun malus)">Malus €/giorno</span>
+                                    <span className="w-[88px] text-center">Definitiva</span>
+                                    <span className="w-9 text-center">Attiva</span>
+                                    <span className="w-7" />
+                                </div>
+                            )}
                             <div className="space-y-1">
                                 {voci.map((r, i) => (
                                     <div key={r.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border ${r.attiva ? "border-white/8 bg-white/[0.02]" : "border-white/5 bg-transparent opacity-50"}`}>

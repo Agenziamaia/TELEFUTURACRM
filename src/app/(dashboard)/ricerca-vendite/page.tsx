@@ -2579,12 +2579,36 @@ export default function RicercaContratto() {
                                                 tendina (chiave nei dettagli, varia per brand). */}
                                             {renderField("dettagli::" + codInsKey, "Codice inserimento")}
                                             {/* i CAMPI VENDITA sono nella sezione 🧾 dedicata (Luca 07/08) */}
-                                            {detReadonly.map(([k, v]) => (
-                                                <div key={k} className="sm:col-span-2 lg:col-span-3">
-                                                    <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>
-                                                    <pre className="text-white text-xs bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
-                                                </div>
-                                            ))}
+                                            {detReadonly.map(([k, v]) => {
+                                                // FOLLOW-UP del Tracking (Luca 10/08): niente JSON grezzo —
+                                                // righe leggibili; se sono tutti vuoti la voce sparisce
+                                                if (/^followup$/i.test(k) && Array.isArray(v)) {
+                                                    const fu = (v as { label?: string; data?: string; esito?: string; note?: string }[])
+                                                        .filter(f => `${f?.data || ""}${f?.esito || ""}${f?.note || ""}`.trim());
+                                                    if (!fu.length) return null;
+                                                    return (
+                                                        <div key={k} className="sm:col-span-2 lg:col-span-3">
+                                                            <span className="text-[11px] uppercase tracking-wider text-slate-500">Follow-up</span>
+                                                            <div className="mt-1 space-y-1">
+                                                                {fu.map((f, i) => (
+                                                                    <div key={i} className="text-xs text-white bg-black/30 rounded-lg px-2.5 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                                                        <span className="font-bold">{f.label || `Follow-up ${i + 1}`}</span>
+                                                                        {f.data && <span>📅 {f.data}</span>}
+                                                                        {f.esito && <span className="font-semibold text-emerald-300">{f.esito}</span>}
+                                                                        {f.note && <span className="text-slate-300">{f.note}</span>}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
+                                                return (
+                                                    <div key={k} className="sm:col-span-2 lg:col-span-3">
+                                                        <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>
+                                                        <pre className="text-white text-xs bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
+                                                    </div>
+                                                );
+                                            })}
                                             {READONLY_META.map(f => (
                                                 <div key={f.key}>
                                                     <span className="text-[11px] uppercase tracking-wider text-slate-500">{f.label}</span>

@@ -6,7 +6,8 @@ import { useTema } from "@/lib/theme";
 import { UrgentTasks } from "@/components/UrgentTasks";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { roleLabel, seesAllStores } from "@/lib/roles";
+import { roleLabel, seesAllStores, areaOf } from "@/lib/roles";
+import { apriTelefono } from "@/lib/dialer";
 import { effectiveAllowed } from "@/lib/nav";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { supabase } from "@/lib/supabaseClient";
@@ -417,6 +418,15 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                         </span>
                     )}
                 </button>
+                {/* ☎ AIRCALL nell'header (Luca 10/08): fuori dal caller il bottone
+                    flottante dava fastidio — da qui si apre lo stesso pannello
+                    (l'iframe vive nel layout, la chiamata non cade navigando) */}
+                {!!user && (areaOf(user.role) === "cc" || ["admin", "dev"].includes(user.role)) && !(pathname || "").startsWith("/caller") && (
+                    <button onClick={apriTelefono} title="Telefono Aircall"
+                        className="text-slate-400 hover:text-white transition-colors">
+                        <span className="text-[17px] leading-none">☎</span>
+                    </button>
+                )}
 
                 {/* MENU PROFILO (03/08): il click apre un menu — profilo, cambio
                     password e LOG OUT (spostato qui dalla sidebar, dove ora vive

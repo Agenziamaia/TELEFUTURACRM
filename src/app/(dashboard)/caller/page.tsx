@@ -2047,21 +2047,22 @@ function CallerPageInner() {
                                         className={`flex-1 rounded-2xl border px-3 py-3 text-left cursor-pointer select-none transition-all ${cls} ${faseFilter === k ? "ring-2 ring-white/30 brightness-125" : faseFilter ? "opacity-50 hover:opacity-80" : "hover:brightness-110"}`}>
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="text-sm font-bold">{l}</div>
-                                            {/* ⏱ storico dentro la card: stopPropagation, il click NON
-                                                deve attivare/disattivare il filtro. Visibile a tutti come
-                                                il vecchio bottone: per i caller resta "il tuo storico"
-                                                (soloCaller), per la direzione l'archivio completo */}
+                                            {/* ⏱ storico + totale RAGGRUPPATI a destra (Luca 10/08: prima
+                                                justify-between li spargeva per tutta la card — brutti e non
+                                                responsive). stopPropagation: il click NON tocca il filtro. */}
                                             {k === "malus" && (
-                                                <span role="button" tabIndex={0}
-                                                    onClick={(e) => { e.stopPropagation(); apriArchivioMalus(); }}
-                                                    onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); apriArchivioMalus(); } }}
-                                                    title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"}
-                                                    className="text-[10px] font-bold underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100 whitespace-nowrap leading-tight mt-0.5">
-                                                    ⏱ Storico →
-                                                </span>
-                                            )}
-                                            {k === "malus" && malusTotStorico != null && malusTotStorico > 0 && (
-                                                <span className="text-[10px] font-black tabular-nums opacity-90 leading-tight">tot. −{malusTotStorico.toFixed(2).replace(".", ",")} €</span>
+                                                <div className="flex flex-col items-end gap-0.5 shrink-0">
+                                                    <span role="button" tabIndex={0}
+                                                        onClick={(e) => { e.stopPropagation(); apriArchivioMalus(); }}
+                                                        onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); apriArchivioMalus(); } }}
+                                                        title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"}
+                                                        className="text-[10px] font-bold underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100 whitespace-nowrap leading-tight">
+                                                        ⏱ Storico →
+                                                    </span>
+                                                    {malusTotStorico != null && malusTotStorico > 0 && (
+                                                        <span className="text-[10px] font-black tabular-nums opacity-90 leading-tight whitespace-nowrap">tot. −{malusTotStorico.toFixed(2).replace(".", ",")} €</span>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                         <div className="text-2xl font-black tabular-nums leading-tight">{n}</div>
