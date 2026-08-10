@@ -37,16 +37,21 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
     const { roles: allRoles } = useRoles();
     // utenti attivi del ruolo simulato, per impersonare la PERSONA (visibilita' sua)
     const [utentiRuolo, setUtentiRuolo] = useState<{ id: string; full_name: string; grade: string | null; primary_store: string | null }[]>([]);
-    // MOD-36: contatore voci aperte della sezione Verifiche (solo admin) —
-    // aggiornato a ogni navigazione; select difensivo (tabella nuova)
+    // MOD-36/38: contatore voci aperte della sezione Verifiche — l'admin conta
+    // le da_verificare + le segnalazioni del delegato in attesa sua; un utente
+    // DELEGATO conta solo le verifiche assegnate a lui (bottone visibile solo
+    // se ne ha). Aggiornato a ogni navigazione; select difensivo.
     const [verificheAperte, setVerificheAperte] = useState(0);
+    const isAdminVer = ["admin", "dev"].includes(user?.role || "");
     useEffect(() => {
-        if (!["admin", "dev"].includes(user?.role || "")) { setVerificheAperte(0); return; }
+        if (!user?.id) { setVerificheAperte(0); return; }
         let vivo = true;
-        supabase.from("dev_updates").select("id", { count: "exact", head: true }).eq("stato", "da_verificare")
-            .then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
+        const q = isAdminVer
+            ? supabase.from("dev_updates").select("id", { count: "exact", head: true }).in("stato", ["da_verificare", "segnalazione_delegato"])
+            : supabase.from("dev_updates").select("id", { count: "exact", head: true }).eq("stato", "da_verificare").eq("delegato_a", user.id);
+        q.then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
         return () => { vivo = false; };
-    }, [user?.role, pathname]);
+    }, [user?.id, isAdminVer, pathname]);
     useEffect(() => {
         if (!viewAs) { setUtentiRuolo([]); return; }
         let vivo = true;
@@ -344,10 +349,10 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                         )}
                     </div>
                 )}
-                {/* VERIFICHE (MOD-36, Luca 10/08, "momentaneo"): SOLO admin —
-                    il recap degli update di sviluppo da esitare + i sospesi
-                    che aspettano una risposta. Badge = quante voci aperte. */}
-                {["admin", "dev"].includes(user?.role || "") && (
+                {/* VERIFICHE (MOD-36/38, Luca 10/08, "momentaneo"): admin — il
+                    recap degli update da esitare + sospesi; un utente DELEGATO
+                    vede il bottone solo se ha verifiche assegnate. */}
+                {(isAdminVer || verificheAperte > 0) && (
                     <button
                         onClick={() => router.push("/verifiche")}
                         title="Verifiche — update da esitare e questioni in sospeso"
