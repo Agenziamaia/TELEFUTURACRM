@@ -112,6 +112,9 @@ interface AppUser {
     password: string | null;
     // MOD-25: utenza Aircall collegata (bigint) — aggancia chiamate e click-to-call
     aircall_user_id?: number | null;
+    // MOD-33: licenziamento con data (futura = programmato) e sospensione
+    data_licenziamento?: string | null;
+    sospeso_dal?: string | null;
     user_stores?: { store_name: string }[];
     user_brands?: { brand: string }[];
     user_store_visibility?: { store_name: string }[];
@@ -1283,18 +1286,33 @@ interface Activity {
 }
 
 function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClose: () => void; onEdit?: () => void; onStatoCambiato?: () => void }) {
-    // LICENZIA / RIASSUMI col pulsantone (Luca 31/07): niente piu' matita per
-    // cambiare lo stato — conferma esplicita, poi il licenziato sparisce dalla
-    // lista (resta visibile col flag "Mostra licenziati")
-    const cambiaStato = async (nuovo: "attivo" | "licenziato") => {
-        const msg = nuovo === "licenziato"
-            ? `Licenziare ${u.full_name}?\nSparirà dalla lista utenti (lo ritrovi col flag "Mostra licenziati") e non potrà più accedere al CRM.`
-            : `Riassumere ${u.full_name}?\nTorna Attivo, con accesso e visibilità come prima.`;
-        if (!window.confirm(msg)) return;
-        const { error } = await supabase.from("app_users").update({ status: nuovo, active: nuovo !== "licenziato" }).eq("id", u.id);
-        if (error) { alert("Cambio stato NON riuscito: " + error.message); return; }
+    // MOD-33 (Luca 10/08): LICENZIA CON DATA + SOSPENDI, modale del CRM (via i
+    // confirm del browser). Oggi = effetto immediato; data futura = programmato
+    // (l'accesso si blocca da quel giorno: gate nel login + guardia sessioni).
+    const oggiIso = new Date().toISOString().slice(0, 10);
+    const [azione, setAzione] = useState<null | "licenzia" | "sospendi">(null);
+    const [dataAzione, setDataAzione] = useState<string>(oggiIso);
+    const [azioneBusy, setAzioneBusy] = useState(false);
+    const aggiornaStato = async (payload: Record<string, unknown>) => {
+        if (azioneBusy) return false;
+        setAzioneBusy(true);
+        const { error } = await supabase.from("app_users").update(payload).eq("id", u.id);
+        setAzioneBusy(false);
+        if (error) { alert("Operazione NON riuscita: " + error.message); return false; }
         onStatoCambiato?.();
+        return true;
     };
+    const eseguiAzione = async () => {
+        const d = dataAzione || oggiIso;
+        const payload = azione === "licenzia"
+            ? (d <= oggiIso
+                ? { status: "licenziato", active: false, data_licenziamento: d, sospeso_dal: null }
+                : { data_licenziamento: d })
+            : { sospeso_dal: d };
+        if (await aggiornaStato(payload)) setAzione(null);
+    };
+    // Riassumi / riattiva / annulla programmazione: si torna pienamente attivi
+    const riattiva = () => aggiornaStato({ status: "attivo", active: true, data_licenziamento: null, sospeso_dal: null });
     // ── ALIAS (mig. 142, 03/08): l'alias diventa l'UNICO nome del gestionale
     //    (applica_alias sostituisce il nome in ogni colonna testo/jsonb);
     //    il nome vero resta in nome_riservato, visibile solo qui.
@@ -1582,7 +1600,7 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                     <DetailRow label="RAL annua (lorda)" value={u.ral_annua != null ? `€ ${Number(u.ral_annua).toLocaleString("it-IT")}` : null} />
                                     <DetailRow label="Costo azienda (solo admin)" value={u.company_cost != null ? `€ ${Number(u.company_cost).toLocaleString("it-IT")}${u.ral_annua != null ? " · da RAL ÷ 12" : ""}` : null} />
                                     <DetailRow label="Costo visibile" value={(() => { const e = effVisibleCost(u, detailRules); return e.value != null ? `€ ${e.value.toLocaleString("it-IT")}${e.fromRule ? " · da regola ruolo" : ""}` : null; })()} />
-                                    <DetailRow label="Stato" value={u.status === "licenziato" ? "Licenziato" : "Attivo"} />
+                                    <DetailRow label="Stato" value={u.status === "licenziato" ? "Licenziato" : u.sospeso_dal && u.sospeso_dal <= oggiIso ? "Sospeso" : u.sospeso_dal ? `Sospensione dal ${fmtDate(u.sospeso_dal)}` : u.data_licenziamento ? `Attivo (licenziamento il ${fmtDate(u.data_licenziamento)})` : "Attivo"} />
                                     <DetailRow label="Telefono" value={u.phone} />
                                     <DetailRow label="Residenza" value={u.address} full />
                                     {u.different_domicile && <DetailRow label="Domicilio" value={u.domicile} full />}
@@ -1610,20 +1628,75 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                 <p className="text-[11px] text-slate-600">L&apos;alias sostituisce il nome in OGNI sezione (vendite, ferie, storici, comunicazioni…); il nome precedente resta visibile solo all&apos;amministrazione, qui.</p>
                             </div>
 
-                            {/* pulsantone LICENZIA / RIASSUMI sotto i dati (Luca 31/07) */}
-                            <div className="glass-card p-4 rounded-xl">
+                            {/* pulsantoni SOSPENDI / LICENZIA / RIASSUMI (MOD-33) */}
+                            <div className="glass-card p-4 rounded-xl space-y-2.5">
+                                {u.status !== "licenziato" && u.sospeso_dal && (
+                                    <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-orange-500/10 border border-orange-500/40">
+                                        <span className="text-sm font-bold text-orange-300">⏸️ {u.sospeso_dal <= oggiIso ? `Sospeso dal ${fmtDate(u.sospeso_dal)}` : `Sospensione programmata dal ${fmtDate(u.sospeso_dal)}`}</span>
+                                        <button onClick={() => aggiornaStato({ sospeso_dal: null })} disabled={azioneBusy}
+                                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50">✅ Riattiva</button>
+                                    </div>
+                                )}
+                                {u.status !== "licenziato" && u.data_licenziamento && (
+                                    <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/40">
+                                        <span className="text-sm font-bold text-rose-300">📅 Licenziamento programmato il {fmtDate(u.data_licenziamento)}</span>
+                                        <button onClick={() => aggiornaStato({ data_licenziamento: null })} disabled={azioneBusy}
+                                            className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold disabled:opacity-50">Annulla</button>
+                                    </div>
+                                )}
                                 {u.status === "licenziato" ? (
-                                    <button onClick={() => cambiaStato("attivo")}
-                                        className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black uppercase tracking-widest transition-colors">
+                                    <button onClick={riattiva} disabled={azioneBusy}
+                                        className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black uppercase tracking-widest transition-colors disabled:opacity-50">
                                         ✅ Riassumi
                                     </button>
-                                ) : (
-                                    <button onClick={() => cambiaStato("licenziato")}
+                                ) : (<>
+                                    {!u.sospeso_dal && (
+                                        <button onClick={() => { setDataAzione(oggiIso); setAzione("sospendi"); }}
+                                            className="w-full py-3.5 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-black uppercase tracking-widest transition-colors">
+                                            ⏸️ Sospendi
+                                        </button>
+                                    )}
+                                    <button onClick={() => { setDataAzione(oggiIso); setAzione("licenzia"); }}
                                         className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-black uppercase tracking-widest transition-colors">
                                         🔴 Licenzia
                                     </button>
-                                )}
+                                </>)}
                             </div>
+                            {/* modale IN-CRM per data + conferma (MOD-33: niente popup browser) */}
+                            {azione && (
+                                <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+                                    onClick={() => { if (!azioneBusy) setAzione(null); }}>
+                                    <div className="w-full max-w-md rounded-2xl border border-white/10 p-6"
+                                        style={{ background: "var(--tf-0e1526)", boxShadow: "0 18px 50px rgba(0,0,0,.55)" }}
+                                        onClick={(e) => e.stopPropagation()}>
+                                        <div className="text-lg font-extrabold text-slate-100 mb-1.5">
+                                            {azione === "licenzia" ? "🔴 Licenzia" : "⏸️ Sospendi"} {u.full_name}
+                                        </div>
+                                        <p className="text-[13px] text-slate-400 mb-4 leading-relaxed">
+                                            {azione === "licenzia"
+                                                ? "Con la data di OGGI l'effetto è immediato: sparisce dalla lista utenti (lo ritrovi col flag \"Mostra licenziati\") e non può più accedere al CRM. Con una data futura il licenziamento è PROGRAMMATO: resta operativo fino a quel giorno, poi l'accesso si blocca da solo."
+                                                : "Il sospeso non può accedere al CRM finché non lo riattivi (l'utenza e i dati restano intatti). Con la data di OGGI è sospeso subito; con una data futura la sospensione parte da quel giorno."}
+                                        </p>
+                                        <label className="block text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1">
+                                            {azione === "licenzia" ? "Data licenziamento" : "Sospeso dal"}
+                                        </label>
+                                        <input type="date" min={oggiIso} value={dataAzione} onChange={(e) => setDataAzione(e.target.value)}
+                                            className="glass-input w-full mb-4" />
+                                        <div className="flex gap-2">
+                                            <button onClick={eseguiAzione} disabled={azioneBusy || !dataAzione}
+                                                className={`flex-1 py-3 rounded-xl text-white text-sm font-black transition-colors disabled:opacity-50 ${azione === "licenzia" ? "bg-rose-600 hover:bg-rose-500" : "bg-orange-700 hover:bg-orange-600"}`}>
+                                                {azioneBusy ? "…" : dataAzione > oggiIso
+                                                    ? (azione === "licenzia" ? "📅 Programma il licenziamento" : "📅 Programma la sospensione")
+                                                    : (azione === "licenzia" ? "🔴 Licenzia subito" : "⏸️ Sospendi subito")}
+                                            </button>
+                                            <button onClick={() => setAzione(null)} disabled={azioneBusy}
+                                                className="px-4 py-3 rounded-xl bg-white/[0.06] hover:bg-white/10 text-slate-300 text-sm font-bold disabled:opacity-50">
+                                                Annulla
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <p className="text-xs text-slate-500">
                                 L&apos;attività è collegata tramite il nome <span className="text-slate-300">{matchName}</span> presente nelle
                                 varie sezioni del CRM.

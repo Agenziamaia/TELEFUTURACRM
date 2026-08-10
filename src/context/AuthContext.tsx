@@ -149,6 +149,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // (roles.ts) appena la sessione esiste — vale per tutto il CRM.
     useEffect(() => { if (baseUser?.id) loadRoleDefs(); }, [baseUser?.id]);
 
+    // MOD-33 (Luca 10/08): SOSPESI e LICENZIATI fuori anche con la sessione
+    // GIA' APERTA — a ogni cambio pagina si riverifica lo stato a DB e, se
+    // l'accesso non e' piu' consentito, la sessione si chiude con navigazione
+    // hard (stessa via del logout, anti-bfcache). Select difensivo: senza la
+    // migrazione delle colonne nuove vale il solo controllo status/active.
+    useEffect(() => {
+        if (!baseUser?.id) return;
+        let vivo = true;
+        (async () => {
+            let d: { status?: string | null; active?: boolean | null; sospeso_dal?: string | null; data_licenziamento?: string | null } | null = null;
+            const r1 = await supabase.from("app_users").select("status, active, sospeso_dal, data_licenziamento").eq("id", baseUser.id).maybeSingle();
+            if (!r1.error) d = r1.data;
+            else {
+                const r2 = await supabase.from("app_users").select("status, active").eq("id", baseUser.id).maybeSingle();
+                if (!r2.error) d = r2.data;
+            }
+            if (!vivo || !d) return;
+            const oggi = new Date().toISOString().slice(0, 10);
+            const dl = String(d.data_licenziamento || "");
+            const sd = String(d.sospeso_dal || "");
+            const bloccato = d.active === false || d.status === "licenziato" || (!!dl && dl <= oggi) || (!!sd && sd <= oggi);
+            if (!bloccato) return;
+            // licenziamento programmato arrivato a scadenza: si concretizza
+            if (dl && dl <= oggi && d.status !== "licenziato") {
+                await supabase.from("app_users").update({ status: "licenziato", active: false }).eq("id", baseUser.id);
+            }
+            try {
+                localStorage.removeItem("crm_session");
+                localStorage.removeItem("crm_last_activity");
+            } catch { /* ignore */ }
+            window.location.replace("/");
+        })();
+        return () => { vivo = false; };
+    }, [baseUser?.id, pathname]);
+
     // Protezione rotte GUIDATA DALLA NAVIGAZIONE (src/lib/nav.ts + tabella
     // role_permissions): stessa fonte della Sidebar e della pagina Permessi, in
     // entrambe le direzioni — cio' che l'admin concede/toglie da li' vale anche
