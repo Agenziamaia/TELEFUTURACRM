@@ -326,6 +326,10 @@ function KpiBar({
                 }}>
                 {logo ? (
                   <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(b)] || 1})` }} />
+                ) : /marginal/i.test(b) ? (
+                  /* P&M: stesso simbolo 💰 della tessera di Registra Vendita
+                     (Luca 10/08: "mettici il simbolo come gli altri") */
+                  <span title={b} style={{ fontSize: 40, lineHeight: 1 }}>💰</span>
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "var(--tf-586174)" }}>{b}</span>
                 )}
@@ -1692,7 +1696,11 @@ export default function TrackingPdaPage() {
       try {
         const { data: eps, error } = await supabase.from("malus_storico").select("*").limit(5000);
         if (error) throw error;
-        const scritture = await sincronizzaMalusStorico(data, (eps ?? []) as EpisodioMalus[]);
+        // le pratiche CESTINATE (tracking_nascosto) escono dalle righe della
+        // sync: cosi' lo spazzino congela A OGGI il loro episodio aperto —
+        // prima restavano dentro e il malus continuava a maturare per sempre
+        // (bug emerso rispondendo alla domanda di Luca, 10/08)
+        const scritture = await sincronizzaMalusStorico(data.filter((r) => !r.tracking_nascosto), (eps ?? []) as EpisodioMalus[]);
         // diagnostica leggera, cercabile in console come [CRASH:]
         console.debug("[SYNC-MALUS] scritture:", scritture);
         if (scritture > 0) {
