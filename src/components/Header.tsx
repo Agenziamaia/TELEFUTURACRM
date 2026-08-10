@@ -55,8 +55,17 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
         const q = isAdminVer
             ? supabase.from("dev_updates").select("id", { count: "exact", head: true }).in("stato", ["da_verificare", "segnalazione_delegato"])
             : supabase.from("dev_updates").select("id", { count: "exact", head: true }).eq("stato", "da_verificare").eq("delegato_a", user.id);
-        q.then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
-        return () => { vivo = false; };
+        const ricarica = () => q.then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
+        ricarica();
+        // la pagina Verifiche avvisa a ogni esito: il badge si aggiorna subito
+        const h = () => {
+            const q2 = isAdminVer
+                ? supabase.from("dev_updates").select("id", { count: "exact", head: true }).in("stato", ["da_verificare", "segnalazione_delegato"])
+                : supabase.from("dev_updates").select("id", { count: "exact", head: true }).eq("stato", "da_verificare").eq("delegato_a", user.id);
+            q2.then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
+        };
+        window.addEventListener("verifiche-cambiate", h);
+        return () => { vivo = false; window.removeEventListener("verifiche-cambiate", h); };
     }, [user?.id, isAdminVer, pathname]);
     useEffect(() => {
         if (!viewAs) { setUtentiRuolo([]); return; }

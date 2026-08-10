@@ -193,6 +193,8 @@ export default function VerifichePage() {
         setBozzeAll((p) => ({ ...p, [id]: [] }));
         setSegnalaId(null);
         carica();
+        // il badge in header si aggiorna al volo (senza aspettare la navigazione)
+        try { window.dispatchEvent(new Event("verifiche-cambiate")); } catch { /* no-op */ }
     };
     // allegati nuovi della voce + quelli già presenti (per segnala/approva)
     const conAllegati = (v: Voce) => {
@@ -242,7 +244,7 @@ export default function VerifichePage() {
     const mie = useMemo(() => isAdmin ? voci : voci.filter((v) => v.delegato_a === user?.id), [voci, isAdmin, user?.id]);
     const sospesi = useMemo(() => mie.filter((v) => v.tipo === "sospeso" && v.stato === "da_verificare"), [mie]);
     const risposte = useMemo(() => mie.filter((v) => v.tipo === "sospeso" && v.stato === "risposta_data"), [mie]);
-    const daVerificare = useMemo(() => mie.filter((v) => v.tipo === "update" && v.stato === "da_verificare"), [mie]);
+    const daVerificare = useMemo(() => mie.filter((v) => (v.tipo === "update" || v.tipo === "task") && v.stato === "da_verificare"), [mie]);
     // colonna SINISTRA = da verificare tue; colonna DESTRA (admin) = delegate
     const daVerificareMie = useMemo(() => isAdmin ? daVerificare.filter((v) => !v.delegato_a) : daVerificare, [daVerificare, isAdmin]);
     const delegateAperte = useMemo(() => isAdmin ? daVerificare.filter((v) => !!v.delegato_a) : [], [daVerificare, isAdmin]);
