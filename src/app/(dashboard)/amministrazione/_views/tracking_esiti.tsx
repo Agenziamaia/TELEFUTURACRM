@@ -69,6 +69,9 @@ export function TrackingEsitiView() {
     const [editVal, setEditVal] = useState("");
     // operatore selezionato nel riquadro FISSO ("" = esiti generali)
     const [brandFisso, setBrandFisso] = useState("");
+    // palette rapida (proposta Francesco, ok Luca 10/08): click sul cerchietto
+    // → finestrina coi colori, un click e via (niente più ciclo uno a uno)
+    const [coloreId, setColoreId] = useState<string | null>(null);
 
     const carica = useCallback(async () => {
         const { data, error } = await supabase.from("tracking_esiti").select("*").order("ordine");
@@ -115,10 +118,9 @@ export function TrackingEsitiView() {
         if (error) { setErr(error.message); return; }
         carica();
     };
-    const cicloColore = async (r: Esito) => {
-        const i = PALETTE.findIndex((p) => p.colore === r.colore);
-        const next = PALETTE[(i + 1) % PALETTE.length];
-        await supabase.from("tracking_esiti").update({ colore: next.colore, bg: next.bg }).eq("id", r.id);
+    const scegliColore = async (r: Esito, pal: { colore: string; bg: string }) => {
+        setColoreId(null);
+        await supabase.from("tracking_esiti").update({ colore: pal.colore, bg: pal.bg }).eq("id", r.id);
         carica();
     };
     const toggleAttiva = async (r: Esito) => {
@@ -240,12 +242,25 @@ export function TrackingEsitiView() {
                                             <button onClick={() => sposta(r, -1)} disabled={i === 0} className="text-slate-600 hover:text-white disabled:opacity-20 leading-none"><ChevronUp className="w-3.5 h-3.5" /></button>
                                             <button onClick={() => sposta(r, 1)} disabled={i === voci.length - 1} className="text-slate-600 hover:text-white disabled:opacity-20 leading-none"><ChevronDown className="w-3.5 h-3.5" /></button>
                                         </div>
-                                        <button
-                                            onClick={() => cicloColore(r)}
-                                            title="Colore — clicca per cambiarlo"
-                                            className="w-4 h-4 rounded-full border border-white/20 shrink-0"
-                                            style={{ background: r.colore }}
-                                        />
+                                        <span className="relative shrink-0 flex items-center">
+                                            <button
+                                                onClick={() => setColoreId(coloreId === r.id ? null : r.id)}
+                                                title="Colore — clicca e scegli dalla palette"
+                                                className="w-4 h-4 rounded-full border border-white/20"
+                                                style={{ background: r.colore }}
+                                            />
+                                            {coloreId === r.id && (
+                                                <span className="absolute left-6 top-1/2 -translate-y-1/2 z-20 flex items-center gap-1.5 px-2.5 py-2 rounded-xl border border-white/15 bg-[#131a2e] shadow-2xl">
+                                                    {PALETTE.map((pal) => (
+                                                        <button key={pal.colore} onClick={() => scegliColore(r, pal)}
+                                                            title="Assegna questo colore"
+                                                            className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-125 ${pal.colore === r.colore ? "border-white" : "border-white/20"}`}
+                                                            style={{ background: pal.colore }} />
+                                                    ))}
+                                                    <button onClick={() => setColoreId(null)} className="ml-1 text-slate-500 hover:text-white text-xs font-bold">✕</button>
+                                                </span>
+                                            )}
+                                        </span>
                                         {editId === r.id ? (
                                             <input autoFocus value={editVal} onChange={(e) => setEditVal(e.target.value)}
                                                 onBlur={() => salvaRinomina(r)}

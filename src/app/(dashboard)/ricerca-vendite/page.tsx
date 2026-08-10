@@ -1981,7 +1981,19 @@ export default function RicercaContratto() {
                                         <td className="px-4 py-3 text-slate-400 text-xs">{row.negozio}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{codInsDi(row) || "—"}</td>
                                         <td className="px-4 py-3 text-slate-400 font-mono text-xs">{row.codice_attivazione}</td>
-                                        <td className="px-4 py-3 text-slate-500 text-xs">{row.data_attivazione}</td>
+                                        {/* orario di REGISTRAZIONE accanto alla data (Luca 10/08):
+                                            created_at — quando la vendita è stata battuta nel CRM */}
+                                        <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
+                                            {row.data_attivazione}
+                                            {(() => {
+                                                const t = new Date(String(row.raw?.created_at || ""));
+                                                return isNaN(t.getTime()) ? null : (
+                                                    <span className="ml-1.5 text-slate-600 tabular-nums" title="Orario di registrazione nel CRM">
+                                                        {t.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </td>
                                         <td className="px-4 py-3">
                                             <span className={cn(
                                                 "px-2 py-1 rounded-full text-[10px] font-medium uppercase tracking-wider",
