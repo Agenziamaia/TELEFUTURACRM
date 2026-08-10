@@ -3199,7 +3199,9 @@ const mobiliAgganciabili=(cats,sales,cart,brandId)=>{
     const f=d.fields||{};
     const codice=String(f["Codice Contratto"]||"").trim();
     const numero=_numeroMobile(f);
-    if(codice||numero)out.push({etichetta:`${s2.catProdotto} #${ri+1}${numero?" · "+numero:""}`,codice,numero});
+    // proposta Francesco 10/08: l'aggancio riporta anche il codice inserimento
+    const codIns=String(f["Codice Inserimento"]||"").trim();
+    if(codice||numero)out.push({etichetta:`${s2.catProdotto} #${ri+1}${numero?" · "+numero:""}`,codice,numero,codIns});
   });}));
   // mobile gia' nel CARRELLO dello stesso brand
   (cart||[]).forEach(gr=>{if(gr.brandId!==brandId)return;(gr.items||[]).forEach(it=>{
@@ -3207,7 +3209,8 @@ const mobiliAgganciabili=(cats,sales,cart,brandId)=>{
     const det=it.details||{};
     const codice=String(det["Codice Contratto"]||"").trim();
     const numero=_numeroMobile(det);
-    if(codice||numero)out.push({etichetta:`${it.catalogo?.prodotto||"Mobile"} (carrello)${numero?" · "+numero:""}`,codice,numero});
+    const codIns=String(det["Codice Inserimento"]||"").trim();
+    if(codice||numero)out.push({etichetta:`${it.catalogo?.prodotto||"Mobile"} (carrello)${numero?" · "+numero:""}`,codice,numero,codIns});
   });});
   // dedup su codice+numero (stesso mobile visto due volte)
   const visti=new Set();
@@ -3351,10 +3354,10 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
     {sub.catCategoria==="Telefono a Rate"&&!/\bCB\b/i.test(sub.catProdotto)&&(mobili||[]).length>0&&(!_NE(f["Codice Contratto"])||!_NE(f["Numero di Cellulare"]))&&(
       <div style={{marginTop:10,padding:"10px 12px",background:"rgba(111,66,193,0.08)",borderRadius:8,border:"1px dashed rgba(111,66,193,0.55)"}}>
         <div style={{fontSize:12,fontWeight:700,color:"var(--tf-a78bfa)",marginBottom:6}}>📎 Nuova attivazione: vuoi agganciarlo al mobile che stai registrando?</div>
-        <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:8}}>Codice contratto e numero si compilano da soli — restano da inserire solo IMEI, modello, rata e pratica di finanziamento.</div>
+        <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:8}}>Codice contratto, numero e codice inserimento si compilano da soli — restano da inserire solo IMEI, modello, rata e pratica di finanziamento.</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
           {(mobili||[]).map((m,mi)=>(
-            <button key={mi} onClick={()=>{if(m.codice)setF("Codice Contratto",m.codice);if(m.numero)setF("Numero di Cellulare",m.numero);}}
+            <button key={mi} onClick={()=>{if(m.codice)setF("Codice Contratto",m.codice);if(m.numero)setF("Numero di Cellulare",m.numero);if(m.codIns)setF("Codice Inserimento",m.codIns);}}
               style={{padding:"7px 14px",borderRadius:8,border:"2px solid rgba(111,66,193,0.7)",background:"rgba(111,66,193,0.18)",color:"var(--tf-c4b5fd)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
               ✓ Aggancia a {m.etichetta}
             </button>
