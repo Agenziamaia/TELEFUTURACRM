@@ -15,7 +15,7 @@ import { useAuth } from "@/context/AuthContext";
 type Voce = {
     id: string; tipo: "update" | "sospeso"; titolo: string;
     dettaglio: string | null; domanda: string | null; link: string | null;
-    stato: "da_verificare" | "risposta_data" | "verificata";
+    stato: "da_verificare" | "risposta_data" | "da_sistemare" | "verificata";
     risposta: string | null; sessione: string | null;
     creato_il: string; verificato_il: string | null; verificato_da: string | null;
 };
@@ -61,10 +61,24 @@ export default function VerifichePage() {
         setBozzeRisposta((p) => ({ ...p, [v.id]: "" }));
         carica();
     };
+    // MOD-36b: "⚠️ Da sistemare" — l'admin scrive cosa non va; Claude la
+    // rilegge a inizio sessione, sistema e riporta la voce a 'da_verificare'
+    const [segnalaId, setSegnalaId] = useState<string | null>(null);
+    const segnala = async (v: Voce) => {
+        const r = (bozzeRisposta[v.id] || "").trim();
+        if (!r || busy) return;
+        setBusy(v.id);
+        await supabase.from("dev_updates").update({ risposta: r, stato: "da_sistemare" }).eq("id", v.id);
+        setBusy(null);
+        setBozzeRisposta((p) => ({ ...p, [v.id]: "" }));
+        setSegnalaId(null);
+        carica();
+    };
 
     const sospesi = useMemo(() => voci.filter((v) => v.tipo === "sospeso" && v.stato === "da_verificare"), [voci]);
     const risposte = useMemo(() => voci.filter((v) => v.tipo === "sospeso" && v.stato === "risposta_data"), [voci]);
     const daVerificare = useMemo(() => voci.filter((v) => v.tipo === "update" && v.stato === "da_verificare"), [voci]);
+    const daSistemare = useMemo(() => voci.filter((v) => v.stato === "da_sistemare"), [voci]);
     const chiuse = useMemo(() => voci.filter((v) => v.stato === "verificata"), [voci]);
 
     if (user && !isAdmin) {
@@ -142,13 +156,43 @@ export default function VerifichePage() {
                     {daVerificare.length === 0 && <p className="text-sm text-slate-600 px-1">Tutto verificato ✓</p>}
                     {daVerificare.map((v) => (
                         <Card key={v.id} v={v}>
-                            <button onClick={() => verifica(v)} disabled={busy === v.id}
-                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-50">
-                                ✓ Verificata
-                            </button>
+                            <div className="flex gap-2 flex-wrap">
+                                <button onClick={() => verifica(v)} disabled={busy === v.id}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-50">
+                                    ✓ Verificata
+                                </button>
+                                <button onClick={() => setSegnalaId(segnalaId === v.id ? null : v.id)} disabled={busy === v.id}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-bold disabled:opacity-50">
+                                    ⚠️ Da sistemare
+                                </button>
+                            </div>
+                            {segnalaId === v.id && (
+                                <div className="flex gap-2 items-start pt-1">
+                                    <textarea value={bozzeRisposta[v.id] || ""} onChange={(e) => setBozzeRisposta((p) => ({ ...p, [v.id]: e.target.value }))}
+                                        placeholder="Scrivi cosa non va o cosa manca: Claude lo sistema alla prossima sessione…" rows={2} autoFocus
+                                        className="glass-input flex-1 text-sm !h-auto py-2 resize-y" />
+                                    <button onClick={() => segnala(v)} disabled={busy === v.id || !(bozzeRisposta[v.id] || "").trim()}
+                                        className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-orange-700 hover:bg-orange-600 text-white text-sm font-bold disabled:opacity-40">
+                                        <Send className="w-4 h-4" /> Segnala
+                                    </button>
+                                </div>
+                            )}
                         </Card>
                     ))}
                 </section>
+
+                {/* ── segnalate DA SISTEMARE (in carico a Claude) ── */}
+                {daSistemare.length > 0 && (
+                    <section className="space-y-3">
+                        <h2 className="text-sm font-bold text-orange-300 uppercase tracking-widest">🛠️ Da sistemare — in carico a Claude <span className="text-slate-500 font-normal normal-case">· {daSistemare.length}</span></h2>
+                        {daSistemare.map((v) => (
+                            <Card key={v.id} v={v}>
+                                <p className="text-[13px] text-orange-200 bg-orange-500/10 border border-orange-500/40 rounded-lg px-3 py-2">⚠️ {v.risposta}</p>
+                                <p className="text-[11px] text-slate-500">Claude la lavora alla prossima sessione e la rimette qui &quot;da verificare&quot; con la nota di cosa ha corretto.</p>
+                            </Card>
+                        ))}
+                    </section>
+                )}
 
                 {/* ── storico chiuse ── */}
                 <section className="space-y-3">
