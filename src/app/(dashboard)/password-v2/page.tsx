@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { LockKeyhole, Wifi, Radio, Tv, Zap, Leaf, ArrowLeft, RotateCcw, Eye, EyeOff, Copy, Key, ShieldCheck, Info, Loader2, History } from "lucide-react";
+import { LockKeyhole, Wifi, Radio, Tv, Zap, Leaf, ArrowLeft, RotateCcw, Eye, EyeOff, Copy, ShieldCheck, Info, Loader2, History } from "lucide-react";
 import { cn } from "@/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useRolePermissions } from "@/lib/usePermissions";
@@ -422,44 +422,34 @@ export default function PasswordV2Page() {
 
             <div className="min-h-[400px]">
                 {step === 1 && (
-                    <div className="space-y-8">
-                        <div className="glass-card p-12 lg:p-16 text-center space-y-6 bg-gradient-to-b from-white/[0.03] to-transparent">
-                            <div className="w-20 h-20 mx-auto bg-indigo-500/10 rounded-[2rem] border border-indigo-500/20 flex items-center justify-center rotate-12 hover:rotate-0 transition-transform duration-500">
-                                <Key className="w-10 h-10 text-indigo-400 -rotate-45" />
-                            </div>
-                            <div className="space-y-2">
-                                <h2 className="text-3xl font-black text-white">Seleziona un Brand</h2>
-                                <p className="text-slate-500 max-w-md mx-auto">
-                                    Scegli il brand per cui vuoi visualizzare le credenziali di accesso
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {BRANDS.map((b) => {
-                                const colorHex = b.id === "windtre" ? "var(--tf-f97316)" : b.id === "vodafone" ? "var(--tf-e60000)" : b.id === "tim" ? "var(--tf-003da5)" : b.id === "sky" ? "var(--tf-0072ce)" : b.id === "fastweb" ? "var(--tf-7c3aed)" : b.id === "iliad" ? "var(--tf-e2001a)" : b.id === "kena" ? "var(--tf-f5a623)" : b.id === "ho" ? "var(--tf-8e24aa)" : "var(--tf-10b981)";
-                                return (
-                                    <div
-                                        key={b.id}
-                                        onClick={() => setBrand(b.id)}
-                                        className="glass-card p-6 cursor-pointer group hover:bg-white/[0.04] transition-all relative overflow-hidden border border-white/[0.08]"
-                                    >
-                                        <div className="absolute top-0 left-0 right-0 h-1" style={{ background: `linear-gradient(to right, ${colorHex}, ${colorHex}88)` }} />
-                                        <div className="flex flex-col items-center justify-center text-center gap-4 py-4">
-                                            <div className={cn("w-20 h-20 rounded-xl overflow-hidden flex items-center justify-center", b.bg)}>
-                                                <img src={b.image} alt={b.name} className="w-full h-full object-contain rounded-xl p-2" />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-xl font-bold text-white mb-1">{b.name}</h3>
-                                                <p className={cn("text-sm font-semibold", b.color)}>
-                                                    {b.categories} categorie
-                                                </p>
-                                            </div>
-                                        </div>
+                    /* MOD-35 (Luca 10/08): via il riquadro "Seleziona un Brand" e le
+                       scritte (nome + n. categorie) — SOLO i loghi, grandi, come la
+                       griglia brand di Registra Vendita: stessi file PNG e stesso
+                       ZOOM per-brand (i loghi hanno margini trasparenti diversissimi,
+                       le scale li rendono omogenei; Energia è il logo tondo). */
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {BRANDS.map((b) => {
+                            const colorHex = b.id === "windtre" ? "var(--tf-f97316)" : b.id === "vodafone" ? "var(--tf-e60000)" : b.id === "tim" ? "var(--tf-003da5)" : b.id === "sky" ? "var(--tf-0072ce)" : b.id === "fastweb" ? "var(--tf-7c3aed)" : b.id === "iliad" ? "var(--tf-e2001a)" : b.id === "kena" ? "var(--tf-f5a623)" : b.id === "ho" ? "var(--tf-8e24aa)" : "var(--tf-10b981)";
+                            const tondo = b.id === "energia";
+                            const ZOOM: Record<string, number> = { windtre: 2.0, tim: 2.2, kena: 2.2, fastweb: 1.9, vodafone: 1.7, sky: 1.35, iliad: 1.14, ho: 1.14 };
+                            const z = ZOOM[b.id] ?? 1;
+                            return (
+                                <button
+                                    key={b.id}
+                                    type="button"
+                                    onClick={() => setBrand(b.id)}
+                                    title={b.name}
+                                    className="rounded-2xl border-2 border-white/10 bg-white/[0.02] hover:bg-white/[0.06] transition-all cursor-pointer overflow-hidden py-7 px-4"
+                                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = colorHex; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = ""; }}
+                                >
+                                    <div className="flex items-center justify-center" style={{ height: 88 }}>
+                                        <img src={b.image} alt={b.name}
+                                            style={{ height: tondo ? 84 : 88, width: "auto", maxWidth: tondo ? "92%" : "98%", objectFit: "contain", transform: tondo || z === 1 ? "none" : `scale(${z})`, transformOrigin: "center" }} />
                                     </div>
-                                );
-                            })}
-                        </div>
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
 

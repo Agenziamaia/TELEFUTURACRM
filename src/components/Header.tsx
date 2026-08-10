@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, ScanLine, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon, KeyRound } from "lucide-react";
+import { Search, ScanLine, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon, KeyRound, ClipboardCheck } from "lucide-react";
 import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
 import { useTema } from "@/lib/theme";
 import { UrgentTasks } from "@/components/UrgentTasks";
@@ -37,6 +37,16 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
     const { roles: allRoles } = useRoles();
     // utenti attivi del ruolo simulato, per impersonare la PERSONA (visibilita' sua)
     const [utentiRuolo, setUtentiRuolo] = useState<{ id: string; full_name: string; grade: string | null; primary_store: string | null }[]>([]);
+    // MOD-36: contatore voci aperte della sezione Verifiche (solo admin) —
+    // aggiornato a ogni navigazione; select difensivo (tabella nuova)
+    const [verificheAperte, setVerificheAperte] = useState(0);
+    useEffect(() => {
+        if (!["admin", "dev"].includes(user?.role || "")) { setVerificheAperte(0); return; }
+        let vivo = true;
+        supabase.from("dev_updates").select("id", { count: "exact", head: true }).eq("stato", "da_verificare")
+            .then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
+        return () => { vivo = false; };
+    }, [user?.role, pathname]);
     useEffect(() => {
         if (!viewAs) { setUtentiRuolo([]); return; }
         let vivo = true;
@@ -333,6 +343,23 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                             </button>
                         )}
                     </div>
+                )}
+                {/* VERIFICHE (MOD-36, Luca 10/08, "momentaneo"): SOLO admin —
+                    il recap degli update di sviluppo da esitare + i sospesi
+                    che aspettano una risposta. Badge = quante voci aperte. */}
+                {["admin", "dev"].includes(user?.role || "") && (
+                    <button
+                        onClick={() => router.push("/verifiche")}
+                        title="Verifiche — update da esitare e questioni in sospeso"
+                        className="relative text-slate-400 hover:text-emerald-300 transition-colors"
+                    >
+                        <ClipboardCheck className="h-5 w-5" />
+                        {verificheAperte > 0 && (
+                            <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center">
+                                {verificheAperte}
+                            </span>
+                        )}
+                    </button>
                 )}
                 {/* TEMA chiaro/scuro (Luca 29/07): come su telefoni e sistemi
                     operativi — ☀️ accende il chiaro, 🌙 torna allo scuro. */}

@@ -92,6 +92,9 @@ interface Device {
   sold_price: number;
   // flaggato in fase di ACQUISTO: comprato apposta per farne pezzi di ricambio
   acquisto_per_ricambi: boolean;
+  // MOD-34 (Luca 10/08): negozio che ha COMPRATO il telefono — immutabile,
+  // fotografato all'insert (store cambia coi movimenti e il dato si perdeva)
+  store_acquisto: string | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -301,6 +304,7 @@ function rowToDevice(r: UsatiRow): Device {
     client_id: r.client_id ?? null,
     venditore: r.venditore || "",
     sold_price: Number(r.sold_price) || 0,
+    store_acquisto: ((r as { store_acquisto?: string | null }).store_acquisto) ?? null,
   };
 }
 
@@ -414,7 +418,7 @@ function StatusBadge({ statusKey }: { statusKey: string }) {
 }
 
 //  StatusTimeline 
-function StatusTimeline({ currentStatus, history }: { currentStatus: UsatoStatus; history: Record<string, { date: Date; operatore: string }> }) {
+function StatusTimeline({ currentStatus, history, storeAcquisto = null }: { currentStatus: UsatoStatus; history: Record<string, { date: Date; operatore: string }>; storeAcquisto?: string | null }) {
   const isKO = currentStatus === "ko";
   const currentIdx = isKO ? 3 : LIFECYCLE.indexOf(currentStatus);
   const [openStep, setOpenStep] = useState<string | null>(null);
@@ -433,7 +437,11 @@ function StatusTimeline({ currentStatus, history }: { currentStatus: UsatoStatus
                 done ? `${s.bgClass} ${s.colorClass} ${s.borderClass}` : active ? `${s.bgClass} ${s.colorClass} ${s.borderClass} shadow-lg` : "border-white/10 bg-transparent")}>
                 {done ? "" : s.icon}
               </div>
-              <span className={cn("text-xs", active ? "font-bold text-white" : "text-slate-400")}>{s.label}</span>
+              <span className={cn("text-xs", active ? "font-bold text-white" : "text-slate-400")}>
+                {s.label}
+                {/* MOD-34: il NEGOZIO D'ACQUISTO accanto allo step (amministrazione) */}
+                {sk === "acquistato" && storeAcquisto && <span className="text-slate-500 font-normal"> ({storeAcquisto})</span>}
+              </span>
               {clickable && hasHist && <span className="ml-auto text-[10px] text-slate-600"></span>}
             </div>
             {openStep === sk && hasHist && (
@@ -441,6 +449,7 @@ function StatusTimeline({ currentStatus, history }: { currentStatus: UsatoStatus
                 <div className="text-white font-semibold">{s.icon} {s.label}</div>
                 <div> {fmtDateTime(history[sk].date)}</div>
                 <div> {history[sk].operatore}</div>
+                {sk === "acquistato" && storeAcquisto && <div>🏬 {storeAcquisto}</div>}
               </div>
             )}
             {i < LIFECYCLE.length - 1 && <div className={cn("w-px h-2 ml-5", done ? "bg-emerald-500/40" : "bg-white/5")} />}
@@ -731,7 +740,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                 )}
               </div>
             )}
-            <div className="mt-4"><StatusTimeline currentStatus={dev.status} history={dev.status_history} /></div>
+            <div className="mt-4"><StatusTimeline currentStatus={dev.status} history={dev.status_history} storeAcquisto={isAmministrazione ? dev.store_acquisto : null} /></div>
             {canAdvance && !puoMuovere(dev, user, lavoraLab, mieiNegozi) && (
               <div className="mt-4 text-[11px] text-slate-500 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2.5">
                 🔒 {faseGestitaDa(dev)}
@@ -863,7 +872,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                     ))}
                   </>
                 )}
-                {([...(vedeCosti ? [["Acquisto", fmtEur(dev.purchase_price), false] as [string, string, boolean]] : []), ["Destinazione", dev.target_store || "", false], ["Grado", dev.grado_usura || "", false], ["Data Acquisto", fmtDate(dev.purchase_date), false], ["Data Reg.", fmtDate(dev.created_at), false], ["Registrato da", dev.venditore || dev.status_history.acquistato?.operatore || "—", false]] as [string, string, boolean][]).map(([l, v, mono]) => (
+                {([...(vedeCosti ? [["Acquisto", fmtEur(dev.purchase_price), false] as [string, string, boolean]] : []), ...(isAmministrazione ? [["Negozio d'acquisto", dev.store_acquisto || "—", false] as [string, string, boolean]] : []), ["Destinazione", dev.target_store || "", false], ["Grado", dev.grado_usura || "", false], ["Data Acquisto", fmtDate(dev.purchase_date), false], ["Data Reg.", fmtDate(dev.created_at), false], ["Registrato da", dev.venditore || dev.status_history.acquistato?.operatore || "—", false]] as [string, string, boolean][]).map(([l, v, mono]) => (
                   <div key={l}>
                     <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wide">{l}</div>
                     <div className={cn("text-sm text-white font-medium", mono && "font-mono")}>{v}</div>
@@ -1667,6 +1676,9 @@ function GestioneUsatiInner() {
   const puoRegole = ["admin", "dev"].includes(user?.role || "");
   const [showRegole, setShowRegole] = useState(false);
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
+  // MOD-34 (Luca 10/08): filtro per NEGOZIO D'ACQUISTO (amministrazione) —
+  // vuoto = tutti; sopravvive ai movimenti perche' legge store_acquisto
+  const [selectedStoreAcq, setSelectedStoreAcq] = useState<string[]>([]);
   const isAmminMain = RUOLI_SEMPRE.includes(user?.role || "");
   // stati di APERTURA per ruolo (Luca 01/08): amministrazione senza filtri,
   // punti vendita col preset acquistato / arrivo in negozio / in vendita
@@ -1843,8 +1855,10 @@ function GestioneUsatiInner() {
     if (prezzoDa && (d.sale_price || 0) < (parseFloat(prezzoDa) || 0)) return false;
     if (prezzoA && (d.sale_price || 0) > (parseFloat(prezzoA) || Infinity)) return false;
     if (ricambiFilter.length > 0) { if (!d.ricambi.some(r => ricambiFilter.includes(r.stato))) return false; }
+    // MOD-34: negozio d'ACQUISTO (vuoto = tutti) — regge ai movimenti
+    if (selectedStoreAcq.length > 0 && !selectedStoreAcq.includes(d.store_acquisto || "— sconosciuto")) return false;
     return true;
-  }, [selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter, mieiAttivo, lavoraLabMain, soloDaPrezzare, ricambiDaPrezzare]);
+  }, [selectedStores, selectedStatuses, dateField, dateFrom, dateTo, searchText, brandFilter, prezzoDa, prezzoA, ricambiFilter, mieiAttivo, lavoraLabMain, soloDaPrezzare, ricambiDaPrezzare, selectedStoreAcq]);
   const filtered = useMemo(() => devices.filter(d => passaFiltri(d)), [devices, passaFiltri]);
 
   // ── INVENTARIO e VETRINA (Luca 31/07): due contatori VERI, sul filtrato.
@@ -1913,7 +1927,7 @@ function GestioneUsatiInner() {
     });
   };
 
-  const resetFilters = () => { setSelectedStores(isAmminMain ? [...NEGOZI] : mieiMatch()); setSelectedStatuses([...PRESET_STATI]); setSoloDaPrezzare(false); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setActiveKpi(null); };
+  const resetFilters = () => { setSelectedStores(isAmminMain ? [...NEGOZI] : mieiMatch()); setSelectedStatuses([...PRESET_STATI]); setSoloDaPrezzare(false); setDateField("created_at"); setDateFrom(""); setDateTo(""); setSearchText(""); setBrandFilter([]); setPrezzoDa(""); setPrezzoA(""); setRicambiFilter([]); setSelectedStoreAcq([]); setActiveKpi(null); };
 
   const handleSaveDevice = useCallback(async (u: Device) => {
     const row = deviceToRow(u);
@@ -2008,6 +2022,9 @@ function GestioneUsatiInner() {
       sale_price: 0,
       purchase_price: Number(data.prezzoAcquisto) || 0,
       store: data.negozio,
+      // MOD-34: fotografia IMMUTABILE del negozio che compra — store cambia
+      // coi movimenti (invio/trasferimenti), questo no
+      store_acquisto: data.negozio,
       target_store: null,
       purchase_date: now.toISOString(),
       listed_date: null,
@@ -2025,9 +2042,10 @@ function GestioneUsatiInner() {
     };
     let { data: inserted, error: e } = await supabase.from("usati").insert(insertRow).select().single();
     if (e && /column/i.test(e.message)) {
-      // mig. 113 non ancora applicata: si registra senza aggancio cliente
-      const { client_id: _c, venditore: _v, ...legacy } = insertRow as Record<string, unknown>;
-      void _c; void _v;
+      // migrazioni non ancora applicate (113 cliente/venditore, MOD-34
+      // store_acquisto): si registra senza le colonne nuove
+      const { client_id: _c, venditore: _v, store_acquisto: _sa, ...legacy } = insertRow as Record<string, unknown>;
+      void _c; void _v; void _sa;
       ({ data: inserted, error: e } = await supabase.from("usati").insert(legacy).select().single());
     }
     if (e) { alert("Registrazione non riuscita: " + e.message); return; }
@@ -2215,6 +2233,13 @@ function GestioneUsatiInner() {
           <MultiSelect label="Ricambi" options={RICAMBIO_STATE_KEYS} selected={ricambiFilter} onChange={setRicambiFilter}
             renderOpt={o => <span>{RICAMBIO_STATES.find(s => s.key === o)?.label || o}</span>} />
           </>)}
+          {/* MOD-34 (amministrazione): quanti telefoni ha COMPRATO ogni PV —
+              legge store_acquisto, che non cambia coi movimenti */}
+          {isAmminMain && (
+            <MultiSelect label="Negozio acquisto"
+              options={Array.from(new Set(devices.map(d => d.store_acquisto || "— sconosciuto"))).sort()}
+              selected={selectedStoreAcq} onChange={setSelectedStoreAcq} />
+          )}
           <button onClick={resetFilters} className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 hover:bg-white/10 transition-all">
             <RotateCcw size={14} /> Reset
           </button>
