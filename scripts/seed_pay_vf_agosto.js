@@ -1,9 +1,12 @@
 // SEED del tabellare Vodafone AGOSTO 2026 (fonte: deck Riunione_Agosto_2026
-// "la nuova tabella" — pagamento a tabella dal canvass di Agosto).
+// "la nuova tabella" — pagamento a tabella dal canvass di Agosto; più i
+// GETTONI delle Tabelle 2.1/3.1 mandate da Luca in chat il 10/08 sera:
+// CB, opzioni e telefoni a rate, stessi importi ragazzi e azienda).
 // Piste seedate: mobile, fisso, business_mobile, business_fisso.
 // NON seedate (in attesa di Luca): soluzioni_digitali (mapping fasce A-D),
 // luce&gas (offerte Fastweb Energia), colonne senza offerta a catalogo
-// (Zero Red Bus. XS, OneNet Ufficio, OneNet Azienda, Extra Qualità/Servizi).
+// (Zero Red Bus. XS, OneNet Ufficio, OneNet Azienda, Extra Qualità/Servizi)
+// e le voci delle Tabelle 2.1/3.1 senza aggancio (vedi commento sezione G).
 // Idempotente: cancella e ricrea SOLO vodafone/2026-08-01.
 // Lancio: node scripts/seed_pay_vf_agosto.js
 const fs = require("fs");
@@ -124,6 +127,52 @@ const BF = [
 for (const b of BF)
   R.push(["business_fisso", b.g, "Business", "Fisso", b.prod, b.off, b.punti, 65, b.tiers]);
 
+// ---------- GETTONI dalle Tabelle 2.1 + 3.1 (screenshot Luca 10/08 sera):
+// CB, opzioni e telefoni a rate — importi FLAT (gettone=true, fuori pista),
+// valgono sia ragazzi sia lato azienda. SOLO le voci ancorabili al catalogo;
+// le altre (One Number, Vodafone Club +, Trade In / Trade in Digitale, Smart
+// Home, Giga Speed Pack Start/Ultra, 5G Priority Access anche Family, Giga
+// Family/Family Plan CB, Assistenza tecnica, Power Control, Add on generico,
+// Accessori in TNP, Wireline proximity lista VDL, Migrazioni no-FTTH, e il
+// lato Fastweb Protect/Up Plus/Change order/Seven Booster) sono in domanda
+// su Verifiche.
+// [nome, tipo_cliente, categoria, prodotto, offerta, importo, note]
+const G = [
+  // ── Tabella 2.1 — RINNOVO A M+1
+  ["Rete Sicura (GA)", "Consumer", "Customer Base", "Rete Sicura", null, 5, "T2.1 · rinnovo a M+1 (Mobile 2.0 GA)"],
+  ["Rete Sicura CB", "Consumer", "Customer Base", "Cambio Offerta", "Rete Sicura CB", 5, "T2.1 · rinnovo a M+1"],
+  ["Rete Sicura Family/150GB", "Consumer", "Customer Base", "Cambio Offerta", "Rete Sicura Family/150GB", 5, "T2.1 · rinnovo a M+1"],
+  ["Vodafone Club", "Consumer", "Customer Base", "Cambio Offerta", "Vodafone Club", 5, "T2.1 · rinnovo a M+1; abbinata a TNP in attivazione = stesso importo"],
+  ["MM4M Start", "Consumer", "Customer Base", "Cambio Offerta", "MM4M Start", 5, "T2.1 · rinnovo a M+1 (Mobile Start Special)"],
+  ["MM4M Pro", "Consumer", "Customer Base", "Cambio Offerta", "MM4M Pro", 10, "T2.1 · rinnovo a M+1 (Pro/Power Special)"],
+  ["MM4M Ultra", "Consumer", "Customer Base", "Cambio Offerta", "MM4M Ultra", 10, "T2.1 · rinnovo a M+1 (Ultra Special / Ultra Plus)"],
+  // ── Tabella 2.1 — ATTIVAZIONE
+  ["Kasko Facile", null, "Multi-Servizi", "Kasko Facile", null, 5, "T2.1 · Kasko GA e CB (Consumer e Business, ogni taglio)"],
+  ["Extender / Seven Booster", "Consumer", "Customer Base", "Cambio Offerta", "Extender", 20, "T2.1 · Super Wi-Fi Extender 6 / Seven Booster Wi-Fi 7"],
+  // ── Tabella 3.1 — MOBILE (dati): Wallet Pay = Mobile Wallet, Smart Pay = Ric. Auto
+  ["Ric Dati (Wallet Pay)", "Consumer", null, null, "Ric Dati", 10, "T3.1 · Dati Consumer in Wallet Pay"],
+  ["Abbonamento Dati (Smart Pay)", "Consumer", null, null, "Abbonamento Dati", 25, "T3.1 · Dati Consumer in Smart Pay"],
+  // ── Tabella 3.1 — FISSA (equivalenza Add on Flat DA CONFERMARE)
+  ["Add on Flat (Chiamate Nazionali)", "Consumer", "Customer Base", "Cambio Offerta", "Chiamate Nazionali", 5, "T3.1 · opzione Flat — equivalenza da confermare"],
+  ["Add on Flat Internazionali", "Consumer", "Customer Base", "Cambio Offerta", "Chiamate Internazionali", 5, "T3.1 · opzione Flat Internazionali — equivalenza da confermare"],
+  // ── Tabella 3.1 — CB & DEVICE: telefoni a rate per fascia (bassa=XS-M, alta=L-XL)
+  ["Rateale fascia bassa (TNP XS-M)", "Consumer", null, "Tel. Rate", "TNP XS-M", 8, "T3.1 · Smartphone GA rateale fascia bassa"],
+  ["Rateale fascia bassa · CB", "Consumer", null, "Tel. Rate CB", "TNP XS-M", 8, "T3.1 · Smartphone CB rateale fascia bassa"],
+  ["Rateale fascia alta (TNP L-XL)", "Consumer", null, "Tel. Rate", "TNP L-XL", 20, "T3.1 · Smartphone GA rateale fascia alta"],
+  ["Rateale fascia alta · CB", "Consumer", null, "Tel. Rate CB", "TNP L-XL", 20, "T3.1 · Smartphone CB rateale fascia alta"],
+  ["Finanziamento S-M (Compass)", "Consumer", null, "Finanziato", "Compass Flexypay S-M", 20, "T3.1 · finanziamento fascia S e M"],
+  ["Finanziamento S-M (Smartphone Easy)", "Consumer", null, "Finanziato", "Smartphone Easy S-M", 20, "T3.1 · finanziamento fascia S e M"],
+  ["Finanziamento S-M · CB (Compass)", "Consumer", null, "Finanziato CB", "Compass Flexypay S-M CB", 20, "T3.1 · finanziamento fascia S e M"],
+  ["Finanziamento S-M · CB (Smartphone Easy)", "Consumer", null, "Finanziato CB", "Smartphone Easy S-M CB", 20, "T3.1 · finanziamento fascia S e M"],
+  ["Finanziamento L (Compass)", "Consumer", null, "Finanziato", "Compass Flexypay L-XL", 40, "T3.1 · finanziamento fascia L"],
+  ["Finanziamento L (Smartphone Easy)", "Consumer", null, "Finanziato", "Smartphone Easy L-XL", 40, "T3.1 · finanziamento fascia L"],
+  ["Finanziamento L · CB (Compass)", "Consumer", null, "Finanziato CB", "Compass Flexypay L-XL CB", 40, "T3.1 · finanziamento fascia L"],
+  ["Finanziamento L · CB (Smartphone Easy)", "Consumer", null, "Finanziato CB", "Smartphone Easy L-XL CB", 40, "T3.1 · finanziamento fascia L"],
+  // ── Tabella 3.1 — CB & DEVICE: wireline
+  ["Trasloco", "Consumer", "Customer Base", "Traslochi", "Trasloco", 40, "T3.1 · Traslochi Rete Fissa su già clienti — in promo"],
+  ["Migrazione FTTH", "Consumer", "Customer Base", "Cambio Offerta", "Migrazione FTTH", 50, "T3.1 · Migrazioni Wireline FTTH-FWA — in promo"],
+];
+
 (async () => {
   await client.connect();
   await client.query("begin");
@@ -146,10 +195,16 @@ for (const b of BF)
                                 punti, pay_base, pay_tiers, gettone, ordine)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false,$12)`,
         [BRAND, MONTH, pista, nome, tc, cat, prod, off, punti, base, tiers, ord++]);
+    for (const [nome, tc, cat, prod, off, importo, note] of G)
+      await client.query(
+        `insert into pay_righe (brand, month, pista, nome, tipo_cliente, categoria, prodotto, offerta,
+                                punti, pay_base, pay_tiers, gettone, note, ordine)
+         values ($1,$2,null,$3,$4,$5,$6,$7,0,$8,'{}',true,$9,$10)`,
+        [BRAND, MONTH, nome, tc, cat, prod, off, importo, note, ord++]);
     await client.query("commit");
   } catch (e) { await client.query("rollback"); console.error("FAIL:", e.message); process.exit(1); }
   const n = async (t) => (await client.query(`select count(*) n from ${t} where brand=$1 and month=$2`, [BRAND, MONTH])).rows[0].n;
-  console.log(`OK — piste ${await n("pay_piste")} (attese 4) · soglie ${await n("pay_soglie")} (attese 24) · righe ${await n("pay_righe")} (attese ${R.length})`);
+  console.log(`OK — piste ${await n("pay_piste")} (attese 4) · soglie ${await n("pay_soglie")} (attese 24) · righe ${await n("pay_righe")} (attese ${R.length + G.length})`);
   // verifica aggancio catalogo: ogni riga con offerta deve esistere nell'albero
   const orfane = (await client.query(`
     select r.nome, r.offerta from pay_righe r where r.brand=$1 and r.month=$2 and r.offerta is not null
