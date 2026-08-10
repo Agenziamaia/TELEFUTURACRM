@@ -22,12 +22,15 @@ type Riga = {
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
 };
 
+// lato ragazzi TUTTO il Vodafone paga come lettera A (correzione Luca 10/08
+// notte: la distinzione VND esiste solo lato azienda — cantiere futuro)
 const CONTESTI = [
     { key: "windtre", label: "WindTre", colore: "#FF6B00" },
-    { key: "vodafone", label: "Vodafone Store · T1", colore: "#E60000" },
-    { key: "vodafone_vnd", label: "Vodafone VND · T2", colore: "#FF6666" },
+    { key: "vodafone", label: "Vodafone · lettera A", colore: "#E60000" },
     { key: "fastweb", label: "Fastweb · T2", colore: "#CC9900" },
     { key: "sky", label: "Sky", colore: "#0072C6" },
+    { key: "tim", label: "TIM", colore: "#0050FF" },
+    { key: "kena", label: "Kena", colore: "#F5A623" },
 ];
 const BRAND_VENDITA = ["windtre", "vodafone", "fastweb", "sky", "tim", "iliad", "very", "ho", "kena", "s4", "dojo", "kipoint"];
 

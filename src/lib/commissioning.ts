@@ -175,36 +175,35 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
 }
 
 /**
- * CONTESTI VF/FW (mappa di Luca 10/08, "dropzone (1).pdf"): Vodafone e
- * Fastweb hanno DUE lettere di gara ciascuno — T1 = Telefutura (Vodafone
- * Store), T2 = Telefutura 2 (multibrand VND). L'attivazione si ALLOCA col
- * CODICE DI INSERIMENTO (il negozio del codice, non quello di attribuzione):
- *   - VF codici Acilia/Baleniere/Castani/Merulana  → "vodafone" (lettera A VS)
- *   - VF codici Donna/Magliana/Collatina/Garbatella → "vodafone_vnd" (T2)
- *   - FW codici dei 4 VS → "vodafone" (FW sui Vodafone Store ricade nella
- *     lettera A e nel commissioning VS)
+ * CONTESTI VF/FW (mappa di Luca 10/08, "dropzone (1).pdf" + correzione 10/08
+ * notte): T1 = Telefutura (Vodafone Store), T2 = Telefutura 2 (multibrand
+ * VND). LATO RAGAZZI — che è quello che il motore paga — TUTTO il Vodafone
+ * conta e paga come Vodafone Store (lettera A): la distinzione VND esiste
+ * solo LATO AZIENDA (cantiere futuro sui PDF delle lettere). Il Fastweb
+ * invece si SPLITTA anche lato ragazzi, col CODICE DI INSERIMENTO (il
+ * negozio del codice, non quello di attribuzione):
+ *   - FW codici dei 4 VS (Acilia/Baleniere/Castani/Merulana) → "vodafone"
+ *     (ricade nella lettera A e nel commissioning VS)
  *   - FW codici Donna/Magliana/Garbatella/Promontori → "fastweb" (T2)
  * Le chiavi contesto SONO le chiavi brand delle tabelle pay. Codice assente →
  * ripiego sul negozio di attribuzione (prima parola); irriconoscibile → null.
  */
 const CTX_VF_T1 = ["acilia", "baleniere", "castani", "merulana"];
-const CTX_VF_T2 = ["donna", "magliana", "collatina", "garbatella"];
 const CTX_FW_T2 = ["donna", "magliana", "garbatella", "promontori"];
 
 export function contestoVfFw(brandId: string | null, codice: string | null, negozio?: string | null): string | null {
-    if (brandId !== "vodafone" && brandId !== "fastweb") return brandId;
+    if (brandId === "vodafone") return "vodafone";   // lato ragazzi: sempre lettera A
+    if (brandId !== "fastweb") return brandId;
     const ref = String(codice || "").trim().toLowerCase() || String(negozio || "").trim().toLowerCase();
     if (!ref) return null;
     if (CTX_VF_T1.some(x => ref.startsWith(x))) return "vodafone";
-    if (brandId === "vodafone" && CTX_VF_T2.some(x => ref.startsWith(x))) return "vodafone_vnd";
-    if (brandId === "fastweb" && CTX_FW_T2.some(x => ref.startsWith(x))) return "fastweb";
+    if (CTX_FW_T2.some(x => ref.startsWith(x))) return "fastweb";
     return null;
 }
 
 /** Etichette leggibili dei contesti pay. */
 export const CONTESTI_LABEL: Record<string, string> = {
-    vodafone: "Vodafone Store · T1 (lettera A, include il Fastweb dei VS)",
-    vodafone_vnd: "Vodafone VND · T2 (multibrand)",
+    vodafone: "Vodafone · lettera A (tutte le attivazioni VF + il Fastweb dei VS)",
     fastweb: "Fastweb · T2 (multibrand)",
 };
 
@@ -219,7 +218,6 @@ export async function caricaContrattiContesto(
 ): Promise<{ contratti: ContrattoPay[]; nonAllocate: number }> {
     const fonti: string[] =
         contesto === "vodafone" ? ["Vodafone", "Fastweb"] :
-        contesto === "vodafone_vnd" ? ["Vodafone"] :
         contesto === "fastweb" ? ["Fastweb"] : [];
     if (!fonti.length)
         return { contratti: await caricaContrattiMese(prefixAltriBrand || contesto, monthISO), nonAllocate: 0 };

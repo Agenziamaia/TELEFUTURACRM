@@ -32,14 +32,11 @@ const BRANDS: { id: string; label: string; logo: string; color: string; zoom: nu
     { id: "s4", label: "S4", logo: "/energy - Copy.png", color: "#28A745", zoom: 1, prefix: "S4" },
 ];
 
-// CONTESTI VF/FW (mappa Luca 10/08): due lettere di gara per brand — la
-// scelta commuta tabellare e avanzamento; l'allocazione delle vendite segue
-// il CODICE DI INSERIMENTO (contestoVfFw in lib/commissioning).
+// CONTESTI (mappa Luca 10/08 + correzione): lato RAGAZZI tutto il Vodafone
+// paga come Vodafone Store (lettera A) — niente scelta; il FASTWEB invece ha
+// due lettere e l'allocazione segue il CODICE DI INSERIMENTO (contestoVfFw
+// in lib/commissioning). La distinzione VND è solo lato azienda (futuro).
 const CONTESTI_BRAND: Record<string, { key: string; label: string }[]> = {
-    vodafone: [
-        { key: "vodafone", label: "🅰️ Vodafone Store · T1" },
-        { key: "vodafone_vnd", label: "🏬 VND multibrand · T2" },
-    ],
     fastweb: [
         { key: "fastweb", label: "🏬 Multibrand · T2" },
         { key: "vodafone", label: "🅰️ Sui Vodafone Store · T1 (lettera A VS)" },
