@@ -19,7 +19,7 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Presentation, Radar, Calculator,
+    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -119,8 +119,8 @@ export const NAVIGATION: NavEntry[] = [
     // Conto economico per PV: sezione RIMOSSA su direttiva Luca 07/08 — si
     // rifà da capo (grafica CRM) DOPO che avrà dato compensi/soglie/target/
     // bonus/malus per operatore; le tabelle ce_* a DB restano dormienti.
-    // Deck builder riunioni (fase 0-1): archivio deck + renderer + Presenta
-    { type: "link", name: "Riunioni", href: "/riunioni", icon: Presentation, roles: ADMINS },
+    // Riunioni (deck builder): sezione MESSA DA PARTE su task Luca 10/08 —
+    // si riprenderà più avanti come sviluppo dedicato (riunione_deck resta a DB).
     {
         type: "hub",
         name: "Gare",

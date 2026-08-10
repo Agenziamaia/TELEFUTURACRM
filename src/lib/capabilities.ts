@@ -454,25 +454,9 @@ export const CAP_CALENDARIO_TASK: CapGroupChoice = {
 // (Conto Economico: capacità rimosse insieme alla sezione — direttiva Luca
 //  07/08; si ricreeranno col rifacimento post-input compensi/soglie/target.)
 
-// ─── RIUNIONI (deck builder, fase 0-1) ───────────────────────────────────────
-export const RIUNIONI_SECTION = "/riunioni";
-export const CAP_RIUNIONI_GESTISCE: CapDef = {
-    id: "gestisce",
-    label: "Crea e gestisce i deck",
-    desc: "Crea le bozze di riunione, aggiorna i dati congelati, congela/scongela i deck.",
-    default: (r) => ["admin", "dev", "direttore_generale"].includes(r),
-};
-export const CAP_RIUNIONI_PRESENTA: CapDef = {
-    id: "presenta",
-    label: "Presenta",
-    desc: "Avvia la modalità presentazione a schermo intero dei deck.",
-    default: (r) => ["admin", "dev", "direttore_generale"].includes(r),
-};
-export const CAP_RIUNIONI: CapGroupFlags = {
-    mode: "flags",
-    section: RIUNIONI_SECTION,
-    sectionLabel: "Riunioni",
-    caps: [CAP_RIUNIONI_GESTISCE, CAP_RIUNIONI_PRESENTA],
-};
+// (Riunioni/deck builder: sezione MESSA DA PARTE su task Luca 10/08 — "è
+//  completamente diversa da quello che mi ero immaginato, la riprenderemo più
+//  in là". Tolte pagina, API e capacità; la tabella riunione_deck e il motore
+//  contoEconomico restano dormienti per la ripresa futura.)
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_RIUNIONI];
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];
