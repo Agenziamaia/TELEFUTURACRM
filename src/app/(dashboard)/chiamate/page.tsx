@@ -62,6 +62,9 @@ export default function RegistroChiamatePage() {
     // FILTRO PERIODO (Luca 10/08): bottoni grandi sopra il registro, "Oggi"
     // preflaggato all'ingresso; vale solo sul registro (la coda resta integrale)
     const [fPeriodo, setFPeriodo] = useState("oggi");
+    // giorno SPECIFICO (proposta Francesco, approvata da Luca 10/08): se
+    // valorizzato vince sui bottoni periodo
+    const [fGiorno, setFGiorno] = useState("");
     const [ricerca, setRicerca] = useState("");
     const [visibili, setVisibili] = useState(50);
     // chiamata espansa: l'audio si apre SOLO qui (vista compatta per tutti)
@@ -146,7 +149,11 @@ export default function RegistroChiamatePage() {
 
     const filtrate = useMemo(() => {
         const cifre = ricerca.replace(/\D/g, "");
-        const rp = tab === "tutte" ? rangePeriodo(fPeriodo) : null;
+        let rp: [Date, Date] | null = null;
+        if (tab === "tutte") {
+            if (fGiorno) { const d0 = new Date(fGiorno + "T00:00:00"); const d1 = new Date(d0); d1.setDate(d1.getDate() + 1); rp = [d0, d1]; }
+            else rp = rangePeriodo(fPeriodo);
+        }
         return eventi.filter((e) => {
             if (tab === "coda" && !inCoda(e)) return false;
             if (rp) { const t = new Date(String(e.started_at || "")); if (isNaN(t.getTime()) || t < rp[0] || t >= rp[1]) return false; }
@@ -159,7 +166,7 @@ export default function RegistroChiamatePage() {
             if (cifre.length >= 3 && !String(e.cliente_num || "").replace(/\D/g, "").includes(cifre)) return false;
             return true;
         });
-    }, [eventi, tab, fDirezione, fEsito, fNegozio, ricerca, fPeriodo]);
+    }, [eventi, tab, fDirezione, fEsito, fNegozio, ricerca, fPeriodo, fGiorno]);
 
     const quando = (iso: unknown) => { const d = new Date(String(iso || "")); return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("it-IT") + " " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }); };
     const durata = (sec: unknown) => { const n = Number(sec) || 0; return n ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}` : "—"; };
@@ -240,13 +247,24 @@ export default function RegistroChiamatePage() {
                     {tab === "tutte" && (
                         <div className="flex flex-wrap gap-2">
                             {[["oggi", "📅 Oggi"], ["ieri", "Ieri"], ["sett", "Questa settimana"], ["sett_scorsa", "Settimana scorsa"], ["mese", "Questo mese"], ["mese_scorso", "Mese scorso"], ["tutte", "Tutte"]].map(([id, label]) => (
-                                <button key={id} onClick={() => { setFPeriodo(id); setVisibili(50); }}
-                                    className={`px-4 py-2.5 rounded-xl border text-sm font-bold transition-all ${fPeriodo === id
+                                <button key={id} onClick={() => { setFPeriodo(id); setFGiorno(""); setVisibili(50); }}
+                                    className={`px-4 py-2.5 rounded-xl border text-sm font-bold transition-all ${fPeriodo === id && !fGiorno
                                         ? "border-emerald-400/70 bg-emerald-500/15 text-emerald-300 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]"
                                         : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25 hover:text-white"}`}>
                                     {label}
                                 </button>
                             ))}
+                            {/* giorno QUALSIASI (Francesco, ok Luca 10/08): il date-picker
+                                vince sui bottoni; la ✕ torna a Oggi */}
+                            <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-sm font-bold transition-all cursor-pointer ${fGiorno
+                                ? "border-emerald-400/70 bg-emerald-500/15 text-emerald-300 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]"
+                                : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25 hover:text-white"}`}>
+                                📆
+                                <input type="date" value={fGiorno} onChange={(e) => { setFGiorno(e.target.value); setVisibili(50); }}
+                                    title="Scegli un giorno qualsiasi da visualizzare"
+                                    className="bg-transparent border-none outline-none text-sm font-bold cursor-pointer w-[130px]" />
+                                {fGiorno && <button onClick={(e) => { e.preventDefault(); setFGiorno(""); setVisibili(50); }} title="Togli il giorno (torna a Oggi)" className="opacity-70 hover:opacity-100">✕</button>}
+                            </label>
                         </div>
                     )}
 
