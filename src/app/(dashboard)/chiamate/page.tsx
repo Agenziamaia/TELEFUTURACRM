@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Search, X, UserPlus, Link2, Archive, RefreshCw } from "lucide-react";
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Search, X, UserPlus, Link2, Archive, RefreshCw , Copy } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useVisibleStores, negozioInValues, sameStore } from "@/lib/visibleStores";
@@ -295,9 +295,23 @@ export default function RegistroChiamatePage() {
                                                     👤 {nomiClienti[e.client_id] || "Cliente"}
                                                 </Link>
                                                 <span className="text-xs text-slate-500 font-mono shrink-0">{numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || "—")}</span>
+                                                {(() => { const num = numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || ""); return num ? (
+                                                    <button onClick={(ev) => { ev.stopPropagation(); navigator.clipboard?.writeText(num); setMsg("📋 Numero copiato: " + num); }}
+                                                        title="Copia il numero" className="shrink-0 text-slate-500 hover:text-white transition-colors">
+                                                        <Copy className="w-3.5 h-3.5" />
+                                                    </button>
+                                                ) : null; })()}
                                             </span>
                                         ) : (
-                                            <span className="ml-auto text-xs text-slate-500 font-mono">{numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || "—")}</span>
+                                            <span className="ml-auto flex items-center gap-2">
+                                                <span className="text-xs text-slate-500 font-mono">{numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || "—")}</span>
+                                                {(() => { const num = numeroNazionale(String(e.cliente_num || "")) || String(e.cliente_num || ""); return num ? (
+                                                    <button onClick={(ev) => { ev.stopPropagation(); navigator.clipboard?.writeText(num); setMsg("📋 Numero copiato: " + num); }}
+                                                        title="Copia il numero" className="shrink-0 text-slate-500 hover:text-white transition-colors">
+                                                        <Copy className="w-3.5 h-3.5" />
+                                                    </button>
+                                                ) : null; })()}
+                                            </span>
                                         )}
                                     </div>
 
@@ -327,10 +341,14 @@ export default function RegistroChiamatePage() {
                                                 className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/25 flex items-center gap-1.5">
                                                 <Link2 className="w-3.5 h-3.5" /> Associa a esistente
                                             </button>
+                                            {/* archiviare = solo amministrativo in su (Luca 10/08):
+                                                le entrate restano in coda per tutti gli altri */}
+                                            {["admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "") && (
                                             <button onClick={() => archivia(e)} title="Numero da ignorare (spam, errore): esce dalla coda"
                                                 className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200 flex items-center gap-1.5">
                                                 <Archive className="w-3.5 h-3.5" /> Ignora
                                             </button>
+                                            )}
                                         </div>
                                     ) : null}
                                 </div>

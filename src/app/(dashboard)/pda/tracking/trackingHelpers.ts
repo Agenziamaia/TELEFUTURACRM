@@ -90,6 +90,9 @@ const TUTTI_STATI_NEGOZIO = [
 export interface EsitoTracking {
   categoria: string; chiave: string; etichetta: string;
   colore: string; bg: string; ordine: number; attiva: boolean; completata: boolean;
+  // €/GIORNO lavorativo quando la pratica sta in QUESTO esito admin (10/08):
+  // usato per il malus da "Non Conforme", configurabile per categoria
+  malus_giorno?: number | null;
   // 'negozio' (default) | 'admin' — esiti della verifica amministrativa
   // (segnalazione Luca 10/08: anche l'amministrativo ha esiti per categoria,
   // col flag "definitiva" che chiude il cerchio della pratica)
@@ -170,6 +173,15 @@ export function getStatiAdminPerCategoria(categoria: string) {
   const db = ESITI_ADMIN_DB?.get(categoria);
   if (db) return db.filter((e) => e.attiva).map(daEsito);
   return categoria === "finanziamento" ? STATI_ADMIN_FINANZIAMENTO : STATI_ADMIN;
+}
+
+/** MALUS €/gg dell'esito ADMIN corrente (es. Non Conforme): dal pannello,
+ *  per categoria. NULL/0 = nessun malus amministrativo. */
+export function malusAdminGiorno(statoAdmin: string, categoria: string): number {
+  const db = ESITI_ADMIN_DB?.get(categoria);
+  const hit = db?.find((e) => e.chiave === statoAdmin);
+  const v = Number(hit?.malus_giorno);
+  return isFinite(v) && v > 0 ? v : 0;
 }
 
 /** Esito admin DEFINITIVO (flag amministrabile): chiude il cerchio della
@@ -275,6 +287,9 @@ const _hit = (soglia: number | null | undefined, valore: number | null) =>
   soglia != null && valore != null && valore >= soglia;
 /** 0 = in regola · 1 = da lavorare · 2 = warning · 3 = malus */
 function livelloRegole(row: TrackingRow): 0 | 1 | 2 | 3 {
+  // MALUS AMMINISTRATIVO (10/08): se l'esito admin corrente ha un €/gg (es.
+  // Non Conforme) la pratica e' in MALUS anche se il negozio l'aveva completata
+  if (malusAdminGiorno(row.statoAdmin, row.categoria) > 0) return 3;
   // Pratica con esito definitivo (completata OPPURE annullata/KO/recesso): non
   // c'e' altro esito da dare, la maturazione si ferma e la pratica esce da malus.
   if (fermaMalus(row.statoNegozio, row.categoria)) return 0;
@@ -317,8 +332,12 @@ export function isMalusRow(row: TrackingRow): boolean {
 
 export function calcolaMalus(row: TrackingRow): number {
   if (livelloRegole(row) !== 3) return 0;
-  const r = regolaDi(row.categoria);
   const m = misure(row);
+  // malus AMMINISTRATIVO: €/gg dell'esito admin × giorni lavorativi
+  // dall'ultimo aggiornamento (l'evento admin riparte il conteggio)
+  const mAdm = malusAdminGiorno(row.statoAdmin, row.categoria);
+  if (mAdm > 0) return Math.round(Math.max(1, m.ggAgg) * mAdm * 100) / 100;
+  const r = regolaDi(row.categoria);
   if (!r) return 0;
   let ecc = 0;
   if (_hit(r.senza_malus, m.ggSenza)) ecc = Math.max(ecc, (m.ggSenza as number) - (r.senza_malus as number) + 1);

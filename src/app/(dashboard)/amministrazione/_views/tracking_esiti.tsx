@@ -17,6 +17,7 @@ type Esito = {
     id: string; categoria: string; chiave: string; etichetta: string;
     colore: string; bg: string; ordine: number; attiva: boolean; completata: boolean;
     lato?: string | null;   // 'negozio' | 'admin' (verifica amministrativa)
+    malus_giorno?: number | null;   // €/gg dell'esito admin (es. Non Conforme)
 };
 
 // coppie colore/sfondo gia' in uso sui badge del Tracking: il pallino cicla qui
@@ -100,6 +101,13 @@ export function TrackingEsitiView() {
         await supabase.from("tracking_esiti").update({ completata: !r.completata }).eq("id", r.id);
         carica();
     };
+    // €/GIORNO dell'esito admin (10/08): vuoto = nessun malus
+    const salvaMalus = async (r: Esito, v: string) => {
+        const n = v.trim() === "" ? null : (parseFloat(v.replace(",", ".")) || null);
+        if ((n ?? null) === (r.malus_giorno ?? null)) return;
+        await supabase.from("tracking_esiti").update({ malus_giorno: n }).eq("id", r.id);
+        carica();
+    };
     const elimina = async (r: Esito) => {
         setDelId(null);
         await supabase.from("tracking_esiti").delete().eq("id", r.id);
@@ -179,6 +187,16 @@ export function TrackingEsitiView() {
                                         ) : (
                                             <button onClick={() => { setEditId(r.id); setEditVal(r.etichetta); }} title={`Clicca per rinominare (chiave interna: ${r.chiave})`}
                                                 className="flex-1 text-left text-sm text-slate-200 hover:text-white truncate">{r.etichetta}</button>
+                                        )}
+                                        {lato === "admin" && (
+                                            <span className="flex items-center gap-1 shrink-0" title="Malus €/GIORNO lavorativo finché la pratica resta in questo esito admin (vuoto = nessun malus)">
+                                                <input defaultValue={r.malus_giorno ?? ""} key={r.id + ":" + (r.malus_giorno ?? "")}
+                                                    onBlur={(e) => salvaMalus(r, e.target.value)}
+                                                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                                    placeholder="—" inputMode="decimal"
+                                                    className={`w-14 glass-input !h-6 text-[11px] px-1.5 text-right ${r.malus_giorno ? "!border-rose-500/50 text-rose-300 font-bold" : ""}`} />
+                                                <span className="text-[9px] text-slate-600 font-bold">€/gg</span>
+                                            </span>
                                         )}
                                         <button onClick={() => toggleCompletata(r)}
                                             title={lato === "admin"
