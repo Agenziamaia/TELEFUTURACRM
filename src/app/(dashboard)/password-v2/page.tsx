@@ -11,7 +11,7 @@ import { useStoreRecords } from "@/lib/org";
 import { supabase } from "@/lib/supabaseClient";
 import { Plus, Pencil, Trash2, Save } from "lucide-react";
 
-type BrandId = "windtre" | "vodafone" | "tim" | "sky" | "fastweb" | "energia" | "iliad" | "kena" | "ho";
+type BrandId = "windtre" | "vodafone" | "tim" | "sky" | "fastweb" | "energia" | "iliad" | "kena" | "ho" | "kipoint";
 
 const BRANDS: { id: BrandId; name: string; color: string; bg: string; image: string; categories: number }[] = [
     { id: "windtre", name: "WindTre", color: "text-orange-300", bg: "bg-orange-500/15 border-orange-500/40", image: "/windtre.png", categories: 4 },
@@ -25,6 +25,8 @@ const BRANDS: { id: BrandId; name: string; color: string; bg: string; image: str
     { id: "iliad", name: "Iliad", color: "text-rose-300", bg: "bg-rose-500/15 border-rose-500/40", image: "/iliad.png", categories: 2 },
     { id: "kena", name: "Kena Mobile", color: "text-amber-300", bg: "bg-amber-500/15 border-amber-500/40", image: "/kena-mobile-v2.png", categories: 2 },
     { id: "ho", name: "Ho Mobile", color: "text-fuchsia-300", bg: "bg-fuchsia-500/15 border-fuchsia-500/40", image: "/ho-mobile.png", categories: 2 },
+    // Kipoint (Luca 10/08): spedizioni e ritiro pacchi
+    { id: "kipoint", name: "Kipoint", color: "text-blue-300", bg: "bg-blue-500/15 border-blue-500/40", image: "/kipoint.png", categories: 0 },
 ];
 
 const CATEGORIES: Record<BrandId, { id: string; name: string }[]> = {
@@ -69,6 +71,7 @@ const CATEGORIES: Record<BrandId, { id: string; name: string }[]> = {
         { id: "ho-partner", name: "Ho Partner" },
         { id: "admin-dashboard", name: "Admin Dashboard" },
     ],
+    kipoint: [],
 };
 
 // I negozi arrivano dal DB (useStoreRecords): erano inventati (Roma Termini,
@@ -429,9 +432,9 @@ export default function PasswordV2Page() {
                        le scale li rendono omogenei; Energia è il logo tondo). */
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {BRANDS.map((b) => {
-                            const colorHex = b.id === "windtre" ? "var(--tf-f97316)" : b.id === "vodafone" ? "var(--tf-e60000)" : b.id === "tim" ? "var(--tf-003da5)" : b.id === "sky" ? "var(--tf-0072ce)" : b.id === "fastweb" ? "var(--tf-7c3aed)" : b.id === "iliad" ? "var(--tf-e2001a)" : b.id === "kena" ? "var(--tf-f5a623)" : b.id === "ho" ? "var(--tf-8e24aa)" : "var(--tf-10b981)";
+                            const colorHex = b.id === "windtre" ? "var(--tf-f97316)" : b.id === "vodafone" ? "var(--tf-e60000)" : b.id === "tim" ? "var(--tf-003da5)" : b.id === "sky" ? "var(--tf-0072ce)" : b.id === "fastweb" ? "var(--tf-7c3aed)" : b.id === "iliad" ? "var(--tf-e2001a)" : b.id === "kena" ? "var(--tf-f5a623)" : b.id === "ho" ? "var(--tf-8e24aa)" : b.id === "kipoint" ? "#0a58ca" : "var(--tf-10b981)";
                             const tondo = b.id === "energia";
-                            const ZOOM: Record<string, number> = { windtre: 2.0, tim: 2.2, kena: 2.2, fastweb: 1.9, vodafone: 1.7, sky: 1.35, iliad: 1.14, ho: 1.14 };
+                            const ZOOM: Record<string, number> = { windtre: 2.0, tim: 2.2, kena: 2.2, fastweb: 1.9, vodafone: 1.7, sky: 1.35, iliad: 1.14, ho: 1.14, kipoint: 1 };
                             const z = ZOOM[b.id] ?? 1;
                             return (
                                 <button
@@ -445,7 +448,7 @@ export default function PasswordV2Page() {
                                 >
                                     <div className="flex items-center justify-center" style={{ height: 88 }}>
                                         <img src={b.image} alt={b.name}
-                                            style={{ height: tondo ? 84 : 88, width: "auto", maxWidth: tondo ? "92%" : "98%", objectFit: "contain", transform: tondo || z === 1 ? "none" : `scale(${z})`, transformOrigin: "center" }} />
+                                            style={{ height: b.id === "kipoint" ? 58 : tondo ? 84 : 88, width: "auto", maxWidth: tondo ? "92%" : "98%", objectFit: "contain", transform: tondo || z === 1 ? "none" : `scale(${z})`, transformOrigin: "center" }} />
                                     </div>
                                 </button>
                             );
