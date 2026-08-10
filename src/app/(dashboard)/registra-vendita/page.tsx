@@ -5770,6 +5770,17 @@ function CRM() {
       dettagli:{...riga.dettagli,"Finanziato":"Sì","N. Rate":rate.join(", ")||null},
     };
   };
+  // MOD-44b (Luca 10/08): col finanziamento l'anagrafica e' quella dello
+  // STEP CLIENTE (step 2) — niente raccolta "diversa" nella finestrina: se
+  // manca, si torna sullo step 2 a compilarla, e il salvataggio la usa.
+  const _anaComeForm=()=>({anonimo:false,tipo:(ana.ragioneSociale||"").trim()?"business":"consumer",
+    nome:ana.nome||"",cognome:ana.cognome||"",ragioneSociale:ana.ragioneSociale||"",
+    nomeRef:ana.nomeRef||"",cognomeRef:ana.cognomeRef||"",cfRef:ana.cfRef||"",
+    tel:ana.cellulare||"",fisso:ana.fisso||"",email:ana.email||"",cf:ana.cf||"",
+    via:ana.via||"",cap:ana.cap||"",citta:ana.citta||""});
+  const _anaStep2Ok=()=>((ana.cf||"").trim().length>=11)
+    &&((((ana.nome||"").trim()&&(ana.cognome||"").trim()))||(ana.ragioneSociale||"").trim())
+    &&(ana.cellulare||"").trim().length>0;
   const saveMargOnly=async()=>{
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
@@ -5782,9 +5793,14 @@ function CRM() {
       if(anon){sT("⚠️ Usato con finanziamento: serve l'anagrafica completa del cliente (niente vendita anonima)");return;}
       if(!attachments.some(a=>a.type==="documento")){sT("⚠️ Usato con finanziamento: carica il DOCUMENTO del cliente nello step Allegati");setVistaStep("allegati");return;}
       if(!attachments.some(a=>a.type==="contratti")){sT("⚠️ Usato con finanziamento: carica il CONTRATTO di finanziamento nello step Allegati");setVistaStep("allegati");return;}
+      if(!margCliSel&&!_anaStep2Ok()){
+        setShowMargSave(false);setVistaStep("cliente");setShowAna(true);
+        sT("💳 Usato con finanziamento: compila l'anagrafica del cliente nello step Cliente (CF, nome/ragione sociale e cellulare), poi torna a salvare");
+        return;
+      }
     }
     if(!anon&&!margCliSel){
-      const f=margSaveForm;
+      const f=_conFin?_anaComeForm():margSaveForm;
       // REFERENTE OBBLIGATORIO per le business anche qui (Luca 01/08): questo
       // percorso chiedeva solo ragione sociale e telefono, ed era la porta da
       // cui nascevano business senza referente. E niente return silenzioso:
@@ -5819,7 +5835,8 @@ function CRM() {
         // stessa logica del flusso brand: CF = match certo; senza CF si
         // riconosce solo con telefono + nome (o ragione sociale); univocita'
         // cellulare; il merge non cancella i dati gia' salvati (segn. 40)
-        const f=margSaveForm;
+        // MOD-44b: col finanziamento i dati sono quelli dello STEP CLIENTE
+        const f=_conFin?_anaComeForm():margSaveForm;
         const business=f.tipo==="business";
         const cfPiva=(f.cf||"").trim();
         const tel=f.tel.trim();
