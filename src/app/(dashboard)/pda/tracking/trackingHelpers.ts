@@ -8,6 +8,7 @@ import {
   STATI_NEGOZIO_ENERGIA,
   STATI_NEGOZIO_SKY,
   STATI_ADMIN,
+  STATI_ADMIN_FINANZIAMENTO,
   type StoriaEvent,
   type TrackingRow,
 } from "./trackingConstants";
@@ -89,17 +90,25 @@ const TUTTI_STATI_NEGOZIO = [
 export interface EsitoTracking {
   categoria: string; chiave: string; etichetta: string;
   colore: string; bg: string; ordine: number; attiva: boolean; completata: boolean;
+  // 'negozio' (default) | 'admin' — esiti della verifica amministrativa
+  // (segnalazione Luca 10/08: anche l'amministrativo ha esiti per categoria,
+  // col flag "definitiva" che chiude il cerchio della pratica)
+  lato?: string | null;
 }
 let ESITI_DB: Map<string, EsitoTracking[]> | null = null;
+let ESITI_ADMIN_DB: Map<string, EsitoTracking[]> | null = null;
 export function impostaEsitiTracking(rows: EsitoTracking[] | null | undefined) {
-  if (!rows || !rows.length) { ESITI_DB = null; return; }
+  if (!rows || !rows.length) { ESITI_DB = null; ESITI_ADMIN_DB = null; return; }
   const m = new Map<string, EsitoTracking[]>();
+  const ma = new Map<string, EsitoTracking[]>();
   [...rows].sort((a, b) => a.ordine - b.ordine).forEach((r) => {
-    const l = m.get(r.categoria) || [];
+    const dest = r.lato === "admin" ? ma : m;
+    const l = dest.get(r.categoria) || [];
     l.push(r);
-    m.set(r.categoria, l);
+    dest.set(r.categoria, l);
   });
-  ESITI_DB = m;
+  ESITI_DB = m.size ? m : null;
+  ESITI_ADMIN_DB = ma.size ? ma : null;
 }
 const daEsito = (e: EsitoTracking) => ({ id: e.chiave, label: e.etichetta, color: e.colore, bg: e.bg });
 
@@ -144,8 +153,34 @@ export function esitoCompletato(statoNegozio: string, categoria: string): boolea
 }
 
 export function getStatoA(id: string) {
-  const s = STATI_ADMIN.find((x) => x.id === id);
+  if (ESITI_ADMIN_DB) {
+    for (const lista of ESITI_ADMIN_DB.values()) {
+      const hit = lista.find((e) => e.chiave === id);
+      if (hit) return daEsito(hit);
+    }
+  }
+  // fallback: il set finanziamento e' il SUPERSET (fix: prima ripagato/
+  // stornato_da_ripagare cadevano sul default "Da Verificare")
+  const s = STATI_ADMIN_FINANZIAMENTO.find((x) => x.id === id);
   return s || STATI_ADMIN[0];
+}
+
+/** Esiti della VERIFICA AMMINISTRATIVA per categoria (DB, fallback hardcoded). */
+export function getStatiAdminPerCategoria(categoria: string) {
+  const db = ESITI_ADMIN_DB?.get(categoria);
+  if (db) return db.filter((e) => e.attiva).map(daEsito);
+  return categoria === "finanziamento" ? STATI_ADMIN_FINANZIAMENTO : STATI_ADMIN;
+}
+
+/** Esito admin DEFINITIVO (flag amministrabile): chiude il cerchio della
+ *  pratica — esce dalla coda ⚡ Da lavorare della verifica amministrazione. */
+export function esitoAdminDefinitivo(statoAdmin: string, categoria: string): boolean {
+  const db = ESITI_ADMIN_DB?.get(categoria);
+  if (db) {
+    const hit = db.find((e) => e.chiave === statoAdmin);
+    if (hit) return hit.completata;
+  }
+  return ["confermato", "pagato", "stornato", "ripagato"].includes(statoAdmin);
 }
 
 export function getCat(id: string) {

@@ -16,6 +16,7 @@ import { CATEGORIE } from "../../pda/tracking/trackingConstants";
 type Esito = {
     id: string; categoria: string; chiave: string; etichetta: string;
     colore: string; bg: string; ordine: number; attiva: boolean; completata: boolean;
+    lato?: string | null;   // 'negozio' | 'admin' (verifica amministrativa)
 };
 
 // coppie colore/sfondo gia' in uso sui badge del Tracking: il pallino cicla qui
@@ -45,6 +46,9 @@ const slugDi = (s: string) => s.trim().toLowerCase().normalize("NFD").replace(/[
 const CATEGORIE_PANNELLO = CATEGORIE.filter((c) => c.id !== "tv");
 
 export function TrackingEsitiView() {
+    // DUE LATI (Luca 10/08): esiti del NEGOZIO e della VERIFICA AMMINISTRATIVA
+    // — stessa meccanica, flag "completata/definitiva" con significato analogo
+    const [lato, setLato] = useState<"negozio" | "admin">("negozio");
     const [righe, setRighe] = useState<Esito[]>([]);
     const [err, setErr] = useState<string | null>(null);
     const [nuova, setNuova] = useState<Record<string, string>>({});
@@ -63,12 +67,12 @@ export function TrackingEsitiView() {
     const aggiungi = async (categoria: string) => {
         const etichetta = (nuova[categoria] || "").trim();
         if (!etichetta) return;
-        const lista = righe.filter((r) => r.categoria === categoria);
+        const lista = righe.filter((r) => r.categoria === categoria && (r.lato || "negozio") === lato);
         let chiave = slugDi(etichetta);
         while (lista.some((r) => r.chiave === chiave)) chiave += "_2";
         const maxOrd = Math.max(0, ...lista.map((r) => r.ordine));
         const { error } = await supabase.from("tracking_esiti").insert({
-            categoria, chiave, etichetta, colore: PALETTE[0].colore, bg: PALETTE[0].bg, ordine: maxOrd + 10,
+            categoria, chiave, etichetta, colore: PALETTE[0].colore, bg: PALETTE[0].bg, ordine: maxOrd + 10, lato,
         });
         if (error) { setErr(error.message); return; }
         setNuova((p) => ({ ...p, [categoria]: "" }));
@@ -102,7 +106,7 @@ export function TrackingEsitiView() {
         carica();
     };
     const sposta = async (r: Esito, dir: -1 | 1) => {
-        const lista = righe.filter((x) => x.categoria === r.categoria).sort((a, b) => a.ordine - b.ordine);
+        const lista = righe.filter((x) => x.categoria === r.categoria && (x.lato || "negozio") === (r.lato || "negozio")).sort((a, b) => a.ordine - b.ordine);
         const i = lista.findIndex((x) => x.id === r.id);
         const altro = lista[i + dir];
         if (!altro) return;
@@ -118,12 +122,23 @@ export function TrackingEsitiView() {
                     <Radar className="w-5 h-5 text-indigo-400" />
                 </div>
                 <div>
-                    <h2 className="text-xl font-bold text-white">Tracking PDA — esiti negozio per categoria</h2>
+                    <h2 className="text-xl font-bold text-white">Tracking PDA — esiti per categoria</h2>
                     <p className="text-sm text-slate-400">
-                        Le liste degli esiti che il negozio sceglie sulle pratiche. Spegnere una voce la toglie dalle scelte nuove (le pratiche gia&apos; esitate restano leggibili).
-                        Il flag <b className="text-emerald-400">🏁 completata</b> = fine del processo: la pratica sparisce dalla lista attiva, entra nella coda di verifica amministrazione (⚡ Da lavorare) e ferma il malus.
+                        {lato === "negozio"
+                            ? <>Gli esiti che il NEGOZIO sceglie sulle pratiche. Il flag <b className="text-emerald-400">🏁 completata</b> = fine del processo: la pratica sparisce dalla lista attiva, entra nella coda di verifica amministrazione (⚡ Da lavorare) e ferma il malus.</>
+                            : <>Gli esiti della VERIFICA AMMINISTRATIVA. Il flag <b className="text-emerald-400">🏁 definitiva</b> = chiude completamente il cerchio della pratica: esce dalla coda ⚡ Da lavorare (Non Conforme resta speciale: la riapre).</>}
                     </p>
                 </div>
+            </div>
+
+            {/* switch NEGOZIO / AMMINISTRAZIONE (Luca 10/08) */}
+            <div className="flex gap-2">
+                {([["negozio", "🏬 Esiti negozio"], ["admin", "🧾 Esiti amministrazione"]] as ["negozio" | "admin", string][]).map(([id, label]) => (
+                    <button key={id} onClick={() => setLato(id)}
+                        className={`px-4 py-2 rounded-xl border text-sm font-bold transition-colors ${lato === id ? "border-indigo-400/70 bg-indigo-500/15 text-white" : "border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/25"}`}>
+                        {label}
+                    </button>
+                ))}
             </div>
 
             {err && <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-sm">{err}</div>}
@@ -135,7 +150,7 @@ export function TrackingEsitiView() {
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
                 {CATEGORIE_PANNELLO.map((cat) => {
-                    const voci = righe.filter((r) => r.categoria === cat.id).sort((a, b) => a.ordine - b.ordine);
+                    const voci = righe.filter((r) => r.categoria === cat.id && (r.lato || "negozio") === lato).sort((a, b) => a.ordine - b.ordine);
                     return (
                         <div key={cat.id} className="glass-panel p-5">
                             <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -166,13 +181,13 @@ export function TrackingEsitiView() {
                                                 className="flex-1 text-left text-sm text-slate-200 hover:text-white truncate">{r.etichetta}</button>
                                         )}
                                         <button onClick={() => toggleCompletata(r)}
-                                            title={r.completata
-                                                ? "Fine processo: la pratica esce dalla lista attiva ed entra nella coda di verifica amministrazione — clicca per toglierlo"
-                                                : "Clicca per marcare questo esito come FINE DEL PROCESSO (completata)"}
+                                            title={lato === "admin"
+                                                ? (r.completata ? "DEFINITIVA: chiude il cerchio della pratica (esce dalla coda ⚡ Da lavorare) — clicca per toglierlo" : "Clicca per marcare questo esito come DEFINITIVO (chiude il cerchio)")
+                                                : (r.completata ? "Fine processo: la pratica esce dalla lista attiva ed entra nella coda di verifica amministrazione — clicca per toglierlo" : "Clicca per marcare questo esito come FINE DEL PROCESSO (completata)")}
                                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 transition-colors ${r.completata
                                                 ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300"
                                                 : "bg-transparent border-white/10 text-slate-600 hover:text-slate-300"}`}>
-                                            🏁 completata
+                                            🏁 {lato === "admin" ? "definitiva" : "completata"}
                                         </button>
                                         <button onClick={() => toggleAttiva(r)} title={r.attiva ? "Attiva — clicca per spegnerla" : "Spenta — clicca per riattivarla"}
                                             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${r.attiva ? "bg-emerald-500/70" : "bg-white/10"}`}>

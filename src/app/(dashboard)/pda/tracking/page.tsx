@@ -12,8 +12,6 @@ import { statoContrattoDa } from "./trackingHelpers";
 import {
   CATEGORIE,
   ALL_BRANDS,
-  STATI_ADMIN,
-  STATI_ADMIN_FINANZIAMENTO,
   MALUS_IMPORTO,
   type TrackingRow,
   type StoriaEvent,
@@ -31,6 +29,8 @@ import {
   impostaRegoleTracking,
   impostaEsitiTracking,
   esitoCompletato,
+  getStatiAdminPerCategoria,
+  esitoAdminDefinitivo,
 } from "./trackingHelpers";
 import { RegoleTracking } from "./RegoleTracking";
 import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
@@ -1065,7 +1065,8 @@ function Drawer({
     return "Sistema";
   };
 
-  const statiAdmin = row.categoria === "finanziamento" ? STATI_ADMIN_FINANZIAMENTO : STATI_ADMIN;
+  // esiti admin AMMINISTRABILI per categoria (10/08): dal pannello, fallback hardcoded
+  const statiAdmin = getStatiAdminPerCategoria(row.categoria);
 
   return (
     <div
@@ -1764,7 +1765,7 @@ export default function TrackingPdaPage() {
     if (row.tracking_nascosto) return false;
     if (soloDaLavorare) {
       if (!esitoCompletato(row.statoNegozio, row.categoria)) return false;
-      if (["confermato", "pagato", "stornato", "non_conforme"].includes(row.statoAdmin)) return false;
+      if (esitoAdminDefinitivo(row.statoAdmin, row.categoria) || row.statoAdmin === "non_conforme") return false;
     } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria) && row.statoAdmin !== "non_conforme") return false;
     if (onlyMine && row.delegated_to !== user?.id) return false;
     if (onlyDelegate && row.delegated_by !== user?.id) return false;
@@ -1833,7 +1834,7 @@ export default function TrackingPdaPage() {
       // che nasconde le completate, altrimenti la coda sarebbe invisibile.
       if (soloDaLavorare) {
         if (!esitoCompletato(row.statoNegozio, row.categoria)) return false;
-        if (["confermato", "pagato", "stornato", "non_conforme"].includes(row.statoAdmin)) return false;
+        if (esitoAdminDefinitivo(row.statoAdmin, row.categoria) || row.statoAdmin === "non_conforme") return false;
       } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria) && row.statoAdmin !== "non_conforme") return false;
       if (onlyMine && row.delegated_to !== user?.id) return false; // "delegate a me"
       if (onlyDelegate && row.delegated_by !== user?.id) return false; // "delegate DA me"
