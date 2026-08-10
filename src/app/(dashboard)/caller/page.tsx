@@ -2056,11 +2056,11 @@ function CallerPageInner() {
                                                         onClick={(e) => { e.stopPropagation(); apriArchivioMalus(); }}
                                                         onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); apriArchivioMalus(); } }}
                                                         title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"}
-                                                        className="text-[10px] font-bold underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100 whitespace-nowrap leading-tight">
+                                                        className="text-[14px] font-bold underline decoration-dotted underline-offset-2 opacity-90 hover:opacity-100 whitespace-nowrap leading-tight">
                                                         ⏱ Storico →
                                                     </span>
                                                     {malusTotStorico != null && malusTotStorico > 0 && (
-                                                        <span className="text-[10px] font-black tabular-nums opacity-90 leading-tight whitespace-nowrap">tot. −{malusTotStorico.toFixed(2).replace(".", ",")} €</span>
+                                                        <span className="text-[14px] font-black tabular-nums leading-tight whitespace-nowrap">tot. −{malusTotStorico.toFixed(2).replace(".", ",")} €</span>
                                                     )}
                                                 </div>
                                             )}
