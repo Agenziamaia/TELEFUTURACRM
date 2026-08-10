@@ -110,6 +110,8 @@ interface AppUser {
     hire_date: string | null;
     note: string | null;
     password: string | null;
+    // MOD-25: utenza Aircall collegata (bigint) — aggancia chiamate e click-to-call
+    aircall_user_id?: number | null;
     user_stores?: { store_name: string }[];
     user_brands?: { brand: string }[];
     user_store_visibility?: { store_name: string }[];
@@ -152,6 +154,7 @@ const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[]; visib
     domicile: "",
     hire_date: "",
     note: "",
+    aircall_user_id: null,
     stores: [],
     brands: [],
     visibility: [],
@@ -784,6 +787,30 @@ function UserForm({
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState("");
 
+    // MOD-25 (Luca 10/08): tendina delle utenze Aircall via /api/aircall/users
+    // (credenziali solo server). Preselezione per EMAIL quando il campo e'
+    // vuoto; comunque il webhook si auto-aggancia alla prima chiamata se
+    // l'email Aircall coincide con quella dell'utente.
+    const [aircallUsers, setAircallUsers] = useState<{ id: number; name: string; email: string | null }[] | null>(null);
+    const [aircallErr, setAircallErr] = useState("");
+    useEffect(() => {
+        let vivo = true;
+        fetch("/api/aircall/users").then((r) => r.json()).then((j) => {
+            if (!vivo) return;
+            if (j?.ok) setAircallUsers(j.users || []);
+            else { setAircallUsers([]); setAircallErr(j?.error || "Aircall non raggiungibile"); }
+        }).catch((e) => { if (vivo) { setAircallUsers([]); setAircallErr(e instanceof Error ? e.message : String(e)); } });
+        return () => { vivo = false; };
+    }, []);
+    useEffect(() => {
+        if (!aircallUsers?.length) return;
+        setF((p) => {
+            if (p.aircall_user_id || !p.email) return p;
+            const hit = aircallUsers.find((u) => (u.email || "").toLowerCase() === String(p.email).trim().toLowerCase());
+            return hit ? { ...p, aircall_user_id: hit.id } : p;
+        });
+    }, [aircallUsers]);
+
     const grades = gradesOf(f.role || "");
 
     const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
@@ -870,6 +897,8 @@ function UserForm({
             domicile: f.different_domicile ? f.domicile?.trim() || null : null,
             hire_date: f.hire_date || null,
             note: f.note?.trim() || null,
+            // MOD-25: aggancio utenza Aircall (null = scollegata)
+            aircall_user_id: f.aircall_user_id ? Number(f.aircall_user_id) : null,
         };
 
         let userId = editing?.id;
@@ -963,6 +992,23 @@ function UserForm({
                         </Field>
                         <Field label="Data assunzione">
                             <input type="date" className="glass-input w-full" value={f.hire_date || ""} onChange={(e) => set("hire_date", e.target.value)} />
+                        </Field>
+                        {/* MOD-25 (Luca 10/08): utenza Aircall — aggancia le chiamate
+                            del call center e il click-to-call. Preselezionata per
+                            email; si auto-aggancia comunque alla prima chiamata. */}
+                        <Field label="Utenza Aircall">
+                            <select className="glass-input w-full" value={f.aircall_user_id ?? ""}
+                                onChange={(e) => set("aircall_user_id", e.target.value ? Number(e.target.value) : null)}>
+                                <option value="">{aircallUsers === null ? "Carico da Aircall…" : "— Non collegata —"}</option>
+                                {f.aircall_user_id && aircallUsers !== null && !aircallUsers.some((u) => u.id === f.aircall_user_id) && (
+                                    <option value={f.aircall_user_id}>Utenza attuale (id {f.aircall_user_id} — non più su Aircall?)</option>
+                                )}
+                                {(aircallUsers ?? []).map((u) => (
+                                    <option key={u.id} value={u.id}>{u.name}{u.email ? ` · ${u.email}` : ""}</option>
+                                ))}
+                            </select>
+                            {aircallErr && <p className="text-[11px] text-rose-400 mt-1">Aircall: {aircallErr}</p>}
+                            {!aircallErr && <p className="text-[11px] text-slate-500 mt-1">Collega le chiamate Aircall a questo utente (call center e click-to-call).</p>}
                         </Field>
                     </div>
 

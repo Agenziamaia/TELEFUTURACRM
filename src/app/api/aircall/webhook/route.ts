@@ -57,6 +57,8 @@ export async function POST(request: Request) {
         const clienteNum = d.raw_digits || d.to || d.from || null; // l'altro capo
         const aircallUserId = d.user?.id ?? null;
         const agente = d.user?.name ?? null;
+        // MOD-25: l'email dell'utenza Aircall serve all'AUTO-AGGANCIO del mapping
+        const agenteEmail = (d.user?.email as string | undefined) ?? null;
         const numberId = d.number?.id ?? null;
         const started = toIso(d.started_at);
         const answered = toIso(d.answered_at);
@@ -176,11 +178,16 @@ export async function POST(request: Request) {
             const { data: ev } = await supabase.from("call_events").select("bridged").eq("aircall_call_id", d.id).maybeSingle();
             if (!ev?.bridged) {
                 bridge = await bridgeVersoCaller({
-                    direction, clienteNum, aircallUserId, agenteNome: agente,
+                    direction, clienteNum, aircallUserId, agenteNome: agente, agenteEmail,
                     answered: answeredBool, durata, clientId, startedIso: started,
                     aircallCallId: d.id,
                 });
-                await supabase.from("call_events").update({ bridged: true }).eq("aircall_call_id", d.id);
+                // MOD-25: l'utenza NON mappata non brucia la chiamata — se un
+                // altro evento terminale arriva dopo l'aggancio (o l'admin mappa
+                // l'utente), il ponte puo' ancora scattare
+                if (bridge !== "skip: agente non mappato") {
+                    await supabase.from("call_events").update({ bridged: true }).eq("aircall_call_id", d.id);
+                }
             }
         }
 
@@ -204,7 +211,7 @@ export async function GET() {
 // la chiamata risposta accende il flag da_esitare e l'esito lo mette il caller.
 async function bridgeVersoCaller(p: {
     direction: string | null; clienteNum: string; aircallUserId: number | null;
-    agenteNome: string | null; answered: boolean; durata: number | null;
+    agenteNome: string | null; agenteEmail?: string | null; answered: boolean; durata: number | null;
     clientId: string | null; startedIso: string | null; aircallCallId: number;
 }): Promise<string> {
     // chi ha gestito la chiamata, dal mapping identita' (fallback sul nome)
@@ -213,9 +220,29 @@ async function bridgeVersoCaller(p: {
         const { data: u } = await supabase.from("app_users").select("id,full_name,role").eq("aircall_user_id", p.aircallUserId).maybeSingle();
         if (u) { callerName = u.full_name; callerRole = u.role; callerId = u.id; }
     }
-    if (!callerName && p.agenteNome) {
-        const { data: u } = await supabase.from("app_users").select("id,full_name,role").ilike("full_name", p.agenteNome).maybeSingle();
-        if (u) { callerName = u.full_name; callerRole = u.role; callerId = u.id; }
+    // AUTO-AGGANCIO (MOD-25, Luca 10/08: "la prossima volta fallo in automatico"):
+    // utenza Aircall non ancora mappata → si risolve per EMAIL (poi nome esatto)
+    // e il mapping si SCRIVE DA SOLO su app_users — dal prossimo evento il giro
+    // e' diretto. Mai rubare un mapping gia' assegnato (guardia is null).
+    if (!callerName && (p.agenteEmail || p.agenteNome)) {
+        let u: { id: string; full_name: string; role: string } | null = null;
+        if (p.agenteEmail) {
+            const { data } = await supabase.from("app_users").select("id,full_name,role")
+                .ilike("email", p.agenteEmail).maybeSingle();
+            u = data ?? null;
+        }
+        if (!u && p.agenteNome) {
+            const { data } = await supabase.from("app_users").select("id,full_name,role")
+                .ilike("full_name", p.agenteNome).maybeSingle();
+            u = data ?? null;
+        }
+        if (u) {
+            callerName = u.full_name; callerRole = u.role; callerId = u.id;
+            if (p.aircallUserId) {
+                await supabase.from("app_users").update({ aircall_user_id: p.aircallUserId })
+                    .eq("id", u.id).is("aircall_user_id", null);
+            }
+        }
     }
     if (!callerName) return "skip: agente non mappato";
     // area call center + admin/dev (cosi' anche i test di Luca creano la pratica);
