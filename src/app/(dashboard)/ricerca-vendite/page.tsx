@@ -2624,9 +2624,15 @@ export default function RicercaContratto() {
                                             {/* i CAMPI VENDITA sono nella sezione 🧾 dedicata (Luca 07/08) */}
                                             {detReadonly.map(([k, v]) => {
                                                 // FOLLOW-UP del Tracking (Luca 10/08): niente JSON grezzo —
-                                                // righe leggibili; se sono tutti vuoti la voce sparisce
-                                                if (/^followup$/i.test(k) && Array.isArray(v)) {
-                                                    const fu = (v as { label?: string; data?: string; esito?: string; note?: string }[])
+                                                // righe leggibili; se sono tutti vuoti la voce sparisce.
+                                                // Copre anche i formati anomali (stringa JSON, oggetto a
+                                                // chiavi numeriche) per le pratiche piu' vecchie.
+                                                if (/^follow[\s_-]*up$/i.test(k)) {
+                                                    let arr: unknown = v;
+                                                    if (typeof arr === "string") { try { arr = JSON.parse(arr); } catch { /* resta stringa */ } }
+                                                    if (arr && typeof arr === "object" && !Array.isArray(arr)) arr = Object.values(arr);
+                                                    if (!Array.isArray(arr)) return null;
+                                                    const fu = (arr as { label?: string; data?: string; esito?: string; note?: string }[])
                                                         .filter(f => `${f?.data || ""}${f?.esito || ""}${f?.note || ""}`.trim());
                                                     if (!fu.length) return null;
                                                     return (

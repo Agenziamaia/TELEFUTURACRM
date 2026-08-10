@@ -273,6 +273,11 @@ function ComunicazioniInner() {
     const [fTitle, setFTitle] = useState("");
     const [fContent, setFContent] = useState("");
     const [fType, setFType] = useState<"info" | "novita" | "warning" | "success" | "update" | "sprint">("info");
+    // Frase Sprint (task Francesco, ok Luca 10/08): di default si pesca da sola
+    // dal calderone (rotazione mai-ripetuta); in alternativa il mittente può
+    // SCEGLIERE la frase esatta dalla tendina ricercabile.
+    const [fSprintScelta, setFSprintScelta] = useState<"caso" | "scelta">("caso");
+    const [fSprintFrase, setFSprintFrase] = useState("");
     // MOD-19: gestione del CALDERONE frasi sprint (aggiungi/modifica/spegni)
     const [frasiOpen, setFrasiOpen] = useState(false);
     const [frasi, setFrasi] = useState<{ id: string; testo: string; attivo: boolean; usi: number }[]>([]);
@@ -446,16 +451,28 @@ function ComunicazioniInner() {
         let sprintFrase: string | null = null;
         if (fType === "sprint") {
             try {
-                const { data: fr } = await supabase.from("sprint_frasi")
-                    .select("id, testo, usi").eq("attivo", true)
-                    .order("usi", { ascending: true })
-                    .order("ultimo_uso", { ascending: true, nullsFirst: true })
-                    .limit(1);
-                if (fr && fr[0]) {
-                    sprintFrase = fr[0].testo;
-                    await supabase.from("sprint_frasi")
+                const fraseScelta = fSprintScelta === "scelta" ? fSprintFrase.trim() : "";
+                if (fraseScelta) {
+                    // frase MIRATA (task Francesco 10/08): si congela quella scelta
+                    // e si aggiornano comunque i contatori d'uso della riga
+                    sprintFrase = fraseScelta;
+                    const { data: fr } = await supabase.from("sprint_frasi")
+                        .select("id, usi").eq("testo", fraseScelta).limit(1);
+                    if (fr && fr[0]) await supabase.from("sprint_frasi")
                         .update({ usi: (Number(fr[0].usi) || 0) + 1, ultimo_uso: new Date().toISOString() })
                         .eq("id", fr[0].id);
+                } else {
+                    const { data: fr } = await supabase.from("sprint_frasi")
+                        .select("id, testo, usi").eq("attivo", true)
+                        .order("usi", { ascending: true })
+                        .order("ultimo_uso", { ascending: true, nullsFirst: true })
+                        .limit(1);
+                    if (fr && fr[0]) {
+                        sprintFrase = fr[0].testo;
+                        await supabase.from("sprint_frasi")
+                            .update({ usi: (Number(fr[0].usi) || 0) + 1, ultimo_uso: new Date().toISOString() })
+                            .eq("id", fr[0].id);
+                    }
                 }
             } catch { /* calderone non migrato: comunicazione senza frase */ }
         }
@@ -486,7 +503,7 @@ function ComunicazioniInner() {
         }
         setError(null);
         setFormOpen(false);
-        setFTitle(""); setFContent(""); setFContentHtml(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget(); setFEsiti([]); setFEsitoNuovo(""); setFSize("piccola"); setFAllegati([]);
+        setFTitle(""); setFContent(""); setFContentHtml(""); setFType("info"); setFKind("bacheca"); setFTutti(puoTutti); azzeraTarget(); setFEsiti([]); setFEsitoNuovo(""); setFSize("piccola"); setFAllegati([]); setFSprintScelta("caso"); setFSprintFrase("");
         fetchAll();
     };
 
@@ -1074,15 +1091,35 @@ function ComunicazioniInner() {
                                         </button>
                                     ))}
                                 </div>
-                                {/* MOD-19: la frase motivazionale dello Sprint viene pescata
-                                    da sola dal CALDERONE (mai ripetuta) alla pubblicazione */}
+                                {/* Frase Sprint: casuale dal calderone (default) OPPURE scelta
+                                    mirata dalla tendina ricercabile (task Francesco, ok Luca 10/08) */}
                                 {fType === "sprint" && (
-                                    <div className="mt-2 flex items-center gap-2 flex-wrap text-[11px] text-amber-300/90">
-                                        <span>🔥 La frase motivazionale si pesca da sola dal calderone (mai ripetuta) e appare sopra la comunicazione.</span>
-                                        <button type="button" onClick={() => { setFrasiOpen(true); caricaFrasi(); }}
-                                            className="px-2.5 py-1 rounded-lg border border-amber-400/40 bg-amber-400/10 text-amber-200 font-bold hover:bg-amber-400/20">
-                                            Gestisci il calderone
-                                        </button>
+                                    <div className="mt-2 space-y-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {([["caso", "🎲 Frase casuale"], ["scelta", "🎯 Seleziona frase specifica"]] as const).map(([m, l]) => (
+                                                <button key={m} type="button"
+                                                    onClick={() => { setFSprintScelta(m); if (m === "scelta" && !frasi.length) caricaFrasi(); }}
+                                                    className={cn("px-3 py-1.5 rounded-full border text-[12px] font-bold transition-all",
+                                                        fSprintScelta === m ? "border-amber-400/70 bg-amber-400/15 text-amber-200" : "border-white/10 text-slate-400 hover:border-white/25")}>
+                                                    {l}
+                                                </button>
+                                            ))}
+                                            <button type="button" onClick={() => { setFrasiOpen(true); caricaFrasi(); }}
+                                                className="px-2.5 py-1 rounded-lg border border-amber-400/40 bg-amber-400/10 text-amber-200 text-[11px] font-bold hover:bg-amber-400/20">
+                                                Gestisci il calderone
+                                            </button>
+                                        </div>
+                                        {fSprintScelta === "scelta" && (
+                                            <SelectOpzioni value={fSprintFrase} onChange={setFSprintFrase}
+                                                opzioni={frasi.filter((f) => f.attivo).map((f) => f.testo)}
+                                                maxVoci={500} placeholder="Scrivi per cercare la frase da inviare…"
+                                                className="glass-input rounded-xl py-2 w-full" />
+                                        )}
+                                        <div className="text-[11px] text-amber-300/90">
+                                            {fSprintScelta === "caso"
+                                                ? "🔥 La frase motivazionale si pesca da sola dal calderone (mai ripetuta) e appare sopra la comunicazione."
+                                                : "🎯 La frase scelta appare sopra la comunicazione; se la lasci vuota si torna al pescaggio automatico."}
+                                        </div>
                                     </div>
                                 )}
                                 {/* MOD-19: pannello CALDERONE — lista, attiva/spegni, modifica, aggiungi */}

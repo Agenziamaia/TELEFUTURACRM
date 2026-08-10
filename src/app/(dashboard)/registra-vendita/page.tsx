@@ -5802,9 +5802,10 @@ function CRM() {
   const _anaStep2Ok=()=>((ana.cf||"").trim().length>=11)
     &&((((ana.nome||"").trim()&&(ana.cognome||"").trim()))||(ana.ragioneSociale||"").trim())
     &&(ana.cellulare||"").trim().length>0;
-  // MOD-44c: per la marginalità SENZA finanziamento basta anche UN solo dato
-  // identificativo (solo nome, solo cognome, solo CF o ragione sociale)
-  const margMinOk=!!((ana.nome||"").trim()||(ana.cognome||"").trim()||(ana.cf||"").trim()||(ana.ragioneSociale||"").trim());
+  // MOD-44c, rivisto su segnalazione Francesco (ok Luca 10/08): il minimo per
+  // la marginalità è nome+cognome+CELLULARE (business: ragione sociale+cellulare)
+  // — o tutti i dati; con meno di così l'utente è obbligato a "Salta dati cliente"
+  const margMinOk=!!((ana.cellulare||"").trim()&&(((ana.nome||"").trim()&&(ana.cognome||"").trim())||(ana.ragioneSociale||"").trim()));
   const saveMargOnly=async()=>{
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
@@ -6605,17 +6606,17 @@ select.rvIn{cursor:pointer}
             <button onClick={()=>setMargSkipPopup(true)} style={{padding:"9px 18px",borderRadius:8,border:"1px dashed rgba(245,158,11,0.6)",background:margSkipCli?"rgba(245,158,11,0.15)":"var(--tf-w20)",color:"var(--tf-fbbf24)",fontSize:12,fontWeight:700,cursor:"pointer"}}>🚫 Salta dati cliente{margSkipCli?" ✓":""}</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            {!margMinOk&&!margSkipCli&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Inserisci almeno un dato (nome, cognome o CF) o salta</span>}
+            {!margMinOk&&!margSkipCli&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e cellulare (o tutti i dati) — altrimenti salta</span>}
             <button disabled={!margMinOk&&!margSkipCli} onClick={()=>{if(margMinOk)setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:(!margMinOk&&!margSkipCli)?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:(!margMinOk&&!margSkipCli)?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:(!margMinOk&&!margSkipCli)?"not-allowed":"pointer"}}>Avanti → Prodotti</button>
           </div>
         </div>}
       </div>}
       {/* MOD-44c: popup CRM (non di Chrome) di conferma skip dati cliente */}
       {margSkipPopup&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2100,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
-        <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:440,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.35)",margin:"0 16px"}}>
+        <div style={{background:"linear-gradient(160deg,#1c2440,#10162b)",borderRadius:16,width:"100%",maxWidth:440,padding:24,border:"2px solid rgba(245,158,11,.55)",boxShadow:"0 8px 40px rgba(0,0,0,.6), 0 0 24px rgba(245,158,11,.18)",margin:"0 16px"}}>
           <div style={{fontSize:34,textAlign:"center",marginBottom:8}}>⚠️</div>
-          <div style={{fontWeight:800,fontSize:16,color:"var(--tf-f8fafc)",textAlign:"center",marginBottom:8}}>Vuoi davvero saltare i dati del cliente?</div>
-          <div style={{fontSize:13,color:"var(--tf-cbd5e1)",lineHeight:1.5,marginBottom:6}}>Saltare i dati <b style={{color:"var(--tf-fbbf24)"}}>inciderà sul commissioning</b> in termini di bonus. I dati del cliente sono importanti per le attività di marketing e per lo storico: basta anche <b>solo il nome</b>, <b>solo il cognome</b> o <b>solo il CF</b>.</div>
+          <div style={{fontWeight:800,fontSize:16,color:"#f8fafc",textAlign:"center",marginBottom:8}}>Vuoi davvero saltare i dati del cliente?</div>
+          <div style={{fontSize:13,color:"#cbd5e1",lineHeight:1.5,marginBottom:6}}>Saltare i dati <b style={{color:"var(--tf-fbbf24)"}}>inciderà sul commissioning</b> in termini di bonus. I dati del cliente sono importanti per le attività di marketing e per lo storico: servono almeno <b>nome, cognome e cellulare</b> (business: ragione sociale e cellulare).</div>
           <div style={{fontSize:11.5,color:"var(--tf-8892b0)",marginBottom:16}}>Lo skip viene registrato sulla vendita con il nome del venditore.</div>
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>setMargSkipPopup(false)} style={{flex:1.4,padding:"11px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#218838)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>← Torna ai dati</button>
@@ -6658,7 +6659,7 @@ select.rvIn{cursor:pointer}
             {/* MOD-44c: in marginalità niente campi obbligatori — basta un dato */}
             {margFlow&&!brand
               ?<>
-                {!margMinOk&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Basta anche solo nome, cognome o CF</span>}
+                {!margMinOk&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e cellulare</span>}
                 <button disabled={!margMinOk} onClick={()=>{if(!margMinOk)return;setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:!margMinOk?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:!margMinOk?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:!margMinOk?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti → Prodotti</button>
               </>
               :<>
