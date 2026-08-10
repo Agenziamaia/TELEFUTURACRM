@@ -51,6 +51,7 @@ export function ArchivioMalusCaller({
     malusAttuali,
     versione,
     onClose,
+    onApriPratica,
 }: {
     puoCompensare: boolean;
     utente: string;
@@ -64,6 +65,8 @@ export function ArchivioMalusCaller({
     /** bump a sincronizzazione DB finita: fa ricaricare gli episodi POST-sync */
     versione?: number;
     onClose: () => void;
+    /** click su una riga → apre il dettaglio della pratica (10/08) */
+    onApriPratica?: (callId: string) => void;
 }) {
     const [episodi, setEpisodi] = useState<EpisodioCaller[]>([]);
     const [caricato, setCaricato] = useState(false);
@@ -220,7 +223,7 @@ export function ArchivioMalusCaller({
         >
             {/* LEZIONE VETRO: gli overlay vanno SOLIDI, mai glass */}
             <div
-                className="bg-[#0e1526] border border-white/10 rounded-2xl w-full max-w-[1000px] max-h-[90vh] overflow-y-auto shadow-2xl"
+                className="bg-[#0e1526] border border-white/10 rounded-2xl w-[98vw] max-w-none h-[94vh] max-h-none overflow-y-auto shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between py-5 px-7 border-b border-white/10 sticky top-0 bg-[#12141f] z-10">
@@ -375,7 +378,9 @@ export function ArchivioMalusCaller({
                                             const giorni = Number(ep.giorni) || 0;
                                             const perGiorno = giorni > 0 ? Math.round((Number(ep.importo) / giorni) * 100) / 100 : 0;
                                             return (
-                                                <tr key={ep.id}>
+                                                <tr key={ep.id} onClick={() => onApriPratica?.(String(ep.call_id))}
+                                                    title="Apri il dettaglio della pratica"
+                                                    className={onApriPratica ? "cursor-pointer hover:bg-white/[0.04] transition-colors" : undefined}>
                                                     <td className={tdStyle + " text-slate-100 font-semibold"}>{ep.caller || "—"}</td>
                                                     <td className={tdStyle}>
                                                         {(() => { const p = pratiche.get(ep.call_id); return p ? (
@@ -404,7 +409,7 @@ export function ArchivioMalusCaller({
                                                         )}
                                                     </td>
                                                     {puoCompensare && (
-                                                        <td className={tdStyle + " whitespace-nowrap text-right"}>
+                                                        <td className={tdStyle + " whitespace-nowrap text-right"} onClick={(e) => e.stopPropagation()}>
                                                             {ep.stato === "attivo" && (
                                                                 confermaId === ep.id ? (
                                                                     <span className="inline-flex gap-1.5">

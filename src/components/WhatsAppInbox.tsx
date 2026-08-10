@@ -291,6 +291,20 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
 
     const instConnessa = visibleInstances.find(i => i.id === selInst);
     const fmtOra = (s: string | null) => s ? new Date(s).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "";
+    // GIORNO + ora (segnalazione Luca 10/08 via Verifiche): "oggi" resta solo
+    // orario, ieri = "ieri", altrimenti gg/mm — cosi' si capisce QUANDO
+    const fmtQuandoWa = (s: string | null) => {
+        if (!s) return "";
+        const d = new Date(s);
+        if (isNaN(d.getTime())) return "";
+        const oggi = new Date(); oggi.setHours(0, 0, 0, 0);
+        const giorno = new Date(d); giorno.setHours(0, 0, 0, 0);
+        const diff = Math.round((oggi.getTime() - giorno.getTime()) / 86400000);
+        const ora = d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+        if (diff === 0) return ora;
+        if (diff === 1) return "ieri " + ora;
+        return d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" }) + " " + ora;
+    };
 
     return (
         <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
@@ -413,7 +427,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center justify-between gap-2">
                                         <span className="text-sm font-semibold text-white truncate">{c.customer_name || (c.is_group ? "Gruppo" : `+${c.customer_number}`)}</span>
-                                        <span className="text-[10px] text-slate-500 shrink-0">{fmtOra(c.last_message_at)}</span>
+                                        <span className="text-[10px] text-slate-500 shrink-0">{fmtQuandoWa(c.last_message_at)}</span>
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
                                         <span className="text-xs text-slate-500 truncate">{c.last_preview || ""}</span>
@@ -520,7 +534,7 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                                                     </>)}
                                                     <p className={cn("text-[10px] mt-0.5 flex items-center gap-1 justify-end", mine ? "text-emerald-100/70" : "text-slate-500")}>
                                                         {m.edited_at && !m.deleted_at && <span className="italic opacity-70">(modificato)</span>}
-                                                        {fmtOra(m.wa_timestamp || m.created_at)}
+                                                        {fmtQuandoWa(m.wa_timestamp || m.created_at)}
                                                         {mine && !m.deleted_at && (m.status === "read" ? <CheckCheck className="w-3.5 h-3.5 text-sky-200" /> : m.status === "delivered" ? <CheckCheck className="w-3.5 h-3.5" /> : m.status === "failed" ? <span className="text-rose-200">✕</span> : <Check className="w-3.5 h-3.5" />)}
                                                     </p>
                                                 </div>

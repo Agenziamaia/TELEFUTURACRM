@@ -16,7 +16,6 @@ import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
 import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
-import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { useStores, useSellers, useCallers } from "@/lib/org";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
@@ -791,6 +790,20 @@ function CallerPageInner() {
         return m;
     }, [calls, regoleCaller, badgePronto, faseInfo]);
     const apriArchivioMalus = useCallback(() => { setShowArchivioMalus(true); eseguiSyncMalus(); }, [eseguiSyncMalus]);
+    // TOTALE storico malus sotto "⏱ Storico →" (Luca 10/08, come Tracking PDA):
+    // somma degli episodi non eliminati (del caller per i non-direttori)
+    const [malusTotStorico, setMalusTotStorico] = useState<number | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            let q = supabase.from("caller_malus").select("importo, caller").eq("eliminato", false);
+            if (!isDirector && currentCaller) q = q.eq("caller", currentCaller);
+            const { data, error } = await q;
+            if (!vivo || error) return;
+            setMalusTotStorico((data ?? []).reduce((t, r) => t + (Number(r.importo) || 0), 0));
+        })();
+        return () => { vivo = false; };
+    }, [isDirector, currentCaller, malusSyncVersione]);
 
     const matchFiltri = (c: Call, ignoraBrand = false, ignoraFase = false) => {
         // le pratiche ASSORBITE (il cliente ha risposto su un'altra riga)
@@ -1822,7 +1835,7 @@ function CallerPageInner() {
             {/* Telefono Aircall: la bolla ☎ vive SOLO nella sezione Caller (richiesta
                 Luca 26/07). Il login Aircall resta in cookie: uscendo e rientrando
                 dalla pagina non viene richiesto di nuovo. */}
-            <AircallPhoneDock />
+            {/* AircallPhoneDock: spostato nel layout (10/08) — globale, la chiamata non cade più cambiando sezione */}
             {/* TITOLO nudo sul gradiente, come Ricerca Vendite (GLB-01, Luca 04/08):
                 niente tag <header> (in tema chiaro diventava una card bianca per la
                 regola globale html.light header) e niente lastra bg/blur/border */}
@@ -2047,6 +2060,9 @@ function CallerPageInner() {
                                                     ⏱ Storico →
                                                 </span>
                                             )}
+                                            {k === "malus" && malusTotStorico != null && malusTotStorico > 0 && (
+                                                <span className="text-[10px] font-black tabular-nums opacity-90 leading-tight">tot. −{malusTotStorico.toFixed(2).replace(".", ",")} €</span>
+                                            )}
                                         </div>
                                         <div className="text-2xl font-black tabular-nums leading-tight">{n}</div>
                                         {k === "malus" && isDirector && faseCounts.importo > 0 && (
@@ -2068,7 +2084,8 @@ function CallerPageInner() {
                                 card-filtro, totali per collaboratore, tabella episodi.
                                 malusAttuali = vista coerente col filtro anche senza scritture;
                                 versione = ricarica a sincronizzazione finita (dati POST-sync) */}
-                            {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} malusAttuali={malusAttuali} versione={malusSyncVersione} onClose={() => setShowArchivioMalus(false)} />}
+                            {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} malusAttuali={malusAttuali} versione={malusSyncVersione} onClose={() => setShowArchivioMalus(false)}
+                                onApriPratica={(id) => { const c = calls.find((x) => String(x.id) === String(id)); if (c) { setShowArchivioMalus(false); openDetail(c); } }} />}
 
                             {/* Filter bar */}
                             <div className="glass-panel p-5">

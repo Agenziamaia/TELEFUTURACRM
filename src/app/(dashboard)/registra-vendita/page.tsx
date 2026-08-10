@@ -5216,12 +5216,15 @@ function CRM() {
     rows.forEach(r => {
       if (r.contratto === "assente") return;
       if (!/telefono a rate/i.test((r._cat && r._cat.categoria) || "")) return;
+      // REGOLA ASSOLUTA (caso Guido Terzi, 10/08): il telefono a rate venduto
+      // INSIEME a un'attivazione mobile / customer base dello stesso brand ha
+      // SEMPRE il contratto unico — non serve che i campi coincidano
       const miei = _identRiga(r._det);
-      if (!miei.length) return;
-      const agganciata = rows.some(o => o !== r && o.brandId === r.brandId
+      const principale = rows.find(o => o !== r && o.brandId === r.brandId
         && !/telefono a rate/i.test((o._cat && o._cat.categoria) || "")
-        && _identRiga(o._det).some(v => miei.includes(v)));
-      if (agganciata) r.contratto = "associato";
+        && (/mobile|customer base/i.test((o._cat && o._cat.categoria) || "")
+          || (miei.length && _identRiga(o._det).some(v => miei.includes(v)))));
+      if (principale) { r.contratto = "associato"; r._mainKey = principale.key; }
     });
     rows.forEach(r => { r.multi = (conta[r.base] || 0) > 1; });
     return rows;
@@ -5686,7 +5689,15 @@ function CRM() {
             const aggiungi = (cid) => attendanceRows.push({ contract_id: cid, client_id: contractRows[0]?.client_id || null, file_url: f.url, file_name: f.name, file_type: f.type });
             if (f.type === "documento") (_ctrIds.length ? _ctrIds : _tuttiIds).forEach(aggiungi);
             else if (f.type === "fattura") (_energiaIds.length ? _energiaIds : [_primoId]).forEach(aggiungi);
-            else aggiungi((f.rowKey && _ctrIdPerRiga[f.rowKey]) || _primoId);
+            else {
+          aggiungi((f.rowKey && _ctrIdPerRiga[f.rowKey]) || _primoId);
+          // contratto UNICO (10/08): stesso file_url anche sulle righe rate
+          // associate alla riga principale (riferimento, non copia)
+          if (f.type === "contratti" && f.rowKey) {
+            righeCarrello().filter(r => r.contratto === "associato" && r._mainKey === f.rowKey && _ctrIdPerRiga[r.key])
+              .forEach(r => aggiungi(_ctrIdPerRiga[r.key]));
+          }
+        }
           });
           const { error: attErr } = await supabase.from("contract_attachments").insert(attendanceRows);
           if (attErr) console.error("Attachment Meta Error:", attErr);
@@ -6418,6 +6429,9 @@ select.rvIn{cursor:pointer}
                         <span style={{fontSize:10,color:"var(--tf-8892b0)"}}>€</span>
                       </span>
                       :<div style={{fontSize:10,fontWeight:700,color:m.importo!=null?"var(--tf-28a745)":"var(--tf-dc3545)"}}>{m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire"}</div>}
+                      {/* 🗑 riga per errore (Luca 10/08 via Verifiche) — le AUTO no: derivano dalla vendita brand */}
+                      {!m.auto&&<button onClick={e=>{e.stopPropagation();setMargItems(p=>p.filter((_,i)=>i!==mi));}} title="Elimina questa riga dal carrello"
+                        style={{marginLeft:4,background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:13,lineHeight:1,padding:"2px 2px",flexShrink:0}}>🗑</button>}
                     </div>
                   ))}
                 </div>}
