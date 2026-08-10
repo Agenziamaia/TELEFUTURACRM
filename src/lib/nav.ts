@@ -147,6 +147,7 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "sky", name: "Sky", roles: ["admin", "dev"], color: "var(--tf-0072c6)" },
                     { id: "s4", name: "S4", roles: ["admin", "dev"], color: "var(--tf-28a745)" },
                     { id: "tim", name: "TIM", roles: ["admin", "dev"], color: "var(--tf-0050ff)" },
+                    { id: "kena", name: "Kena", roles: ["admin", "dev"], color: "#F5A623" },
                     { id: "dojo", name: "Dojo", roles: ["admin", "dev"], color: "var(--tf-14b8a6)" },
                 ],
             },
@@ -203,8 +204,6 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
             // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
             { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
-            // Tabellari pay delle GARE (Luca 10/08): soglie e importi per brand/mese
-            { name: "Tabellari Gare", sez: "paytabellari", icon: Trophy, roles: ["admin", "dev"] },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

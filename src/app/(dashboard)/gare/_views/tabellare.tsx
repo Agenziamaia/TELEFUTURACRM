@@ -1,17 +1,17 @@
 "use client";
 
-// TABELLARI GARE (cantiere GARE 10/08, direttiva Luca: "devo poterci lavorare
-// sulle tabelle per ogni brand e cambiargli le soglie, tutto molto intuitivo").
-// Amministra pay_piste / pay_soglie / pay_righe per CONTESTO+mese — la fonte
-// del Calcolatore $$$ e del motore commissioning. I contesti VF/FW seguono la
-// mappa T1/T2 (lib/commissioning): le vendite si allocano col codice di
-// inserimento. Le soglie si scrivono come le pensa Luca: solo il "da S1..Sn",
-// il fino-a si ricava da solo. I tabellari seedati valgono LUGLIO (tranne
-// VF T1 già di agosto): da qui si ritoccano mese per mese.
+// TABELLARE PAY dentro Gare → operatore (Luca 11/08: "andava integrata nella
+// sezione GARE che esiste già, ognuno dentro il proprio operatore" — prima
+// viveva in Amministrazione → Tabellari Gare). Mese e lato arrivano dalla
+// pagina Gare (barra mese + tab Azienda/Ragazzi): qui solo l'editor di
+// pay_piste / pay_soglie / pay_righe — la fonte del Calcolatore $$$ e del
+// motore commissioning. Le soglie si scrivono come le pensa Luca: solo il
+// "da S1..Sn", il fino-a si ricava da solo. Un brand con SOLO il lato azienda
+// deriva il ragazzi con la "% ai ragazzi" di ogni pista.
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Plus, Save, Trash2, Trophy } from "lucide-react";
+import { Copy, Plus, Save, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { dbError, notify } from "./toast";
+import { dbError, notify } from "../../amministrazione/_views/toast";
 
 type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number; perc_ragazzi: number | null };
 type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; soglia_a: number | null };
@@ -22,22 +22,7 @@ type Riga = {
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
 };
 
-// lato ragazzi TUTTO il Vodafone paga come lettera A (correzione Luca 10/08
-// notte: la distinzione VND esiste solo lato azienda — cantiere futuro)
-const CONTESTI = [
-    { key: "windtre", label: "WindTre", colore: "#FF6B00" },
-    { key: "vodafone", label: "Vodafone · lettera A", colore: "#E60000" },
-    { key: "fastweb", label: "Fastweb · T2", colore: "#CC9900" },
-    { key: "sky", label: "Sky", colore: "#0072C6" },
-    { key: "tim", label: "TIM", colore: "#0050FF" },
-    { key: "kena", label: "Kena", colore: "#F5A623" },
-];
 const BRAND_VENDITA = ["windtre", "vodafone", "fastweb", "sky", "tim", "iliad", "very", "ho", "kena", "s4", "dojo", "kipoint"];
-
-const meseCorrente = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
 const mesePrec = (m: string) => {
     const [y, mm] = m.split("-").map(Number);
     const d = new Date(y, mm - 2, 1);
@@ -49,23 +34,17 @@ const num = (v: string): number => {
     return Number.isFinite(n) ? n : 0;
 };
 
-export function PayTabellariView() {
-    const [mese, setMese] = useState(meseCorrente());
+export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda }: {
+    ctx: string; mese: string; lato: "ragazzi" | "azienda"; colore: string; vaiAzienda?: () => void;
+}) {
     const monthISO = `${mese}-01`;
-    const [ctx, setCtx] = useState<string>("windtre");
-    const meta = CONTESTI.find(c => c.key === ctx);
-    const colore = meta?.colore || "#6366f1";
-
-    // lato: 'ragazzi' = quello che paga il motore · 'azienda' = le lettere vere.
-    // Un brand con SOLO il lato azienda deriva il ragazzi a % (perc_ragazzi).
-    const [lato, setLato] = useState<"ragazzi" | "azienda">("ragazzi");
-    const [aziendaEsiste, setAziendaEsiste] = useState(false);
     const [piste, setPiste] = useState<Pista[]>([]);
     const [soglie, setSoglie] = useState<Soglia[]>([]);          // copia editabile
     const [soglieDirty, setSoglieDirty] = useState<Set<string>>(new Set());   // per pista
     const [righe, setRighe] = useState<Riga[]>([]);
     const [orig, setOrig] = useState<Map<string, string>>(new Map());   // id → JSON per il dirty
     const [carico, setCarico] = useState(false);
+    const [aziendaEsiste, setAziendaEsiste] = useState(false);
     const [nuovaRigaPer, setNuovaRigaPer] = useState<string | null>(null);   // chiave pista | "__gettoni"
 
     const load = useCallback(async () => {
@@ -160,7 +139,7 @@ export function PayTabellariView() {
             supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
-        if (!p.data?.length) { notify(`Nessun tabellare ${meta?.label} su ${mesePrec(mese)}`); return; }
+        if (!p.data?.length) { notify(`Nessun tabellare (${lato}) su ${mesePrec(mese)}`); return; }
         const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato })));
         const e2 = (s.data?.length ? await supabase.from("pay_soglie").insert(s.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
         const e3 = (r.data?.length ? await supabase.from("pay_righe").insert(r.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
@@ -171,131 +150,101 @@ export function PayTabellariView() {
     const righeDiPista = (chiave: string) => righe.filter(r => r.pista === chiave && !r.gettone);
     const gettoni = righe.filter(r => r.gettone || !r.pista);
 
+    if (carico) return <div className="text-slate-400 text-sm">Carico il tabellare…</div>;
+
+    if (!piste.length) {
+        return lato === "ragazzi" && aziendaEsiste ? (
+            <div className="glass-panel rounded-2xl p-6 text-center">
+                <div className="text-slate-300 mb-2">Il tabellare ragazzi di questo mese è <b>DERIVATO dal lato azienda</b> con la &quot;% ai ragazzi&quot; di ogni pista.</div>
+                {vaiAzienda && <button onClick={vaiAzienda} className="px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: colore }}>🏢 Lavora sul lato azienda</button>}
+            </div>
+        ) : (
+            <div className="glass-panel rounded-2xl p-6 text-center">
+                <div className="text-slate-300 mb-3">Nessun tabellare ({lato}) su {mese}.</div>
+                <button onClick={copiaMese} className="px-4 py-2 rounded-xl text-sm font-semibold text-white inline-flex items-center gap-2" style={{ background: colore }}>
+                    <Copy size={15} /> Copia da {mesePrec(mese)} e ritocca
+                </button>
+            </div>
+        );
+    }
+
     return (
-        <div>
-            <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2"><Trophy size={22} /> Tabellari Gare</h2>
-                <input type="month" value={mese} onChange={e => setMese(e.target.value)}
-                    className="bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
-            </div>
-            <div className="text-[12px] text-slate-400 mb-3">
-                Qui vive il pagamento a tabella dei ragazzi: soglie per pista e € per attivazione a ogni soglia.
-                Le vendite si agganciano per NOME (tipo cliente · categoria · prodotto · offerta — vince la riga più specifica);
-                su Vodafone e Fastweb l&apos;attivazione si alloca alla lettera T1/T2 col <b>codice di inserimento</b>.
+        <div className="space-y-5">
+            <div className="text-[12px] text-slate-400">
+                Le vendite si agganciano per NOME (tipo cliente · categoria · prodotto · offerta — vince la riga più specifica).
+                {lato === "azienda" && " Se il lato ragazzi non ha un suo tabellare, si deriva da qui con la \"% ai ragazzi\"."}
             </div>
 
-            {/* contesti */}
-            <div className="flex gap-2 flex-wrap mb-5">
-                {CONTESTI.map(c => (
-                    <button key={c.key} onClick={() => setCtx(c.key)}
-                        className="px-4 py-2 rounded-xl text-sm font-semibold border transition"
-                        style={ctx === c.key ? { background: c.colore, borderColor: "transparent", color: "#fff" }
-                            : { borderColor: "rgba(255,255,255,0.1)", color: "#cbd5e1", background: "rgba(255,255,255,0.04)" }}>
-                        <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ background: ctx === c.key ? "#fff" : c.colore }} />
-                        {c.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* lato: ragazzi (paga il motore) vs azienda (le lettere vere) */}
-            <div className="flex gap-2 flex-wrap items-center mb-5">
-                {(["ragazzi", "azienda"] as const).map(l => (
-                    <button key={l} onClick={() => setLato(l)}
-                        className={`px-3 py-1.5 rounded-xl text-sm font-semibold border ${lato === l ? "border-indigo-400 text-white bg-indigo-500/30" : "border-white/10 text-slate-400 bg-white/[0.04]"}`}>
-                        {l === "ragazzi" ? "🧑‍💼 Ragazzi" : "🏢 Azienda"}
-                    </button>
-                ))}
-                {lato === "azienda" && <span className="text-[11px] text-slate-500">le lettere di gara vere; se un brand non ha il lato ragazzi, il ragazzi si DERIVA da qui con la "% ai ragazzi"</span>}
-            </div>
-
-            {carico ? <div className="text-slate-400 text-sm">Carico…</div> : !piste.length ? (
-                lato === "ragazzi" && aziendaEsiste ? (
-                    <div className="glass-panel rounded-2xl p-6 text-center">
-                        <div className="text-slate-300 mb-2">Il lato ragazzi di {meta?.label} · {mese} è <b>DERIVATO dal lato azienda</b> con la &quot;% ai ragazzi&quot; di ogni pista.</div>
-                        <button onClick={() => setLato("azienda")} className="px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: colore }}>🏢 Lavora sul lato azienda</button>
-                    </div>
-                ) : (
-                <div className="glass-panel rounded-2xl p-6 text-center">
-                    <div className="text-slate-300 mb-3">Nessun tabellare {meta?.label} ({lato}) su {mese}.</div>
-                    <button onClick={copiaMese} className="px-4 py-2 rounded-xl text-sm font-semibold text-white inline-flex items-center gap-2" style={{ background: colore }}>
-                        <Copy size={15} /> Copia da {mesePrec(mese)} e ritocca
-                    </button>
-                </div>
-                )
-            ) : (
-                <div className="space-y-5">
-                    {/* SOGLIE per pista */}
-                    <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
-                        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">Soglie — scrivi solo il &quot;da&quot;: il fino-a si sistema da solo</div>
-                        {piste.map(p => {
-                            const scala = soglieDi(p.chiave);
-                            return (
-                                <div key={p.id} className="mb-4 last:mb-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-sm font-semibold text-white min-w-[130px]">{p.nome} <span className="text-slate-500 font-normal">({p.um})</span></span>
-                                        {scala.map((s, i) => (
-                                            <label key={s.tier} className="text-[11px] text-slate-400">S{i + 1} da
-                                                <input value={s.soglia_da} onChange={e => setDa(p.chiave, s.tier, e.target.value)} className={inputCls + " ml-1"} />
-                                            </label>
-                                        ))}
-                                        {lato === "azienda" && (
-                                            <label className="text-[11px] text-amber-300/90 ml-2">% ai ragazzi
-                                                <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
-                                                    onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                                    className={inputCls + " ml-1 w-16"} placeholder="100" />
-                                                {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
-                                                    <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
-                                            </label>
-                                        )}
-                                        <button onClick={() => addSoglia(p.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
-                                        <button onClick={() => dropSoglia(p.chiave)} className="text-slate-500 hover:text-red-400" title="Togli l'ultima soglia"><Trash2 size={14} /></button>
-                                        {soglieDirty.has(p.chiave) && (
-                                            <button onClick={() => salvaSoglie(p.chiave)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva soglie</button>
-                                        )}
-                                    </div>
-                                    <div className="text-[11px] text-slate-500 mt-1 ml-[130px]">
-                                        {scala.map((s, i) => `S${i + 1}: ${s.soglia_da}${i < scala.length - 1 ? `–${scala[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-
-                    {/* RIGHE per pista */}
-                    {piste.map(p => {
-                        const rr = righeDiPista(p.chiave);
-                        const nTiers = soglieDi(p.chiave).length;
-                        return (
-                            <div key={p.id} className="glass-panel rounded-2xl p-5">
-                                <div className="flex items-center justify-between mb-1">
-                                    <div className="text-[11px] uppercase tracking-wider text-slate-400">Righe · {p.nome} ({rr.length})</div>
-                                    <button onClick={() => setNuovaRigaPer(nuovaRigaPer === p.chiave ? null : p.chiave)} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Riga</button>
-                                </div>
-                                {nuovaRigaPer === p.chiave && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={p.chiave} nTiers={nTiers} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} />}
-                                {rr.map(r => <RigaEd key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
-                                {!rr.length && <div className="text-slate-500 text-sm">Nessuna riga su questa pista.</div>}
+            {/* SOGLIE per pista */}
+            <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
+                <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">Soglie — scrivi solo il &quot;da&quot;: il fino-a si sistema da solo</div>
+                {piste.map(p => {
+                    const scala = soglieDi(p.chiave);
+                    return (
+                        <div key={p.id} className="mb-4 last:mb-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-semibold text-white min-w-[130px]">{p.nome} <span className="text-slate-500 font-normal">({p.um})</span></span>
+                                {scala.map((s, i) => (
+                                    <label key={s.tier} className="text-[11px] text-slate-400">S{i + 1} da
+                                        <input value={s.soglia_da} onChange={e => setDa(p.chiave, s.tier, e.target.value)} className={inputCls + " ml-1"} />
+                                    </label>
+                                ))}
+                                {lato === "azienda" && (
+                                    <label className="text-[11px] text-amber-300/90 ml-2">% ai ragazzi
+                                        <input value={percDraft[p.id] ?? (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi))}
+                                            onChange={e => setPercDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                            className={inputCls + " ml-1 w-16"} placeholder="100" />
+                                        {percDraft[p.id] != null && percDraft[p.id] !== (p.perc_ragazzi == null ? "" : String(p.perc_ragazzi)) &&
+                                            <button onClick={() => salvaPerc(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                    </label>
+                                )}
+                                <button onClick={() => addSoglia(p.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
+                                <button onClick={() => dropSoglia(p.chiave)} className="text-slate-500 hover:text-red-400" title="Togli l'ultima soglia"><Trash2 size={14} /></button>
+                                {soglieDirty.has(p.chiave) && (
+                                    <button onClick={() => salvaSoglie(p.chiave)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva soglie</button>
+                                )}
                             </div>
-                        );
-                    })}
-
-                    {/* GETTONI */}
-                    <div className="glass-panel rounded-2xl p-5">
-                        <div className="flex items-center justify-between mb-1">
-                            <div className="text-[11px] uppercase tracking-wider text-slate-400">💰 Gettoni — pagano sempre, senza soglia ({gettoni.length})</div>
-                            <button onClick={() => setNuovaRigaPer(nuovaRigaPer === "__gettoni" ? null : "__gettoni")} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Gettone</button>
+                            <div className="text-[11px] text-slate-500 mt-1 ml-[130px]">
+                                {scala.map((s, i) => `S${i + 1}: ${s.soglia_da}${i < scala.length - 1 ? `–${scala[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}
+                            </div>
                         </div>
-                        {nuovaRigaPer === "__gettoni" && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={null} nTiers={0} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} />}
-                        {gettoni.map(r => <RigaEd key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
-                        {!gettoni.length && <div className="text-slate-500 text-sm">Nessun gettone.</div>}
+                    );
+                })}
+            </div>
+
+            {/* RIGHE per pista */}
+            {piste.map(p => {
+                const rr = righeDiPista(p.chiave);
+                const nTiers = soglieDi(p.chiave).length;
+                return (
+                    <div key={p.id} className="glass-panel rounded-2xl p-5">
+                        <div className="flex items-center justify-between mb-1">
+                            <div className="text-[11px] uppercase tracking-wider text-slate-400">Righe · {p.nome} ({rr.length})</div>
+                            <button onClick={() => setNuovaRigaPer(nuovaRigaPer === p.chiave ? null : p.chiave)} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Riga</button>
+                        </div>
+                        {nuovaRigaPer === p.chiave && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={p.chiave} nTiers={nTiers} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} />}
+                        {rr.map(r => <RigaEd key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
+                        {!rr.length && <div className="text-slate-500 text-sm">Nessuna riga su questa pista.</div>}
                     </div>
+                );
+            })}
+
+            {/* GETTONI */}
+            <div className="glass-panel rounded-2xl p-5">
+                <div className="flex items-center justify-between mb-1">
+                    <div className="text-[11px] uppercase tracking-wider text-slate-400">💰 Gettoni — pagano sempre, senza soglia ({gettoni.length})</div>
+                    <button onClick={() => setNuovaRigaPer(nuovaRigaPer === "__gettoni" ? null : "__gettoni")} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Gettone</button>
                 </div>
-            )}
+                {nuovaRigaPer === "__gettoni" && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={null} nTiers={0} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} />}
+                {gettoni.map(r => <RigaEd key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
+                {!gettoni.length && <div className="text-slate-500 text-sm">Nessun gettone.</div>}
+            </div>
         </div>
     );
 }
 
-// Riga editabile — TOP-LEVEL, mai annidata nel componente pagina (lezione
-// CardVoce 10/08: il rimontaggio a ogni tasto fa perdere il focus agli input).
+// Riga editabile — TOP-LEVEL, mai annidata (lezione CardVoce 10/08: il
+// rimontaggio a ogni tasto fa perdere il focus agli input).
 function RigaEd({ r, nTiers, isDirty, onUp, onSalva, onElimina }: {
     r: Riga; nTiers: number; isDirty: boolean;
     onUp: (id: string, patch: Partial<Riga>) => void;
@@ -338,10 +287,9 @@ function NuovaRiga({ ctx, monthISO, pista, nTiers, lato, dopo }: {
     const [nome, setNome] = useState("");
     const [tc, setTc] = useState<string | null>(null);
     const [cat, setCat] = useState(""); const [prod, setProd] = useState(""); const [off, setOff] = useState("");
-    const [bv, setBv] = useState(ctx === "vodafone_vnd" ? "vodafone" : BRAND_VENDITA.includes(ctx) ? ctx : "vodafone");
+    const [bv, setBv] = useState(BRAND_VENDITA.includes(ctx) ? ctx : "vodafone");
     const [punti, setPunti] = useState("1"); const [base, setBase] = useState("");
     const [tiers, setTiers] = useState<string[]>(Array.from({ length: nTiers }, () => ""));
-    const inputCls = "bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-sm text-white";
     const salva = async () => {
         if (!nome.trim()) { notify("Dai un nome alla riga"); return; }
         const { error } = await supabase.from("pay_righe").insert({
@@ -358,7 +306,7 @@ function NuovaRiga({ ctx, monthISO, pista, nTiers, lato, dopo }: {
     return (
         <div className="border border-dashed border-white/15 rounded-xl p-3 mb-3 space-y-2">
             <div className="flex gap-2 flex-wrap items-center">
-                <input placeholder="Nome riga (etichetta)" value={nome} onChange={e => setNome(e.target.value)} className={inputCls + " flex-1 min-w-[180px]"} />
+                <input placeholder="Nome riga (etichetta)" value={nome} onChange={e => setNome(e.target.value)} className={inputCls + " flex-1 min-w-[180px] text-left"} />
                 {[null, "Consumer", "Business"].map(t => (
                     <button key={String(t)} onClick={() => setTc(t)} className={`text-xs px-2 py-1 rounded-lg border ${tc === t ? "border-indigo-400 text-white bg-indigo-500/30" : "border-white/10 text-slate-400"}`}>
                         {t || "Tutti"}
@@ -366,19 +314,19 @@ function NuovaRiga({ ctx, monthISO, pista, nTiers, lato, dopo }: {
                 ))}
             </div>
             <div className="flex gap-2 flex-wrap">
-                <input placeholder="Categoria (nome esatto, vuoto = tutte)" value={cat} onChange={e => setCat(e.target.value)} className={inputCls + " flex-1 min-w-[150px]"} />
-                <input placeholder="Prodotto (vuoto = tutti)" value={prod} onChange={e => setProd(e.target.value)} className={inputCls + " flex-1 min-w-[150px]"} />
-                <input placeholder="Offerta (vuoto = tutte)" value={off} onChange={e => setOff(e.target.value)} className={inputCls + " flex-1 min-w-[150px]"} />
+                <input placeholder="Categoria (nome esatto, vuoto = tutte)" value={cat} onChange={e => setCat(e.target.value)} className={inputCls + " flex-1 min-w-[150px] text-left"} />
+                <input placeholder="Prodotto (vuoto = tutti)" value={prod} onChange={e => setProd(e.target.value)} className={inputCls + " flex-1 min-w-[150px] text-left"} />
+                <input placeholder="Offerta (vuoto = tutte)" value={off} onChange={e => setOff(e.target.value)} className={inputCls + " flex-1 min-w-[150px] text-left"} />
             </div>
             <div className="flex gap-2 flex-wrap items-center">
                 <span className="text-[11px] text-slate-400">brand della vendita</span>
                 {BRAND_VENDITA.slice(0, 6).map(b => (
                     <button key={b} onClick={() => setBv(b)} className={`text-xs px-2 py-1 rounded-lg border ${bv === b ? "border-indigo-400 text-white bg-indigo-500/30" : "border-white/10 text-slate-400"}`}>{b}</button>
                 ))}
-                {pista && <label className="text-[11px] text-slate-400">punti <input value={punti} onChange={e => setPunti(e.target.value)} className={inputCls + " w-14 text-right"} /></label>}
-                <label className="text-[11px] text-slate-400">{pista ? "base €" : "gettone €"} <input value={base} onChange={e => setBase(e.target.value)} className={inputCls + " w-20 text-right"} /></label>
+                {pista && <label className="text-[11px] text-slate-400">punti <input value={punti} onChange={e => setPunti(e.target.value)} className={inputCls + " w-14"} /></label>}
+                <label className="text-[11px] text-slate-400">{pista ? "base €" : "gettone €"} <input value={base} onChange={e => setBase(e.target.value)} className={inputCls} /></label>
                 {pista && tiers.map((t, i) => (
-                    <label key={i} className="text-[11px] text-slate-400">S{i + 1} € <input value={t} onChange={e => setTiers(p => p.map((x, j) => j === i ? e.target.value : x))} className={inputCls + " w-20 text-right"} /></label>
+                    <label key={i} className="text-[11px] text-slate-400">S{i + 1} € <input value={t} onChange={e => setTiers(p => p.map((x, j) => j === i ? e.target.value : x))} className={inputCls} /></label>
                 ))}
                 <button onClick={salva} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-3 py-1.5 rounded-lg border border-emerald-500/40"><Save size={13} /> Aggiungi</button>
             </div>

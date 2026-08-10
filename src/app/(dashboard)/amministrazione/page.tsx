@@ -13,7 +13,6 @@ import { CatalogoView } from "./_views/catalogo";
 import { CallCenterView } from "./_views/callcenter";
 import { CalendarioEsitiView } from "./_views/calendario_esiti";
 import { TrackingEsitiView } from "./_views/tracking_esiti";
-import { PayTabellariView } from "./_views/paytabellari";
 import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
@@ -79,7 +78,6 @@ import {
     ShieldCheck,
     Clock3,
     Radar,
-    Trophy,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -203,7 +201,6 @@ const SEZIONI: Sezione[] = [
     { id: "ordinemerce", label: "Ordine Merce", icon: Package, desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
     { id: "calendario", label: "Calendario", icon: CalendarClock, desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
     { id: "trackingesiti", label: "Tracking PDA", icon: Radar, desc: "Esiti negozio del Tracking per categoria: etichette, colori, ordine, voci spente e flag \"completata\" (fine processo → coda verifica)." },
-    { id: "paytabellari", label: "Tabellari Gare", icon: Trophy, desc: "Il pagamento a tabella dei ragazzi per brand e mese: soglie per pista, € per attivazione a ogni soglia, gettoni — la fonte del Calcolatore $$$." },
     // Target, Direzione Inserimento e Obiettivi Home: TRASLOCATI nell'hub
     // Gare (Luca 03/08) — i vecchi URL ?sez=... vengono reindirizzati la'.
 ];
@@ -587,8 +584,6 @@ function AmministrazioneInner() {
                 <CalendarioEsitiView />
             ) : sez === "trackingesiti" ? (
                 <TrackingEsitiView />
-            ) : sez === "paytabellari" ? (
-                <PayTabellariView />
             ) : null}
 
             {showForm && (

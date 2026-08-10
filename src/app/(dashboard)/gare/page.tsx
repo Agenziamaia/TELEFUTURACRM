@@ -13,6 +13,7 @@ import { RAGAZZI_GARA } from "./_views/shared";
 import { TargetSection } from "../amministrazione/_views/target";
 import { DashboardTargetAdmin } from "@/components/DashboardTargetAdmin";
 import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
+import { TabellareEditor } from "./_views/tabellare";
 
 /* GARE — le condizioni degli operatori (lato AZIENDA) e la gara interna della squadra
    (lato RAGAZZI), per brand e per mese. RIORDINO (Luca 03/08): i brand vivono nel
@@ -28,12 +29,17 @@ const GARE_BRANDS = [
     { id: "sky", label: "Sky", desc: "Soglie e commissioning Sky.", color: "var(--tf-0072c6)", logo: "/sky.png" },
     { id: "s4", label: "S4", desc: "Soglie e commissioning energia S4.", color: "var(--tf-28a745)", logo: "/energy - Copy.png" },
     { id: "tim", label: "TIM", desc: "Soglie e commissioning Tim.", color: "var(--tf-0050ff)", logo: "/tim-logo-v2.png" },
+    { id: "kena", label: "Kena", desc: "Soglie e commissioning Kena.", color: "#F5A623", logo: "/kena-mobile-v2.png" },
     { id: "dojo", label: "Dojo", desc: "Soglie e commissioning POS Dojo.", color: "var(--tf-14b8a6)", logo: "/dojo-round.png" },
 ] as const;
 
 // Scala ottica dei loghi col marchio piccolo dentro un canvas grande (stessi
 // valori di brandAssets); gli altri PNG sono gia' pieni e restano a 1.
-const GARE_LOGO_SCALE: Record<string, number> = { w3: 1.7, vs: 1.95, vnd: 1.95, fastweb: 1.75 };
+const GARE_LOGO_SCALE: Record<string, number> = { w3: 1.7, vs: 1.95, vnd: 1.95, fastweb: 1.75, kena: 2.0 };
+
+// gara brand → contesto delle tabelle pay (il TABELLARE del Calcolatore $$$).
+// vnd non ha tabellare (lato azienda futuro sui PDF); s4/dojo non ancora.
+const PAY_CTX: Record<string, string> = { w3: "windtre", vs: "vodafone", fastweb: "fastweb", sky: "sky", tim: "tim", kena: "kena" };
 
 // le sezioni di GESTIONE traslocate dall'Amministrazione (Luca 03/08)
 const GARE_GESTIONE = [
@@ -59,6 +65,7 @@ function GareInner() {
     const lato = searchParams.get("lato") === "ragazzi" ? "ragazzi" : "azienda";
     const go = (b?: string, l?: string) => router.push(b ? `/gare?brand=${b}${l ? `&lato=${l}` : ""}` : "/gare");
     const [month, setMonth] = useState(currentMonthKey());
+    const [vecchioSchema, setVecchioSchema] = useState(false);   // schema gare pre-tabellari, a richiesta
     const rag = brand ? RAGAZZI_GARA[brand.id] : null;
     const GestIcon = gestione?.icon;
 
@@ -201,10 +208,26 @@ function GareInner() {
                         </div>
                     </div>
 
-                    {lato === "azienda" ? (
-                        <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
-                    ) : (
-                        <RagazziTab key={`${rag!.id}|${month}|rag`} garaId={rag!.id} month={month} nota={rag!.nota} />
+                    {/* TABELLARE PAY (Luca 11/08): il tabellare vive QUI, dentro il suo
+                        operatore, pilotato dalla barra mese e dalle tab Azienda/Ragazzi.
+                        Lo schema gare precedente resta consultabile dal bottone in fondo. */}
+                    {PAY_CTX[brand.id] ? (
+                        <>
+                            <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
+                                ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}
+                                vaiAzienda={() => go(brand.id, "azienda")} />
+                            <button onClick={() => setVecchioSchema(v => !v)}
+                                className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+                                {vecchioSchema ? "▾ Nascondi lo schema gare precedente" : "▸ Mostra lo schema gare precedente"}
+                            </button>
+                        </>
+                    ) : null}
+                    {(!PAY_CTX[brand.id] || vecchioSchema) && (
+                        lato === "azienda" ? (
+                            <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
+                        ) : rag ? (
+                            <RagazziTab key={`${rag.id}|${month}|rag`} garaId={rag.id} month={month} nota={rag.nota} />
+                        ) : null
                     )}
                 </>
             )}
