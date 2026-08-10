@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { MARG_PRODUCTS_LEGACY } from "@/lib/margMargini";
 import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento, appuntamentiPerCF, venditoreLavoraIn } from "@/lib/matchAppuntamento";
 import { storeRoot as _storeRoot } from "@/lib/storeRoot";
-import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
+import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef, vaInTracking } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
@@ -5498,12 +5498,20 @@ function CRM() {
           // Vendite dal flusso catalogo: macro-categoria ESPLICITA (perimetro
           // chiuso, niente inferenza); il legacy resta per il carrello storico.
           const macroId = item.catalogo ? (item.catalogo.macro || "extra") : categoriaDi(group.brandLabel, item.macro, item.sub);
-          // Segnalazione 91: una pratica MOBILE senza finanziamento e senza MNP
-          // non e' da lavorare nel Tracking, quindi nasce gia' Attiva (come Extra
-          // e Sostituzioni). Esempi: francesca iossa, Alberto Franzini.
+          // MOD-23 (Luca 10/08): criterio UNICO condiviso col Tracking — tutto
+          // ciò che NON entra nel Tracking PDA (vaInTracking false) nasce già
+          // "Attivo" in Ricerca Vendite: Very, CB, Multi-Servizi, POS, digitale,
+          // extra, sostituzioni e mobile consumer semplice. Prima un'euristica
+          // locale divergeva (Segnalazione 91): Very/CB/POS nascevano "Nuovo"
+          // per sempre e il mobile BUSINESS semplice nasceva "Attivo" per errore
+          // pur entrando in tracking. Le chiavi passate coincidono con la riga
+          // scritta nel push qui sotto, così nascita e Tracking non divergono.
           const _ctrl = controlliDi(item.details);
-          const mobileSemplice = macroId === "mobile" && !_ctrl.includes("mnp") && !_ctrl.includes("finanziamento");
-          const giaAttivo = /sostituzione|sost /i.test(String(item.sub || "")) || macroId === "extra" || mobileSemplice;
+          const giaAttivo = !vaInTracking({
+            brand: group.brandLabel, prodotto: item.sub, categoria: item.macro,
+            categoria_macro: macroId, controlli: _ctrl,
+            tipo_cliente: item.catalogo ? item.catalogo.tipo : null, dettagli: item.details,
+          });
           // chiave riga identica a righeCarrello(): brand + etichetta + occorrenza
           const _rigaBase = String(group.brandId || "") + "::" + _etichettaRiga(item);
           _contaRighe[_rigaBase] = (_contaRighe[_rigaBase] || 0) + 1;

@@ -57,6 +57,13 @@ export function ArchivioMalus({
   // deep-link dalla scheda utente (Luca 02/08): archivio gia' filtrato su di lui
   const [venditoreSel, setVenditoreSel] = useState(venditoreIniziale || "");
   const [search, setSearch] = useState("");
+  // MOD-24 (Luca 10/08): filtri periodo/categoria/negozio + sort sulle colonne
+  const [dataDa, setDataDa] = useState("");
+  const [dataA, setDataA] = useState("");
+  const [categoriaSel, setCategoriaSel] = useState("");
+  const [negozioSel, setNegozioSel] = useState("");
+  const [sortKey, setSortKey] = useState<"nominativo" | "categoria" | "brand" | "negozio" | "venditore" | "data_inizio" | "data_fine" | "giorni" | "importo" | "stato" | "">("");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [confermaId, setConfermaId] = useState<string | null>(null);
   const [eliminaId, setEliminaId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -65,11 +72,16 @@ export function ArchivioMalus({
   const statoDi = (e: EpisodioMalus): "in_corso" | "attivo" | "compensato" =>
     e.stato === "compensato" ? "compensato" : e.data_fine === null ? "in_corso" : "attivo";
 
-  // Filtri trasversali (ricerca + venditore); le card di riepilogo filtrano lo stato.
+  // Filtri trasversali (ricerca + venditore + periodo/categoria/negozio, MOD-24);
+  // le card di riepilogo filtrano lo stato. Periodo sul giorno di INIZIO malus.
   const filtratiBase = useMemo(() => {
     const q = search.trim().toLowerCase();
     return episodi.filter((e) => {
       if (venditoreSel && (e.venditore || "—") !== venditoreSel) return false;
+      if (dataDa && (e.data_inizio || "") < dataDa) return false;
+      if (dataA && (e.data_inizio || "") > dataA) return false;
+      if (categoriaSel && (e.categoria || "—") !== categoriaSel) return false;
+      if (negozioSel && (e.negozio || "—") !== negozioSel) return false;
       if (q) {
         const match = [e.nominativo, e.venditore, e.negozio, e.brand, e.categoria]
           .some((v) => (v || "").toLowerCase().includes(q));
@@ -77,7 +89,9 @@ export function ArchivioMalus({
       }
       return true;
     });
-  }, [episodi, venditoreSel, search]);
+  }, [episodi, venditoreSel, search, dataDa, dataA, categoriaSel, negozioSel]);
+  const categorie = useMemo(() => Array.from(new Set(episodi.map((e) => e.categoria || "—"))).sort(), [episodi]);
+  const negozi = useMemo(() => Array.from(new Set(episodi.map((e) => e.negozio || "—"))).sort(), [episodi]);
 
   const filtrati = useMemo(
     () => filtratiBase.filter((e) => statoSel === "tutti" || statoDi(e) === statoSel),
@@ -109,10 +123,28 @@ export function ArchivioMalus({
     return [...m.entries()].sort((a, b) => (b[1].inCorso + b[1].attivi) - (a[1].inCorso + a[1].attivi));
   }, [filtratiBase]);
 
-  const ordinati = useMemo(
-    () => [...filtrati].sort((a, b) => (b.data_inizio || "").localeCompare(a.data_inizio || "")),
-    [filtrati]
-  );
+  // MOD-24: sort per colonna (default: inizio più recente). data_fine NULL =
+  // episodio IN CORSO → nel sort vale come "oggi/futuro", non finisce in fondo.
+  const doSort = (k: typeof sortKey) => {
+    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(k); setSortDir("asc"); }
+  };
+  const freccia = (k: typeof sortKey) => (sortKey === k ? (sortDir === "asc" ? " ↑" : " ↓") : "");
+  const ordinati = useMemo(() => {
+    const arr = [...filtrati];
+    if (!sortKey) return arr.sort((a, b) => (b.data_inizio || "").localeCompare(a.data_inizio || ""));
+    const val = (e: EpisodioMalus): string | number => {
+      if (sortKey === "giorni" || sortKey === "importo") return Number(e[sortKey]) || 0;
+      if (sortKey === "data_fine") return e.data_fine || "9999-12-31";   // in corso in testa sul desc
+      if (sortKey === "stato") return statoDi(e);
+      return String(e[sortKey as keyof EpisodioMalus] ?? "").toLowerCase();
+    };
+    return arr.sort((a, b) => {
+      const va = val(a), vb = val(b);
+      const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [filtrati, sortKey, sortDir]);
 
   const setCompensato = async (ep: EpisodioMalus, compensa: boolean) => {
     setSalvando(true);
@@ -185,6 +217,8 @@ export function ArchivioMalus({
 
   const thStyle =
     "py-2 px-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/10 whitespace-nowrap";
+  // MOD-24: intestazione cliccabile per il sort
+  const thSort = thStyle + " cursor-pointer select-none hover:text-slate-300 transition-colors";
   const tdStyle = "py-2 px-3 border-b border-white/5 text-[12px]";
 
   return (
@@ -196,7 +230,7 @@ export function ArchivioMalus({
       aria-label="Archivio Malus"
     >
       <div
-        className="bg-[#0e1526] border border-white/10 rounded-2xl w-full max-w-[1150px] max-h-[90vh] overflow-y-auto shadow-2xl"
+        className="bg-[#0e1526] border border-white/10 rounded-2xl w-[98vw] h-[94vh] max-w-none overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between py-5 px-7 border-b border-white/10 sticky top-0 bg-[#12141f] z-10">
@@ -274,6 +308,31 @@ export function ArchivioMalus({
                 />
               </div>
             )}
+            {/* MOD-24: periodo (sul giorno di inizio malus) + categoria + punto vendita */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-slate-500 font-semibold">Periodo</span>
+              <input type="date" value={dataDa} onChange={(e) => setDataDa(e.target.value)} title="Dal giorno di inizio"
+                className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[12px] py-1.5 px-2 outline-none" />
+              <span className="text-slate-600 text-xs">→</span>
+              <input type="date" value={dataA} onChange={(e) => setDataA(e.target.value)} title="Al giorno di inizio"
+                className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[12px] py-1.5 px-2 outline-none" />
+            </div>
+            <select value={categoriaSel} onChange={(e) => setCategoriaSel(e.target.value)}
+              className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none min-w-[150px]">
+              <option value="">Tutte le categorie</option>
+              {categorie.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={negozioSel} onChange={(e) => setNegozioSel(e.target.value)}
+              className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none min-w-[150px]">
+              <option value="">Tutti i negozi</option>
+              {negozi.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+            {(dataDa || dataA || categoriaSel || negozioSel) && (
+              <button type="button" onClick={() => { setDataDa(""); setDataA(""); setCategoriaSel(""); setNegozioSel(""); }}
+                className="text-[11px] font-bold text-slate-400 hover:text-white border border-white/10 rounded-lg py-2 px-3 bg-white/[0.03]">
+                ✕ Pulisci filtri
+              </button>
+            )}
           </div>
 
           {/* Totali per collaboratore */}
@@ -331,16 +390,17 @@ export function ArchivioMalus({
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-white/[0.04]">
-                      <th className={thStyle}>Cliente</th>
-                      <th className={thStyle}>Categoria</th>
-                      <th className={thStyle}>Brand</th>
-                      <th className={thStyle}>Negozio</th>
-                      <th className={thStyle}>Venditore</th>
-                      <th className={thStyle}>Inizio</th>
-                      <th className={thStyle}>Fine</th>
-                      <th className={thStyle + " text-center"}>GG</th>
-                      <th className={thStyle + " text-right"}>Importo</th>
-                      <th className={thStyle}>Stato</th>
+                      {/* MOD-24: intestazioni cliccabili per il sort (↑/↓) */}
+                      <th className={thSort} onClick={() => doSort("nominativo")}>Cliente{freccia("nominativo")}</th>
+                      <th className={thSort} onClick={() => doSort("categoria")}>Categoria{freccia("categoria")}</th>
+                      <th className={thSort} onClick={() => doSort("brand")}>Brand{freccia("brand")}</th>
+                      <th className={thSort} onClick={() => doSort("negozio")}>Negozio{freccia("negozio")}</th>
+                      <th className={thSort} onClick={() => doSort("venditore")}>Venditore{freccia("venditore")}</th>
+                      <th className={thSort} onClick={() => doSort("data_inizio")}>Inizio{freccia("data_inizio")}</th>
+                      <th className={thSort} onClick={() => doSort("data_fine")}>Fine{freccia("data_fine")}</th>
+                      <th className={thSort + " text-center"} onClick={() => doSort("giorni")}>GG{freccia("giorni")}</th>
+                      <th className={thSort + " text-right"} onClick={() => doSort("importo")}>Importo{freccia("importo")}</th>
+                      <th className={thSort} onClick={() => doSort("stato")}>Stato{freccia("stato")}</th>
                       {(canCompensare || puoEliminare) && <th className={thStyle}></th>}
                     </tr>
                   </thead>
