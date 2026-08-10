@@ -81,12 +81,41 @@ const TUTTI_STATI_NEGOZIO = [
   ...STATI_NEGOZIO_SKY,
 ];
 
+/* ── ESITI AMMINISTRABILI (tabella tracking_esiti, MOD-28 Luca 10/08) ──
+   Con la tabella popolata vincono le righe a DB: etichette, colori, ordine,
+   voci spente e flag "completata" (fine processo). Le liste hardcoded restano
+   i DEFAULT (tabella vuota/mancante) e il vocabolario STORICO: getStatoN e la
+   ricostruzione malus le usano come fallback per chiavi/etichette vecchie. */
+export interface EsitoTracking {
+  categoria: string; chiave: string; etichetta: string;
+  colore: string; bg: string; ordine: number; attiva: boolean; completata: boolean;
+}
+let ESITI_DB: Map<string, EsitoTracking[]> | null = null;
+export function impostaEsitiTracking(rows: EsitoTracking[] | null | undefined) {
+  if (!rows || !rows.length) { ESITI_DB = null; return; }
+  const m = new Map<string, EsitoTracking[]>();
+  [...rows].sort((a, b) => a.ordine - b.ordine).forEach((r) => {
+    const l = m.get(r.categoria) || [];
+    l.push(r);
+    m.set(r.categoria, l);
+  });
+  ESITI_DB = m;
+}
+const daEsito = (e: EsitoTracking) => ({ id: e.chiave, label: e.etichetta, color: e.colore, bg: e.bg });
+
 export function getStatoN(id: string) {
+  if (ESITI_DB) {
+    for (const lista of ESITI_DB.values()) {
+      const hit = lista.find((e) => e.chiave === id);
+      if (hit) return daEsito(hit);
+    }
+  }
   const s = TUTTI_STATI_NEGOZIO.find((x) => x.id === id);
   return s || STATI_NEGOZIO[0];
 }
 
-export function getStatiNegozioPerCategoria(categoria: string) {
+/** Lista hardcoded storica: fallback + vocabolario per le etichette vecchie. */
+export function getStatiNegozioBase(categoria: string) {
   if (categoria === "mnp") return STATI_NEGOZIO_MNP;
   if (categoria === "fisso") return STATI_NEGOZIO_FISSO;
   if (categoria === "finanziamento") return STATI_NEGOZIO_FINANZIAMENTO;
@@ -94,6 +123,24 @@ export function getStatiNegozioPerCategoria(categoria: string) {
   if (categoria === "energia") return STATI_NEGOZIO_ENERGIA;
   if (categoria === "sky") return STATI_NEGOZIO_SKY;
   return STATI_NEGOZIO;
+}
+
+export function getStatiNegozioPerCategoria(categoria: string) {
+  const db = ESITI_DB?.get(categoria);
+  if (db) return db.filter((e) => e.attiva).map(daEsito);
+  return getStatiNegozioBase(categoria);
+}
+
+/** Esito "fine processo" (flag amministrabile): pilota il filtro Mostra
+ *  completate, la coda di verifica amministrazione e lo stop del malus. */
+export function esitoCompletato(statoNegozio: string, categoria: string): boolean {
+  const db = ESITI_DB?.get(categoria);
+  if (db) {
+    const hit = db.find((e) => e.chiave === statoNegozio);
+    if (hit) return hit.completata;
+    // chiave storica non piu' censita per la categoria: vale il default storico
+  }
+  return (STATI_COMPLETATI[categoria] || ["attivato"]).includes(statoNegozio);
 }
 
 export function getStatoA(id: string) {
@@ -139,8 +186,9 @@ export const STATI_COMPLETATI: Record<string, string[]> = {
  * in 🔴 Malus all'infinito, "come se dovessimo dare un altro esito".)
  */
 export function fermaMalus(statoNegozio: string, categoria: string): boolean {
-  const completati = STATI_COMPLETATI[categoria] || ["attivato"];
-  if (completati.includes(statoNegozio)) return true;
+  // MOD-28: la nozione di "completata" e' il flag amministrabile a DB
+  // (fallback: STATI_COMPLETATI storico) — unica fonte anche per i filtri.
+  if (esitoCompletato(statoNegozio, categoria)) return true;
   return statoContrattoDa(statoNegozio) === "Annullato" || statoNegozio === "recesso_info_errate";
 }
 

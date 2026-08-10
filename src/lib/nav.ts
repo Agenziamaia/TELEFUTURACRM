@@ -19,7 +19,7 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Presentation,
+    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Presentation, Radar,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -194,6 +194,8 @@ export const NAVIGATION: NavEntry[] = [
             // articoli ordinabili di Ordine Merce (Luca 01/08): amministrativo in su
             { name: "Ordine Merce", sez: "ordinemerce", icon: Package, roles: [...ADMINS, "amministrativo"] },
             { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
+            // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
+            { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

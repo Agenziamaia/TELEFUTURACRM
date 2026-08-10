@@ -12,6 +12,7 @@ import { RuoliView } from "./_views/ruoli";
 import { CatalogoView } from "./_views/catalogo";
 import { CallCenterView } from "./_views/callcenter";
 import { CalendarioEsitiView } from "./_views/calendario_esiti";
+import { TrackingEsitiView } from "./_views/tracking_esiti";
 import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
@@ -76,6 +77,7 @@ import {
     Layers,
     ShieldCheck,
     Clock3,
+    Radar,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -192,6 +194,7 @@ const SEZIONI: Sezione[] = [
     { id: "callcenter", label: "Call Center", icon: Phone, desc: "Opzioni della sezione Caller: esiti/stati, provenienze, tipologie e obiettivi — aggiungi, rinomina, riordina, spegni." },
     { id: "ordinemerce", label: "Ordine Merce", icon: Package, desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
     { id: "calendario", label: "Calendario", icon: CalendarClock, desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
+    { id: "trackingesiti", label: "Tracking PDA", icon: Radar, desc: "Esiti negozio del Tracking per categoria: etichette, colori, ordine, voci spente e flag \"completata\" (fine processo → coda verifica)." },
     // Target, Direzione Inserimento e Obiettivi Home: TRASLOCATI nell'hub
     // Gare (Luca 03/08) — i vecchi URL ?sez=... vengono reindirizzati la'.
 ];
@@ -573,6 +576,8 @@ function AmministrazioneInner() {
                 <CallCenterView />
             ) : sez === "calendario" ? (
                 <CalendarioEsitiView />
+            ) : sez === "trackingesiti" ? (
+                <TrackingEsitiView />
             ) : null}
 
             {showForm && (

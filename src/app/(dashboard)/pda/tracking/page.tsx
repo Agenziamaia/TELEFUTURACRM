@@ -29,6 +29,8 @@ import {
   isMalusRow,
   calcolaMalus,
   impostaRegoleTracking,
+  impostaEsitiTracking,
+  esitoCompletato,
 } from "./trackingHelpers";
 import { RegoleTracking } from "./RegoleTracking";
 import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
@@ -1525,6 +1527,10 @@ export default function TrackingPdaPage() {
     (async () => {
       const { data: rg } = await supabase.from("tracking_regole").select("*");
       if (rg && rg.length) { impostaRegoleTracking(rg as never); setRegoleV((v) => v + 1); }
+      // MOD-28: esiti amministrabili (tabella tracking_esiti) — senza righe (o
+      // senza tabella) valgono le liste hardcoded, il CRM non si rompe mai
+      const { data: es } = await supabase.from("tracking_esiti").select("*").order("ordine");
+      if (es && es.length) { impostaEsitiTracking(es as never); setRegoleV((v) => v + 1); }
     })();
   }, []);
 
@@ -1745,7 +1751,9 @@ export default function TrackingPdaPage() {
     if (hit) { setSelected(hit); deepOpened.current = true; }
   }, [data]);
 
-  const statiCompletatiNegozio = ["attivato", "liquidato", "completo_sky", "attivo_sky"];
+  // MOD-28: "completata" non e' piu' una lista hardcoded (che tra l'altro
+  // divergeva da STATI_COMPLETATI: mancava re_inserita) ma il flag
+  // amministrabile della tabella tracking_esiti — helper esitoCompletato.
 
   // PDA-01: platea per le OPZIONI dei filtri Negozio/Utente/Categoria — le
   // "pratiche da monitorare in questo momento". Replica i soli filtri DI
@@ -1755,13 +1763,13 @@ export default function TrackingPdaPage() {
   const baseVisibile = useMemo(() => data.filter((row) => {
     if (row.tracking_nascosto) return false;
     if (soloDaLavorare) {
-      if (!statiCompletatiNegozio.includes(row.statoNegozio)) return false;
+      if (!esitoCompletato(row.statoNegozio, row.categoria)) return false;
       if (["confermato", "pagato", "stornato", "non_conforme"].includes(row.statoAdmin)) return false;
-    } else if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
+    } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria) && row.statoAdmin !== "non_conforme") return false;
     if (onlyMine && row.delegated_to !== user?.id) return false;
     if (onlyDelegate && row.delegated_by !== user?.id) return false;
     return true;
-  }), [data, mostraCompletate, soloDaLavorare, onlyMine, onlyDelegate, user?.id]);
+  }), [data, mostraCompletate, soloDaLavorare, onlyMine, onlyDelegate, user?.id, regoleV]);
 
   // Opzioni con dipendenza UNIDIREZIONALE (niente prune a cascata):
   // NEGOZIO ← base; UTENTE ← base+negozio; CATEGORIA ← base+negozio+utente.
@@ -1824,9 +1832,9 @@ export default function TrackingPdaPage() {
       // aspettano ancora l'esito definitivo dell'admin — bypassa la regola
       // che nasconde le completate, altrimenti la coda sarebbe invisibile.
       if (soloDaLavorare) {
-        if (!statiCompletatiNegozio.includes(row.statoNegozio)) return false;
+        if (!esitoCompletato(row.statoNegozio, row.categoria)) return false;
         if (["confermato", "pagato", "stornato", "non_conforme"].includes(row.statoAdmin)) return false;
-      } else if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
+      } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria) && row.statoAdmin !== "non_conforme") return false;
       if (onlyMine && row.delegated_to !== user?.id) return false; // "delegate a me"
       if (onlyDelegate && row.delegated_by !== user?.id) return false; // "delegate DA me"
       if (kpiFilter !== null) {
@@ -1885,7 +1893,7 @@ export default function TrackingPdaPage() {
       if (row.tracking_nascosto) return false;
       // Esito definitivo del negozio = pratica completata = sparisce da sola.
       // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
-      if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
+      if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria) && row.statoAdmin !== "non_conforme") return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (utentiSel.length > 0 && !utentiSel.includes(row.venditore)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;

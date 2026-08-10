@@ -18,6 +18,7 @@ import {
   regolaDi,
   fermaMalus,
   getStatiNegozioPerCategoria,
+  getStatiNegozioBase,
   isMalusRow,
   calcolaMalus,
 } from "./trackingHelpers";
@@ -122,8 +123,12 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const r = regolaDi(row.categoria);
   const euro = Number(r?.malus_euro) || 0;
   if (!r || euro <= 0) return [];
+  // MOD-28: le etichette sono persistite in chiaro negli eventi, e dal pannello
+  // ora si possono RINOMINARE — la mappa unisce il vocabolario storico
+  // (hardcoded) e quello corrente (DB), cosi' gli eventi vecchi restano leggibili
   const labelToId = new Map(
-    getStatiNegozioPerCategoria(row.categoria).map((s) => [s.label.toLowerCase(), s.id])
+    [...getStatiNegozioBase(row.categoria), ...getStatiNegozioPerCategoria(row.categoria)]
+      .map((s) => [s.label.toLowerCase(), s.id] as [string, string])
   );
   const oggi = new Date();
   oggi.setHours(0, 0, 0, 0);
