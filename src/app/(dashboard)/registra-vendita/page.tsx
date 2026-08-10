@@ -3229,7 +3229,10 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
   const codici=_codiciDi(pageBrand);
   return (<div>
     {offerte.length>0&&(
-      offerte.length>10
+      /* Bottoni fino a 14 offerte, tendina oltre (Luca 10/08: VF privato GA/MNP
+         Wallet e GA Ric. Auto hanno 13-14 offerte e devono mostrare i bottoni
+         come MNP Ric. Auto; i muri da 24-36 offerte — W3 MNP — restano tendina) */
+      offerte.length>14
         ? <div style={{marginTop:6,maxWidth:420}}><DD l="Offerta" r v={off} o={pickOff} vals={offerte.map(o=>o.nome)}/></div>
         : <div style={{marginTop:6}}>
             <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Offerta <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
