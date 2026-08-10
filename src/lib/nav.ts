@@ -109,13 +109,13 @@ export const NAVIGATION: NavEntry[] = [
             // sul proxy). La voce resta amministrabile dal pannello Permessi.
             { name: "Registro Chiamate", href: "/chiamate", icon: Phone, roles: EVERYONE },
             { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
-            // CALCOLATORE $$$ (cantiere GARE 10/08): registra-vendita riassunto
-            // che dice il commissioning di una vendita alla soglia scelta (pay
-            // tabellare). Qui dentro Negozio su ordine di Luca (10/08 sera).
-            // Per ora admin/dev: si apre ai ragazzi quando arriva la vista gare.
-            { name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
         ],
     },
+    // CALCOLATORE $$$ (cantiere GARE 10/08): registra-vendita riassunto che
+    // dice il commissioning di una vendita alla soglia scelta (pay tabellare).
+    // Link autonomo SOTTO il gruppo Negozio, prima di Calendario (Luca 10/08).
+    // Per ora admin/dev: si apre ai ragazzi quando arriva la vista gare.
+    { type: "link", name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: EVERYONE },
     { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
