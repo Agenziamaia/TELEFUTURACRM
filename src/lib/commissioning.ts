@@ -121,11 +121,22 @@ export function matchRigaTabellare(
     return best;
 }
 
+/**
+ * REGOLA GENERALE (Luca 10/08): le SOSTITUZIONI SIM — di TUTTI gli operatori —
+ * non generano né commissioning né punti in gara. Escluse alla radice: non
+ * sono "scoperture", sono fuori dal perimetro. I contracts scrivono il
+ * prodotto ("Sostituzione SIM"), il catalogo anche la categoria.
+ */
+export function sostituzioneSim(c: { categoria?: string | null; prodotto?: string | null }): boolean {
+    return /sostituzion/i.test(String(c.prodotto || "")) || /sostituzion/i.test(String(c.categoria || ""));
+}
+
 /** Perimetro v1 della produzione che conta per le gare. */
 export function produzioneValidaGare(c: ContrattoPay): boolean {
     if (!String(c.id || "").startsWith("CTR-")) return false;   // solo pratiche brand
     if (c.nascosta_gestione === true) return false;
     if (/annull/i.test(String(c.stato || ""))) return false;
+    if (sostituzioneSim(c)) return false;
     return true;
 }
 

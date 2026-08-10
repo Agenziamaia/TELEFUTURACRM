@@ -12,7 +12,7 @@ import { Calculator, ChevronDown, Loader2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import {
     Avanzamento, PayRiga, Tabellare,
-    calcolaAvanzamento, caricaContrattiMese, caricaTabellare, matchRigaTabellare, payPerRiga,
+    calcolaAvanzamento, caricaContrattiMese, caricaTabellare, matchRigaTabellare, payPerRiga, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
@@ -114,6 +114,8 @@ export default function CalcolatorePage() {
     const catSel = cats.find(c => c.id === catId) || null;
     const prodSel = prods.find(p => p.id === prodId) || null;
     const offSel = offs.find(o => o.id === offId) || null;
+    // Sostituzioni SIM: mai commissioning né punti (regola generale, tutti i brand)
+    const esclusaProd = !!(prodSel && sostituzioneSim({ categoria: catSel?.nome, prodotto: prodSel.nome }));
 
     // risoluzione riga pay
     const riga: PayRiga | null = useMemo(() => {
@@ -137,6 +139,7 @@ export default function CalcolatorePage() {
         for (const o of offs) {
             const p = prods.find(x => x.id === o.prodotto_id); if (!p) continue;
             const c = cats.find(x => x.id === p.categoria_id); if (!c) continue;
+            if (sostituzioneSim({ categoria: c.nome, prodotto: p.nome })) continue;   // escluse per regola, non scoperture
             const r = matchRigaTabellare(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome });
             if (!r) out.push({ tipo: p.tipo_cliente, cat: c.nome, prod: p.nome, off: o.nome });
         }
@@ -229,7 +232,8 @@ export default function CalcolatorePage() {
                                                     color: on ? "#fff" : "#cbd5e1",
                                                 }}>
                                                 {o.nome}
-                                                {tab && !r && <span className="block text-[10px] font-normal mt-0.5 text-amber-400">🚫 senza commissioning</span>}
+                                                {esclusaProd && <span className="block text-[10px] font-normal mt-0.5 text-slate-400">➖ esclusa dalle gare</span>}
+                                                {!esclusaProd && tab && !r && <span className="block text-[10px] font-normal mt-0.5 text-amber-400">🚫 senza commissioning</span>}
                                             </button>
                                         );
                                     })}
@@ -242,7 +246,11 @@ export default function CalcolatorePage() {
                     {/* ③ RISULTATO */}
                     {offSel && (
                         <div className="glass-panel rounded-2xl p-6" style={{ borderLeft: `4px solid ${meta?.color || "#6366f1"}` }}>
-                            {!tab ? (
+                            {esclusaProd ? (
+                                <div className="text-slate-300 text-sm">
+                                    ➖ Le <b>sostituzioni SIM</b> non generano né commissioning né punti in gara — regola aziendale, vale per tutti gli operatori.
+                                </div>
+                            ) : !tab ? (
                                 <div className="text-amber-300 text-sm">Tabellare non caricato per questo mese: nessun pay calcolabile.</div>
                             ) : !riga ? (
                                 <div className="text-amber-300 font-semibold flex items-center gap-2">
