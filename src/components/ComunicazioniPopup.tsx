@@ -355,8 +355,10 @@ export function ComunicazioniPopup() {
     const { Icon } = stile;
     const taglia = stileTaglia(attuale.size);
 
+    // MOD-37: com-scura = ISOLA SCURA — la card resta scenografica scura anche
+    // in tema chiaro, i testi NON si ribaltano (vedi globals.css)
     return (
-        <div className="fixed inset-0 z-[5000] flex flex-col items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+        <div className="com-scura fixed inset-0 z-[5000] flex flex-col items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
             {/* MOD-19: one-shot RIPETUTI fino a conferma (key con colpo) */}
             {attuale.type === "success" && <Confetti key={attuale.id + ":" + colpo} />}
             {attuale.type === "novita" && <EsplosioneBomba key={attuale.id + ":" + colpo} />}

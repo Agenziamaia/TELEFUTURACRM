@@ -722,7 +722,10 @@ function ComunicazioniInner() {
                                     com.type === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent",
                                     com.type === "novita" && "bg-gradient-to-br from-orange-500/[0.10] via-transparent to-red-500/[0.07]",
                                     com.type === "sprint" && "border border-amber-400/40 bg-gradient-to-br from-amber-400/[0.10] via-transparent to-yellow-500/[0.07]",
-                                    !collassata && com.type === "warning" && "anim-bordo-rosso"
+                                    !collassata && com.type === "warning" && "anim-bordo-rosso",
+                                    // MOD-37: da APERTA la card è un mondo scuro anche in tema
+                                    // chiaro (isola com-scura + fondo scuro, vedi globals.css)
+                                    !collassata && "com-scura com-espansa"
                                 )}
                             >
                                 {/* SFONDO VIVO (Luca 03/08): da aperta, il genere si muove —
@@ -1151,7 +1154,7 @@ function ComunicazioniInner() {
                                         if (fKind === "popup") return (
                                             // taglia GRANDE (mig. 158): qui riempie il riquadro anteprima
                                             // (il popup vero occupa quasi tutto lo schermo)
-                                            <div className={`relative rounded-2xl border shadow-2xl overflow-hidden mx-auto ${tg.s === "grande" ? "w-full min-h-[420px] flex flex-col" : "max-w-[520px]"}${fType === "warning" ? " anim-bordo-rosso" : ""}`} style={{ background: fondoComunicazione(fType), borderColor: st.border }}>
+                                            <div className={`com-scura relative rounded-2xl border shadow-2xl overflow-hidden mx-auto ${tg.s === "grande" ? "w-full min-h-[420px] flex flex-col" : "max-w-[520px]"}${fType === "warning" ? " anim-bordo-rosso" : ""}`} style={{ background: fondoComunicazione(fType), borderColor: st.border }}>
                                                 {/* stessa VIVACITA' del popup vero (Luca 03/08) */}
                                                 <SfondoComunicazione genere={fType} />
                                                 <div className="relative flex items-start gap-3.5 p-5 pb-3.5">
@@ -1189,7 +1192,9 @@ function ComunicazioniInner() {
                                                 fType === "success" && "bg-gradient-to-br from-emerald-500/[0.08] via-transparent to-fuchsia-500/[0.07]",
                                                 fType === "update" && "bg-gradient-to-br from-violet-500/[0.08] to-transparent",
                                                 fType === "novita" && "bg-gradient-to-br from-orange-500/[0.10] via-transparent to-red-500/[0.07]",
-                                                fType === "sprint" && "border border-amber-400/40 bg-gradient-to-br from-amber-400/[0.10] via-transparent to-yellow-500/[0.07]")}>
+                                                fType === "sprint" && "border border-amber-400/40 bg-gradient-to-br from-amber-400/[0.10] via-transparent to-yellow-500/[0.07]",
+                                                // MOD-37: l'anteprima card replica la card APERTA → stesso mondo scuro
+                                                "com-scura com-espansa")}>
                                                 {fType === "sprint" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.09] rotate-12 select-none">🔥</span>}
                                                 {fType === "success" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.08] rotate-12 select-none">🎉</span>}
                                                 {fType === "update" && <span aria-hidden className="absolute -right-3 -bottom-4 text-[80px] opacity-[0.07] rotate-12 select-none">🚀</span>}
