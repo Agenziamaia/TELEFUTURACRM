@@ -87,7 +87,12 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     // turni chiusi. Fotografia di TUTTO il team come i contatori accanto
     // (Presenti ora / Totale ore): NON seguono i filtri dello storico e si
     // rinfrescano da soli ogni minuto.
-    const vistaDirezione = vistaTeam && !puoTimbrare;
+    // MOD-11b (Luca 10/08): la vista supervisione è UNA SOLA — il direttore
+    // (timbra+team) vede ESATTAMENTE i quadri dell'amministrativo; il suo stato
+    // personale sta già nella barra compatta di timbratura sopra. Le due viste
+    // sono quindi: operatore (KPI personali + card grande) e supervisore
+    // (quadri team), con la barra badge in più per chi timbra E supervisiona.
+    const vistaDirezione = vistaTeam;
     const [dirStats, setDirStats] = useState<{
         pause: number; pauseMin: number; inPausaOra: number;
         entrati: number;
