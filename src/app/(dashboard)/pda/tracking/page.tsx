@@ -172,8 +172,10 @@ function codiceInserimento(det: Record<string, unknown> | undefined): string | n
 }
 
 // ─── Badges ───────────────────────────────────────────────────────────────────
-function StatoBadge({ id, set }: { id: string; set: "admin" | "negozio" }) {
-  const s = set === "admin" ? getStatoA(id) : getStatoN(id);
+// categoria+brand: dal pannello la stessa chiave puo' avere etichette diverse
+// per categoria/operatore — senza contesto il badge pescherebbe quella sbagliata
+function StatoBadge({ id, set, categoria, brand }: { id: string; set: "admin" | "negozio"; categoria?: string; brand?: string | null }) {
+  const s = set === "admin" ? getStatoA(id) : getStatoN(id, categoria, brand);
   return (
     <span
       className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap border"
@@ -833,7 +835,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                   <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-400 text-xs">{row.venditore}</td>
                   <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-500 text-xs">{row.dataInserimento}</td>
                   <td className="py-2.5 px-3.5 border-b border-white/5">
-                    <StatoBadge id={row.statoNegozio} set="negozio" />
+                    <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
                   </td>
                   <td className="py-2.5 px-3.5 border-b border-white/5">
                     <StatoBadge id={row.statoAdmin} set="admin" />
@@ -1004,7 +1006,7 @@ function Drawer({
       const fuJson = JSON.stringify(s.fu);
       const cambioFu = row.categoria === "piva" && fuJson !== baseFu.current;
       if (s.statoN !== baseN.current) {
-        eventi.push({ data: oggi, tipo: "stato_negozio", testo: "Esito negozio aggiornato: " + getStatoN(s.statoN).label, utente: nomeUtente, ruolo: "negozio" });
+        eventi.push({ data: oggi, tipo: "stato_negozio", testo: "Esito negozio aggiornato: " + getStatoN(s.statoN, row.categoria, row.brand).label, utente: nomeUtente, ruolo: "negozio" });
       }
       if (nota) {
         eventi.push({ data: oggi, tipo: "nota_negozio", testo: nota, utente: nomeUtente, ruolo: "negozio" });
@@ -1098,7 +1100,7 @@ function Drawer({
         </div>
         <div className="flex gap-1.5 items-center py-2.5">
           <span className="text-[11px] text-slate-500 mr-1">Negozio:</span>
-          <StatoBadge id={row.statoNegozio} set="negozio" />
+          <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
           <span className="text-[11px] text-slate-500 mx-1">| Admin:</span>
           <StatoBadge id={row.statoAdmin} set="admin" />
         </div>
@@ -1323,7 +1325,7 @@ function Drawer({
             <p className="text-xs text-slate-500 mb-3.5">Conferma o rettifica l&apos;esito. Visibile a tutte le parti.</p>
             <div className="mb-1.5">
               <div className={labelStyle + " mb-2"}>Esito corrente negozio</div>
-              <StatoBadge id={row.statoNegozio} set="negozio" />
+              <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
             </div>
             <div className="my-3.5">
               <div className={labelStyle + " mb-2"}>Esito amministrazione</div>

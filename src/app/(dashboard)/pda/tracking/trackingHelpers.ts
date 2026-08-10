@@ -133,15 +133,51 @@ export function impostaEsitiTracking(rows: EsitoTracking[] | null | undefined) {
 }
 const daEsito = (e: EsitoTracking) => ({ id: e.chiave, label: e.etichetta, color: e.colore, bg: e.bg });
 
-export function getStatoN(id: string) {
+/** Risoluzione chiave→badge. Con categoria (e brand) si cerca PRIMA nella
+ *  lista giusta: dal pannello la stessa chiave puo' avere etichette diverse
+ *  per categoria (es. `attivato` = "Completata" MNP / "Attivo" fisso /
+ *  "Fornitura Attiva" energia) e lo scan globale ne pescherebbe una a caso. */
+export function getStatoN(id: string, categoria?: string, brand?: string | null) {
   if (ESITI_DB) {
+    if (categoria) {
+      const mia = _lista(ESITI_DB, categoria, brand);
+      const hit = mia?.find((e) => e.chiave === id);
+      if (hit) return daEsito(hit);
+      if (brandEsitiKey(brand)) {
+        const gen = ESITI_DB.get(categoria)?.find((e) => e.chiave === id);
+        if (gen) return daEsito(gen);
+      }
+    }
     for (const lista of ESITI_DB.values()) {
       const hit = lista.find((e) => e.chiave === id);
       if (hit) return daEsito(hit);
     }
   }
+  if (categoria) {
+    const s = getStatiNegozioBase(categoria).find((x) => x.id === id);
+    if (s) return s;
+  }
   const s = TUTTI_STATI_NEGOZIO.find((x) => x.id === id);
   return s || STATI_NEGOZIO[0];
+}
+
+/** VOCABOLARIO etichetta→chiave per la ricostruzione dello storico
+ *  (malusStorico): unisce le liste hardcoded storiche e TUTTE le righe DB
+ *  della categoria — generale e ogni operatore, spente comprese — perche'
+ *  gli eventi persistono l'etichetta in chiaro e devono restare risolvibili
+ *  dopo rinomine e personalizzazioni per brand. La lista dell'operatore
+ *  della pratica vince sulle omonimie. */
+export function vocabolarioEtichette(categoria: string, brand?: string | null): Map<string, string> {
+  const out = new Map<string, string>();
+  getStatiNegozioBase(categoria).forEach((s) => out.set(s.label.toLowerCase(), s.id));
+  if (ESITI_DB) {
+    for (const [k, lista] of ESITI_DB) {
+      if (k !== categoria && !k.startsWith(categoria + "§")) continue;
+      lista.forEach((e) => out.set(e.etichetta.toLowerCase(), e.chiave));
+    }
+    _lista(ESITI_DB, categoria, brand)?.forEach((e) => out.set(e.etichetta.toLowerCase(), e.chiave));
+  }
+  return out;
 }
 
 /** Lista hardcoded storica: fallback + vocabolario per le etichette vecchie. */
