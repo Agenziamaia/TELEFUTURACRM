@@ -104,6 +104,23 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     const conferma = async () => {
         let paid: number | undefined = cashDone ? paidAmount : undefined;
         if (metodo === "CONTANTI" && !cashDone) {
+            // PRE-CHECK: lo scontrino è emettibile? Se no, NON si incassa (mai prendere
+            // contanti senza poter emettere lo scontrino).
+            setFase("stampa"); setMsg("Verifico lo scontrino…");
+            let chk: any = {};
+            try {
+                const res = await fetch("/api/vendita/scontrino", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ negozio: data.negozio, items: data.items, dryRun: true }),
+                });
+                chk = await res.json().catch(() => ({}));
+                if (!res.ok) chk.ok = false;
+            } catch (e: any) { chk = { ok: false, error: String(e?.message || e) }; }
+            if (!chk.ok) {
+                setFase("errore");
+                setMsg("Scontrino non emettibile (" + (chk.error || "voci senza reparto") + "). Incasso NON avviato.");
+                return;
+            }
             const r = await incassaContanti(daPagare, data.negozio);
             if (!r || !r.ok) {
                 setFase("errore");

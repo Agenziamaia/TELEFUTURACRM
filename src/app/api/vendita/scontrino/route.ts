@@ -62,6 +62,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "nessuna voce stampabile (reparto mancante o voci escluse)", esclusi }, { status: 400 });
     }
 
+    // Pre-check (dryRun): conferma che lo scontrino è emettibile SENZA metterlo in
+    // coda. Il modale lo chiama PRIMA di incassare i contanti, così NON prende soldi
+    // se lo scontrino non potrebbe uscire.
+    if (b.dryRun) return NextResponse.json({ ok: true, stampabili: items.length, esclusi });
+
     const totale = +(items.reduce((t, i) => t + i.unitPrice * i.quantity, 0)).toFixed(2);
     const payment: any = {
         description: b.paymentDescription || (Number(b.paymentType) === 0 ? "CONTANTE" : "CARTA"),
