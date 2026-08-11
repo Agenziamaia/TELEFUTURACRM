@@ -13,12 +13,11 @@ import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef, vaInTracking } 
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
 
-// POS scontrino/cassa: ATTIVO solo nei negozi elencati (env, separati da virgola,
-// es. "Donna Olimpia"). Vuoto/non impostato = SPENTO ovunque → il modale Incasso &
-// Scontrino NON compare e il flusso degli altri negozi resta identico. Si accende
-// impostando NEXT_PUBLIC_POS_SCONTRINO_STORES sul box e ridistribuendo.
-const POS_STORES = (process.env.NEXT_PUBLIC_POS_SCONTRINO_STORES || "").split(",").map((s) => s.trim()).filter(Boolean);
-const posScontrinoAbilitato = (neg) => POS_STORES.includes(String(neg || "").trim());
+// POS scontrino/cassa: ATTIVO solo nei negozi in tabella pos_scontrino_negozi
+// (caricata nel componente) + eventuale override da env. Vuoto = SPENTO ovunque →
+// il modale Incasso & Scontrino NON compare e gli altri negozi restano identici.
+// L'interruttore per negozio si gestisce a DB (niente env sul box).
+const POS_STORES_ENV = (process.env.NEXT_PUBLIC_POS_SCONTRINO_STORES || "").split(",").map((s) => s.trim()).filter(Boolean);
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
@@ -5186,6 +5185,18 @@ function CRM() {
   const [submitting, setSubmitting] = useState(false);
   // POS: dati per il modale Incasso & Scontrino (si apre a vendita registrata).
   const [scontrino, setScontrino] = useState<ScontrinoData | null>(null);
+  // Negozi con POS attivo: caricati da DB (pos_scontrino_negozi) → interruttore
+  // on/off per negozio senza toccare il box. Env resta come override.
+  const posStoresRef = useRef<string[]>([]);
+  useEffect(() => {
+    supabase.from("pos_scontrino_negozi").select("negozio").then(({ data }) => {
+      posStoresRef.current = (data || []).map((r: any) => String(r.negozio || "").trim());
+    });
+  }, []);
+  const posScontrinoAbilitato = (neg) => {
+    const n = String(neg || "").trim();
+    return posStoresRef.current.includes(n) || POS_STORES_ENV.includes(n);
+  };
   // Voci del carrello candidate allo scontrino (prezzate). Reparto/va_in_scontrino
   // li decide il server da marg_items; qui passiamo tutte le righe con prezzo.
   const buildScontrinoItems = (list) => (list || [])
