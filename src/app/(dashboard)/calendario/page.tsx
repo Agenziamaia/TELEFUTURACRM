@@ -1375,7 +1375,12 @@ export default function Calendario() {
     const STATO_CALL_DA_ESITO: Record<string, string> = {
         attivato: "Attivato",
         attivato_diverso_negozio: "Attivato Altro Negozio",
-        ko: "Andato Non Interessato",
+        // FLUSSO A DUE STEP (Luca 11/08): il negozio esita "Venuto Non
+        // Interessato" → la pratica caller prende lo STESSO stato (lavorabile,
+        // ⚡ dal giorno dopo: il caller richiama e verifica). "Andato Non
+        // Interessato" è lo step SUCCESSIVO, definitivo, che mette SOLO il
+        // caller dopo la verifica telefonica — e archivia la pratica.
+        ko: "Venuto Non Interessato",
         no_show: "Non andato",
         annullato: "Annullato",
     };
