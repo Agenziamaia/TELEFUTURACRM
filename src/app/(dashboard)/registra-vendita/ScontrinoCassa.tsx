@@ -2,12 +2,15 @@
 
 import { useCallback, useState } from "react";
 import { createPortal } from "react-dom";
+import { supabase } from "@/lib/supabaseClient";
 import { arrotonda5, totaleRighe, PAGAMENTO, type RigaScontrino, type MetodoPagamento } from "@/lib/pos";
 
 /* Modale "Incasso & Scontrino" — l'output fiscale di Registra Vendita.
-   Si apre a vendita registrata: sceglie il pagamento, per i CONTANTI comanda la
-   cassa automatica pagAmico (ponte locale) mostrando l'incasso live, poi mette in
-   coda lo scontrino fiscale sul RT Epson (/api/vendita/scontrino → print_jobs).
+   Si apre a vendita registrata: sceglie il pagamento, per i CONTANTI mette in coda
+   un incasso sulla cassa automatica pagAmico (l'agente locale del negozio la comanda
+   e riporta incassato/resto), poi mette in coda lo scontrino fiscale sul RT.
+   Tutto passa dalla coda cloud (print_jobs) → l'agente del negozio esegue sul LAN:
+   funziona da qualsiasi dispositivo, nessun collegamento diretto dal browser.
    Contanti = guida la macchina; Carta/Finanziamento = solo scontrino (il POS è a
    parte). Il reset della vendita avviene alla chiusura (onDone). */
 
@@ -17,15 +20,9 @@ export interface ScontrinoData {
     deviceUrl?: string;
 }
 
-function bridgeUrl(): string {
-    if (typeof window !== "undefined") {
-        const ls = window.localStorage.getItem("pagamico_bridge");
-        if (ls) return ls;
-    }
-    return process.env.NEXT_PUBLIC_PAGAMICO_BRIDGE_URL || "http://localhost:4801";
-}
-
 const eur = (n: number) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
+const POLL_MS = 1500;
+const CASH_TIMEOUT_MS = 240000; // 4 min: il cliente inserisce i contanti
 
 type Fase = "scelta" | "incasso" | "stampa" | "fatto" | "errore";
 
@@ -35,59 +32,37 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     const [incassato, setIncassato] = useState(0);
     const [resto, setResto] = useState(0);
     const [msg, setMsg] = useState("");
-    const [sessId, setSessId] = useState<string | null>(null);
     const [esclusi, setEsclusi] = useState<{ description: string; motivo: string }[]>([]);
 
-    const incassaContanti = useCallback(async (amount: number) => {
+    // Incasso contanti via coda: enqueue → poll del job finché done/error.
+    const incassaContanti = useCallback(async (amount: number, negozio: string | null) => {
         setFase("incasso");
-        setIncassato(0);
-        setMsg(`Inserire ${eur(amount)} nella cassa…`);
+        setMsg(`In attesa di ${eur(amount)} — il cliente inserisce i contanti nella cassa.`);
         try {
-            const res = await fetch(`${bridgeUrl()}/collect?stream=1`, {
+            const res = await fetch("/api/vendita/incasso", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ amount }),
+                body: JSON.stringify({ negozio, amount }),
             });
-            if (!res.ok || !res.body) throw new Error("cassa non raggiungibile");
-            const reader = res.body.getReader();
-            const dec = new TextDecoder();
-            let buf = "";
-            let done: any = null;
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.jobId) throw new Error(j.error || "cassa non disponibile");
+            const jobId = j.jobId as string;
+            const start = Date.now();
             for (;;) {
-                const { value, done: rdone } = await reader.read();
-                if (rdone) break;
-                buf += dec.decode(value, { stream: true });
-                let idx: number;
-                while ((idx = buf.indexOf("\n\n")) >= 0) {
-                    const chunk = buf.slice(0, idx);
-                    buf = buf.slice(idx + 2);
-                    const evM = /event: (.*)/.exec(chunk);
-                    const dM = /data: (.*)/.exec(chunk);
-                    if (!dM) continue;
-                    let d: any;
-                    try { d = JSON.parse(dM[1]); } catch { continue; }
-                    const ev = evM?.[1];
-                    if (ev === "start") setSessId(d.id ?? null);
-                    else if (ev === "progress") setIncassato(d.incassato || 0);
-                    else if (ev === "done") done = d;
+                await new Promise((r) => setTimeout(r, POLL_MS));
+                const { data: row } = await supabase.from("print_jobs").select("status, result").eq("id", jobId).single();
+                if (row && (row.status === "done" || row.status === "error")) {
+                    let out: any = {};
+                    try { out = JSON.parse(row.result || "{}"); } catch { /* result non-JSON */ }
+                    const ok = row.status === "done" && out.ok !== false && !out.errore;
+                    return { ok, incassato: out.incassato ?? (ok ? amount : 0), resto: out.resto ?? 0, erroreMsg: out.msg || (row.status === "error" ? "errore cassa" : "") };
                 }
+                if (Date.now() - start > CASH_TIMEOUT_MS) return { ok: false, erroreMsg: "tempo scaduto: agente non attivo o cassa non risponde" };
             }
-            return done || { ok: false, erroreMsg: "nessuna risposta dalla cassa" };
         } catch (e: any) {
             return { ok: false, erroreMsg: String(e?.message || e) };
         }
     }, []);
-
-    const annullaCassa = useCallback(async () => {
-        if (!sessId) return;
-        try {
-            await fetch(`${bridgeUrl()}/cancel`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: sessId }),
-            });
-        } catch { /* la macchina restituisce comunque i contanti al timeout */ }
-    }, [sessId]);
 
     const stampaScontrino = useCallback(async (paidAmount?: number) => {
         setFase("stampa");
@@ -103,7 +78,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                     items: data?.items ?? [],
                     paymentType: pag.paymentType,
                     paymentDescription: pag.description,
-                    paidAmount: paidAmount,
+                    paidAmount,
                 }),
             });
             const j = await res.json().catch(() => ({}));
@@ -121,7 +96,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     const conferma = async () => {
         let paid: number | undefined;
         if (metodo === "CONTANTI") {
-            const r = await incassaContanti(daPagare);
+            const r = await incassaContanti(daPagare, data.negozio);
             if (!r || !r.ok) {
                 setFase("errore");
                 setMsg("Incasso non riuscito: " + (r?.erroreMsg || "annullato"));
@@ -164,7 +139,6 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                     <span className="text-xs text-slate-400">{data.negozio || "—"}</span>
                 </div>
 
-                {/* riepilogo voci */}
                 <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 max-h-44 overflow-y-auto">
                     {data.items.map((r, i) => (
                         <div key={i} className="flex items-center justify-between px-3 py-1.5 text-sm">
@@ -200,10 +174,10 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                 )}
 
                 {fase === "incasso" && (
-                    <div className="space-y-3 text-center py-2">
+                    <div className="space-y-3 text-center py-3">
+                        <div className="text-3xl animate-pulse">💶</div>
                         <p className="text-sm text-slate-300">{msg}</p>
-                        <div className="text-3xl font-bold text-emerald-300 tabular-nums">{eur(incassato)} <span className="text-base text-slate-500">/ {eur(daPagare)}</span></div>
-                        <button type="button" onClick={annullaCassa} className="text-xs text-rose-300 hover:text-rose-200 underline">Annulla incasso</button>
+                        <p className="text-[11px] text-slate-500">Per annullare, usa lo schermo della cassa.</p>
                     </div>
                 )}
 
