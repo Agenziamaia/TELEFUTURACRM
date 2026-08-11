@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { waIstanzeVisibili } from "@/lib/waVisibilita";
 import { designatiIncarico } from "@/lib/incarichi";
 import {
     Home,
@@ -162,10 +163,11 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
         const load = async () => {
             try { const rows = await getInbox(user.id); if (alive) setChatUnread(rows.reduce((s, r) => s + (r.unread || 0), 0)); } catch { }
             try {
-                // SOLO utenze CONNESSE (caso Sheekel 11/08): l'inbox nasconde le
-                // chat delle utenze disconnesse — il badge non deve contarle
+                // STESSA visibilità dell'inbox (Sheekel 11/08): ogni caller conta
+                // SOLO i propri numeri (store manager il negozio, Luca tutto) e
+                // solo le utenze CONNESSE — il badge = ciò che l'inbox mostra
                 const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio, status");
-                const mine = (insts || []).filter((i: any) => (i.owner_user_id === user.id || (i.negozio && myStores.some((s) => sameStore(i.negozio, s)))) && i.status === "connessa").map((i: any) => i.id);
+                const mine = waIstanzeVisibili((insts || []) as never[], user.id, user.role, myStores, { soloConnesse: true }).map((i: any) => i.id);
                 let n = 0;
                 if (mine.length) { const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine); n = (data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
                 if (alive) setWaUnread(n);

@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { waScopeDi } from "@/lib/waVisibilita";
 import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut, Trash2, ChevronLeft, Pencil, Ban } from "lucide-react";
 import { cn } from "@/utils";
 
@@ -64,12 +65,9 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // generico (un secondo admin non vedrebbe tutto), non il dev, non l'amministrativo.
     // I numeri WhatsApp possono essere personali. Legato all'ID reale, cosi' con il
     // "guarda come" Luca vede comunque la vista ristretta dell'utente simulato.
-    const LUCA_ID = "0355d28b-968f-4089-93b7-b8b5eeeda40c";
-    const waScope: "all" | "store" | "own" = useMemo(() => {
-        if (user?.id === LUCA_ID) return "all";
-        if (user?.role === "store_manager") return "store";
-        return "own";
-    }, [user?.id, user?.role]);
+    // regola estratta in lib condivisa (Sheekel 11/08): inbox e BADGE della
+    // voce Chat devono usare la stessa identica visibilità
+    const waScope: "all" | "store" | "own" = useMemo(() => waScopeDi(user?.id, user?.role), [user?.id, user?.role]);
     const visibleInstances = useMemo(() => {
         if (waScope === "all") return instances;
         if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id);

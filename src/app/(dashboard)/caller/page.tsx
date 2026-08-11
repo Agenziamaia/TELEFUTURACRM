@@ -24,7 +24,7 @@ import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
-import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller, type MalusLive } from "@/lib/callerMalus";
+import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller, type MalusLive } from "@/lib/callerMalus";
 import { CallerRegoleModal } from "@/components/CallerRegole";
 import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
 import { ArchivioMalusCaller } from "./_components/ArchivioMalusCaller";
@@ -737,7 +737,17 @@ function CallerPageInner() {
         const _ult = _st.length ? _st[_st.length - 1] : null;
         if (_ult && _ult.caller === "Import VDL") return { fase: "da_lavorare", giorniMalus: 0, importo: 0, dalMalus: null };
         const operativi = giorniBadge ? (giorniBadge.get(c.caller) || new Set<string>()) : null;
-        const fase = faseDi(lavorativiDopo(rif, oggi, operativi), r);
+        // GIORNI = GIORNI BADGIATI solo per la CORSA (Luca 11/08): "Da lavorare"
+        // segue il flusso NATURALE (lun-sab: la pratica ci deve andare comunque);
+        // warning e malus scorrono SOLO nei giorni in cui il caller ha timbrato —
+        // niente valanghe di malus al rientro da ferie/assenze.
+        const gNaturali = lavorativiDopo(rif, oggi, null);
+        const gBadge = lavorativiDopo(rif, oggi, operativi);
+        const fase: FaseCaller = r.esente ? "ok"
+            : (r.giorni_malus != null && gBadge >= r.giorni_malus) ? "malus"
+                : (r.giorni_warning != null && gBadge >= r.giorni_warning) ? "warning"
+                    : (r.giorni_lavorare != null && gNaturali >= r.giorni_lavorare) ? "da_lavorare"
+                        : "ok";
         const dalMalus = fase === "malus" && r.giorni_malus != null ? aggiungiLavorativi(rif, r.giorni_malus, operativi) : null;
         const giorniMalus = dalMalus ? lavorativiDopo(dalMalus, oggi, operativi) + 1 : 0;
         return { fase: dalMalus || fase !== "malus" ? fase : "warning", giorniMalus, importo: Math.round(giorniMalus * r.malus_giorno * 100) / 100, dalMalus };

@@ -29,6 +29,7 @@ import {
   calcolaMalus,
   impostaRegoleTracking,
   impostaEsitiTracking,
+  impostaCalendarioChiusure,
   esitoCompletato,
   getStatiAdminPerCategoria,
   esitoAdminDefinitivo,
@@ -1380,6 +1381,17 @@ export default function TrackingPdaPage() {
       // senza tabella) valgono le liste hardcoded, il CRM non si rompe mai
       const { data: es } = await supabase.from("tracking_esiti").select("*").order("ordine");
       if (es && es.length) { impostaEsitiTracking(es as never); setRegoleV((v) => v + 1); }
+      // CHIUSURE (Luca 11/08): festivi globali + chiusure straordinarie per
+      // negozio (Amministrazione → Orari & Chiusure) — nei giorni chiusi
+      // warning/malus non corrono. Best-effort: senza dati vale il lun-sab.
+      try {
+        const [fest, chius] = await Promise.all([
+          supabase.from("giorni_festivi").select("giorno"),
+          supabase.from("chiusure_negozio").select("store, dal, al"),
+        ]);
+        impostaCalendarioChiusure((fest.data ?? []) as never, (chius.data ?? []) as never);
+        setRegoleV((v) => v + 1);
+      } catch { /* calendario assente: comportamento storico */ }
     })();
   }, []);
 

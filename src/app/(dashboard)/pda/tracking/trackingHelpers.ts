@@ -1,3 +1,4 @@
+import { sameStore } from "@/lib/visibleStores";
 import {
   CATEGORIE,
   STATI_NEGOZIO,
@@ -39,6 +40,51 @@ function parseRuleDate(dataStr: string): Date | null {
   const from = new Date(year, month, day);
   if (isNaN(from.getTime())) return null;
   return from;
+}
+
+/* ── CALENDARIO CHIUSURE (Luca 11/08) ──
+   La domenica non conta già; qui si aggiungono i FESTIVI (giorni_festivi,
+   globali) e le CHIUSURE STRAORDINARIE per negozio (chiusure_negozio,
+   Amministrazione → Orari & Chiusure): nei giorni in cui il negozio della
+   pratica è CHIUSO, warning e malus NON corrono — la pratica arriva al
+   massimo a ⚡ Da lavorare (che segue il calendario naturale) e alla
+   riapertura il countdown riparte da dov'era. Registro impostato dalla
+   pagina; vuoto = comportamento storico (solo lun-sab). */
+let FESTIVI: Set<string> | null = null;
+let CHIUSURE: { store: string; dal: string; al: string }[] | null = null;
+export function impostaCalendarioChiusure(
+  festivi: { giorno: string }[] | null | undefined,
+  chiusure: { store: string; dal: string; al: string }[] | null | undefined,
+) {
+  FESTIVI = festivi?.length ? new Set(festivi.map((f) => String(f.giorno).slice(0, 10))) : null;
+  CHIUSURE = chiusure?.length ? chiusure : null;
+}
+const _ymd = (d: Date) => {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+};
+function giornoChiuso(d: Date, negozio?: string): boolean {
+  const ymd = _ymd(d);
+  if (FESTIVI?.has(ymd)) return true;
+  if (negozio && CHIUSURE) {
+    return CHIUSURE.some((c) => sameStore(c.store, negozio) && ymd >= String(c.dal).slice(0, 10) && ymd <= String(c.al).slice(0, 10));
+  }
+  return false;
+}
+/** Giorni lavorativi col negozio APERTO (lun-sab, meno festivi e chiusure). */
+export function giorniApertiDa(dataStrIta: string, negozio?: string): number {
+  const from = parseRuleDate(dataStrIta);
+  if (!from) return 0;
+  const to = new Date();
+  to.setHours(0, 0, 0, 0);
+  from.setHours(0, 0, 0, 0);
+  let count = 0;
+  const cur = new Date(from);
+  while (cur < to) {
+    cur.setDate(cur.getDate() + 1);
+    if (cur.getDay() !== 0 && !giornoChiuso(cur, negozio)) count++;
+  }
+  return count;
 }
 
 export function giorniLavorativiDa(dataStrIta: string): number {
@@ -366,11 +412,19 @@ function misure(row: TrackingRow) {
   // eventi di modifica contratto (senza `data`) non azzerano il contatore
   const ultimo = ultimoEventoDatato(row.storia);
   const ggUltimo = ultimo ? giorniLavorativiDa(ultimo.data) : null;
+  // varianti APERTI (Luca 11/08): warning e malus corrono solo nei giorni in
+  // cui il negozio della pratica era aperto (festivi e chiusure esclusi)
+  const aGg = giorniApertiDa(row.dataInserimento, row.negozio);
+  const aUltimo = ultimo ? giorniApertiDa(ultimo.data, row.negozio) : null;
   return {
     gg,
     ggSenza: ultimo ? null : gg,
     ggSucc: ggUltimo,
     ggAgg: ultimo ? (ggUltimo as number) : gg,
+    aGg,
+    aSenza: ultimo ? null : aGg,
+    aSucc: aUltimo,
+    aAgg: ultimo ? (aUltimo as number) : aGg,
   };
 }
 const _hit = (soglia: number | null | undefined, valore: number | null) =>
@@ -388,8 +442,9 @@ function livelloRegole(row: TrackingRow): 0 | 1 | 2 | 3 {
   let speciale: 0 | 1 | 2 | 3 = 0;
   if (row.categoria === "piva") {
     if (row.statoNegozio === "cliente_irreperibile") {
-      if (m.ggAgg > 4) speciale = 3;
-      else if (m.ggAgg >= 2) speciale = 2;
+      // warning/malus sul calendario APERTO del negozio (Luca 11/08)
+      if (m.aAgg > 4) speciale = 3;
+      else if (m.aAgg >= 2) speciale = 2;
       else speciale = 1;
     }
   } else if (row.categoria === "sky") {
@@ -401,9 +456,12 @@ function livelloRegole(row: TrackingRow): 0 | 1 | 2 | 3 {
     if (statiCritici.includes(row.statoNegozio)) speciale = 2;
   }
   if (!r) return speciale;
+  // CHIUSURE (Luca 11/08): ⚡ Da lavorare segue il calendario NATURALE (la
+  // pratica ci deve arrivare comunque); warning e malus corrono SOLO nei
+  // giorni col negozio aperto — a negozio chiuso la corsa si congela.
   let lv: 0 | 1 | 2 | 3 = 0;
-  if (_hit(r.senza_malus, m.ggSenza) || _hit(r.succ_malus, m.ggSucc) || _hit(r.compl_malus, m.gg)) lv = 3;
-  else if (_hit(r.senza_warning, m.ggSenza) || _hit(r.succ_warning, m.ggSucc) || _hit(r.compl_warning, m.gg)) lv = 2;
+  if (_hit(r.senza_malus, m.aSenza) || _hit(r.succ_malus, m.aSucc) || _hit(r.compl_malus, m.aGg)) lv = 3;
+  else if (_hit(r.senza_warning, m.aSenza) || _hit(r.succ_warning, m.aSucc) || _hit(r.compl_warning, m.aGg)) lv = 2;
   else if (_hit(r.senza_lavorare, m.ggSenza) || _hit(r.succ_lavorare, m.ggSucc) || _hit(r.compl_lavorare, m.gg)) lv = 1;
   return (lv >= speciale ? lv : speciale) as 0 | 1 | 2 | 3;
 }
@@ -423,18 +481,19 @@ export function isMalusRow(row: TrackingRow): boolean {
 export function calcolaMalus(row: TrackingRow): number {
   if (livelloRegole(row) !== 3) return 0;
   const m = misure(row);
-  // malus AMMINISTRATIVO: €/gg dell'esito admin × giorni lavorativi
+  // malus AMMINISTRATIVO: €/gg dell'esito admin × giorni col negozio APERTO
   // dall'ultimo aggiornamento (l'evento admin riparte il conteggio)
   const mAdm = malusAdminGiorno(row.statoAdmin, row.categoria, row.brand);
-  if (mAdm > 0) return Math.round(Math.max(1, m.ggAgg) * mAdm * 100) / 100;
+  if (mAdm > 0) return Math.round(Math.max(1, m.aAgg) * mAdm * 100) / 100;
   const r = regolaDi(row.categoria);
   if (!r) return 0;
+  // CHIUSURE (Luca 11/08): l'eccedenza matura solo nei giorni aperti
   let ecc = 0;
-  if (_hit(r.senza_malus, m.ggSenza)) ecc = Math.max(ecc, (m.ggSenza as number) - (r.senza_malus as number) + 1);
-  if (_hit(r.succ_malus, m.ggSucc)) ecc = Math.max(ecc, (m.ggSucc as number) - (r.succ_malus as number) + 1);
-  if (_hit(r.compl_malus, m.gg)) ecc = Math.max(ecc, m.gg - (r.compl_malus as number) + 1);
-  if (row.categoria === "piva" && row.statoNegozio === "cliente_irreperibile" && m.ggAgg > 4)
-    ecc = Math.max(ecc, m.ggAgg - 4);
+  if (_hit(r.senza_malus, m.aSenza)) ecc = Math.max(ecc, (m.aSenza as number) - (r.senza_malus as number) + 1);
+  if (_hit(r.succ_malus, m.aSucc)) ecc = Math.max(ecc, (m.aSucc as number) - (r.succ_malus as number) + 1);
+  if (_hit(r.compl_malus, m.aGg)) ecc = Math.max(ecc, m.aGg - (r.compl_malus as number) + 1);
+  if (row.categoria === "piva" && row.statoNegozio === "cliente_irreperibile" && m.aAgg > 4)
+    ecc = Math.max(ecc, m.aAgg - 4);
   return ecc * (Number(r.malus_euro) || 0);
 }
 

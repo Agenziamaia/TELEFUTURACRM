@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { waIstanzeVisibili } from "@/lib/waVisibilita";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
@@ -420,11 +421,10 @@ function ChatPageInner() {
   const loadChannelCounts = useCallback(async () => {
     if (!meId) return;
     try {
-      // SOLO utenze CONNESSE (caso Sheekel 11/08): l'inbox nasconde le chat
-      // delle utenze disconnesse, quindi il badge non deve contarle — sennò
-      // mostra non-letti che dentro la sezione non si trovano
+      // STESSA visibilità dell'inbox (Sheekel 11/08): ogni caller conta SOLO i
+      // propri numeri (store manager il negozio, Luca tutto), solo CONNESSE
       const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio, status");
-      const mine = (insts || []).filter((i: any) => (i.owner_user_id === meId || (i.negozio && myStores.some((s) => sameStore(i.negozio, s)))) && i.status === "connessa").map((i: any) => i.id);
+      const mine = waIstanzeVisibili((insts || []) as never[], meId, user?.role, myStores, { soloConnesse: true }).map((i: any) => i.id);
       if (mine.length) {
         const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine);
         setWaUnread((data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0));
