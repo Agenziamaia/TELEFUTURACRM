@@ -1275,14 +1275,14 @@ function CallerPageInner() {
     // sui non-risposto spariscono dalla sezione caller — restano a database
     // (e nello storico del cliente: l'ho chiamato su tre numeri) ma non si
     // portano avanti righe doppie.
-    async function assorbiPraticheGemelle(c: Call, callId: string) {
+    async function assorbiPraticheGemelle(c: Call, callId: string, opts: { ancheTraDeboli?: boolean } = {}) {
         const statoRef = c.statoNew || c.stato;
         const idf = String((c.tipo_cliente === "business" ? c.piva : c.cf) || "").trim().toUpperCase();
         if (!statoRef || !idf) return;
         const eDebole = (s: string) => s === "Nuovo" || NRD_STATI.includes(s);
         try {
             const campoIdf = c.tipo_cliente === "business" ? "piva" : "cf";
-            const { data: gemelle } = await supabase.from("calls").select("id, stato, assorbita_da").ilike(campoIdf, idf).neq("id", callId);
+            const { data: gemelle } = await supabase.from("calls").select("id, stato, assorbita_da").ilike(campoIdf, idf).neq("id", callId).order("created_at", { ascending: true });
             const rows = (gemelle ?? []) as { id: string; stato: string; assorbita_da: string | null }[];
             if (!eDebole(statoRef)) {
                 // la riga corrente e' quella VINCENTE (il cliente ha risposto):
@@ -1294,8 +1294,14 @@ function CallerPageInner() {
             } else {
                 // la riga corrente e' DEBOLE (Nuovo/NR): se il cliente ha gia'
                 // una riga vincente — es. sto solo riportando il CF sulle
-                // chiamate fallite di stamattina — e' la CORRENTE a sparire
-                const vincente = rows.find((g) => !eDebole(g.stato) && !g.assorbita_da);
+                // chiamate fallite di stamattina — e' la CORRENTE a sparire.
+                // ASSOCIAZIONE A SCHEDA ESISTENTE (Sheekel 11/08, ok Luca): nel
+                // flusso "Aggiorna dati" la corrente sparisce anche se l'altra
+                // riga e' a sua volta debole (caso Cold NR1 + Cold NR1): il
+                // numero ormai sta sulla scheda cliente, la lavorazione vive
+                // sulla gemella piu' vecchia — niente righe doppie.
+                const vincente = rows.find((g) => !eDebole(g.stato) && !g.assorbita_da)
+                    || (opts.ancheTraDeboli ? rows.find((g) => !g.assorbita_da) : undefined);
                 if (!vincente) return;
                 const { error } = await supabase.from("calls").update({ assorbita_da: vincente.id }).eq("id", callId);
                 if (error && !/column/i.test(error.message || "")) console.warn("assorbimento non riuscito:", error.message);
@@ -1338,7 +1344,9 @@ function CallerPageInner() {
         }
         if (error) { alert("Dati NON aggiornati: " + error.message); return; }
         await creaAnagraficaSeManca(editCall);
-        await assorbiPraticheGemelle(editCall, editCall.id);
+        // "Aggiorna dati" = associazione alla scheda: le doppie spariscono
+        // anche tra righe deboli (Cold NR1 associata → assorbita, Sheekel 11/08)
+        await assorbiPraticheGemelle(editCall, editCall.id, { ancheTraDeboli: true });
         await fetchCalls();
         closeModal();
     }
