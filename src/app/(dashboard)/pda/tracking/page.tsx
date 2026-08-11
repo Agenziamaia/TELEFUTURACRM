@@ -1385,11 +1385,16 @@ export default function TrackingPdaPage() {
       // negozio (Amministrazione → Orari & Chiusure) — nei giorni chiusi
       // warning/malus non corrono. Best-effort: senza dati vale il lun-sab.
       try {
-        const [fest, chius] = await Promise.all([
+        const [fest, chius, dom] = await Promise.all([
           supabase.from("giorni_festivi").select("giorno"),
           supabase.from("chiusure_negozio").select("store, dal, al"),
+          supabase.from("stores").select("name").eq("domenica_aperta", true),
         ]);
-        impostaCalendarioChiusure((fest.data ?? []) as never, (chius.data ?? []) as never);
+        impostaCalendarioChiusure(
+          (fest.data ?? []) as never,
+          (chius.data ?? []) as never,
+          ((dom.data ?? []) as { name: string }[]).map((s) => s.name),
+        );
         setRegoleV((v) => v + 1);
       } catch { /* calendario assente: comportamento storico */ }
     })();

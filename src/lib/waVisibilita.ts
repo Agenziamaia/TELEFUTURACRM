@@ -17,6 +17,18 @@ export function waScopeDi(userId?: string | null, role?: string | null): WaScope
     return "own";
 }
 
+/** BADGE della voce Chat (Luca 11/08, round 3): il pallino conta SOLO il
+ *  numero PERSONALE (owner) — chi ha visibilità completa (Luca) o di negozio
+ *  non deve vedere notifiche di chat che non sono le sue. Nessun numero
+ *  configurato = nessun pallino. Solo utenze connesse. Le notifiche degli
+ *  ALTRI numeri gestiti si vedono DENTRO la sezione, sul chip di ogni numero. */
+export function waIstanzeBadge<T extends { id: string; owner_user_id?: string | null; status?: string | null }>(
+    instances: T[],
+    userId: string | null | undefined,
+): T[] {
+    return instances.filter((i) => !!userId && i.owner_user_id === userId && i.status === "connessa");
+}
+
 export function waIstanzeVisibili<T extends { id: string; owner_user_id?: string | null; negozio?: string | null; status?: string | null }>(
     instances: T[],
     userId: string | null | undefined,

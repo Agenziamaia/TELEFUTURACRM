@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
-import { waIstanzeVisibili } from "@/lib/waVisibilita";
+import { waIstanzeBadge } from "@/lib/waVisibilita";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
@@ -421,10 +421,11 @@ function ChatPageInner() {
   const loadChannelCounts = useCallback(async () => {
     if (!meId) return;
     try {
-      // STESSA visibilità dell'inbox (Sheekel 11/08): ogni caller conta SOLO i
-      // propri numeri (store manager il negozio, Luca tutto), solo CONNESSE
-      const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio, status");
-      const mine = waIstanzeVisibili((insts || []) as never[], meId, user?.role, myStores, { soloConnesse: true }).map((i: any) => i.id);
+      // BADGE = SOLO il numero PERSONALE (Luca 11/08): chi vede tutto non deve
+      // avere il pallino per chat non sue; le notifiche degli altri numeri
+      // stanno sul chip di ogni numero dentro la scheda WhatsApp
+      const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, status");
+      const mine = waIstanzeBadge((insts || []) as never[], meId).map((i: any) => i.id);
       if (mine.length) {
         const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine);
         setWaUnread((data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0));

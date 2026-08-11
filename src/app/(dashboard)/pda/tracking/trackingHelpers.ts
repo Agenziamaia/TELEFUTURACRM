@@ -52,18 +52,27 @@ function parseRuleDate(dataStr: string): Date | null {
    pagina; vuoto = comportamento storico (solo lun-sab). */
 let FESTIVI: Set<string> | null = null;
 let CHIUSURE: { store: string; dal: string; al: string }[] | null = null;
+// negozi OPERATIVI la domenica (stores.domenica_aperta, Luca 11/08): per loro
+// la domenica conta come giorno aperto — niente assunzione lun-sab per tutti
+let DOMENICALI: string[] | null = null;
 export function impostaCalendarioChiusure(
   festivi: { giorno: string }[] | null | undefined,
   chiusure: { store: string; dal: string; al: string }[] | null | undefined,
+  domenicali?: string[] | null,
 ) {
   FESTIVI = festivi?.length ? new Set(festivi.map((f) => String(f.giorno).slice(0, 10))) : null;
   CHIUSURE = chiusure?.length ? chiusure : null;
+  DOMENICALI = domenicali?.length ? domenicali : null;
 }
 const _ymd = (d: Date) => {
   const p = (n: number) => String(n).padStart(2, "0");
   return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 };
 function giornoChiuso(d: Date, negozio?: string): boolean {
+  if (d.getDay() === 0) {
+    const apertoDomenica = !!negozio && !!DOMENICALI?.some((s) => sameStore(s, negozio));
+    if (!apertoDomenica) return true;
+  }
   const ymd = _ymd(d);
   if (FESTIVI?.has(ymd)) return true;
   if (negozio && CHIUSURE) {
@@ -71,7 +80,8 @@ function giornoChiuso(d: Date, negozio?: string): boolean {
   }
   return false;
 }
-/** Giorni lavorativi col negozio APERTO (lun-sab, meno festivi e chiusure). */
+/** Giorni col negozio APERTO (domeniche incluse se il negozio è domenicale,
+ *  meno festivi e chiusure straordinarie). */
 export function giorniApertiDa(dataStrIta: string, negozio?: string): number {
   const from = parseRuleDate(dataStrIta);
   if (!from) return 0;
@@ -82,7 +92,7 @@ export function giorniApertiDa(dataStrIta: string, negozio?: string): number {
   const cur = new Date(from);
   while (cur < to) {
     cur.setDate(cur.getDate() + 1);
-    if (cur.getDay() !== 0 && !giornoChiuso(cur, negozio)) count++;
+    if (!giornoChiuso(cur, negozio)) count++;
   }
   return count;
 }
