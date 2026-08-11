@@ -6,7 +6,10 @@ import { ErrorBoundaryClient } from "@/components/ErrorBoundaryClient";
 import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { MARG_PRODUCTS_LEGACY } from "@/lib/margMargini";
-import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
+import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento, appuntamentiPerCF, venditoreLavoraIn } from "@/lib/matchAppuntamento";
+import { registraContrattoBrands, registraContrattoAlbero, contrattoRichiestoPer } from "@/lib/contrattoAllegato";
+import { storeRoot as _storeRoot } from "@/lib/storeRoot";
+import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef, vaInTracking } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
 
@@ -267,8 +270,10 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
     const mVal=p.type==="fixed"?(p.fixedMargin||0):p.type==="pct"?(pVal*(p.pctMargin||0)/100):p.type==="cost"?(pVal-(p.companyCost||0)):0;
     if(p.needsImei){
       // SOLO telefoni scelti dal magazzino (Luca 31/07): niente IMEI a mano.
-      const units=usatoUnits.filter(u=>u.usatoId).map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId,prezzo:(u.prezzo!=null&&String(u.prezzo).trim()!=="")?(parseFloat(String(u.prezzo).replace(",","."))||null):null}));
+      const units=usatoUnits.filter(u=>u.usatoId).map(u=>({imei:u.imei||"",model:u.model||"",usatoId:u.usatoId,prezzo:(u.prezzo!=null&&String(u.prezzo).trim()!=="")?(parseFloat(String(u.prezzo).replace(",","."))||null):null,finanziato:u.finanziato||null,rate:u.finanziato==="si"?(parseInt(u.rate)||null):null}));
       if(units.length===0)return;
+      // MOD-44: la scelta finanziamento e' OBBLIGATORIA (e con Si' servono le rate)
+      if(usatoUnits.some(u=>u.usatoId&&(!u.finanziato||(u.finanziato==="si"&&!(parseInt(u.rate)>0)))))return;
       const _im=units.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
       if(new Set(_im).size!==_im.length)return;
       const q=units.length||1;
@@ -281,6 +286,8 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
   const _usImeis=usatoUnits.map(u=>String(u.imei||"").replace(/\D/g,"")).filter(x=>x.length===15);
   const hasDupImei=!!(selProd&&selProd.needsImei)&&(new Set(_usImeis).size!==_usImeis.length);
   const unitMissing=!!(selProd&&selProd.needsImei)&&!usatoUnits.some(u=>u.usatoId);
+  // MOD-44: gate finanziamento (scelta obbligatoria; Si' → rate)
+  const finMissing=!!(selProd&&selProd.needsImei)&&usatoUnits.some(u=>u.usatoId&&(!u.finanziato||(u.finanziato==="si"&&!(parseInt(u.rate)>0))));
   return(<div style={inline?{width:"100%"}:{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center",backdropFilter:"blur(4px)"}}>
     {!inline&&<style>{`@keyframes margSlideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>}
     <div style={inline?{background:"transparent",width:"100%",display:"flex",flexDirection:"column"}:{background:"var(--tf-w20)",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:760,maxHeight:"85vh",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 -4px 30px rgba(0,0,0,.2)",animation:"margSlideUp 0.32s cubic-bezier(0.22,1,0.36,1)"}}>
@@ -371,10 +378,35 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
                       </div>
                       <button onClick={()=>clearUnit(i)} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✕ cambia</button>
                     </div>
-                    <div style={{marginTop:8}}>
-                      <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Prezzo di VENDITA €</div>
-                      <input value={u.prezzo??""} onChange={e=>setUnit(i,"prezzo",e.target.value)} type="number" min="0" step="0.01" placeholder="es. 199"
-                        style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(u.prezzo??"").trim()===""?"2px solid #fd7e14":"1px solid var(--tf-w100)",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
+                    {/* MOD-44 (Luca 10/08): prezzo RISTRETTO + "Finanziato?" a destra
+                        nello stesso quadrato; con Sì e' obbligatorio il n. rate */}
+                    <div style={{marginTop:8,display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap"}}>
+                      <div style={{width:150}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Prezzo di VENDITA €</div>
+                        <input value={u.prezzo??""} onChange={e=>setUnit(i,"prezzo",e.target.value)} type="number" min="0" step="0.01" placeholder="es. 199"
+                          style={{width:"100%",padding:"9px 12px",borderRadius:8,border:String(u.prezzo??"").trim()===""?"2px solid #fd7e14":"1px solid var(--tf-w100)",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
+                      </div>
+                      <div>
+                        <div style={{fontSize:10,fontWeight:700,color:"var(--tf-8892b0)",marginBottom:3}}>Ha fatto un FINANZIAMENTO? <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+                        <div style={{display:"flex",gap:6}}>
+                          {["si","no"].map(v=>(
+                            <button key={v} type="button" onClick={()=>setUnit(i,"finanziato",v)}
+                              style={{padding:"8px 18px",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",
+                                border:u.finanziato===v?(v==="si"?"2px solid #f59e0b":"2px solid #28a745"):(!u.finanziato?"2px solid #fd7e14":"1px solid var(--tf-w100)"),
+                                background:u.finanziato===v?(v==="si"?"rgba(245,158,11,0.18)":"rgba(40,167,69,0.15)"):"var(--tf-w30)",
+                                color:u.finanziato===v?(v==="si"?"#fbbf24":"#4ade80"):"var(--tf-8892b0)"}}>
+                              {v==="si"?"Sì":"No"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {u.finanziato==="si"&&(
+                        <div style={{width:110}}>
+                          <div style={{fontSize:10,fontWeight:700,color:"var(--tf-fbbf24)",marginBottom:3}}>N. RATE <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
+                          <input value={u.rate??""} onChange={e=>setUnit(i,"rate",e.target.value.replace(/\D/g,"").slice(0,3))} type="number" min="1" placeholder="es. 24"
+                            style={{width:"100%",padding:"9px 12px",borderRadius:8,border:!(parseInt(u.rate)>0)?"2px solid #fd7e14":"2px solid #f59e0b",fontSize:14,fontWeight:800,boxSizing:"border-box"}}/>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ):(
@@ -401,9 +433,10 @@ const MargPOS=memo(({show,onClose,venditore,negozio,onAdd,editItem,inline})=>{
             <input value={importo} onChange={e=>setImporto(e.target.value)} type="number" min="0" step="0.01" placeholder="es. 29.90" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:importoMissing?"2px solid #dc3545":"1px solid var(--tf-w100)",fontSize:14,fontWeight:700,boxSizing:"border-box"}}/>
             {selProd.isTelCash&&<div style={{fontSize:10,color:"var(--tf-28a745)",fontWeight:700,marginTop:4}}>Margine 4% = € {(((parseFloat(importo)||0)*4)/100).toFixed(2)}</div>}</div>}
           {hasDupImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Sono presenti IMEI duplicati: correggili per registrare</div>}
-          {unitMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(253,126,20,0.12)",border:"1px solid #fdd3ad",color:"var(--tf-fd7e14)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Seleziona il telefono dal magazzino usati: si vendono solo dispositivi presenti a magazzino</div>}
-          {importoMissing&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
-          <button onClick={handleAdd} disabled={hasDupImei||importoMissing} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:(hasDupImei||importoMissing)?"var(--tf-cfcfcf)":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:(hasDupImei||importoMissing)?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
+          {/* MOD-44: via i banner ridondanti del flusso usato — la card unità
+              guida gia' (bordi arancio sui campi mancanti) */}
+          {importoMissing&&!selProd.needsImei&&<div style={{marginBottom:8,padding:"8px 12px",borderRadius:8,background:"rgba(220,53,69,0.12)",border:"1px solid #f5c2c2",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,textAlign:"center"}}>⛔ Inserisci il prezzo di vendita per registrare {selProd.name}</div>}
+          <button onClick={handleAdd} disabled={hasDupImei||importoMissing||unitMissing||finMissing} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:(hasDupImei||importoMissing||unitMissing||finMissing)?"var(--tf-cfcfcf)":"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:(hasDupImei||importoMissing||unitMissing||finMissing)?"not-allowed":"pointer"}}>✅ Registra {selProd.name}</button>
         </div>)}
       </div>
     </div>
@@ -1003,6 +1036,45 @@ const caricaListini = () => {
     .then(({ data }) => { _listiniTutti = data || []; return _listiniTutti; })
     .catch(() => { _listiniTutti = []; return _listiniTutti; });
   return _listiniAttesa;
+};
+// ── VALORI CONTO ECONOMICO (cantiere 07/08): coefficiente bundle Vodafone
+//    (ce_parametri 'bundle_coeff_default', frazione es. 0.60) + tariffe Kipoint
+//    (catalog_valori per offerta/dimensione). Cache di modulo come i listini.
+let _ceBundleCoeff = null, _ceTariffe = null, _ceValoriAttesa = null;
+const caricaCeValori = () => {
+  if (_ceValoriAttesa) return _ceValoriAttesa;
+  _ceValoriAttesa = Promise.all([
+    supabase.from("ce_parametri").select("valore_num").eq("chiave", "bundle_coeff_default").is("month", null),
+    supabase.from("catalog_valori").select("prezzo, margine_tipo, margine_valore, opzione:catalog_opzioni(nome, offerta:catalog_offerte(nome)), offerta_diretta:catalog_offerte(nome)").eq("attivo", true),
+  ]).then(([p, v]) => {
+    _ceBundleCoeff = Number(p.data?.[0]?.valore_num ?? 0.60);
+    _ceTariffe = v.data || [];
+    return true;
+  }).catch(() => { _ceBundleCoeff = 0.60; _ceTariffe = []; return true; });
+  return _ceValoriAttesa;
+};
+const _tariffaKipoint = (offertaNome, dimNome) => {
+  if (!_ceTariffe) return null;
+  const nrm = (s) => String(s || "").trim().toLowerCase();
+  if (dimNome) {
+    const r = _ceTariffe.find(t => t.opzione && nrm(t.opzione.nome) === nrm(dimNome) && nrm(t.opzione.offerta?.nome) === nrm(offertaNome));
+    if (r) return r;
+  }
+  return _ceTariffe.find(t => t.offerta_diretta && nrm(t.offerta_diretta.nome) === nrm(offertaNome)) || null;
+};
+// MOD-15: tariffa di UNA OPZIONE kipoint (servizio/assicurazione/supplemento).
+// SOLO match per opzione — niente fallback sull'offerta come _tariffaKipoint,
+// altrimenti un'opzione senza listino erediterebbe il prezzo della fascia.
+const _tariffaKipointOpz = (offertaNome, opzNome) => {
+  if (!_ceTariffe) return null;
+  const nrm = (s) => String(s || "").trim().toLowerCase();
+  return _ceTariffe.find(t => t.opzione && nrm(t.opzione.nome) === nrm(opzNome) && nrm(t.opzione.offerta?.nome) === nrm(offertaNome)) || null;
+};
+// MOD-15: range di peso codificato nel NOME offerta ("TBASE 0-2 kg" → {0,2}).
+// Data-driven: le fasce arrivano dal catalogo, niente soglie cablate.
+const _fasciaKg = (nome) => {
+  const m = String(nome || "").match(/(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)\s*kg/i);
+  return m ? { min: parseFloat(m[1].replace(",", ".")), max: parseFloat(m[2].replace(",", ".")) } : null;
 };
 const listinoPerModello = async (modello) => {
   const k = chiaveListino(modello);
@@ -3135,7 +3207,9 @@ const mobiliAgganciabili=(cats,sales,cart,brandId)=>{
     const f=d.fields||{};
     const codice=String(f["Codice Contratto"]||"").trim();
     const numero=_numeroMobile(f);
-    if(codice||numero)out.push({etichetta:`${s2.catProdotto} #${ri+1}${numero?" · "+numero:""}`,codice,numero});
+    // proposta Francesco 10/08: l'aggancio riporta anche il codice inserimento
+    const codIns=String(f["Codice Inserimento"]||"").trim();
+    if(codice||numero)out.push({etichetta:`${s2.catProdotto} #${ri+1}${numero?" · "+numero:""}`,codice,numero,codIns});
   });}));
   // mobile gia' nel CARRELLO dello stesso brand
   (cart||[]).forEach(gr=>{if(gr.brandId!==brandId)return;(gr.items||[]).forEach(it=>{
@@ -3143,7 +3217,8 @@ const mobiliAgganciabili=(cats,sales,cart,brandId)=>{
     const det=it.details||{};
     const codice=String(det["Codice Contratto"]||"").trim();
     const numero=_numeroMobile(det);
-    if(codice||numero)out.push({etichetta:`${it.catalogo?.prodotto||"Mobile"} (carrello)${numero?" · "+numero:""}`,codice,numero});
+    const codIns=String(det["Codice Inserimento"]||"").trim();
+    if(codice||numero)out.push({etichetta:`${it.catalogo?.prodotto||"Mobile"} (carrello)${numero?" · "+numero:""}`,codice,numero,codIns});
   });});
   // dedup su codice+numero (stesso mobile visto due volte)
   const visti=new Set();
@@ -3195,7 +3270,9 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
       // TETTO 3 condiviso Bundle+Accessori (il Kasko non conta)
       if((_opzBundle(o.nome)||_opzAccessorio(o.nome))&&contaVincolate(opz)>=MAX_BUNDLE_ACC)return;
       if(o.gruppo){(offSel?offSel.opzioni:[]).forEach(x=>{if(x.gruppo===o.gruppo)delete next[x.nome];});}
-      next[o.nome]=o.tipo==="numero"?1:true;}
+      // Bundle e Accessori hanno SEMPRE la quantità (Luca 07/08, Regola 1):
+      // il contatore appare anche se l'opzione a catalogo non è tipo "numero"
+      next[o.nome]=(o.tipo==="numero"||_opzBundle(o.nome)||_opzAccessorio(o.nome))?1:true;}
     setF("__opzioni",next);};
   const _vinc=contaVincolate(opz);
   const _haVincolabili=(offSel?offSel.opzioni:[]).some(o=>_opzBundle(o.nome)||_opzAccessorio(o.nome));
@@ -3206,9 +3283,58 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
   const hasCampoGnp=campi.some(c=>/^gnp$/i.test(c.nome));
   const pageBrand=sub.catBrand==="s4"?"energy":sub.catBrand;
   const codici=_codiciDi(pageBrand);
+  // MOD-15 (Luca 10/08): SIMULATORE PESO VOLUMETRICO per le spedizioni Kipoint
+  // a fasce di peso (offerte "TBASE a-b kg"). pesoTassabile = max(pesoReale,
+  // h×l×p/6000) → seleziona la fascia con setF DIRETTO (non pickOff: azzererebbe
+  // le opzioni già scelte — i nomi opzione sono identici su tutte le fasce).
+  const fasceKg=offerte.map(o=>({o,r:_fasciaKg(o.nome)})).filter(x=>x.r).sort((a,b)=>a.r.min-b.r.min);
+  const isKipointSped=sub.catBrand==="kipoint"&&sub.catCategoria==="Spedizioni"&&fasceKg.length>=2;
+  const _spNum=(x)=>{const v=parseFloat(String(x??"").replace(",","."));return isFinite(v)&&v>0?v:null;};
+  const sp=f.__sped||{};
+  const _spVol=(()=>{const h=_spNum(sp.h),l=_spNum(sp.l),p=_spNum(sp.p);return (h&&l&&p)?h*l*p/6000:null;})();
+  const _spTass=(()=>{const kg=_spNum(sp.kg);return (_spVol!=null||kg!=null)?Math.max(_spVol||0,kg||0):null;})();
+  const _spOltre=isKipointSped&&_spTass!=null&&fasceKg.length>0&&_spTass>fasceKg[fasceKg.length-1].r.max;
+  const upSped=(k,v)=>{
+    const nx={...sp,[k]:v};setF("__sped",nx);
+    const h=_spNum(nx.h),l=_spNum(nx.l),p=_spNum(nx.p),kg=_spNum(nx.kg);
+    const vol=(h&&l&&p)?h*l*p/6000:null;
+    const tass=(vol!=null||kg!=null)?Math.max(vol||0,kg||0):null;
+    if(tass==null||!fasceKg.length)return;
+    const last=fasceKg[fasceKg.length-1];
+    const hit=fasceKg.find(x=>tass>=x.r.min&&tass<x.r.max)||((tass>=last.r.min&&tass<=last.r.max)?last:null);
+    if(hit){
+      setF("Offerta",hit.o.nome);
+      setF("Peso tassabile (kg)",String(Math.round(tass*100)/100));
+      if(kg)setF("Peso reale (kg)",String(kg));
+      if(h&&l&&p)setF("Dimensioni (cm)",h+"×"+l+"×"+p);
+    }
+  };
   return (<div>
+    {isKipointSped&&(
+      <div style={{marginTop:6,padding:"10px 12px",background:"rgba(10,88,202,0.08)",borderRadius:8,border:"1px dashed rgba(10,88,202,0.55)"}}>
+        <div style={{fontSize:12,fontWeight:700,color:"var(--tf-60a5fa)",marginBottom:6}}>⚖️ Simulatore peso volumetrico <span style={{fontWeight:400,color:"var(--tf-64748b)"}}>(H×L×P ÷ 6000 vs peso reale: vince il maggiore)</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(70px,1fr))",gap:"8px 12px",maxWidth:520}}>
+          <TF l="Altezza (cm)" v={sp.h||""} o={v=>upSped("h",v)} p="es. 30"/>
+          <TF l="Larghezza (cm)" v={sp.l||""} o={v=>upSped("l",v)} p="es. 40"/>
+          <TF l="Profondità (cm)" v={sp.p||""} o={v=>upSped("p",v)} p="es. 20"/>
+          <TF l="Peso reale (kg)" v={sp.kg||""} o={v=>upSped("kg",v)} p="es. 3,5"/>
+        </div>
+        {_spTass!=null&&(
+          <div style={{marginTop:8,fontSize:12,fontWeight:700,color:_spOltre?"var(--tf-fbbf24)":"var(--tf-34d399)"}}>
+            {_spVol!=null&&<span>Volumetrico {Math.round(_spVol*100)/100} kg · </span>}
+            Tassabile <span style={{fontSize:14}}>{Math.round(_spTass*100)/100} kg</span>
+            {_spOltre
+              ? <span> — ⚠️ oltre l'ultima fascia ({fasceKg[fasceKg.length-1].r.max} kg): spedizione a preventivo</span>
+              : off?<span> → {off}</span>:null}
+          </div>
+        )}
+      </div>
+    )}
     {offerte.length>0&&(
-      offerte.length>10
+      /* Bottoni fino a 14 offerte, tendina oltre (Luca 10/08: VF privato GA/MNP
+         Wallet e GA Ric. Auto hanno 13-14 offerte e devono mostrare i bottoni
+         come MNP Ric. Auto; i muri da 24-36 offerte — W3 MNP — restano tendina) */
+      offerte.length>14
         ? <div style={{marginTop:6,maxWidth:420}}><DD l="Offerta" r v={off} o={pickOff} vals={offerte.map(o=>o.nome)}/></div>
         : <div style={{marginTop:6}}>
             <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:4}}>Offerta <span style={{color:"var(--tf-dc3545)"}}>*</span></div>
@@ -3226,7 +3352,7 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
             return(
             <span key={o.nome} style={{display:"inline-flex",alignItems:"center",gap:6}}>
               <button onClick={()=>togOpz(o)} disabled={bloccata} title={bloccata?"Massimo "+MAX_BUNDLE_ACC+" elementi tra Bundle e Accessori":undefined} className={on?"opz-on":undefined} style={{padding:"6px 12px",borderRadius:999,cursor:bloccata?"not-allowed":"pointer",opacity:bloccata?0.35:1,border:on?"2px solid "+color:"1px solid var(--tf-w150)",background:on?color+"26":"var(--tf-w30)",color:on?"#fff":"var(--tf-8892b0)",fontSize:11,fontWeight:700}}>{on?"✓ ":""}{o.nome}{o.gruppo?" ¹":""}</button>
-              {on&&o.tipo==="numero"&&<input type="number" min="1" max={(_opzBundle(o.nome)||_opzAccessorio(o.nome))?(MAX_BUNDLE_ACC-(_vinc-_qtaOpz(opz[o.nome]))):undefined} value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{let q=Math.max(1,parseInt(e.target.value||"1",10)||1);
+              {on&&(o.tipo==="numero"||_opzBundle(o.nome)||_opzAccessorio(o.nome))&&<input type="number" min="1" max={(_opzBundle(o.nome)||_opzAccessorio(o.nome))?(MAX_BUNDLE_ACC-(_vinc-_qtaOpz(opz[o.nome]))):undefined} value={opz[o.nome]===true?1:opz[o.nome]} onChange={e=>{let q=Math.max(1,parseInt(e.target.value||"1",10)||1);
                 if(_opzBundle(o.nome)||_opzAccessorio(o.nome)){const altre=_vinc-_qtaOpz(opz[o.nome]);q=Math.max(1,Math.min(q,MAX_BUNDLE_ACC-altre));}
                 setF("__opzioni",{...opz,[o.nome]:q});}} style={{width:64,padding:"5px 8px",borderRadius:6,border:"1px solid var(--tf-w150)",fontSize:12,background:"var(--tf-w40)",color:"var(--tf-f8fafc)"}}/>}
             </span>);})}
@@ -3236,10 +3362,10 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
     {sub.catCategoria==="Telefono a Rate"&&!/\bCB\b/i.test(sub.catProdotto)&&(mobili||[]).length>0&&(!_NE(f["Codice Contratto"])||!_NE(f["Numero di Cellulare"]))&&(
       <div style={{marginTop:10,padding:"10px 12px",background:"rgba(111,66,193,0.08)",borderRadius:8,border:"1px dashed rgba(111,66,193,0.55)"}}>
         <div style={{fontSize:12,fontWeight:700,color:"var(--tf-a78bfa)",marginBottom:6}}>📎 Nuova attivazione: vuoi agganciarlo al mobile che stai registrando?</div>
-        <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:8}}>Codice contratto e numero si compilano da soli — restano da inserire solo IMEI, modello, rata e pratica di finanziamento.</div>
+        <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:8}}>Codice contratto, numero e codice inserimento si compilano da soli — restano da inserire solo IMEI, modello, rata e pratica di finanziamento.</div>
         <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
           {(mobili||[]).map((m,mi)=>(
-            <button key={mi} onClick={()=>{if(m.codice)setF("Codice Contratto",m.codice);if(m.numero)setF("Numero di Cellulare",m.numero);}}
+            <button key={mi} onClick={()=>{if(m.codice)setF("Codice Contratto",m.codice);if(m.numero)setF("Numero di Cellulare",m.numero);if(m.codIns)setF("Codice Inserimento",m.codIns);}}
               style={{padding:"7px 14px",borderRadius:8,border:"2px solid rgba(111,66,193,0.7)",background:"rgba(111,66,193,0.18)",color:"var(--tf-c4b5fd)",fontSize:12,fontWeight:700,cursor:"pointer"}}>
               ✓ Aggancia a {m.etichetta}
             </button>
@@ -3277,6 +3403,14 @@ const CatalogoSub=({sub,sd,uF,gid,si,sc,color,mobili})=>{
                 )}
               </div>
             );
+            // MOD-15: l'indirizzo del destinatario esige il NUMERO CIVICO —
+            // avviso qui + blocco vero in subComplete (civicoMancante)
+            if(/^indirizzo destinatario$/i.test(cmp.nome))return (
+              <div key={cmp.nome}>
+                <TF l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p="Via Roma 12"/>
+                {_NE(f[cmp.nome])&&civicoMancante(String(f[cmp.nome]))&&<div style={{fontSize:10,color:"var(--tf-fbbf24)",marginTop:2}}>⚠️ Manca il numero civico (es. "Via Roma 12")</div>}
+              </div>
+            );
             return <TF key={cmp.nome} l={cmp.nome} r={!cmp.facoltativo} v={f[cmp.nome]||""} o={v=>setF(cmp.nome,v)} p={cmp.nota||""}/>;
           })}
         </div>
@@ -3307,6 +3441,12 @@ const subComplete=(sub,d)=>{
         if((!_hasG||(f["GNP"]||"")==="Sì")&&!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;
       }
       else if(!cmp.facoltativo&&!_NE(f[cmp.nome]))return false;
+    }
+    // MOD-15: spedizioni Kipoint — l'indirizzo del destinatario senza numero
+    // civico tiene la vendita "Incompleta" (stesso criterio del cliente)
+    if(sub.catBrand==="kipoint"&&sub.catCategoria==="Spedizioni"){
+      const _ind=f["Indirizzo Destinatario"];
+      if(_NE(_ind)&&civicoMancante(String(_ind)))return false;
     }
     return true;
   }
@@ -4165,6 +4305,10 @@ function CRM() {
   // P&M come un BRAND (Luca 03/08): step Prodotti a piena pagina, non più
   // il foglietto dal basso. margFlow = flusso marginalità attivo.
   const [margFlow,setMargFlow]=useState(false);
+  // MOD-44c (Luca 10/08): anche la marginalità PASSA dallo step Cliente.
+  // Lo skip è una scelta esplicita (popup CRM) e viene TRACCIATA sulla vendita.
+  const [margSkipCli,setMargSkipCli]=useState(false);
+  const [margSkipPopup,setMargSkipPopup]=useState(false);
   const [margEditItem,setMargEditItem]=useState(null);
   const [showMargList,setShowMargList]=useState(false);
   const [showMargSection,setShowMargSection]=useState(false);
@@ -4330,6 +4474,31 @@ function CRM() {
   const [clienteFound,setClienteFound]=useState(false);
   const [lookupDone,setLookupDone]=useState(false);
   const [lookupBusy,setLookupBusy]=useState(false);
+  // MATCH APPUNTAMENTO (cantiere 08/08): avviso quando il CF cercato ha un
+  // appuntamento aperto preso da un caller — la vendita lo attivera' al salvataggio.
+  const [apptAvviso,setApptAvviso]=useState(null);
+  const verificaAppuntamentoBanner=async(cf,cfRef)=>{
+    try{
+      if(!cf&&!cfRef){setApptAvviso(null);return;}
+      const apps=await appuntamentiPerCF(cf||"",cfRef||"");
+      const aperto=apps.find(a=>!["attivato","attivato_diverso_negozio","ko","annullato"].includes(String(a.status||"")));
+      setApptAvviso(aperto?{da:aperto.created_by||"un caller",data:aperto.date,store:aperto.store}:null);
+    }catch{setApptAvviso(null);}
+  };
+  // POPUP decisionale (Luca 08/08): quando la vendita chiude un appuntamento
+  // dello STESSO negozio, si CHIEDE al venditore se associarla (l'appuntamento
+  // puo' essere vecchio). {app, contractIds, firma}. Il caso "altro negozio" e'
+  // automatico (attivato_diverso_negozio, nessuna cooperation) senza popup.
+  const [matchPending,setMatchPending]=useState(null);
+  const [matchBusy,setMatchBusy]=useState(false);
+  const confermaMatch=async(assoc)=>{
+    const mp=matchPending; if(!mp)return;
+    if(!assoc){setMatchPending(null);return;}
+    setMatchBusy(true);
+    try{ await agganciaVenditaAppuntamento(mp.app.id, mp.contractIds, mp.firma, true); }
+    catch(e){ console.error("[MATCH-APP]",e); }
+    setMatchBusy(false); setMatchPending(null);
+  };
   const [showAna,setShowAna]=useState(false);
   const [ana,setAna]=useState({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
   // FLAG TURISTA (03/08, mig. 140): cliente di passaggio SENZA CF italiano.
@@ -4370,6 +4539,9 @@ function CRM() {
         offs=ro.data||[];
       }
       const t={categorie:rc.data||[],prodotti:prods,offerte:offs};
+      // MOD-31: registro della regola "contratto richiesto" (colonne del
+      // catalogo, risolte offerta→prodotto→categoria→brand allo step Allegati)
+      registraContrattoAlbero(slug,t.categorie,prods,offs);
       _catCacheRef.current[slug]=t;
       if(al)setCatTree(t);
     }catch(e){if(al){setCatTree({categorie:[],prodotti:[],offerte:[]});sT("⚠️ Catalogo non raggiungibile: "+String((e&&e.message)||e));}}})();
@@ -4398,10 +4570,14 @@ function CRM() {
     try{
       const neg=user?.negozio||"";
       const [rb,rr]=await Promise.all([
-        supabase.from("catalog_brands").select("id,default_abilitato"),
+        // select * (non colonne puntuali): cosi' contratto_richiesto arriva
+        // quando la migrazione MOD-31 c'e', senza rompere la query quando manca
+        supabase.from("catalog_brands").select("*"),
         neg?supabase.from("store_brand_rules").select("brand,vede,registra").eq("store",neg):Promise.resolve({data:[]}),
       ]);
       if(!al)return;
+      // MOD-31: regola contratto a livello BRAND nel registro condiviso
+      registraContrattoBrands((rb&&rb.data)||[]);
       const defs={};((rb&&rb.data)||[]).forEach(r=>{defs[r.id]=r.default_abilitato!==false;});
       const map={};((rr&&rr.data)||[]).forEach(r=>{map[r.brand]={vede:r.vede!==false,registra:r.registra!==false};});
       setBrandDefaults(defs);setBrandRules(map);
@@ -4418,6 +4594,10 @@ function CRM() {
   };
   const brandVisibili=BRANDS.filter(b=>_brandEff(b).vede);
   const [confirmReset,setConfirmReset]=useState(false);
+  // MOD-2b (Luca 08/08): conferma "nessuna opzione da collegare?" quando si mette
+  // in carrello un'offerta che HA opzioni disponibili ma non ne ha scelta nessuna.
+  // {offerte:string[], after:fn|null} mentre il popup è aperto; null = chiuso.
+  const [confirmNoOpz,setConfirmNoOpz]=useState(null);
   const [showStep4,setShowStep4]=useState(false);
   // quando il flusso apre i prodotti, la vista segue (qui e NON piu' in alto:
   // le dipendenze dell'effect si valutano subito → showStep4 deve esistere)
@@ -4570,11 +4750,31 @@ function CRM() {
   const hasIncomplete=(()=>{let bad=false;cats.forEach(g=>{(sales[g.id]||[]).forEach((row,si)=>{if(!row)return;g.subs.forEach(s=>{const d=row[s.id];if(d&&d.active){const b=subBadge(d,dupCheck,s,_reqMissing(g.id+"-"+si+"-"+s.id));if(b&&b.st!=="ok")bad=true;}});});});return bad;})();
   const skyIncomplete=false; // Sky ora passa dal flusso catalogo (macchinario skyS dormiente)
   const blockSaveAll=blockSave||hasIncomplete||skyIncomplete;
-  const addCart=()=>{
+  // MOD-2b: offerte del brand corrente che HANNO opzioni a catalogo ma per cui il
+  // venditore non ne ha collegata NESSUNA (nomi unici, per il popup di conferma).
+  const _offerteSenzaOpzioni=()=>{
+    const out=[];
+    cats.forEach(g=>{(sales[g.id]||[]).forEach(row=>{if(!row)return;g.subs.forEach(s=>{
+      if(!s.isCatalogo)return;
+      const d=row[s.id];if(!(d&&d.active))return;
+      const f=d.fields||{};const offName=f["Offerta"]||"";if(!offName)return;
+      const offSel=(s.catOfferte||[]).find(o=>o.nome===offName);
+      if(!offSel||!(offSel.opzioni||[]).length)return;   // offerta senza opzioni a catalogo → niente conferma
+      const opz=f.__opzioni||{};
+      if(Object.keys(opz).filter(k=>opz[k]).length===0&&out.indexOf(offName)<0)out.push(offName);
+    });});});
+    return out;
+  };
+  const addCart=(after,skipOpz)=>{
     const items=colItems();
     if(blockSaveAll){sT(hasIncomplete?"⚠ Ci sono prodotti Incompleti: completali prima di salvare":(hasDupPodPdr?"⚠ POD/PDR duplicato: correggi prima di salvare":(hasDupCodContr?"⚠ Codice contratto duplicato: correggi prima di salvare":"⚠ Numero/ICCID non valido: correggi prima di salvare")));return;}
+    // MOD-2b (Luca 08/08): prima di mettere in carrello, se c'è un'offerta con
+    // opzioni disponibili ma nessuna collegata, chiedi conferma. Il commit vero
+    // (e la navigazione "after") avviene solo dopo il sì (addCart(after,true)).
+    if(!skipOpz){const senza=_offerteSenzaOpzioni();if(senza.length){setConfirmNoOpz({offerte:senza,after:after||null});return;}}
     if(items.length>0&&bObj){const snap={sales:JSON.parse(JSON.stringify(sales)),sesCode,skyS:JSON.parse(JSON.stringify(skyS))};setCart(p=>[...p,{brandId:brand,brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items,sv:snap}]);setMargItems(p=>computeAutoMarg(p,brand,bObj.label,items));sT("✅ "+items.length+" prodotti "+bObj.label)}
     setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setBrand(null);
+    if(after)after();
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
   const rmCG=idx=>setCart(p=>p.filter((_,i)=>i!==idx));
@@ -4660,8 +4860,20 @@ function CRM() {
     }catch(e){console.error("[TNP-LISTINO]",e);return null;}};   // mai far sparire la voce per un dato storto
     for(const it of (items||[])){
       const macro=String(it.macro||"").toUpperCase();const sub=String(it.sub||"");
-      if(/sostituzione\s*sim/i.test(sub)){if(AUTO_SOST[brandId])push(AUTO_SOST[brandId]);}
-      else if(macro.includes("MOBILE")&&!/\bcb\b/i.test(sub)&&AUTO_SIM[brandId])push(AUTO_SIM[brandId]);
+      // SIM VODAFONE = PRODOTTO DI MAGAZZINO GIUSTO (Luca 07/08, fiscalità):
+      // Business → SEMPRE "Sost Vodafone" (anche sul FISSO, che prima non
+      // scaricava nulla); Consumer → Fisso e Sostituzione SIM scaricano
+      // "Sim Vodafone" (la sostituzione consumer prima scaricava la Sost).
+      const _vfBiz=brandId==="vodafone"&&it.catalogo?.tipo==="Business";
+      if(/sostituzione\s*sim/i.test(sub)){
+        if(brandId==="vodafone")push(_vfBiz?"Sost Vodafone":"Sim Vodafone");
+        else if(AUTO_SOST[brandId])push(AUTO_SOST[brandId]);
+      }
+      else if(macro.includes("MOBILE")&&!/\bcb\b/i.test(sub)){
+        if(brandId==="vodafone")push(_vfBiz?"Sost Vodafone":"Sim Vodafone");
+        else if(AUTO_SIM[brandId])push(AUTO_SIM[brandId]);
+      }
+      else if(brandId==="vodafone"&&macro.includes("FISSO"))push(_vfBiz?"Sost Vodafone":"Sim Vodafone");
       const det=it.details||{};
       const tnp=[det["Tipo TNP"],det.tnpTipo,det.cbTnpTipo].map(v=>String(v||"").trim().toLowerCase());
       // RV-03: telefono a rate BUSINESS a marginalita' SOLO su WindTre — per gli
@@ -4671,8 +4883,10 @@ function CRM() {
       // BUNDLE VODAFONE (Luca 06/08): l'opzione "Bundle <importo>" e' a tutti
       // gli effetti un prodotto in marginalita' — entra nel CARRELLO come voce
       // auto (non un telefono: resta un bundle) con l'importo esplicito nel
-      // nome dell'opzione × quantita'. Il margine arrivera' da un coefficiente
-      // a catalogo (prossimo cantiere): per ora 0, l'importo intanto si vede.
+      // nome dell'opzione × quantita'. MARGINE = importo × coefficiente
+      // (ce_parametri 'bundle_coeff_default', come il 'Bundel Systema' del
+      // foglio Costi & Ricavi — cantiere CE 07/08); cache fredda → 0 e il
+      // ricalcolo live lo aggiorna appena il coefficiente arriva.
       if(brandId==="vodafone"){
         for(const op of (it.catalogo?.opzioni||[])){
           if(!/bundle/i.test(String(op?.nome||"")))continue;
@@ -4681,7 +4895,38 @@ function CRM() {
           const unit=parseFloat(mAmt[1].replace(",","."));
           if(!(unit>0))continue;
           const q=Math.max(1,Number(op.quantita||1));
-          push(String(op.nome).trim(),true,{qty:q,price:unit,importo:Math.round(unit*q*100)/100,margin:0,totalMargin:0,priceLocked:true,priceRequired:false,bundle:true});
+          const coeff=_ceBundleCoeff??0;
+          push(String(op.nome).trim(),true,{qty:q,price:unit,importo:Math.round(unit*q*100)/100,margin:Math.round(unit*coeff*100)/100,totalMargin:Math.round(unit*q*coeff*100)/100,priceLocked:true,priceRequired:false,bundle:true});
+        }
+      }
+      // KIPOINT (cantiere CE 07/08): spedizioni/ritiri = servizi che vivono in
+      // MARGINALITA'. Tariffa da catalog_valori (offerta + dimensione scelta);
+      // senza tariffa la voce chiede l'importo al negozio e il margine
+      // arrivera' col listino tariffe (file di Luca).
+      if(brandId==="kipoint"){
+        const off=String(it.catalogo?.offerta||it.catalogo?.prodotto||"Kipoint").trim();
+        const dim=(it.catalogo?.opzioni||[]).map(o=>String(o?.nome||"")).find(n=>/^dimensione\s/i.test(n))||null;
+        const nome=("Kipoint "+off+(dim?" — "+dim.replace(/^dimensione\s*/i,""):"")).trim();
+        const t=_tariffaKipoint(off,dim);
+        if(t&&t.prezzo!=null){
+          const pz=Number(t.prezzo)||0;
+          const mg=t.margine_tipo==="fisso"?Number(t.margine_valore||0):t.margine_tipo==="percent"?Math.round(pz*Number(t.margine_valore||0))/100:0;
+          push(nome,true,{price:pz,importo:pz,margin:mg,totalMargin:mg,priceLocked:true,priceRequired:false});
+        } else push(nome,false);
+        // MOD-15 (Luca 10/08): OGNI opzione kipoint è un costo AGGIUNTIVO —
+        // una voce prezzata per ciascuna (servizi, assicurazione, RFS, SCS).
+        // Tariffa SOLO per match opzione (niente fallback fascia); le vecchie
+        // "Dimensione XS-XL" restano dentro la voce principale come prima.
+        for(const _op of (it.catalogo?.opzioni||[])){
+          const _n=String(_op?.nome||"").trim();
+          if(!_n||/^dimensione\s/i.test(_n))continue;
+          const _t=_tariffaKipointOpz(off,_n);
+          const _nomeOpz=("Kipoint "+_n).trim();
+          if(_t&&_t.prezzo!=null){
+            const _pz=Number(_t.prezzo)||0;
+            const _mg=_t.margine_tipo==="fisso"?Number(_t.margine_valore||0):_t.margine_tipo==="percent"?Math.round(_pz*Number(_t.margine_valore||0))/100:0;
+            push(_nomeOpz,true,{price:_pz,importo:_pz,margin:_mg,totalMargin:_mg,priceLocked:true,priceRequired:false});
+          } else push(_nomeOpz,false);
         }
       }
     }
@@ -4712,6 +4957,8 @@ function CRM() {
     setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems()));
     // cache listini fredda: si carica e si ricalcola (il TNP prende il prezzo)
     if(!_listiniTutti)caricaListini().then(()=>{ setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); });
+    // valori CE freddi: coefficiente bundle e tariffe Kipoint, poi ricalcolo
+    if(_ceBundleCoeff==null)caricaCeValori().then(()=>{ setMargItems(p=>computeAutoMarg(p,brand,bObj.label,colItems())); });
   },[sales,skyS,brand]); // eslint-disable-line react-hooks/exhaustive-deps
   const rmMargItem=(idx)=>setMargItems(p=>p.filter((_,i)=>i!==idx));
 
@@ -4749,11 +4996,15 @@ function CRM() {
           .select("id,file_url,file_name,created_at")
           .in("contract_id", ids).eq("file_type", "documento")
           .order("created_at", { ascending: false }).limit(40);
-        // i piu' recenti vincono; dedup per nome file (lo stesso documento
-        // riagganciato su piu' vendite = una sola card)
+        // i piu' recenti vincono; dedup per URL (fix Luca 10/08, caso
+        // CLBNNA63T67A662A): lo STESSO file riagganciato su piu' vendite ha lo
+        // stesso file_url → una sola card. Prima si deduplicava per NOME file e
+        // fronte+retro con lo stesso nome (es. "documento-1.jpg" da due sessioni
+        // QR) collassavano in una card sola: il retro spariva dalla proposta,
+        // dal riaggancio E dall'archiviazione con esito scaduti/smarrito.
         const visti = {}; const docs = [];
         (atts || []).forEach(a => {
-          const k = String(a.file_name || a.file_url).trim().toLowerCase();
+          const k = String(a.file_url || a.id).trim();
           if (visti[k]) return; visti[k] = true;
           docs.push({ id: a.id, url: a.file_url, name: a.file_name || "documento", created: a.created_at });
         });
@@ -4779,6 +5030,19 @@ function CRM() {
     setAttachments(prev => prev.filter(a => !a.reused));
     setDocRiuso(p => ({ ...p, fase: "esito", esito: "scaduti", check: false }));
   };
+  // MOD-14 (Luca 08/08): due esiti in più oltre a validi/scaduti.
+  // ALTRO documento (tipo diverso, ENTRAMBI validi): si carica il nuovo e i
+  // vecchi RESTANO validi in parallelo (nessuna archiviazione al submit).
+  const docAltro = () => {
+    setAttachments(prev => prev.filter(a => !a.reused));
+    setDocRiuso(p => ({ ...p, fase: "esito", esito: "altro", check: false }));
+  };
+  // SMARRITO: i vecchi vanno nello storico come "smarriti" (non vecchi), tolti
+  // dalla disponibilità; l'amministrativo li vede marcati. Si carica il nuovo.
+  const docSmarrito = () => {
+    setAttachments(prev => prev.filter(a => !a.reused));
+    setDocRiuso(p => ({ ...p, fase: "esito", esito: "smarrito", check: false }));
+  };
   const docRiusoReset = () => {
     setAttachments(prev => prev.filter(a => !a.reused));
     setDocRiuso(p => ({ ...p, fase: "trovati", esito: null, check: false }));
@@ -4791,6 +5055,8 @@ function CRM() {
     const dotAttivo = fase === "trovati" ? 0 : (fase === "esito" ? 2 : 1);
     const doneOk = fase === "esito" && docRiuso.esito === "validi";
     const doneExp = fase === "esito" && docRiuso.esito === "scaduti";
+    const doneAltro = fase === "esito" && docRiuso.esito === "altro";
+    const doneSmarrito = fase === "esito" && docRiuso.esito === "smarrito";
     const thumb = (d, h) => {
       const mime = _mimeDaNome(d.name || d.url);
       return mime.startsWith("image/")
@@ -4843,7 +5109,11 @@ function CRM() {
           <div style={{ fontSize: 12, fontWeight: 800, color: "var(--tf-f8fafc)", marginBottom: 8 }}>Come li vedi?</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button type="button" onClick={() => setDocRiuso(p => ({ ...p, fase: "conferma", esito: null }))} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-28a745)", background: "rgba(40,167,69,0.12)", color: "var(--tf-28a745)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>✅ Validi e leggibili</button>
+            {/* MOD-14: altro documento valido (si archiviano ENTRAMBI) */}
+            <button type="button" onClick={docAltro} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-38bdf8)", background: "rgba(56,189,248,0.12)", color: "var(--tf-38bdf8)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>📄 Ha un altro documento (entrambi validi)</button>
             <button type="button" onClick={docScaduti} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-f59e0b)", background: "rgba(245,158,11,0.12)", color: "var(--tf-f59e0b)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>⏰ Scaduti o da sostituire</button>
+            {/* MOD-14: smarrito (storico "smarrito", tolto dalla disponibilità) */}
+            <button type="button" onClick={docSmarrito} style={{ padding: "11px 22px", borderRadius: 10, border: "2px solid var(--tf-f87171)", background: "rgba(248,113,113,0.12)", color: "var(--tf-f87171)", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>🔴 Smarrito</button>
           </div>
         </div>}
         {fase === "conferma" && <div style={{ animation: "docRiusoIn .25s ease both" }}>
@@ -4874,6 +5144,32 @@ function CRM() {
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             {docRiuso.docs.map(d => <span key={d.id} style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-64748b)", background: "var(--tf-w30)", border: "1px solid var(--tf-w60)", borderRadius: 999, padding: "4px 10px", textDecoration: "line-through" }}>🗄️ {d.name}</span>)}
+          </div>
+          <button type="button" onClick={docRiusoReset} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>↩︎ Cambia scelta</button>
+        </div>}
+        {/* MOD-14: ALTRO documento — si carica il nuovo, i vecchi restano VALIDI (parallelo) */}
+        {doneAltro && <div style={{ animation: "docRiusoIn .25s ease both" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--tf-38bdf8)", marginBottom: 4 }}>📄 Due documenti validi in parallelo.</div>
+          <div style={{ fontSize: 11, color: "var(--tf-8892b0)", marginBottom: 10 }}>Carica il NUOVO documento nella casella 🪪 Documento qui sotto: al salvataggio resteranno validi <b>sia quelli in archivio sia il nuovo</b> (niente sostituzione).</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ width: 12, height: 12, borderRadius: "50%", background: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-w100)", display: "inline-block" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-8892b0)" }}>{_nuoviDocCaricati > 0 ? `✅ ${_nuoviDocCaricati} nuovo/i caricato/i — resteranno affiancati ai precedenti` : "In attesa del nuovo documento…"}</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {docRiuso.docs.map(d => <span key={d.id} style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-38bdf8)", background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.4)", borderRadius: 999, padding: "4px 10px" }}>📎 {d.name} (resta valido)</span>)}
+          </div>
+          <button type="button" onClick={docRiusoReset} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>↩︎ Cambia scelta</button>
+        </div>}
+        {/* MOD-14: SMARRITO — i vecchi diventano "smarriti" (storico), tolti dai validi */}
+        {doneSmarrito && <div style={{ animation: "docRiusoIn .25s ease both" }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--tf-f87171)", marginBottom: 4 }}>🔴 Documento segnato come smarrito.</div>
+          <div style={{ fontSize: 11, color: "var(--tf-8892b0)", marginBottom: 10 }}>Carica il NUOVO documento qui sotto. Al salvataggio i vecchi passano a <b>smarrito</b> nello storico: tolti dalla disponibilità, resta traccia visibile all&apos;amministrazione (non &quot;vecchi&quot; ma smarriti).</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ width: 12, height: 12, borderRadius: "50%", background: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-w100)", display: "inline-block" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: _nuoviDocCaricati > 0 ? "var(--tf-34d399)" : "var(--tf-8892b0)" }}>{_nuoviDocCaricati > 0 ? `✅ ${_nuoviDocCaricati} nuovo/i caricato/i` : "In attesa del nuovo documento…"}</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {docRiuso.docs.map(d => <span key={d.id} style={{ fontSize: 10, fontWeight: 700, color: "var(--tf-f87171)", background: "rgba(248,113,113,0.10)", border: "1px solid rgba(248,113,113,0.4)", borderRadius: 999, padding: "4px 10px" }}>🔴 {d.name} (smarrito)</span>)}
           </div>
           <button type="button" onClick={docRiusoReset} style={{ padding: "9px 16px", borderRadius: 10, border: "1px solid var(--tf-w100)", background: "var(--tf-w20)", color: "var(--tf-8892b0)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>↩︎ Cambia scelta</button>
         </div>}
@@ -4916,6 +5212,13 @@ function CRM() {
   // La stessa enumerazione gira nel submit per mappare riga -> contract_id
   // senza ambiguita' (l'id contratto e' generato lato client PRIMA dell'insert).
   const _etichettaRiga = (it) => String((it && it.catalogo && it.catalogo.offerta) || (it && it.sub) || "prodotto");
+  // MOD-32: identificativi che legano due righe alla STESSA pratica (telefono
+  // a rate agganciato al mobile: codice contratto/numero copiati; W3 CB
+  // agganciato al cambio offerta: cellulare/cod. cliente). Prefix-match sui
+  // nomi campo cosi' valgono anche le varianti ("Cellulare CB", ...).
+  const _identRiga = (det) => Object.keys(det || {})
+    .filter(k => /^(codice contratto|cod\.? ?cliente|numero di cellulare|numero definitivo|numero provvisorio|cellulare)/i.test(k))
+    .map(k => String(det[k] || "").trim()).filter(v => v.length >= 5);
   const righeCarrello = () => {
     const gruppi = [...cart];
     const curI = colItems();
@@ -4924,8 +5227,33 @@ function CRM() {
     gruppi.forEach(g => (g.items || []).forEach(it => {
       const base = String(g.brandId || "") + "::" + _etichettaRiga(it);
       conta[base] = (conta[base] || 0) + 1;
-      rows.push({ key: base + "::" + conta[base], base, nCopia: conta[base], brandId: g.brandId, brandLabel: g.brandLabel, brandIcon: g.brandIcon, brandColor: g.brandColor, isCurrent: !!g.isCurrent, label: _etichettaRiga(it), sky: String(g.brandId || "").toLowerCase() === "sky", iliad: String(g.brandId || "").toLowerCase() === "iliad" });
+      const slug = SLUG_CATALOGO[g.brandId] || String(g.brandId || "").toLowerCase();
+      const cat = (it && it.catalogo) || null;
+      rows.push({
+        key: base + "::" + conta[base], base, nCopia: conta[base], brandId: g.brandId, brandLabel: g.brandLabel,
+        brandIcon: g.brandIcon, brandColor: g.brandColor, isCurrent: !!g.isCurrent, label: _etichettaRiga(it),
+        // MOD-31: stato del contratto dal CATALOGO (offerta→prodotto→categoria→
+        // brand; fallback storico: iliad assente, sky facoltativo)
+        contratto: contrattoRichiestoPer(slug, cat ? cat.tipo : "", cat ? cat.categoria : "", cat ? cat.prodotto : "", cat ? cat.offerta : ""),
+        _cat: cat, _det: (it && it.details) || {},
+      });
     }));
+    // MOD-32: telefono a rate AGGANCIATO a un'altra riga dello stesso brand
+    // (identificativo condiviso) = vendita unica → il contratto lo porta la
+    // riga principale, qui non si chiede
+    rows.forEach(r => {
+      if (r.contratto === "assente") return;
+      if (!/telefono a rate/i.test((r._cat && r._cat.categoria) || "")) return;
+      // REGOLA ASSOLUTA (caso Guido Terzi, 10/08): il telefono a rate venduto
+      // INSIEME a un'attivazione mobile / customer base dello stesso brand ha
+      // SEMPRE il contratto unico — non serve che i campi coincidano
+      const miei = _identRiga(r._det);
+      const principale = rows.find(o => o !== r && o.brandId === r.brandId
+        && !/telefono a rate/i.test((o._cat && o._cat.categoria) || "")
+        && (/mobile|customer base/i.test((o._cat && o._cat.categoria) || "")
+          || (miei.length && _identRiga(o._det).some(v => miei.includes(v)))));
+      if (principale) { r.contratto = "associato"; r._mainKey = principale.key; }
+    });
     rows.forEach(r => { r.multi = (conta[r.base] || 0) > 1; });
     return rows;
   };
@@ -5004,8 +5332,9 @@ function CRM() {
     // ECCEZIONE SKY (Luca 04/08): Sky non rilascia il contratto — le righe
     // Sky non lo richiedono mai (la casella resta disponibile, facoltativa).
     righeCarrello().forEach(r => {
-      // Sky e ILIAD (Luca 06/08): il contratto non esiste — mai richiesto
-      if (r.sky || r.iliad) return;
+      // MOD-31/32: blocca SOLO gli obbligatori — facoltativo/assente/associato
+      // (vendita agganciata: contratto unico sulla riga principale) non fermano
+      if (r.contratto !== "obbligatorio") return;
       if (!attachments.some(a => a.type === "contratti" && (a.rowKey || "") === r.key))
         m.push(`📄 contratto per ${r.brandLabel} — ${r.label}${r.multi ? " (n°" + r.nCopia + ")" : ""} (step Allegati)`);
     });
@@ -5268,12 +5597,20 @@ function CRM() {
           // Vendite dal flusso catalogo: macro-categoria ESPLICITA (perimetro
           // chiuso, niente inferenza); il legacy resta per il carrello storico.
           const macroId = item.catalogo ? (item.catalogo.macro || "extra") : categoriaDi(group.brandLabel, item.macro, item.sub);
-          // Segnalazione 91: una pratica MOBILE senza finanziamento e senza MNP
-          // non e' da lavorare nel Tracking, quindi nasce gia' Attiva (come Extra
-          // e Sostituzioni). Esempi: francesca iossa, Alberto Franzini.
+          // MOD-23 (Luca 10/08): criterio UNICO condiviso col Tracking — tutto
+          // ciò che NON entra nel Tracking PDA (vaInTracking false) nasce già
+          // "Attivo" in Ricerca Vendite: Very, CB, Multi-Servizi, POS, digitale,
+          // extra, sostituzioni e mobile consumer semplice. Prima un'euristica
+          // locale divergeva (Segnalazione 91): Very/CB/POS nascevano "Nuovo"
+          // per sempre e il mobile BUSINESS semplice nasceva "Attivo" per errore
+          // pur entrando in tracking. Le chiavi passate coincidono con la riga
+          // scritta nel push qui sotto, così nascita e Tracking non divergono.
           const _ctrl = controlliDi(item.details);
-          const mobileSemplice = macroId === "mobile" && !_ctrl.includes("mnp") && !_ctrl.includes("finanziamento");
-          const giaAttivo = /sostituzione|sost /i.test(String(item.sub || "")) || macroId === "extra" || mobileSemplice;
+          const giaAttivo = !vaInTracking({
+            brand: group.brandLabel, prodotto: item.sub, categoria: item.macro,
+            categoria_macro: macroId, controlli: _ctrl,
+            tipo_cliente: item.catalogo ? item.catalogo.tipo : null, dettagli: item.details,
+          });
           // chiave riga identica a righeCarrello(): brand + etichetta + occorrenza
           const _rigaBase = String(group.brandId || "") + "::" + _etichettaRiga(item);
           _contaRighe[_rigaBase] = (_contaRighe[_rigaBase] || 0) + 1;
@@ -5313,7 +5650,7 @@ function CRM() {
       });
 
       margList.forEach(mi => {
-        contractRows.push({
+        contractRows.push(_margRigaFin({
           id: `EXT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
           client_id: clientId,
           data: dateStr,
@@ -5335,7 +5672,7 @@ function CRM() {
           data_attivazione: dateStr,   // compilata subito: e' la data di registrazione (Luca)
           dettagli: { product: mi.product, price: (mi.importo != null ? mi.importo : mi.price), importo: mi.importo ?? null, margin: mi.margin, qty: mi.qty, model: mi.model, imei: mi.imei, units: Array.isArray(mi.units) ? mi.units : null },
           is_demo: false
-        });
+        }, mi));
       });
 
       // Promemoria di Step 7 -> task in calendario (tabella gia' esistente).
@@ -5362,36 +5699,75 @@ function CRM() {
         // ALLEGATI PER CONTRATTO (Luca 05/08): prima TUTTI gli allegati
         // finivano sul primo contratto del carrello. Ora:
         //  - documento d'identita' (caricato o riusato): replicato su OGNI
-        //    contratto della vendita (stesso file_url, una riga per contratto)
-        //    cosi' ogni contratto e' completo nel modale di Ricerca Vendite;
+        //    PRATICA BRAND (righe CTR-) della vendita — stesso file_url, una
+        //    riga per contratto, cosi' ogni pratica e' completa nel modale di
+        //    Ricerca Vendite. MAI sulle voci marginalita' EXT- (caso D'Atria
+        //    07/08: 4 documenti × 5 righe = 23 allegati in scheda cliente);
+        //    senza righe CTR (solo marginalita' nel carrello brand) fallback
+        //    su tutte, altrimenti il documento resterebbe orfano;
         //  - contratto/altro: sulla riga corrispondente via rowKey; se la
         //    riga non esiste piu' (orfano) fallback sul primo contratto;
         //  - fattura (energia): sui contratti energia, o primo se non ce ne sono.
         if (uploadedFiles.length > 0) {
           const _tuttiIds = contractRows.map(r => r.id);
+          const _ctrIds = _tuttiIds.filter(id => String(id).startsWith("CTR-"));
           const _primoId = _tuttiIds[0];
           const attendanceRows = [];
           uploadedFiles.forEach(f => {
             const aggiungi = (cid) => attendanceRows.push({ contract_id: cid, client_id: contractRows[0]?.client_id || null, file_url: f.url, file_name: f.name, file_type: f.type });
-            if (f.type === "documento") _tuttiIds.forEach(aggiungi);
+            if (f.type === "documento") (_ctrIds.length ? _ctrIds : _tuttiIds).forEach(aggiungi);
             else if (f.type === "fattura") (_energiaIds.length ? _energiaIds : [_primoId]).forEach(aggiungi);
-            else aggiungi((f.rowKey && _ctrIdPerRiga[f.rowKey]) || _primoId);
+            else {
+          aggiungi((f.rowKey && _ctrIdPerRiga[f.rowKey]) || _primoId);
+          // contratto UNICO (10/08): stesso file_url anche sulle righe rate
+          // associate alla riga principale (riferimento, non copia)
+          if (f.type === "contratti" && f.rowKey) {
+            righeCarrello().filter(r => r.contratto === "associato" && r._mainKey === f.rowKey && _ctrIdPerRiga[r.key])
+              .forEach(r => aggiungi(_ctrIdPerRiga[r.key]));
+          }
+        }
           });
           const { error: attErr } = await supabase.from("contract_attachments").insert(attendanceRows);
           if (attErr) console.error("Attachment Meta Error:", attErr);
         }
 
-        // DOCUMENTI SCADUTI → ARCHIVIO (Luca 05/08): le righe vecchie passano a
-        // file_type='documento_archiviato' SOLO quando la vendita con i NUOVI
-        // documenti e' realmente salvata (qui). Da questo momento le viste che
-        // filtrano 'documento' non le contano piu': validi solo i nuovi.
-        // Idempotente: un retry riscrive lo stesso valore sulle stesse righe.
-        if (docRiuso && docRiuso.esito === "scaduti" && (docRiuso.docs || []).length && uploadedFiles.some(f => f.type === "documento")) {
+        // DOCUMENTI — ESITO RIUSO (Luca 05/08 + MOD-14 08/08): al salvataggio
+        // della vendita coi NUOVI documenti, le righe vecchie cambiano stato in
+        // base all'esito scelto in verifica. SOLO se sono stati davvero caricati
+        // nuovi documenti. Idempotente. 'altro' = restano validi (niente update):
+        //   · scaduti  → documento_archiviato (vecchio, fuori dai validi)
+        //   · smarrito → documento_smarrito  (fuori dai validi, visibile ad admin)
+        //   · altro    → nessuna modifica: i vecchi restano validi in parallelo
+        if (docRiuso && (docRiuso.esito === "scaduti" || docRiuso.esito === "smarrito") && (docRiuso.docs || []).length && uploadedFiles.some(f => f.type === "documento")) {
+          const nuovoType = docRiuso.esito === "smarrito" ? "documento_smarrito" : "documento_archiviato";
           const { error: archErr } = await supabase.from("contract_attachments")
-            .update({ file_type: "documento_archiviato" })
+            .update({ file_type: nuovoType })
             .in("id", docRiuso.docs.map(d => d.id));
-          if (archErr) console.error("Archivio documenti scaduti error:", archErr);
+          if (archErr) console.error("Aggiornamento stato documenti riuso error:", archErr);
         }
+        // MATCH APPUNTAMENTO (cantiere 08/08): se questa vendita chiude un
+        // appuntamento del call center (stesso CF, entro 30gg dalla data
+        // fissata) lo aggancia. STESSO negozio + venditore che ci lavora →
+        // POPUP: il venditore decide se associare (cooperation al caller).
+        // ALTRO negozio → automatico "attivato_diverso_negozio" (visibilita',
+        // niente cooperation). Non blocca MAI il salvataggio.
+        try {
+          const _ctrDaMatch = contractRows.filter(r => String(r.id).startsWith("CTR-")).map(r => r.id);
+          if (_ctrDaMatch.length && (ana.cf || ana.cfRef)) {
+            const cand = await trovaAppuntamentoDaAgganciare(ana.cf, ana.cfRef || null, selNeg, dateStr);
+            if (cand) {
+              const radiceApp = cand.appuntamento.store ? _storeRoot(cand.appuntamento.store) : null;
+              const vendOk = !radiceApp || await venditoreLavoraIn(selVend || user?.name || null, radiceApp);
+              if (cand.stessoNegozio && vendOk) {
+                // stesso negozio: chiedo al venditore (popup dopo il reset)
+                setMatchPending({ app: cand.appuntamento, contractIds: _ctrDaMatch, firma: user?.name || selVend || "match" });
+              } else {
+                // altro negozio: attivato ma senza cooperation, in automatico
+                await agganciaVenditaAppuntamento(cand.appuntamento.id, _ctrDaMatch, user?.name || selVend || "match", false);
+              }
+            }
+          }
+        } catch (e) { console.error("[MATCH-APP]", e); }
       }
 
       // scarico magazzino usati: i telefoni scelti dal magazzino passano a
@@ -5425,25 +5801,71 @@ function CRM() {
   // marginalita' venduta senza brand andava persa. Ora crea le righe EXT-
   // come fa handleSubmit per il ramo con brand.
   const [margSaving,setMargSaving]=useState(false);
+  // ── MOD-44 (Luca 10/08): vendita USATO con FINANZIAMENTO ──
+  // La riga marginalità della vendita usato con unità finanziate diventa una
+  // PRATICA DI FINANZIAMENTO nel Tracking PDA: brand "Prodotti e Marginalità"
+  // (non inizia per "Marginal" → passa il perimetro vaInTracking), macro
+  // mobile + controllo finanziamento → riga Finanziamento; nasce "Nuovo"
+  // (da lavorare), non gia' attiva.
+  const _usatoFinanziato=(mi)=>mi&&mi.productId==="vendita_usato"&&Array.isArray(mi.units)&&mi.units.some(u=>u&&u.finanziato==="si");
+  const _margRigaFin=(riga,mi)=>{
+    if(!_usatoFinanziato(mi))return riga;
+    const rate=mi.units.filter(u=>u&&u.finanziato==="si").map(u=>u.rate).filter(Boolean);
+    return {...riga,
+      // brand INVARIATO "Marginalità" (Luca 10/08: niente tessera doppia in
+      // Ricerca Vendite, categoria resta Marginalità) — nel Tracking entra
+      // per l'eccezione margFinanziata come riga Finanziamento
+      brand:"Marginalità",categoria_macro:"extra",controlli:["finanziamento"],
+      stato:"Nuovo",stato_negozio:"nuovo",data_attivazione:null,
+      dettagli:{...riga.dettagli,"Finanziato":"Sì","N. Rate":rate.join(", ")||null},
+    };
+  };
+  // MOD-44b (Luca 10/08): col finanziamento l'anagrafica e' quella dello
+  // STEP CLIENTE (step 2) — niente raccolta "diversa" nella finestrina: se
+  // manca, si torna sullo step 2 a compilarla, e il salvataggio la usa.
+  const _anaComeForm=()=>({anonimo:false,tipo:(ana.ragioneSociale||"").trim()?"business":"consumer",
+    nome:ana.nome||"",cognome:ana.cognome||"",ragioneSociale:ana.ragioneSociale||"",
+    nomeRef:ana.nomeRef||"",cognomeRef:ana.cognomeRef||"",cfRef:ana.cfRef||"",
+    tel:ana.cellulare||"",fisso:ana.fisso||"",email:ana.email||"",cf:ana.cf||"",
+    via:ana.via||"",cap:ana.cap||"",citta:ana.citta||""});
+  const _anaStep2Ok=()=>((ana.cf||"").trim().length>=11)
+    &&((((ana.nome||"").trim()&&(ana.cognome||"").trim()))||(ana.ragioneSociale||"").trim())
+    &&(ana.cellulare||"").trim().length>0;
+  // MOD-44c, rivisto su segnalazione Francesco (ok Luca 10/08): il minimo per
+  // la marginalità è nome+cognome+CELLULARE (business: ragione sociale+cellulare)
+  // — o tutti i dati; con meno di così l'utente è obbligato a "Salta dati cliente"
+  const margMinOk=!!((ana.cellulare||"").trim()&&(((ana.nome||"").trim()&&(ana.cognome||"").trim())||(ana.ragioneSociale||"").trim()));
   const saveMargOnly=async()=>{
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
     if(margSaving)return;
-    const anon=margSaveForm.anonimo;
+    // MOD-44c: i dati cliente vengono SOLO dallo step Cliente; "anonimo" = skip
+    // esplicito confermato dal popup (tracciato sulla vendita)
+    const anon=margSkipCli;
+    // MOD-44: con un USATO FINANZIATO servono anagrafica VERA (niente skip)
+    // e allegati documento + contratto obbligatori
+    const _conFin=margItems.some(_usatoFinanziato);
+    if(_conFin){
+      if(anon){setShowMargSave(false);setMargSkipCli(false);setVistaStep("cliente");setShowAna(true);sT("💳 Usato con finanziamento: i dati del cliente sono OBBLIGATORI, non si possono saltare — compilali nello step Cliente");return;}
+      if(!margCliSel&&!_anaStep2Ok()){
+        setShowMargSave(false);setVistaStep("cliente");setShowAna(true);
+        sT("💳 Usato con finanziamento: compila l'anagrafica del cliente nello step Cliente (CF, nome/ragione sociale e cellulare), poi torna a salvare");
+        return;
+      }
+      if(!attachments.some(a=>a.type==="documento")){sT("⚠️ Usato con finanziamento: carica il DOCUMENTO del cliente nello step Allegati");setShowMargSave(false);setVistaStep("allegati");return;}
+      if(!attachments.some(a=>a.type==="contratti")){sT("⚠️ Usato con finanziamento: carica il CONTRATTO di finanziamento nello step Allegati");setShowMargSave(false);setVistaStep("allegati");return;}
+    }
     if(!anon&&!margCliSel){
-      const f=margSaveForm;
-      // REFERENTE OBBLIGATORIO per le business anche qui (Luca 01/08): questo
-      // percorso chiedeva solo ragione sociale e telefono, ed era la porta da
-      // cui nascevano business senza referente. E niente return silenzioso:
-      // si dice COSA manca.
-      const cfRefM=(f.cfRef||"").trim().toUpperCase().replace(/\s+/g,"");
-      const miss=f.tipo==="business"
-        ?[!f.ragioneSociale.trim()&&"Ragione Sociale",!f.nomeRef.trim()&&"Nome Referente",!f.cognomeRef.trim()&&"Cognome Referente",
-          // CF referente obbligatorio anche qui (03/08, mig. 139)
-          (!cfRefM||!/^[A-Z0-9]{16}$/.test(cfRefM))&&"CF Referente (16 caratteri)",
-          !f.tel.trim()&&"Cellulare"].filter(Boolean)
-        :[!f.nome.trim()&&"Nome",!f.cognome.trim()&&"Cognome",!f.tel.trim()&&"Cellulare"].filter(Boolean);
-      if(miss.length){showToast("⚠️ Campi obbligatori mancanti: "+miss.join(", "));return;}
+      const f=_anaComeForm();
+      // MOD-44c: basta UN dato identificativo (anche solo nome, solo cognome o
+      // solo CF) — senza nulla si torna allo step Cliente, dove al limite si
+      // salta in modo esplicito e tracciato
+      const haId=!!(f.nome.trim()||f.cognome.trim()||f.cf.trim()||f.ragioneSociale.trim());
+      if(!haId){
+        setShowMargSave(false);setVistaStep("cliente");setShowAna(true);
+        sT("👤 Compila almeno un dato del cliente nello step Cliente (basta anche solo nome, cognome o CF) — oppure salta da lì in modo esplicito");
+        return;
+      }
       // Bug indirizzo (Luca 04/08): via facoltativa, ma se compilata il civico va messo
       if(f.via.trim()&&civicoMancante(f.via)){showToast("⚠️ Nell'indirizzo manca il numero civico (es. \"Via Roma 12\"): aggiungilo o lascia il campo vuoto");return;}
     }
@@ -5466,7 +5888,8 @@ function CRM() {
         // stessa logica del flusso brand: CF = match certo; senza CF si
         // riconosce solo con telefono + nome (o ragione sociale); univocita'
         // cellulare; il merge non cancella i dati gia' salvati (segn. 40)
-        const f=margSaveForm;
+        // MOD-44c: i dati sono SEMPRE quelli dello STEP CLIENTE
+        const f=_anaComeForm();
         const business=f.tipo==="business";
         const cfPiva=(f.cf||"").trim();
         const tel=f.tel.trim();
@@ -5506,7 +5929,7 @@ function CRM() {
         },{onConflict:"id"});
         if(ce)throw ce;
       }
-      const rows=margItems.map(mi=>({
+      const rows=margItems.map(mi=>_margRigaFin({
         id:`EXT-${crypto.randomUUID().slice(0,8).toUpperCase()}`,
         client_id:clientId,data:dateStr,brand:"Marginalità",categoria:"Marginalità",categoria_macro:"extra",controlli:[],
         // Segnalazione 52: le vendite a marginalita' sono brand Extra, quindi
@@ -5514,14 +5937,38 @@ function CRM() {
         // salvataggio scriveva "Nuovo" fisso e non valorizzava l'esito negozio.
         prodotto:mi.product,stato:"Attivo",stato_negozio:"attivato",venditore:mi.vendor||selVend,negozio:mi.store||selNeg,
         codice_attivazione:"VENDITA-DIRETTA",data_registrazione:dateStr,data_attivazione:dateStr,
-        dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei,units:Array.isArray(mi.units)?mi.units:null},
+        // MOD-44c: lo skip dei dati cliente resta TRACCIATO sulla vendita
+        dettagli:{product:mi.product,price:(mi.importo!=null?mi.importo:mi.price),importo:mi.importo??null,margin:mi.margin,qty:mi.qty,model:mi.model,imei:mi.imei,units:Array.isArray(mi.units)?mi.units:null,...(anon?{"Anagrafica saltata":"Sì","Saltata da":selVend||""}:{})},
         is_demo:false,
-      }));
+      },mi));
       const {error}=await supabase.from("contracts").insert(rows);
       if(error)throw error;
+      // MOD-44: allegati della vendita marginalità — con FINANZIAMENTO sono
+      // gia' stati verificati obbligatori; si caricano e si agganciano alla
+      // pratica di finanziamento (o alla prima riga)
+      try{
+        const praticaFin=rows.find(r=>Array.isArray(r.controlli)&&r.controlli.includes("finanziamento"));
+        const targetId=(praticaFin||rows[0])?.id;
+        if(targetId&&attachments.length){
+          const attRows=[];
+          for(const att of attachments){
+            let url=att.reused?att.url:null;
+            if(!url&&att.file){
+              const ext=(att.name.split(".").pop()||"bin").toLowerCase();
+              const path=`${clientId}/${clientId}_${Date.now()}_${Math.random().toString(36).slice(2,7)}.${ext}`;
+              const {error:eUp}=await supabase.storage.from("contracts").upload(path,att.file);
+              if(eUp)continue;
+              url=supabase.storage.from("contracts").getPublicUrl(path).data.publicUrl;
+            }
+            if(url)attRows.push({contract_id:targetId,client_id:clientId,file_url:url,file_name:att.name,file_type:att.type});
+          }
+          if(attRows.length)await supabase.from("contract_attachments").insert(attRows);
+        }
+      }catch{/* allegati best-effort: la vendita e' gia' salva */}
       await scaricaUsatiVenduti(margItems, clientId, dateStr, selVend);
       setMargSaveForm({...MARG_FORM_VUOTO});
       setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
+      setMargSkipCli(false);
       setShowMargSave(false);
       showToast(`Vendita salvata! ${rows.length} prodott${rows.length===1?"o":"i"} registrat${rows.length===1?"o":"i"}`);
       // POS: apri Incasso & Scontrino sulle voci prezzate (solo negozi abilitati); fullReset alla chiusura.
@@ -5562,6 +6009,7 @@ function CRM() {
     if(c.tipo==="business"&&tipoCliente!=="business")setTipoCliente("business");
     if(c.tipo==="consumer"&&tipoCliente!=="privato")setTipoCliente("privato");
     setTurista(!!c.turista&&c.tipo!=="business");
+    verificaAppuntamentoBanner(c.cf_piva,c.cf_ref);
   };
   const doLookup=async()=>{
     const v=(lookupValue||"").trim();
@@ -5579,6 +6027,8 @@ function CRM() {
         setClienteFound(false);
         setAna({nome:"",cognome:"",cellulare:"",email:"",via:"",cap:"",citta:"",iban:"",cf:/^[A-Z0-9]{11,16}$/.test(v.replace(/\s+/g,""))?v.replace(/\s+/g,""):"",ragioneSociale:"",nomeRef:"",cognomeRef:"",cfRef:"",recapito:"",fisso:"",intDiverso:false,intNome:"",intCognome:"",intCf:""});
         setTurista(false);
+        // il cliente non e' a sistema ma il CF potrebbe avere un appuntamento
+        verificaAppuntamentoBanner(v.replace(/\s+/g,""),"");
         return;
       }
       applicaCliente(c);
@@ -5706,6 +6156,28 @@ function CRM() {
     </div>
   );
 
+  // MOD-2b: conferma "nessuna opzione da collegare?" — condivisa da form e carrello
+  // come confirmResetModal. Il sì rilancia addCart saltando il check (skipOpz=true)
+  // e riesegue la navigazione "after" salvata all'apertura del popup.
+  const confirmNoOpzModal = confirmNoOpz && (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setConfirmNoOpz(null)}}>
+      <div style={{background:"var(--tf-0e1526)",border:"1px solid var(--tf-w120)",borderRadius:16,padding:"28px 30px",width:"min(460px,92vw)",boxShadow:"0 18px 50px rgba(0,0,0,.55)",textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:10}}>🧩</div>
+        <div style={{fontSize:17,fontWeight:800,color:"var(--tf-f8fafc)",marginBottom:6}}>Nessuna opzione da collegare?</div>
+        <div style={{fontSize:14,color:"var(--tf-8892b0)",marginBottom:14,lineHeight:1.5}}>
+          {(confirmNoOpz.offerte||[]).length>1?"Queste offerte hanno":"Questa offerta ha"} opzioni disponibili, ma non ne {(confirmNoOpz.offerte||[]).length>1?"hai collegata nessuna":"hai collegata nessuna"}:
+        </div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",marginBottom:20}}>
+          {(confirmNoOpz.offerte||[]).map(n=><span key={n} style={{padding:"6px 12px",borderRadius:999,border:"1px solid var(--tf-w150)",background:"var(--tf-w30)",color:"var(--tf-c4b5fd)",fontSize:12,fontWeight:700}}>{n}</span>)}
+        </div>
+        <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+          <button onClick={()=>setConfirmNoOpz(null)} style={{padding:"11px 24px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:700,cursor:"pointer"}}>No, torno a collegarle</button>
+          <button onClick={()=>{const a=confirmNoOpz&&confirmNoOpz.after;setConfirmNoOpz(null);addCart(a,true);}} style={{padding:"11px 24px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#1f8a3a)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>Sì, prosegui senza opzioni</button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ═══════════ CART ═══════════
   if(showCart){
     const curI=colItems();const allG=[...cart];
@@ -5800,7 +6272,7 @@ function CRM() {
           <button onClick={()=>setShowCart(false)} style={{padding:"12px 24px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:13,fontWeight:600,cursor:"pointer"}}>← Torna</button>
           {/* #124: reset TOTALE del form disponibile anche nel carrello */}
           <button onClick={()=>setConfirmReset(true)} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
-          {!onlyMarg&&<button onClick={()=>{if(brand&&colItems().length>0){addCart();}setBrand(null);setShowCart(false);}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
+          {!onlyMarg&&<button onClick={()=>{const nav=()=>{setBrand(null);setShowCart(false);};if(brand&&colItems().length>0){addCart(nav);}else{nav();}}} style={{padding:"12px 24px",borderRadius:10,border:"2px solid #6f42c1",background:"rgba(111,66,193,0.12)",color:"var(--tf-6f42c1)",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Altro brand</button>}
           {onlyMarg&&<button onClick={()=>setShowMargSave(true)} style={{padding:"12px 36px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#6f42c1,#9b59b6)",color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",marginLeft:"auto"}}>💾 Salva Marginalità ({margItems.length})</button>}
           {!onlyMarg&&(()=>{const _m=mancanzeVendita();const _ok=tp>0&&!submitting&&_m.length===0;
             // col gate non superato il bottone RESTA cliccabile (Luca 04/08):
@@ -5823,11 +6295,17 @@ function CRM() {
                 </div>
               ))}
             </div>
-            <label style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,cursor:"pointer",background:"rgba(0,114,198,0.10)",borderRadius:8,padding:"10px 14px"}}>
-              <input type="checkbox" checked={margSaveForm.anonimo} onChange={e=>setMargSaveForm(p=>({...p,anonimo:e.target.checked}))} style={{width:18,height:18,cursor:"pointer"}}/>
-              <div><div style={{fontWeight:700,fontSize:13,color:"var(--tf-f8fafc)"}}>Vendi senza dati cliente</div><div style={{fontSize:11,color:"var(--tf-64748b)"}}>Salta nome, cognome e telefono</div></div>
-            </label>
-            {!margSaveForm.anonimo&&(margCliSel?(
+            {/* MOD-44c: i dati cliente vivono nello STEP CLIENTE — qui solo il
+                riepilogo; per modificarli si torna allo step 2 */}
+            {margSkipCli?(
+              <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"1px dashed rgba(245,158,11,0.6)",background:"rgba(245,158,11,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:800,color:"var(--tf-fbbf24)"}}>🚫 Vendita senza dati cliente</div>
+                  <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>Skip scelto nello step Cliente — viene registrato sulla vendita</div>
+                </div>
+                <button onClick={()=>{setShowMargSave(false);setVistaStep("cliente");}} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>👤 Aggiungi dati</button>
+              </div>
+            ):(margCliSel?(
               <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"2px solid #28a745",background:"rgba(40,167,69,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
                 <div>
                   <div style={{fontSize:13,fontWeight:800,color:"var(--tf-e2e8f0)"}}>✓ {margCliLabel(margCliSel)}</div>
@@ -5835,61 +6313,29 @@ function CRM() {
                 </div>
                 <button onClick={()=>setMargCliSel(null)} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✕ cambia</button>
               </div>
-            ):(
-              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
-                <div>
-                  <div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Cerca cliente (cognome, nome, cellulare o CF)</div>
-                  <input value={margCliCerca} onChange={e=>setMargCliCerca(e.target.value)} placeholder="Es. Rossi Mario, 339…, RSSMRA…" style={{width:"100%",padding:"9px 12px",borderRadius:8,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/>
-                  {margCliHits.length>0&&<div style={{marginTop:6,borderRadius:8,border:"1px solid var(--tf-w80)",overflow:"hidden"}}>
-                    {margCliHits.map(c=>(
-                      <button key={c.id} onClick={()=>{setMargCliSel(c);setMargCliHits([]);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",border:"none",borderBottom:"1px solid var(--tf-w50)",background:"var(--tf-w20)",cursor:"pointer"}}>
-                        <span style={{fontSize:13,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{margCliLabel(c)}</span>
-                        <span style={{fontSize:11,color:"var(--tf-8892b0)",marginLeft:8}}>{[c.cf_piva,c.cellulare].filter(Boolean).join(" • ")}</span>
-                      </button>
-                    ))}
-                  </div>}
-                  {margCliCerca.trim().length>=3&&margCliHits.length===0&&<div style={{fontSize:10,color:"var(--tf-fd7e14)",fontWeight:700,marginTop:4}}>Nessuna anagrafica trovata: compila i campi sotto per crearla.</div>}
+            ):((()=>{
+              // riepilogo dei dati compilati nello STEP CLIENTE (MOD-44c)
+              const f=_anaComeForm();
+              const nomeCli=(f.ragioneSociale||`${f.nome} ${f.cognome}`.trim()||f.cf||"").trim();
+              const sub=[f.cf,f.tel].filter(Boolean).join(" • ");
+              return nomeCli?(
+                <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"2px solid #28a745",background:"rgba(40,167,69,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:800,color:"var(--tf-e2e8f0)"}}>✓ {nomeCli}</div>
+                    <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>{sub||"dati dallo step Cliente"}</div>
+                  </div>
+                  <button onClick={()=>{setShowMargSave(false);setVistaStep("cliente");setShowAna(true);}} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ Modifica</button>
                 </div>
-                <div style={{fontSize:10,fontWeight:700,color:"var(--tf-64748b)",textTransform:"uppercase"}}>Oppure crea una nuova anagrafica</div>
-                <div style={{display:"flex",gap:8}}>
-                  {[["privato","👤 Privato"],["business","🏢 Business"]].map(([k,l])=>(
-                    <button key={k} onClick={()=>setMargSaveForm(p=>({...p,tipo:k}))} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",border:margSaveForm.tipo===k?"2px solid #6f42c1":"1px solid var(--tf-w100)",background:margSaveForm.tipo===k?"rgba(111,66,193,0.15)":"var(--tf-w30)",color:margSaveForm.tipo===k?"var(--tf-a78bfa)":"var(--tf-8892b0)"}}>{l}</button>
-                  ))}
+              ):(
+                <div style={{marginBottom:14,padding:"10px 14px",borderRadius:10,border:"1px dashed rgba(245,158,11,0.6)",background:"rgba(245,158,11,0.10)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:800,color:"var(--tf-fbbf24)"}}>⚠️ Nessun dato cliente</div>
+                    <div style={{fontSize:11,color:"var(--tf-8892b0)"}}>Compila lo step Cliente (basta anche solo nome, cognome o CF) o salta da lì</div>
+                  </div>
+                  <button onClick={()=>{setShowMargSave(false);setVistaStep("cliente");setShowAna(true);}} style={{padding:"5px 10px",borderRadius:8,border:"1px solid var(--tf-w150)",background:"var(--tf-w40)",color:"var(--tf-8892b0)",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>👤 Compila</button>
                 </div>
-                {margSaveForm.tipo==="business"?(
-                  <>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Ragione Sociale <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.ragioneSociale} onChange={e=>setMargSaveForm(p=>({...p,ragioneSociale:e.target.value}))} placeholder="Es. Rossi S.r.l." style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>P.IVA / CF</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. 01234567890" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
-                    <div style={{display:"flex",gap:10}}>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Nome Referente <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.nomeRef} onChange={e=>setMargSaveForm(p=>({...p,nomeRef:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Cognome Referente <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.cognomeRef} onChange={e=>setMargSaveForm(p=>({...p,cognomeRef:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                    </div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>CF Referente <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.cfRef} onChange={e=>setMargSaveForm(p=>({...p,cfRef:e.target.value.toUpperCase().replace(/\s+/g,"")}))} maxLength={16} placeholder="Es. RSSMRA80A01H501B" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Telefono Fisso</div><input value={margSaveForm.fisso} onChange={e=>setMargSaveForm(p=>({...p,fisso:e.target.value.replace(/\D/g,"").slice(0,11)}))} placeholder="Es. 061234567 (facoltativo)" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                  </>
-                ):(
-                  <>
-                    <div style={{display:"flex",gap:10}}>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Nome <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.nome} onChange={e=>setMargSaveForm(p=>({...p,nome:e.target.value}))} placeholder="Es. Mario" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                      <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Cognome <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.cognome} onChange={e=>setMargSaveForm(p=>({...p,cognome:e.target.value}))} placeholder="Es. Rossi" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                    </div>
-                    <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Codice Fiscale</div><input value={margSaveForm.cf} onChange={e=>setMargSaveForm(p=>({...p,cf:e.target.value.toUpperCase()}))} placeholder="Es. RSSMRA80A01H501U" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box",fontFamily:"monospace"}}/></div>
-                  </>
-                )}
-                <div style={{display:"flex",gap:10}}>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Telefono <span style={{color:"var(--tf-dc3545)"}}>*</span></div><input value={margSaveForm.tel} onChange={e=>setMargSaveForm(p=>({...p,tel:e.target.value}))} placeholder="Es. 3391234567" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Email</div><input value={margSaveForm.email} onChange={e=>setMargSaveForm(p=>({...p,email:e.target.value}))} placeholder="Es. mario@mail.it" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                </div>
-                <div><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>{margSaveForm.tipo==="business"?"Indirizzo sede":"Indirizzo di residenza"}</div>
-                  <IndirizzoAutocomplete value={margSaveForm.via} onChange={v=>setMargSaveForm(p=>({...p,via:v}))}
-                    onPick={s=>setMargSaveForm(p=>({...p,via:s.indirizzo,cap:s.cap||p.cap,citta:s.citta||p.citta}))}
-                    placeholder="Via e civico: scegli dalla lista" className="glass-input rounded-lg py-2 w-full"/></div>
-                <div style={{display:"flex",gap:10}}>
-                  <div style={{width:110}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>CAP</div><input value={margSaveForm.cap} onChange={e=>setMargSaveForm(p=>({...p,cap:e.target.value.replace(/\D/g,"").slice(0,5)}))} placeholder="00100" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                  <div style={{flex:1}}><div style={{fontSize:11,fontWeight:600,color:"var(--tf-8892b0)",marginBottom:3}}>Città</div><input value={margSaveForm.citta} onChange={e=>setMargSaveForm(p=>({...p,citta:e.target.value}))} placeholder="Es. Roma" style={{width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid var(--tf-w100)",fontSize:13,boxSizing:"border-box"}}/></div>
-                </div>
-              </div>
-            ))}
+              );
+            })()))}
             <div style={{display:"flex",gap:10,marginTop:4}}>
               <button onClick={chiudiMargSave} style={{flex:1,padding:"11px 0",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:13,fontWeight:700,cursor:"pointer"}}>← Annulla</button>
               <button onClick={saveMargOnly} disabled={margSaving} style={{flex:1,padding:"11px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#218838)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>{margSaving?"Salvataggio...":"✅ Salva vendita"}</button>
@@ -5897,7 +6343,7 @@ function CRM() {
           </div>
         </div>}
         {/* #124: popup di conferma reset anche dentro il carrello */}
-        {confirmResetModal}
+        {confirmResetModal}{confirmNoOpzModal}
       </div>
     );
     return cartContent;
@@ -5956,7 +6402,11 @@ select.rvIn{cursor:pointer}
             // MARGINE, non prezzo (Luca 06/08): per i telefoni a listino conta
             // il MARGINE generato (4%), non il costo del telefono — il valore
             // del carrello e' quello che ci portiamo a casa
-            const contrib=(m)=>{const q=Number(m.qty)||1;const marg=m.totalMargin!=null?Number(m.totalMargin):(m.margin!=null?Number(m.margin):null);return (marg!=null?marg:(Number(m.importo)||0))*q;};
+            // VALORE CARRELLO (fix Luca 07/08, bundle 2°/3° "×10"): totalMargin
+            // e importo sono GIÀ totali (unità × qtà) — moltiplicare ancora per
+            // la quantità elevava al quadrato (3 bundle → ×9). Solo il margin
+            // unitario va moltiplicato per la qtà.
+            const contrib=(m)=>{if(m.totalMargin!=null)return Number(m.totalMargin);const q=Number(m.qty)||1;if(m.margin!=null)return Number(m.margin)*q;return Number(m.importo)||0;};
             const val=margItems.reduce((t,m)=>t+contrib(m),0);
             const tel=margItems.filter(m=>m.priceLocked&&(m.totalMargin!=null||m.margin!=null));
             const telListino=tel.reduce((t,m)=>t+(Number(m.importo)||0)*(Number(m.qty)||1),0);
@@ -6001,6 +6451,9 @@ select.rvIn{cursor:pointer}
                         <span style={{fontSize:10,color:"var(--tf-8892b0)"}}>€</span>
                       </span>
                       :<div style={{fontSize:10,fontWeight:700,color:m.importo!=null?"var(--tf-28a745)":"var(--tf-dc3545)"}}>{m.importo!=null?("€ "+Number(m.importo).toFixed(2)):"prezzo da inserire"}</div>}
+                      {/* 🗑 riga per errore (Luca 10/08 via Verifiche) — le AUTO no: derivano dalla vendita brand */}
+                      {!m.auto&&<button onClick={e=>{e.stopPropagation();setMargItems(p=>p.filter((_,i)=>i!==mi));}} title="Elimina questa riga dal carrello"
+                        style={{marginLeft:4,background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:13,lineHeight:1,padding:"2px 2px",flexShrink:0}}>🗑</button>}
                     </div>
                   ))}
                 </div>}
@@ -6014,6 +6467,25 @@ select.rvIn{cursor:pointer}
       </div>
       {!drawerCarrello&&<button className="crmFab" onClick={()=>setDrawerCarrello(true)} title="Apri il riepilogo vendite" style={{background:bG}}>🛒{tCI>0&&<span style={{background:"var(--tf-ffd800)",color:"#111",borderRadius:10,padding:"1px 9px",fontSize:12,fontWeight:900}}>{tCI}</span>}</button>}
       {toast&&<div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",background:"var(--tf-28a745)",color:"#fff",padding:"12px 28px",borderRadius:10,fontSize:14,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.2)",zIndex:9999}}>{toast}</div>}
+      {/* POPUP MATCH APPUNTAMENTO (Luca 08/08): centrale, decisione esplicita —
+          "Sì, associa" grande, "No" piccolo a destra (stile "Più tardi"). */}
+      {matchPending&&createPortal(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.72)",zIndex:12000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
+          <div style={{background:"var(--tf-0e1526)",border:"1px solid rgba(99,102,241,0.4)",borderRadius:16,maxWidth:480,width:"100%",padding:24,boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:40,textAlign:"center",marginBottom:8}}>📞</div>
+            <div style={{fontSize:18,fontWeight:800,color:"var(--tf-f8fafc)",textAlign:"center",marginBottom:10}}>Appuntamento del call center</div>
+            <div style={{fontSize:14,lineHeight:1.55,color:"var(--tf-cbd5e1)",textAlign:"center",marginBottom:20}}>
+              Questo cliente aveva un appuntamento preso da <b style={{color:"#fff"}}>{matchPending.app.created_by||"un caller"}</b>
+              {matchPending.app.date?<> per il <b style={{color:"#fff"}}>{matchPending.app.date}</b></>:null}
+              {matchPending.app.store?<> ({matchPending.app.store})</>:null}.<br/>
+              Vuoi <b style={{color:"var(--tf-a5b4fc)"}}>associare questa vendita</b> all&apos;appuntamento? Risulterà <b>attivato</b> e la cooperation andrà al caller.
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <button onClick={()=>confermaMatch(true)} disabled={matchBusy} style={{flex:1,padding:"13px 0",borderRadius:12,border:"none",background:"linear-gradient(135deg,#6366f1,#4f46e5)",color:"#fff",fontSize:15,fontWeight:800,cursor:"pointer",opacity:matchBusy?0.6:1}}>{matchBusy?"Associo…":"✓ Sì, associa"}</button>
+              <button onClick={()=>confermaMatch(false)} disabled={matchBusy} style={{padding:"13px 16px",borderRadius:12,border:"none",background:"transparent",color:"var(--tf-8892b0)",fontSize:13,fontWeight:600,cursor:"pointer"}}>No</button>
+            </div>
+          </div>
+        </div>, document.body)}
       {/* titolo in alto a sinistra + contenuto a tutta pagina, come Ricerca Vendite (Luca 03/08) */}
       <div style={{marginBottom:18}}>
         <h1 style={{fontSize:28,fontWeight:800,color:"var(--tf-f8fafc)",margin:0,letterSpacing:-0.3}}>Registra Vendita</h1>
@@ -6025,15 +6497,18 @@ select.rvIn{cursor:pointer}
           indietro/avanti passa SOLO da qui — niente piu' righe riassunto. */}
       {(()=>{
         const anagOk=tipoCliente==="business"?!!(ana.ragioneSociale||"").trim():!!((ana.nome||"").trim()&&(ana.cognome||"").trim());
-        const percCliente=!tipoCliente?0:(anagOk?100:50);
+        // MOD-44c: in marginalità lo step Cliente e' OBBLIGATORIO (dati minimi
+        // o skip esplicito) — prodotti/allegati/note si sbloccano solo dopo
+        const margCliOk=margMinOk||margSkipCli;
+        const percCliente=(margFlow&&!brand)?(margCliOk?100:(tipoCliente?50:0)):(!tipoCliente?0:(anagOk?100:50));
         const cAtt=bObj?bC:"var(--tf-6366f1)";
         const STEPS=[
           {id:"brand",label:margFlow&&!brand?"Marginalità":"Brand",icona:(bObj&&bObj.logo)?<Image src={bObj.logo} alt={bObj.label} width={84} height={30} style={{height:26,width:"auto",maxWidth:82,objectFit:"contain"}}/>:<span style={{fontSize:20}}>{margFlow&&!brand?"📦":(bObj?bObj.icon:"⚡")}</span>,perc:(brand||margFlow)?100:0,abil:true},
-          {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand},
-          {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:23}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
-          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?true:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.sky||r.iliad||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand)||!!(showAna&&showStep4)},
+          {id:"cliente",label:"Cliente",icona:<span style={{fontSize:23}}>{tipoCliente?(tipoCliente==="privato"?"👤":"🏢"):"🧑‍💼"}</span>,perc:percCliente,abil:!!brand||(margFlow&&!brand)},
+          {id:"prodotti",label:"Prodotti",icona:<span style={{fontSize:23}}>🛒</span>,perc:margFlow&&!brand?(margItems.length>0?100:50):((showStep4&&tCI>0)?100:(showStep4?50:0)),abil:(margFlow&&!brand&&margCliOk)||!!(showAna&&showStep4)},
+          {id:"allegati",label:"Allegati",icona:<span style={{fontSize:23}}>📎</span>,perc:((((margFlow&&!brand)?true:(attachments.some(a=>a.type==="documento")&&righeCarrello().every(r=>r.contratto!=="obbligatorio"||attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key))))?50:0))+((stepVisti.allegati&&selVend&&selNeg&&dataVendita)?50:0),abil:(margFlow&&!brand&&margCliOk)||!!(showAna&&showStep4)},
           // verde APPENA si flagga Sì o No (Luca 05/08): la scelta completa lo step
-          {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:notaScelta?100:0,abil:(margFlow&&!brand)||!!(showAna&&showStep4),opz:true},
+          {id:"note",label:"Note",icona:<span style={{fontSize:23}}>📝</span>,perc:notaScelta?100:0,abil:(margFlow&&!brand&&margCliOk)||!!(showAna&&showStep4),opz:true},
         ];
         const _doneCount=STEPS.filter(s=>s.perc>=100).length;
         const _railPct=Math.min(100,(_doneCount/(STEPS.length-1))*100);
@@ -6093,7 +6568,9 @@ select.rvIn{cursor:pointer}
             if(brand&&_lavoro&&cart.findIndex(g=>g.brandId===brand)<0&&!window.confirm("Hai una vendita in corso su questo brand non ancora nel carrello: passando a Prodotti & Marginalità la perdi.\n\nContinuare?"))return;
             setBrand(null);setSales({});setSesCode("");setShowStep4(false);setShowAna(false);setCambioBrand(false);
             setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);
-            setMargFlow(true);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));
+            // MOD-44c (Luca 10/08): anche la marginalità passa dallo step
+            // Cliente — niente salto diretto ai prodotti
+            setMargFlow(true);setVistaStep("cliente");setStepVisti(pv=>({...pv,prodotti:true}));
           }} title="Prodotti & Marginalità" style={{padding:"26px 16px",borderRadius:14,border:margFlow?"2px solid #6f42c1":"2px dashed #6f42c1",background:"rgba(111,66,193,0.12)",cursor:"pointer",textAlign:"center",position:"relative",overflow:"hidden",boxShadow:margFlow?"0 0 0 3px rgba(111,66,193,0.25)":"none"}}>
             {margItems.length>0&&<span style={{position:"absolute",top:8,right:8,background:"var(--tf-6f42c1)",color:"#fff",borderRadius:10,padding:"2px 10px",fontSize:12,fontWeight:800}}>{margItems.length}</span>}
             {/* stesso simbolo della tessera Marginalità di Ricerca Vendite: 💰
@@ -6105,8 +6582,11 @@ select.rvIn{cursor:pointer}
       </div>}
 
 
-      {vistaStep==="cliente"&&brand&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
+      {vistaStep==="cliente"&&(brand||(margFlow&&!brand))&&<div style={{background:"var(--tf-w20)",borderRadius:14,padding:18,marginBottom:12,borderLeft:"4px solid #6f42c1"}}>
         <div style={{fontSize:11,fontWeight:700,color:"var(--tf-6f42c1)",marginBottom:12,textTransform:"uppercase"}}>👥 Cliente — tipo e ricerca</div>
+        {margFlow&&!brand&&<div style={{marginBottom:12,padding:"9px 12px",borderRadius:8,background:"rgba(111,66,193,0.10)",border:"1px dashed rgba(111,66,193,0.5)",fontSize:12,color:"var(--tf-a78bfa)",fontWeight:600}}>
+          💰 Vendita a marginalità: bastano anche <b>solo nome</b>, <b>solo cognome</b> o <b>solo il CF</b>. Se il cliente non vuole lasciare nulla puoi saltare, ma la scelta viene registrata.
+        </div>}
         <div style={{display:"flex",gap:12,marginBottom:tipoCliente?16:0}}>
           {(brand==="very"||brand==="ho"||brand==="kena"?["privato"]:["privato","business"]).map(t=><button key={t} onClick={()=>{setTipoCliente(t);setShowAna(false);setClienteFound(false);setLookupValue("");setSales({});setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setShowStep4(false)}} style={{flex:1,padding:12,borderRadius:10,border:tipoCliente===t?"2px solid #6f42c1":"2px solid var(--tf-w60)",background:tipoCliente===t?"rgba(111,66,193,0.12)":"var(--tf-w40)",cursor:"pointer",textAlign:"center"}}><div style={{fontSize:22,marginBottom:2}}>{t==="privato"?"👤":"🏢"}</div><div style={{fontWeight:700,fontSize:14,color:tipoCliente===t?"var(--tf-6f42c1)":"var(--tf-f8fafc)"}}>{t==="privato"?"Privato":"Business"}</div></button>)}
         </div>
@@ -6149,7 +6629,33 @@ select.rvIn{cursor:pointer}
             </div>
           )}
           {lookupDone&&(clienteFound?<div style={{marginTop:10,background:"rgba(40,167,69,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-28a745)"}}>✅ Cliente trovato in anagrafica</div>:<div style={{marginTop:10,background:"rgba(245,158,11,0.12)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-f59e0b)"}}>⚠ Cliente non presente in anagrafica — compila i dati a mano (bastano nome, cognome e cellulare)</div>)}
+          {apptAvviso&&<div style={{marginTop:8,background:"rgba(99,102,241,0.14)",border:"1px solid rgba(99,102,241,0.4)",borderRadius:6,padding:"8px 12px",fontSize:12,color:"var(--tf-a5b4fc)",fontWeight:600}}>📞 Questo cliente ha un appuntamento aperto preso da {apptAvviso.da}{apptAvviso.data?` (fissato per il ${apptAvviso.data})`:""}{apptAvviso.store?` · ${apptAvviso.store}`:""} — registrando la vendita l&apos;appuntamento verrà attivato e il merito assegnato al caller.</div>}
         </div>}
+        {/* MOD-44c: navigazione dello step Cliente in MARGINALITÀ — avanti coi
+            dati minimi oppure skip esplicito col popup (tracciato) */}
+        {margFlow&&!brand&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:14,paddingTop:12,borderTop:"1px solid var(--tf-w60)",gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <button onClick={()=>setVistaStep("brand")} style={{padding:"9px 18px",borderRadius:8,border:"1px solid var(--tf-w140)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:12,fontWeight:700,cursor:"pointer"}}>← Indietro</button>
+            <button onClick={()=>setMargSkipPopup(true)} style={{padding:"9px 18px",borderRadius:8,border:"1px dashed rgba(245,158,11,0.6)",background:margSkipCli?"rgba(245,158,11,0.15)":"var(--tf-w20)",color:"var(--tf-fbbf24)",fontSize:12,fontWeight:700,cursor:"pointer"}}>🚫 Salta dati cliente{margSkipCli?" ✓":""}</button>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            {!margMinOk&&!margSkipCli&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e cellulare (o tutti i dati) — altrimenti salta</span>}
+            <button disabled={!margMinOk&&!margSkipCli} onClick={()=>{if(margMinOk)setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:(!margMinOk&&!margSkipCli)?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:(!margMinOk&&!margSkipCli)?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:(!margMinOk&&!margSkipCli)?"not-allowed":"pointer"}}>Avanti → Prodotti</button>
+          </div>
+        </div>}
+      </div>}
+      {/* MOD-44c: popup CRM (non di Chrome) di conferma skip dati cliente */}
+      {margSkipPopup&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2100,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
+        <div style={{background:"linear-gradient(160deg,#1c2440,#10162b)",borderRadius:16,width:"100%",maxWidth:440,padding:24,border:"2px solid rgba(245,158,11,.55)",boxShadow:"0 8px 40px rgba(0,0,0,.6), 0 0 24px rgba(245,158,11,.18)",margin:"0 16px"}}>
+          <div style={{fontSize:34,textAlign:"center",marginBottom:8}}>⚠️</div>
+          <div style={{fontWeight:800,fontSize:16,color:"#f8fafc",textAlign:"center",marginBottom:8}}>Vuoi davvero saltare i dati del cliente?</div>
+          <div style={{fontSize:13,color:"#cbd5e1",lineHeight:1.5,marginBottom:6}}>Saltare i dati <b style={{color:"var(--tf-fbbf24)"}}>inciderà sul commissioning</b> in termini di bonus. I dati del cliente sono importanti per le attività di marketing e per lo storico: servono almeno <b>nome, cognome e cellulare</b> (business: ragione sociale e cellulare).</div>
+          <div style={{fontSize:11.5,color:"var(--tf-8892b0)",marginBottom:16}}>Lo skip viene registrato sulla vendita con il nome del venditore.</div>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setMargSkipPopup(false)} style={{flex:1.4,padding:"11px 0",borderRadius:10,border:"none",background:"linear-gradient(135deg,#28a745,#218838)",color:"#fff",fontSize:13,fontWeight:800,cursor:"pointer"}}>← Torna ai dati</button>
+            <button onClick={()=>{setMargSkipCli(true);setMargSkipPopup(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{flex:1,padding:"11px 0",borderRadius:10,border:"1px solid rgba(220,53,69,0.6)",background:"rgba(220,53,69,0.12)",color:"var(--tf-f87171)",fontSize:13,fontWeight:800,cursor:"pointer"}}>Salta comunque</button>
+          </div>
+        </div>
       </div>}
 
 
@@ -6183,8 +6689,16 @@ select.rvIn{cursor:pointer}
             <button onClick={()=>setConfirmReset(true)} style={{padding:"9px 18px",borderRadius:8,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Obbligatori: {anaMissing.join(", ")}</span>}
-            <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"var(--tf-w80)":"linear-gradient(135deg,#2E75B6,#1B3A5C)",color:anaMissing.length>0?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
+            {/* MOD-44c: in marginalità niente campi obbligatori — basta un dato */}
+            {margFlow&&!brand
+              ?<>
+                {!margMinOk&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e cellulare</span>}
+                <button disabled={!margMinOk} onClick={()=>{if(!margMinOk)return;setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:!margMinOk?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:!margMinOk?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:!margMinOk?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti → Prodotti</button>
+              </>
+              :<>
+                {anaMissing.length>0&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Obbligatori: {anaMissing.join(", ")}</span>}
+                <button disabled={anaMissing.length>0} onClick={()=>{if(anaMissing.length===0)setShowStep4(true)}} title={anaMissing.length>0?"Compila "+anaMissing.join(", "):""} style={{padding:"9px 22px",borderRadius:8,border:"none",background:anaMissing.length>0?"var(--tf-w80)":"linear-gradient(135deg,#2E75B6,#1B3A5C)",color:anaMissing.length>0?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:anaMissing.length>0?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti →</button>
+              </>}
           </div>
         </div>
       </div>}
@@ -6464,7 +6978,10 @@ select.rvIn{cursor:pointer}
                 spesso non ci sono i dati del cliente) */}
             <div style={{fontSize:10,color:"var(--tf-8892b0)",marginBottom:10}}>Per le vendite di sola marginalità gli allegati sono FACOLTATIVI: carica documento o altro solo se li hai.</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-              {[{l:"Documento",i:"🪪",t:"documento"},{l:"Altro",i:"📁",t:"altro"}].map(a=>boxAllegato(a,null,"facoltativo"))}
+              {(margItems.some(_usatoFinanziato)
+                ? [{l:"Documento",i:"🪪",t:"documento",n:"OBBLIGATORIO per il finanziamento"},{l:"Contratto",i:"📄",t:"contratti",n:"OBBLIGATORIO per il finanziamento"},{l:"Altro",i:"📁",t:"altro",n:"facoltativo"}]
+                : [{l:"Documento",i:"🪪",t:"documento",n:"facoltativo"},{l:"Altro",i:"📁",t:"altro",n:"facoltativo"}]
+              ).map(a=>boxAllegato(a,null,a.n))}
             </div>
             {listaFileAllegati(attachments.map((a,i)=>({a,i})))}
           </>):(<>
@@ -6486,13 +7003,18 @@ select.rvIn{cursor:pointer}
                   {bd&&bd.logo?<span style={{background:"#fff",borderRadius:8,padding:"2px 8px",display:"inline-flex",alignItems:"center"}}><Image src={bd.logo} alt={r.brandLabel} width={120} height={30} style={{height:20,width:"auto",maxWidth:96,objectFit:"contain"}}/></span>:<span style={{fontSize:13,fontWeight:800,color:"var(--tf-f8fafc)"}}>{r.brandIcon} {r.brandLabel}</span>}
                   <span style={{fontSize:12,fontWeight:800,color:"var(--tf-f8fafc)"}}>{r.label}{r.multi?<span style={{color:"var(--tf-8892b0)",fontWeight:700}}> · n°{r.nCopia}</span>:null}</span>
                   {r.isCurrent&&<span style={{background:"var(--tf-ffd800)",borderRadius:12,padding:"2px 10px",color:"#111",fontSize:9,fontWeight:800}}>IN CORSO</span>}
-                  {r.iliad?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>Iliad: senza contratto</span>:r.sky?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>Sky: contratto facoltativo</span>
+                  {/* MOD-31/32: badge dallo stato risolto (catalogo + aggancio) */}
+                  {r.contratto==="assente"?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>senza contratto</span>
+                    :r.contratto==="associato"?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-c4b5fd)",background:"rgba(111,66,193,0.14)",border:"1px solid rgba(111,66,193,0.5)",borderRadius:999,padding:"2px 10px"}}>📎 vendita agganciata: contratto unico</span>
+                    :r.contratto==="facoltativo"?(attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key)
+                      ?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-34d399)",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.4)",borderRadius:999,padding:"2px 10px"}}>✓ contratto caricato</span>
+                      :<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f59e0b)",background:"rgba(245,158,11,0.12)",border:"1px solid rgba(245,158,11,0.4)",borderRadius:999,padding:"2px 10px"}}>contratto facoltativo</span>)
                     :(attachments.some(a=>a.type==="contratti"&&(a.rowKey||"")===r.key)
                       ?<span style={{fontSize:9,fontWeight:800,color:"var(--tf-34d399)",background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.4)",borderRadius:999,padding:"2px 10px"}}>✓ contratto caricato</span>
                       :<span style={{fontSize:9,fontWeight:800,color:"var(--tf-f87171)",background:"rgba(220,53,69,0.10)",border:"1px solid rgba(220,53,69,0.4)",borderRadius:999,padding:"2px 10px"}}>contratto mancante</span>)}
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-                  {!r.iliad&&boxAllegato({l:"Contratto",i:"📄",t:"contratti"},r.key,r.sky?"Sky non rilascia contratti — facoltativo":"obbligatorio per questa offerta")}
+                  {r.contratto!=="assente"&&r.contratto!=="associato"&&boxAllegato({l:"Contratto",i:"📄",t:"contratti"},r.key,r.contratto==="facoltativo"?"facoltativo per questa offerta":"obbligatorio per questa offerta")}
                   {boxAllegato({l:"Altro",i:"📁",t:"altro"},r.key,"facoltativo")}
                 </div>
                 {listaFileAllegati(attachments.map((a,i)=>({a,i})).filter(({a})=>(a.type==="contratti"||a.type==="altro")&&(a.rowKey||"")===r.key))}
@@ -6551,7 +7073,8 @@ select.rvIn{cursor:pointer}
 
       {["prodotti","allegati","note"].includes(vistaStep)&&((margFlow&&!brand)||(showAna&&showStep4))&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingBottom:20,marginTop:8,gap:10}}>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>{const PREV={prodotti:(margFlow&&!brand)?"brand":"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
+          {/* MOD-44c: anche in marginalità l'indietro dai prodotti passa dal Cliente */}
+          <button onClick={()=>{const PREV={prodotti:"cliente",allegati:"prodotti",note:"allegati"};setVistaStep(PREV[vistaStep]||"brand");}} style={{padding:"11px 20px",borderRadius:10,border:"1px solid var(--tf-w100)",background:"var(--tf-w20)",color:"var(--tf-8892b0)",fontSize:14,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>← Indietro</button>
           <button onClick={()=>setConfirmReset(true)} style={{padding:"11px 22px",borderRadius:10,border:"2px solid #dc3545",background:"var(--tf-w20)",color:"var(--tf-dc3545)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>🗑️ Reset form</button>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
@@ -6565,12 +7088,12 @@ select.rvIn{cursor:pointer}
               VERO resta nel riepilogo) e compare SOLO dopo la scelta Sì/No
               sulle note. Apre il RIEPILOGO (caso Damiano 04/08: col ritorno
               alla griglia brand la registrazione finale non partiva mai). */}
-          {brand&&vistaStep==="note"&&notaScelta&&<button onClick={()=>{addCart();setVistaStep("brand");setShowCart(true);}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>🛒 Vai al carrello →</button>}
+          {brand&&vistaStep==="note"&&notaScelta&&<button onClick={()=>{addCart(()=>{setVistaStep("brand");setShowCart(true);});}} disabled={blockSaveAll} title={blockSaveAll?(hasIncomplete?"Completa tutti i prodotti (stato Incompleto) prima di salvare":(hasDupPodPdr?"POD/PDR duplicato — correggi prima di salvare":(hasDupCodContr?"Codice contratto duplicato — correggi prima di salvare":"Numero/ICCID non valido — correggi prima di salvare"))):""} style={{padding:"11px 22px",borderRadius:10,border:"2px solid "+(blockSaveAll?"var(--tf-w100)":"var(--tf-28a745)"),background:blockSaveAll?"var(--tf-w30)":"rgba(40,167,69,0.12)",color:blockSaveAll?"var(--tf-64748b)":"var(--tf-28a745)",fontSize:13,fontWeight:800,cursor:blockSaveAll?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8}}>🛒 Vai al carrello →</button>}
         </div>
       </div>}
 
       {/* ── CONFIRM RESET POPUP (condiviso, #124) ────────────────────────── */}
-      {confirmResetModal}
+      {confirmResetModal}{confirmNoOpzModal}
 
       {/* ── VF QTY MODAL OVERLAY ─────────────────────────────────────────── */}
       {vfQtyModal&&(

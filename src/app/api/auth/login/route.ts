@@ -28,6 +28,28 @@ export async function POST(request: Request) {
         const row = Array.isArray(data) ? data[0] : data;
         if (!row) return NextResponse.json({ ok: false, error: "Email o password non validi" });
 
+        // ── MOD-33 (Luca 10/08): SOSPENSIONE e LICENZIAMENTO PROGRAMMATO ──
+        // verify_login filtra gia' i licenziati effettivi (where u.active);
+        // qui si negano i SOSPESI e si concretizza il licenziamento arrivato a
+        // scadenza (status/active allineati al primo tentativo di accesso).
+        // Select difensivo: senza migrazione le colonne mancano e vale il solo
+        // filtro storico su active.
+        {
+            let stato: { sospeso_dal?: string | null; data_licenziamento?: string | null } | null = null;
+            const r1 = await supabase.from("app_users").select("sospeso_dal, data_licenziamento").eq("id", row.id).maybeSingle();
+            if (!r1.error) stato = r1.data;
+            const oggi = new Date().toISOString().slice(0, 10);
+            const dl = String(stato?.data_licenziamento || "");
+            if (dl && dl <= oggi) {
+                await supabase.from("app_users").update({ status: "licenziato", active: false }).eq("id", row.id);
+                return NextResponse.json({ ok: false, error: "Account disattivato: l'accesso al CRM non è più consentito." });
+            }
+            const sd = String(stato?.sospeso_dal || "");
+            if (sd && sd <= oggi) {
+                return NextResponse.json({ ok: false, error: "Account sospeso dall'amministrazione: accesso non consentito." });
+            }
+        }
+
         // primo accesso: prima la password personale, poi la 2FA (al login dopo)
         if (row.must_change_password) return NextResponse.json({ stage: "change", email: row.email });
 

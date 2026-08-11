@@ -16,12 +16,13 @@ import { roleLabel, seesWholeStore, BRAND_COLORS } from "@/lib/roles";
 import { useVisibleStores } from "@/lib/visibleStores";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { caricaTutte } from "@/lib/fetchTutte";
+import { cn } from "@/utils";
 import { BussolaWidget } from "@/components/DirezioneInserimento";
 import {
   FileText, Users, CheckCircle2, Clock, Store as StoreIcon, TrendingUp,
   AlertTriangle, ArrowRight, Loader2, Compass, Target as TargetIcon, Zap,
   Megaphone, Trophy, Search, Plus, ChevronDown, ChevronUp, LayoutGrid,
-  Check, GripVertical, CalendarClock,
+  Check, GripVertical, CalendarClock, LogIn, EyeOff, Eye,
 } from "lucide-react";
 
 const norm = (s) => (s || "").trim().toLowerCase();
@@ -94,6 +95,62 @@ function BarChart({ icon: Icon, title, rows, total, colorFor, accent }) {
         </div>
       )}
     </div>
+  );
+}
+
+// MOD-9 (Luca 08/08): bacheca degli accessi — chi ha fatto login, dal più
+// VECCHIO al più recente (last_seen_at asc). Amministrativo in su. Si possono
+// NASCONDERE utenti: la scelta è personale (localStorage per utente).
+function LoginBoardWidget({ uid }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const key = uid ? `tf_home_login_hidden_${uid}` : null;
+  const [hidden, setHidden] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(`tf_home_login_hidden_${uid}`) || "[]")); } catch { return new Set(); }
+  });
+  const [mostraNascosti, setMostraNascosti] = useState(false);
+  useEffect(() => {
+    supabase.from("app_users").select("id, full_name, role, last_seen_at, active")
+      .not("last_seen_at", "is", null).order("last_seen_at", { ascending: true }).limit(500)
+      .then(({ data }) => { setUsers((data || []).filter(u => u.active !== false)); setLoading(false); });
+  }, []);
+  const toggle = (id) => {
+    setHidden(prev => {
+      const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id);
+      if (key) { try { localStorage.setItem(key, JSON.stringify([...n])); } catch { /* storage negato */ } }
+      return n;
+    });
+  };
+  const fmtQuando = (s) => {
+    if (!s) return "—";
+    const d = new Date(s); if (isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  };
+  const visibili = mostraNascosti ? users : users.filter(u => !hidden.has(u.id));
+  return (
+    <WidgetShell icon={LogIn} title="Accessi collaboratori" accent="var(--tf-34d399)"
+      action={hidden.size > 0 ? <button onClick={() => setMostraNascosti(v => !v)} className="text-[10px] font-bold text-slate-400 hover:text-slate-200 flex items-center gap-1">{mostraNascosti ? <><Eye className="w-3 h-3" /> nascondi ({hidden.size})</> : <><EyeOff className="w-3 h-3" /> mostra nascosti ({hidden.size})</>}</button> : <span className="text-[10px] text-slate-500">dal più vecchio</span>}>
+      <div className="p-3 space-y-1.5 overflow-y-auto max-h-[240px]">
+        {loading ? <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-slate-500" /></div>
+          : visibili.length === 0 ? <p className="text-xs text-slate-500 text-center py-4">Nessun accesso registrato.</p>
+            : visibili.map(u => {
+              const nascosto = hidden.has(u.id);
+              return (
+                <div key={u.id} className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 group", nascosto ? "opacity-40 bg-white/[0.01]" : "bg-white/[0.02] hover:bg-white/[0.05]")}>
+                  <div className="w-7 h-7 rounded-full bg-emerald-500/15 text-emerald-300 flex items-center justify-center text-[11px] font-black shrink-0">{(u.full_name || "?").charAt(0).toUpperCase()}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-slate-100 truncate">{u.full_name || "—"}</div>
+                    <div className="text-[10px] text-slate-500 truncate">{roleLabel(u.role)}</div>
+                  </div>
+                  <div className="text-[10px] text-slate-400 tabular-nums shrink-0">{fmtQuando(u.last_seen_at)}</div>
+                  <button onClick={() => toggle(u.id)} title={nascosto ? "Mostra di nuovo" : "Nascondi dalla mia vista"} className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-white/10 text-slate-500 shrink-0">
+                    {nascosto ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              );
+            })}
+      </div>
+    </WidgetShell>
   );
 }
 
@@ -376,6 +433,9 @@ export default function Dashboard() {
               })}
           </div>
         </WidgetShell>
+
+        {/* Accessi collaboratori (MOD-9): solo amministrativo in su */}
+        {seesAll && <LoginBoardWidget uid={user?.id} />}
       </div>
     ),
     leaderboard: (

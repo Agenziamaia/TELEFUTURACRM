@@ -142,16 +142,16 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
 
     // scarica la posta nuova per la casella selezionata + ricarica le conversazioni
     const [pollErr, setPollErr] = useState<string | null>(null);
-    const aggiorna = async (accId?: string) => {
+    const aggiorna = async (accId?: string, force = false) => {
         const id = accId || selAcc; if (!id) return;
         setRefreshing(true);
         try {
-            await api("/api/email/poll", { accountId: id });
+            await api("/api/email/poll", { accountId: id, force });
             setPollErr(null);
         } catch (e) {
             // prima l'errore veniva INGHIOTTITO e "la posta non si aggiornava
             // a tratti" senza spiegazioni (Luca 02/08): un retry e poi si dice
-            try { await api("/api/email/poll", { accountId: id }); setPollErr(null); }
+            try { await api("/api/email/poll", { accountId: id, force }); setPollErr(null); }
             catch (e2) { setPollErr("Aggiornamento non riuscito: " + ((e2 as Error)?.message || "riprova")); }
         }
         setRefreshing(false);
@@ -341,7 +341,7 @@ export function EmailInbox({ embedded = false, componiA = null }: { embedded?: b
 
     return (
         <div className={embedded ? "h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden" : "w-full max-w-7xl mx-auto space-y-4"}>
-            <TopBar embedded={embedded} onConnect={() => setConnectModal(true)} onManage={() => setManageModal(true)} onRefresh={() => aggiorna()} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />
+            <TopBar embedded={embedded} onConnect={() => setConnectModal(true)} onManage={() => setManageModal(true)} onRefresh={() => aggiorna(undefined, true)} refreshing={refreshing} search={search} setSearch={setSearch} showSearch />
             {pollErr && <p className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-1.5 shrink-0">{pollErr}</p>}
 
             {/* selettore casella (se piu' di una) */}

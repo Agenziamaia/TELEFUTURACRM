@@ -21,6 +21,14 @@ export type CatFiltro = {
     offByProd: Record<string, string[]>;
     /** tutte le offerte del brand */
     offNames: string[];
+    // offerta SPENTA a catalogo (attivo=false su TUTTE le sue righe): in
+    // Ricerca Vendite scende in fondo alla tendina con l'etichetta ⛔
+    offSpenta: Record<string, boolean>;
+    // TIPO CLIENTE (Luca 10/08): lo stesso NOME prodotto può esistere sia
+    // Consumer sia Business (es. "Fisso" Vodafone) — questi indici dicono a
+    // quali tipi appartiene ogni prodotto/offerta, per la cascata dei filtri
+    prodTipi: Record<string, string[]>;
+    offTipi: Record<string, string[]>;
     /** categorie FINI del catalogo che il brand vende davvero, in ordine di catalogo */
     catNames: string[];
     /** prodotti per categoria fine */
@@ -29,6 +37,9 @@ export type CatFiltro = {
     offsByCat: Record<string, string[]>;
     /** opzioni per NOME offerta */
     opzByOff: Record<string, string[]>;
+    /** opzioni COMPLETE per NOME offerta (nome, tipo, gruppo esclusivo) —
+     *  servono all'editor opzioni del modale di Ricerca Vendite (Luca 07/08) */
+    opzMetaByOff: Record<string, { nome: string; tipo: string | null; gruppo: string | null }[]>;
 };
 
 export type MargArticolo = { name: string; kind: string };
@@ -69,22 +80,28 @@ export async function loadCatalogoBrand(slug: string, opts?: { fresh?: boolean }
     const hit = _catFiltro[slug];
     if (hit && !opts?.fresh) return hit;
     const catNomi = await loadCatalogoCategorie(opts);
-    const rp = await supabase.from("catalog_prodotti").select("id, nome, categoria_id").eq("brand_id", slug);
-    const prods = (rp.data ?? []) as { id: string; nome: string; categoria_id: string }[];
-    let offs: { id: string; prodotto_id: string; nome: string }[] = [];
+    const rp = await supabase.from("catalog_prodotti").select("id, nome, categoria_id, tipo_cliente").eq("brand_id", slug);
+    const prods = (rp.data ?? []) as { id: string; nome: string; categoria_id: string; tipo_cliente?: string | null }[];
+    let offs: { id: string; prodotto_id: string; nome: string; attivo?: boolean | null }[] = [];
     let opzs: { offerta_id: string; nome: string }[] = [];
     if (prods.length) {
-        const ro = await supabase.from("catalog_offerte").select("id, prodotto_id, nome").in("prodotto_id", prods.map((x) => x.id));
-        offs = (ro.data ?? []) as { id: string; prodotto_id: string; nome: string }[];
+        const ro = await supabase.from("catalog_offerte").select("id, prodotto_id, nome, attivo").in("prodotto_id", prods.map((x) => x.id));
+        offs = (ro.data ?? []) as { id: string; prodotto_id: string; nome: string; attivo?: boolean | null }[];
         if (offs.length) {
-            const rz = await supabase.from("catalog_opzioni").select("offerta_id, nome").in("offerta_id", offs.map((o) => o.id));
-            opzs = (rz.data ?? []) as { offerta_id: string; nome: string }[];
+            const rz = await supabase.from("catalog_opzioni").select("offerta_id, nome, tipo, gruppo_singolo, ordine").order("ordine").in("offerta_id", offs.map((o) => o.id));
+            opzs = (rz.data ?? []) as { offerta_id: string; nome: string; tipo?: string | null; gruppo_singolo?: string | null }[];
         }
     }
     // opzioni per NOME offerta (la stessa offerta può vivere in più categorie)
     const offNomeById: Record<string, string> = {}; offs.forEach((o) => { offNomeById[o.id] = o.nome; });
     const opzByOff: Record<string, string[]> = {};
-    opzs.forEach((z) => { const on = offNomeById[z.offerta_id]; if (!on) return; (opzByOff[on] = opzByOff[on] || []).push(z.nome); });
+    const opzMetaByOff: CatFiltro["opzMetaByOff"] = {};
+    opzs.forEach((z) => {
+        const on = offNomeById[z.offerta_id]; if (!on) return;
+        (opzByOff[on] = opzByOff[on] || []).push(z.nome);
+        const meta = (opzMetaByOff[on] = opzMetaByOff[on] || []);
+        if (!meta.some((m) => m.nome === z.nome)) meta.push({ nome: z.nome, tipo: (z as { tipo?: string | null }).tipo ?? null, gruppo: (z as { gruppo_singolo?: string | null }).gruppo_singolo ?? null });
+    });
     Object.keys(opzByOff).forEach((k) => { opzByOff[k] = Array.from(new Set(opzByOff[k])).sort(); });
     const nomeById: Record<string, string> = {}; prods.forEach((x) => { nomeById[x.id] = x.nome; });
     const offByProd: Record<string, string[]> = {};
@@ -100,7 +117,17 @@ export async function loadCatalogoBrand(slug: string, opts?: { fresh?: boolean }
         const ids = new Set(suoiProds.map((p) => p.id));
         offsByCat[c.nome] = Array.from(new Set(offs.filter((o) => ids.has(o.prodotto_id)).map((o) => o.nome))).sort();
     });
-    const t: CatFiltro = { slug, prodNames: Array.from(new Set(prods.map((x) => x.nome))).sort(), offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat, offsByCat, opzByOff };
+    // spenta = NESSUNA riga attiva con quel nome (lo stesso nome può vivere
+    // sotto più prodotti: basta una riga accesa perché l'offerta conti viva)
+    const offSpenta: Record<string, boolean> = {};
+    offs.forEach((o) => { const acceso = (o as { attivo?: boolean | null }).attivo !== false; const prev = offSpenta[o.nome]; offSpenta[o.nome] = prev === undefined ? !acceso : (prev && !acceso); });
+    const prodTipi: Record<string, string[]> = {};
+    prods.forEach((x) => { const t = (x.tipo_cliente || "Consumer").trim(); const l = (prodTipi[x.nome] = prodTipi[x.nome] || []); if (!l.includes(t)) l.push(t); });
+    const tipoByProdId: Record<string, string> = {};
+    prods.forEach((x) => { tipoByProdId[x.id] = (x.tipo_cliente || "Consumer").trim(); });
+    const offTipi: Record<string, string[]> = {};
+    offs.forEach((o) => { const t = tipoByProdId[o.prodotto_id]; if (!t) return; const l = (offTipi[o.nome] = offTipi[o.nome] || []); if (!l.includes(t)) l.push(t); });
+    const t: CatFiltro = { slug, offSpenta, prodTipi, offTipi, prodNames: Array.from(new Set(prods.map((x) => x.nome))).sort(), offByProd, offNames: Array.from(new Set(offs.map((o) => o.nome))).sort(), catNames, prodsByCat, offsByCat, opzByOff, opzMetaByOff };
     _catFiltro[slug] = t;
     return t;
 }

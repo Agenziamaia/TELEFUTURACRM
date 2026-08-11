@@ -12,8 +12,6 @@ import { statoContrattoDa } from "./trackingHelpers";
 import {
   CATEGORIE,
   ALL_BRANDS,
-  STATI_ADMIN,
-  STATI_ADMIN_FINANZIAMENTO,
   MALUS_IMPORTO,
   type TrackingRow,
   type StoriaEvent,
@@ -21,6 +19,7 @@ import {
 } from "./trackingConstants";
 import {
   getStatiNegozioPerCategoria,
+  getStatiNegozioTutte,
   getStatoN,
   getStatoA,
   getCat,
@@ -29,6 +28,10 @@ import {
   isMalusRow,
   calcolaMalus,
   impostaRegoleTracking,
+  impostaEsitiTracking,
+  esitoCompletato,
+  getStatiAdminPerCategoria,
+  esitoAdminDefinitivo,
 } from "./trackingHelpers";
 import { RegoleTracking } from "./RegoleTracking";
 import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
@@ -169,8 +172,10 @@ function codiceInserimento(det: Record<string, unknown> | undefined): string | n
 }
 
 // ─── Badges ───────────────────────────────────────────────────────────────────
-function StatoBadge({ id, set }: { id: string; set: "admin" | "negozio" }) {
-  const s = set === "admin" ? getStatoA(id) : getStatoN(id);
+// categoria+brand: dal pannello la stessa chiave puo' avere etichette diverse
+// per categoria/operatore — senza contesto il badge pescherebbe quella sbagliata
+function StatoBadge({ id, set, categoria, brand }: { id: string; set: "admin" | "negozio"; categoria?: string; brand?: string | null }) {
+  const s = set === "admin" ? getStatoA(id) : getStatoN(id, categoria, brand);
   return (
     <span
       className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap border"
@@ -323,6 +328,10 @@ function KpiBar({
                 }}>
                 {logo ? (
                   <img src={logo} alt={b} style={{ maxHeight: 56, maxWidth: "92%", objectFit: "contain", display: "block", transform: `scale(${TRK_LOGO_SCALE[trkBrandKey(b)] || 1})` }} />
+                ) : /marginal/i.test(b) ? (
+                  /* P&M: stesso simbolo 💰 della tessera di Registra Vendita
+                     (Luca 10/08: "mettici il simbolo come gli altri") */
+                  <span title={b} style={{ fontSize: 40, lineHeight: 1 }}>💰</span>
                 ) : (
                   <span className="text-xs font-bold" style={{ color: on ? color : "var(--tf-586174)" }}>{b}</span>
                 )}
@@ -424,10 +433,10 @@ function FilterBar({
     // Solo gli esiti delle categorie realmente presenti: entrano gli stati Sky
     // (prima assenti), escono quelli delle categorie morte (PDA-01).
     pools = [
-      ...categorie.flatMap((cat) => getStatiNegozioPerCategoria(cat.id)),
+      ...categorie.flatMap((cat) => getStatiNegozioTutte(cat.id)),
     ];
   } else {
-    pools = catSel.flatMap((cid) => getStatiNegozioPerCategoria(cid));
+    pools = catSel.flatMap((cid) => getStatiNegozioTutte(cid));
   }
   const seen = new Set<string>();
   const statiDisponibili = pools.filter((s) => {
@@ -826,7 +835,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                   <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-400 text-xs">{row.venditore}</td>
                   <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-500 text-xs">{row.dataInserimento}</td>
                   <td className="py-2.5 px-3.5 border-b border-white/5">
-                    <StatoBadge id={row.statoNegozio} set="negozio" />
+                    <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
                   </td>
                   <td className="py-2.5 px-3.5 border-b border-white/5">
                     <StatoBadge id={row.statoAdmin} set="admin" />
@@ -928,16 +937,19 @@ function Drawer({
   onDelegate,
   delegatoNome = null,
   episodiMalus = [],
+  scartaRef,
 }: {
   row: TrackingRow;
   onClose: () => void;
-  onUpdate: (updated: TrackingRow) => void;
+  onUpdate: (updated: TrackingRow, opts?: { salvaFollowup?: boolean }) => void;
   members?: { id: string; full_name: string }[];
   canDelegate?: boolean;
   canEditAdmin?: boolean;
   onDelegate?: (rowId: string, toId: string | null) => void;
   delegatoNome?: string | null;
   episodiMalus?: EpisodioMalus[];
+  // cestino: la pratica sta sparendo dalla vista → la bozza si butta, non si salva
+  scartaRef?: { current: boolean };
 }) {
   // nome VERO di chi modifica nello storico (Luca 02/08): niente piu'
   // "Venditore"/"Amministrazione" generici
@@ -966,54 +978,80 @@ function Drawer({
     );
   };
 
-  const salva = (origine: "negozio" | "admin") => {
-    const oggi = new Date().toLocaleDateString("it-IT");
-    const nuovaStoria = [...row.storia];
+  // MOD-27 (Luca 10/08): via i bottoni Salva — le modifiche restano in BOZZA
+  // qui dentro e si scrivono DA SOLE quando si chiude la sezione (cambio tab),
+  // si cambia pratica o si chiude la scheda: un esito cliccato per sbaglio e
+  // corretto al volo NON intasa lo storico. I refs sono la fonte del commit di
+  // chiusura: durante l'unmount lo stato React non e' piu' leggibile.
+  const staged = useRef({ statoN: row.statoNegozio, statoA: row.statoAdmin, notaN: "", notaA: "", fu: followup });
+  useEffect(() => { staged.current = { statoN: editStatoN, statoA: editStatoA, notaN: notaNegozio, notaA: notaAdmin, fu: followup }; });
+  // baseline = ultimo valore COMMITTATO (parte dal dato a DB): il confronto con
+  // la bozza decide se c'e' davvero qualcosa da salvare
+  const baseN = useRef(row.statoNegozio);
+  const baseA = useRef(row.statoAdmin);
+  const baseFu = useRef(JSON.stringify(row.followup ?? []));
+  // storia accumulata, inclusi i commit non ancora tornati dal giro DB→prop; se
+  // il prop si allunga per altre vie (es. evento delega) vince il piu' ricco
+  const storiaRef = useRef<StoriaEvent[]>(row.storia);
+  useEffect(() => { if (row.storia.length > storiaRef.current.length) storiaRef.current = row.storia; }, [row.storia]);
 
-    if (origine === "negozio") {
-      if (editStatoN !== row.statoNegozio) {
-        nuovaStoria.push({
-          data: oggi,
-          tipo: "stato_negozio",
-          testo: "Esito negozio aggiornato: " + getStatoN(editStatoN).label,
-          utente: nomeUtente,
-          ruolo: "negozio",
-        });
+  const commit = (origine?: "negozio" | "admin") => {
+    const s = staged.current;
+    const oggi = new Date().toLocaleDateString("it-IT");
+    const eventi: StoriaEvent[] = [];
+    let dirty = false;
+    let salvaFollowup = false;
+    if (origine !== "admin") {
+      const nota = s.notaN.trim();
+      const fuJson = JSON.stringify(s.fu);
+      const cambioFu = row.categoria === "piva" && fuJson !== baseFu.current;
+      if (s.statoN !== baseN.current) {
+        eventi.push({ data: oggi, tipo: "stato_negozio", testo: "Esito negozio aggiornato: " + getStatoN(s.statoN, row.categoria, row.brand).label, utente: nomeUtente, ruolo: "negozio" });
       }
-      if (notaNegozio.trim()) {
-        nuovaStoria.push({
-          data: oggi,
-          tipo: "nota_negozio",
-          testo: notaNegozio.trim(),
-          utente: nomeUtente,
-          ruolo: "negozio",
-        });
+      if (nota) {
+        eventi.push({ data: oggi, tipo: "nota_negozio", testo: nota, utente: nomeUtente, ruolo: "negozio" });
       }
-      onUpdate({ ...row, statoNegozio: editStatoN, storia: nuovaStoria });
-      setNotaNegozio("");
-    } else {
-      if (editStatoA !== row.statoAdmin) {
-        nuovaStoria.push({
-          data: oggi,
-          tipo: "stato_admin",
-          testo: "Esito admin aggiornato: " + getStatoA(editStatoA).label,
-          utente: nomeUtente,
-          ruolo: "admin",
-        });
+      if (s.statoN !== baseN.current || nota || cambioFu) {
+        dirty = true;
+        salvaFollowup = cambioFu;
+        baseN.current = s.statoN;
+        baseFu.current = fuJson;
+        s.notaN = "";
+        setNotaNegozio("");
       }
-      if (notaAdmin.trim()) {
-        nuovaStoria.push({
-          data: oggi,
-          tipo: "nota_admin",
-          testo: notaAdmin.trim(),
-          utente: nomeUtente,
-          ruolo: "admin",
-        });
-      }
-      onUpdate({ ...row, statoAdmin: editStatoA, storia: nuovaStoria });
-      setNotaAdmin("");
     }
+    if (origine !== "negozio") {
+      const nota = s.notaA.trim();
+      if (s.statoA !== baseA.current) {
+        eventi.push({ data: oggi, tipo: "stato_admin", testo: "Esito admin aggiornato: " + getStatoA(s.statoA).label, utente: nomeUtente, ruolo: "admin" });
+      }
+      if (nota) {
+        eventi.push({ data: oggi, tipo: "nota_admin", testo: nota, utente: nomeUtente, ruolo: "admin" });
+      }
+      if (s.statoA !== baseA.current || nota) {
+        dirty = true;
+        baseA.current = s.statoA;
+        s.notaA = "";
+        setNotaAdmin("");
+      }
+    }
+    if (!dirty) return;
+    const nuovaStoria = [...storiaRef.current, ...eventi];
+    storiaRef.current = nuovaStoria;
+    onUpdate({ ...row, statoNegozio: baseN.current, statoAdmin: baseA.current, followup: s.fu, storia: nuovaStoria }, { salvaFollowup });
   };
+  // il commit di chiusura (unmount: ✕, cambio pratica, navigazione) passa da un
+  // ref cosi' legge sempre la versione corrente della funzione
+  const commitRef = useRef(commit);
+  useEffect(() => { commitRef.current = commit; });
+  useEffect(() => {
+    if (scartaRef) scartaRef.current = false;
+    return () => {
+      if (scartaRef?.current) { scartaRef.current = false; return; }
+      commitRef.current();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const labelStyle = "text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1";
   const valStyle = "text-[13px] text-slate-200";
@@ -1034,7 +1072,8 @@ function Drawer({
     return "Sistema";
   };
 
-  const statiAdmin = row.categoria === "finanziamento" ? STATI_ADMIN_FINANZIAMENTO : STATI_ADMIN;
+  // esiti admin AMMINISTRABILI per categoria (10/08): dal pannello, fallback hardcoded
+  const statiAdmin = getStatiAdminPerCategoria(row.categoria, row.brand);
 
   return (
     <div
@@ -1061,7 +1100,7 @@ function Drawer({
         </div>
         <div className="flex gap-1.5 items-center py-2.5">
           <span className="text-[11px] text-slate-500 mr-1">Negozio:</span>
-          <StatoBadge id={row.statoNegozio} set="negozio" />
+          <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
           <span className="text-[11px] text-slate-500 mx-1">| Admin:</span>
           <StatoBadge id={row.statoAdmin} set="admin" />
         </div>
@@ -1089,7 +1128,14 @@ function Drawer({
               <button
                 key={tab}
                 type="button"
-                onClick={() => setActiveTab(tab)}
+                onClick={() => {
+                  // MOD-27: lasciare la sezione = salvarla (se c'e' una bozza)
+                  if (tab !== activeTab) {
+                    if (activeTab === "negozio") commit("negozio");
+                    if (activeTab === "admin") commit("admin");
+                  }
+                  setActiveTab(tab);
+                }}
                 className="py-2 px-4 bg-transparent border-none border-b-2 cursor-pointer transition-all text-[13px] font-normal"
                 style={{
                   borderBottomColor: active ? "var(--tf-6366f1)" : "transparent",
@@ -1222,7 +1268,7 @@ function Drawer({
                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Esito negozio</div>
               </div>
               <div className="flex flex-wrap gap-2 mb-3.5">
-                {getStatiNegozioPerCategoria(row.categoria).map((s) => {
+                {getStatiNegozioPerCategoria(row.categoria, row.brand).map((s) => {
                   const sel = editStatoN === s.id;
                   return (
                     <button
@@ -1262,13 +1308,10 @@ function Drawer({
                 placeholder="Nota negozio (es: cliente contattato…)"
                 className="w-full min-h-[68px] bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] p-2.5 resize-y outline-none box-border mb-2.5"
               />
-              <button
-                type="button"
-                onClick={() => salva("negozio")}
-                className="w-full bg-indigo-600 border-none rounded-lg text-white text-[13px] font-semibold py-2 px-5 cursor-pointer"
-              >
-                Salva esito negozio
-              </button>
+              {/* MOD-27: niente bottone — vedi commit() qui sopra */}
+              <p className="text-[11px] text-slate-500 text-center">
+                💾 Si salva da solo quando cambi sezione o pratica, o chiudi questa scheda.
+              </p>
             </div>
           </div>
         )}
@@ -1282,7 +1325,7 @@ function Drawer({
             <p className="text-xs text-slate-500 mb-3.5">Conferma o rettifica l&apos;esito. Visibile a tutte le parti.</p>
             <div className="mb-1.5">
               <div className={labelStyle + " mb-2"}>Esito corrente negozio</div>
-              <StatoBadge id={row.statoNegozio} set="negozio" />
+              <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
             </div>
             <div className="my-3.5">
               <div className={labelStyle + " mb-2"}>Esito amministrazione</div>
@@ -1313,14 +1356,10 @@ function Drawer({
               placeholder="Nota amministrazione…"
               className="w-full min-h-[68px] bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] p-2.5 resize-y outline-none box-border mb-2.5"
             />
-            <button
-              type="button"
-              onClick={() => salva("admin")}
-              className="w-full bg-purple-600 border-none rounded-lg text-white text-[13px] font-semibold py-2 px-5 cursor-pointer"
-            >
-              Salva verifica amministrazione
-            </button>
-
+            {/* MOD-27: niente bottone — vedi commit() qui sopra */}
+            <p className="text-[11px] text-slate-500 text-center">
+              💾 Si salva da solo quando cambi sezione o pratica, o chiudi questa scheda.
+            </p>
           </div>
         )}
 
@@ -1468,6 +1507,11 @@ export default function TrackingPdaPage() {
   const [negozioSel, setNegozioSel] = useState<string>("");
 
   const [selected, setSelected] = useState<TrackingRow | null>(null);
+  // MOD-27: specchio di `selected` per i callback con deps [] + flag "butta la
+  // bozza" letto dal Drawer all'unmount (solo per il cestino)
+  const selectedRef = useRef<TrackingRow | null>(null);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+  const scartaCommitRef = useRef(false);
   // STORICO MALUS (30/07, mig. 103): episodi persistiti + vista archivio.
   const [episodi, setEpisodi] = useState<EpisodioMalus[]>([]);
   const [malusErr, setMalusErr] = useState<string | null>(null);
@@ -1491,6 +1535,10 @@ export default function TrackingPdaPage() {
     (async () => {
       const { data: rg } = await supabase.from("tracking_regole").select("*");
       if (rg && rg.length) { impostaRegoleTracking(rg as never); setRegoleV((v) => v + 1); }
+      // MOD-28: esiti amministrabili (tabella tracking_esiti) — senza righe (o
+      // senza tabella) valgono le liste hardcoded, il CRM non si rompe mai
+      const { data: es } = await supabase.from("tracking_esiti").select("*").order("ordine");
+      if (es && es.length) { impostaEsitiTracking(es as never); setRegoleV((v) => v + 1); }
     })();
   }, []);
 
@@ -1630,7 +1678,7 @@ export default function TrackingPdaPage() {
         statoNegozio: perCat[c] ?? (
           (c === "sky" && base.categoria === "fisso" && (perCat["fisso"] === "attivato" || (!perCat["fisso"] && base.statoNegozio === "attivato")))
             ? "attivo_sky"
-            : ((base.statoNegozio && getStatiNegozioPerCategoria(c).some((s) => s.id === base.statoNegozio)) ? base.statoNegozio : "nuovo")),
+            : ((base.statoNegozio && getStatiNegozioPerCategoria(c, base.brand).some((s) => s.id === base.statoNegozio)) ? base.statoNegozio : "nuovo")),
       }));
     });
     return out;
@@ -1650,7 +1698,11 @@ export default function TrackingPdaPage() {
       try {
         const { data: eps, error } = await supabase.from("malus_storico").select("*").limit(5000);
         if (error) throw error;
-        const scritture = await sincronizzaMalusStorico(data, (eps ?? []) as EpisodioMalus[]);
+        // le pratiche CESTINATE (tracking_nascosto) escono dalle righe della
+        // sync: cosi' lo spazzino congela A OGGI il loro episodio aperto —
+        // prima restavano dentro e il malus continuava a maturare per sempre
+        // (bug emerso rispondendo alla domanda di Luca, 10/08)
+        const scritture = await sincronizzaMalusStorico(data.filter((r) => !r.tracking_nascosto), (eps ?? []) as EpisodioMalus[]);
         // diagnostica leggera, cercabile in console come [CRASH:]
         console.debug("[SYNC-MALUS] scritture:", scritture);
         if (scritture > 0) {
@@ -1711,7 +1763,9 @@ export default function TrackingPdaPage() {
     if (hit) { setSelected(hit); deepOpened.current = true; }
   }, [data]);
 
-  const statiCompletatiNegozio = ["attivato", "liquidato", "completo_sky", "attivo_sky"];
+  // MOD-28: "completata" non e' piu' una lista hardcoded (che tra l'altro
+  // divergeva da STATI_COMPLETATI: mancava re_inserita) ma il flag
+  // amministrabile della tabella tracking_esiti — helper esitoCompletato.
 
   // PDA-01: platea per le OPZIONI dei filtri Negozio/Utente/Categoria — le
   // "pratiche da monitorare in questo momento". Replica i soli filtri DI
@@ -1721,13 +1775,13 @@ export default function TrackingPdaPage() {
   const baseVisibile = useMemo(() => data.filter((row) => {
     if (row.tracking_nascosto) return false;
     if (soloDaLavorare) {
-      if (!statiCompletatiNegozio.includes(row.statoNegozio)) return false;
-      if (["confermato", "pagato", "stornato", "non_conforme"].includes(row.statoAdmin)) return false;
-    } else if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
+      if (!esitoCompletato(row.statoNegozio, row.categoria, row.brand)) return false;
+      if (esitoAdminDefinitivo(row.statoAdmin, row.categoria, row.brand) || row.statoAdmin === "non_conforme") return false;
+    } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
     if (onlyMine && row.delegated_to !== user?.id) return false;
     if (onlyDelegate && row.delegated_by !== user?.id) return false;
     return true;
-  }), [data, mostraCompletate, soloDaLavorare, onlyMine, onlyDelegate, user?.id]);
+  }), [data, mostraCompletate, soloDaLavorare, onlyMine, onlyDelegate, user?.id, regoleV]);
 
   // Opzioni con dipendenza UNIDIREZIONALE (niente prune a cascata):
   // NEGOZIO ← base; UTENTE ← base+negozio; CATEGORIA ← base+negozio+utente.
@@ -1774,7 +1828,7 @@ export default function TrackingPdaPage() {
     if (next.length === catSel.length) return;
     setCatSel(next);
     if (next.length === 0) { setStatoSel([]); return; }
-    const validi = new Set(next.flatMap((cid) => getStatiNegozioPerCategoria(cid).map((s) => s.id)));
+    const validi = new Set(next.flatMap((cid) => getStatiNegozioTutte(cid).map((s) => s.id)));
     setStatoSel((prev) => {
       const sNext = prev.filter((id) => validi.has(id));
       return sNext.length === prev.length ? prev : sNext;
@@ -1790,9 +1844,9 @@ export default function TrackingPdaPage() {
       // aspettano ancora l'esito definitivo dell'admin — bypassa la regola
       // che nasconde le completate, altrimenti la coda sarebbe invisibile.
       if (soloDaLavorare) {
-        if (!statiCompletatiNegozio.includes(row.statoNegozio)) return false;
-        if (["confermato", "pagato", "stornato", "non_conforme"].includes(row.statoAdmin)) return false;
-      } else if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
+        if (!esitoCompletato(row.statoNegozio, row.categoria, row.brand)) return false;
+        if (esitoAdminDefinitivo(row.statoAdmin, row.categoria, row.brand) || row.statoAdmin === "non_conforme") return false;
+      } else if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
       if (onlyMine && row.delegated_to !== user?.id) return false; // "delegate a me"
       if (onlyDelegate && row.delegated_by !== user?.id) return false; // "delegate DA me"
       if (kpiFilter !== null) {
@@ -1851,7 +1905,7 @@ export default function TrackingPdaPage() {
       if (row.tracking_nascosto) return false;
       // Esito definitivo del negozio = pratica completata = sparisce da sola.
       // ECCEZIONE: se l'admin la boccia (non conforme) torna lavorabile e riappare.
-      if (!mostraCompletate && statiCompletatiNegozio.includes(row.statoNegozio) && row.statoAdmin !== "non_conforme") return false;
+      if (!mostraCompletate && esitoCompletato(row.statoNegozio, row.categoria, row.brand) && row.statoAdmin !== "non_conforme") return false;
       if (catSel.length > 0 && !catSel.includes(row.categoria)) return false;
       if (utentiSel.length > 0 && !utentiSel.includes(row.venditore)) return false;
       if (venditoreSel && row.venditore !== venditoreSel) return false;
@@ -1918,6 +1972,9 @@ export default function TrackingPdaPage() {
     try {
       const { error } = await supabase.from("contracts").update({ tracking_nascosto: true }).eq("id", row.id);
       if (error) throw error;
+      // MOD-27: la pratica sparisce dalla vista — l'eventuale bozza nel drawer
+      // NON va committata (scriverebbe storico su una pratica appena nascosta)
+      if (selectedRef.current && selectedRef.current.id === row.id) scartaCommitRef.current = true;
       setRawList((prev) => prev.map((r) => ((r.id as string) === row.id ? { ...r, tracking_nascosto: true } : r)));
       setSelected((sel) => (sel && sel.id === row.id ? null : sel));
       setDaEliminare(null);
@@ -1943,7 +2000,7 @@ export default function TrackingPdaPage() {
   }, [rawList, memberName, user]);
 
   const handleUpdate = useCallback(
-    async (updated: TrackingRow) => {
+    async (updated: TrackingRow, opts?: { salvaFollowup?: boolean }) => {
       // Segnalazioni 37 e 38: lo stato lavorato qui deve comparire subito in
       // Ricerca Contratto, e la data di attivazione si popola quando la pratica
       // diventa davvero attiva (prima veniva scritta all'inserimento).
@@ -1956,7 +2013,7 @@ export default function TrackingPdaPage() {
       // questo callback ha deps [] e nel suo closure `rawList` e' quello del primo
       // render (vuoto), quindi il merge partiva da {} e CANCELLAVA le altre categorie
       // gia' salvate (corruzione della riga sorella allo "Salva esito negozio").
-      const { data: _cur } = await supabase.from("contracts").select("stati_categoria").eq("id", updated.id).maybeSingle();
+      const { data: _cur } = await supabase.from("contracts").select("stati_categoria, dettagli").eq("id", updated.id).maybeSingle();
       const attuali = ((_cur?.stati_categoria as Record<string, string>) || {});
       const nuoviStati = { ...attuali, [cat]: updated.statoNegozio };
 
@@ -1974,6 +2031,11 @@ export default function TrackingPdaPage() {
         stati_categoria: nuoviStati,
       };
       if (!rigaEspansa) payload.stato_negozio = updated.statoNegozio;
+      // MOD-27: i follow-up P.IVA (cliente irreperibile) vivono in dettagli —
+      // prima non venivano MAI persistiti; si scrivono solo quando cambiano
+      if (opts?.salvaFollowup) {
+        payload.dettagli = { ...((_cur?.dettagli as Record<string, unknown>) || {}), followup: updated.followup || [] };
+      }
       // La data di attivazione NON si tocca qui: viene compilata alla
       // registrazione ed e' quella la data buona (indicazione di Luca, che
       // annulla la segnalazione 38). Qui si propaga solo lo stato.
@@ -1985,7 +2047,10 @@ export default function TrackingPdaPage() {
       setRawList((prev) =>
         prev.map((r) => ((r.id as string) === updated.id ? { ...r, ...payload } : r))
       );
-      setSelected(updated);
+      // MOD-27: il commit puo' arrivare dal drawer della pratica PRECEDENTE
+      // (unmount al cambio pratica): la selezione si aggiorna solo se e' ancora
+      // la stessa riga, altrimenti si riaprirebbe la scheda vecchia
+      setSelected((sel) => sel && sel.id === updated.id && sel.categoria === updated.categoria ? updated : sel);
     },
     []
   );
@@ -2005,7 +2070,9 @@ export default function TrackingPdaPage() {
                 title="Le pratiche con esito definitivo del negozio spariscono da sole: attiva per rivederle"
                 className={"px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors " + (mostraCompletate ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-400 hover:bg-white/5")}
               >
-                {mostraCompletate ? "✓" : "✅"} Mostra completate
+                {/* spento = casella VUOTA (10/08: la ✅ verde da spento sembrava
+                    un toggle acceso e ha ingannato tutti, me compreso) */}
+                {mostraCompletate ? "✓" : "☐"} Mostra completate
               </button>
             </div>
             <p className="text-slate-400 text-sm">Monitoraggio pratiche: esito negozio, esito admin, storico e malus</p>
@@ -2191,9 +2258,15 @@ export default function TrackingPdaPage() {
         )}
 
         {selected && (
-          <Drawer row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate}
+          /* MOD-27: il key RIMONTA il drawer a ogni cambio pratica — senza,
+             React riusava l'istanza e la bozza (stato/note) della pratica
+             precedente "traslocava" sulla nuova; l'unmount della vecchia
+             istanza fa anche il commit automatico della sua bozza */
+          <Drawer key={selected.rowKey || `${selected.id}#${selected.categoria}`}
+            row={selected} onClose={() => setSelected(null)} onUpdate={handleUpdate}
             members={members} canDelegate={canDelegate} canEditAdmin={canEditAdmin} onDelegate={handleDelegate} delegatoNome={memberName(selected.delegated_to)}
-            episodiMalus={episodiPerRiga.get(`${selected.id}#${selected.categoria}`) || []} />
+            episodiMalus={episodiPerRiga.get(`${selected.id}#${selected.categoria}`) || []}
+            scartaRef={scartaCommitRef} />
         )}
       </div>
     </div>

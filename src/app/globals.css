@@ -898,3 +898,45 @@ html.light .badge-kpi:hover{ transform:translateY(-2px); box-shadow:0 2px 6px rg
    brand (color+26) con testo bianco → invisibile nel tema chiaro. Nel chiaro il testo va
    scuro (bordo colorato + ✓ segnalano comunque la selezione). Dark invariato. */
 html.light .opz-on{ color:#0e1526 !important; }
+
+/* ── COMUNICAZIONI (MOD-37, Luca 10/08): dentro `.com-scura` la card resta un
+   MONDO SCURO anche in tema chiaro (cielo stellato, braci, hazard) — i testi
+   e le velature NON si ribaltano, altrimenti testo scuro su fondo scuro
+   (foto Luca: popup illeggibile). Applicata al popup, alle anteprime del form
+   e alla card ESPANSA della bacheca, che in chiaro prende il fondo scuro. ── */
+html.light .com-scura [class~="text-white"] { color: #ffffff !important; }
+html.light .com-scura [class*="hover:text-white"]:hover { color: #ffffff !important; }
+html.light .com-scura [class~="text-slate-100"] { color: #f1f5f9 !important; }
+html.light .com-scura [class~="text-slate-200"] { color: #e2e8f0 !important; }
+html.light .com-scura [class~="text-slate-300"] { color: #cbd5e1 !important; }
+html.light .com-scura [class~="text-slate-400"] { color: #94a3b8 !important; }
+html.light .com-scura [class~="text-slate-500"] { color: #94a3b8 !important; } /* alzato: il 500 sparirebbe sul fondo scuro */
+html.light .com-scura [class~="text-slate-600"] { color: #7c8aa5 !important; }
+html.light .com-scura [class~="text-amber-200"] { color: #fde68a !important; }
+html.light .com-scura [class~="text-amber-300"] { color: #fcd34d !important; }
+html.light .com-scura [class~="text-amber-400"] { color: #fbbf24 !important; }
+html.light .com-scura [class~="text-rose-300"] { color: #fda4af !important; }
+html.light .com-scura [class~="text-rose-400"] { color: #fb7185 !important; }
+html.light .com-scura [class~="text-red-400"] { color: #f87171 !important; }
+html.light .com-scura [class~="text-emerald-300"] { color: #6ee7b7 !important; }
+html.light .com-scura [class~="text-emerald-400"] { color: #34d399 !important; }
+html.light .com-scura [class~="text-sky-200"] { color: #bae6fd !important; }
+html.light .com-scura [class~="text-sky-300"] { color: #7dd3fc !important; }
+html.light .com-scura [class~="text-sky-400"] { color: #38bdf8 !important; }
+html.light .com-scura [class~="text-violet-100"] { color: #ede9fe !important; }
+html.light .com-scura [class~="text-violet-300"] { color: #c4b5fd !important; }
+html.light .com-scura [class~="text-violet-400"] { color: #a78bfa !important; }
+html.light .com-scura [class~="text-orange-300"] { color: #fdba74 !important; }
+html.light .com-scura [class~="text-orange-400"] { color: #fb923c !important; }
+html.light .com-scura [class~="text-blue-400"] { color: #60a5fa !important; }
+html.light .com-scura [class*="bg-white/"] { background-color: rgba(255,255,255,0.07) !important; }
+html.light .com-scura [class~="bg-white/10"] { background-color: rgba(255,255,255,0.10) !important; }
+html.light .com-scura [class*="hover:bg-white/"]:hover { background-color: rgba(255,255,255,0.14) !important; }
+html.light .com-scura [class*="border-white/"] { border-color: rgba(255,255,255,0.15) !important; }
+html.light .com-scura [class*="bg-black/40"] { background-color: rgba(0,0,0,0.40) !important; }
+html.light .com-scura [class*="bg-black/30"] { background-color: rgba(0,0,0,0.30) !important; }
+html.light .com-scura [class*="bg-black/20"] { background-color: rgba(0,0,0,0.20) !important; }
+html.light .com-scura input, html.light .com-scura textarea { color: #f1f5f9; }
+html.light .com-scura input::placeholder, html.light .com-scura textarea::placeholder { color: #64748b !important; }
+/* la card ESPANSA della bacheca: in chiaro prende il fondo scuro del popup */
+html.light .com-espansa { background: linear-gradient(160deg, #131a30 0%, #0b0f1e 100%) !important; border-color: rgba(255,255,255,0.14) !important; }

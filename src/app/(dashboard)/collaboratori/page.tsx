@@ -27,7 +27,7 @@ function CollaboratoriPageContent() {
     // rotellina in Amministrazione → Utenti → Permessi). Luca 27/07: store manager
     // e direttore commerciale NON gestiscono il team — vedono la maschera del
     // consulente (solo le proprie richieste), salvo riaccenderla per ruolo.
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const gestioneFerie = !!user && capAllowed(user.role, FERIE_SECTION, CAP_FERIE_GESTIONE, capPerms);
 
     const sectionInfo = {

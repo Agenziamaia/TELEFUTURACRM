@@ -16,7 +16,7 @@ import { useVisibleStores, sameStore } from "@/lib/visibleStores";
 import { useCallers } from "@/lib/org";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK } from "@/lib/capabilities";
-import { fasciaLabel } from "@/lib/fasce";
+import { fasciaLabel, fasciaStart, eFascia } from "@/lib/fasce";
 import { RicercaCliente } from "@/components/RicercaCliente";
 
 // Tipi degli appuntamenti (i dati arrivano da Supabase, vedi fetch piu' sotto).
@@ -354,7 +354,7 @@ export default function Calendario() {
     const [showCreateMeetingModal, setShowCreateMeetingModal] = useState(false);
     const [selectedMeeting, setSelectedMeeting] = useState<CalendarMeeting | null>(null);
     const [showMeetingDetailModal, setShowMeetingDetailModal] = useState(false);
-    const [showSearchDrawer, setShowSearchDrawer] = useState(false);
+    // MOD-26: il pannello ricerca dedicato non esiste più — i filtri sono unificati
     // pannello elenco TASK ARRETRATE (Luca 04/08, riporto stile Google)
     const [showArretrate, setShowArretrate] = useState(false);
     // filtri del MODALE arretrate (Luca 05/08): solo per chi vede task altrui
@@ -382,6 +382,13 @@ export default function Calendario() {
     const [tasks, setTasks] = useState<CalendarTask[]>([]);
     const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
     const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
+
+    // MOD-8 (Luca 08/08): il negozio esita un appuntamento come "Da richiamare" →
+    // fissa il giorno → si genera un appuntamento telefonico (type "richiamo") al
+    // caller che l'aveva fissato e la pratica torna nella sua coda del call center.
+    const [richiamoNegozio, setRichiamoNegozio] = useState<{ date: string; fascia: string; time: string }>({ date: "", fascia: "mattina", time: "" });
+    const [richiamoNegozioBusy, setRichiamoNegozioBusy] = useState(false);
+    const [richiamoNegozioEsito, setRichiamoNegozioEsito] = useState<string | null>(null);
 
     // Agenda blocks (agent-only); blocked dates prevent telephone team from booking
     const [agendaBlocks, setAgendaBlocks] = useState<AgendaBlock[]>([]);
@@ -530,9 +537,6 @@ export default function Calendario() {
 
     // Search Filters State
     const [searchQuery, setSearchQuery] = useState("");
-    const [searchCfPiva, setSearchCfPiva] = useState("");
-    const [searchPhone, setSearchPhone] = useState("");
-    const [searchAgent, setSearchAgent] = useState("");
     const [searchDateFrom, setSearchDateFrom] = useState("");
     const [searchDateTo, setSearchDateTo] = useState("");
 
@@ -604,6 +608,106 @@ export default function Calendario() {
         const d = esitoDef(status, tipo);
         return (d && PALETTE[d.colore]) || (STATUS_COLORS as Record<string, string>)[status] || PALETTE.slate;
     };
+    // ── MOD-8 (Luca 08/08): genera l'appuntamento telefonico al call center dopo
+    // che il negozio ha esitato l'appuntamento fisico come "Da richiamare".
+    // Crea (o aggiorna, se già esiste) un evento type "richiamo" nel calendario
+    // intestato a chi aveva fissato l'appuntamento, e riporta la pratica collegata
+    // nella coda del caller (calls.stato = "Da richiamare" + data_richiamo).
+    async function generaRichiamoDaNegozio() {
+        const a = selectedAppointment;
+        if (!a) return;
+        if (!richiamoNegozio.date) { setRichiamoNegozioEsito("⚠️ Scegli il giorno del richiamo."); return; }
+        setRichiamoNegozioBusy(true);
+        setRichiamoNegozioEsito(null);
+        try {
+            const fasciaR = eFascia(richiamoNegozio.fascia) ? richiamoNegozio.fascia : null;
+            const oraTecnica = fasciaR ? fasciaStart(fasciaR)! : (richiamoNegozio.time || "10:00").slice(0, 5);
+            const provenienza = `Richiamo richiesto dal negozio${a.store ? ` (${a.store})` : ""} dopo l'appuntamento del ${new Date(a.date + "T12:00:00").toLocaleDateString("it-IT")}`;
+
+            // Pratiche del call center collegate a questo appuntamento fisico. Un
+            // business con più contratti può avere più righe sullo stesso
+            // appointment_id (matchAppuntamento) → le requeue tutte.
+            const { data: linkRows } = await supabase
+                .from("calls")
+                .select("id, caller, richiamo_event_id")
+                .eq("appointment_id", a.id);
+            const calls = (linkRows as { id: string; caller?: string | null; richiamo_event_id?: number | null }[] | null) || [];
+            // dedup: se una delle pratiche ha già un evento richiamo, riusa quello
+            const existingEvt = calls.find(c => c.richiamo_event_id)?.richiamo_event_id || null;
+            // intestatario = il caller che lavorava la pratica; ripiego su chi ha
+            // fissato l'appuntamento (per gli walk-in senza call collegata).
+            const intestatario = calls.find(c => c.caller)?.caller || a.createdBy || "";
+
+            const payload: Record<string, unknown> = {
+                date: richiamoNegozio.date,
+                time: oraTecnica,
+                fascia: fasciaR,
+                type: "richiamo",
+                store: null,
+                agente: "",
+                customer_name: a.customerName,
+                customer_phone: a.customerPhone,
+                cf_piva: a.cfPiva || null,
+                notes: [provenienza, a.esitoNote].filter(Boolean).join(" — "),
+                status: "scheduled",
+                created_by: intestatario,
+            };
+            const { fascia: _fx, ...payloadLegacy } = payload;   // fallback pre-mig. 118
+
+            let eventId = existingEvt;
+            if (existingEvt) {
+                let { error } = await supabase.from("appointments").update(payload).eq("id", existingEvt);
+                if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(payloadLegacy).eq("id", existingEvt));
+                if (error) throw error;
+            } else {
+                let { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
+                if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert(payloadLegacy).select("id").single());
+                if (error) throw error;
+                eventId = (ins as { id: number } | null)?.id ?? null;
+            }
+
+            // Rimetti OGNI pratica collegata nella coda del suo caller. Se l'update
+            // fallisce NON è un successo: va segnalato (bug: prima era silenziato).
+            let inCoda = 0;
+            let requeueErr: string | null = null;
+            for (const c of calls) {
+                const upd: Record<string, unknown> = { stato: "Da richiamare", data_richiamo: richiamoNegozio.date, fascia_richiamo: fasciaR };
+                if (eventId) upd.richiamo_event_id = eventId;
+                let { error } = await supabase.from("calls").update(upd).eq("id", c.id);
+                if (error && /column/i.test(error.message || "")) {
+                    const { fascia_richiamo: _f, richiamo_event_id: _r, ...legacy } = upd;
+                    ({ error } = await supabase.from("calls").update(legacy).eq("id", c.id));
+                }
+                if (error) requeueErr = error.message; else inCoda++;
+            }
+
+            // aggiorna la vista locale del calendario con l'evento richiamo
+            if (eventId) {
+                const nuovo: Appointment = {
+                    id: eventId, date: richiamoNegozio.date, time: oraTecnica, fascia: fasciaR || undefined,
+                    type: "richiamo", agente: "", store: undefined,
+                    customerName: a.customerName, customerPhone: a.customerPhone, cfPiva: a.cfPiva,
+                    notes: String(payload.notes || ""), status: "scheduled", createdBy: intestatario,
+                };
+                setAppointments(prev => prev.some(x => x.id === eventId) ? prev.map(x => x.id === eventId ? { ...x, ...nuovo } : x) : [...prev, nuovo]);
+            }
+
+            const quando = `${new Date(richiamoNegozio.date + "T12:00:00").toLocaleDateString("it-IT")}${fasciaR ? ` · ${fasciaLabel(fasciaR)}` : ""}`;
+            const noNumero = !String(a.customerPhone || "").trim() ? " ⚠️ Il cliente non ha un numero in scheda: il caller lo recupera dall'anagrafica." : "";
+            if (calls.length === 0) {
+                setRichiamoNegozioEsito(`✅ Richiamo fissato per il ${quando} in calendario per ${intestatario || "il call center"}. Nessuna pratica del centralino era collegata a questo appuntamento, quindi non compare nella coda chiamate.${noNumero}`);
+            } else if (requeueErr) {
+                setRichiamoNegozioEsito(`⚠️ Evento creato, ma ${calls.length - inCoda} pratica/e NON è tornata nella coda del caller: ${requeueErr}`);
+            } else {
+                setRichiamoNegozioEsito(`✅ Richiamo fissato per il ${quando}. La pratica è tornata nella coda di ${intestatario || "il call center"}.${noNumero}`);
+            }
+        } catch (e) {
+            setRichiamoNegozioEsito("❌ Errore: " + ((e as Error).message || "richiamo non creato"));
+        } finally {
+            setRichiamoNegozioBusy(false);
+        }
+    }
+
     // filtro esiti appuntamenti: unione negozio+domicilio, senza doppioni
     const esitiFiltroAppt = (() => {
         const visti = new Set<string>();
@@ -695,7 +799,7 @@ export default function Calendario() {
     // Scelte: tutti / call_center / negozio / propri (fallback). I default
     // fotografano il codice storico: admin+direzione+amministrazione = tutti,
     // direttore_cc = call_center, il resto = negozio.
-    const { perms: calPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: calPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const vistaCal = capChoice(user?.role, CAP_CALENDARIO_VISTA, calPerms);
     // VISIBILITÀ TASK SEPARATA (Luca 05/08): «oggi è legata a quella del
     // calendario ma devono essere due cose diverse» — rotellina "Calendario —
@@ -1192,15 +1296,16 @@ export default function Calendario() {
     };
 
     // Search result chronological list (includes RBAC store-based filtering implicitly from visibleAppointments)
+    // MOD-26 (Luca 10/08): ricerca UNIFICATA — un solo campo che matcha nome,
+    // CF/P.IVA o cellulare (via i tre campi separati del vecchio pannello)
     const searchResults = visibleAppointments.filter(a => {
-        // Apply Name / Ragione Sociale (case-insensitive)
-        if (searchQuery && !a.customerName.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-        // Apply CF / PIVA
-        if (searchCfPiva && !(a.cfPiva && a.cfPiva.toLowerCase().includes(searchCfPiva.toLowerCase()))) return false;
-        // Apply Phone
-        if (searchPhone && !a.customerPhone.includes(searchPhone)) return false;
-        // Apply Agent (Admin only filter)
-        if (isCallCenter && searchAgent && searchAgent !== "Tutti gli agenti" && a.agente !== searchAgent) return false;
+        if (searchQuery) {
+            const q = searchQuery.trim().toLowerCase();
+            const hit = a.customerName.toLowerCase().includes(q)
+                || (a.cfPiva && a.cfPiva.toLowerCase().includes(q))
+                || (a.customerPhone && a.customerPhone.includes(searchQuery.trim()));
+            if (!hit) return false;
+        }
         const from = parseSearchDate(searchDateFrom);
         const to = parseSearchDate(searchDateTo);
         if (from && a.date < from) return false;
@@ -1261,6 +1366,47 @@ export default function Calendario() {
         setBlockAgendaForm({ mode: "single", startDate: "", endDate: "", note: "" });
     };
 
+    // ── SYNC ESITO NEGOZIO → PRATICA CALLER (fix 10/08, caso Greco/41
+    // "Attivato Anomalia"): prima l'esito scelto qui NON toccava mai la
+    // pratica calls — il caller non lo vedeva e lo storico non lo registrava.
+    // Ora: SEMPRE una voce di storico sulla pratica collegata; per gli esiti
+    // definitivi si aggiorna anche calls.stato (mappa condivisa). Best-effort:
+    // il calendario resta comunque la fonte dell'esito.
+    const STATO_CALL_DA_ESITO: Record<string, string> = {
+        attivato: "Attivato",
+        attivato_diverso_negozio: "Attivato Altro Negozio",
+        ko: "Andato Non Interessato",
+        no_show: "Non andato",
+        annullato: "Annullato",
+    };
+    const sincronizzaEsitoSuPratica = async (apptId: number | string, daLabel: string, aLabel: string, chiaveEsito: string) => {
+        try {
+            const { data: pratiche } = await supabase.from("calls").select("id, stato, storico").eq("appointment_id", apptId);
+            for (const p of (pratiche || []) as { id: string; stato: string | null; storico: unknown[] | null }[]) {
+                const storico = Array.isArray(p.storico) ? [...p.storico] : [];
+                storico.push({
+                    data: new Date().toISOString(), caller: user?.name || "Negozio",
+                    campo: "Esito negozio", da: daLabel, a: aLabel,
+                    dettagli: { origine: "calendario", esito: chiaveEsito },
+                });
+                const nuovo = STATO_CALL_DA_ESITO[chiaveEsito];
+                const upd: Record<string, unknown> = { storico };
+                if (nuovo && p.stato !== nuovo) upd.stato = nuovo;
+                await supabase.from("calls").update(upd).eq("id", p.id);
+            }
+        } catch { /* best-effort */ }
+    };
+    const notaNegozioSuPratica = async (apptId: number | string, testo: string) => {
+        try {
+            const { data: pratiche } = await supabase.from("calls").select("id, storico").eq("appointment_id", apptId);
+            for (const p of (pratiche || []) as { id: string; storico: unknown[] | null }[]) {
+                const storico = Array.isArray(p.storico) ? [...p.storico] : [];
+                storico.push({ data: new Date().toISOString(), caller: user?.name || "Negozio", campo: "Nota negozio", da: "", a: testo, dettagli: { origine: "calendario" } });
+                await supabase.from("calls").update({ storico }).eq("id", p.id);
+            }
+        } catch { /* best-effort */ }
+    };
+
     return (
         <div className="w-full">
             <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -1281,18 +1427,8 @@ export default function Calendario() {
                     </p>
                 </div>
                 <div className="flex gap-3">
-                    <button
-                        onClick={() => setShowSearchDrawer(!showSearchDrawer)}
-                        className={cn(
-                            "h-10 px-5 flex items-center gap-2 rounded-lg font-medium transition-all shadow-lg border",
-                            showSearchDrawer
-                                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/50 shadow-indigo-500/20"
-                                : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
-                        )}
-                    >
-                        <Search className="w-4 h-4" />
-                        Cerca appuntamenti
-                    </button>
+                    {/* MOD-26: via il bottone "Cerca appuntamenti" — la ricerca
+                        vive nei filtri unificati qui sotto */}
                     {tasksArretrate.length > 0 && (
                         <button
                             onClick={() => setShowArretrate(v => !v)}
@@ -1345,82 +1481,91 @@ export default function Calendario() {
                 </div>
             </div>
 
-            {/* Filtri negozio/consulente MULTI-SELEZIONE (Luca 05/08): compaiono
-                a chiunque veda più negozi o più consulenti — direttore CC coi
-                caller, direttore commerciale multi-negozio, non solo la
-                direzione. Ogni tendina appare solo se la sua platea è plurale. */}
-            {puoFiltrareCal && (
-                <div className="mb-6 flex flex-col md:flex-row gap-4 p-4 rounded-xl bg-white/[0.02] border border-white/5">
-                    {mostraFiltroNegozio && <div className="flex-1">
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Punto Vendita</label>
-                        <FiltroMulti
-                            values={filterStores}
-                            onChange={setFilterStores}
-                            opzioni={negoziOpzioni}
-                            etichettaTutti="Tutti i punti vendita"
+            {/* ── FILTRI UNIFICATI (MOD-26, Luca 10/08): ricerca cliente, periodo,
+                esiti, punti vendita/consulenti e categorie raccolti in UN
+                pannello compatto — via il vecchio pannello "Cerca appuntamenti". ── */}
+            <div className="mb-6 p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-3">
+                {/* riga 1: ricerca + periodo + esiti + pulisci */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="relative flex-1 min-w-[220px] max-w-md">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                        <input
+                            type="text"
+                            placeholder="Cerca cliente: nome, CF/P.IVA o cellulare…"
+                            className="glass-input w-full text-sm h-9 pl-9"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
                         />
-                    </div>}
-                    {mostraFiltroConsulente && <div className="flex-1">
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Consulente</label>
-                        <FiltroMulti
-                            values={filterAgents}
-                            onChange={setFilterAgents}
-                            opzioni={consulentiOpzioni}
-                            etichettaTutti="Tutti i consulenti"
-                        />
-                    </div>}
-                    {isCallCenter && <div className="flex-1">
-                        {/* chi ha PRENOTATO l'appuntamento, non l'incaricato */}
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">Filtra per Fissato da</label>
-                        <FiltroMulti
-                            values={filterCreatedBys}
-                            onChange={setFilterCreatedBys}
-                            opzioni={fissatoDaOpzioni}
-                            etichettaTutti="Chiunque"
-                        />
-                    </div>}
-                </div>
-            )}
-
-            {/* Outcome Filters (appointments & tasks) */}
-            <div className="mb-4 flex flex-col md:flex-row gap-3">
-                <div className="flex-1 max-w-xs">
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
-                        Filtro esito appuntamenti
-                    </label>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] uppercase font-bold text-slate-500">dal</span>
+                        <DatePickerInput id="da_data_appuntamento" value={searchDateFrom} onChange={setSearchDateFrom} placeholder="—" />
+                        <span className="text-[10px] uppercase font-bold text-slate-500">al</span>
+                        <DatePickerInput id="a_data_appuntamento" value={searchDateTo} onChange={setSearchDateTo} placeholder="—" />
+                    </div>
                     <select
-                        className="glass-input w-full text-sm"
+                        className="glass-input text-sm h-9 w-auto min-w-[170px]"
                         value={appointmentOutcomeFilter}
                         onChange={(e) => setAppointmentOutcomeFilter(e.target.value as AppointmentStatus | "")}
+                        title="Filtro esito appuntamenti"
                     >
-                        <option value="">Tutti gli esiti</option>
+                        <option value="">Esito app. — tutti</option>
                         {esitiFiltroAppt.map((s) => (
-                            <option key={s.chiave} value={s.chiave}>
-                                {s.etichetta}
-                            </option>
+                            <option key={s.chiave} value={s.chiave}>{s.etichetta}</option>
                         ))}
                     </select>
-                </div>
-                <div className="flex-1 max-w-xs">
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wider">
-                        Filtro esito task
-                    </label>
                     <select
-                        className="glass-input w-full text-sm"
+                        className="glass-input text-sm h-9 w-auto min-w-[150px]"
                         value={taskOutcomeFilter}
                         onChange={(e) => setTaskOutcomeFilter(e.target.value as TaskStatus | "")}
+                        title="Filtro esito task"
                     >
-                        <option value="">Tutti gli stati</option>
+                        <option value="">Task — tutte</option>
                         {esitiPer("task").map((s) => (
                             <option key={s.chiave} value={s.chiave}>{s.etichetta}</option>
                         ))}
                     </select>
+                    {(searchQuery || searchDateFrom || searchDateTo || appointmentOutcomeFilter || taskOutcomeFilter) && (
+                        <button
+                            type="button"
+                            onClick={() => { setSearchQuery(""); setSearchDateFrom(""); setSearchDateTo(""); setAppointmentOutcomeFilter("" as AppointmentStatus | ""); setTaskOutcomeFilter("" as TaskStatus | ""); }}
+                            className="h-9 text-xs px-3 rounded-lg text-slate-400 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
+                        >
+                            ✕ Pulisci
+                        </button>
+                    )}
                 </div>
-            </div>
-
-            {/* Filtro CATEGORIE — i "pallini" del calendario, ora in alto e cliccabili
-                (per tutti i ruoli): click = mostra solo le categorie selezionate. */}
-            <div className="mb-6 flex flex-wrap items-center gap-2">
+                {/* riga 2: punti vendita / consulenti / fissato da (solo platee plurali) */}
+                {puoFiltrareCal && (mostraFiltroNegozio || mostraFiltroConsulente || isCallCenter) && (
+                    <div className="flex flex-wrap gap-2.5">
+                        {mostraFiltroNegozio && <div className="flex-1 min-w-[200px] max-w-sm" title="Punti vendita">
+                            <FiltroMulti
+                                values={filterStores}
+                                onChange={setFilterStores}
+                                opzioni={negoziOpzioni}
+                                etichettaTutti="Tutti i punti vendita"
+                            />
+                        </div>}
+                        {mostraFiltroConsulente && <div className="flex-1 min-w-[200px] max-w-sm" title="Consulenti">
+                            <FiltroMulti
+                                values={filterAgents}
+                                onChange={setFilterAgents}
+                                opzioni={consulentiOpzioni}
+                                etichettaTutti="Tutti i consulenti"
+                            />
+                        </div>}
+                        {isCallCenter && <div className="flex-1 min-w-[200px] max-w-sm" title="Chi ha fissato l'appuntamento">
+                            <FiltroMulti
+                                values={filterCreatedBys}
+                                onChange={setFilterCreatedBys}
+                                opzioni={fissatoDaOpzioni}
+                                etichettaTutti="Fissato da: chiunque"
+                            />
+                        </div>}
+                    </div>
+                )}
+                {/* riga 3: categorie (i "pallini" cliccabili) */}
+                <div className="flex flex-wrap items-center gap-2">
                 {([
                     ["incoming", "Inbound", "bg-blue-400", "border-blue-500/40 bg-blue-500/15 text-blue-200"],
                     ["outgoing", "Outbound", "bg-amber-400", "border-amber-500/40 bg-amber-500/15 text-amber-200"],
@@ -1459,97 +1604,15 @@ export default function Calendario() {
                         <Lock className="w-3 h-3 text-amber-400" /> Giorno bloccato
                     </span>
                 )}
+                </div>
             </div>
 
-            {/* Advanced Search Drawer */}
-            {showSearchDrawer && (
+            {/* MOD-26: RISULTATI di ricerca — compaiono da soli quando la
+                ricerca unificata (testo o periodo) è attiva */}
+            {(searchQuery.trim() !== "" || searchDateFrom !== "" || searchDateTo !== "") && (
                 <div className="glass-card mb-6 p-6 animate-in slide-in-from-top-4 fade-in duration-200">
-                    <h3 className="text-lg font-medium text-white mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
-                        <Search className="w-5 h-5 text-indigo-400" />
-                        Filtri di ricerca
-                    </h3>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        {/* 1. Nome / Ragione Sociale */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Nome o Ragione Sociale</label>
-                            <input
-                                type="text"
-                                placeholder="Es. Mario Rossi"
-                                className="glass-input w-full"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
-                        </div>
-
-                        {/* 2. CF / PIVA */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Codice Fiscale / P.IVA</label>
-                            <input
-                                type="text"
-                                placeholder="Inserisci CF o P.IVA"
-                                className="glass-input w-full"
-                                value={searchCfPiva}
-                                onChange={(e) => setSearchCfPiva(e.target.value)}
-                            />
-                        </div>
-
-                        {/* 3. Cellulare */}
-                        <div>
-                            <label className="block text-sm font-medium text-slate-300 mb-2">Numero di cellulare</label>
-                            <input
-                                type="number"
-                                placeholder="Es. 3331234567"
-                                className="glass-input w-full"
-                                value={searchPhone}
-                                onChange={(e) => setSearchPhone(e.target.value)}
-                            />
-                        </div>
-
-                        {/* 4. Agente (Admin Only) */}
-                        {isCallCenter ? (
-                            <div>
-                                <label className="block text-sm font-bold text-indigo-300 mb-2">Consulente</label>
-                                <SelectPersona
-                                    className="glass-input w-full border-indigo-500/30 focus:border-indigo-500/50"
-                                    value={searchAgent}
-                                    onChange={setSearchAgent}
-                                    opzioni={agents}
-                                    placeholder="Tutti — scrivi per filtrare"
-                                />
-                            </div>
-                        ) : (
-                            // Space preserver for layout on non-admin
-                            <div className="hidden lg:block"></div>
-                        )}
-
-                        {/* Date Ranges */}
-                        <div className="md:col-span-2 lg:col-span-4 grid grid-cols-1 md:grid-cols-2 gap-6 pt-2 border-t border-white/5 mt-2">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-2">Da data appuntamento</label>
-                                <DatePickerInput id="da_data_appuntamento" value={searchDateFrom} onChange={setSearchDateFrom} placeholder="Seleziona data" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-2">A data appuntamento</label>
-                                <DatePickerInput id="a_data_appuntamento" value={searchDateTo} onChange={setSearchDateTo} placeholder="Seleziona data" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mt-6 flex gap-3">
-                        <button type="button" onClick={() => setShowSearchDrawer(false)} className="primary-btn h-10 px-6 text-sm">Cerca</button>
-                        <button
-                            type="button"
-                            onClick={() => setShowSearchDrawer(false)}
-                            className="h-10 px-6 rounded-lg font-medium bg-white/5 text-slate-300 hover:bg-white/10 transition-colors text-sm"
-                        >
-                            Annulla
-                        </button>
-                    </div>
-
-                    {/* Temporary mockup of chronological results inside the drawer */}
-                    <div className="mt-8 pt-6 border-t border-white/10">
-                        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Risultati di ricerca</h4>
+                    <div>
+                        <h4 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4">Risultati di ricerca ({searchResults.length})</h4>
                         <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
                             {searchResults.map(appt => (
                                 <div key={appt.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors gap-4">
@@ -2351,10 +2414,19 @@ export default function Calendario() {
                         </div>
                         <div className="space-y-3 text-sm">
                             <div className="flex items-center justify-between">
+                                {/* badge per TUTTI i tipi (Luca 08/08): prima era binario
+                                    incoming/else → i richiami risultavano "Outbound" (bug di vista;
+                                    a DB il type è corretto = 'richiamo', 0 outgoing) */}
                                 <span className={cn("px-3 py-1 rounded-full border text-xs font-medium",
-                                    selectedAppointment.type === "incoming" ? "bg-blue-500/15 border-blue-500/30 text-blue-400" : "bg-amber-500/15 border-amber-500/30 text-amber-400"
+                                    selectedAppointment.type === "incoming" ? "bg-blue-500/15 border-blue-500/30 text-blue-400" :
+                                        selectedAppointment.type === "richiamo" ? "bg-pink-500/15 border-pink-500/30 text-pink-300" :
+                                            selectedAppointment.type === "self_generated" ? "bg-purple-500/15 border-purple-500/30 text-purple-300" :
+                                                "bg-amber-500/15 border-amber-500/30 text-amber-400"
                                 )}>
-                                    {selectedAppointment.type === "incoming" ? "🏪 Inbound — cliente viene in store" : "🚗 Outbound — agente va dal cliente"}
+                                    {selectedAppointment.type === "incoming" ? "🏪 Inbound — cliente viene in store" :
+                                        selectedAppointment.type === "richiamo" ? "☎️ Richiamo telefonico — call center" :
+                                            selectedAppointment.type === "self_generated" ? "🧑‍💼 Auto-generato — agente" :
+                                                "🚗 Outbound — agente va dal cliente"}
                                 </span>
                                 <span className={cn("px-2.5 py-1 rounded-full border text-xs font-medium", esitoClasse(selectedAppointment.status, selectedAppointment.type))}>
                                     {esitoLabel(selectedAppointment.status, selectedAppointment.type)}
@@ -2377,7 +2449,7 @@ export default function Calendario() {
                                             className="px-2 py-0.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/25 text-xs shrink-0">🗺 Maps</a>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />{selectedAppointment.type === "incoming" && selectedAppointment.store ? `Punto vendita: ${selectedAppointment.store}` : `Agente: ${selectedAppointment.agente || "—"}`}</div>
+                                <div className="flex items-center gap-2 text-slate-400 text-xs"><User className="w-3 h-3" />{selectedAppointment.type === "incoming" && selectedAppointment.store ? `Punto vendita: ${selectedAppointment.store}` : selectedAppointment.type === "richiamo" ? `Call center: ${selectedAppointment.createdBy || selectedAppointment.agente || "—"}` : `Agente: ${selectedAppointment.agente || "—"}`}</div>
                                 {/* Operatore che ha preso l'appuntamento, a prima vista (Luca 30/07). */}
                                 {selectedAppointment.createdBy && (
                                     <div className="flex items-center gap-2 text-violet-300 text-sm font-medium">
@@ -2400,13 +2472,26 @@ export default function Calendario() {
                                     value={selectedAppointment.status}
                                     onChange={async e => {
                                         const s = e.target.value as AppointmentStatus;
+                                        const prima = selectedAppointment.status;
                                         await supabase.from("appointments").update({ status: s }).eq("id", selectedAppointment.id);
+                                        // fix 10/08: l'esito del negozio arriva ANCHE sulla pratica
+                                        // caller (storico sempre + stato per gli esiti definitivi)
+                                        sincronizzaEsitoSuPratica(selectedAppointment.id,
+                                            esitoLabel(prima, selectedAppointment.type),
+                                            esitoLabel(s, selectedAppointment.type), s);
                                         setAppointments(prev => prev.map(a => a.id === selectedAppointment.id ? { ...a, status: s } : a));
                                         setSelectedAppointment({ ...selectedAppointment, status: s });
+                                        // MOD-8: quando si sceglie "Da richiamare" apparecchia il pannello richiamo
+                                        setRichiamoNegozioEsito(null);
+                                        if (s === "da_richiamare") setRichiamoNegozio({ date: "", fascia: "mattina", time: "" });
                                     }}
                                 >
                                     {(() => {
-                                        const scelte = esitiPer(selectedAppointment.type);
+                                        // "attivato"/"attivato_diverso_negozio" NON sono selezionabili a
+                                        // mano dal negozio (Luca 08/08): arrivano SOLO dal match con una
+                                        // vendita registrata. Il valore corrente resta visibile.
+                                        const BLOCCATI = ["attivato", "attivato_diverso_negozio"];
+                                        const scelte = esitiPer(selectedAppointment.type).filter((x) => !BLOCCATI.includes(x.chiave));
                                         const cur = selectedAppointment.status;
                                         const conCorrente = scelte.some((x) => x.chiave === cur)
                                             ? scelte
@@ -2416,6 +2501,7 @@ export default function Calendario() {
                                         ));
                                     })()}
                                 </select>
+                                <p className="text-[11px] text-slate-500">L&apos;esito «Attivato» si imposta da solo quando la vendita del cliente viene registrata (match automatico) — non è più selezionabile a mano.</p>
                                 <textarea
                                     className="glass-input w-full resize-none text-xs"
                                     rows={2}
@@ -2427,7 +2513,52 @@ export default function Calendario() {
                                         setAppointments(prev => prev.map(a => a.id === selectedAppointment.id ? { ...a, esitoNote: v } : a));
                                         setSelectedAppointment({ ...selectedAppointment, esitoNote: v });
                                     }}
+                                    onBlur={e => {
+                                        // fix 10/08: la nota esito finisce anche nello storico della pratica
+                                        const v = e.target.value.trim();
+                                        if (v) notaNegozioSuPratica(selectedAppointment.id, v);
+                                    }}
                                 />
+
+                                {/* MOD-8: negozio → "Da richiamare" → fissa il giorno → richiamo al call center */}
+                                {selectedAppointment.status === "da_richiamare" && selectedAppointment.type !== "richiamo" && (
+                                    <div className="mt-2 p-3 rounded-xl bg-pink-500/10 border border-pink-500/30 space-y-2">
+                                        <p className="text-[11px] font-semibold text-pink-200 flex items-center gap-1.5">
+                                            <Phone className="w-3.5 h-3.5" /> Genera l&apos;appuntamento telefonico per il call center
+                                        </p>
+                                        <p className="text-[11px] text-slate-400 leading-snug">
+                                            Fissa quando il cliente va ricontattato: si crea un richiamo intestato a
+                                            {selectedAppointment.createdBy ? ` ${selectedAppointment.createdBy}` : " chi ha fissato l'appuntamento"} e, se la pratica è collegata, torna nella coda del centralino.
+                                        </p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-[10px] text-slate-500 mb-1">Giorno *</label>
+                                                <input type="date" className="glass-input w-full text-xs"
+                                                    value={richiamoNegozio.date}
+                                                    onChange={e => setRichiamoNegozio(p => ({ ...p, date: e.target.value }))} />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] text-slate-500 mb-1">Fascia</label>
+                                                <select className="glass-input w-full text-xs"
+                                                    value={richiamoNegozio.fascia}
+                                                    onChange={e => setRichiamoNegozio(p => ({ ...p, fascia: e.target.value }))}>
+                                                    <option value="mattina">🌅 Mattina (10:00–13:00)</option>
+                                                    <option value="pomeriggio">🌇 Pomeriggio (16:00–19:30)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <button type="button" disabled={richiamoNegozioBusy || !richiamoNegozio.date}
+                                            onClick={generaRichiamoDaNegozio}
+                                            className="w-full py-2 rounded-lg bg-pink-500/20 border border-pink-500/40 text-pink-200 text-xs font-medium hover:bg-pink-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                                            {richiamoNegozioBusy ? "Creazione…" : "📞 Genera richiamo per il call center"}
+                                        </button>
+                                        {richiamoNegozioEsito && (
+                                            <p className={cn("text-[11px] leading-snug", richiamoNegozioEsito.startsWith("✅") ? "text-emerald-300" : richiamoNegozioEsito.startsWith("⚠️") ? "text-amber-300" : "text-red-300")}>
+                                                {richiamoNegozioEsito}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

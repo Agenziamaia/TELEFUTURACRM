@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { routeBases, effectiveAllowed, groupKey, groupByLabel } from "@/lib/nav";
+import { roleGradeKey, userKey } from "@/lib/usePermissions";
 import { loadRoleDefs } from "@/lib/useRoles";
 import type { RoleId } from "@/lib/roles";
 
@@ -148,6 +149,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // (roles.ts) appena la sessione esiste — vale per tutto il CRM.
     useEffect(() => { if (baseUser?.id) loadRoleDefs(); }, [baseUser?.id]);
 
+    // MOD-33 (Luca 10/08): SOSPESI e LICENZIATI fuori anche con la sessione
+    // GIA' APERTA — a ogni cambio pagina si riverifica lo stato a DB e, se
+    // l'accesso non e' piu' consentito, la sessione si chiude con navigazione
+    // hard (stessa via del logout, anti-bfcache). Select difensivo: senza la
+    // migrazione delle colonne nuove vale il solo controllo status/active.
+    useEffect(() => {
+        if (!baseUser?.id) return;
+        let vivo = true;
+        (async () => {
+            let d: { status?: string | null; active?: boolean | null; sospeso_dal?: string | null; data_licenziamento?: string | null } | null = null;
+            const r1 = await supabase.from("app_users").select("status, active, sospeso_dal, data_licenziamento").eq("id", baseUser.id).maybeSingle();
+            if (!r1.error) d = r1.data;
+            else {
+                const r2 = await supabase.from("app_users").select("status, active").eq("id", baseUser.id).maybeSingle();
+                if (!r2.error) d = r2.data;
+            }
+            if (!vivo || !d) return;
+            const oggi = new Date().toISOString().slice(0, 10);
+            const dl = String(d.data_licenziamento || "");
+            const sd = String(d.sospeso_dal || "");
+            const bloccato = d.active === false || d.status === "licenziato" || (!!dl && dl <= oggi) || (!!sd && sd <= oggi);
+            if (!bloccato) return;
+            // licenziamento programmato arrivato a scadenza: si concretizza
+            if (dl && dl <= oggi && d.status !== "licenziato") {
+                await supabase.from("app_users").update({ status: "licenziato", active: false }).eq("id", baseUser.id);
+            }
+            try {
+                localStorage.removeItem("crm_session");
+                localStorage.removeItem("crm_last_activity");
+            } catch { /* ignore */ }
+            window.location.replace("/");
+        })();
+        return () => { vivo = false; };
+    }, [baseUser?.id, pathname]);
+
     // Protezione rotte GUIDATA DALLA NAVIGAZIONE (src/lib/nav.ts + tabella
     // role_permissions): stessa fonte della Sidebar e della pagina Permessi, in
     // entrambe le direzioni — cio' che l'admin concede/toglie da li' vale anche
@@ -155,17 +191,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [routePerms, setRoutePerms] = useState<Map<string, boolean> | null>(null);
     useEffect(() => {
         const role = user?.role;
+        const grade = user?.grade;
+        const uid = user?.id;
         if (!role || role === "admin" || role === "dev") { setRoutePerms(new Map()); return; }
         let vivo = true;
-        supabase.from("role_permissions").select("perm_key,allowed").eq("role", role)
+        // ANCHE le eccezioni di grado ("ruolo@grado") e di PERSONA ("user:<id>",
+        // MOD-29 — vedi usePermissions): senza, un permesso concesso al solo
+        // grado/utente apriva la voce in sidebar ma questo blocco rimbalzava in
+        // home (bug 10/08). Ordine di fusione: ruolo → grado → utente.
+        const chiavi: string[] = [role];
+        if (grade) chiavi.push(roleGradeKey(role, grade));
+        if (uid) chiavi.push(userKey(uid));
+        supabase.from("role_permissions").select("role,perm_key,allowed").in("role", chiavi)
             .then(({ data, error }) => {
                 if (!vivo) return;
                 const m = new Map<string, boolean>();
-                if (!error) (data ?? []).forEach((r: { perm_key: string; allowed: boolean }) => m.set(r.perm_key, r.allowed));
+                if (!error) {
+                    const rows = (data ?? []) as { role: string; perm_key: string; allowed: boolean }[];
+                    rows.filter((r) => r.role === role).forEach((r) => m.set(r.perm_key, r.allowed));
+                    if (grade) rows.filter((r) => r.role === roleGradeKey(role, grade)).forEach((r) => m.set(r.perm_key, r.allowed));
+                    if (uid) rows.filter((r) => r.role === userKey(uid)).forEach((r) => m.set(r.perm_key, r.allowed));
+                }
                 setRoutePerms(m);
             });
         return () => { vivo = false; };
-    }, [user?.role]);
+    }, [user?.role, user?.grade, user?.id]);
     useEffect(() => {
         if (!user || !routePerms) return;
         if (user.role === "admin" || user.role === "dev") return;

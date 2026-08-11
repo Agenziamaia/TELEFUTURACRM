@@ -37,7 +37,7 @@ export function UrgentTasks() {
     // Richieste di modifica contratto: il contatore segue la ROTELLINA di
     // Ricerca Vendite (chi ha la modifica "diretta" approva — 04/08), non più
     // la sola lista direzionale.
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const vedeRichiesteModifica = !!user && capChoice(user.role, CAP_RICERCA_MODIFICA, capPerms) === "diretta";
 
     useEffect(() => {

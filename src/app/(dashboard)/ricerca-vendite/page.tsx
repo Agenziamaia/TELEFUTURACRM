@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation, FileText, ChevronDown } from "lucide-react";
@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
 import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
+import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { useActiveStores } from "@/lib/org";
 import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
 import { caricaTutte } from "@/lib/fetchTutte";
@@ -19,6 +20,7 @@ import { codiciPerBrand } from "@/lib/codiciInserimento";
 import { scaricaXlsx, type CellaXlsx } from "@/lib/exportXlsx";
 import { useRolePermissions } from "@/lib/usePermissions";
 import { capChoice, CAP_RICERCA_MODIFICA } from "@/lib/capabilities";
+import { trovaAppuntamentoDaAgganciare, agganciaVenditaAppuntamento } from "@/lib/matchAppuntamento";
 
 interface ContrattoRow {
     id: string;
@@ -132,6 +134,16 @@ function fmtVal(v: unknown): string {
     if (v === null || v === undefined || v === "") return "—";
     if (typeof v === "boolean") return v ? "Si" : "No";
     if (typeof v === "object") return JSON.stringify(v);
+    // stringhe JSON di OPZIONI (contract::opzioni nelle richieste/riepiloghi):
+    // mai JSON grezzo a schermo, chi approva deve capire cosa cambia
+    if (typeof v === "string" && v.startsWith("[")) {
+        try {
+            const a = JSON.parse(v);
+            if (Array.isArray(a) && a.every((o) => o && typeof o === "object" && "nome" in o)) {
+                return a.length ? a.map((o: { nome?: string; quantita?: number | null }) => String(o.nome || "") + (o.quantita && Number(o.quantita) > 1 ? ` ×${o.quantita}` : "")).join(", ") : "—";
+            }
+        } catch { /* non era il JSON delle opzioni */ }
+    }
     return String(v);
 }
 
@@ -220,7 +232,10 @@ function FiltroMulti({ values, onChange, opzioni, className = "", disabled = fal
     const visuale = (o: string) => etichette?.[o] ?? o;
     const spuntata = (o: string) => tutte || (values as string[]).includes(o);
     const toggle = (o: string) => {
-        if (values === null) { onChange(opzioni.filter((x) => x !== o)); return; } // dal "tutto" si toglie la prima voce
+        // Luca 10/08: dallo stato "tutte" il click ELEGGE la voce a unico
+        // filtro attivo (prima la toglieva dall'insieme — controintuitivo);
+        // con un sottoinsieme già scelto resta il toggle classico
+        if (values === null) { onChange([o]); return; }
         const next = values.includes(o) ? values.filter((x) => x !== o) : [...values, o];
         onChange(opzioni.length > 0 && opzioni.every((x) => next.includes(x)) ? null : next);
     };
@@ -359,6 +374,10 @@ export default function RicercaContratto() {
     //    Le liste arrivano da catalog_* (incluse le voci spente: lo storico
     //    le contiene), non piu' dai distinct dello storico.
     const [filterCategorie, setFilterCategorie] = useState<string[] | null>(null);
+    // MOD-30 (Luca 10/08): tipologia cliente PRIMA della categoria. Filtra su
+    // contracts.tipo_cliente ('Consumer'/'Business' — backfill 10/08 dal
+    // clients.tipo per le righe storiche nate senza).
+    const [filterTipoCliente, setFilterTipoCliente] = useState<string[] | null>(null);
     const [filterOfferte, setFilterOfferte] = useState<string[] | null>(null);
     // OPZIONI (Luca 28/07): quarto anello della catena — si sbloccano dopo
     // l'offerta; multi, match sul jsonb contracts.opzioni [{nome,quantita}]:
@@ -410,6 +429,13 @@ export default function RicercaContratto() {
     // /ricerca-vendite?id=<id> apre il dettaglio del contratto.
     // Segnalazione 75: il contratto cercato puo' non essere nella pagina caricata,
     // quindi filtro subito per quell'id: cosi' c'e' di sicuro e il dettaglio si apre.
+    // MOD-1b (Luca 08/08): carico le regole campi vendita a DB così il modale
+    // può ricalcolare i campi che le OPZIONI si portano dietro (senza, userebbe
+    // solo il fallback statico). Stessa fonte del pannello Catalogo / Registra.
+    useEffect(() => {
+        supabase.from("catalog_campi_regole").select("*").order("ordine")
+            .then(({ data }) => { if (data) impostaRegoleCampi(data as Parameters<typeof impostaRegoleCampi>[0]); });
+    }, []);
     const deepLinked = useRef(false);
     useEffect(() => {
         const id = new URLSearchParams(window.location.search).get("id");
@@ -505,7 +531,7 @@ export default function RicercaContratto() {
     // ruolo (nulla cambia per nessuno); la modalità di SALVATAGGIO segue
     // comunque la capacità, il cui default fotografa la regola di Luca 04/08:
     // amministrativo in su diretta, il resto con autorizzazione.
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const modRicerca = capChoice(user?.role, CAP_RICERCA_MODIFICA, capPerms);
     // LA ROTELLINA COMANDA SEMPRE (Luca 04/08 sera): niente perimetri storici
     // "a rotellina vergine" — il caso store specialist ha mostrato il paradosso:
@@ -583,13 +609,22 @@ export default function RicercaContratto() {
         }
         if (!soloSlug) { setCatalogoBrand(null); return; }
         let alive = true;
-        loadCatalogoBrand(soloSlug).then((t) => { if (alive) setCatalogoBrand(t); });
+        // FRESH sempre (Luca 10/08): la cache in memoria congelava il flag
+        // attivo/spento — riaccendevi un'offerta dal pannello e qui restava ⛔
+        // finché non ricaricavi la pagina. Due query leggere a ogni tessera.
+        loadCatalogoBrand(soloSlug, { fresh: true }).then((t) => { if (alive) setCatalogoBrand(t); });
         return () => { alive = false; };
     }, [soloSlug]); // eslint-disable-line react-hooks/exhaustive-deps
     // CONSEGUENZIALITÀ (Luca 28/07): le offerte seguono i prodotti scelti; senza
     // prodotti ma con una categoria, seguono i prodotti di quella categoria —
     // e comunque si restringono alle offerte DELLA categoria (la stessa offerta
     // può esistere sia in Wallet sia in Ric. Auto).
+    // TIPO CLIENTE nella cascata (Luca 10/08): "Fisso" esiste sia Consumer sia
+    // Business con lo stesso nome — senza questo taglio le offerte business
+    // finivano nella tendina anche col filtro Consumer attivo
+    const _tipoOk = useCallback((tipi?: string[]) =>
+        !filterTipoCliente?.length || (tipi || []).some((t) => filterTipoCliente.includes(t)),
+        [filterTipoCliente]);
     const offerteDisponibili = useMemo(() => {
         if (!catalogoBrand) return [];
         // RIC-06: categorie/prodotti sono insiemi (null = tutto selezionato =
@@ -597,15 +632,25 @@ export default function RicercaContratto() {
         const base = filterProdotti?.length ? filterProdotti
             : filterCategorie?.length ? filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || [])
             : null;
-        if (!base) return catalogoBrand.offNames;
+        // le SPENTE scendono in fondo (Luca 10/08): sopra restano le vive
+        const ordina = (arr: string[]) => arr.filter((o) => _tipoOk(catalogoBrand.offTipi?.[o])).sort((a, b) =>
+            (catalogoBrand.offSpenta?.[a] ? 1 : 0) - (catalogoBrand.offSpenta?.[b] ? 1 : 0) || a.localeCompare(b));
+        if (!base) return ordina([...catalogoBrand.offNames]);
         let set = new Set<string>();
         base.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
         if (filterCategorie?.length) {
             const s2 = new Set(filterCategorie.flatMap((c) => catalogoBrand.offsByCat[c] || []));
             set = new Set(Array.from(set).filter((o) => s2.has(o)));
         }
-        return Array.from(set).sort();
-    }, [catalogoBrand, filterProdotti, filterCategorie]);
+        return ordina(Array.from(set));
+    }, [catalogoBrand, filterProdotti, filterCategorie, _tipoOk]);
+    // etichette ⛔ per le offerte spente nella tendina (il VALORE resta il nome
+    // pulito: i filtri e lo storico non cambiano)
+    const offEtichette = useMemo(() => {
+        const out: Record<string, string> = {};
+        offerteDisponibili.forEach((o) => { if (catalogoBrand?.offSpenta?.[o]) out[o] = o + " · ⛔ spenta"; });
+        return out;
+    }, [offerteDisponibili, catalogoBrand]);
     // le OPZIONI si sbloccano con almeno un'offerta scelta: unione delle loro
     const opzioniDisponibili = useMemo(() => {
         if (!catalogoBrand || !filterOfferte?.length) return [];
@@ -734,6 +779,9 @@ export default function RicercaContratto() {
         // (Luca 28/07): dettagli->>categoria_catalogo copre il 100% dello
         // storico dopo il backfill (regola pagamento per i mobile vecchi).
         if (filterCategorie !== null && !soloMarg) query = query.in("dettagli->>categoria_catalogo", filterCategorie);
+        // MOD-30: tipologia cliente (Consumer/Business) — la Marginalità non ha
+        // tipo cliente, per lei il filtro resta spento come la categoria
+        if (filterTipoCliente !== null && !soloMarg) query = query.in("tipo_cliente", filterTipoCliente);
         // Segnalazione 55 (chiarita): il Tecnico vede SOLO i contratti brand Extra
         // (di tutto il proprio negozio). Gli altri: Extra nascosti salvo checkbox.
         if (isTecnico) query = query.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
@@ -769,7 +817,6 @@ export default function RicercaContratto() {
         if (filterCliente) {
             const safe = filterCliente.trim().replace(/[",()]/g, "");
             if (safe) {
-                const term = `%${safe}%`;
                 // Segnalazione 36. Prima: .or("clients.nome.ilike.…") — PostgREST
                 // legge "clients" come colonna e "nome" come operatore, e risponde
                 // 400 PGRST100 "failed to parse logic tree". Le condizioni su una
@@ -778,10 +825,19 @@ export default function RicercaContratto() {
                 // C.F. o P.IVA" ma cf_piva NON era tra le colonne cercate — il
                 // filtro per codice fiscale non trovava mai nulla. Aggiunti
                 // cf_piva e il referente business (nome_ref/cognome_ref).
-                query = query.or(
-                    `nome.ilike.${term},cognome.ilike.${term},ragione_sociale.ilike.${term},cf_piva.ilike.${term},nome_ref.ilike.${term},cognome_ref.ilike.${term}`,
-                    { referencedTable: "clients" }
-                );
+                // FILTRO INTELLIGENTE (Luca 10/08): "Mario Rossi" non trovava
+                // nulla perché la stringa intera non sta né in nome né in
+                // cognome. Ora si spezza in PAROLE e ognuna deve combaciare con
+                // uno dei campi (gli .or ripetuti sulla stessa tabella vanno in
+                // AND) — nome+cognome funziona in qualsiasi ordine.
+                const tokens = safe.split(/\s+/).filter(Boolean).slice(0, 6);
+                for (const tk of tokens) {
+                    const term = `%${tk}%`;
+                    query = query.or(
+                        `nome.ilike.${term},cognome.ilike.${term},ragione_sociale.ilike.${term},cf_piva.ilike.${term},nome_ref.ilike.${term},cognome_ref.ilike.${term}`,
+                        { referencedTable: "clients" }
+                    );
+                }
             }
         }
 
@@ -845,7 +901,7 @@ export default function RicercaContratto() {
             setFacetCounts(m);
         }, 300);
         return () => clearTimeout(timer);
-    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterOpzioni), kMulti(filterCategorie), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, daDataAttivazione, aDataAttivazione, Array.from(selBrands).join("|"), kMulti(margTipi), kMulti(margArticoli), (margListino ?? []).length, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [isGlobalView, visKey, visReady, lockedVenditore, isTecnico, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterOpzioni), kMulti(filterCategorie), kMulti(filterTipoCliente), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, daDataAttivazione, aDataAttivazione, Array.from(selBrands).join("|"), kMulti(margTipi), kMulti(margArticoli), (margListino ?? []).length, contractList.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Segnalazione 47: quando cambia un filtro, torna a pagina 1. Prima, se eri a
     // pagina 2+ e applicavi un filtro (es. un Prodotto) con pochi risultati, la
@@ -855,13 +911,13 @@ export default function RicercaContratto() {
     useEffect(() => {
         if (firstFilterRun.current) { firstFilterRun.current = false; return; }
         setPage(1);
-    }, [kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni)]);
+    }, [kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterTipoCliente), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni)]);
 
     // Debounced fetch (riparte anche quando arriva la lista dei negozi visibili)
     useEffect(() => {
         const timer = setTimeout(fetchData, 300);
         return () => clearTimeout(timer);
-    }, [page, visKey, visReady, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni), (margListino ?? []).length, catalogoBrand?.slug ?? ""]);
+    }, [page, visKey, visReady, kMulti(filterVenditori), filterCodice, filterBrand, kMulti(filterProdotti), kMulti(filterOfferte), kMulti(filterCategorie), kMulti(filterTipoCliente), kMulti(filterNegozi), kMulti(filterCodiciIns), filterCliente, filterCellulare, filterImei, Array.from(selBrands).join("|"), daDataAttivazione, aDataAttivazione, kMulti(margTipi), kMulti(margArticoli), kMulti(filterOpzioni), (margListino ?? []).length, catalogoBrand?.slug ?? ""]);
 
     // Segnalazione 37: "su ricerca contratto deve riportare stesso stato in tempo
     // reale". La pagina caricava i contratti una volta sola, quindi un cambio di
@@ -928,6 +984,111 @@ export default function RicercaContratto() {
     // resetta a ogni apertura da openContract).
     const [openSecs, setOpenSecs] = useState<Record<string, boolean>>({});
     const toggleSec = (id: string) => setOpenSecs(p => ({ ...p, [id]: !p[id] }));
+    // SPOSTA CONTRATTO AD ALTRO CLIENTE (Luca 08/08, caso Butnaru/Fei): quando
+    // la vendita è registrata sulla scheda cliente sbagliata, si cambia il
+    // client_id invece di forzare il CF (che è univoco). Solo modifica diretta.
+    const [spostaOpen, setSpostaOpen] = useState(false);
+    const [spostaQuery, setSpostaQuery] = useState("");
+    const [spostaHits, setSpostaHits] = useState<{ id: string; nome: string; cognome: string; ragione_sociale: string; cf_piva: string; cellulare: string }[]>([]);
+    const [spostaBusy, setSpostaBusy] = useState(false);
+    // VENDITA MISTA (Luca 10/08): quando la vendita da spostare ha più righe,
+    // si SCEGLIE cosa spostare (spunte) — il "tutto insieme" cieco trascinava
+    // anche prodotti di un'altra persona (caso sost. SIM Butnaru → Fei).
+    const [pickerSposta, setPickerSposta] = useState<null | { target: string; righe: { id: string; etichetta: string; sub: string; sel: boolean }[]; done: (ids: string[] | null) => void }>(null);
+    useEffect(() => {
+        const q = spostaQuery.trim();
+        if (!spostaOpen || q.length < 3) { setSpostaHits([]); return; }
+        let vivo = true;
+        const t = setTimeout(async () => {
+            const like = `%${q}%`;
+            const { data } = await supabase.from("clients")
+                .select("id, nome, cognome, ragione_sociale, cf_piva, cellulare")
+                .or(`cf_piva.ilike.${like},nome.ilike.${like},cognome.ilike.${like},ragione_sociale.ilike.${like},cellulare.ilike.${like}`)
+                .limit(8);
+            if (vivo) setSpostaHits((data as typeof spostaHits) || []);
+        }, 250);
+        return () => { vivo = false; clearTimeout(t); };
+    }, [spostaQuery, spostaOpen]);
+    // NUCLEO RIUSABILE (10/08): sposta TUTTE le righe della stessa vendita
+    // (stesso cliente + stessa data: CTR + marginalità EXT insieme) sulla
+    // scheda del cliente giusto, POI ritenta il MATCH APPUNTAMENTO col CF
+    // della scheda nuova: al submit non era potuto scattare (il CF era quello
+    // sbagliato) e senza questo la vendita spostata restava orfana
+    // dell'appuntamento e il caller perdeva la cooperation (caso Butnaru/Fei).
+    // Usato dal bottone 🔀 Sposta cliente E dal flusso guidato di approvazione.
+    const spostaVenditaSuCliente = async (contractId: string, nuovo: { id: string; etichetta: string }, firma: string): Promise<{ ok: boolean; msg: string }> => {
+        const { data: c } = await supabase.from("contracts").select("id, client_id, data, negozio, clients(nome, cognome, ragione_sociale)").eq("id", contractId).single();
+        if (!c || !(c as any).client_id) return { ok: false, msg: "Il contratto non ha un cliente collegato: impossibile spostare." };
+        const vc = (c as any).clients as { nome?: string; cognome?: string; ragione_sociale?: string } | null;
+        const vecchioNome = vc ? (vc.ragione_sociale || `${vc.nome || ""} ${vc.cognome || ""}`.trim()) : "—";
+        const { data: righeV } = await supabase.from("contracts").select("id, storia, brand, prodotto, offerta").eq("client_id", (c as any).client_id).eq("data", (c as any).data || "");
+        const righe = ((righeV || []) as { id: string; storia: unknown; brand?: string | null; prodotto?: string | null; offerta?: string | null }[]);
+        let daSpostare: { id: string; storia: unknown }[] = righe.length ? righe : [{ id: contractId, storia: [] as unknown }];
+        // Più righe nella stessa vendita → l'operatore SCEGLIE cosa spostare
+        // (default: tutte spuntate). Le righe non spuntate restano dove sono.
+        if (righe.length > 1) {
+            const scelte = await new Promise<string[] | null>(done => setPickerSposta({
+                target: nuovo.etichetta,
+                righe: righe.map(r => ({
+                    id: r.id,
+                    etichetta: [r.prodotto, r.offerta].filter(Boolean).join(" · ") || r.brand || r.id,
+                    sub: r.id + (r.brand ? " · " + r.brand : ""),
+                    sel: true,
+                })),
+                done,
+            }));
+            setPickerSposta(null);
+            if (!scelte || !scelte.length) return { ok: false, msg: "Spostamento annullato." };
+            daSpostare = righe.filter(r => scelte.includes(r.id));
+        }
+        const stamp = new Date().toISOString();
+        for (const rg of daSpostare) {
+            const storia = Array.isArray(rg.storia) ? [...rg.storia] : [];
+            storia.push({ at: stamp, user: firma, campo: "Cliente", da: vecchioNome, a: nuovo.etichetta });
+            const { error } = await supabase.from("contracts").update({ client_id: nuovo.id, storia }).eq("id", rg.id);
+            if (error) return { ok: false, msg: `Spostamento riga ${rg.id} NON riuscito: ${error.message}` };
+        }
+        let msg = `Vendita spostata su «${nuovo.etichetta}» (${daSpostare.length} rig${daSpostare.length === 1 ? "a" : "he"}).`;
+        // ── RETRO-MATCH appuntamento sul CF della scheda giusta ──
+        try {
+            const { data: nc } = await supabase.from("clients").select("cf_piva, cf_ref").eq("id", nuovo.id).maybeSingle();
+            const cfN = (nc as { cf_piva?: string | null; cf_ref?: string | null } | null)?.cf_piva || "";
+            if (cfN) {
+                const cand = await trovaAppuntamentoDaAgganciare(cfN, (nc as any)?.cf_ref || null, (c as any).negozio || null, (c as any).data || "");
+                if (cand) {
+                    const a = cand.appuntamento;
+                    const ids = daSpostare.map(r => r.id);
+                    if (cand.stessoNegozio) {
+                        const okCoop = window.confirm(`📞 «${nuovo.etichetta}» ha un appuntamento APERTO del call center (${a.created_by || "caller"}, ${a.date || ""}${a.store ? " — " + a.store : ""}).\n\nAgganciare questa vendita? L'appuntamento diventa ATTIVATO e la cooperation va al caller.`);
+                        if (okCoop) {
+                            const ok = await agganciaVenditaAppuntamento(a.id, ids, firma, true);
+                            msg += ok ? ` Appuntamento del ${a.date || "—"} ATTIVATO con cooperation a ${a.created_by || "caller"}.` : " ⚠️ Aggancio all'appuntamento NON riuscito (riprova dal calendario).";
+                        }
+                    } else {
+                        const ok = await agganciaVenditaAppuntamento(a.id, ids, firma, false);
+                        msg += ok ? ` Appuntamento del ${a.date || "—"} segnato attivato (altro negozio).` : " ⚠️ Aggancio all'appuntamento NON riuscito.";
+                    }
+                }
+            }
+        } catch { /* retro-match best-effort: lo spostamento resta valido */ }
+        return { ok: true, msg };
+    };
+    const spostaContrattoA = async (nuovo: { id: string; nome: string; cognome: string; ragione_sociale: string }) => {
+        if (!selectedContract || spostaBusy) return;
+        const nomeNuovo = nuovo.ragione_sociale || `${nuovo.nome || ""} ${nuovo.cognome || ""}`.trim() || nuovo.id;
+        if (!selectedContract.raw?.client_id) { alert("Il contratto non ha un cliente collegato: impossibile spostare."); return; }
+        if (!window.confirm(`Spostare questa vendita (contratto + eventuali marginalità dello stesso giorno) dal cliente «${selectedContract.cliente}» al cliente «${nomeNuovo}»?\nI dati restano invariati, cambia solo la scheda cliente.`)) return;
+        setSpostaBusy(true);
+        try {
+            const r = await spostaVenditaSuCliente(selectedContract.id, { id: nuovo.id, etichetta: nomeNuovo }, user?.name || "—");
+            if (!r.ok) { alert(r.msg); setSpostaBusy(false); return; }
+            setSpostaOpen(false); setSpostaQuery(""); setSpostaHits([]);
+            setSelectedContract(null);
+            await fetchData();
+            alert("✅ " + r.msg);
+        } catch (e) { alert("Errore: " + (e instanceof Error ? e.message : "riprova")); }
+        setSpostaBusy(false);
+    };
     const openContract = (row: ContrattoRow, mode: "view" | "edit") => {
         const vals: Record<string, string> = {};
         CONTRACT_FIELDS.forEach(f => { vals[`contract::${f.key}`] = row.raw?.[f.key] == null ? "" : String(row.raw[f.key]); });
@@ -936,6 +1097,10 @@ export default function RicercaContratto() {
             if (v !== null && typeof v === "object") return; // oggetti annidati: sola lettura
             vals[`dettagli::${k}`] = v == null ? "" : String(v);
         });
+        // OPZIONI contrattualizzate (Luca 07/08): jsonb → JSON canonico,
+        // l'editor dedicato vive in "Dati del contratto"
+        vals["contract::opzioni"] = JSON.stringify(Array.isArray(row.raw?.opzioni) ? row.raw.opzioni : []);
+        setSpostaOpen(false); setSpostaQuery(""); setSpostaHits([]);   // reset pannello sposta
         setEditValues(vals);
         setReqNote("");
         setReqMsg(null);
@@ -949,6 +1114,7 @@ export default function RicercaContratto() {
     const originalOf = (row: ContrattoRow, key: string): unknown => {
         const i = key.indexOf("::");
         const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract" && field === "opzioni") return JSON.stringify(Array.isArray(row.raw?.opzioni) ? row.raw.opzioni : []);
         if (scope === "contract") return row.raw?.[field];
         if (scope === "client") return row.client?.[field];
         return (row.raw?.dettagli as Record<string, unknown> | undefined)?.[field];
@@ -957,6 +1123,7 @@ export default function RicercaContratto() {
     const labelOf = (key: string): string => {
         const i = key.indexOf("::");
         const scope = key.slice(0, i), field = key.slice(i + 2);
+        if (scope === "contract" && field === "opzioni") return "Opzioni";
         if (scope === "contract") return CONTRACT_FIELDS.find(f => f.key === field)?.label || field;
         if (scope === "client") return (CLIENT_FIELDS.find(f => f.key === field)?.label || field) + " (cliente)";
         // RIC-03: la categoria fine viaggia come chiave dei dettagli ma nel
@@ -1094,7 +1261,11 @@ export default function RicercaContratto() {
     // `firmaStoria` è chi compare nelle righe di storia. Ritorna null se tutto
     // ok, altrimenti il messaggio d'errore da mostrare (niente resta "a metà"
     // senza che si veda — segnalazione 32).
-    const applicaCambiamenti = async (contractId: string, changes: Record<string, any>, firmaStoria: string): Promise<string | null> => {
+    // Ritorno: null = ok · string = errore · {cfConflitto} = il CF richiesto
+    // appartiene GIÀ a un altro cliente → il chiamante offre lo spostamento
+    // guidato della vendita su quella scheda (10/08, caso Butnaru/Fei v2).
+    type EsitoApplica = string | { cfConflitto: { id: string; nome: string; cf: string } } | null;
+    const applicaCambiamenti = async (contractId: string, changes: Record<string, any>, firmaStoria: string): Promise<EsitoApplica> => {
         const { data: c } = await supabase.from("contracts").select("*").eq("id", contractId).single();
         if (!c) return "Contratto " + contractId + " non trovato.";
         const contractPatch: Record<string, unknown> = {};
@@ -1103,11 +1274,26 @@ export default function RicercaContratto() {
         let detTouched = false;
         const storia: any[] = Array.isArray(c.storia) ? [...c.storia] : [];
         const stamp = new Date().toISOString();
+        const leggibiliOpz = (x: unknown): string => {
+            try { const a = JSON.parse(String(x || "[]")); return Array.isArray(a) && a.length ? a.map((o: { nome?: string; quantita?: number | null }) => String(o.nome || "") + (o.quantita && Number(o.quantita) > 1 ? " ×" + o.quantita : "")).join(", ") : "—"; } catch { return "—"; }
+        };
         Object.entries(changes || {}).forEach(([k, raw]) => {
             if (k.startsWith("__")) return;   // "__meta" = motivazione, non un campo
             const v = raw as { da: any; a: any; label?: string };
             const i = k.indexOf("::");
             const scope = k.slice(0, i), field = k.slice(i + 2);
+            if (scope === "contract" && field === "opzioni") {
+                // OPZIONI (Luca 07/08): viaggiano come JSON canonico → jsonb;
+                // si risincronizza anche la stringa dei dettagli (formato del
+                // Registra) e la storia resta leggibile, mai JSON grezzo
+                let arr: { nome: string; quantita: number | null }[] = [];
+                try { const px = JSON.parse(String(v.a || "[]")); if (Array.isArray(px)) arr = px; } catch { arr = []; }
+                contractPatch.opzioni = arr;
+                det["Opzioni"] = arr.map(o => o.nome + (o.quantita && Number(o.quantita) > 1 ? ` (${o.quantita})` : "")).join(", ");
+                detTouched = true;
+                storia.push({ at: stamp, user: firmaStoria, campo: "Opzioni", da: leggibiliOpz(v.da), a: leggibiliOpz(v.a) });
+                return;
+            }
             if (scope === "contract") contractPatch[field] = v.a === "" ? null : v.a;
             else if (scope === "client") clientPatch[field] = v.a === "" ? null : v.a;
             else if (scope === "dettagli") { det[field] = coerceLike(det[field], String(v.a)); detTouched = true; }
@@ -1137,11 +1323,28 @@ export default function RicercaContratto() {
         }
         if (detTouched) contractPatch.dettagli = det;
         contractPatch.storia = storia;
+        // GUARDIA CF PRIMA DI OGNI SCRITTURA (fix 10/08): prima stava DOPO
+        // l'update del contratto → applicazione PARZIALE (campi contratto
+        // scritti, cliente no) e righe di storia duplicate a ogni ritentativo.
+        // Ora il conflitto ferma tutto in anticipo e torna STRUTTURATO, così
+        // il chiamante può proporre lo spostamento guidato della vendita.
+        if (Object.keys(clientPatch).length > 0 && c.client_id && clientPatch.cf_piva) {
+            const { data: gia } = await supabase.from("clients")
+                .select("id, nome, cognome, ragione_sociale").ilike("cf_piva", String(clientPatch.cf_piva)).neq("id", c.client_id).limit(1);
+            if (gia && gia[0]) {
+                const g = gia[0] as { id: string; nome?: string; cognome?: string; ragione_sociale?: string };
+                const chi = g.ragione_sociale || `${g.nome || ""} ${g.cognome || ""}`.trim() || "un altro cliente";
+                return { cfConflitto: { id: g.id, nome: chi, cf: String(clientPatch.cf_piva) } };
+            }
+        }
         const { error: cErr } = await supabase.from("contracts").update(contractPatch).eq("id", contractId);
         if (cErr) return "Modifica NON applicata al contratto: " + cErr.message;
         if (Object.keys(clientPatch).length > 0 && c.client_id) {
             const { error: clErr } = await supabase.from("clients").update(clientPatch).eq("id", c.client_id);
-            if (clErr) return "Modifica NON applicata al cliente: " + clErr.message;
+            if (clErr) {
+                if (/uq_clients_cf_piva|duplicate key/i.test(clErr.message)) return `Il codice fiscale ${clientPatch.cf_piva || ""} è già registrato su un altro cliente: non può stare su due schede. Spostate il contratto alla scheda giusta (bottone 🔀 Sposta cliente).`;
+                return "Modifica NON applicata al cliente: " + clErr.message;
+            }
         }
         return null;
     };
@@ -1190,7 +1393,21 @@ export default function RicercaContratto() {
         setSaving(true);
         const esito = await applicaCambiamenti(selectedContract.id, pendingChanges,
             `${user?.name || "—"} (modifica diretta)`);
-        if (esito) { setSaving(false); setReqMsg(esito); return; }
+        if (esito && typeof esito === "object" && "cfConflitto" in esito) {
+            // stesso flusso guidato dell'approvazione: qui l'admin è già nel
+            // modale, quindi in alternativa può usare il bottone 🔀 Sposta cliente
+            const g = esito.cfConflitto;
+            setSaving(false);
+            const okSposta = window.confirm(
+                `Il codice fiscale ${g.cf} appartiene già a «${g.nome}»: non può stare su due schede.\n\n` +
+                `OK = SPOSTA questa vendita sulla scheda di «${g.nome}» (CF invariato).\nAnnulla = non fare nulla.`);
+            if (!okSposta) { setReqMsg(`CF già di «${g.nome}»: nessuna modifica applicata. In alternativa usa 🔀 Sposta cliente.`); return; }
+            const sp = await spostaVenditaSuCliente(selectedContract.id, { id: g.id, etichetta: g.nome }, user?.name || "—");
+            setReqMsg((sp.ok ? "✅ " : "") + sp.msg);
+            if (sp.ok) { setDetailMode("view"); setSelectedContract(null); await fetchData(); }
+            return;
+        }
+        if (esito) { setSaving(false); setReqMsg(esito as string); return; }
         const payload: Record<string, unknown> = { ...pendingChanges };
         if (reqNote.trim()) payload.__meta = { note: reqNote.trim() };
         const { error: tErr } = await supabase.from("contract_change_requests").insert({
@@ -1227,9 +1444,45 @@ export default function RicercaContratto() {
             // RIC-04: stessa applicazione del salvataggio diretto (funzione
             // unica applicaCambiamenti). Se qualcosa va storto la richiesta
             // resta in attesa (gli errori non venivano letti — segnalazione 32).
-            const esito = await applicaCambiamenti(req.contract_id, req.changes || {},
-                `${req.requested_by_name || "—"} → approvata da ${user?.name || "—"}`);
-            if (esito) { setReqBusy(null); alert(esito); return; }
+            const firma = `${req.requested_by_name || "—"} → approvata da ${user?.name || "—"}`;
+            let esito = await applicaCambiamenti(req.contract_id, req.changes || {}, firma);
+            // ── FLUSSO GUIDATO CF DUPLICATO (10/08, caso Butnaru/Fei) ──
+            // La richiesta "cambia CF" in realtà significa quasi sempre "la
+            // vendita è intestata al cliente sbagliato". Invece del vicolo
+            // cieco: proponiamo di SPOSTARE la vendita sulla scheda giusta,
+            // poi riapplichiamo il resto della richiesta su quella scheda
+            // (il CF a quel punto coincide e passa da solo).
+            if (esito && typeof esito === "object" && "cfConflitto" in esito) {
+                const g = esito.cfConflitto;
+                const okSposta = window.confirm(
+                    `Il codice fiscale ${g.cf} appartiene già a «${g.nome}»: non può stare su due schede.\n\n` +
+                    `Questa richiesta in realtà dice che la vendita è intestata al cliente SBAGLIATO.\n\n` +
+                    `OK = SPOSTA la vendita (contratto + marginalità dello stesso giorno) sulla scheda di «${g.nome}» e applica le altre correzioni lì.\n` +
+                    `Annulla = non fare nulla (la richiesta resta in attesa).`);
+                if (!okSposta) { setReqBusy(null); return; }
+                const sp = await spostaVenditaSuCliente(req.contract_id, { id: g.id, etichetta: g.nome }, firma);
+                if (!sp.ok) { setReqBusy(null); alert(sp.msg); return; }
+                // riapplica la richiesta sulla scheda giusta: il cf_piva ora
+                // coincide col cliente puntato → nessun conflitto; gli altri
+                // campi (contratto/dettagli/cliente) vengono applicati normalmente
+                esito = await applicaCambiamenti(req.contract_id, req.changes || {}, firma);
+                if (esito && typeof esito === "string") { setReqBusy(null); alert("Vendita spostata, ma il resto della richiesta non è passato: " + esito); return; }
+                await supabase.from("contract_change_requests").update({
+                    status: "approved",
+                    reviewed_by: user?.id || null,
+                    reviewed_by_name: user?.name || "—",
+                    reviewed_at: new Date().toISOString(),
+                    review_note: `Gestita SPOSTANDO la vendita sulla scheda di «${g.nome}» (CF invariato). ${sp.msg}${note ? " · " + note : ""}`,
+                }).eq("id", req.id);
+                setReqBusy(null);
+                await loadChangeReqs();
+                await fetchData();
+                await ricaricaAperto(req.contract_id);
+                setReqMsg("✅ " + sp.msg);
+                alert("✅ " + sp.msg);
+                return;
+            }
+            if (esito) { setReqBusy(null); alert(esito as string); return; }
         }
         const { error: rErr } = await supabase.from("contract_change_requests").update({
             status: approve ? "approved" : "rejected",
@@ -1588,7 +1841,20 @@ export default function RicercaContratto() {
 
                 {/* FILA CATALOGO (Luca 28/07): categoria → prodotto → offerta → opzioni
                     su una riga tutta loro — sono filtri in successione. */}
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mt-6 pt-6 border-t border-white/5">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mt-6 pt-6 border-t border-white/5">
+                    {/* 4-ante. Tipo cliente (MOD-30, Luca 10/08): PRIMA della categoria. */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">Tipo cliente</label>
+                        <FiltroMulti
+                            values={filterTipoCliente} disabled={soloMarg}
+                            testoDisabilitato="La Marginalità non ha tipo cliente"
+                            onChange={setFilterTipoCliente}
+                            opzioni={["Consumer", "Business"]}
+                            etichettaTutti="Tutti i tipi"
+                            className="glass-input w-full text-sm"
+                        />
+                    </div>
+
                     {/* 4-bis. Categoria (dal catalogo): sempre in fila — con la sola
                         Marginalità si spegne (per lei c'è la riga sotto). */}
                     <div>
@@ -1599,7 +1865,7 @@ export default function RicercaContratto() {
                             values={filterCategorie} disabled={soloMarg}
                             testoDisabilitato="Per la Marginalità: riga sotto"
                             onChange={(v) => { setFilterCategorie(v); setFilterProdotti(null); setFilterOfferte(null); setFilterOpzioni(null); }}
-                            opzioni={catalogoBrand ? catalogoBrand.catNames : catNomiAll}
+                            opzioni={catalogoBrand ? catalogoBrand.catNames.filter((cn) => (catalogoBrand.prodsByCat[cn] || []).some((pn) => _tipoOk(catalogoBrand.prodTipi?.[pn]))) : catNomiAll}
                             etichettaTutti="Tutte le categorie"
                             className="glass-input w-full text-sm"
                         />
@@ -1613,7 +1879,7 @@ export default function RicercaContratto() {
                             con checkbox, default tutto selezionato. */}
                         <FiltroMulti
                             values={filterProdotti} onChange={setFilterProdotti}
-                            opzioni={catalogoBrand ? (filterCategorie?.length ? Array.from(new Set(filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || []))) : catalogoBrand.prodNames) : []}
+                            opzioni={catalogoBrand ? (filterCategorie?.length ? Array.from(new Set(filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || []))) : catalogoBrand.prodNames).filter((pn) => _tipoOk(catalogoBrand.prodTipi?.[pn])) : []}
                             disabled={!catalogoBrand}
                             testoDisabilitato="Seleziona un solo brand dalle tessere"
                             etichettaTutti="Tutti i prodotti"
@@ -1628,6 +1894,7 @@ export default function RicercaContratto() {
                         <FiltroMulti
                             values={filterOfferte} onChange={setFilterOfferte}
                             opzioni={offerteDisponibili}
+                            etichette={offEtichette}
                             disabled={!catalogoBrand}
                             testoDisabilitato="Seleziona un solo brand dalle tessere"
                             etichettaTutti="Tutte le offerte"
@@ -1699,7 +1966,7 @@ export default function RicercaContratto() {
 
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
-                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditori(null); setFilterCodice(""); setFilterBrand(""); setFilterProdotti(null); setFilterCategorie(null); setFilterOfferte(null); setFilterOpzioni(null); setMargTipi(null); setMargArticoli(null); setFilterNegozi(null); setFilterCodiciIns(null); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
+                    <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditori(null); setFilterCodice(""); setFilterBrand(""); setFilterProdotti(null); setFilterCategorie(null); setFilterTipoCliente(null); setFilterOfferte(null); setFilterOpzioni(null); setMargTipi(null); setMargArticoli(null); setFilterNegozi(null); setFilterCodiciIns(null); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
                     <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportExcel}>
                         Scarica Excel
                     </button>
@@ -1745,7 +2012,19 @@ export default function RicercaContratto() {
                                         <td className="px-4 py-3 text-slate-400 text-xs">{row.negozio}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{codInsDi(row) || "—"}</td>
                                         <td className="px-4 py-3 text-slate-400 font-mono text-xs">{row.codice_attivazione}</td>
-                                        <td className="px-4 py-3 text-slate-500 text-xs">{row.data_attivazione}</td>
+                                        {/* orario di REGISTRAZIONE accanto alla data (Luca 10/08):
+                                            created_at — quando la vendita è stata battuta nel CRM */}
+                                        <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
+                                            {row.data_attivazione}
+                                            {(() => {
+                                                const t = new Date(String(row.raw?.created_at || ""));
+                                                return isNaN(t.getTime()) ? null : (
+                                                    <span className="ml-1.5 text-slate-600 tabular-nums" title="Orario di registrazione nel CRM">
+                                                        {t.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </td>
                                         <td className="px-4 py-3">
                                             <span className={cn(
                                                 "px-2 py-1 rounded-full text-[10px] font-medium uppercase tracking-wider",
@@ -1839,7 +2118,10 @@ export default function RicercaContratto() {
                 // inserimento (sta nel box Dati contratto) e la categoria di
                 // catalogo (RIC-03: governata dalla tendina Categoria, mai piu'
                 // testo libero — un refuso rompeva il filtro della pagina).
-                const detEditable = det.filter(([k, v]) => k !== codInsKey && k !== "categoria_catalogo" && (v === null || typeof v !== "object"));
+                // le OPZIONI non sono un dettaglio: vivono in "Dati del contratto"
+                // (editor dedicato); "Offerta" e "menu_brand" sono doppioni di
+                // campi gia' governati altrove (Luca 07/08)
+                const detEditable = det.filter(([k, v]) => k !== codInsKey && k !== "categoria_catalogo" && k !== "Opzioni" && k !== "Offerta" && k !== "menu_brand" && (v === null || typeof v !== "object"));
                 const detReadonly = det.filter(([, v]) => v !== null && typeof v === "object");
                 // SOLO le richieste di QUESTO contratto (prima contava tutte le pendenti)
                 const pendingForThis = contractReqs.filter(r => r.status === "pending" && r.contract_id === row.id);
@@ -1906,6 +2188,16 @@ export default function RicercaContratto() {
                             const offs = catalogoModale.offByProd[v] || [];
                             if (next["contract::offerta"] && !offs.includes(next["contract::offerta"])) next["contract::offerta"] = "";
                         }
+                        // offerta cambiata (diretta o a cascata) → le opzioni non
+                        // le appartengono piu': si riparte pulite; ma se si RITORNA
+                        // all'offerta originale si riseminano quelle salvate (senza
+                        // questo, un giro categoria-e-ritorno svuotava le opzioni
+                        // in silenzio — verifica avversaria 07/08)
+                        if (next["contract::offerta"] !== prev["contract::offerta"]) {
+                            next["contract::opzioni"] = next["contract::offerta"] === String(row.raw?.offerta ?? "")
+                                ? JSON.stringify(Array.isArray(row.raw?.opzioni) ? row.raw.opzioni : [])
+                                : "[]";
+                        }
                         return next;
                     });
                 };
@@ -1959,6 +2251,132 @@ export default function RicercaContratto() {
                                     autoComplete="off" name={`f-${k}`} data-lpignore="true"
                                     onChange={e => setEditValues(prev => ({ ...prev, [k]: e.target.value }))} />
                             )}
+                        </div>
+                    );
+                };
+
+                // ── OPZIONI CONTRATTUALIZZATE (Luca 07/08): editor in "Dati del
+                //    contratto" — le opzioni vanno in GARA, non sono un dettaglio.
+                //    Regole del Registra replicate: gruppo ¹ mutuamente esclusivo,
+                //    tetto condiviso Bundle+Accessori ≤ 3, quantità sui vincolati;
+                //    le opzioni salvate fuori catalogo restano visibili e rimovibili.
+                const _ropKasko = (n: string) => /kasko/i.test(n);
+                const _ropBundle = (n: string) => !_ropKasko(n) && /bundle/i.test(n);
+                const _ropAcc = (n: string) => !_ropKasko(n) && /accessori/i.test(n);
+                const MAX_OPZ_VINC = 3;
+                const opzSel = ((): { nome: string; quantita: number | null }[] => {
+                    try { const a = JSON.parse(editValues["contract::opzioni"] || "[]"); return Array.isArray(a) ? a : []; } catch { return []; }
+                })();
+                const opzWrite = (arr: { nome: string; quantita: number | null }[]) => {
+                    setEditValues(prev => ({ ...prev, ["contract::opzioni"]: JSON.stringify(arr) }));
+                    // toccando le opzioni apro la sezione Campi vendita: se l'opzione
+                    // aggiunta richiede campi nuovi, il venditore li vede e li compila (MOD-1b)
+                    setOpenSecs(p => ({ ...p, campi: true }));
+                };
+                const opzQta = (o: { quantita: number | null }) => Math.max(1, Number(o.quantita || 1));
+                const opzVinc = opzSel.filter(o => _ropBundle(o.nome) || _ropAcc(o.nome)).reduce((sm, o) => sm + opzQta(o), 0);
+
+                // ── MOD-1b (Luca 08/08): i CAMPI VENDITA che le OPZIONI si portano
+                //    dietro. Le regole del catalogo (catalog_campi_regole con
+                //    condizione opzioni) + i campi dinamici Bundle/Accessori/Kasko
+                //    (Codice Bundle N / Imei Accessorio N / Seriale Kasko) danno i
+                //    campi ATTESI per l'offerta+opzioni; quelli NON ancora nei
+                //    dettagli sono i "campi da compilare" — la sezione 🧾 li mostra
+                //    e si apre da sola per suggerirli.
+                const _norm = (s: string) => String(s || "").trim().toLowerCase();
+                const campiDinamiciDaOpzioni = (): string[] => {
+                    const out: string[] = []; let nAcc = 0; let kasko = false;
+                    opzSel.forEach(o => {
+                        if (_ropKasko(o.nome)) { kasko = true; return; }
+                        if (_ropBundle(o.nome)) { const q = opzQta(o); for (let i = 1; i <= q; i++) out.push("Codice " + o.nome + (q > 1 ? " (" + i + ")" : "")); }
+                        else if (_ropAcc(o.nome)) nAcc += opzQta(o);
+                    });
+                    for (let i = 1; i <= nAcc; i++) out.push("Imei Accessorio " + i);
+                    if (kasko) out.push("Seriale Kasko");
+                    return out;
+                };
+                const campiAttesi: string[] = (isMarg || detailMode === "view") ? [] : (() => {
+                    const slug = LABEL_SLUG[String(editBrand || row.brand)] || String(editBrand || row.brand || "").toLowerCase();
+                    const tipoCli = _norm(String(row.client?.tipo ?? "")) === "business" ? "Business" : "Consumer";
+                    const cat = String(editValues["dettagli::categoria_catalogo"] || (row.raw?.dettagli as Record<string, unknown> | undefined)?.categoria_catalogo || row.raw?.categoria || "");
+                    const prod = String(editValues["contract::prodotto"] || row.prodotto || "");
+                    const off = String(editValues["contract::offerta"] || "");
+                    const attive = opzSel.map(o => String(o.nome));
+                    const base = risolviCampi(slug, tipoCli, cat, prod, off, attive).map(c => c.nome);
+                    return Array.from(new Set([...base, ...campiDinamiciDaOpzioni()]));
+                })();
+                // campi già presenti nei dettagli (qualunque forma) → non "mancanti".
+                // Il Registra RINOMINA alcune chiavi al salvataggio (registra-vendita
+                // ~4573): "Seriale SIM (ICCID)"→"ICCID", "Codice Inserimento"→"Cod.Ins."
+                // — vanno normalizzate o un campo compilato risulterebbe mancante
+                // (falso positivo + rischio chiave doppia al ri-salvataggio).
+                const _RENAME_DET: Record<string, string> = { "Seriale SIM (ICCID)": "ICCID", "Codice Inserimento": "Cod.Ins." };
+                const _detNomi = new Set(det.map(([k]) => k));
+                const _presente = (n: string) => _detNomi.has(n) || _detNomi.has(_RENAME_DET[n] || " ");
+                const campiMancanti = campiAttesi.filter(n => n && !_presente(n) && n !== "Codice Inserimento" && n !== "Offerta" && n !== "Seriale SIM (ICCID)");
+
+                const renderOpzioni = () => {
+                    if (detailMode === "view" || isMarg) {
+                        const inRichiesta = pendingKeys.includes("contract::opzioni");
+                        return (
+                            <div className={cn("sm:col-span-2 lg:col-span-3", inRichiesta && "rounded-lg ring-2 ring-amber-400/60 bg-amber-400/10 px-2 py-1.5 -mx-2")}>
+                                <span className="text-[11px] uppercase tracking-wider text-slate-500">Opzioni{inRichiesta && <span className="ml-1.5 text-amber-300 font-bold normal-case">· modifica richiesta</span>}</span>
+                                <p className="text-white text-sm break-words">{fmtOpzioni(row.raw?.opzioni)}</p>
+                            </div>
+                        );
+                    }
+                    const off = editValues["contract::offerta"] || "";
+                    const meta = catalogoModale?.opzMetaByOff?.[off] || [];
+                    const fuoriCat = opzSel.filter(o => !meta.some(m => m.nome === o.nome)).map(o => ({ nome: o.nome, tipo: null as string | null, gruppo: null as string | null }));
+                    const tutte = [...meta, ...fuoriCat];
+                    const changed = editValues["contract::opzioni"] !== String(originalOf(row, "contract::opzioni") ?? "[]");
+                    const toggle = (m: { nome: string; tipo: string | null; gruppo: string | null }) => {
+                        const on = opzSel.some(o => o.nome === m.nome);
+                        if (on) { opzWrite(opzSel.filter(o => o.nome !== m.nome)); return; }
+                        if ((_ropBundle(m.nome) || _ropAcc(m.nome)) && opzVinc >= MAX_OPZ_VINC) return;
+                        let next = opzSel;
+                        if (m.gruppo) { const stesse = new Set(tutte.filter(x => x.gruppo === m.gruppo).map(x => x.nome)); next = next.filter(o => !stesse.has(o.nome)); }
+                        opzWrite([...next, { nome: m.nome, quantita: (m.tipo === "numero" || _ropBundle(m.nome) || _ropAcc(m.nome)) ? 1 : null }]);
+                    };
+                    const setQta = (nome: string, q: number) => {
+                        const cur = opzSel.find(o => o.nome === nome); if (!cur) return;
+                        let n = Math.max(1, q || 1);
+                        if (_ropBundle(nome) || _ropAcc(nome)) { const altre = opzVinc - opzQta(cur); n = Math.max(1, Math.min(n, MAX_OPZ_VINC - altre)); }
+                        opzWrite(opzSel.map(o => o.nome === nome ? { ...o, quantita: n } : o));
+                    };
+                    const haVinc = tutte.some(m => _ropBundle(m.nome) || _ropAcc(m.nome));
+                    return (
+                        <div className={cn("sm:col-span-2 lg:col-span-3", changed && "rounded-lg ring-1 ring-amber-400/50 bg-amber-400/5 p-2 -m-2")}>
+                            <span className="text-[11px] uppercase tracking-wider text-slate-500">
+                                Opzioni{haVinc && <span className={cn("normal-case font-bold ml-1.5", opzVinc >= MAX_OPZ_VINC ? "text-amber-300" : "text-slate-500")}>Bundle+Accessori: {opzVinc}/{MAX_OPZ_VINC}</span>}
+                            </span>
+                            {tutte.length === 0 ? (
+                                <p className="text-xs text-slate-500 mt-1">{off ? "L'offerta non ha opzioni a catalogo." : "Scegli prima l'offerta: le opzioni arrivano dal catalogo."}</p>
+                            ) : (
+                                <div className="flex flex-wrap gap-2 mt-1.5">
+                                    {tutte.map(m => {
+                                        const sel = opzSel.find(o => o.nome === m.nome);
+                                        const bloccata = !sel && (_ropBundle(m.nome) || _ropAcc(m.nome)) && opzVinc >= MAX_OPZ_VINC;
+                                        return (
+                                            <span key={m.nome} className="inline-flex items-center gap-1.5">
+                                                <button type="button" onClick={() => toggle(m)} disabled={bloccata}
+                                                    title={bloccata ? `Massimo ${MAX_OPZ_VINC} elementi tra Bundle e Accessori` : undefined}
+                                                    className={cn("px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors",
+                                                        sel ? "border-indigo-400/70 bg-indigo-500/20 text-white" : "border-white/15 bg-white/5 text-slate-400 hover:bg-white/10",
+                                                        bloccata && "opacity-35 cursor-not-allowed")}>
+                                                    {sel ? "✓ " : ""}{m.nome}{m.gruppo ? " ¹" : ""}
+                                                </button>
+                                                {sel && sel.quantita != null && (
+                                                    <input type="number" min={1} value={opzQta(sel)}
+                                                        onChange={e => setQta(m.nome, parseInt(e.target.value || "1", 10) || 1)}
+                                                        className="w-14 glass-input text-xs text-right" />
+                                                )}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            <p className="text-[10px] text-slate-600 mt-1.5">Le opzioni vanno in gara e nei compensi. Le voci di marginalità già nate dalla vendita (es. bundle) NON si ricalcolano da qui.</p>
                         </div>
                     );
                 };
@@ -2020,6 +2438,14 @@ export default function RicercaContratto() {
                                             <Edit className="w-3.5 h-3.5" /> Modifica
                                         </button>
                                     )}
+                                    {/* SPOSTA a un altro cliente (Luca 08/08): solo modifica diretta,
+                                        per correggere una vendita intestata alla scheda sbagliata */}
+                                    {detailMode === "edit" && modificaDiretta && !isMarg && (
+                                        <button onClick={() => setSpostaOpen(v => !v)}
+                                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 flex items-center gap-1.5">
+                                            🔀 Sposta cliente
+                                        </button>
+                                    )}
                                     {detailMode === "edit" && (
                                         <button onClick={() => openContract(row, "view")}
                                             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/5 text-slate-300 hover:bg-white/10">
@@ -2033,6 +2459,31 @@ export default function RicercaContratto() {
                             </div>
 
                             <div className="p-6 overflow-y-auto space-y-6">
+                                {/* SPOSTA CONTRATTO AD ALTRO CLIENTE (Luca 08/08) */}
+                                {spostaOpen && detailMode === "edit" && modificaDiretta && (
+                                    <div className="rounded-xl border border-amber-400/40 bg-amber-400/[0.06] p-4 space-y-3">
+                                        <div className="text-sm font-bold text-amber-200">🔀 Sposta a un altro cliente</div>
+                                        <p className="text-xs text-slate-400">Cerca la scheda cliente giusta (CF, nome o cellulare): il contratto <b className="text-slate-200">{row.id}</b> verrà intestato a quella scheda. I dati del contratto restano invariati.</p>
+                                        <input value={spostaQuery} onChange={e => setSpostaQuery(e.target.value)} autoFocus
+                                            placeholder="CF, nome, cognome o cellulare…" className="glass-input w-full text-sm" />
+                                        <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                                            {spostaQuery.trim().length < 3 ? <p className="text-[11px] text-slate-500">Scrivi almeno 3 caratteri.</p>
+                                                : spostaHits.length === 0 ? <p className="text-[11px] text-slate-500">Nessun cliente trovato.</p>
+                                                    : spostaHits.filter(h => h.id !== row.raw?.client_id).map(h => {
+                                                        const nome = h.ragione_sociale || `${h.nome || ""} ${h.cognome || ""}`.trim() || "—";
+                                                        return (
+                                                            <button key={h.id} disabled={spostaBusy} onClick={() => spostaContrattoA(h)}
+                                                                className="w-full flex items-center gap-2 text-left rounded-lg bg-white/[0.03] border border-white/10 px-3 py-2 hover:bg-white/[0.07] hover:border-amber-400/40 disabled:opacity-50">
+                                                                <span className="text-xs font-semibold text-slate-100 truncate flex-1">{nome}</span>
+                                                                <span className="text-[10px] font-mono text-slate-400">{h.cf_piva || "senza CF"}</span>
+                                                                {h.cellulare && <span className="text-[10px] text-slate-500">· {h.cellulare}</span>}
+                                                                <span className="text-[10px] font-bold text-amber-300">sposta →</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                        </div>
+                                    </div>
+                                )}
                                 {reqMsg && (
                                     <div className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{reqMsg}</div>
                                 )}
@@ -2083,12 +2534,27 @@ export default function RicercaContratto() {
                                                     ? renderField("dettagli::categoria_catalogo", "Categoria")
                                                     : renderField("contract::" + f.key, f.label, f.kind)
                                             ))}
-                                            {/* RIC-03: opzioni della vendita (jsonb dal catalogo) in sola
-                                                lettura — prima non comparivano da nessuna parte. */}
-                                            <div>
-                                                <span className="text-[11px] uppercase tracking-wider text-slate-500">Opzioni</span>
-                                                <p className="text-white text-sm break-words">{fmtOpzioni(row.raw?.opzioni)}</p>
-                                            </div>
+                                            {/* OPZIONI (Luca 07/08): parte integrante del contratto —
+                                                editor a chips col catalogo dell'offerta, quantita' e
+                                                tetto Bundle+Accessori come nel Registra. */}
+                                            {renderOpzioni()}
+                                        </div>)}
+
+                                    {SectionC("campi", "🧾", "Campi vendita",
+                                        campiMancanti.length ? `${detEditable.length} campi · ${campiMancanti.length} da compilare` : (detEditable.length ? `${detEditable.length} campi` : "nessun campo"),
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {detEditable.length === 0 && campiMancanti.length === 0 && <p className="text-sm text-slate-500 sm:col-span-2 lg:col-span-3">Nessun campo vendita su questa pratica.</p>}
+                                            {detEditable.map(([k]) => renderField("dettagli::" + k, k))}
+                                            {/* MOD-1b: i campi che le OPZIONI scelte si portano dietro e
+                                                che non sono ancora compilati — evidenziati, da riempire */}
+                                            {campiMancanti.length > 0 && detailMode === "edit" && (
+                                                <div className="sm:col-span-2 lg:col-span-3 rounded-lg border border-amber-400/40 bg-amber-400/[0.06] p-3">
+                                                    <div className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-2">⚠ Campi richiesti dalle opzioni — da compilare</div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        {campiMancanti.map((k) => renderField("dettagli::" + k, k))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>)}
 
                                     {SectionC("allegati", "📎", "Allegati",
@@ -2155,13 +2621,43 @@ export default function RicercaContratto() {
                                             {/* Segnalazione 67/71: codice inserimento modificabile a
                                                 tendina (chiave nei dettagli, varia per brand). */}
                                             {renderField("dettagli::" + codInsKey, "Codice inserimento")}
-                                            {detEditable.map(([k]) => renderField("dettagli::" + k, k))}
-                                            {detReadonly.map(([k, v]) => (
-                                                <div key={k} className="sm:col-span-2 lg:col-span-3">
-                                                    <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>
-                                                    <pre className="text-white text-xs bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
-                                                </div>
-                                            ))}
+                                            {/* i CAMPI VENDITA sono nella sezione 🧾 dedicata (Luca 07/08) */}
+                                            {detReadonly.map(([k, v]) => {
+                                                // FOLLOW-UP del Tracking (Luca 10/08): niente JSON grezzo —
+                                                // righe leggibili; se sono tutti vuoti la voce sparisce.
+                                                // Copre anche i formati anomali (stringa JSON, oggetto a
+                                                // chiavi numeriche) per le pratiche piu' vecchie.
+                                                if (/^follow[\s_-]*up$/i.test(k)) {
+                                                    let arr: unknown = v;
+                                                    if (typeof arr === "string") { try { arr = JSON.parse(arr); } catch { /* resta stringa */ } }
+                                                    if (arr && typeof arr === "object" && !Array.isArray(arr)) arr = Object.values(arr);
+                                                    if (!Array.isArray(arr)) return null;
+                                                    const fu = (arr as { label?: string; data?: string; esito?: string; note?: string }[])
+                                                        .filter(f => `${f?.data || ""}${f?.esito || ""}${f?.note || ""}`.trim());
+                                                    if (!fu.length) return null;
+                                                    return (
+                                                        <div key={k} className="sm:col-span-2 lg:col-span-3">
+                                                            <span className="text-[11px] uppercase tracking-wider text-slate-500">Follow-up</span>
+                                                            <div className="mt-1 space-y-1">
+                                                                {fu.map((f, i) => (
+                                                                    <div key={i} className="text-xs text-white bg-black/30 rounded-lg px-2.5 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                                                        <span className="font-bold">{f.label || `Follow-up ${i + 1}`}</span>
+                                                                        {f.data && <span>📅 {f.data}</span>}
+                                                                        {f.esito && <span className="font-semibold text-emerald-300">{f.esito}</span>}
+                                                                        {f.note && <span className="text-slate-300">{f.note}</span>}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                }
+                                                return (
+                                                    <div key={k} className="sm:col-span-2 lg:col-span-3">
+                                                        <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>
+                                                        <pre className="text-white text-xs bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
+                                                    </div>
+                                                );
+                                            })}
                                             {READONLY_META.map(f => (
                                                 <div key={f.key}>
                                                     <span className="text-[11px] uppercase tracking-wider text-slate-500">{f.label}</span>
@@ -2259,6 +2755,37 @@ export default function RicercaContratto() {
                     </div>
                 );
             })()}
+            {/* PICKER righe da spostare (vendita mista, Luca 10/08) — portal sul
+                body: deve funzionare sia dal modale sia dal pannello richieste */}
+            {pickerSposta && createPortal(
+                <div className="fixed inset-0 z-[6000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+                    onClick={e => { if (e.target === e.currentTarget) pickerSposta.done(null); }}>
+                    <div className="w-full max-w-md rounded-2xl border border-amber-400/40 bg-[#0e1526] p-6 shadow-2xl">
+                        <h3 className="text-base font-bold text-white mb-1">Cosa sposto su «{pickerSposta.target}»?</h3>
+                        <p className="text-xs text-slate-400 mb-4">Questa vendita ha più righe. Togli la spunta a ciò che deve <b className="text-slate-200">RESTARE sul cliente attuale</b> (es. prodotti di un'altra persona registrati nella stessa vendita).</p>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {pickerSposta.righe.map((r, i) => (
+                                <label key={r.id} className="flex items-center gap-2.5 rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 cursor-pointer hover:bg-white/[0.07]">
+                                    <input type="checkbox" checked={r.sel} className="accent-amber-400"
+                                        onChange={() => setPickerSposta(p => p ? { ...p, righe: p.righe.map((x, xi) => xi === i ? { ...x, sel: !x.sel } : x) } : p)} />
+                                    <span className="min-w-0">
+                                        <span className="block text-sm font-semibold text-slate-100 truncate">{r.etichetta}</span>
+                                        <span className="block text-[10px] font-mono text-slate-500 truncate">{r.sub}</span>
+                                    </span>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="flex justify-end gap-2.5 mt-5">
+                            <button onClick={() => pickerSposta.done(null)}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-300 border border-white/15 hover:bg-white/5">Annulla</button>
+                            <button onClick={() => pickerSposta.done(pickerSposta.righe.filter(r => r.sel).map(r => r.id))}
+                                disabled={!pickerSposta.righe.some(r => r.sel)}
+                                className="px-4 py-2 rounded-xl text-sm font-bold text-black bg-amber-400 hover:bg-amber-300 disabled:opacity-40">
+                                Sposta {pickerSposta.righe.filter(r => r.sel).length} rig{pickerSposta.righe.filter(r => r.sel).length === 1 ? "a" : "he"} →
+                            </button>
+                        </div>
+                    </div>
+                </div>, document.body)}
         </div>
     );
 }

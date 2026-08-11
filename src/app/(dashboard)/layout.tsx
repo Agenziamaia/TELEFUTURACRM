@@ -3,6 +3,7 @@
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ChatToaster } from "@/components/ChatToaster";
+import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { PageBackProvider } from "@/context/PageBackContext";
 import { PresenceProvider } from "@/context/PresenceContext";
 import { useState, useEffect } from "react";
@@ -54,6 +55,12 @@ export default function AuthLayout({
                     </main>
                 </div>
                 <ChatToaster />
+                {/* TELEFONO AIRCALL GLOBALE (segnalazione 10/08 via Verifiche): stava
+                    solo nella pagina caller — navigando altrove il componente si
+                    smontava, l'iframe moriva e LA CHIAMATA CADEVA. Qui nel layout
+                    sopravvive a ogni cambio di sezione (si gate-a da solo: area cc
+                    e admin/dev). */}
+                <AircallPhoneDock />
             </PresenceProvider>
         </PageBackProvider>
     );

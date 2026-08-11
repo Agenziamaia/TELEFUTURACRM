@@ -112,16 +112,22 @@ export const CAP_CLIENTI: CapGroupChoice = {
 // SPOSTATA da /collaboratori?tab=badge all'hub Call Center (Luca 28/07):
 // le righe cap:* esistenti sono state MIGRATE alla nuova chiave (mig. 096).
 export const BADGE_SECTION = "/caller?tab=badge";
+// MOD-11b (Luca 10/08): i profili sono le COMBINAZIONI di questi interruttori.
+//   · solo Timbratura                  → OPERATORE: badge grande + i suoi KPI/storico
+//   · Timbratura + Supervisione        → DIRETTORE: stessa vista dell'amministrativo
+//                                        + barra badge compatta per timbrare
+//   · solo Supervisione                → AMMINISTRATIVO: vista team, nessun badge
+//   · Corregge i turni                 → extra a parte (default: amministrazione)
 export const CAP_BADGE_TIMBRA: CapDef = {
     id: "timbra",
-    label: "Timbratura",
-    desc: "Card Inizia/Pausa/Fine turno con timer, KPI personali e storico badgiate.",
+    label: "Timbratura (operatore)",
+    desc: "Badgia i turni. Da sola: card grande Inizia/Pausa/Fine con KPI e storico personali. Insieme a Supervisione: barra di timbratura compatta sopra la vista team (profilo direttore).",
     default: (r) => areaOf(r) === "cc",
 };
 export const CAP_BADGE_TEAM: CapDef = {
     id: "vede_team",
     label: "Supervisione presenze",
-    desc: "Contatori team, turni in corso (con forza chiusura) e Storico presenze allargato con filtri, benchmark ed export.",
+    desc: "La vista team completa (identica per direttore e amministrativo): quadri live della giornata, contatori, turni in corso e Storico presenze con filtri ed export. Da sola = profilo amministrativo (nessun badge). NON permette di modificare i turni: serve l'interruttore a parte.",
     default: (r) => (seesAllStores(r) || seesWholeStore(r)) && r !== "back_office_caller",
 };
 // Correzione/eliminazione dei turni e chiusura forzata (Luca 05/08): prima era
@@ -445,28 +451,12 @@ export const CAP_CALENDARIO_TASK: CapGroupChoice = {
     },
 };
 
-// ─── CONTO ECONOMICO per punto vendita (cantiere 07/08) ──────────────────────
-// La VISIBILITÀ della pagina resta al menu (nav.ts + matrice Permessi); qui le
-// due capacità di comportamento, come da piano deck builder (gestisce=direzione
-// · presenta registrata subito per la regia riunioni).
-export const CE_SECTION = "/conto-economico";
-export const CAP_CE_GESTISCE: CapDef = {
-    id: "gestisce",
-    label: "Gestisce costi e parametri",
-    desc: "Modifica le voci di costo mensili dei negozi, gli appuntamenti del telefonico e il costo del reparto; in futuro congela gli snapshot del mese.",
-    default: (r) => ["admin", "dev", "direttore_generale"].includes(r),
-};
-export const CAP_CE_PRESENTA: CapDef = {
-    id: "presenta",
-    label: "Presenta in riunione",
-    desc: "Riservata alla regia delle riunioni (deck builder): potrà avviare la modalità presentazione dei deck costruiti sul conto economico.",
-    default: (r) => ["admin", "dev", "direttore_generale"].includes(r),
-};
-export const CAP_CONTO_ECONOMICO: CapGroupFlags = {
-    mode: "flags",
-    section: CE_SECTION,
-    sectionLabel: "Conto Economico",
-    caps: [CAP_CE_GESTISCE, CAP_CE_PRESENTA],
-};
+// (Conto Economico: capacità rimosse insieme alla sezione — direttiva Luca
+//  07/08; si ricreeranno col rifacimento post-input compensi/soglie/target.)
 
-export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD, CAP_CONTO_ECONOMICO];
+// (Riunioni/deck builder: sezione MESSA DA PARTE su task Luca 10/08 — "è
+//  completamente diversa da quello che mi ero immaginato, la riprenderemo più
+//  in là". Tolte pagina, API e capacità; la tabella riunione_deck e il motore
+//  contoEconomico restano dormienti per la ripresa futura.)
+
+export const CAPABILITIES: CapGroup[] = [CAP_CLIENTI, CAP_CLIENTI_EXTRA, CAP_RICERCA_MODIFICA, CAP_CALENDARIO_VISTA, CAP_CALENDARIO_TASK, CAP_BADGE, CAP_USATO, CAP_FERIE, CAP_COMUNICAZIONI, CAP_DISDETTE, CAP_PASSWORD];

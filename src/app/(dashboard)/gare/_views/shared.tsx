@@ -111,6 +111,7 @@ export const RAGAZZI_GARA: Record<string, { id: string; label: string; nota?: st
     sky: { id: "sky", label: "Sky" },
     s4: { id: "s4", label: "S4" },
     tim: { id: "tim", label: "TIM" },
+    kena: { id: "kena", label: "Kena" },
     dojo: { id: "dojo", label: "Dojo" },
 };
 

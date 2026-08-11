@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel, AREAS, gradesFor, gradeLabel } from "@/lib/roles";
-import { roleGradeKey } from "@/lib/usePermissions";
+import { roleGradeKey, userKey } from "@/lib/usePermissions";
 import { useRoles } from "@/lib/useRoles";
 import { NAVIGATION, effectiveAllowed, OUTBOUND_HIDDEN_GROUPS, hubChildKey, hubSubKey, groupKey, type PermMap } from "@/lib/nav";
 import { CAPABILITIES, capKey, capAllowed, capChoice, type CapGroup, type CapGroupChoice } from "@/lib/capabilities";
@@ -74,16 +74,36 @@ export function PermessiView() {
     // regola il RUOLO); un grado scelto COMMUTA l'intera matrice su di lui —
     // gli interruttori mostrano e scrivono le sue eccezioni.
     const [grado, setGrado] = useState<string>("");
-    useEffect(() => { setGrado(""); }, [ruolo]);
+    // PERSONA (MOD-29, Luca 10/08): terzo livello — righe "user:<id>" che
+    // vincono su grado e ruolo. Scegliere una persona commuta la matrice su di
+    // lei (il suo grado resta implicito nella fusione); esclusivo col grado.
+    const [persone, setPersone] = useState<{ id: string; full_name: string; grade: string | null }[]>([]);
+    const [persona, setPersona] = useState<string>("");
+    const [righePersone, setRighePersone] = useState<Map<string, PermMap>>(new Map());
+    useEffect(() => { setGrado(""); setPersona(""); }, [ruolo]);
+    useEffect(() => {
+        if (!ruolo) { setPersone([]); return; }
+        let vivo = true;
+        supabase.from("app_users").select("id, full_name, grade")
+            .eq("role", ruolo).or("status.is.null,status.neq.licenziato").order("full_name")
+            .then(({ data }) => { if (vivo) setPersone((data ?? []) as { id: string; full_name: string; grade: string | null }[]); });
+        return () => { vivo = false; };
+    }, [ruolo]);
+    const personaObj = persone.find((u) => u.id === persona) || null;
     const [busy, setBusy] = useState<string | null>(null);
     // ⚙️ aperto: le opzioni di comportamento esplodono SOTTO la riga della sezione
     const [capOpen, setCapOpen] = useState<string | null>(null);
     const gruppi = useMemo(catalogo, []);
 
     const load = async (r: string) => {
-        const { data, error } = await supabase.from("role_permissions").select("role,perm_key,allowed")
-            .or(`role.eq.${r},role.like.${r}@%`);
-        if (error) { dbError("permessi", error); return; }
+        // due letture: righe di ruolo+gradi, e TUTTE le eccezioni per persona
+        // ("user:<id>", poche per natura) — i conteggi si mostrano solo per le
+        // persone del ruolo selezionato
+        const [{ data, error }, { data: dataU, error: errU }] = await Promise.all([
+            supabase.from("role_permissions").select("role,perm_key,allowed").or(`role.eq.${r},role.like.${r}@%`),
+            supabase.from("role_permissions").select("role,perm_key,allowed").like("role", "user:%"),
+        ]);
+        if (error || errU) { dbError("permessi", (error || errU)!); return; }
         const m: PermMap = new Map();
         const gm = new Map<string, PermMap>();
         ((data ?? []) as { role: string; perm_key: string; allowed: boolean }[]).forEach((x) => {
@@ -93,20 +113,35 @@ export function PermessiView() {
             pm.set(x.perm_key, x.allowed);
             gm.set(g, pm);
         });
+        const um = new Map<string, PermMap>();
+        ((dataU ?? []) as { role: string; perm_key: string; allowed: boolean }[]).forEach((x) => {
+            const uid = x.role.slice("user:".length);
+            const pm = um.get(uid) || new Map();
+            pm.set(x.perm_key, x.allowed);
+            um.set(uid, pm);
+        });
         setRighe(m);
         setRigheGradi(gm);
+        setRighePersone(um);
     };
     useEffect(() => { if (ruolo) load(ruolo); }, [ruolo]);
 
-    // vista corrente: righe di ruolo, con le eccezioni del grado SOPRA
+    // vista corrente: righe di ruolo, con le eccezioni del grado SOPRA; con una
+    // PERSONA scelta: ruolo → il SUO grado (implicito) → le sue eccezioni
     const permsEff = useMemo<PermMap>(() => {
+        if (persona) {
+            const m: PermMap = new Map(righe);
+            if (personaObj?.grade) (righeGradi.get(personaObj.grade) ?? new Map()).forEach((v, k) => m.set(k, v));
+            (righePersone.get(persona) ?? new Map()).forEach((v, k) => m.set(k, v));
+            return m;
+        }
         if (!grado) return righe;
         const m: PermMap = new Map(righe);
         (righeGradi.get(grado) ?? new Map()).forEach((v, k) => m.set(k, v));
         return m;
-    }, [righe, righeGradi, grado]);
+    }, [righe, righeGradi, righePersone, grado, persona, personaObj?.grade]);
     // dove SCRIVONO interruttori e rotelline in questa vista
-    const chiaveScrittura = grado ? roleGradeKey(ruolo, grado) : ruolo;
+    const chiaveScrittura = persona ? userKey(persona) : grado ? roleGradeKey(ruolo, grado) : ruolo;
 
     if (!isAdmin) return (
         <div className="p-8 text-center text-slate-500 rounded-xl bg-white/[0.02] border border-white/5">
@@ -119,7 +154,20 @@ export function PermessiView() {
         setBusy(v.href);
         const attuale = effectiveAllowed(ruolo, v.href, v.defaultRoles, permsEff, v.gruppo);
         let error: { message: string } | null = null;
-        if (grado) {
+        if (persona) {
+            // ECCEZIONE PERSONALE (MOD-29): se il nuovo valore torna uguale a
+            // quello che la persona avrebbe da ruolo+grado, la riga si CANCELLA
+            // da sola (si torna a ereditare)
+            const mBase: PermMap = new Map(righe);
+            if (personaObj?.grade) (righeGradi.get(personaObj.grade) ?? new Map()).forEach((v2, k) => mBase.set(k, v2));
+            const effSotto = effectiveAllowed(ruolo, v.href, v.defaultRoles, mBase, v.gruppo);
+            const nuovo = !attuale;
+            ({ error } = nuovo === effSotto
+                ? await supabase.from("role_permissions").delete().eq("role", chiaveScrittura).eq("perm_key", v.href)
+                : await supabase.from("role_permissions").upsert(
+                    { role: chiaveScrittura, perm_key: v.href, allowed: nuovo, updated_by: user?.name || "—", updated_at: new Date().toISOString() },
+                    { onConflict: "role,perm_key" }));
+        } else if (grado) {
             // ECCEZIONE DI GRADO: se il nuovo valore torna uguale al ruolo,
             // la riga si CANCELLA da sola (si torna a ereditare)
             const effRuolo = effectiveAllowed(ruolo, v.href, v.defaultRoles, righe, v.gruppo);
@@ -137,7 +185,7 @@ export function PermessiView() {
         }
         setBusy(null);
         if (error) { dbError("salvataggio permesso", error); return; }
-        notify(`${v.nome}: ${!attuale ? "visibile" : "nascosta"} per ${roleLabel(ruolo)}${grado ? ` · ${gradeLabel(ruolo, grado)}` : ""}`, "ok");
+        notify(`${v.nome}: ${!attuale ? "visibile" : "nascosta"} per ${persona ? (personaObj?.full_name || "la persona") : roleLabel(ruolo) + (grado ? ` · ${gradeLabel(ruolo, grado)}` : "")}`, "ok");
         load(ruolo);
     };
 
@@ -212,7 +260,7 @@ export function PermessiView() {
                                 const on = grado === g.id;
                                 const nEcc = righeGradi.get(g.id)?.size ?? 0;
                                 return (
-                                    <button key={g.id} onClick={() => setGrado(on ? "" : g.id)}
+                                    <button key={g.id} onClick={() => { setGrado(on ? "" : g.id); if (!on) setPersona(""); }}
                                         className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
                                         style={on
                                             ? { color: "var(--tf-fbbf24)", borderColor: "var(--tf-f59e0b)", background: "rgba(245,158,11,0.14)" }
@@ -223,10 +271,43 @@ export function PermessiView() {
                             })}
                         </div>
                     )}
-                    {ruolo && grado && (
+                    {/* PERSONA (MOD-29, Luca 10/08): eccezioni del SINGOLO utente,
+                        vincono su ruolo e grado — esclusive con la scelta del grado */}
+                    {ruolo && persone.length > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-white/5">
+                            <span className="text-[10px] font-bold uppercase tracking-widest w-24 shrink-0 text-sky-300">Persona</span>
+                            <button onClick={() => setPersona("")}
+                                className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
+                                style={!persona
+                                    ? { color: "var(--tf-38bdf8)", borderColor: "var(--tf-0ea5e9)", background: "rgba(14,165,233,0.14)" }
+                                    : { color: "var(--tf-94a3b8)", borderColor: "var(--tf-w100)" }}>
+                                Tutte le persone{!persona && " ✓"}
+                            </button>
+                            {persone.map((u) => {
+                                const on = persona === u.id;
+                                const nEcc = righePersone.get(u.id)?.size ?? 0;
+                                return (
+                                    <button key={u.id} onClick={() => { setPersona(on ? "" : u.id); if (!on) setGrado(""); }}
+                                        className="text-xs px-3 py-1.5 rounded-lg border font-bold transition-colors"
+                                        style={on
+                                            ? { color: "var(--tf-38bdf8)", borderColor: "var(--tf-0ea5e9)", background: "rgba(14,165,233,0.14)" }
+                                            : { color: "var(--tf-94a3b8)", borderColor: "var(--tf-w100)" }}>
+                                        {u.full_name}{on && " ✓"}{nEcc > 0 && <span className="ml-1.5 text-[10px] font-black text-sky-400">·{nEcc}</span>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                    {ruolo && grado && !persona && (
                         <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
                             Stai regolando <b>{roleLabel(ruolo)} · {gradeLabel(ruolo, grado)}</b>: gli interruttori mostrano cosa vede questo grado.
                             Le voci senza pallino ambra seguono il ruolo; rimettendo un interruttore com&apos;è per il ruolo, l&apos;eccezione si cancella da sola.
+                        </p>
+                    )}
+                    {ruolo && persona && (
+                        <p className="text-xs text-sky-300/90 bg-sky-500/10 border border-sky-500/30 rounded-lg px-3 py-2">
+                            Stai regolando SOLO <b>{personaObj?.full_name}</b> ({roleLabel(ruolo)}{personaObj?.grade ? ` · ${gradeLabel(ruolo, personaObj.grade)}` : ""}): le sue eccezioni vincono su ruolo e grado.
+                            Le voci senza pallino azzurro seguono ruolo/grado; rimettendo un interruttore com&apos;è per il suo ruolo, l&apos;eccezione personale si cancella da sola.
                         </p>
                     )}
                     <p className="text-xs text-slate-500 pt-1">
@@ -253,7 +334,8 @@ export function PermessiView() {
                             <div className="divide-y divide-white/5">
                                 {g.voci.map((v) => {
                                     const eff = effectiveAllowed(ruolo, v.href, v.defaultRoles, permsEff, v.gruppo);
-                                    const eccezione = !!grado && (righeGradi.get(grado)?.has(v.href) ?? false);
+                                    const eccezione = !persona && !!grado && (righeGradi.get(grado)?.has(v.href) ?? false);
+                                    const eccPersona = !!persona && (righePersone.get(persona)?.has(v.href) ?? false);
                                     // COERENZA GERARCHICA (regola Luca): con un antenato spento la voce
                                     // non conta nulla e NON si puo' accendere — prima si accende l'hub
                                     // (o la sezione), poi si scelgono le voci interne una a una.
@@ -283,6 +365,7 @@ export function PermessiView() {
                                                     </button>
                                                 )}
                                                 {eccezione && <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" title={`Eccezione del grado ${gradeLabel(ruolo, grado)} su questa voce`} />}
+                                                {eccPersona && <span className="w-2 h-2 rounded-full bg-sky-400 shrink-0" title={`Eccezione personale di ${personaObj?.full_name} su questa voce`} />}
                                                 <button onClick={() => { if (!padreOff) toggle(v); }} disabled={busy === v.href || padreOff}
                                                     className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${eff ? "bg-emerald-500/70" : "bg-white/10"} ${busy === v.href ? "opacity-50" : ""} ${padreOff ? "cursor-not-allowed" : ""}`}
                                                     title={padreOff ? "Prima accendi l'accesso all'hub (la riga sopra): con l'hub spento le voci interne non si possono abilitare" : eff ? "Visibile — clicca per nascondere" : "Nascosta — clicca per concedere"}>

@@ -81,7 +81,7 @@ export function useQrUpload(onFiles: (files: File[]) => void) {
  *  classi glass del tema (light incluso via globals.css). Portal sul body e
  *  z-3000: sopra le modali di pagina (es. dettaglio ticket z-[1100]), sotto
  *  le tendine SelectPersona (z-4000). */
-export function QrUploadModal({ qr, hint }: { qr: ReturnType<typeof useQrUpload>; hint?: string }) {
+export function QrUploadModal({ qr, hint, esito }: { qr: ReturnType<typeof useQrUpload>; hint?: string; esito?: (n: number) => string }) {
     if (!qr.aperto || typeof document === "undefined") return null;
     return createPortal(
         <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm"
@@ -95,7 +95,7 @@ export function QrUploadModal({ qr, hint }: { qr: ReturnType<typeof useQrUpload>
                     <div className="py-6">
                         <div className="text-5xl mb-2">✅</div>
                         <div className="text-base font-extrabold text-emerald-400">Ricevuto!</div>
-                        <div className="text-xs text-slate-400 mt-1.5">{qr.ricevuti} file aggiunt{qr.ricevuti === 1 ? "o" : "i"} agli allegati.</div>
+                        <div className="text-xs text-slate-400 mt-1.5">{esito ? esito(qr.ricevuti) : `${qr.ricevuti} file aggiunt${qr.ricevuti === 1 ? "o" : "i"} agli allegati.`}</div>
                     </div>
                 ) : (
                     <>

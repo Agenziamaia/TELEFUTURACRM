@@ -12,6 +12,7 @@ import { RuoliView } from "./_views/ruoli";
 import { CatalogoView } from "./_views/catalogo";
 import { CallCenterView } from "./_views/callcenter";
 import { CalendarioEsitiView } from "./_views/calendario_esiti";
+import { TrackingEsitiView } from "./_views/tracking_esiti";
 import { IncarichiView } from "./_views/incarichi";
 import { DebitiView, DebitiUtenteBox, MalusUtenteBox } from "./_views/debiti";
 import { OrdineMerceArticoliView } from "./_views/ordinemerce";
@@ -76,6 +77,7 @@ import {
     Layers,
     ShieldCheck,
     Clock3,
+    Radar,
 } from "lucide-react";
 
 /* ---------- Tipi ---------- */
@@ -108,6 +110,11 @@ interface AppUser {
     hire_date: string | null;
     note: string | null;
     password: string | null;
+    // MOD-25: utenza Aircall collegata (bigint) — aggancia chiamate e click-to-call
+    aircall_user_id?: number | null;
+    // MOD-33: licenziamento con data (futura = programmato) e sospensione
+    data_licenziamento?: string | null;
+    sospeso_dal?: string | null;
     user_stores?: { store_name: string }[];
     user_brands?: { brand: string }[];
     user_store_visibility?: { store_name: string }[];
@@ -150,6 +157,7 @@ const EMPTY_USER: Partial<AppUser> & { stores: string[]; brands: string[]; visib
     domicile: "",
     hire_date: "",
     note: "",
+    aircall_user_id: null,
     stores: [],
     brands: [],
     visibility: [],
@@ -192,6 +200,7 @@ const SEZIONI: Sezione[] = [
     { id: "callcenter", label: "Call Center", icon: Phone, desc: "Opzioni della sezione Caller: esiti/stati, provenienze, tipologie e obiettivi — aggiungi, rinomina, riordina, spegni." },
     { id: "ordinemerce", label: "Ordine Merce", icon: Package, desc: "Gli articoli ordinabili dai negozi: Prodotti da banco ed Extra — aggiungi, rinomina, spegni o elimina; crea categorie nuove." },
     { id: "calendario", label: "Calendario", icon: CalendarClock, desc: "Esiti del calendario per tipo di evento: appuntamenti in negozio, a domicilio e task — etichette, colori, ordine." },
+    { id: "trackingesiti", label: "Tracking PDA", icon: Radar, desc: "Esiti negozio del Tracking per categoria: etichette, colori, ordine, voci spente e flag \"completata\" (fine processo → coda verifica)." },
     // Target, Direzione Inserimento e Obiettivi Home: TRASLOCATI nell'hub
     // Gare (Luca 03/08) — i vecchi URL ?sez=... vengono reindirizzati la'.
 ];
@@ -213,7 +222,7 @@ function AmministrazioneInner() {
     }, [sez, router]);
     // GATING DAI PERMESSI (nav.ts + role_permissions): ogni sezione dell'hub e
     // ogni funzione di Utenti si concede una a una dalla pagina Permessi.
-    const { perms } = useRolePermissions(user?.role, user?.grade);
+    const { perms, loaded: permsLoaded } = useRolePermissions(user?.role, user?.grade, user?.id);
     // ruoli FUSI codice+DB: i ruoli creati da UI compaiono in filtri e form
     const { roles: allRoles } = useRoles();
     const hubAmm = hubByHref("/amministrazione")!;
@@ -291,9 +300,16 @@ function AmministrazioneInner() {
         setLoading(false);
     }, []);
 
+    // L'anagrafica (utenti con costi + negozi) serve SOLO alle sezioni Utenti e
+    // Costi: chi entra per altre sezioni (es. Catalogo, permesso 10/08 anche a
+    // gradi non-sede) non la scarica affatto.
+    const serveAnagrafica = sezOk("utenti") || costiVisibile;
     useEffect(() => {
-        fetchAll();
-    }, [fetchAll]);
+        if (!permsLoaded) return;
+        if (serveAnagrafica) fetchAll();
+        else setLoading(false);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fetchAll, permsLoaded, serveAnagrafica]);
 
     const filteredUsers = useMemo(() => {
         return users.filter((u) => {
@@ -324,16 +340,27 @@ function AmministrazioneInner() {
         return map;
     }, [filteredUsers]);
 
-    // amministrativo e direttore_generale entrano per la SOLA sezione Utenti
-    // (sezioniVisibili sopra); tutti gli altri ruoli restano fuori.
-    if (user && !["admin", "dev", "amministrativo", "direttore_generale"].includes(user.role)) {
-        return (
-            <div className="glass-panel p-10 text-center max-w-lg mx-auto mt-10">
-                <Shield className="w-10 h-10 text-rose-400 mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-white">Accesso riservato</h2>
-                <p className="text-slate-400 mt-2">Solo l&apos;Admin può accedere all&apos;Amministrazione.</p>
-            </div>
-        );
+    // L'ingresso segue i PERMESSI (pagina Permessi, per ruolo o grado), non una
+    // lista fissa di ruoli: chi ha almeno una sezione concessa entra e vede solo
+    // quella (bug 10/08: lo store manager senior col Catalogo abilitato veniva
+    // respinto). Finché i permessi non sono arrivati: spinner, non porta in faccia.
+    if (user && !["admin", "dev"].includes(user.role)) {
+        if (!permsLoaded) {
+            return (
+                <div className="flex items-center justify-center py-20 text-slate-400">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                </div>
+            );
+        }
+        if (sezioniVisibili.length === 0) {
+            return (
+                <div className="glass-panel p-10 text-center max-w-lg mx-auto mt-10">
+                    <Shield className="w-10 h-10 text-rose-400 mx-auto mb-4" />
+                    <h2 className="text-xl font-bold text-white">Accesso riservato</h2>
+                    <p className="text-slate-400 mt-2">Nessuna sezione dell&apos;Amministrazione è abilitata per il tuo ruolo.</p>
+                </div>
+            );
+        }
     }
 
     return (
@@ -555,6 +582,8 @@ function AmministrazioneInner() {
                 <CallCenterView />
             ) : sez === "calendario" ? (
                 <CalendarioEsitiView />
+            ) : sez === "trackingesiti" ? (
+                <TrackingEsitiView />
             ) : null}
 
             {showForm && (
@@ -761,6 +790,33 @@ function UserForm({
     const [saving, setSaving] = useState(false);
     const [err, setErr] = useState("");
 
+    // MOD-25 (Luca 10/08): tendina delle utenze Aircall via /api/aircall/users
+    // (credenziali solo server). Preselezione per EMAIL quando il campo e'
+    // vuoto; comunque il webhook si auto-aggancia alla prima chiamata se
+    // l'email Aircall coincide con quella dell'utente.
+    const [aircallUsers, setAircallUsers] = useState<{ id: number; name: string; email: string | null }[] | null>(null);
+    const [aircallErr, setAircallErr] = useState("");
+    // la lista arriva LIVE dall'API Aircall a ogni apertura del form (una nuova
+    // utenza compare da sola alla prossima apertura); il bottone 🔄 la ricarica
+    // al volo senza chiudere (domanda Luca 10/08)
+    const caricaAircall = useCallback(() => {
+        setAircallUsers(null);
+        setAircallErr("");
+        fetch("/api/aircall/users").then((r) => r.json()).then((j) => {
+            if (j?.ok) setAircallUsers(j.users || []);
+            else { setAircallUsers([]); setAircallErr(j?.error || "Aircall non raggiungibile"); }
+        }).catch((e) => { setAircallUsers([]); setAircallErr(e instanceof Error ? e.message : String(e)); });
+    }, []);
+    useEffect(() => { caricaAircall(); }, [caricaAircall]);
+    useEffect(() => {
+        if (!aircallUsers?.length) return;
+        setF((p) => {
+            if (p.aircall_user_id || !p.email) return p;
+            const hit = aircallUsers.find((u) => (u.email || "").toLowerCase() === String(p.email).trim().toLowerCase());
+            return hit ? { ...p, aircall_user_id: hit.id } : p;
+        });
+    }, [aircallUsers]);
+
     const grades = gradesOf(f.role || "");
 
     const set = (k: string, v: unknown) => setF((p) => ({ ...p, [k]: v }));
@@ -847,6 +903,8 @@ function UserForm({
             domicile: f.different_domicile ? f.domicile?.trim() || null : null,
             hire_date: f.hire_date || null,
             note: f.note?.trim() || null,
+            // MOD-25: aggancio utenza Aircall (null = scollegata)
+            aircall_user_id: f.aircall_user_id ? Number(f.aircall_user_id) : null,
         };
 
         let userId = editing?.id;
@@ -940,6 +998,29 @@ function UserForm({
                         </Field>
                         <Field label="Data assunzione">
                             <input type="date" className="glass-input w-full" value={f.hire_date || ""} onChange={(e) => set("hire_date", e.target.value)} />
+                        </Field>
+                        {/* MOD-25 (Luca 10/08): utenza Aircall — aggancia le chiamate
+                            del call center e il click-to-call. Preselezionata per
+                            email; si auto-aggancia comunque alla prima chiamata. */}
+                        <Field label="Utenza Aircall">
+                            <div className="flex gap-1.5">
+                                <select className="glass-input w-full" value={f.aircall_user_id ?? ""}
+                                    onChange={(e) => set("aircall_user_id", e.target.value ? Number(e.target.value) : null)}>
+                                    <option value="">{aircallUsers === null ? "Carico da Aircall…" : "— Non collegata —"}</option>
+                                    {f.aircall_user_id && aircallUsers !== null && !aircallUsers.some((u) => u.id === f.aircall_user_id) && (
+                                        <option value={f.aircall_user_id}>Utenza attuale (id {f.aircall_user_id} — non più su Aircall?)</option>
+                                    )}
+                                    {(aircallUsers ?? []).map((u) => (
+                                        <option key={u.id} value={u.id}>{u.name}{u.email ? ` · ${u.email}` : ""}</option>
+                                    ))}
+                                </select>
+                                <button type="button" onClick={caricaAircall} title="Ricarica la lista da Aircall (es. utenza appena creata)"
+                                    className="shrink-0 px-3 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10">
+                                    <RotateCw className={`w-4 h-4${aircallUsers === null ? " animate-spin" : ""}`} />
+                                </button>
+                            </div>
+                            {aircallErr && <p className="text-[11px] text-rose-400 mt-1">Aircall: {aircallErr}</p>}
+                            {!aircallErr && <p className="text-[11px] text-slate-500 mt-1">Lista LIVE da Aircall a ogni apertura (🔄 per ricaricarla subito). Comunque un nuovo caller si aggancia da solo alla prima chiamata, se l&apos;email coincide.</p>}
                         </Field>
                     </div>
 
@@ -1214,18 +1295,39 @@ interface Activity {
 }
 
 function UserDetail({ u, onClose, onEdit, onStatoCambiato }: { u: AppUser; onClose: () => void; onEdit?: () => void; onStatoCambiato?: () => void }) {
-    // LICENZIA / RIASSUMI col pulsantone (Luca 31/07): niente piu' matita per
-    // cambiare lo stato — conferma esplicita, poi il licenziato sparisce dalla
-    // lista (resta visibile col flag "Mostra licenziati")
-    const cambiaStato = async (nuovo: "attivo" | "licenziato") => {
-        const msg = nuovo === "licenziato"
-            ? `Licenziare ${u.full_name}?\nSparirà dalla lista utenti (lo ritrovi col flag "Mostra licenziati") e non potrà più accedere al CRM.`
-            : `Riassumere ${u.full_name}?\nTorna Attivo, con accesso e visibilità come prima.`;
-        if (!window.confirm(msg)) return;
-        const { error } = await supabase.from("app_users").update({ status: nuovo, active: nuovo !== "licenziato" }).eq("id", u.id);
-        if (error) { alert("Cambio stato NON riuscito: " + error.message); return; }
+    // MOD-33 (Luca 10/08): LICENZIA CON DATA + SOSPENDI, modale del CRM (via i
+    // confirm del browser). Oggi = effetto immediato; data futura = programmato
+    // (l'accesso si blocca da quel giorno: gate nel login + guardia sessioni).
+    const oggiIso = new Date().toISOString().slice(0, 10);
+    const [azione, setAzione] = useState<null | "licenzia" | "sospendi">(null);
+    const [dataAzione, setDataAzione] = useState<string>(oggiIso);
+    // blocco accesso (segnalazione Luca 10/08): con data futura scelgo se
+    // bloccare l'accesso DA SUBITO o solo DALLA data di licenziamento
+    const [bloccaSubito, setBloccaSubito] = useState(false);
+    const [azioneBusy, setAzioneBusy] = useState(false);
+    const aggiornaStato = async (payload: Record<string, unknown>) => {
+        if (azioneBusy) return false;
+        setAzioneBusy(true);
+        const { error } = await supabase.from("app_users").update(payload).eq("id", u.id);
+        setAzioneBusy(false);
+        if (error) { alert("Operazione NON riuscita: " + error.message); return false; }
         onStatoCambiato?.();
+        return true;
     };
+    const eseguiAzione = async () => {
+        const d = dataAzione || oggiIso;
+        // licenziamento: la DATA è il record storico (può anche essere passata);
+        // il BLOCCO accesso scatta subito se d<=oggi o se Luca sceglie
+        // "blocca subito", altrimenti entra in vigore alla data
+        const payload = azione === "licenzia"
+            ? (d <= oggiIso || bloccaSubito
+                ? { status: "licenziato", active: false, data_licenziamento: d, sospeso_dal: null }
+                : { data_licenziamento: d })
+            : { sospeso_dal: d };
+        if (await aggiornaStato(payload)) setAzione(null);
+    };
+    // Riassumi / riattiva / annulla programmazione: si torna pienamente attivi
+    const riattiva = () => aggiornaStato({ status: "attivo", active: true, data_licenziamento: null, sospeso_dal: null });
     // ── ALIAS (mig. 142, 03/08): l'alias diventa l'UNICO nome del gestionale
     //    (applica_alias sostituisce il nome in ogni colonna testo/jsonb);
     //    il nome vero resta in nome_riservato, visibile solo qui.
@@ -1513,7 +1615,7 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                     <DetailRow label="RAL annua (lorda)" value={u.ral_annua != null ? `€ ${Number(u.ral_annua).toLocaleString("it-IT")}` : null} />
                                     <DetailRow label="Costo azienda (solo admin)" value={u.company_cost != null ? `€ ${Number(u.company_cost).toLocaleString("it-IT")}${u.ral_annua != null ? " · da RAL ÷ 12" : ""}` : null} />
                                     <DetailRow label="Costo visibile" value={(() => { const e = effVisibleCost(u, detailRules); return e.value != null ? `€ ${e.value.toLocaleString("it-IT")}${e.fromRule ? " · da regola ruolo" : ""}` : null; })()} />
-                                    <DetailRow label="Stato" value={u.status === "licenziato" ? "Licenziato" : "Attivo"} />
+                                    <DetailRow label="Stato" value={u.status === "licenziato" ? "Licenziato" : u.sospeso_dal && u.sospeso_dal <= oggiIso ? "Sospeso" : u.sospeso_dal ? `Sospensione dal ${fmtDate(u.sospeso_dal)}` : u.data_licenziamento ? `Attivo (licenziamento il ${fmtDate(u.data_licenziamento)})` : "Attivo"} />
                                     <DetailRow label="Telefono" value={u.phone} />
                                     <DetailRow label="Residenza" value={u.address} full />
                                     {u.different_domicile && <DetailRow label="Domicilio" value={u.domicile} full />}
@@ -1541,20 +1643,87 @@ La persona vedrà il nuovo nome dal prossimo accesso.`);
                                 <p className="text-[11px] text-slate-600">L&apos;alias sostituisce il nome in OGNI sezione (vendite, ferie, storici, comunicazioni…); il nome precedente resta visibile solo all&apos;amministrazione, qui.</p>
                             </div>
 
-                            {/* pulsantone LICENZIA / RIASSUMI sotto i dati (Luca 31/07) */}
-                            <div className="glass-card p-4 rounded-xl">
+                            {/* pulsantoni SOSPENDI / LICENZIA / RIASSUMI (MOD-33) */}
+                            <div className="glass-card p-4 rounded-xl space-y-2.5">
+                                {u.status !== "licenziato" && u.sospeso_dal && (
+                                    <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-orange-500/10 border border-orange-500/40">
+                                        <span className="text-sm font-bold text-orange-300">⏸️ {u.sospeso_dal <= oggiIso ? `Sospeso dal ${fmtDate(u.sospeso_dal)}` : `Sospensione programmata dal ${fmtDate(u.sospeso_dal)}`}</span>
+                                        <button onClick={() => aggiornaStato({ sospeso_dal: null })} disabled={azioneBusy}
+                                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold disabled:opacity-50">✅ Riattiva</button>
+                                    </div>
+                                )}
+                                {u.status !== "licenziato" && u.data_licenziamento && (
+                                    <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/40">
+                                        <span className="text-sm font-bold text-rose-300">📅 Licenziamento programmato il {fmtDate(u.data_licenziamento)}</span>
+                                        <button onClick={() => aggiornaStato({ data_licenziamento: null })} disabled={azioneBusy}
+                                            className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-xs font-bold disabled:opacity-50">Annulla</button>
+                                    </div>
+                                )}
                                 {u.status === "licenziato" ? (
-                                    <button onClick={() => cambiaStato("attivo")}
-                                        className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black uppercase tracking-widest transition-colors">
+                                    <button onClick={riattiva} disabled={azioneBusy}
+                                        className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black uppercase tracking-widest transition-colors disabled:opacity-50">
                                         ✅ Riassumi
                                     </button>
-                                ) : (
-                                    <button onClick={() => cambiaStato("licenziato")}
+                                ) : (<>
+                                    {!u.sospeso_dal && (
+                                        <button onClick={() => { setDataAzione(oggiIso); setAzione("sospendi"); }}
+                                            className="w-full py-3.5 rounded-xl bg-orange-500 hover:bg-orange-400 text-white text-sm font-black uppercase tracking-widest transition-colors">
+                                            ⏸️ Sospendi
+                                        </button>
+                                    )}
+                                    <button onClick={() => { setDataAzione(oggiIso); setBloccaSubito(false); setAzione("licenzia"); }}
                                         className="w-full py-3.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-black uppercase tracking-widest transition-colors">
                                         🔴 Licenzia
                                     </button>
-                                )}
+                                </>)}
                             </div>
+                            {/* modale IN-CRM per data + conferma (MOD-33: niente popup browser) */}
+                            {azione && (
+                                <div className="fixed inset-0 z-[3000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+                                    onClick={() => { if (!azioneBusy) setAzione(null); }}>
+                                    <div className="w-full max-w-md rounded-2xl border border-white/10 p-6"
+                                        style={{ background: "var(--tf-0e1526)", boxShadow: "0 18px 50px rgba(0,0,0,.55)" }}
+                                        onClick={(e) => e.stopPropagation()}>
+                                        <div className="text-lg font-extrabold text-slate-100 mb-1.5">
+                                            {azione === "licenzia" ? "🔴 Licenzia" : "⏸️ Sospendi"} {u.full_name}
+                                        </div>
+                                        <p className="text-[13px] text-slate-400 mb-4 leading-relaxed">
+                                            {azione === "licenzia"
+                                                ? "Con la data di OGGI l'effetto è immediato: sparisce dalla lista utenti (lo ritrovi col flag \"Mostra licenziati\") e non può più accedere al CRM. Con una data futura il licenziamento è PROGRAMMATO: resta operativo fino a quel giorno, poi l'accesso si blocca da solo."
+                                                : "Il sospeso non può accedere al CRM finché non lo riattivi (l'utenza e i dati restano intatti). Con la data di OGGI è sospeso subito; con una data futura la sospensione parte da quel giorno."}
+                                        </p>
+                                        <label className="block text-[11px] text-slate-500 font-bold uppercase tracking-wider mb-1">
+                                            {azione === "licenzia" ? "Data licenziamento (fa da registro: può anche essere passata)" : "Sospeso dal"}
+                                        </label>
+                                        <input type="date" min={azione === "sospendi" ? oggiIso : undefined} value={dataAzione} onChange={(e) => setDataAzione(e.target.value)}
+                                            className="glass-input w-full mb-4" />
+                                        {/* con data FUTURA scegli quando scatta il blocco accesso */}
+                                        {azione === "licenzia" && dataAzione > oggiIso && (
+                                            <div className="mb-4 space-y-1.5">
+                                                <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Blocco accesso al CRM</p>
+                                                {([[false, `⏳ Dalla data del licenziamento (${new Date(dataAzione + "T00:00").toLocaleDateString("it-IT")})`], [true, "🔒 Da subito (resta licenziato in data " + new Date(dataAzione + "T00:00").toLocaleDateString("it-IT") + ")"]] as [boolean, string][]).map(([v, l]) => (
+                                                    <label key={String(v)} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                                                        <input type="radio" name="bloccoAccesso" checked={bloccaSubito === v} onChange={() => setBloccaSubito(v)} className="accent-rose-500" />
+                                                        {l}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div className="flex gap-2">
+                                            <button onClick={eseguiAzione} disabled={azioneBusy || !dataAzione}
+                                                className={`flex-1 py-3 rounded-xl text-white text-sm font-black transition-colors disabled:opacity-50 ${azione === "licenzia" ? "bg-rose-600 hover:bg-rose-500" : "bg-orange-500 hover:bg-orange-400"}`}>
+                                                {azioneBusy ? "…" : dataAzione > oggiIso
+                                                    ? (azione === "licenzia" ? (bloccaSubito ? "🔴 Licenzia e blocca subito" : "📅 Programma il licenziamento") : "📅 Programma la sospensione")
+                                                    : (azione === "licenzia" ? "🔴 Licenzia subito" : "⏸️ Sospendi subito")}
+                                            </button>
+                                            <button onClick={() => setAzione(null)} disabled={azioneBusy}
+                                                className="px-4 py-3 rounded-xl bg-white/[0.06] hover:bg-white/10 text-slate-300 text-sm font-bold disabled:opacity-50">
+                                                Annulla
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <p className="text-xs text-slate-500">
                                 L&apos;attività è collegata tramite il nome <span className="text-slate-300">{matchName}</span> presente nelle
                                 varie sezioni del CRM.

@@ -26,6 +26,13 @@ const PALETTE: Record<string, string> = {
 const slugDi = (s: string) => s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "esito";
 
+// ESITI DI SISTEMA (fix 10/08, segnalazione Luca): "attivato" e "attivato
+// altro negozio" NON sono esiti che il negozio sceglie — li scrive SOLO il
+// match automatico con la vendita registrata. Qui restano visibili (per
+// etichetta/colore) ma NON si possono spegnere, eliminare o confondere con
+// le scelte manuali: il calendario li esclude comunque dalla tendina.
+const ESITI_SISTEMA = ["attivato", "attivato_diverso_negozio"];
+
 export function CalendarioEsitiView() {
     const [righe, setRighe] = useState<Esito[]>([]);
     const [err, setErr] = useState<string | null>(null);
@@ -133,6 +140,14 @@ export function CalendarioEsitiView() {
                                             <button onClick={() => { setEditId(r.id); setEditVal(r.etichetta); }} title={`Clicca per rinominare (chiave interna: ${r.chiave})`}
                                                 className="flex-1 text-left text-sm text-slate-200 hover:text-white truncate">{r.etichetta}</button>
                                         )}
+                                        {ESITI_SISTEMA.includes(r.chiave) ? (
+                                            /* esito DI SISTEMA: lo scrive solo il match con la vendita —
+                                               niente interruttore, niente cestino (fix 10/08) */
+                                            <span title="Questo esito lo imposta SOLO il sistema (match con la vendita registrata): il negozio non lo può scegliere e da qui non si spegne né si elimina."
+                                                className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 shrink-0">
+                                                ⚙️ automatico
+                                            </span>
+                                        ) : (<>
                                         <button onClick={() => toggle(r)} title={r.attiva ? "Attiva — clicca per spegnerla" : "Spenta — clicca per riattivarla"}
                                             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${r.attiva ? "bg-emerald-500/70" : "bg-white/10"}`}>
                                             <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${r.attiva ? "left-[18px]" : "left-0.5"}`} />
@@ -146,6 +161,7 @@ export function CalendarioEsitiView() {
                                             <button onClick={() => setDelId(r.id)} title="Elimina la voce (gli eventi storici mantengono la chiave)"
                                                 className="p-1 rounded-md text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 shrink-0">🗑</button>
                                         )}
+                                        </>)}
                                     </div>
                                 ))}
                             </div>

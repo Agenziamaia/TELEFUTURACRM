@@ -16,7 +16,6 @@ import { useAuth } from "@/context/AuthContext";
 import { chiamaAircall } from "@/lib/dialer";
 import { numeroNazionale } from "@/lib/telefono";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
-import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { useStores, useSellers, useCallers } from "@/lib/org";
 import { caricaTutte } from "@/lib/fetchTutte";
 import { seesAllStores, seesWholeStore } from "@/lib/roles";
@@ -437,7 +436,7 @@ function CallerPageInner() {
     // ── hub Call Center: sezione corrente + pillole + visibilita' Badge ──
     const searchParams = useSearchParams();
     const hubTab = searchParams.get("tab") === "badge" ? "badge" : "caller";
-    const { perms: hubPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: hubPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const badgeVisibile = effectiveAllowed(user?.role, "/caller?tab=badge", EVERYONE, hubPerms, "Call Center");
     // AUDIO delle registrazioni a capability (cap:/clienti:ascolta_registrazioni,
     // Luca 04/08): senza permesso il player nello storico voce non compare —
@@ -586,6 +585,37 @@ function CallerPageInner() {
         }
     };
 
+    // ── ESITO DEL NEGOZIO visibile QUI (fix 10/08, caso Greco/41 anomalie):
+    // la fonte unica dell'esito appuntamento è appointments.status — badge in
+    // lista + box nel dettaglio pratica, così caller e negozio vedono la
+    // stessa verità. Caricato a lotti per gli appointment_id delle pratiche.
+    const [esitiNegozio, setEsitiNegozio] = useState<Record<string, { status: string; esito_note: string | null; date: string | null; store: string | null }>>({});
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            const ids = [...new Set(calls.map((c) => (c as { appointment_id?: number | string | null }).appointment_id).filter(Boolean))] as (number | string)[];
+            if (!ids.length) { if (vivo) setEsitiNegozio({}); return; }
+            const out: Record<string, { status: string; esito_note: string | null; date: string | null; store: string | null }> = {};
+            for (let i = 0; i < ids.length; i += 200) {
+                const { data } = await supabase.from("appointments").select("id, status, esito_note, date, store").in("id", ids.slice(i, i + 200));
+                ((data || []) as { id: number | string; status: string; esito_note: string | null; date: string | null; store: string | null }[])
+                    .forEach((a) => { out[String(a.id)] = a; });
+            }
+            if (vivo) setEsitiNegozio(out);
+        })();
+        return () => { vivo = false; };
+    }, [calls]);
+    const ESITO_NEG_LBL: Record<string, { l: string; cls: string }> = {
+        attivato: { l: "ATTIVATO dal negozio", cls: "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" },
+        attivato_diverso_negozio: { l: "ATTIVATO (altro negozio)", cls: "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" },
+        ko: { l: "KO dal negozio", cls: "bg-rose-500/10 border-rose-500/40 text-rose-300" },
+        annullato: { l: "Annullato dal negozio", cls: "bg-slate-500/10 border-slate-500/40 text-slate-300" },
+        no_show: { l: "Non presentato", cls: "bg-amber-500/10 border-amber-500/40 text-amber-300" },
+        in_gestione: { l: "In gestione al negozio", cls: "bg-amber-500/10 border-amber-500/40 text-amber-300" },
+        da_richiamare: { l: "Da richiamare (negozio)", cls: "bg-pink-500/10 border-pink-500/40 text-pink-300" },
+        da_rifissare: { l: "Da rifissare (negozio)", cls: "bg-amber-500/10 border-amber-500/40 text-amber-300" },
+    };
+
     const fetchListe = async () => {
         const { data, error } = await supabase
             .from("liste")
@@ -654,6 +684,10 @@ function CallerPageInner() {
     const [selBrands, setSelBrands] = useState<Set<string>>(new Set());  // vuoto = tutte
     // Filtro rapido dal pulsante "Da esitare" in alto (Luca 30/07).
     const [soloDaEsitare, setSoloDaEsitare] = useState(false);
+    // ATTIVATE (Luca 08/08): le pratiche attivate (dal match vendita↔appuntamento
+    // o attivate a mano) escono dal "da lavorare" — un toggle default OFF le
+    // rimostra. "Attivato", "Attivato Anomalia", "Attivato Altro Negozio".
+    const [mostraAttivate, setMostraAttivate] = useState(false);
     // FACCETTE COERENTI (Luca 30/07): i contatori dei brand rispettano TUTTI
     // gli altri filtri attivi (caller, date, stato...) ignorando solo la
     // selezione brand stessa — prima erano fissi e non seguivano i filtri.
@@ -756,12 +790,33 @@ function CallerPageInner() {
         return m;
     }, [calls, regoleCaller, badgePronto, faseInfo]);
     const apriArchivioMalus = useCallback(() => { setShowArchivioMalus(true); eseguiSyncMalus(); }, [eseguiSyncMalus]);
+    // TOTALE storico malus sotto "⏱ Storico →" (Luca 10/08, come Tracking PDA):
+    // somma degli episodi non eliminati (del caller per i non-direttori)
+    const [malusTotStorico, setMalusTotStorico] = useState<number | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        (async () => {
+            let q = supabase.from("caller_malus").select("importo, caller").eq("eliminato", false);
+            if (!isDirector && currentCaller) q = q.eq("caller", currentCaller);
+            const { data, error } = await q;
+            if (!vivo || error) return;
+            setMalusTotStorico((data ?? []).reduce((t, r) => t + (Number(r.importo) || 0), 0));
+        })();
+        return () => { vivo = false; };
+    }, [isDirector, currentCaller, malusSyncVersione]);
 
     const matchFiltri = (c: Call, ignoraBrand = false, ignoraFase = false) => {
         // le pratiche ASSORBITE (il cliente ha risposto su un'altra riga)
         // non si portano avanti: vivono solo nello storico del cliente
         if (c.assorbita_da) return false;
         if (!isDirector && c.caller !== currentCaller) return false;
+        // ATTIVATE (Luca 08/08): di default escono dal lavoro; col toggle acceso
+        // vedo SOLO le attivate (le altre spariscono per differenza), poi filtro
+        // per periodo/consulente. Un consulente vede già solo le sue (riga sopra).
+        {
+            const isAtt = /^attivat/i.test(String(c.stato || ""));
+            if (mostraAttivate ? !isAtt : isAtt) return false;
+        }
         if (soloDaEsitare && !c.da_esitare) return false;
         if (!ignoraFase && faseFilter && faseInfo(c).fase !== faseFilter) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
@@ -808,7 +863,7 @@ function CallerPageInner() {
         return true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
+    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const faseCounts = useMemo(() => {
         const cnt = { da_lavorare: 0, warning: 0, malus: 0, importo: 0 };
@@ -820,7 +875,7 @@ function CallerPageInner() {
             else if (fi.fase === "malus") { cnt.malus++; cnt.importo += fi.importo; }
         });
         return cnt;
-    }, [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
+    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const brandCounts = useMemo(() => {
         const scoped = calls.filter((c) => matchFiltri(c, true));
@@ -828,7 +883,7 @@ function CallerPageInner() {
         // faseFilter + faseInfo NELLE DIPENDENZE (check profondo Luca 05/08):
         // mancavano — il memo restava congelato e i badge dei brand mostravano
         // sempre il totale, ignorando Da Lavorare/Warning/Malus.
-    }, [calls, isDirector, currentCaller, soloDaEsitare, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
+    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
 
     function listaBrandLabel(l: ListaAssegnata): string {
         if (l.provenienza === "Acquistato") return l.brandAcq || "—";
@@ -1013,7 +1068,9 @@ function CallerPageInner() {
             customer_phone: numeroNazionale(c.cellulare || c.numero) || c.cellulare || c.numero || "",
             cf_piva: c.cf || c.piva || null,
             notes: ["Fissato dal call center", c.note].filter(Boolean).join(" — "),
-            status: "scheduled",
+            // FIX 10/08 (buco #5, caso Greco): "scheduled" viaggia SOLO
+            // nell'INSERT — l'UPDATE di un ri-esito del caller NON deve più
+            // cancellare in silenzio l'esito già dato dal negozio sul calendario.
             created_by: c.caller || currentCaller,
         };
         const { data: linked } = await supabase.from("calls").select("appointment_id").eq("id", callId).maybeSingle();
@@ -1025,8 +1082,8 @@ function CallerPageInner() {
             if (error) alert("Appuntamento in calendario NON aggiornato: " + error.message);
             return;
         }
-        let { data: ins, error } = await supabase.from("appointments").insert(payload).select("id").single();
-        if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert(payloadLegacy).select("id").single());
+        let { data: ins, error } = await supabase.from("appointments").insert({ ...payload, status: "scheduled" }).select("id").single();
+        if (error && /column/i.test(error.message || "")) ({ data: ins, error } = await supabase.from("appointments").insert({ ...payloadLegacy, status: "scheduled" }).select("id").single());
         if (error) { alert("Appuntamento NON portato in calendario: " + error.message); return; }
         if (ins?.id) {
             const { error: linkErr } = await supabase.from("calls").update({ appointment_id: ins.id }).eq("id", callId);
@@ -1336,6 +1393,15 @@ function CallerPageInner() {
                 ? editCall.negozio_provenienza
                 : editCall.negozio_pertinenza;
             if (!String(pertinenza || "").trim()) { alert("NEGOZIO DI PERTINENZA obbligatorio (anche se non risponde): è il punto vendita congruo per il cliente — serve ai richiami per sapere dove mandarlo."); return; }
+            // GUARDIA ANTI-CONTRADDIZIONE (fix 10/08, caso Greco): appuntamento
+            // GIÀ ATTIVATO dal negozio → niente "Attivato Anomalia" sopra.
+            {
+                const enG = esitiNegozio[String((editCall as { appointment_id?: number | string | null }).appointment_id ?? "")];
+                if (enG && /^attivato/.test(enG.status) && /anomal/i.test(editCall.statoNew || "")) {
+                    alert("Questo appuntamento risulta GIÀ ATTIVATO dal punto vendita: la pratica va segnata «Attivato» (o si aggancia da sola alla vendita col match) — non «Attivato Anomalia». Se c'è un problema vero, segnalalo al direttore.");
+                    return;
+                }
+            }
             const original = calls.find(c => c.id === editCall.id);
             if (!original) return;
             const newStorico: StoricoEntry[] = [
@@ -1401,7 +1467,10 @@ function CallerPageInner() {
             }
             await creaAnagraficaSeManca(editCall);
             await assorbiPraticheGemelle(editCall, editCall.id);
-            if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew) {
+            // MOD-10 (Luca 08/08): "Appuntamento telefonico" NON va sul calendario —
+            // resta pratica del call center e segue il flusso classico giorni/malus
+            // sulla data fissata (data_richiamo, salvata sopra). "Da richiamare" sì.
+            if (RIC_STATI.includes(editCall.statoNew) && editCall.dataRichiamoNew && editCall.statoNew !== "Appuntamento telefonico") {
                 await sincronizzaRichiamo({ ...original, ...editCall }, editCall.id, editCall.dataRichiamoNew);
             }
             if (APP_STATI.includes(editCall.statoNew)) {
@@ -1750,9 +1819,8 @@ function CallerPageInner() {
     // ── vista BADGE dell'hub (spostata da Collaboratori) ──
     if (hubTab === "badge") return (
         <div className="h-full flex flex-col overflow-y-auto">
-            <div className="flex-none px-8 pt-6 pb-2 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex-none px-8 pt-6 pb-2 flex items-center gap-3 flex-wrap">
                 {hubPills}
-                <h1 className="text-xl font-black text-white tracking-tight">🕒 Badge — presenze e timbrature</h1>
             </div>
             <div className="flex-1 p-4 md:p-8 pt-2">
                 <div className="max-w-7xl mx-auto">
@@ -1767,7 +1835,7 @@ function CallerPageInner() {
             {/* Telefono Aircall: la bolla ☎ vive SOLO nella sezione Caller (richiesta
                 Luca 26/07). Il login Aircall resta in cookie: uscendo e rientrando
                 dalla pagina non viene richiesto di nuovo. */}
-            <AircallPhoneDock />
+            {/* AircallPhoneDock: spostato nel layout (10/08) — globale, la chiamata non cade più cambiando sezione */}
             {/* TITOLO nudo sul gradiente, come Ricerca Vendite (GLB-01, Luca 04/08):
                 niente tag <header> (in tema chiaro diventava una card bianca per la
                 regola globale html.light header) e niente lastra bg/blur/border */}
@@ -1842,6 +1910,22 @@ function CallerPageInner() {
                                     : "border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"}`}
                             >
                                 ☎️ Da esitare: {daEsitare}{soloDaEsitare ? " ✕" : ""}
+                            </button>
+                        ) : null;
+                    })()}
+                    {/* ATTIVATE (Luca 08/08): default OFF, escono dal lavoro; click = rimostra */}
+                    {(() => {
+                        const nAtt = calls.filter((c) => /^attivat/i.test(String(c.stato || "")) && (isDirector || c.caller === currentCaller) && !c.assorbita_da).length;
+                        return (nAtt > 0 || mostraAttivate) ? (
+                            <button
+                                type="button"
+                                onClick={() => setMostraAttivate((v) => !v)}
+                                title={mostraAttivate ? "Nascondi di nuovo le pratiche attivate" : "Mostra anche le pratiche attivate (di norma escono dal lavoro)"}
+                                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors ${mostraAttivate
+                                    ? "border-emerald-400 bg-emerald-500/25 text-emerald-200 shadow-lg shadow-emerald-500/20"
+                                    : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"}`}
+                            >
+                                ✅ Attivate: {nAtt}{mostraAttivate ? " ✕" : ""}
                             </button>
                         ) : null;
                     })()}
@@ -1963,18 +2047,22 @@ function CallerPageInner() {
                                         className={`flex-1 rounded-2xl border px-3 py-3 text-left cursor-pointer select-none transition-all ${cls} ${faseFilter === k ? "ring-2 ring-white/30 brightness-125" : faseFilter ? "opacity-50 hover:opacity-80" : "hover:brightness-110"}`}>
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="text-sm font-bold">{l}</div>
-                                            {/* ⏱ storico dentro la card: stopPropagation, il click NON
-                                                deve attivare/disattivare il filtro. Visibile a tutti come
-                                                il vecchio bottone: per i caller resta "il tuo storico"
-                                                (soloCaller), per la direzione l'archivio completo */}
+                                            {/* ⏱ storico + totale RAGGRUPPATI a destra (Luca 10/08: prima
+                                                justify-between li spargeva per tutta la card — brutti e non
+                                                responsive). stopPropagation: il click NON tocca il filtro. */}
                                             {k === "malus" && (
-                                                <span role="button" tabIndex={0}
-                                                    onClick={(e) => { e.stopPropagation(); apriArchivioMalus(); }}
-                                                    onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); apriArchivioMalus(); } }}
-                                                    title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"}
-                                                    className="text-[10px] font-bold underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100 whitespace-nowrap leading-tight mt-0.5">
-                                                    ⏱ Storico →
-                                                </span>
+                                                <div className="flex flex-col items-end gap-0.5 shrink-0">
+                                                    <span role="button" tabIndex={0}
+                                                        onClick={(e) => { e.stopPropagation(); apriArchivioMalus(); }}
+                                                        onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); apriArchivioMalus(); } }}
+                                                        title={isDirector ? "Archivio dei malus (in corso, attivi, compensati)" : "Il tuo storico malus: in corso, attivi, compensati"}
+                                                        className="text-[14px] font-bold underline decoration-dotted underline-offset-2 opacity-90 hover:opacity-100 whitespace-nowrap leading-tight">
+                                                        ⏱ Storico →
+                                                    </span>
+                                                    {malusTotStorico != null && malusTotStorico > 0 && (
+                                                        <span className="text-[14px] font-black tabular-nums leading-tight whitespace-nowrap">tot. −{malusTotStorico.toFixed(2).replace(".", ",")} €</span>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                         <div className="text-2xl font-black tabular-nums leading-tight">{n}</div>
@@ -1997,7 +2085,8 @@ function CallerPageInner() {
                                 card-filtro, totali per collaboratore, tabella episodi.
                                 malusAttuali = vista coerente col filtro anche senza scritture;
                                 versione = ricarica a sincronizzazione finita (dati POST-sync) */}
-                            {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} malusAttuali={malusAttuali} versione={malusSyncVersione} onClose={() => setShowArchivioMalus(false)} />}
+                            {showArchivioMalus && <ArchivioMalusCaller puoCompensare={isDirector && (puoRegoleCaller || ["amministrativo", "direttore_generale"].includes(user?.role || ""))} utente={user?.name || "—"} soloCaller={isDirector ? undefined : currentCaller} malusAttuali={malusAttuali} versione={malusSyncVersione} onClose={() => setShowArchivioMalus(false)}
+                                onApriPratica={(id) => { const c = calls.find((x) => String(x.id) === String(id)); if (c) { setShowArchivioMalus(false); openDetail(c); } }} />}
 
                             {/* Filter bar */}
                             <div className="glass-panel p-5">
@@ -2122,6 +2211,7 @@ function CallerPageInner() {
                                                 {/* COLONNA APPUNTAMENTO (03/08): la data si vede da fuori;
                                                     vuota quando lo stato non prevede una data */}
                                                 <td className="px-4 py-3 whitespace-nowrap">
+                                                    <div className="flex flex-col items-start gap-1">
                                                     {APP_STATI.includes(c.stato) && c.data_appuntamento ? (
                                                         <span title={`Appuntamento del ${formatDate(c.data_appuntamento)}${eFascia(c.fascia_appuntamento) ? ` · ${fasciaLabel(c.fascia_appuntamento)}` : ""}${c.negozio_appuntamento ? ` · ${c.negozio_appuntamento}` : ""}`}
                                                             className="px-2 py-1 rounded-full text-[11px] font-bold border bg-purple-500/10 border-purple-500/40 text-purple-300">
@@ -2133,6 +2223,18 @@ function CallerPageInner() {
                                                             ⏰ {formatDateShort(c.data_richiamo)}{c.fascia_richiamo === "mattina" ? " ☀️" : c.fascia_richiamo === "pomeriggio" ? " 🌇" : ""}
                                                         </span>
                                                     ) : null}
+                                                    {/* fix 10/08: l'ESITO DEL NEGOZIO si vede anche qui */}
+                                                    {(() => {
+                                                        const en = esitiNegozio[String((c as { appointment_id?: number | string | null }).appointment_id ?? "")];
+                                                        if (!en || en.status === "scheduled" || !ESITO_NEG_LBL[en.status]) return null;
+                                                        return (
+                                                            <span title={en.esito_note || "Esito del punto vendita"}
+                                                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${ESITO_NEG_LBL[en.status].cls}`}>
+                                                                🏬 {ESITO_NEG_LBL[en.status].l}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                    </div>
                                                 </td>
                                                 {/* CESTINO in coda, dopo l'Appuntamento (Luca 03/08) */}
                                                 <td className="px-2 py-3 text-right whitespace-nowrap">
@@ -2837,6 +2939,20 @@ function CallerPageInner() {
                                         </>
                                     )}
 
+                                    {/* fix 10/08: box ESITO DEL NEGOZIO — la stessa verità del calendario */}
+                                    {(() => {
+                                        const en = esitiNegozio[String((editCall as { appointment_id?: number | string | null }).appointment_id ?? "")];
+                                        if (!en || en.status === "scheduled") return null;
+                                        const lb = ESITO_NEG_LBL[en.status] || { l: en.status, cls: "bg-slate-500/10 border-slate-500/40 text-slate-300" };
+                                        return (
+                                            <div className="p-3 rounded-xl border border-white/10 bg-white/[0.03] flex items-center gap-2.5 flex-wrap">
+                                                <span className="text-lg">🏬</span>
+                                                <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border ${lb.cls}`}>{lb.l}</span>
+                                                <span className="text-[11px] text-slate-400">Esito del punto vendita sull&apos;appuntamento{en.date ? ` del ${formatDateShort(en.date)}` : ""}{en.store ? ` — ${en.store}` : ""}</span>
+                                                {en.esito_note && <span className="w-full text-[11px] text-slate-400 italic">&ldquo;{en.esito_note}&rdquo;</span>}
+                                            </div>
+                                        );
+                                    })()}
                                     <SectionTitle>Aggiorna Stato</SectionTitle>
                                     <div className="p-4 bg-black/20 border border-white/5 rounded-xl space-y-3">
                                         <div className="flex items-center gap-3">

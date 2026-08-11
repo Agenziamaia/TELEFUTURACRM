@@ -48,7 +48,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     // amministrabili da Amministrazione → Utenti → Permessi). Default storici:
     // timbra = area call center; supervisione = ruoli manageriali tranne il
     // Back Office/Caller, che timbra come un caller.
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const puoTimbrare = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TIMBRA, capPerms);
     const vistaTeam = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TEAM, capPerms);
     const status: "off" | "running" | "paused" = !activeShift ? "off" : activeShift.pause_started_at ? "paused" : "running";
@@ -87,7 +87,12 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
     // turni chiusi. Fotografia di TUTTO il team come i contatori accanto
     // (Presenti ora / Totale ore): NON seguono i filtri dello storico e si
     // rinfrescano da soli ogni minuto.
-    const vistaDirezione = vistaTeam && !puoTimbrare;
+    // MOD-11b (Luca 10/08): la vista supervisione è UNA SOLA — il direttore
+    // (timbra+team) vede ESATTAMENTE i quadri dell'amministrativo; il suo stato
+    // personale sta già nella barra compatta di timbratura sopra. Le due viste
+    // sono quindi: operatore (KPI personali + card grande) e supervisore
+    // (quadri team), con la barra badge in più per chi timbra E supervisiona.
+    const vistaDirezione = vistaTeam;
     const [dirStats, setDirStats] = useState<{
         pause: number; pauseMin: number; inPausaOra: number;
         entrati: number;
@@ -283,9 +288,32 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                 )}
             </div>
 
+            {/* IBRIDO (MOD-11, Luca 08/08): chi timbra E supervisiona vede una
+                barra di timbratura COMPATTA — stessa logica/stato della card
+                grande (nessun doppio stato del turno) — così i pannelli team
+                prendono tutta la larghezza. La card grande resta a chi SOLO timbra. */}
+            {puoTimbrare && vistaTeam && (
+                <div className="glass-panel p-4 flex items-center gap-4 flex-wrap border-l-4 border-l-indigo-500">
+                    <div className="flex items-center gap-2">
+                        <div className={cn("w-2.5 h-2.5 rounded-full animate-pulse", status === "running" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : status === "paused" ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]" : "bg-slate-600")} />
+                        <span className="text-sm font-bold text-white uppercase tracking-tight">{labelStatus}</span>
+                    </div>
+                    <div className="text-2xl font-black text-white tabular-nums tracking-tighter">
+                        {Math.floor(todaySeconds / 3600).toString().padStart(2, "0")}:{String(Math.floor(todaySeconds / 60) % 60).padStart(2, "0")}<span className="text-base text-slate-400">:{String(todaySeconds % 60).padStart(2, "0")}</span>
+                    </div>
+                    {activeShift?.started_at && <span className="text-[11px] font-bold text-slate-400">Entrata {new Date(activeShift.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</span>}
+                    <div className="flex items-center gap-2 ml-auto">
+                        {canStart && <button onClick={handleStart} disabled={loading} className="h-10 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs tracking-wide transition-all active:scale-95 disabled:opacity-50">▶ Inizia turno</button>}
+                        {canPause && <button onClick={handlePause} className="h-10 px-4 rounded-xl bg-amber-500/20 text-amber-500 border border-amber-500/30 hover:bg-amber-500/30 font-bold text-xs tracking-wide transition-all active:scale-95">⏸ Pausa</button>}
+                        {canResume && <button onClick={handleResume} className="h-10 px-4 rounded-xl bg-emerald-500 text-white font-bold text-xs tracking-wide transition-all active:scale-95">▶ Riprendi</button>}
+                        {canStop && <button onClick={handleStop} className="h-10 px-4 rounded-xl bg-rose-500 text-white font-bold text-xs tracking-wide transition-all active:scale-95">■ Fine turno</button>}
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-                {/* Badge Action Card — solo call center */}
-                {puoTimbrare && <div className="xl:col-span-4 glass-card p-8 flex flex-col items-center text-center relative overflow-hidden group">
+                {/* Badge Action Card grande — solo chi timbra e NON supervisiona */}
+                {puoTimbrare && !vistaTeam && <div className="xl:col-span-4 glass-card p-8 flex flex-col items-center text-center relative overflow-hidden group">
                     {/* Decorative background logo icon */}
                     <Clock className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 text-white/5 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700" />
 
@@ -372,7 +400,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
                 </div>}
 
                 {/* Dashboard admin/Team View: senza card timbratura occupa TUTTA la larghezza */}
-                <div className={cn(puoTimbrare ? "xl:col-span-8" : "xl:col-span-12", "flex flex-col gap-6 min-w-0")}>
+                <div className={cn((puoTimbrare && !vistaTeam) ? "xl:col-span-8" : "xl:col-span-12", "flex flex-col gap-6 min-w-0")}>
                     {vistaTeam ? (
                         <>
                             <BadgeAdminDashboard onRefresh={async () => { await fetchActiveShift(); await fetchTeamStats(); }} />
@@ -397,7 +425,7 @@ export function BadgeAndDashboard({ isAdminLike }: { isAdminLike: boolean }) {
 
 function BadgeAdminDashboard({ onRefresh }: { onRefresh: () => void }) {
     const { user } = useAuth();   // serve per il tasto "Esporta ore" (segn.83)
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const [shifts, setShifts] = useState<ShiftRow[]>([]);
     const [filterPerson, setFilterPerson] = useState("");
     const [filterStore, setFilterStore] = useState("");
@@ -770,7 +798,7 @@ function StoricoPersonale({ nome, parte = "tutto" }: { nome: string; parte?: "kp
 
 function PresenzeAdmin() {
     const { user } = useAuth();
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     // Correzione ED eliminazione turni dalla ROTELLINA (Luca 05/08, cap
     // corregge_turni): prima cancellare era solo-admin (25/07) e correggere
     // era codice fisso "amministrativo in su" — ora un interruttore unico.
@@ -1217,7 +1245,7 @@ function TimelineTurnoModal({ shift, onClose }: { shift: ShiftRow; onClose: () =
     Si mostra solo a chi ha la capacita' di timbratura (cap timbra). */
 export function BadgeWidget() {
     const { user } = useAuth();
-    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade);
+    const { perms: capPerms } = useRolePermissions(user?.role, user?.grade, user?.id);
     const puoTimbrare = capAllowed(user?.role, BADGE_SECTION, CAP_BADGE_TIMBRA, capPerms);
     const [shift, setShift] = useState<ShiftRow | null>(null);
     const [sec, setSec] = useState(0);

@@ -19,7 +19,7 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors,
+    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -111,14 +111,21 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
         ],
     },
+    // CALCOLATORE $$$ (cantiere GARE 10/08): registra-vendita riassunto che
+    // dice il commissioning di una vendita alla soglia scelta (pay tabellare).
+    // Link autonomo SOTTO il gruppo Negozio, prima di Calendario (Luca 10/08).
+    // Per ora admin/dev: si apre ai ragazzi quando arriva la vista gare.
+    { type: "link", name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: EVERYONE },
     { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
     { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
     { type: "link", name: "Assistente AI", href: "/assistente", icon: Sparkles, roles: MANAGERS },
-    // Conto economico per punto vendita (cantiere 07/08): replica del foglio
-    // 'Costi & Ricavi' — direzione; altri ruoli concedibili dalla matrice Permessi
-    { type: "link", name: "Conto Economico", href: "/conto-economico", icon: Euro, roles: ADMINS },
+    // Conto economico per PV: sezione RIMOSSA su direttiva Luca 07/08 — si
+    // rifà da capo (grafica CRM) DOPO che avrà dato compensi/soglie/target/
+    // bonus/malus per operatore; le tabelle ce_* a DB restano dormienti.
+    // Riunioni (deck builder): sezione MESSA DA PARTE su task Luca 10/08 —
+    // si riprenderà più avanti come sviluppo dedicato (riunione_deck resta a DB).
     {
         type: "hub",
         name: "Gare",
@@ -140,6 +147,7 @@ export const NAVIGATION: NavEntry[] = [
                     { id: "sky", name: "Sky", roles: ["admin", "dev"], color: "var(--tf-0072c6)" },
                     { id: "s4", name: "S4", roles: ["admin", "dev"], color: "var(--tf-28a745)" },
                     { id: "tim", name: "TIM", roles: ["admin", "dev"], color: "var(--tf-0050ff)" },
+                    { id: "kena", name: "Kena", roles: ["admin", "dev"], color: "#F5A623" },
                     { id: "dojo", name: "Dojo", roles: ["admin", "dev"], color: "var(--tf-14b8a6)" },
                 ],
             },
@@ -148,6 +156,8 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Direzione Inserimento", sez: "direzione", icon: Compass, roles: ["admin", "dev"] },
         ],
     },
+    // (il Calcolatore $$$ vive SOPRA, sotto il gruppo Negozio — il doppione
+    // che stava qui è stato rimosso su segnalazione di Luca 11/08)
     {
         type: "hub",
         name: "Amministrazione",
@@ -192,6 +202,8 @@ export const NAVIGATION: NavEntry[] = [
             // articoli ordinabili di Ordine Merce (Luca 01/08): amministrativo in su
             { name: "Ordine Merce", sez: "ordinemerce", icon: Package, roles: [...ADMINS, "amministrativo"] },
             { name: "Calendario", sez: "calendario", icon: CalendarDays, roles: ["admin", "dev"] },
+            // Esiti del Tracking PDA per categoria (MOD-28, Luca 10/08)
+            { name: "Tracking PDA", sez: "trackingesiti", icon: Radar, roles: ["admin", "dev"] },
             // Target, Direzione Inserimento e Obiettivi Home sono TRASLOCATI
             // nell'hub Gare (Luca 03/08) — vedi sopra.
         ],

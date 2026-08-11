@@ -10,12 +10,19 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { areaOf } from "@/lib/roles";
 import { registraTelefono, registraApriTelefono, segnalaTelefonoConnesso } from "@/lib/dialer";
 
 export function AircallPhoneDock() {
     const { user } = useAuth();
+    // Luca 10/08: il bottone flottante in basso resta SOLO nella sezione
+    // caller; nelle altre sezioni il telefono si apre dal ☎ nell'header e il
+    // pannello compare in alto a destra (sotto le icone) — l'iframe e' sempre
+    // lo stesso, montato nel layout: la chiamata non cade mai.
+    const pathname = usePathname();
+    const inCaller = (pathname || "").startsWith("/caller");
     const [open, setOpen] = useState(false);
     const [avviato, setAvviato] = useState(false);
     const [connesso, setConnesso] = useState(false);
@@ -61,7 +68,7 @@ export function AircallPhoneDock() {
             {/* AZIONE PRIMARIA della pagina (gerarchia Luca 26/07): il telefono.
                 Sempre verde, ben ancorato in basso a destra; il pallino dice se
                 la sessione Aircall e' connessa. */}
-            <button
+            {inCaller && <button
                 onClick={() => setOpen(!open)}
                 title={open ? "Chiudi il telefono" : connesso ? "Telefono Aircall — connesso" : "Apri il telefono Aircall per chiamare"}
                 className={`fixed bottom-6 right-6 z-[900] w-14 h-14 rounded-full flex items-center justify-center border transition-all ring-1 ring-white/10 ${open ? "bg-rose-600/90 hover:bg-rose-500 border-rose-400/40 shadow-lg shadow-rose-900/40" : "bg-gradient-to-br from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 border-white/15 shadow-lg shadow-indigo-950/60 hover:scale-105"} text-white`}
@@ -70,11 +77,11 @@ export function AircallPhoneDock() {
                 {!open && (
                     <span className={`absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0a0c10] ${connesso ? "bg-emerald-300 animate-pulse" : "bg-slate-500"}`} title={connesso ? "Connesso" : "Accedi al primo utilizzo"} />
                 )}
-            </button>
+            </button>}
             {/* pannello sempre montato dopo il primo avvio: si nasconde, non si smonta */}
             <div
-                className={`fixed bottom-20 right-5 z-[900] rounded-2xl overflow-hidden border border-white/15 shadow-2xl bg-[#0f1420] ${open ? "" : "hidden"}`}
-                style={{ width: 376, height: 620 }}
+                className={`fixed z-[900] rounded-2xl overflow-hidden border border-white/15 shadow-2xl bg-[#0f1420] ${inCaller ? "bottom-20 right-5" : "top-16 right-4"} ${open ? "" : "hidden"}`}
+                style={{ width: 376, height: 620, maxHeight: "calc(100vh - 90px)" }}
             >
                 <div className="h-9 px-3 flex items-center justify-between bg-white/[0.04] border-b border-white/10">
                     <span className="text-xs font-bold text-slate-300">☎ Telefono Aircall {connesso ? "· connesso" : "· accedi con le tue credenziali Aircall"}</span>

@@ -10,6 +10,7 @@
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { SelectPersona } from "@/components/SelectPersona";
+import { FiltroMulti } from "@/components/FiltroMulti";
 import { getCat, regolaDi, fermaMalus } from "./trackingHelpers";
 import { type EpisodioMalus, totaliEpisodi, formatDataIt } from "./malusStorico";
 
@@ -57,6 +58,14 @@ export function ArchivioMalus({
   // deep-link dalla scheda utente (Luca 02/08): archivio gia' filtrato su di lui
   const [venditoreSel, setVenditoreSel] = useState(venditoreIniziale || "");
   const [search, setSearch] = useState("");
+  // MOD-24 (Luca 10/08): filtri periodo/categoria/negozio + sort sulle colonne
+  // categoria/negozio = FiltroMulti STANDARD del CRM (null = tutto, come ovunque)
+  const [dataDa, setDataDa] = useState("");
+  const [dataA, setDataA] = useState("");
+  const [categoriaSel, setCategoriaSel] = useState<string[] | null>(null);
+  const [negozioSel, setNegozioSel] = useState<string[] | null>(null);
+  const [sortKey, setSortKey] = useState<"nominativo" | "categoria" | "brand" | "negozio" | "venditore" | "data_inizio" | "data_fine" | "giorni" | "importo" | "stato" | "">("");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [confermaId, setConfermaId] = useState<string | null>(null);
   const [eliminaId, setEliminaId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -65,11 +74,16 @@ export function ArchivioMalus({
   const statoDi = (e: EpisodioMalus): "in_corso" | "attivo" | "compensato" =>
     e.stato === "compensato" ? "compensato" : e.data_fine === null ? "in_corso" : "attivo";
 
-  // Filtri trasversali (ricerca + venditore); le card di riepilogo filtrano lo stato.
+  // Filtri trasversali (ricerca + venditore + periodo/categoria/negozio, MOD-24);
+  // le card di riepilogo filtrano lo stato. Periodo sul giorno di INIZIO malus.
   const filtratiBase = useMemo(() => {
     const q = search.trim().toLowerCase();
     return episodi.filter((e) => {
       if (venditoreSel && (e.venditore || "—") !== venditoreSel) return false;
+      if (dataDa && (e.data_inizio || "") < dataDa) return false;
+      if (dataA && (e.data_inizio || "") > dataA) return false;
+      if (categoriaSel !== null && !categoriaSel.includes(e.categoria || "—")) return false;
+      if (negozioSel !== null && !negozioSel.includes(e.negozio || "—")) return false;
       if (q) {
         const match = [e.nominativo, e.venditore, e.negozio, e.brand, e.categoria]
           .some((v) => (v || "").toLowerCase().includes(q));
@@ -77,7 +91,9 @@ export function ArchivioMalus({
       }
       return true;
     });
-  }, [episodi, venditoreSel, search]);
+  }, [episodi, venditoreSel, search, dataDa, dataA, categoriaSel, negozioSel]);
+  const categorie = useMemo(() => Array.from(new Set(episodi.map((e) => e.categoria || "—"))).sort(), [episodi]);
+  const negozi = useMemo(() => Array.from(new Set(episodi.map((e) => e.negozio || "—"))).sort(), [episodi]);
 
   const filtrati = useMemo(
     () => filtratiBase.filter((e) => statoSel === "tutti" || statoDi(e) === statoSel),
@@ -109,10 +125,28 @@ export function ArchivioMalus({
     return [...m.entries()].sort((a, b) => (b[1].inCorso + b[1].attivi) - (a[1].inCorso + a[1].attivi));
   }, [filtratiBase]);
 
-  const ordinati = useMemo(
-    () => [...filtrati].sort((a, b) => (b.data_inizio || "").localeCompare(a.data_inizio || "")),
-    [filtrati]
-  );
+  // MOD-24: sort per colonna (default: inizio più recente). data_fine NULL =
+  // episodio IN CORSO → nel sort vale come "oggi/futuro", non finisce in fondo.
+  const doSort = (k: typeof sortKey) => {
+    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(k); setSortDir("asc"); }
+  };
+  const freccia = (k: typeof sortKey) => (sortKey === k ? (sortDir === "asc" ? " ↑" : " ↓") : "");
+  const ordinati = useMemo(() => {
+    const arr = [...filtrati];
+    if (!sortKey) return arr.sort((a, b) => (b.data_inizio || "").localeCompare(a.data_inizio || ""));
+    const val = (e: EpisodioMalus): string | number => {
+      if (sortKey === "giorni" || sortKey === "importo") return Number(e[sortKey]) || 0;
+      if (sortKey === "data_fine") return e.data_fine || "9999-12-31";   // in corso in testa sul desc
+      if (sortKey === "stato") return statoDi(e);
+      return String(e[sortKey as keyof EpisodioMalus] ?? "").toLowerCase();
+    };
+    return arr.sort((a, b) => {
+      const va = val(a), vb = val(b);
+      const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [filtrati, sortKey, sortDir]);
 
   const setCompensato = async (ep: EpisodioMalus, compensa: boolean) => {
     setSalvando(true);
@@ -185,6 +219,8 @@ export function ArchivioMalus({
 
   const thStyle =
     "py-2 px-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/10 whitespace-nowrap";
+  // MOD-24: intestazione cliccabile per il sort
+  const thSort = thStyle + " cursor-pointer select-none hover:text-slate-300 transition-colors";
   const tdStyle = "py-2 px-3 border-b border-white/5 text-[12px]";
 
   return (
@@ -196,7 +232,7 @@ export function ArchivioMalus({
       aria-label="Archivio Malus"
     >
       <div
-        className="bg-[#0e1526] border border-white/10 rounded-2xl w-full max-w-[1150px] max-h-[90vh] overflow-y-auto shadow-2xl"
+        className="bg-[#0e1526] border border-white/10 rounded-2xl w-[98vw] h-[94vh] max-w-none overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between py-5 px-7 border-b border-white/10 sticky top-0 bg-[#12141f] z-10">
@@ -238,8 +274,8 @@ export function ArchivioMalus({
                   tabIndex={0}
                   onClick={() => setStatoSel(c.id)}
                   onKeyDown={(e) => e.key === "Enter" && setStatoSel(c.id)}
-                  className="rounded-xl border p-3.5 cursor-pointer select-none transition-all"
-                  style={{ background: active ? c.color + "22" : "var(--tf-1e293b)", borderColor: active ? c.color : "var(--tf-334155)" }}
+                  className={"rounded-xl border p-3.5 cursor-pointer select-none transition-all" + (active ? "" : " bg-white/[0.03] border-white/10 hover:bg-white/[0.06]")}
+                  style={active ? { background: c.color + "22", borderColor: c.color } : undefined}
                 >
                   <div className="text-xl font-bold" style={{ color: c.color }}>{eur(c.val)}</div>
                   <div className="text-[11px] mt-0.5 font-medium" style={{ color: active ? c.color : "var(--tf-94a3b8)" }}>
@@ -260,7 +296,7 @@ export function ArchivioMalus({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Cerca per cliente, venditore, negozio, brand…"
-                className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 pl-9 outline-none w-full box-border"
+                className="glass-input w-full text-sm pl-9"
               />
             </div>
             {venditori.length > 1 && (
@@ -273,6 +309,28 @@ export function ArchivioMalus({
                   className="bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none w-full"
                 />
               </div>
+            )}
+            {/* MOD-24: periodo (sul giorno di inizio malus) + categoria + punto
+                vendita — tendine FiltroMulti STANDARD del CRM (multi-selezione) */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase font-bold text-slate-500">Periodo</span>
+              <input type="date" value={dataDa} onChange={(e) => setDataDa(e.target.value)} title="Dal giorno di inizio"
+                className="glass-input text-sm py-2" />
+              <span className="text-slate-600 text-xs">→</span>
+              <input type="date" value={dataA} onChange={(e) => setDataA(e.target.value)} title="Al giorno di inizio"
+                className="glass-input text-sm py-2" />
+            </div>
+            <div className="min-w-[190px]">
+              <FiltroMulti values={categoriaSel} onChange={setCategoriaSel} opzioni={categorie} etichettaTutti="Tutte le categorie" />
+            </div>
+            <div className="min-w-[190px]">
+              <FiltroMulti values={negozioSel} onChange={setNegozioSel} opzioni={negozi} etichettaTutti="Tutti i punti vendita" />
+            </div>
+            {(dataDa || dataA || categoriaSel !== null || negozioSel !== null) && (
+              <button type="button" onClick={() => { setDataDa(""); setDataA(""); setCategoriaSel(null); setNegozioSel(null); }}
+                className="text-[11px] font-bold text-slate-400 hover:text-white border border-white/10 rounded-lg py-2 px-3 bg-white/[0.03] hover:bg-white/[0.06]">
+                ✕ Pulisci filtri
+              </button>
             )}
           </div>
 
@@ -331,16 +389,17 @@ export function ArchivioMalus({
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-white/[0.04]">
-                      <th className={thStyle}>Cliente</th>
-                      <th className={thStyle}>Categoria</th>
-                      <th className={thStyle}>Brand</th>
-                      <th className={thStyle}>Negozio</th>
-                      <th className={thStyle}>Venditore</th>
-                      <th className={thStyle}>Inizio</th>
-                      <th className={thStyle}>Fine</th>
-                      <th className={thStyle + " text-center"}>GG</th>
-                      <th className={thStyle + " text-right"}>Importo</th>
-                      <th className={thStyle}>Stato</th>
+                      {/* MOD-24: intestazioni cliccabili per il sort (↑/↓) */}
+                      <th className={thSort} onClick={() => doSort("nominativo")}>Cliente{freccia("nominativo")}</th>
+                      <th className={thSort} onClick={() => doSort("categoria")}>Categoria{freccia("categoria")}</th>
+                      <th className={thSort} onClick={() => doSort("brand")}>Brand{freccia("brand")}</th>
+                      <th className={thSort} onClick={() => doSort("negozio")}>Negozio{freccia("negozio")}</th>
+                      <th className={thSort} onClick={() => doSort("venditore")}>Venditore{freccia("venditore")}</th>
+                      <th className={thSort} onClick={() => doSort("data_inizio")}>Inizio{freccia("data_inizio")}</th>
+                      <th className={thSort} onClick={() => doSort("data_fine")}>Fine{freccia("data_fine")}</th>
+                      <th className={thSort + " text-center"} onClick={() => doSort("giorni")}>GG{freccia("giorni")}</th>
+                      <th className={thSort + " text-right"} onClick={() => doSort("importo")}>Importo{freccia("importo")}</th>
+                      <th className={thSort} onClick={() => doSort("stato")}>Stato{freccia("stato")}</th>
                       {(canCompensare || puoEliminare) && <th className={thStyle}></th>}
                     </tr>
                   </thead>

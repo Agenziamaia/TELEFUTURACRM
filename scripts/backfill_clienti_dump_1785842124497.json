@@ -1,0 +1,464 @@
+[
+ {
+  "id": "3ce05d44-cc10-44b8-a626-a42cc0853c82",
+  "aircall_call_id": "3994688212",
+  "cliente_num": "+39 375 860 4971",
+  "client_id": "CL-18626771002-1785515784711",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "09c68ebb-d628-42ed-bb69-4999e5124c1e",
+  "aircall_call_id": "3999097883",
+  "cliente_num": "+39 320 564 6786",
+  "client_id": "CL-FBRRRT72R49H501I-1785762353241",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "d150fa22-5f70-41f4-a73c-1e0e70310fc1",
+  "aircall_call_id": "3999217857",
+  "cliente_num": "+39 320 624 2265",
+  "client_id": "CL-CCTGRG91P55H501A-1785498131442",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "0dd88b68-d8b4-4fc8-9023-f05ad288fc6f",
+  "aircall_call_id": "3999847145",
+  "cliente_num": "+39 333 935 4352",
+  "client_id": "CL-14309771005-1785503927388",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "149f4b2a-96b5-41a1-b568-9d2b6d8a2456",
+  "aircall_call_id": "4001167014",
+  "cliente_num": "+39 333 935 4352",
+  "client_id": "CL-14309771005-1785503927388",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "e742ee81-6f16-4087-aac4-911cc6968d0c",
+  "aircall_call_id": "4013739338",
+  "cliente_num": "+39 320 858 5042",
+  "client_id": "CL-LLLTRS83B55A048Y-1785581354869",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "66ba114a-65df-4e1c-8c5d-fef96144c9f2",
+  "aircall_call_id": "4002693886",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "42c88710-02ac-4bfc-b2f8-a860e47f826f",
+  "aircall_call_id": "4002669573",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "3a090dd1-5995-4cd5-b1d3-26fcb1c728d3",
+  "aircall_call_id": "4001047118",
+  "cliente_num": "+39 333 935 4352",
+  "client_id": "CL-14309771005-1785503927388",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "c0ffc4f4-1961-4ddb-9176-f5c604ae6d31",
+  "aircall_call_id": "4002717183",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "ec4d0edb-b84f-4921-ad80-347ab2df4c45",
+  "aircall_call_id": "4002726161",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "30fcf3e1-57e9-4623-bd60-32790a14c650",
+  "aircall_call_id": "4002795159",
+  "cliente_num": "+39 333 935 4352",
+  "client_id": "CL-14309771005-1785503927388",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "2aade3c1-2a61-4387-b7fa-fc57239b60df",
+  "aircall_call_id": "4002812617",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "e19099e5-3826-4d82-aa7b-58d444087368",
+  "aircall_call_id": "4002997550",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "abec44c8-9c53-4795-ba28-ec2a41bef93e",
+  "aircall_call_id": "4008707921",
+  "cliente_num": "+39 348 044 7956",
+  "client_id": "CL-GNNLGU64D01H501K-1785492632442",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "2aca57af-b68f-4d33-946c-27a5b9af5a37",
+  "aircall_call_id": "4004017293",
+  "cliente_num": "+39 392 132 0452",
+  "client_id": "CL-DRZFNC65B18H501E-1785427522032",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "0066dcf7-2541-44d2-86a3-bacb330bf202",
+  "aircall_call_id": "4014035386",
+  "cliente_num": "+39 328 422 0442",
+  "client_id": "CL-PRASLL07S60H501X-1785607900336",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "bd5cb8a2-0729-4cb7-87b7-591139c1cf22",
+  "aircall_call_id": "4006910496",
+  "cliente_num": "+39 328 069 1365",
+  "client_id": "CL-BRBPRZ59C67H501F-1785494285596",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "5963352e-af88-4333-a9df-732440949ac1",
+  "aircall_call_id": "4004318088",
+  "cliente_num": "+39 334 273 1581",
+  "client_id": "CL-MRNCRL97B67H501R-1785497901646",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "128002f8-fe8c-49aa-abd5-f2a44b072341",
+  "aircall_call_id": "4006787243",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "8e31ca8b-12ec-4041-bd47-4d029efa68d9",
+  "aircall_call_id": "4004694718",
+  "cliente_num": "+39 375 860 4971",
+  "client_id": "CL-18626771002-1785515784711",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "361bf883-d50e-4a2d-aee0-95b535745fb1",
+  "aircall_call_id": "4010987214",
+  "cliente_num": "+39 320 604 0691",
+  "client_id": "CL-CNTNNA64B63H501N-1785490945328",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "caea2e15-133b-4bc7-82d4-ba1685b9f0d9",
+  "aircall_call_id": "4006897127",
+  "cliente_num": "+39 328 069 1365",
+  "client_id": "CL-BRBPRZ59C67H501F-1785494285596",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "f9fb214a-969b-4d76-851d-01c191175f37",
+  "aircall_call_id": "4011926630",
+  "cliente_num": "+39 349 470 8050",
+  "client_id": "CL-09414350588-1785505463766",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "472e2c51-82f6-453c-ade7-27ecc618871e",
+  "aircall_call_id": "4011926242",
+  "cliente_num": "+39 349 470 8050",
+  "client_id": "CL-09414350588-1785505463766",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "977206ba-534a-4a79-8279-34500c2c8fb8",
+  "aircall_call_id": "4011927341",
+  "cliente_num": "+39 349 470 8050",
+  "client_id": "CL-09414350588-1785505463766",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "f3db42ad-aacf-4340-82f2-90a9501d6677",
+  "aircall_call_id": "4008747880",
+  "cliente_num": "+39 351 745 6217",
+  "client_id": "CL-CLNMRT67L60H501Y-1785745301385",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "d093301f-3de4-41b8-b209-69315ffd8aac",
+  "aircall_call_id": "3999308606",
+  "cliente_num": "+39 331 244 7989",
+  "client_id": "CL-CPPPLA67D43H501Y-1785493355945",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "d3a9e3b0-5247-49c0-914f-5a83a78f5ab4",
+  "aircall_call_id": "4008706618",
+  "cliente_num": "+39 348 044 7956",
+  "client_id": "CL-GNNLGU64D01H501K-1785492632442",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "e6e31d9e-b14c-471a-8f65-a9c305fcd91b",
+  "aircall_call_id": "4008705723",
+  "cliente_num": "+39 348 044 7956",
+  "client_id": "CL-GNNLGU64D01H501K-1785492632442",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "1b6d8e8f-2308-42aa-bb3e-468e855423ff",
+  "aircall_call_id": "4008707108",
+  "cliente_num": "+39 348 044 7956",
+  "client_id": "CL-GNNLGU64D01H501K-1785492632442",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "260766d1-0ec4-4a23-a29f-a5caaccf4caa",
+  "aircall_call_id": "4008708639",
+  "cliente_num": "+39 348 044 7956",
+  "client_id": "CL-GNNLGU64D01H501K-1785492632442",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "50cf1442-a28d-4da8-a9b0-38c721ae00eb",
+  "aircall_call_id": "4011184528",
+  "cliente_num": "+39 333 971 7447",
+  "client_id": "CL-TRNRRT79H47B354Z-1785751560301",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "4d36d973-c647-4c4b-bee0-e934e9eae9be",
+  "aircall_call_id": "4011981310",
+  "cliente_num": "+39 338 657 1782",
+  "client_id": "CL-BCCGRL60T57E955W-1785584423820",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "c565a814-5c69-4153-b278-5ffa4a24ba5a",
+  "aircall_call_id": "4011988959",
+  "cliente_num": "+39 328 127 1282",
+  "client_id": "CL-FRRFRC86E44G482Y-1785574468410",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "719cfcbb-c6a8-42da-ba72-56a7302ac821",
+  "aircall_call_id": "4004157473",
+  "cliente_num": "+39 320 575 3069",
+  "client_id": "CL-MNCMLC63D61D843O-1785495840131",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "e4c904c0-5487-4585-9d20-f8cf995c7867",
+  "aircall_call_id": "4012046659",
+  "cliente_num": "+39 393 460 6793",
+  "client_id": "CL-GRDFBA71M25H501L-1785507002027",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "c4aefefc-9c2d-4696-a555-25c349cc1e5d",
+  "aircall_call_id": "4011277143",
+  "cliente_num": "+39 392 004 9267",
+  "client_id": "CL-RCCLND76A13H501X-1785517528718",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "33914f39-a381-4dd5-910f-8a40d3d1107c",
+  "aircall_call_id": "4013656157",
+  "cliente_num": "+39 333 971 7447",
+  "client_id": "CL-TRNRRT79H47B354Z-1785751560301",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "e8b99b1a-8c22-496b-ab89-4c6027e96eb2",
+  "aircall_call_id": "3995964223",
+  "cliente_num": "+39 388 933 9727",
+  "client_id": "CL-PTRVLR76E09H501P-1785495282591",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "4596f1be-8a22-411a-8ce5-bab2e21b6d82",
+  "aircall_call_id": "4013657917",
+  "cliente_num": "+39 351 633 9572",
+  "client_id": "CL-VCRMTT94C19H501H-1785605875065",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "bcd67ed3-71e8-4139-82b8-c80b8188396a",
+  "aircall_call_id": "4013659606",
+  "cliente_num": "+39 351 633 9572",
+  "client_id": "CL-VCRMTT94C19H501H-1785605875065",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "375e12bb-b5ce-4931-a260-3468e85db042",
+  "aircall_call_id": "4015929898",
+  "cliente_num": "+39 389 642 4636",
+  "client_id": "CL-DLLDRA79E14H501U-1785767709090",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "11bc0e76-2195-416e-9971-f14b7ad80883",
+  "aircall_call_id": "4013900599",
+  "cliente_num": "+39 329 627 0840",
+  "client_id": "CL-VRDCLD69T67H501U-1785605960462",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "5d3fcdc9-9e63-4660-b900-7d74dc6f94d0",
+  "aircall_call_id": "4015261002",
+  "cliente_num": "+39 347 642 4061",
+  "client_id": "CL-14617071007-1785827676104",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "8fef8bda-184f-47b3-82e0-421c52f6c24f",
+  "aircall_call_id": "4015555422",
+  "cliente_num": "+39 347 642 4061",
+  "client_id": "CL-14617071007-1785827676104",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "1d0a34ba-2302-4db1-99bf-fdd1176c08ef",
+  "aircall_call_id": "4017280840",
+  "cliente_num": "+39 329 205 1885",
+  "client_id": "CL-SCRNGL89M04H501G-1785770396946",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "491e40dd-69f1-46a6-8bca-90873bfefe7f",
+  "aircall_call_id": "4015706600",
+  "cliente_num": "+39 333 971 7447",
+  "client_id": "CL-TRNRRT79H47B354Z-1785751560301",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "df22fa5a-fe8a-4bcb-b6ad-277d5b11c1ca",
+  "aircall_call_id": "4016786179",
+  "cliente_num": "+39 328 387 0253",
+  "client_id": "CL-NTNSDR66E21H501X-1785764900201",
+  "fonte": "client_numeri"
+ },
+ {
+  "id": "9c507f44-8993-4fd1-8acc-09e160cb280a",
+  "aircall_call_id": "4019608122",
+  "cliente_num": "+39 339 399 2147",
+  "client_id": "CL-CLNDNL81S20H501V-1785836182954",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "94710549-fe00-4e0e-94b9-6007c987a61b",
+  "aircall_call_id": "4016926955",
+  "cliente_num": "+39 349 570 5413",
+  "client_id": "CL-CCLMDN58H58E155X-1785777745125",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "9da247db-741f-48be-886f-63812e352fe2",
+  "aircall_call_id": "4016867512",
+  "cliente_num": "+39 335 620 1499",
+  "client_id": "CL-FFTMGR71E52H926C-1785765743991",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "134d2a3b-26b5-4353-af6f-41d29b842c84",
+  "aircall_call_id": "4015933531",
+  "cliente_num": "+39 389 642 4636",
+  "client_id": "CL-DLLDRA79E14H501U-1785767709090",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "b3bc53e9-b196-486c-86af-db5035d6a8bb",
+  "aircall_call_id": "4016898387",
+  "cliente_num": "+39 349 570 5413",
+  "client_id": "CL-CCLMDN58H58E155X-1785777745125",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "952b551a-0149-4707-8629-b191fa27638f",
+  "aircall_call_id": "4016909321",
+  "cliente_num": "+39 349 570 5413",
+  "client_id": "CL-CCLMDN58H58E155X-1785777745125",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "c7fbe781-7cbd-4733-9d2c-6fd7ccf69ee8",
+  "aircall_call_id": "4019614190",
+  "cliente_num": "+39 339 399 2147",
+  "client_id": "CL-CLNDNL81S20H501V-1785836182954",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "3528a08b-5625-4a56-bdfb-e20ab8506840",
+  "aircall_call_id": "4019646158",
+  "cliente_num": "+39 339 399 2147",
+  "client_id": "CL-CLNDNL81S20H501V-1785836182954",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "ca2be5eb-5224-4022-90c3-9736d97193af",
+  "aircall_call_id": "4016034536",
+  "cliente_num": "+39 349 570 5413",
+  "client_id": "CL-CCLMDN58H58E155X-1785777745125",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "ec9de2fe-d23a-489f-aa6a-8e1ad9ae62cb",
+  "aircall_call_id": "4016030559",
+  "cliente_num": "+39 347 729 3001",
+  "client_id": "CL-GRCMRA51P01H501Q-1785752722932",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "0498b713-09f3-47cd-beeb-bd3135c913d9",
+  "aircall_call_id": "4016027751",
+  "cliente_num": "+39 347 729 3001",
+  "client_id": "CL-GRCMRA51P01H501Q-1785752722932",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "2f0fd874-160c-475f-9885-b2dc027fe7cc",
+  "aircall_call_id": "4017075627",
+  "cliente_num": "+39 349 570 5413",
+  "client_id": "CL-CCLMDN58H58E155X-1785777745125",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "fb1655d4-a7d4-4bff-b9c0-518e98c0b07a",
+  "aircall_call_id": "4016494466",
+  "cliente_num": "+39 347 642 4061",
+  "client_id": "CL-14617071007-1785827676104",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "93bc9415-919f-4dc7-a53c-933f87a57eff",
+  "aircall_call_id": "4001012453",
+  "cliente_num": "+39 327 037 7880",
+  "client_id": "CL-MRSKSC77H55H501U-1785257277893",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "bd25e2e0-ff1a-44df-9a37-7999dd8c9455",
+  "aircall_call_id": "4002727077",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "4b204c44-4f52-4211-bdf2-d4dbd2cd54c9",
+  "aircall_call_id": "4002731384",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ },
+ {
+  "id": "24d69058-90d9-4ee9-944c-4bcb2fdac017",
+  "aircall_call_id": "4006824102",
+  "cliente_num": "+39 328 705 5659",
+  "client_id": "CL-TBLCRL93E24H501A-1785485912266",
+  "fonte": "clients.cellulare"
+ }
+]

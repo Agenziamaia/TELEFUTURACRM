@@ -20,8 +20,12 @@ import type { PermMap } from "@/lib/nav";
 
 /** chiave role delle eccezioni di grado in role_permissions */
 export const roleGradeKey = (role: string, grade: string) => `${role}@${grade}`;
+/** PERMESSI PER PERSONA (MOD-29, Luca 10/08): righe role_permissions con
+ *  chiave "user:<app_users.id>" = eccezioni del SINGOLO utente, che vincono
+ *  su grado e ruolo. Ordine di fusione: ruolo → grado → utente. */
+export const userKey = (userId: string) => `user:${userId}`;
 
-export function useRolePermissions(role: string | null | undefined, grade?: string | null): { perms: PermMap | null; loaded: boolean } {
+export function useRolePermissions(role: string | null | undefined, grade?: string | null, userId?: string | null): { perms: PermMap | null; loaded: boolean } {
     const [perms, setPerms] = useState<PermMap | null>(null);
     const [loaded, setLoaded] = useState(false);
 
@@ -33,22 +37,26 @@ export function useRolePermissions(role: string | null | undefined, grade?: stri
         }
         let vivo = true;
         setLoaded(false);
-        const chiavi = grade ? [role, roleGradeKey(role, grade)] : [role];
+        const chiavi = [role];
+        if (grade) chiavi.push(roleGradeKey(role, grade));
+        if (userId) chiavi.push(userKey(userId));
         supabase.from("role_permissions").select("role,perm_key,allowed").in("role", chiavi)
             .then(({ data, error }) => {
                 if (!vivo) return;
                 const m: PermMap = new Map();
                 if (!error) {
                     const rows = (data ?? []) as { role: string; perm_key: string; allowed: boolean }[];
-                    // prima le righe di ruolo, poi le eccezioni di grado SOPRA
+                    // prima le righe di ruolo, poi le eccezioni di grado, poi
+                    // quelle della PERSONA — l'ultimo strato vince
                     rows.filter((r) => r.role === role).forEach((r) => m.set(r.perm_key, r.allowed));
                     if (grade) rows.filter((r) => r.role === roleGradeKey(role, grade)).forEach((r) => m.set(r.perm_key, r.allowed));
+                    if (userId) rows.filter((r) => r.role === userKey(userId)).forEach((r) => m.set(r.perm_key, r.allowed));
                 }
                 setPerms(m);
                 setLoaded(true);
             });
         return () => { vivo = false; };
-    }, [role, grade]);
+    }, [role, grade, userId]);
 
     return { perms, loaded };
 }

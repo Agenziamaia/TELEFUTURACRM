@@ -8,6 +8,7 @@ import {
   STATI_NEGOZIO_ENERGIA,
   STATI_NEGOZIO_SKY,
   STATI_ADMIN,
+  STATI_ADMIN_FINANZIAMENTO,
   type StoriaEvent,
   type TrackingRow,
 } from "./trackingConstants";
@@ -81,12 +82,106 @@ const TUTTI_STATI_NEGOZIO = [
   ...STATI_NEGOZIO_SKY,
 ];
 
-export function getStatoN(id: string) {
+/* ── ESITI AMMINISTRABILI (tabella tracking_esiti, MOD-28 Luca 10/08) ──
+   Con la tabella popolata vincono le righe a DB: etichette, colori, ordine,
+   voci spente e flag "completata" (fine processo). Le liste hardcoded restano
+   i DEFAULT (tabella vuota/mancante) e il vocabolario STORICO: getStatoN e la
+   ricostruzione malus le usano come fallback per chiavi/etichette vecchie. */
+export interface EsitoTracking {
+  categoria: string; chiave: string; etichetta: string;
+  colore: string; bg: string; ordine: number; attiva: boolean; completata: boolean;
+  // €/GIORNO lavorativo quando la pratica sta in QUESTO esito admin (10/08):
+  // usato per il malus da "Non Conforme", configurabile per categoria
+  malus_giorno?: number | null;
+  // 'negozio' (default) | 'admin' — esiti della verifica amministrativa
+  // (segnalazione Luca 10/08: anche l'amministrativo ha esiti per categoria,
+  // col flag "definitiva" che chiude il cerchio della pratica)
+  lato?: string | null;
+  // OPERATORE (Luca 10/08): NULL = lista generale della categoria; valorizzato
+  // (es. 'windtre') = lista specifica che, se esiste, VINCE per quel brand.
+  // Pensato per il fisso, dove gli esiti cambiano da operatore a operatore.
+  brand?: string | null;
+}
+/** chiave-mappa: "fisso" (generale) oppure "fisso§windtre" (per operatore) */
+export const brandEsitiKey = (b: string | null | undefined) =>
+  String(b || "").trim().toLowerCase().replace(/\s+/g, "");
+const _kb = (categoria: string, brand?: string | null) => {
+  const b = brandEsitiKey(brand);
+  return b ? categoria + "§" + b : categoria;
+};
+/** lista per categoria+brand: prima la lista dell'operatore, poi la generale */
+const _lista = (map: Map<string, EsitoTracking[]> | null, categoria: string, brand?: string | null) => {
+  if (!map) return undefined;
+  if (brandEsitiKey(brand)) { const b = map.get(_kb(categoria, brand)); if (b && b.length) return b; }
+  return map.get(categoria);
+};
+let ESITI_DB: Map<string, EsitoTracking[]> | null = null;
+let ESITI_ADMIN_DB: Map<string, EsitoTracking[]> | null = null;
+export function impostaEsitiTracking(rows: EsitoTracking[] | null | undefined) {
+  if (!rows || !rows.length) { ESITI_DB = null; ESITI_ADMIN_DB = null; return; }
+  const m = new Map<string, EsitoTracking[]>();
+  const ma = new Map<string, EsitoTracking[]>();
+  [...rows].sort((a, b) => a.ordine - b.ordine).forEach((r) => {
+    const dest = r.lato === "admin" ? ma : m;
+    const k = _kb(r.categoria, r.brand);
+    const l = dest.get(k) || [];
+    l.push(r);
+    dest.set(k, l);
+  });
+  ESITI_DB = m.size ? m : null;
+  ESITI_ADMIN_DB = ma.size ? ma : null;
+}
+const daEsito = (e: EsitoTracking) => ({ id: e.chiave, label: e.etichetta, color: e.colore, bg: e.bg });
+
+/** Risoluzione chiave→badge. Con categoria (e brand) si cerca PRIMA nella
+ *  lista giusta: dal pannello la stessa chiave puo' avere etichette diverse
+ *  per categoria (es. `attivato` = "Completata" MNP / "Attivo" fisso /
+ *  "Fornitura Attiva" energia) e lo scan globale ne pescherebbe una a caso. */
+export function getStatoN(id: string, categoria?: string, brand?: string | null) {
+  if (ESITI_DB) {
+    if (categoria) {
+      const mia = _lista(ESITI_DB, categoria, brand);
+      const hit = mia?.find((e) => e.chiave === id);
+      if (hit) return daEsito(hit);
+      if (brandEsitiKey(brand)) {
+        const gen = ESITI_DB.get(categoria)?.find((e) => e.chiave === id);
+        if (gen) return daEsito(gen);
+      }
+    }
+    for (const lista of ESITI_DB.values()) {
+      const hit = lista.find((e) => e.chiave === id);
+      if (hit) return daEsito(hit);
+    }
+  }
+  if (categoria) {
+    const s = getStatiNegozioBase(categoria).find((x) => x.id === id);
+    if (s) return s;
+  }
   const s = TUTTI_STATI_NEGOZIO.find((x) => x.id === id);
   return s || STATI_NEGOZIO[0];
 }
 
-export function getStatiNegozioPerCategoria(categoria: string) {
+/** VOCABOLARIO etichetta→chiave per la ricostruzione dello storico
+ *  (malusStorico): unisce le liste hardcoded storiche e TUTTE le righe DB
+ *  della categoria — generale e ogni operatore, spente comprese — perche'
+ *  gli eventi persistono l'etichetta in chiaro e devono restare risolvibili
+ *  dopo rinomine e personalizzazioni per brand. La lista dell'operatore
+ *  della pratica vince sulle omonimie. */
+export function vocabolarioEtichette(categoria: string, brand?: string | null): Map<string, string> {
+  const out = new Map<string, string>();
+  getStatiNegozioBase(categoria).forEach((s) => out.set(s.label.toLowerCase(), s.id));
+  if (ESITI_DB) {
+    for (const [k, lista] of ESITI_DB) {
+      if (k !== categoria && !k.startsWith(categoria + "§")) continue;
+      lista.forEach((e) => out.set(e.etichetta.toLowerCase(), e.chiave));
+    }
+    _lista(ESITI_DB, categoria, brand)?.forEach((e) => out.set(e.etichetta.toLowerCase(), e.chiave));
+  }
+  return out;
+}
+
+/** Lista hardcoded storica: fallback + vocabolario per le etichette vecchie. */
+export function getStatiNegozioBase(categoria: string) {
   if (categoria === "mnp") return STATI_NEGOZIO_MNP;
   if (categoria === "fisso") return STATI_NEGOZIO_FISSO;
   if (categoria === "finanziamento") return STATI_NEGOZIO_FINANZIAMENTO;
@@ -96,9 +191,82 @@ export function getStatiNegozioPerCategoria(categoria: string) {
   return STATI_NEGOZIO;
 }
 
+export function getStatiNegozioPerCategoria(categoria: string, brand?: string | null) {
+  const db = _lista(ESITI_DB, categoria, brand);
+  if (db) return db.filter((e) => e.attiva).map(daEsito);
+  return getStatiNegozioBase(categoria);
+}
+
+/** TUTTE le chiavi della categoria (generale + ogni operatore, senza doppioni):
+ *  serve ai pool dei filtri, che devono conoscere anche gli esiti per-brand. */
+export function getStatiNegozioTutte(categoria: string) {
+  if (!ESITI_DB) return getStatiNegozioBase(categoria);
+  const out: { id: string; label: string; color: string; bg: string }[] = [];
+  const visti = new Set<string>();
+  for (const [k, lista] of ESITI_DB) {
+    if (k !== categoria && !k.startsWith(categoria + "§")) continue;
+    lista.forEach((e) => { if (e.attiva && !visti.has(e.chiave)) { visti.add(e.chiave); out.push(daEsito(e)); } });
+  }
+  return out.length ? out : getStatiNegozioBase(categoria);
+}
+
+/** Esito "fine processo" (flag amministrabile): pilota il filtro Mostra
+ *  completate, la coda di verifica amministrazione e lo stop del malus. */
+export function esitoCompletato(statoNegozio: string, categoria: string, brand?: string | null): boolean {
+  const db = _lista(ESITI_DB, categoria, brand);
+  if (db) {
+    const hit = db.find((e) => e.chiave === statoNegozio);
+    if (hit) return hit.completata;
+    // chiave non censita nella lista dell'operatore: prova la generale
+    if (brandEsitiKey(brand)) {
+      const gen = ESITI_DB?.get(categoria)?.find((e) => e.chiave === statoNegozio);
+      if (gen) return gen.completata;
+    }
+    // chiave storica non piu' censita per la categoria: vale il default storico
+  }
+  return (STATI_COMPLETATI[categoria] || ["attivato"]).includes(statoNegozio);
+}
+
 export function getStatoA(id: string) {
-  const s = STATI_ADMIN.find((x) => x.id === id);
+  if (ESITI_ADMIN_DB) {
+    for (const lista of ESITI_ADMIN_DB.values()) {
+      const hit = lista.find((e) => e.chiave === id);
+      if (hit) return daEsito(hit);
+    }
+  }
+  // fallback: il set finanziamento e' il SUPERSET (fix: prima ripagato/
+  // stornato_da_ripagare cadevano sul default "Da Verificare")
+  const s = STATI_ADMIN_FINANZIAMENTO.find((x) => x.id === id);
   return s || STATI_ADMIN[0];
+}
+
+/** Esiti della VERIFICA AMMINISTRATIVA per categoria (DB, fallback hardcoded). */
+export function getStatiAdminPerCategoria(categoria: string, brand?: string | null) {
+  const db = _lista(ESITI_ADMIN_DB, categoria, brand);
+  if (db) return db.filter((e) => e.attiva).map(daEsito);
+  return categoria === "finanziamento" ? STATI_ADMIN_FINANZIAMENTO : STATI_ADMIN;
+}
+
+/** MALUS €/gg dell'esito ADMIN corrente (es. Non Conforme): dal pannello,
+ *  per categoria. NULL/0 = nessun malus amministrativo. */
+export function malusAdminGiorno(statoAdmin: string, categoria: string, brand?: string | null): number {
+  const db = _lista(ESITI_ADMIN_DB, categoria, brand);
+  const hit = db?.find((e) => e.chiave === statoAdmin)
+    || (brandEsitiKey(brand) ? ESITI_ADMIN_DB?.get(categoria)?.find((e) => e.chiave === statoAdmin) : undefined);
+  const v = Number(hit?.malus_giorno);
+  return isFinite(v) && v > 0 ? v : 0;
+}
+
+/** Esito admin DEFINITIVO (flag amministrabile): chiude il cerchio della
+ *  pratica — esce dalla coda ⚡ Da lavorare della verifica amministrazione. */
+export function esitoAdminDefinitivo(statoAdmin: string, categoria: string, brand?: string | null): boolean {
+  const db = _lista(ESITI_ADMIN_DB, categoria, brand);
+  if (db) {
+    const hit = db.find((e) => e.chiave === statoAdmin)
+      || (brandEsitiKey(brand) ? ESITI_ADMIN_DB?.get(categoria)?.find((e) => e.chiave === statoAdmin) : undefined);
+    if (hit) return hit.completata;
+  }
+  return ["confermato", "pagato", "stornato", "ripagato"].includes(statoAdmin);
 }
 
 export function getCat(id: string) {
@@ -138,9 +306,10 @@ export const STATI_COMPLETATI: Record<string, string[]> = {
  * (Segnalazione Lorenzo 03/08/2026: le pratiche esitate "annullato"/KO restavano
  * in 🔴 Malus all'infinito, "come se dovessimo dare un altro esito".)
  */
-export function fermaMalus(statoNegozio: string, categoria: string): boolean {
-  const completati = STATI_COMPLETATI[categoria] || ["attivato"];
-  if (completati.includes(statoNegozio)) return true;
+export function fermaMalus(statoNegozio: string, categoria: string, brand?: string | null): boolean {
+  // MOD-28: la nozione di "completata" e' il flag amministrabile a DB
+  // (fallback: STATI_COMPLETATI storico) — unica fonte anche per i filtri.
+  if (esitoCompletato(statoNegozio, categoria, brand)) return true;
   return statoContrattoDa(statoNegozio) === "Annullato" || statoNegozio === "recesso_info_errate";
 }
 
@@ -192,9 +361,12 @@ const _hit = (soglia: number | null | undefined, valore: number | null) =>
   soglia != null && valore != null && valore >= soglia;
 /** 0 = in regola · 1 = da lavorare · 2 = warning · 3 = malus */
 function livelloRegole(row: TrackingRow): 0 | 1 | 2 | 3 {
+  // MALUS AMMINISTRATIVO (10/08): se l'esito admin corrente ha un €/gg (es.
+  // Non Conforme) la pratica e' in MALUS anche se il negozio l'aveva completata
+  if (malusAdminGiorno(row.statoAdmin, row.categoria, row.brand) > 0) return 3;
   // Pratica con esito definitivo (completata OPPURE annullata/KO/recesso): non
   // c'e' altro esito da dare, la maturazione si ferma e la pratica esce da malus.
-  if (fermaMalus(row.statoNegozio, row.categoria)) return 0;
+  if (fermaMalus(row.statoNegozio, row.categoria, row.brand)) return 0;
   const m = misure(row);
   const r = regolaDi(row.categoria);
   let speciale: 0 | 1 | 2 | 3 = 0;
@@ -234,8 +406,12 @@ export function isMalusRow(row: TrackingRow): boolean {
 
 export function calcolaMalus(row: TrackingRow): number {
   if (livelloRegole(row) !== 3) return 0;
-  const r = regolaDi(row.categoria);
   const m = misure(row);
+  // malus AMMINISTRATIVO: €/gg dell'esito admin × giorni lavorativi
+  // dall'ultimo aggiornamento (l'evento admin riparte il conteggio)
+  const mAdm = malusAdminGiorno(row.statoAdmin, row.categoria, row.brand);
+  if (mAdm > 0) return Math.round(Math.max(1, m.ggAgg) * mAdm * 100) / 100;
+  const r = regolaDi(row.categoria);
   if (!r) return 0;
   let ecc = 0;
   if (_hit(r.senza_malus, m.ggSenza)) ecc = Math.max(ecc, (m.ggSenza as number) - (r.senza_malus as number) + 1);

@@ -1,11 +1,15 @@
 "use client";
 
-import { Search, Maximize, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon, KeyRound } from "lucide-react";
+import { Search, ScanLine, Bell, Menu, LogOut, ArrowLeft, Loader2, User as UserIcon, Sun, Moon, KeyRound, ClipboardCheck } from "lucide-react";
+import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
 import { useTema } from "@/lib/theme";
 import { UrgentTasks } from "@/components/UrgentTasks";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { roleLabel, seesAllStores } from "@/lib/roles";
+import { roleLabel, seesAllStores, areaOf } from "@/lib/roles";
+import { apriTelefono } from "@/lib/dialer";
+import { effectiveAllowed } from "@/lib/nav";
+import { useRolePermissions } from "@/lib/usePermissions";
 import { supabase } from "@/lib/supabaseClient";
 import { useRoles } from "@/lib/useRoles";
 import { cn } from "@/utils";
@@ -36,6 +40,34 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
     const { roles: allRoles } = useRoles();
     // utenti attivi del ruolo simulato, per impersonare la PERSONA (visibilita' sua)
     const [utentiRuolo, setUtentiRuolo] = useState<{ id: string; full_name: string; grade: string | null; primary_store: string | null }[]>([]);
+    // MOD-36/38: contatore voci aperte della sezione Verifiche — l'admin conta
+    // le da_verificare + le segnalazioni del delegato in attesa sua; un utente
+    // DELEGATO conta solo le verifiche assegnate a lui (bottone visibile solo
+    // se ne ha). Aggiornato a ogni navigazione; select difensivo.
+    const [verificheAperte, setVerificheAperte] = useState(0);
+    const isAdminVer = ["admin", "dev"].includes(user?.role || "");
+    // MOD-43 (Luca 10/08): la sezione si CONCEDE dai permessi (/verifiche) —
+    // per grado (store_manager@senior) o per persona (user:<id>), come Francesco
+    const { perms: permsVer } = useRolePermissions(user?.role, user?.grade, user?.id);
+    const puoVerifiche = isAdminVer || effectiveAllowed(user?.role, "/verifiche", ["admin", "dev"], permsVer);
+    useEffect(() => {
+        if (!user?.id) { setVerificheAperte(0); return; }
+        let vivo = true;
+        const q = isAdminVer
+            ? supabase.from("dev_updates").select("id", { count: "exact", head: true }).in("stato", ["da_verificare", "segnalazione_delegato"])
+            : supabase.from("dev_updates").select("id", { count: "exact", head: true }).eq("stato", "da_verificare").eq("delegato_a", user.id);
+        const ricarica = () => q.then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
+        ricarica();
+        // la pagina Verifiche avvisa a ogni esito: il badge si aggiorna subito
+        const h = () => {
+            const q2 = isAdminVer
+                ? supabase.from("dev_updates").select("id", { count: "exact", head: true }).in("stato", ["da_verificare", "segnalazione_delegato"])
+                : supabase.from("dev_updates").select("id", { count: "exact", head: true }).eq("stato", "da_verificare").eq("delegato_a", user.id);
+            q2.then(({ count, error }) => { if (vivo && !error) setVerificheAperte(count || 0); });
+        };
+        window.addEventListener("verifiche-cambiate", h);
+        return () => { vivo = false; window.removeEventListener("verifiche-cambiate", h); };
+    }, [user?.id, isAdminVer, pathname]);
     useEffect(() => {
         if (!viewAs) { setUtentiRuolo([]); return; }
         let vivo = true;
@@ -133,17 +165,22 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
         router.push(`/ricerca-vendite?id=${encodeURIComponent(h.contractId)}`);
     };
 
-    // ─── Schermo intero ───
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    useEffect(() => {
-        const onFs = () => setIsFullscreen(!!document.fullscreenElement);
-        document.addEventListener("fullscreenchange", onFs);
-        return () => document.removeEventListener("fullscreenchange", onFs);
-    }, []);
-    const toggleFullscreen = () => {
-        if (document.fullscreenElement) document.exitFullscreen?.();
-        else document.documentElement.requestFullscreen?.();
+    // ─── DropZone: trasferimento volatile telefono → PC via QR (MOD-12, Luca
+    //     08/08). Rimpiazza il vecchio tasto "schermo intero". Riusa la stessa
+    //     infrastruttura QR di Registra Vendita/Chat/Usati (useQrUpload +
+    //     /m/u/<token>): il telefono carica foto/scansioni, qui i File arrivati
+    //     vengono SCARICATI sul PC (nessuna copia resta nel CRM: è volatile).
+    const scaricaSulPc = (file: File) => {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement("a");
+        a.href = url; a.download = file.name || "file";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
     };
+    const dropzone = useQrUpload((files) => {
+        // download sfalsati: alcuni browser bloccano i download multipli simultanei
+        files.forEach((f, i) => setTimeout(() => scaricaSulPc(f), i * 400));
+    });
 
     // ─── Comunicazioni: pallino sulle nuove ───
     // Non esiste una tabella "letto/non letto": si tiene l'ultima apertura per
@@ -328,6 +365,23 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                         )}
                     </div>
                 )}
+                {/* VERIFICHE (MOD-36/38, Luca 10/08, "momentaneo"): admin — il
+                    recap degli update da esitare + sospesi; un utente DELEGATO
+                    vede il bottone solo se ha verifiche assegnate. */}
+                {(puoVerifiche || verificheAperte > 0) && (
+                    <button
+                        onClick={() => router.push("/verifiche")}
+                        title="Verifiche — update da esitare e questioni in sospeso"
+                        className="relative text-slate-400 hover:text-emerald-300 transition-colors"
+                    >
+                        <ClipboardCheck className="h-5 w-5" />
+                        {verificheAperte > 0 && (
+                            <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-emerald-600 text-white text-[9px] font-black flex items-center justify-center">
+                                {verificheAperte}
+                            </span>
+                        )}
+                    </button>
+                )}
                 {/* TEMA chiaro/scuro (Luca 29/07): come su telefoni e sistemi
                     operativi — ☀️ accende il chiaro, 🌙 torna allo scuro. */}
                 <button
@@ -337,14 +391,18 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                 >
                     {tema === "chiaro" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
                 </button>
-                {/* Il tasto schermo intero non faceva nulla: ora entra ed esce davvero. */}
+                {/* DropZone (MOD-12): un QR volatile per portare foto/scansioni dal
+                    telefono a QUESTO PC (si scaricano in locale, niente resta nel CRM). */}
                 <button
-                    onClick={toggleFullscreen}
-                    title={isFullscreen ? "Esci da schermo intero" : "Schermo intero"}
+                    onClick={() => dropzone.openQr("dropzone", "doc")}
+                    title="Trasferisci dal telefono (QR): foto e scansioni si scaricano su questo PC"
                     className="text-slate-400 hover:text-white transition-colors"
                 >
-                    <Maximize className="h-5 w-5" />
+                    <ScanLine className="h-5 w-5" />
                 </button>
+                <QrUploadModal qr={dropzone}
+                    hint="Inquadra il QR col telefono e carica foto o una scansione PDF: il file si scarica su questo computer."
+                    esito={(n) => `${n} file scaricat${n === 1 ? "o" : "i"} su questo PC.`} />
                 {/* La campanella = COMUNICAZIONI; le cose DA FARE stanno nella ⚡
                     Task urgenti qui accanto (es. nuovo utente da completare). */}
                 <UrgentTasks />
@@ -360,6 +418,15 @@ export function Header({ onMenuClick, autoHide }: { onMenuClick?: () => void; au
                         </span>
                     )}
                 </button>
+                {/* ☎ AIRCALL nell'header (Luca 10/08): fuori dal caller il bottone
+                    flottante dava fastidio — da qui si apre lo stesso pannello
+                    (l'iframe vive nel layout, la chiamata non cade navigando) */}
+                {!!user && (areaOf(user.role) === "cc" || ["admin", "dev"].includes(user.role)) && !(pathname || "").startsWith("/caller") && (
+                    <button onClick={apriTelefono} title="Telefono Aircall"
+                        className="text-slate-400 hover:text-white transition-colors">
+                        <span className="text-[17px] leading-none">☎</span>
+                    </button>
+                )}
 
                 {/* MENU PROFILO (03/08): il click apre un menu — profilo, cambio
                     password e LOG OUT (spostato qui dalla sidebar, dove ora vive

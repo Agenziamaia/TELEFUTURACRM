@@ -17,7 +17,7 @@ import type { TrackingRow, StoriaEvent } from "./trackingConstants";
 import {
   regolaDi,
   fermaMalus,
-  getStatiNegozioPerCategoria,
+  vocabolarioEtichette,
   isMalusRow,
   calcolaMalus,
 } from "./trackingHelpers";
@@ -122,9 +122,12 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
   const r = regolaDi(row.categoria);
   const euro = Number(r?.malus_euro) || 0;
   if (!r || euro <= 0) return [];
-  const labelToId = new Map(
-    getStatiNegozioPerCategoria(row.categoria).map((s) => [s.label.toLowerCase(), s.id])
-  );
+  // MOD-28: le etichette sono persistite in chiaro negli eventi, e dal pannello
+  // ora si possono RINOMINARE — il vocabolario unisce hardcoded storico e DB,
+  // COMPRESE le liste per operatore (fix 10/08: un esito solo-brand come
+  // "Ko Cliente Irreperibile" non si risolveva → flagCompletato mai alzato →
+  // episodi fantasma in archivio per pratiche gia' chiuse)
+  const labelToId = vocabolarioEtichette(row.categoria, row.brand);
   const oggi = new Date();
   oggi.setHours(0, 0, 0, 0);
 
@@ -154,7 +157,7 @@ export function ricostruisciEpisodi(row: TrackingRow): EpisodioDerivato[] {
       const id = m ? labelToId.get(m[1].trim().toLowerCase()) : undefined;
       // Esito definitivo (completata o annullata/KO/recesso) -> ferma la
       // maturazione: i segmenti successivi non generano piu' malus.
-      if (id) flagCompletato = fermaMalus(id, row.categoria);
+      if (id) flagCompletato = fermaMalus(id, row.categoria, row.brand);
     }
     segs.push({ start: d, soglia: r.succ_malus, completato: flagCompletato });
   }

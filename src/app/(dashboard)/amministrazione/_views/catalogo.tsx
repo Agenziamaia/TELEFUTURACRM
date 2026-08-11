@@ -22,10 +22,10 @@ import { BrandNegozioView } from "./brandnegozio";
 
 const TIPI = ["Consumer", "Business"] as const;
 
-interface Cat { id: string; nome: string; ordine: number; attivo: boolean }
-interface Brand { id: string; nome: string; colore1: string; colore2: string; ordine: number; attivo: boolean }
-interface Prod { id: string; brand_id: string; tipo_cliente: string; categoria_id: string; nome: string; ordine: number; attivo: boolean }
-interface Off { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean }
+interface Cat { id: string; nome: string; ordine: number; attivo: boolean; contratto_richiesto?: string | null }
+interface Brand { id: string; nome: string; colore1: string; colore2: string; ordine: number; attivo: boolean; contratto_richiesto?: string | null }
+interface Prod { id: string; brand_id: string; tipo_cliente: string; categoria_id: string; nome: string; ordine: number; attivo: boolean; contratto_richiesto?: string | null }
+interface Off { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean; contratto_richiesto?: string | null }
 interface Opz { id: string; offerta_id: string; nome: string; tipo: string | null; gruppo_singolo: string | null; ordine: number; attivo: boolean }
 interface CampoRegola { nome: string; tipo: string; nota: string; conferma: boolean; attivo?: boolean; facoltativo?: boolean; valori?: string[] }
 /* riga della QUINTA tabella (03/08): campo risolto per l'offerta selezionata,
@@ -199,6 +199,37 @@ export function CatalogoView() {
 
     const toggleAttivo = (table: string, id: string, attivo: boolean) =>
         run("Attiva/spegni", () => supabase.from(table).update({ attivo: !attivo }).eq("id", id));
+
+    // ── ALLEGATO CONTRATTO (MOD-31, Luca 10/08): regola a 3 stati su ogni
+    // livello (brand → categoria → prodotto → offerta; il piu' specifico vince
+    // nello step Allegati di Registra Vendita). null = eredita dal livello
+    // sopra; default finale = obbligatorio. Il pallino cicla i 4 stati.
+    const CONTRATTO_CICLO: (string | null)[] = [null, "obbligatorio", "facoltativo", "assente"];
+    const CONTRATTO_LABEL: Record<string, { txt: string; cls: string }> = {
+        eredita: { txt: "📄 eredita", cls: "text-slate-500 border-white/10" },
+        obbligatorio: { txt: "📄 obbligatorio", cls: "text-indigo-300 border-indigo-500/50 bg-indigo-500/10" },
+        facoltativo: { txt: "📄 facoltativo", cls: "text-amber-300 border-amber-500/50 bg-amber-500/10" },
+        assente: { txt: "📄 senza contratto", cls: "text-rose-300 border-rose-500/40 bg-rose-500/10" },
+    };
+    const setContratto = (table: string, id: string, attuale: string | null | undefined) => {
+        const cur = CONTRATTO_CICLO.indexOf(attuale ?? null);
+        const next = CONTRATTO_CICLO[(cur + 1) % CONTRATTO_CICLO.length];
+        return run("Regola contratto", () => supabase.from(table).update({ contratto_richiesto: next }).eq("id", id),
+            next ? `Contratto: ${next}` : "Contratto: eredita dal livello sopra");
+    };
+    const PillContratto = ({ table, row, hint, sempre = false }: { table: string; row: { id: string; contratto_richiesto?: string | null }; hint: string; sempre?: boolean }) => {
+        const v = row.contratto_richiesto || "eredita";
+        const s = CONTRATTO_LABEL[v] || CONTRATTO_LABEL.eredita;
+        return (
+            <button onClick={(e) => { e.stopPropagation(); setContratto(table, row.id, row.contratto_richiesto ?? null); }}
+                title={`Allegato CONTRATTO per ${hint} — clicca per cambiare: eredita → obbligatorio → facoltativo → senza contratto. Vale nello step Allegati di Registra Vendita (il livello più specifico vince).`}
+                className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 whitespace-nowrap transition-colors", s.cls,
+                    // senza regola propria la pillola compare al passaggio (come le azioni)
+                    !row.contratto_richiesto && !sempre && "opacity-0 group-hover:opacity-100")}>
+                {s.txt}
+            </button>
+        );
+    };
 
     const move = (table: string, list: { id: string; ordine: number }[], id: string, dir: -1 | 1) => {
         const i = list.findIndex((r) => r.id === id);
@@ -627,8 +658,8 @@ export function CatalogoView() {
 
                 {brandSel === "__negozi" ? <div className="mt-4"><BrandNegozioView brands={brands} onBrandsChanged={() => { loadBase(); }} /></div>
                 : brandSel === "__marg" ? <div className="mt-4"><MarginalitaView /></div> : (<>
-                {/* tipo cliente */}
-                <div className="flex gap-2 mt-3">
+                {/* tipo cliente + regola contratto a livello BRAND (MOD-31) */}
+                <div className="flex gap-2 mt-3 items-center flex-wrap">
                     {tipiBrand.map(({ t, n }) => (
                         <button key={t} onClick={() => { setTipoSel(t); setProdSel(""); setOffSel(""); setEdit(null); }}
                             disabled={n === 0 && tipoSel !== t}
@@ -637,6 +668,12 @@ export function CatalogoView() {
                             {t} <span className="opacity-60 normal-case tracking-normal">({n})</span>
                         </button>
                     ))}
+                    {brandCur && (
+                        <span className="ml-auto flex items-center gap-1.5 text-[10px] text-slate-500 group">
+                            Contratto per tutto {brandCur.nome}:
+                            <PillContratto table="catalog_brands" row={brandCur} hint={`l'intero brand ${brandCur.nome}`} sempre />
+                        </span>
+                    )}
                 </div>
                 </>)}
                 </>)}
@@ -763,6 +800,7 @@ export function CatalogoView() {
                                     <>
                                         <span className="truncate">{c.nome}</span>
                                         <span className="flex items-center gap-1 shrink-0">
+                                            <PillContratto table="catalog_categorie" row={c} hint={`tutta la categoria ${c.nome}`} />
                                             {gestCat && <RowActions table="catalog_categorie" row={c} list={cats} onDel={() => delCategoria(c)} />}
                                             <span className={cn("text-[10px] tabular-nums", (countByCat[c.id] || 0) ? "text-slate-400" : "text-slate-600")}>{countByCat[c.id] || 0}</span>
                                         </span>
@@ -800,6 +838,7 @@ export function CatalogoView() {
                                             <>
                                                 <span className="truncate">{p.nome}{!p.attivo && <span className="ml-2 text-[9px] uppercase text-slate-500">spento</span>}</span>
                                                 <span className="flex items-center gap-1 shrink-0">
+                                                    <PillContratto table="catalog_prodotti" row={p} hint={`tutto il prodotto ${p.nome}`} />
                                                     <RowActions table="catalog_prodotti" row={p} list={prodsList} onDel={() => delProdotto(p)} />
                                                     <span className="text-[10px] text-slate-500 tabular-nums">{nOffOf(p.id)} off.</span>
                                                 </span>
@@ -842,6 +881,7 @@ export function CatalogoView() {
                                                     <>
                                                         <span className="truncate">{o.nome}{!o.attivo && <span className="ml-2 text-[9px] uppercase text-slate-500">spenta</span>}</span>
                                                         <span className="flex items-center gap-1 shrink-0">
+                                                            <PillContratto table="catalog_offerte" row={o} hint={`la sola offerta ${o.nome}`} />
                                                             <RowActions table="catalog_offerte" row={o} list={offsList} onDel={() => delOfferta(o)} />
                                                             <span className="text-[10px] text-slate-500 tabular-nums">{kids.length} opz.</span>
                                                         </span>

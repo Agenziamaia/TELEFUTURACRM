@@ -11,6 +11,8 @@ let _apriTelefono: (() => void) | null = null;
 export function registraTelefono(fn: DialFn) { _telefono = fn; }
 export function segnalaTelefonoConnesso(v: boolean) { _telefonoConnesso = v; }
 export function registraApriTelefono(fn: () => void) { _apriTelefono = fn; }
+/** Apre il pannello del telefono (usato dal ☎ nell'header fuori dal caller). */
+export function apriTelefono() { _apriTelefono?.(); }
 
 /** Compone sul telefono incorporato nel CRM (pre-compila; il verde e' manuale). */
 async function componiNelDock(e164: string): Promise<boolean> {

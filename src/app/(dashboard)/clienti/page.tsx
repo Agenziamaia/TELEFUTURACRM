@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
-import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
+import { Search, Filter, RefreshCw, Users, FileText, Smartphone, Phone, Mail, Building, MapPin, X, ChevronRight, ChevronDown, Calendar, CheckCircle2, Clock, AlertTriangle, Paperclip, ExternalLink, Plus, Loader2 } from "lucide-react";
 import { seesWholeStore, seesAllStores } from "@/lib/roles";
 import { usePageView } from "@/lib/pageView";
 import { supabase } from "@/lib/supabaseClient";
@@ -119,7 +119,11 @@ const CATEGORIE_DOC = [
     { id: "contratti", label: "Contratti", color: "var(--tf-a78bfa)", match: (t: string | null) => (t || "").toLowerCase() === "contratti" },
     // Segnalazione 84: bollette del vecchio operatore sui contratti energia.
     { id: "fattura", label: "Fatture", color: "var(--tf-fbbf24)", match: (t: string | null) => (t || "").toLowerCase() === "fattura" },
-    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura"].includes((t || "").toLowerCase()) },
+    // MOD-14 (Luca 08/08): documenti smarriti e archiviati/scaduti — fuori dai
+    // validi, visibili SOLO all'amministrazione (adminOnly) con etichetta chiara.
+    { id: "smarrito", label: "🔴 Smarriti", color: "var(--tf-f87171)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_smarrito" },
+    { id: "archiviato", label: "🗄️ Archiviati/scaduti", color: "var(--tf-94a3b8)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_archiviato" },
+    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura", "documento_smarrito", "documento_archiviato"].includes((t || "").toLowerCase()) },
 ];
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
@@ -127,8 +131,10 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // Capacita' "Allegati del cliente" (ingranaggio Clienti in Permessi): senza,
     // la sezione Documenti/PDA non compare proprio.
     const { user: uAll } = useAuth();
-    const { perms: permAll } = useRolePermissions(uAll?.role, uAll?.grade);
+    const { perms: permAll } = useRolePermissions(uAll?.role, uAll?.grade, uAll?.id);
     const vedeAllegati = capAllowed(uAll?.role, "/clienti", CAP_CLIENTI_ALLEGATI, permAll);
+    // smarriti/archiviati (MOD-14) visibili SOLO all'amministrazione
+    const isAdminDoc = ["admin", "dev", "direttore_generale", "amministrativo"].includes(String(uAll?.role || ""));
     type DocRiga = { id: string; file_url: string; file_name: string; contract_id: string | null; file_type: string | null; created_at: string | null };
     const [docs, setDocs] = useState<DocRiga[]>([]);
     // Immagine aperta a schermo (prima si apriva in una scheda nuova).
@@ -157,6 +163,68 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         setDocs([...raccolti.values()].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))));
     };
     useEffect(() => { reloadDocs(); /* eslint-disable-next-line */ }, [contratti, cliente.id]);
+
+    // ── DOCUMENTI A MENU (Luca 07/08): categoria → BRAND → MESI, con DEDUP
+    //    per file. Il documento d'identità viene replicato su ogni pratica
+    //    della vendita (righe contract_attachments distinte, STESSO file —
+    //    caso D'Atria: 4 file sembravano 20): qui un file = UNA card,
+    //    attribuita ai brand delle sue pratiche CTR-; i file agganciati solo
+    //    a voci marginalità stanno sotto "Marginalità", quelli di contratti
+    //    eliminati sotto "Conservati".
+    const [openCat, setOpenCat] = useState<Record<string, boolean>>({});
+    const [openBrand, setOpenBrand] = useState<Record<string, boolean>>({});
+    const [meseSel, setMeseSel] = useState<Record<string, string>>({});
+    type DocFile = { key: string; nome: string; url: string; tipo: string | null; pratiche: string[] };
+    const alberoDocs = useMemo(() => {
+        const infoCtr = new Map<string, { brand: string; data: string | null }>();
+        contratti.forEach((c) => infoCtr.set(c.id, { brand: c.brand || "—", data: c.data || null }));
+        const meseDi = (creato: string | null, ctrData: string | null) => {
+            const m = (ctrData || creato || "").slice(0, 7);
+            return /^\d{4}-\d{2}$/.test(m) ? m : "—";
+        };
+        // raggruppo per categoria e poi per file_url (dedup delle repliche)
+        const filePerCat = new Map<string, Map<string, DocRiga[]>>();
+        docs.forEach((d) => {
+            const cat = CATEGORIE_DOC.find((c) => c.match(d.file_type))?.id || "altro";
+            if (!filePerCat.has(cat)) filePerCat.set(cat, new Map());
+            const m = filePerCat.get(cat)!;
+            if (!m.has(d.file_url)) m.set(d.file_url, []);
+            m.get(d.file_url)!.push(d);
+        });
+        // albero: categoria → brand → mese (YYYY-MM) → file
+        const albero = new Map<string, Map<string, Map<string, DocFile[]>>>();
+        filePerCat.forEach((files, cat) => {
+            files.forEach((righe, url) => {
+                const ctrRighe = righe.filter((r) => r.contract_id?.startsWith("CTR-") && infoCtr.has(r.contract_id));
+                const extRighe = righe.filter((r) => r.contract_id?.startsWith("EXT-") && infoCtr.has(r.contract_id));
+                const dest = new Map<string, string>();   // brand → mese
+                if (ctrRighe.length) ctrRighe.forEach((r) => { const i = infoCtr.get(r.contract_id as string)!; if (!dest.has(i.brand)) dest.set(i.brand, meseDi(r.created_at, i.data)); });
+                else if (extRighe.length) { const i = infoCtr.get(extRighe[0].contract_id as string)!; dest.set("Marginalità", meseDi(extRighe[0].created_at, i.data)); }
+                else dest.set("Conservati", meseDi(righe[0].created_at, null));
+                const file: DocFile = {
+                    key: cat + "|" + url, nome: righe[0].file_name || "documento", url, tipo: righe[0].file_type,
+                    // solo pratiche ESISTENTI: gli id di contratti eliminati non si mostrano
+                    pratiche: [...new Set(righe.map((r) => r.contract_id).filter((id) => id && infoCtr.has(id)))] as string[],
+                };
+                dest.forEach((mese, brand) => {
+                    if (!albero.has(cat)) albero.set(cat, new Map());
+                    const perBrand = albero.get(cat)!;
+                    if (!perBrand.has(brand)) perBrand.set(brand, new Map());
+                    const perMese = perBrand.get(brand)!;
+                    if (!perMese.has(mese)) perMese.set(mese, []);
+                    perMese.get(mese)!.push(file);
+                });
+            });
+        });
+        return albero;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [docs, contratti]);
+    const labelMeseDoc = (m: string) => {
+        if (!/^\d{4}-\d{2}$/.test(m)) return "Senza data";
+        const [y, mm] = m.split("-").map(Number);
+        const s = new Date(y, mm - 1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" });
+        return s.charAt(0).toUpperCase() + s.slice(1);
+    };
 
     // INTEGRAZIONE DOCUMENTI (Luca 31/07, evoluzione della segnalazione 114):
     // il caricamento dei documenti mancanti dopo la registrazione ora e' una
@@ -226,23 +294,62 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // CHIAMATE del cliente (call_events, già agganciate per client_id): voce
     // compatta per giorno+direzione+interlocutore; il click porta allo storico
     // chiamate della scheda (player e dettagli stanno LÀ, la timeline resta leggera).
-    const [chiamateTml, setChiamateTml] = useState<{ id: string; direction: string | null; negozio: string | null; agente_nome: string | null; started_at: string | null }[]>([]);
+    const [chiamateTml, setChiamateTml] = useState<{ id: string; direction: string | null; negozio: string | null; agente_nome: string | null; started_at: string | null; call_id: string | null }[]>([]);
     useEffect(() => {
         (async () => {
             const { data } = await supabase.from("call_events")
-                .select("id, direction, negozio, agente_nome, started_at")
+                .select("id, direction, negozio, agente_nome, started_at, call_id")
                 .eq("client_id", cliente.id)
                 .order("started_at", { ascending: false }).limit(200);
             setChiamateTml((data ?? []) as never);
         })();
     }, [cliente.id]);
+    // MOD-21 (Luca 10/08): la chiamata del call center si ESPANDE e mostra
+    // l'appuntamento fissato da quella pratica — come la visita coi contratti.
+    // Catena a due salti: call_events.call_id → calls.appointment_id (o il
+    // richiamo_event_id per gli appuntamenti telefonici) → appointments.
+    type ApptTml = { id: number; date: string | null; time: string | null; store: string | null; status: string | null; created_by: string | null; esito_note: string | null; type: string | null };
+    const [apptDiCall, setApptDiCall] = useState<Record<string, ApptTml>>({});
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            const callIds = [...new Set(chiamateTml.map((e) => e.call_id).filter(Boolean))] as string[];
+            if (!callIds.length) { if (alive) setApptDiCall({}); return; }
+            const { data: prat } = await supabase.from("calls").select("id, appointment_id, richiamo_event_id").in("id", callIds);
+            const mapCallApp: Record<string, number> = {};
+            (prat || []).forEach((p: { id: string; appointment_id: number | string | null; richiamo_event_id: number | string | null }) => {
+                const aid = Number(p.appointment_id || p.richiamo_event_id || 0);
+                if (aid) mapCallApp[p.id] = aid;
+            });
+            const apptIds = [...new Set(Object.values(mapCallApp))];
+            if (!apptIds.length) { if (alive) setApptDiCall({}); return; }
+            const { data: apps } = await supabase.from("appointments").select("id, date, time, store, status, created_by, esito_note, type").in("id", apptIds);
+            const perId: Record<number, ApptTml> = {};
+            ((apps || []) as ApptTml[]).forEach((a) => { perId[Number(a.id)] = a; });
+            const out: Record<string, ApptTml> = {};
+            Object.entries(mapCallApp).forEach(([cid, aid]) => { if (perId[aid]) out[cid] = perId[aid]; });
+            if (alive) setApptDiCall(out);
+        })();
+        return () => { alive = false; };
+    }, [chiamateTml]);
+    // stato appuntamento → etichetta/colore (sottoinsieme del calendario)
+    const APP_STATO: Record<string, { label: string; cls: string }> = {
+        scheduled: { label: "Programmato", cls: "bg-sky-500/10 border-sky-500/20 text-sky-300" },
+        in_gestione: { label: "In gestione", cls: "bg-amber-500/10 border-amber-500/20 text-amber-300" },
+        attivato: { label: "Attivato", cls: "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" },
+        attivato_diverso_negozio: { label: "Attivato (altro negozio)", cls: "bg-emerald-500/10 border-emerald-500/20 text-emerald-300" },
+        ko: { label: "KO", cls: "bg-rose-500/10 border-rose-500/20 text-rose-300" },
+        annullato: { label: "Annullato", cls: "bg-slate-500/10 border-slate-500/20 text-slate-300" },
+        da_richiamare: { label: "Da richiamare", cls: "bg-amber-500/10 border-amber-500/20 text-amber-300" },
+        da_rifissare: { label: "Da rifissare", cls: "bg-amber-500/10 border-amber-500/20 text-amber-300" },
+    };
     // giorni-contratto espansi inline (stato locale: nessuna navigazione)
     const [gruppiAperti, setGruppiAperti] = useState<Record<string, boolean>>({});
 
     // Voce della timeline: "semplice" (documenti/disdette), con `contratti`
     // (giorno+negozio espandibile inline) o con `apreStorico` (chiamate → click
     // sullo storico chiamate della scheda).
-    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number };
+    type VoceTimeline = { key: string; when: string; color: string; icon: string; title: string; desc: string; stato: string | null; contratti?: Contratto[]; apreStorico?: boolean; docsN?: number; appuntamenti?: ApptTml[] };
     const isMarg = (b?: string | null) => /marginal|extra/i.test(b || "");
 
     // CONTRATTI raggruppati per giorno+negozio: "è andato in negozio e ha
@@ -285,25 +392,31 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
     // CHIAMATE per giorno: inbound = "Ha chiamato <negozio|Call Center>",
     // outbound = "Chiamato da …" (negozio dalla colonna negozio; null con
     // agente = Call Center). Più chiamate stesso giorno = una voce col contatore.
-    const gruppiChiamate = new Map<string, { when: string; dir: "in" | "out"; chi: string; n: number }>();
+    const gruppiChiamate = new Map<string, { when: string; dir: "in" | "out"; chi: string; n: number; callIds: string[] }>();
     chiamateTml.filter((e) => e.started_at).forEach((e) => {
         const chi = (e.negozio || "").trim() || (e.agente_nome ? "Call Center" : "Telefutura");
         const dir: "in" | "out" = e.direction === "inbound" ? "in" : "out";
         const k = String(e.started_at).slice(0, 10) + "|" + dir + "|" + chi;
         const g = gruppiChiamate.get(k);
-        if (g) { g.n += 1; if (String(e.started_at) > g.when) g.when = String(e.started_at); }
-        else gruppiChiamate.set(k, { when: String(e.started_at), dir, chi, n: 1 });
+        if (g) { g.n += 1; if (String(e.started_at) > g.when) g.when = String(e.started_at); if (e.call_id && !g.callIds.includes(e.call_id)) g.callIds.push(e.call_id); }
+        else gruppiChiamate.set(k, { when: String(e.started_at), dir, chi, n: 1, callIds: e.call_id ? [e.call_id] : [] });
     });
-    const vociChiamate: VoceTimeline[] = [...gruppiChiamate.entries()].map(([k, g]) => ({
-        key: "t" + k, when: g.when,
-        color: g.dir === "in" ? "var(--tf-22c55e)" : "var(--tf-a78bfa)",
-        icon: g.dir === "in" ? "📥" : "📤",
-        title: g.dir === "in" ? `Ha chiamato ${g.chi}` : `Chiamato da ${g.chi}`,
-        desc: g.n === 1
-            ? new Date(g.when).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
-            : `${g.n} chiamate`,
-        stato: null, apreStorico: true,
-    }));
+    const vociChiamate: VoceTimeline[] = [...gruppiChiamate.entries()].map(([k, g]) => {
+        // MOD-21: appuntamenti fissati dalle pratiche di queste chiamate —
+        // si mostrano ESPANDENDO la voce (freccia), come i contratti del giorno
+        const appts: ApptTml[] = []; const vistiApp = new Set<number>();
+        g.callIds.forEach((cid) => { const a = apptDiCall[cid]; if (a && !vistiApp.has(Number(a.id))) { vistiApp.add(Number(a.id)); appts.push(a); } });
+        return {
+            key: "t" + k, when: g.when,
+            color: g.dir === "in" ? "var(--tf-22c55e)" : "var(--tf-a78bfa)",
+            icon: g.dir === "in" ? "📥" : "📤",
+            title: g.dir === "in" ? `Ha chiamato ${g.chi}` : `Chiamato da ${g.chi}`,
+            desc: (g.n === 1
+                ? new Date(g.when).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
+                : `${g.n} chiamate`) + (appts.length ? " · 📅 appuntamento fissato" : ""),
+            stato: null, apreStorico: true, appuntamenti: appts.length ? appts : undefined,
+        };
+    });
 
     // Timeline 360°: eventi REALI (contratti + chiamate + documenti + disdette), in ordine.
     const timeline: VoceTimeline[] = [
@@ -311,7 +424,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         ...vociChiamate,
         // solo i caricamenti nei giorni SENZA visita: gli altri vivono dentro
         // la voce del negozio (esperienza unica del cliente, Luca 04/08)
-        ...docs.filter((d) => d.created_at && !giorniVisita.has(String(d.created_at).slice(0, 10)))
+        ...docs.filter((d) => d.created_at && !giorniVisita.has(String(d.created_at).slice(0, 10))
+            // smarriti/archiviati fuori dalla timeline per i non-admin (MOD-14)
+            && (isAdminDoc || !CATEGORIE_DOC.find((c) => c.match(d.file_type))?.adminOnly))
             .map((d) => ({ key: "d" + d.id, when: d.created_at as string, color: "var(--tf-f59e0b)", icon: "📄", title: "Documento caricato", desc: d.file_name || "documento", stato: null as string | null })),
         ...eventiDisdette.filter((e) => e.when),
     ].sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
@@ -442,7 +557,9 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                     {/* ───────── COLONNA DESTRA: schede ───────── */}
                     <div className="glass-card flex flex-col min-h-[440px]">
                         <div className="flex border-b border-white/5 px-3 shrink-0">
-                            {[{ id: "timeline", label: "Timeline 360°", icon: "⏳" }, { id: "contratti", label: `Contratti (${contratti.length})`, icon: "📄" }, ...(vedeAllegati ? [{ id: "documenti", label: `Documenti (${docs.length})`, icon: "📎" }] : [])].map(t => (
+                            {/* il badge conta i FILE veri (dedup per file_url), e SOLO quelli
+                                visibili: smarriti/archiviati contano solo per l'amministrazione (MOD-14) */}
+                            {[{ id: "timeline", label: "Timeline 360°", icon: "⏳" }, { id: "contratti", label: `Contratti (${contratti.length})`, icon: "📄" }, ...(vedeAllegati ? [{ id: "documenti", label: `Documenti (${new Set(docs.filter(d => isAdminDoc || !CATEGORIE_DOC.find(c => c.match(d.file_type))?.adminOnly).map(d => d.file_url)).size})`, icon: "📎" }] : [])].map(t => (
                                 <button key={t.id} onClick={() => setTab(t.id as typeof tab)}
                                     className={`px-4 py-3.5 text-[13px] font-semibold flex items-center gap-2 border-b-2 -mb-px transition-colors ${tab === t.id ? "border-indigo-500 text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
                                     <span>{t.icon}</span> {t.label}
@@ -459,17 +576,19 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                             <div className="absolute left-[19px] top-2 bottom-2 w-px bg-white/5" />
                             <div className="space-y-6">
                                 {timeline.map(ev => {
-                                    const cliccabile = !!ev.contratti || !!ev.apreStorico;
-                                    const aperta = !!ev.contratti && !!gruppiAperti[ev.key];
+                                    // MOD-21: espandibile anche la CHIAMATA con appuntamento dentro
+                                    const espandibile = !!ev.contratti || !!(ev.appuntamenti && ev.appuntamenti.length);
+                                    const cliccabile = espandibile || !!ev.apreStorico;
+                                    const aperta = espandibile && !!gruppiAperti[ev.key];
                                     return (
                                         <div key={ev.key} className="relative">
                                             <div role={cliccabile ? "button" : undefined} tabIndex={cliccabile ? 0 : undefined}
                                                 onClick={() => {
-                                                    if (ev.contratti) setGruppiAperti((p) => ({ ...p, [ev.key]: !p[ev.key] }));
+                                                    if (espandibile) setGruppiAperti((p) => ({ ...p, [ev.key]: !p[ev.key] }));
                                                     else if (ev.apreStorico) setShowStorico(true);
                                                 }}
                                                 onKeyDown={(e) => { if (cliccabile && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); (e.currentTarget as HTMLElement).click(); } }}
-                                                title={ev.contratti ? (aperta ? "Chiudi i contratti del giorno" : "Mostra i contratti del giorno") : ev.apreStorico ? "Apri lo storico chiamate" : undefined}
+                                                title={ev.contratti ? (aperta ? "Chiudi i contratti del giorno" : "Mostra i contratti del giorno") : (ev.appuntamenti && ev.appuntamenti.length) ? (aperta ? "Chiudi il dettaglio" : "Mostra l'appuntamento fissato") : ev.apreStorico ? "Apri lo storico chiamate" : undefined}
                                                 className={`flex gap-4 relative ${cliccabile ? "cursor-pointer group/tml rounded-xl -mx-2 px-2 py-1 -my-1 hover:bg-white/[0.03] transition-colors" : ""}`}>
                                                 {/* color-mix: le tinte stanno nei CSS var del tema (chiaro incluso) */}
                                                 <div className="w-10 h-10 rounded-full flex items-center justify-center text-base shrink-0 z-10"
@@ -478,8 +597,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                     <div className="flex items-center justify-between gap-2">
                                                         <h4 className="text-sm font-semibold text-slate-100 flex items-center gap-1.5 min-w-0">
                                                             <span className="truncate">{ev.title}</span>
-                                                            {ev.contratti && <span className="text-slate-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
-                                                            {ev.apreStorico && <span className="text-[11px] font-bold text-violet-300 opacity-0 group-hover/tml:opacity-100 transition-opacity shrink-0">→ storico</span>}
+                                                            {(ev.contratti || (ev.appuntamenti && ev.appuntamenti.length)) && <span className="text-slate-500 shrink-0">{aperta ? "▴" : "▾"}</span>}
+                                                            {ev.apreStorico && !(ev.appuntamenti && ev.appuntamenti.length) && <span className="text-[11px] font-bold text-violet-300 opacity-0 group-hover/tml:opacity-100 transition-opacity shrink-0">→ storico</span>}
                                                         </h4>
                                                         <span className="text-[11px] text-slate-500 shrink-0">{new Date(ev.when).toLocaleDateString("it-IT")}</span>
                                                     </div>
@@ -491,7 +610,31 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                                 dettaglio contratto (stesso deep link della tab Contratti) */}
                                             {aperta && (
                                                 <div className="ml-14 mt-2 space-y-1.5">
-                                                    {ev.contratti!.map((c) => {
+                                                    {/* MOD-21: l'APPUNTAMENTO fissato dalla chiamata del call center */}
+                                                    {(ev.appuntamenti || []).map((a) => {
+                                                        const st = APP_STATO[a.status || ""] || { label: a.status || "—", cls: "bg-slate-500/10 border-slate-500/20 text-slate-300" };
+                                                        return (
+                                                            <div key={"app" + a.id} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5">
+                                                                <span className="w-5 h-5 flex items-center justify-center text-sm shrink-0">📅</span>
+                                                                <span className="flex-1 min-w-0">
+                                                                    <span className="block text-xs font-semibold text-slate-100 truncate">
+                                                                        Appuntamento{a.type === "richiamo" ? " telefonico" : ""} {a.date ? new Date(a.date + "T00:00:00").toLocaleDateString("it-IT") : "—"}{a.time ? ` · ${a.time}` : ""}{a.store ? ` — ${a.store}` : ""}
+                                                                    </span>
+                                                                    <span className="block text-[10px] text-slate-500 truncate">{a.created_by ? `Fissato da ${a.created_by} (call center)` : "Fissato dal call center"}{a.esito_note ? ` · ${a.esito_note}` : ""}</span>
+                                                                </span>
+                                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 border ${st.cls}`}>{st.label}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    {ev.apreStorico && (
+                                                        <button onClick={() => setShowStorico(true)} title="Apri lo storico chiamate"
+                                                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-violet-500/30 text-left transition-all">
+                                                            <span className="w-5 h-5 flex items-center justify-center text-sm shrink-0">📞</span>
+                                                            <span className="flex-1 text-xs font-semibold text-slate-300">Apri lo storico chiamate</span>
+                                                            <ExternalLink className="w-3 h-3 text-slate-600 shrink-0" />
+                                                        </button>
+                                                    )}
+                                                    {(ev.contratti || []).map((c) => {
                                                         const logo = TRK_BRAND_LOGOS[trkBrandKey(c.brand || "")];
                                                         return (
                                                             <button key={c.id} onClick={() => openContract(c.id)} title="Apri il dettaglio del contratto"
@@ -626,53 +769,110 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                                 Nessun documento caricato per questo cliente.
                             </div>
                         ) : (
-                            // Richiesta Luca (segnalazione 29): i documenti vanno divisi per
-                            // categoria di caricamento, con la data. La categoria e' quella
-                            // scelta allo Step 5 della registrazione (file_type); quelli senza
-                            // categoria finiscono in "Altro", come chiesto.
-                            <div className="space-y-4">
+                            // MENU A TRE LIVELLI (Luca 07/08): ogni categoria è un menù che si
+                            // scoppia/nasconde; dentro, la selezione del BRAND (se il cliente ha
+                            // pratiche di più brand) e poi la divisione per MESI: un click sul
+                            // mese e compaiono i file di quel mese. Un file = UNA card anche se
+                            // la vendita l'ha agganciato a più pratiche (dedup per file).
+                            <div className="space-y-3">
                                 {CATEGORIE_DOC.map((cat) => {
-                                    const items = docs.filter((d) => (cat.match(d.file_type)));
-                                    if (items.length === 0) return null;
+                                    // categorie smarriti/archiviati SOLO all'amministrazione (MOD-14)
+                                    if ((cat as { adminOnly?: boolean }).adminOnly && !isAdminDoc) return null;
+                                    const perBrand = alberoDocs.get(cat.id);
+                                    if (!perBrand || perBrand.size === 0) return null;
+                                    const fileCat = new Set<string>();
+                                    perBrand.forEach((pm) => pm.forEach((fl) => fl.forEach((f) => fileCat.add(f.key))));
+                                    const aperta = !!openCat[cat.id];
+                                    // card file riusabile (stesso markup in vista piatta e brand→mesi)
+                                    const cardFile = (f: DocFile, sub: string) => {
+                                        const isImmagine = /^image\//i.test(f.tipo || "") || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(f.nome || "");
+                                        const contenuto = (
+                                            <>
+                                                <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
+                                                <span className="flex-1 min-w-0">
+                                                    <span className="block text-xs text-slate-300 truncate">{f.nome}</span>
+                                                    {sub ? <span className="block text-[10px] text-slate-600 truncate">{sub}</span> : null}
+                                                </span>
+                                                <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
+                                            </>
+                                        );
+                                        const cls = "flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group text-left w-full";
+                                        return isImmagine
+                                            ? <button key={f.key} type="button" className={cls} onClick={() => setLightbox({ src: f.url, alt: f.nome })}>{contenuto}</button>
+                                            : <a key={f.key} href={f.url} target="_blank" rel="noreferrer" className={cls}>{contenuto}</a>;
+                                    };
+                                    // DOCUMENTI D'IDENTITÀ (Luca 08/08): niente livello brand né mesi —
+                                    // apri la categoria e vedi i file del cliente. Il brand distingue
+                                    // solo i CONTRATTI (le altre categorie tengono brand→mesi).
+                                    const catPiatta = cat.id === "documento";
+                                    const filePiatti = catPiatta
+                                        ? [...new Map([...perBrand.values()].flatMap((pm) => [...pm.values()].flat()).map((f) => [f.key, f])).values()]
+                                        : [];
                                     return (
-                                        <div key={cat.id}>
-                                            <div className="flex items-center gap-2 mb-2">
+                                        <div key={cat.id} className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden">
+                                            <button type="button" onClick={() => setOpenCat((o) => ({ ...o, [cat.id]: !o[cat.id] }))}
+                                                className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-white/[0.03] transition-colors">
+                                                {aperta ? <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />}
                                                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded"
                                                     style={{ color: cat.color, background: cat.color + "1f", border: "1px solid " + cat.color + "44" }}>
                                                     {cat.label}
                                                 </span>
-                                                <span className="text-[10px] text-slate-600">{items.length} file</span>
-                                            </div>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                {items.map((d) => {
-                                                    // Le immagini si aprono qui sopra invece che in una scheda nuova.
-                                                    const isImmagine = /^image\//i.test(d.file_type || "")
-                                                        || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(d.file_name || "");
-                                                    const contenuto = (
-                                                        <>
-                                                            <FileText className="w-4 h-4 shrink-0" style={{ color: cat.color }} />
-                                                            <span className="flex-1 min-w-0">
-                                                                <span className="block text-xs text-slate-300 truncate">{d.file_name || "documento"}</span>
-                                                                <span className="block text-[10px] text-slate-600">
-                                                                    {d.created_at ? new Date(d.created_at).toLocaleDateString("it-IT") : "—"} · {d.contract_id || "contratto eliminato — documento conservato"}
-                                                                </span>
-                                                            </span>
-                                                            <ExternalLink className="w-3.5 h-3.5 text-slate-600 group-hover:text-indigo-400 shrink-0" />
-                                                        </>
-                                                    );
-                                                    const cls = "flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-indigo-500/30 transition-all group text-left w-full";
-                                                    return isImmagine ? (
-                                                        <button key={d.id} type="button" className={cls}
-                                                            onClick={() => setLightbox({ src: d.file_url, alt: d.file_name || "" })}>
-                                                            {contenuto}
-                                                        </button>
-                                                    ) : (
-                                                        <a key={d.id} href={d.file_url} target="_blank" rel="noreferrer" className={cls}>
-                                                            {contenuto}
-                                                        </a>
-                                                    );
-                                                })}
-                                            </div>
+                                                <span className="text-[10px] text-slate-600">{fileCat.size} file</span>
+                                            </button>
+                                            {aperta && catPiatta && (
+                                                <div className="px-3 pb-3">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        {filePiatti.map((f) => cardFile(f, ""))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {aperta && !catPiatta && (
+                                                <div className="px-3 pb-3 space-y-2">
+                                                    {[...perBrand.entries()].map(([brand, perMese]) => {
+                                                        const bKey = cat.id + "|" + brand;
+                                                        const bAperta = openBrand[bKey] ?? perBrand.size === 1;
+                                                        const mesi = [...perMese.keys()].sort().reverse();
+                                                        const meseAttivo = meseSel[bKey] && perMese.has(meseSel[bKey]) ? meseSel[bKey] : mesi[0];
+                                                        const nBrand = new Set([...perMese.values()].flat().map((f) => f.key)).size;
+                                                        const logo = TRK_BRAND_LOGOS[trkBrandKey(brand)];
+                                                        return (
+                                                            <div key={brand} className="border border-white/5 rounded-xl overflow-hidden">
+                                                                <button type="button" onClick={() => setOpenBrand((o) => ({ ...o, [bKey]: !bAperta }))}
+                                                                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/[0.03] transition-colors">
+                                                                    {bAperta ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
+                                                                    {logo ? <img src={logo} alt={brand} className="w-5 h-5 object-contain shrink-0" /> : null}
+                                                                    <span className="text-xs font-bold text-slate-200">
+                                                                        {brand === "Conservati" ? "Contratti eliminati — documenti conservati" : brand}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-slate-600">{nBrand} file</span>
+                                                                </button>
+                                                                {bAperta && (
+                                                                    <div className="px-3 pb-3 space-y-2">
+                                                                        {mesi.length > 1 && (
+                                                                            <div className="flex flex-wrap gap-1.5">
+                                                                                {mesi.map((m) => (
+                                                                                    <button key={m} type="button" onClick={() => setMeseSel((s) => ({ ...s, [bKey]: m }))}
+                                                                                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${m === meseAttivo ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300 font-semibold" : "bg-white/[0.02] border-white/10 text-slate-400 hover:bg-white/[0.05]"}`}>
+                                                                                        {labelMeseDoc(m)} · {new Set((perMese.get(m) || []).map((f) => f.key)).size}
+                                                                                    </button>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                            {(perMese.get(meseAttivo) || []).map((f) => {
+                                                                                const sub = (f.pratiche.length === 0
+                                                                                    ? "contratto eliminato — documento conservato"
+                                                                                    : f.pratiche.length === 1 ? f.pratiche[0] : `su ${f.pratiche.length} pratiche della vendita`);
+                                                                                return cardFile(f, `${labelMeseDoc(meseAttivo)} · ${sub}`);
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -1147,7 +1347,7 @@ export default function ClientiPage() {
     // Amministrazione → Utenti → Permessi): "tutti" | "negozi" | "propri".
     // I default replicano il comportamento storico; la visibilità TOTALE a
     // livello utente (seesAllVis) non viene mai ristretta dallo scope di ruolo.
-    const { perms: capPerms } = useRolePermissions(role);
+    const { perms: capPerms } = useRolePermissions(role, user?.grade, user?.id);
     // ── VISIBILITÀ CLIENTI: FONTE UNICA condivisa con Registra Vendita
     //    (src/lib/clientiVisibili — Luca 28/07: mai più logiche divergenti).
     const scopeClienti = capChoice(role, CAP_CLIENTI, capPerms);
@@ -1517,10 +1717,33 @@ export default function ClientiPage() {
             <div className="flex-1 overflow-y-auto p-4 md:p-8">
                 <div className="max-w-7xl mx-auto space-y-6">
 
-                    {/* TOP CONTROLS */}
-                    <div className="flex flex-col md:flex-row gap-4 justify-between items-center">
+                    {/* TOP CONTROLS — pulsantini tipo cliente + ricerca + filtri
+                        sulla STESSA riga (Luca 08/08: più piccoli, allineati alla
+                        casella di ricerca, tabella più in alto) */}
+                    <div className="flex flex-col md:flex-row gap-3 justify-between items-center">
+                        {/* Tipo cliente: solo emoji, altezza = casella ricerca */}
+                        <div className="flex gap-1.5 shrink-0">
+                            {([
+                                { t: "tutti", emoji: "👥", titolo: "Tutti i clienti" },
+                                { t: "consumer", emoji: "👤", titolo: "Consumer" },
+                                { t: "business", emoji: "🏢", titolo: "Business" },
+                                { t: "turista", emoji: "🌍", titolo: "Turisti" },
+                            ] as const).map(({ t, emoji, titolo }) => (
+                                <button
+                                    key={t}
+                                    onClick={() => { setFilterTipo(t); setCurrentPage(1); }}
+                                    title={titolo} aria-label={titolo}
+                                    className={`w-11 h-11 rounded-xl border flex items-center justify-center text-lg transition-all ${filterTipo === t
+                                        ? "bg-violet-500/20 border-violet-500/50 shadow shadow-violet-500/10"
+                                        : "bg-white/5 border-white/10 grayscale opacity-60 hover:opacity-100 hover:grayscale-0"
+                                        }`}
+                                >
+                                    {emoji}
+                                </button>
+                            ))}
+                        </div>
                         {/* Quick Search */}
-                        <div className="relative w-full md:w-96 group">
+                        <div className="relative w-full md:flex-1 md:max-w-md group">
                             <input
                                 type="text"
                                 placeholder="Cerca per nome, email, cellulare, CF..."
@@ -1562,24 +1785,8 @@ export default function ClientiPage() {
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                {/* Tipo Cliente Toggle */}
-                                <div className="lg:col-span-4 flex flex-col gap-2 mb-2">
-                                    <span className="text-xs font-medium text-slate-400">Tipo Cliente</span>
-                                    <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 w-max">
-                                        {(["tutti", "consumer", "business", "turista"] as const).map((t) => (
-                                            <button
-                                                key={t}
-                                                onClick={() => { setFilterTipo(t); setCurrentPage(1); }}
-                                                className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition-all duration-200 ${filterTipo === t
-                                                    ? "bg-violet-500/20 text-violet-300 border border-violet-500/20 shadow-lg shadow-violet-500/5"
-                                                    : "text-slate-400 hover:text-white"
-                                                    }`}
-                                            >
-                                                {t === "turista" ? "🌍 turisti" : t}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
+                                {/* Il Tipo Cliente è ora nei pulsantoni emoji sopra la ricerca
+                                    (Luca 08/08) — qui restano solo i filtri per dato specifico. */}
 
                                 {/* Filtri "gestito da": due campi NORMALI come gli altri, multi-
                                     selezione nello stile unificato (Luca 30/07). */}
@@ -1989,7 +2196,7 @@ function StoricoChiamateCliente({ cliente, onClose }: { cliente: { id: string; c
     // verificato a DB), qui si evita di mostrare un player che risponderebbe
     // 403. Lo storico SENZA audio resta visibile a chi vede il cliente.
     const { user: uStorico } = useAuth();
-    const { perms: permsStorico } = useRolePermissions(uStorico?.role, uStorico?.grade);
+    const { perms: permsStorico } = useRolePermissions(uStorico?.role, uStorico?.grade, uStorico?.id);
     const puoAudio = puoAscoltareRegistrazioni(uStorico?.role, permsStorico);
     const [eventi, setEventi] = useState<Record<string, unknown>[]>([]);
     const [pratiche, setPratiche] = useState<Record<string, unknown>[]>([]);
