@@ -28,15 +28,14 @@ if ($Install) {
   New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
   Copy-Item -Path $MyInvocation.MyCommand.Path -Destination $dest -Force
   $argLine = "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dest`" -Crm `"$Crm`" -Token `"$Token`" -Negozio `"$Negozio`" -FiscalUrl `"$FiscalUrl`" -CashIp `"$CashIp`""
-  $action  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $argLine
-  $trigger = New-ScheduledTaskTrigger -AtLogOn
-  $set     = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartInterval (New-TimeSpan -Minutes 1) -RestartCount 999 -ExecutionTimeLimit ([TimeSpan]::Zero)
-  Register-ScheduledTask -TaskName "TelefuturaPosAgent" -Action $action -Trigger $trigger -Settings $set -Force | Out-Null
-  Start-ScheduledTask -TaskName "TelefuturaPosAgent"
+  # Avvio automatico a ogni ACCESSO — chiave Run dell'UTENTE: nessun permesso admin.
+  Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "TelefuturaPosAgent" -Value ("powershell " + $argLine) -Force
+  # Avvia subito, nascosto (se ne gira gia' uno, chiudilo prima con Get-CimInstance/Stop-Process).
+  Start-Process powershell -WindowStyle Hidden -ArgumentList $argLine
   Write-Host ""
-  Write-Host "  Installato. 'TelefuturaPosAgent' parte a ogni accesso al PC ed e' gia' in esecuzione." -ForegroundColor Green
+  Write-Host "  Installato (avvio automatico all'accesso, SENZA admin) e GIA' in esecuzione." -ForegroundColor Green
   Write-Host "  Negozio='$Negozio'  stampante='$FiscalUrl'  cassa='$CashIp'"
-  Write-Host "  (Per rimuoverlo: Unregister-ScheduledTask -TaskName TelefuturaPosAgent -Confirm:`$false)"
+  Write-Host "  (Per rimuoverlo: Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name TelefuturaPosAgent)"
   Write-Host ""
   exit 0
 }
