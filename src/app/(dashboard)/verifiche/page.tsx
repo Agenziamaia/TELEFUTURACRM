@@ -156,8 +156,13 @@ function CardVoce({ v, children }: { v: Voce; children?: React.ReactNode }) {
                     {v.dettaglio.split("\n").map((riga, i) => {
                         const t = riga.trim();
                         if (!t) return null;
-                        const titolo = /^\p{Extended_Pictographic}/u.test(t);
-                        return <p key={i} className={titolo ? "font-semibold text-slate-100 mt-2 first:mt-0" : ""}>{t}</p>;
+                        // grassetto SOLO per le righe corte (titoli veri): i paragrafi
+                        // lunghi con emoji restano testo normale, spaziato — sennò il
+                        // recap diventa un muro di bold che "sembra tutto maiuscolo"
+                        // (segnalazione Luca 11/08 sera)
+                        const conEmoji = /^\p{Extended_Pictographic}/u.test(t);
+                        const titolo = conEmoji && t.length <= 80;
+                        return <p key={i} className={titolo ? "font-semibold text-slate-100 mt-2 first:mt-0" : conEmoji ? "mt-2 first:mt-0" : ""}>{t}</p>;
                     })}
                 </div>
             )}
