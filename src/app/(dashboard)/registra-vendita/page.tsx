@@ -5844,8 +5844,10 @@ function CRM() {
     &&(ana.cellulare||"").trim().length>0;
   // MOD-44c, rivisto su segnalazione Francesco (ok Luca 10/08): il minimo per
   // la marginalità è nome+cognome+CELLULARE (business: ragione sociale+cellulare)
-  // — o tutti i dati; con meno di così l'utente è obbligato a "Salta dati cliente"
-  const margMinOk=!!((ana.cellulare||"").trim()&&(((ana.nome||"").trim()&&(ana.cognome||"").trim())||(ana.ragioneSociale||"").trim()));
+  // — o tutti i dati; con meno di così l'utente è obbligato a "Salta dati cliente".
+  // Il cellulare deve essere VERO (11/08: un numero a caso passava): 9-13 cifre.
+  const _celMargOk=(()=>{const d=(ana.cellulare||"").replace(/\D/g,"");return d.length>=9&&d.length<=13;})();
+  const margMinOk=!!(_celMargOk&&(((ana.nome||"").trim()&&(ana.cognome||"").trim())||(ana.ragioneSociale||"").trim()));
   const saveMargOnly=async()=>{
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
@@ -6650,7 +6652,7 @@ select.rvIn{cursor:pointer}
             <button onClick={()=>setMargSkipPopup(true)} style={{padding:"9px 18px",borderRadius:8,border:"1px dashed rgba(245,158,11,0.6)",background:margSkipCli?"rgba(245,158,11,0.15)":"var(--tf-w20)",color:"var(--tf-fbbf24)",fontSize:12,fontWeight:700,cursor:"pointer"}}>🚫 Salta dati cliente{margSkipCli?" ✓":""}</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            {!margMinOk&&!margSkipCli&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e cellulare (o tutti i dati) — altrimenti salta</span>}
+            {!margMinOk&&!margSkipCli&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e un cellulare valido (9-13 cifre) — altrimenti salta</span>}
             <button disabled={!margMinOk&&!margSkipCli} onClick={()=>{if(margMinOk)setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:(!margMinOk&&!margSkipCli)?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:(!margMinOk&&!margSkipCli)?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:(!margMinOk&&!margSkipCli)?"not-allowed":"pointer"}}>Avanti → Prodotti</button>
           </div>
         </div>}
@@ -6703,7 +6705,7 @@ select.rvIn{cursor:pointer}
             {/* MOD-44c: in marginalità niente campi obbligatori — basta un dato */}
             {margFlow&&!brand
               ?<>
-                {!margMinOk&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e cellulare</span>}
+                {!margMinOk&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e un cellulare valido (9-13 cifre)</span>}
                 <button disabled={!margMinOk} onClick={()=>{if(!margMinOk)return;setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:!margMinOk?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:!margMinOk?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:!margMinOk?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti → Prodotti</button>
               </>
               :<>

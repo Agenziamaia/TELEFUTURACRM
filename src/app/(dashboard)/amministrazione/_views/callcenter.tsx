@@ -20,10 +20,14 @@ const COMPORTAMENTI: { id: string; label: string }[] = [
     { id: "appuntamento", label: "📅 Appuntamento" },
     { id: "richiamo", label: "☎ Richiamo" },
     { id: "non_risposto", label: "📵 Non risposto" },
+    // ESITO DEFINITIVO (Luca 11/08, come il 🏁 del Tracking PDA): archivia la
+    // pratica/lead — esce dalla lista di lavoro del Caller (si rivede col
+    // toggle 🗂 Archiviate), non resta in perenne lavorazione e non genera malus
+    { id: "definitivo", label: "🏁 Definitivo — archivia" },
 ];
 
 const CATEGORIE: { id: string; label: string; hint: string }[] = [
-    { id: "stato", label: "Stati / Esiti", hint: "La lista che i caller scelgono quando esitano una chiamata. La tendina a destra decide l'AUTOMATISMO della voce: Appuntamento = chiede data/negozio e va sul calendario; Richiamo = chiede la data e crea il promemoria; Non risposto = chiede il WhatsApp." },
+    { id: "stato", label: "Stati / Esiti", hint: "La lista che i caller scelgono quando esitano una chiamata. La tendina a destra decide l'AUTOMATISMO della voce: Appuntamento = chiede data/negozio e va sul calendario; Richiamo = chiede la data e crea il promemoria; Non risposto = chiede il WhatsApp; 🏁 Definitivo = ARCHIVIA la pratica (esce dal lavoro, niente malus — si rivede col toggle 🗂 Archiviate)." },
     { id: "provenienza", label: "Provenienze", hint: "Da dove arriva il lead." },
     { id: "tipologia", label: "Tipologie", hint: "Il tipo di attività della chiamata." },
     { id: "obiettivo", label: "Obiettivi", hint: "Cosa si vuole vendere/ottenere." },

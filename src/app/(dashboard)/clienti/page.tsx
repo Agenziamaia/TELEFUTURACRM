@@ -933,6 +933,11 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
     const [indirizzo, setIndirizzo] = useState(cliente?.indirizzo ?? "");
     const [cap, setCap] = useState(cliente?.cap ?? "");
     const [citta, setCitta] = useState(cliente?.citta ?? "");
+    // IBAN + DOCUMENTI dal form (Luca 11/08): comodi anche senza vendita —
+    // l'IBAN va sull'anagrafica, i file diventano contract_attachments del solo
+    // cliente (contract_id NULL, mig. 20260806010000: sopravvivono comunque)
+    const [iban, setIban] = useState(cliente?.iban ?? "");
+    const [docNuovi, setDocNuovi] = useState<File[]>([]);
     // Segnalazione 56: acquisizione. Su nuovo cliente si sceglie negozio/Agenzia;
     // su modifica il dato non si tocca (e' storico, lo mostra il badge).
     const [acquisito, setAcquisito] = useState(cliente?.acquisito_da ?? "");
@@ -1021,6 +1026,7 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
             indirizzo,
             cap,
             citta,
+            iban: iban.trim().toUpperCase().replace(/\s+/g, " ") || null,
         };
 
         try {
@@ -1033,6 +1039,22 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
                 const insertPayload = { id: `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`, ...basePayload, acquisito_da: acquisito || null, is_demo: false };
                 const { error: err } = await supabase.from("clients").insert([insertPayload]);
                 if (err) throw err;
+                // DOCUMENTI dal form (Luca 11/08): caricati sul cliente appena
+                // creato, senza vendita (contract_id NULL). Best-effort: un
+                // errore sull'upload non butta via l'anagrafica salvata.
+                for (const f of docNuovi) {
+                    try {
+                        const ext = (f.name.split(".").pop() || "bin");
+                        const path = `${insertPayload.id}/${insertPayload.id}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+                        const { error: upErr } = await supabase.storage.from("contracts").upload(path, f);
+                        if (upErr) throw upErr;
+                        const { data: pub } = supabase.storage.from("contracts").getPublicUrl(path);
+                        await supabase.from("contract_attachments").insert({
+                            contract_id: null, client_id: insertPayload.id,
+                            file_url: pub.publicUrl, file_name: f.name, file_type: "documento",
+                        });
+                    } catch (e) { console.error("[CLIENTI] upload documento fallito:", e); }
+                }
                 // RETRO-AGGANCIO (AIR-01e): le chiamate del Registro ancora senza
                 // cliente con questo numero si agganciano alla nuova anagrafica
                 // (coda di 9 cifre, cifre intervallate da % per gli spazi).
@@ -1251,6 +1273,34 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
                                     </select>
                                 </div>
                             )}
+                            {/* IBAN dal form (Luca 11/08): comodo anche senza vendita */}
+                            <div className="space-y-1.5 sm:col-span-2">
+                                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">IBAN</label>
+                                <input
+                                    type="text"
+                                    value={iban}
+                                    onChange={(e) => setIban(e.target.value.toUpperCase())}
+                                    className="w-full glass-input text-sm rounded-xl py-3 font-mono"
+                                    placeholder="IT60 X054 2811 1010 0000 0123 456"
+                                />
+                            </div>
+                            {/* DOCUMENTI dal form (Luca 11/08): caricati sul cliente,
+                                anche senza alcuna vendita registrata */}
+                            {!cliente && (
+                                <div className="space-y-1.5 sm:col-span-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Documenti (facoltativi)</label>
+                                    <input
+                                        type="file"
+                                        multiple
+                                        accept="image/*,.pdf"
+                                        onChange={(e) => setDocNuovi(Array.from(e.target.files || []))}
+                                        className="w-full text-sm text-slate-400 file:mr-3 file:px-3.5 file:py-2 file:rounded-lg file:border file:border-violet-500/40 file:bg-violet-500/15 file:text-violet-200 file:text-xs file:font-bold file:cursor-pointer hover:file:bg-violet-500/25 file:transition-all"
+                                    />
+                                    {docNuovi.length > 0 && (
+                                        <div className="text-[11px] text-slate-400">{docNuovi.length} file da caricare: {docNuovi.map((f) => f.name).join(" · ")}</div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1391,6 +1441,23 @@ export default function ClientiPage() {
     const [utentiFiltro, setUtentiFiltro] = useState<{ full_name: string; match_name: string | null }[]>([]);
     const [contrattiGest, setContrattiGest] = useState<{ client_id: string | null; venditore: string | null; negozio: string | null }[] | null>(null);
     const [acquisitiGest, setAcquisitiGest] = useState<{ id: string; acquisito_da: string | null; creato_da?: string | null }[]>([]);
+    // "👤 I MIEI" (Luca 11/08, richiesta consulenti): default TUTTI aperti, col
+    // toggle si vedono solo i clienti gestiti (venditore di una pratica) o
+    // creati da me. match_name incluso: sui contratti il venditore è spesso
+    // quello (lezione Eloisa Nucci / segn. Lorenzo 03/08).
+    const [soloMiei, setSoloMiei] = useState(false);
+    const [mieiNomi, setMieiNomi] = useState<Set<string> | null>(null);
+    useEffect(() => {
+        if (!soloMiei || mieiNomi || !user?.id) return;
+        (async () => {
+            const nomi = new Set<string>();
+            const t0 = String(user?.name || "").trim().toLowerCase();
+            if (t0) nomi.add(t0);
+            const { data } = await supabase.from("app_users").select("full_name, match_name").eq("id", user.id).maybeSingle();
+            [data?.full_name, data?.match_name].forEach((n) => { const t = String(n || "").trim().toLowerCase(); if (t) nomi.add(t); });
+            setMieiNomi(nomi);
+        })();
+    }, [soloMiei, mieiNomi, user?.id, user?.name]);
     useEffect(() => {
         if (!canApproveAccess) return;
         supabase.from("app_users").select("full_name, match_name").eq("active", true).order("full_name")
@@ -1404,7 +1471,7 @@ export default function ClientiPage() {
         // il mapping pratiche->clienti si carica una volta sola: subito se la
         // colonna e' visibile, altrimenti alla prima selezione del filtro
         if (contrattiGest !== null) return;
-        if (!vedeGestitoDa && !(canApproveAccess && (filterGestitoDa.length || filterNegozioGestito.length))) return;
+        if (!vedeGestitoDa && !soloMiei && !(canApproveAccess && (filterGestitoDa.length || filterNegozioGestito.length))) return;
         (async () => {
             const { data: cs } = await caricaTutte<{ client_id: string | null; venditore: string | null; negozio: string | null }>((from, to) =>
                 supabase.from("contracts").select("client_id, venditore, negozio").order("id").range(from, to));
@@ -1418,7 +1485,7 @@ export default function ClientiPage() {
             setContrattiGest((cs ?? []) as never);
             setAcquisitiGest((acq ?? []) as never);
         })();
-    }, [canApproveAccess, vedeGestitoDa, filterGestitoDa, filterNegozioGestito, contrattiGest]);
+    }, [canApproveAccess, vedeGestitoDa, soloMiei, filterGestitoDa, filterNegozioGestito, contrattiGest]);
     const gestioneDi = useMemo(() => {
         const m = new Map<string, { venditori: string[]; negozi: string[] }>();
         (contrattiGest || []).forEach((c) => {
@@ -1459,6 +1526,18 @@ export default function ClientiPage() {
         }
         return set;
     }, [canApproveAccess, filterGestitoDa, filterNegozioGestito, contrattiGest, acquisitiGest, utentiFiltro]);
+    // clienti "miei": venditore di una pratica O creatore dell'anagrafica
+    const mieiSet = useMemo(() => {
+        if (!soloMiei) return null;
+        if (contrattiGest === null || !mieiNomi) return new Set<string>(); // in carica
+        const set = new Set<string>((contrattiGest || [])
+            .filter((c) => c.client_id && mieiNomi.has(String(c.venditore || "").trim().toLowerCase()))
+            .map((c) => c.client_id as string));
+        acquisitiGest.forEach((c) => {
+            if (mieiNomi.has(String(c.creato_da || "").trim().toLowerCase())) set.add(c.id);
+        });
+        return set;
+    }, [soloMiei, contrattiGest, acquisitiGest, mieiNomi]);
 
     // MOTIVO OBBLIGATORIO (03/08): al click su "Richiedi accesso" si apre un
     // modale dove si spiega PERCHE' serve quel cliente; il testo viaggia con
@@ -1593,6 +1672,7 @@ export default function ClientiPage() {
 
             // 2. Advanced filters
             if (gestitiSet && !gestitiSet.has(c.id)) return false;
+            if (mieiSet && !mieiSet.has(c.id)) return false;
             if (filterTipo === "turista") { if (!c.turista) return false; }
             else if (filterTipo !== "tutti" && c.tipo !== filterTipo) return false;
             // per le business il "Nome/Cognome Referente" puo' stare in nome_ref
@@ -1618,7 +1698,7 @@ export default function ClientiPage() {
 
             return true;
         });
-    }, [clientList, quickSearch, filterTipo, filterNome, filterCognome, filterRagione, filterCellulare, filterEmail, filterIdentifier, filterAcqDa, filterAcqA, gestitiSet]);
+    }, [clientList, quickSearch, filterTipo, filterNome, filterCognome, filterRagione, filterCellulare, filterEmail, filterIdentifier, filterAcqDa, filterAcqA, gestitiSet, mieiSet]);
 
     // Pagination bounds
     const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
@@ -1741,6 +1821,18 @@ export default function ClientiPage() {
                                     {emoji}
                                 </button>
                             ))}
+                            {/* 👤 I MIEI (Luca 11/08, come "Mostra i miei" degli Usati):
+                                default tutti aperti, il toggle mostra solo i clienti
+                                gestiti o creati da me */}
+                            <button
+                                onClick={() => { setSoloMiei((v) => !v); setCurrentPage(1); }}
+                                title={soloMiei ? "Torna a tutti i clienti" : "Solo i clienti gestiti (venditore di una pratica) o creati da me"}
+                                className={`h-11 px-3.5 rounded-xl border flex items-center justify-center gap-1.5 text-sm font-semibold transition-all ${soloMiei
+                                    ? "bg-violet-500/25 border-violet-400/60 text-violet-100"
+                                    : "bg-violet-500/10 border-violet-500/30 text-violet-200 hover:bg-violet-500/20"}`}
+                            >
+                                👤 I miei{soloMiei ? " ✓" : ""}
+                            </button>
                         </div>
                         {/* Quick Search */}
                         <div className="relative w-full md:flex-1 md:max-w-md group">

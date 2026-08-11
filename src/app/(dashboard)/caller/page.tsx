@@ -688,6 +688,9 @@ function CallerPageInner() {
     // o attivate a mano) escono dal "da lavorare" — un toggle default OFF le
     // rimostra. "Attivato", "Attivato Anomalia", "Attivato Altro Negozio".
     const [mostraAttivate, setMostraAttivate] = useState(false);
+    // ARCHIVIATE (Luca 11/08): gli stati col comportamento 🏁 Definitivo
+    // archiviano la pratica — fuori dal lavoro e dal malus, si rivedono qui
+    const [mostraArchiviate, setMostraArchiviate] = useState(false);
     // FACCETTE COERENTI (Luca 30/07): i contatori dei brand rispettano TUTTI
     // gli altri filtri attivi (caller, date, stato...) ignorando solo la
     // selezione brand stessa — prima erano fissi e non seguivano i filtri.
@@ -713,6 +716,9 @@ function CallerPageInner() {
         // sempre. Ora la fase e' ok → la sync li chiude in "attivo — da
         // scalare" con l'importo maturato fino all'assorbimento.
         if (c.assorbita_da) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
+        // 🏁 DEFINITIVO (Luca 11/08): pratica archiviata — mai in lavorazione,
+        // mai malus, qualunque regola abbia lo stato
+        if (comportamenti[String(c.stato || "")] === "definitivo") return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
         const r = regoleCaller.get(c.stato);
         if (!r || r.esente) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
         const rif = dataRiferimento(c, c.stato, RIC_STATI, APP_STATI);
@@ -735,7 +741,7 @@ function CallerPageInner() {
         const dalMalus = fase === "malus" && r.giorni_malus != null ? aggiungiLavorativi(rif, r.giorni_malus, operativi) : null;
         const giorniMalus = dalMalus ? lavorativiDopo(dalMalus, oggi, operativi) + 1 : 0;
         return { fase: dalMalus || fase !== "malus" ? fase : "warning", giorniMalus, importo: Math.round(giorniMalus * r.malus_giorno * 100) / 100, dalMalus };
-    }, [regoleCaller, RIC_STATI, APP_STATI, giorniBadge]);
+    }, [regoleCaller, RIC_STATI, APP_STATI, giorniBadge, comportamenti]);
 
     const puoRegoleCaller = ["admin", "dev"].includes(user?.role || "");
     const [showRegoleCaller, setShowRegoleCaller] = useState(false);
@@ -817,6 +823,12 @@ function CallerPageInner() {
             const isAtt = /^attivat/i.test(String(c.stato || ""));
             if (mostraAttivate ? !isAtt : isAtt) return false;
         }
+        // ARCHIVIATE (Luca 11/08): comportamento 🏁 Definitivo = la pratica è
+        // chiusa e archiviata — esce dal lavoro; col toggle vedo SOLO le archiviate
+        {
+            const isArch = comportamenti[String(c.stato || "")] === "definitivo";
+            if (mostraArchiviate ? !isArch : isArch) return false;
+        }
         if (soloDaEsitare && !c.da_esitare) return false;
         if (!ignoraFase && faseFilter && faseInfo(c).fase !== faseFilter) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
@@ -863,7 +875,7 @@ function CallerPageInner() {
         return true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
+    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, mostraArchiviate, comportamenti, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const faseCounts = useMemo(() => {
         const cnt = { da_lavorare: 0, warning: 0, malus: 0, importo: 0 };
@@ -875,7 +887,7 @@ function CallerPageInner() {
             else if (fi.fase === "malus") { cnt.malus++; cnt.importo += fi.importo; }
         });
         return cnt;
-    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
+    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, mostraArchiviate, comportamenti, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const brandCounts = useMemo(() => {
         const scoped = calls.filter((c) => matchFiltri(c, true));
@@ -883,7 +895,7 @@ function CallerPageInner() {
         // faseFilter + faseInfo NELLE DIPENDENZE (check profondo Luca 05/08):
         // mancavano — il memo restava congelato e i badge dei brand mostravano
         // sempre il totale, ignorando Da Lavorare/Warning/Malus.
-    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
+    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, mostraArchiviate, comportamenti, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
 
     function listaBrandLabel(l: ListaAssegnata): string {
         if (l.provenienza === "Acquistato") return l.brandAcq || "—";
@@ -1919,13 +1931,30 @@ function CallerPageInner() {
                         return (nAtt > 0 || mostraAttivate) ? (
                             <button
                                 type="button"
-                                onClick={() => setMostraAttivate((v) => !v)}
+                                onClick={() => { setMostraAttivate((v) => !v); setMostraArchiviate(false); }}
                                 title={mostraAttivate ? "Nascondi di nuovo le pratiche attivate" : "Mostra anche le pratiche attivate (di norma escono dal lavoro)"}
                                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors ${mostraAttivate
                                     ? "border-emerald-400 bg-emerald-500/25 text-emerald-200 shadow-lg shadow-emerald-500/20"
                                     : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"}`}
                             >
                                 ✅ Attivate: {nAtt}{mostraAttivate ? " ✕" : ""}
+                            </button>
+                        ) : null;
+                    })()}
+                    {/* ARCHIVIATE (Luca 11/08): stati col comportamento 🏁 Definitivo —
+                        fuori dal lavoro e dal malus; il toggle le rimostra (solo loro) */}
+                    {(() => {
+                        const nArch = calls.filter((c) => comportamenti[String(c.stato || "")] === "definitivo" && (isDirector || c.caller === currentCaller) && !c.assorbita_da).length;
+                        return (nArch > 0 || mostraArchiviate) ? (
+                            <button
+                                type="button"
+                                onClick={() => { setMostraArchiviate((v) => !v); setMostraAttivate(false); }}
+                                title={mostraArchiviate ? "Nascondi di nuovo le pratiche archiviate" : "Mostra le pratiche archiviate (esito definitivo: fuori dal lavoro e dal malus)"}
+                                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors ${mostraArchiviate
+                                    ? "border-slate-300 bg-slate-500/25 text-slate-100 shadow-lg shadow-slate-500/20"
+                                    : "border-slate-500/40 bg-slate-500/10 text-slate-300 hover:bg-slate-500/20"}`}
+                            >
+                                🗂 Archiviate: {nArch}{mostraArchiviate ? " ✕" : ""}
                             </button>
                         ) : null;
                     })()}

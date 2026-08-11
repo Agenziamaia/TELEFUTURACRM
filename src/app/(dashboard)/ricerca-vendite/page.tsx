@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { SelectOpzioni } from "@/components/SelectPersona";
+import { VoceAnnidata } from "@/components/VoceAnnidata";
 import { Search, Eye, Edit, Trash2, X, ShieldCheck, Check, Clock, Navigation, FileText, ChevronDown } from "lucide-react";
 import { cn } from "@/utils";
 import { DatePickerInput } from "@/components/DatePickerInput";
@@ -816,7 +817,21 @@ export default function RicercaContratto() {
 
         if (filterCliente) {
             const safe = filterCliente.trim().replace(/[",()]/g, "");
-            if (safe) {
+            // IMEI / SERIALE (Luca 11/08: l'IMEI di un usato venduto trovava zero
+            // perché il campo cerca solo sull'anagrafica): se la stringa è tutta
+            // cifre si cerca sul CONTRATTO — IMEI piatti, terminali `units`
+            // dell'usato (anche finanziato), codice attivazione.
+            const soloCifre = safe.replace(/[\s./-]/g, "");
+            if (/^\d{8,20}$/.test(soloCifre)) {
+                const t = `%${soloCifre}%`;
+                query = query.or([
+                    `codice_attivazione.ilike.${t}`,
+                    `dettagli->>IMEI.ilike.${t}`,
+                    `dettagli->>"IMEI TNP".ilike.${t}`,
+                    `dettagli->>"IMEI CB".ilike.${t}`,
+                    `dettagli->units.cs."[{\\"imei\\":\\"${soloCifre}\\"}]"`,
+                ].join(","));
+            } else if (safe) {
                 // Segnalazione 36. Prima: .or("clients.nome.ilike.…") — PostgREST
                 // legge "clients" come colonna e "nome" come operatore, e risponde
                 // 400 PGRST100 "failed to parse logic tree". Le condizioni su una
@@ -2622,42 +2637,14 @@ export default function RicercaContratto() {
                                                 tendina (chiave nei dettagli, varia per brand). */}
                                             {renderField("dettagli::" + codInsKey, "Codice inserimento")}
                                             {/* i CAMPI VENDITA sono nella sezione 🧾 dedicata (Luca 07/08) */}
-                                            {detReadonly.map(([k, v]) => {
-                                                // FOLLOW-UP del Tracking (Luca 10/08): niente JSON grezzo —
-                                                // righe leggibili; se sono tutti vuoti la voce sparisce.
-                                                // Copre anche i formati anomali (stringa JSON, oggetto a
-                                                // chiavi numeriche) per le pratiche piu' vecchie.
-                                                if (/^follow[\s_-]*up$/i.test(k)) {
-                                                    let arr: unknown = v;
-                                                    if (typeof arr === "string") { try { arr = JSON.parse(arr); } catch { /* resta stringa */ } }
-                                                    if (arr && typeof arr === "object" && !Array.isArray(arr)) arr = Object.values(arr);
-                                                    if (!Array.isArray(arr)) return null;
-                                                    const fu = (arr as { label?: string; data?: string; esito?: string; note?: string }[])
-                                                        .filter(f => `${f?.data || ""}${f?.esito || ""}${f?.note || ""}`.trim());
-                                                    if (!fu.length) return null;
-                                                    return (
-                                                        <div key={k} className="sm:col-span-2 lg:col-span-3">
-                                                            <span className="text-[11px] uppercase tracking-wider text-slate-500">Follow-up</span>
-                                                            <div className="mt-1 space-y-1">
-                                                                {fu.map((f, i) => (
-                                                                    <div key={i} className="text-xs text-white bg-black/30 rounded-lg px-2.5 py-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                                                                        <span className="font-bold">{f.label || `Follow-up ${i + 1}`}</span>
-                                                                        {f.data && <span>📅 {f.data}</span>}
-                                                                        {f.esito && <span className="font-semibold text-emerald-300">{f.esito}</span>}
-                                                                        {f.note && <span className="text-slate-300">{f.note}</span>}
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                }
-                                                return (
-                                                    <div key={k} className="sm:col-span-2 lg:col-span-3">
-                                                        <span className="text-[11px] uppercase tracking-wider text-slate-500">{k}</span>
-                                                        <pre className="text-white text-xs bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
-                                                    </div>
-                                                );
-                                            })}
+                                            {/* Mai più JSON grezzo (Luca/Francesco 10-11/08): followup,
+                                                units e ogni altro valore annidato diventano righe
+                                                leggibili — e spariscono se vuoti (VoceAnnidata). */}
+                                            {detReadonly.map(([k, v]) => (
+                                                <VoceAnnidata key={k} nome={k} valore={v}
+                                                    wrapperClassName="sm:col-span-2 lg:col-span-3"
+                                                    labelClassName="text-[11px] uppercase tracking-wider text-slate-500" />
+                                            ))}
                                             {READONLY_META.map(f => (
                                                 <div key={f.key}>
                                                     <span className="text-[11px] uppercase tracking-wider text-slate-500">{f.label}</span>

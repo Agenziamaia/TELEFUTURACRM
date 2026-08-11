@@ -34,6 +34,7 @@ import {
   esitoAdminDefinitivo,
 } from "./trackingHelpers";
 import { RegoleTracking } from "./RegoleTracking";
+import { VoceAnnidata } from "@/components/VoceAnnidata";
 import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
 import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt } from "./malusStorico";
 
@@ -1082,11 +1083,11 @@ function Drawer({
                         </div>
                       </div>
                     ))}
+                    {/* Mai più JSON grezzo (segnalazione Francesco 11/08): i
+                        valori annidati (followup, units…) diventano righe
+                        leggibili e spariscono se vuoti. */}
                     {annidate.map(([k, v]) => (
-                      <div key={k} className="col-span-2">
-                        <div className={labelStyle}>{k}</div>
-                        <pre className="text-[11px] text-slate-300 bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
-                      </div>
+                      <VoceAnnidata key={k} nome={k} valore={v} wrapperClassName="col-span-2" labelClassName={labelStyle} />
                     ))}
                   </div>
                 </div>

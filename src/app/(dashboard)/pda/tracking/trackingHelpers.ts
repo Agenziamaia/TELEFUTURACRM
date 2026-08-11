@@ -57,6 +57,20 @@ export function giorniLavorativiDa(dataStrIta: string): number {
   return count;
 }
 
+/** ULTIMO evento con data valida (caso Becattini, 11/08): gli eventi di
+ *  MODIFICA CONTRATTO scritti da Ricerca Vendite hanno un formato diverso
+ *  ({campo, da, a, at}) SENZA `data` — leggendo l'ultimo evento a prescindere
+ *  il contatore trovava una data non parsabile e restava a 0 per sempre (la
+ *  pratica non entrava mai in Da lavorare/Warning/Malus). Quegli eventi non
+ *  sono lavorazioni del Tracking e NON azzerano il contatore. */
+function ultimoEventoDatato(storia: StoriaEvent[] | null | undefined): StoriaEvent | null {
+  if (!storia) return null;
+  for (let i = storia.length - 1; i >= 0; i--) {
+    if (parseRuleDate(String(storia[i]?.data || ""))) return storia[i];
+  }
+  return null;
+}
+
 /** ggAgg = working days since last storia event (DevSpec §5). Empty storia → 999. */
 export function giorniDaUltimoAggiornamento(storia: StoriaEvent[], dataInserimento?: string): number {
   // Segnalazione 25: senza storico questa funzione restituiva 999 giorni. Una
@@ -65,10 +79,10 @@ export function giorniDaUltimoAggiornamento(storia: StoriaEvent[], dataInserimen
   // un fisso. Sono esattamente i "5000/10000 EUR" segnalati.
   // Senza storico il conteggio parte dalla data di inserimento della pratica;
   // se manca anche quella non si puo' dedurre nulla e il malus resta a zero.
-  if (!storia || storia.length === 0) {
+  const ultimo = ultimoEventoDatato(storia);
+  if (!ultimo) {
     return dataInserimento ? giorniLavorativiDa(dataInserimento) : 0;
   }
-  const ultimo = storia[storia.length - 1];
   return giorniLavorativiDa(ultimo.data);
 }
 
@@ -348,13 +362,15 @@ export function regolaDi(categoria: string): RegolaTracking | undefined {
 }
 function misure(row: TrackingRow) {
   const gg = giorniLavorativiDa(row.dataInserimento);
-  const haStoria = !!(row.storia && row.storia.length > 0);
-  const ggUltimo = haStoria ? giorniLavorativiDa(row.storia[row.storia.length - 1].data) : null;
+  // caso Becattini (11/08): si considera solo l'ultimo evento DATATO — gli
+  // eventi di modifica contratto (senza `data`) non azzerano il contatore
+  const ultimo = ultimoEventoDatato(row.storia);
+  const ggUltimo = ultimo ? giorniLavorativiDa(ultimo.data) : null;
   return {
     gg,
-    ggSenza: haStoria ? null : gg,
+    ggSenza: ultimo ? null : gg,
     ggSucc: ggUltimo,
-    ggAgg: haStoria ? (ggUltimo as number) : gg,
+    ggAgg: ultimo ? (ggUltimo as number) : gg,
   };
 }
 const _hit = (soglia: number | null | undefined, valore: number | null) =>
