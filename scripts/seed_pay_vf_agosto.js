@@ -134,6 +134,16 @@ for (const b of BF)
 // (0,2 / 0,4 / 0,5 con cap 30 per POS — cap non modellato) e NON pagano.
 for (const [off, pDV] of [["Dolce Vita Start 14.95", 0.2], ["Dolce Vita Pro 19.95", 0.4], ["Dolce Vita Ultra 24.95", 0.5], ["Dolce Vita Plus 24.95", 0.5]])
   R.push(["mobile", "Dolce Vita (" + pDV + " pt, no pay)", "Consumer", null, null, off, pDV, 0, [0, 0, 0, 0, 0, 0]]);
+// ---------- SOLUZIONI DIGITALI (fasce dallo schema di Luca 11/08; deck =
+// valori lettera): a catalogo solo 5 offerte — C = p1 b10 30/40/50 · D = p0,5 b5 15/20/25.
+for (const [offSD, fasciaSD, pSD, bSD, tSD] of [
+  ["Backup Facile", "C", 1, 10, [30, 40, 50]],
+  ["Secure Drive", "C", 1, 10, [30, 40, 50]],
+  ["AI Essential", "C", 1, 10, [30, 40, 50]],
+  ["AI Standard", "C", 1, 10, [30, 40, 50]],
+  ["Worry Free", "D", 0.5, 5, [15, 20, 25]],
+])
+  R.push(["soluzioni_digitali", "Sol. Digitale " + offSD + " · Fascia " + fasciaSD, "Business", "Multi-Servizi", "Soluzioni Digitali", offSD, pSD, bSD, tSD]);
 
 // ---------- GETTONI dalle Tabelle 2.1 + 3.1 (screenshot Luca 10/08 sera):
 // CB, opzioni e telefoni a rate — importi FLAT (gettone=true, fuori pista),
