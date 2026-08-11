@@ -30,7 +30,11 @@ if ($Install) {
   $argLine = "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$dest`" -Crm `"$Crm`" -Token `"$Token`" -Negozio `"$Negozio`" -FiscalUrl `"$FiscalUrl`" -CashIp `"$CashIp`""
   # Avvio automatico a ogni ACCESSO — chiave Run dell'UTENTE: nessun permesso admin.
   Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "TelefuturaPosAgent" -Value ("powershell " + $argLine) -Force
-  # Avvia subito, nascosto (se ne gira gia' uno, chiudilo prima con Get-CimInstance/Stop-Process).
+  # Chiudi eventuali agenti gia' in esecuzione (evita doppioni al re-install).
+  Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
+    Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match 'TelefuturaPosAgent' } |
+    ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch { } }
+  # Avvia subito, nascosto.
   Start-Process powershell -WindowStyle Hidden -ArgumentList $argLine
   Write-Host ""
   Write-Host "  Installato (avvio automatico all'accesso, SENZA admin) e GIA' in esecuzione." -ForegroundColor Green
