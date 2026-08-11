@@ -29,8 +29,12 @@ const num = (v: string): number => {
     return Number.isFinite(n) ? n : 0;
 };
 
-export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto }: {
+export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, nascondiVuoto }: {
     ctx: string; mese: string; lato: "ragazzi" | "azienda"; colore: string; vaiAzienda?: () => void;
+    // a tabellare ASSENTE non mostrare la card vuota (confondeva: sotto ci sono
+    // le tabelle dello schema esistente — caso W3 azienda, Luca 11/08): la
+    // creazione si apre dal link discreto della pagina Gare
+    nascondiVuoto?: boolean;
     // true quando il tabellare di questo lato non esiste (e non è nemmeno un
     // ragazzi derivato dall'azienda): la pagina Gare mostra allora lo schema
     // gare precedente da solo, senza far sparire i dati già impostati (Luca 11/08)
@@ -178,6 +182,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto }
     if (carico) return <div className="text-slate-400 text-sm">Carico il tabellare…</div>;
 
     if (!piste.length) {
+        if (nascondiVuoto && !(lato === "ragazzi" && aziendaEsiste)) return null;
         return lato === "ragazzi" && aziendaEsiste ? (
             <div className="glass-panel rounded-2xl p-6 text-center">
                 <div className="text-slate-300 mb-2">Il tabellare ragazzi di questo mese è <b>DERIVATO dal lato azienda</b> con la &quot;% ai ragazzi&quot; di ogni pista.</div>

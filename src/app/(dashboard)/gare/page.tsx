@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { Trophy, ArrowLeft, ChevronLeft, ChevronRight, CalendarDays, Building2, Users, ClipboardList, Target, Compass, Layers } from "lucide-react";
@@ -65,8 +65,10 @@ function GareInner() {
     const lato = searchParams.get("lato") === "ragazzi" ? "ragazzi" : "azienda";
     const go = (b?: string, l?: string) => router.push(b ? `/gare?brand=${b}${l ? `&lato=${l}` : ""}` : "/gare");
     const [month, setMonth] = useState(currentMonthKey());
+    useEffect(() => { setMostraCreazione(false); }, [brandId, lato, month]);
     const [vecchioSchema, setVecchioSchema] = useState(false);   // schema gare pre-tabellari, a richiesta
     const [tabVuoto, setTabVuoto] = useState(false);   // tabellare assente → lo schema precedente si mostra da solo
+    const [mostraCreazione, setMostraCreazione] = useState(false);   // apre la card copia/crea del tabellare pay
     const rag = brand ? RAGAZZI_GARA[brand.id] : null;
     const GestIcon = gestione?.icon;
 
@@ -216,7 +218,8 @@ function GareInner() {
                         <>
                             <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
                                 ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}
-                                vaiAzienda={() => go(brand.id, "azienda")} onVuoto={setTabVuoto} />
+                                vaiAzienda={() => go(brand.id, "azienda")} onVuoto={setTabVuoto}
+                                nascondiVuoto={!mostraCreazione} />
                             {!tabVuoto && (
                                 <button onClick={() => setVecchioSchema(v => !v)}
                                     className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
@@ -225,6 +228,12 @@ function GareInner() {
                             )}
                         </>
                     ) : null}
+                    {PAY_CTX[brand.id] && tabVuoto && !mostraCreazione && (
+                        <button onClick={() => setMostraCreazione(true)}
+                            className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+                            ＋ Imposta il tabellare pay del Calcolatore per questo mese
+                        </button>
+                    )}
                     {(!PAY_CTX[brand.id] || vecchioSchema || tabVuoto) && (
                         lato === "azienda" ? (
                             <AziendaTab key={`${brand.id}|${month}|az`} brand={brand.id} month={month} />
