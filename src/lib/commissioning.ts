@@ -30,6 +30,7 @@ export type PayRiga = {
     tipo_cliente: string | null; categoria: string | null; prodotto: string | null;
     offerta: string | null; opzione: string | null;
     brand_vendita: string | null;               // NULL = qualsiasi brand di vendita
+    moltiplicatore?: boolean;                   // true = i tiers sono MOLTIPLICATORI del canone dell'offerta (modello W3)
     punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
 };
@@ -77,7 +78,7 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
         supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
         supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier"),
-        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
             .eq("brand", brand).eq("month", monthISO).eq("lato", lato).eq("attivo", true).order("ordine").limit(1000),
     ]);
     const piste = (pisteRes.data || []) as PayPista[];
@@ -177,7 +178,9 @@ export function sostituzioneSim(c: { categoria?: string | null; prodotto?: strin
  */
 export function esclusaDalleGare(c: { categoria?: string | null; prodotto?: string | null; offerta?: string | null }): boolean {
     if (sostituzioneSim(c)) return true;
-    if (/^easy control$/i.test(String(c.offerta || "").trim())) return true;
+    // "vanno trattate come una sostituzione" (Luca 11/08): Easy Control (VF)
+    // e Smart Security (W3) — né commissioning né punti.
+    if (/^(easy control|smart security)$/i.test(String(c.offerta || "").trim())) return true;
     return false;
 }
 

@@ -17,7 +17,7 @@ import {
 
 type Cat = { id: string; nome: string; ordine: number };
 type Prod = { id: string; categoria_id: string; tipo_cliente: string; nome: string; ordine: number; attivo: boolean | null };
-type Off = { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean | null };
+type Off = { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean | null; canone_mensile: number | null };
 
 const BRANDS: { id: string; label: string; logo: string; color: string; zoom: number; prefix: string }[] = [
     { id: "windtre", label: "WindTre", logo: "/windtre.png", color: "#FF6B00", zoom: 2.0, prefix: "WindTre" },
@@ -116,7 +116,7 @@ export default function CalcolatorePage() {
             const prodotti = ((pRes.data || []) as Prod[]).filter(p => p.attivo !== false);
             const ids = prodotti.map(p => p.id);
             const oRes = ids.length
-                ? await supabase.from("catalog_offerte").select("id, prodotto_id, nome, ordine, attivo").in("prodotto_id", ids).order("ordine").limit(2000)
+                ? await supabase.from("catalog_offerte").select("id, prodotto_id, nome, ordine, attivo, canone_mensile").in("prodotto_id", ids).order("ordine").limit(2000)
                 : { data: [] as Off[] };
             if (!vivo) return;
             setCats((cRes.data || []) as Cat[]);
@@ -188,8 +188,16 @@ export default function CalcolatorePage() {
     for (const sg of scalaRiga) if (puntiProj >= sg.soglia_da) tierProj = sg.tier;
     // preselezione sulla PROIEZIONE (a inizio mese, senza dati, vale la live)
     const tier = tierSel == null ? (gl && gl.trascorsi > 0 && avz ? tierProj : tierLive) : tierSel;
-    const pay = riga ? payPerRiga(riga, riga.gettone ? 0 : tier) : null;
-    const payProssima = riga && !riga.gettone && tier < scalaRiga.length ? payPerRiga(riga, tier + 1) : null;
+    // modello W3: la riga a MOLTIPLICATORE paga canone x valore della soglia
+    const canone = offSel?.canone_mensile == null ? null : Number(offSel.canone_mensile);
+    const valore = riga ? payPerRiga(riga, riga.gettone ? 0 : tier) : null;
+    const pay = riga?.moltiplicatore
+        ? (canone != null && valore != null ? Math.round(canone * valore * 100) / 100 : null)
+        : valore;
+    const valProssima = riga && !riga.gettone && tier < scalaRiga.length ? payPerRiga(riga, tier + 1) : null;
+    const payProssima = riga?.moltiplicatore
+        ? (canone != null && valProssima != null ? Math.round(canone * valProssima * 100) / 100 : null)
+        : valProssima;
 
     // scoperture: offerte del catalogo senza riga pay
     const scoperte = useMemo(() => {
@@ -356,6 +364,9 @@ export default function CalcolatorePage() {
                                                     : tier <= 0
                                                         ? '"Di cui base" — sotto la 1ª soglia'
                                                         : `alla Soglia ${tier} · retroattivo dal 1° pezzo`}
+                                                {riga.moltiplicatore && (canone != null
+                                                    ? ` · ×${valore} sul canone di ${euro(canone)}`
+                                                    : " · ⚠️ manca il canone mensile a catalogo")}
                                             </div>
                                         </div>
                                         <div className="text-right">
