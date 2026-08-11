@@ -252,71 +252,104 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                 })}
             </div>
 
-            {/* RIGHE per pista */}
+            {/* RIGHE per pista — TABELLE compatte (segnalazione Luca 11/08: numeri
+                centrati, colonne strette, niente scroll infinito — stile delle
+                griglie S1-S4 che manda lui) */}
             {piste.map(p => {
                 const rr = righeDiPista(p.chiave);
                 const nTiers = soglieDi(p.chiave).length;
                 return (
-                    <div key={p.id} className="glass-panel rounded-2xl p-5">
-                        <div className="flex items-center justify-between mb-1">
-                            <div className="text-[11px] uppercase tracking-wider text-slate-400">Righe · {p.nome} ({rr.length})</div>
+                    <div key={p.id} className="glass-panel rounded-2xl overflow-hidden">
+                        <div className="flex items-center justify-between px-4 pt-3 pb-2">
+                            <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">{p.nome} <span className="text-slate-600">({rr.length})</span></div>
                             <button onClick={() => setNuovaRigaPer(nuovaRigaPer === p.chiave ? null : p.chiave)} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Riga</button>
                         </div>
-                        {nuovaRigaPer === p.chiave && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={p.chiave} nTiers={nTiers} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} />}
-                        {rr.map(r => <RigaEd key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
-                        {!rr.length && <div className="text-slate-500 text-sm">Nessuna riga su questa pista.</div>}
+                        {nuovaRigaPer === p.chiave && <div className="px-4"><NuovaRiga ctx={ctx} monthISO={monthISO} pista={p.chiave} nTiers={nTiers} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} /></div>}
+                        {rr.length > 0 && (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm border-collapse">
+                                    <thead>
+                                        <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                            <th className="text-left font-semibold px-3 py-1.5">Offerta</th>
+                                            <th className="px-1.5 py-1.5 font-semibold text-center w-12">Punti</th>
+                                            <th className="px-1.5 py-1.5 font-semibold text-center w-16">Base</th>
+                                            {Array.from({ length: nTiers }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-16">S{i + 1}</th>)}
+                                            <th className="px-2 py-1.5 w-20"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {rr.map(r => <RigaRow key={r.id} r={r} nTiers={nTiers} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                        {!rr.length && <div className="text-slate-500 text-sm px-4 pb-3">Nessuna riga su questa pista.</div>}
                     </div>
                 );
             })}
 
-            {/* GETTONI */}
-            <div className="glass-panel rounded-2xl p-5">
-                <div className="flex items-center justify-between mb-1">
-                    <div className="text-[11px] uppercase tracking-wider text-slate-400">💰 Gettoni — pagano sempre, senza soglia ({gettoni.length})</div>
+            {/* GETTONI — tabella compatta */}
+            <div className="glass-panel rounded-2xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 pt-3 pb-2">
+                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">💰 Gettoni — pagano sempre, senza soglia <span className="text-slate-600">({gettoni.length})</span></div>
                     <button onClick={() => setNuovaRigaPer(nuovaRigaPer === "__gettoni" ? null : "__gettoni")} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Gettone</button>
                 </div>
-                {nuovaRigaPer === "__gettoni" && <NuovaRiga ctx={ctx} monthISO={monthISO} pista={null} nTiers={0} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} />}
-                {gettoni.map(r => <RigaEd key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
-                {!gettoni.length && <div className="text-slate-500 text-sm">Nessun gettone.</div>}
+                {nuovaRigaPer === "__gettoni" && <div className="px-4"><NuovaRiga ctx={ctx} monthISO={monthISO} pista={null} nTiers={0} lato={lato} dopo={() => { setNuovaRigaPer(null); load(); }} /></div>}
+                {gettoni.length > 0 && (
+                    <table className="w-full text-sm border-collapse">
+                        <thead>
+                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                <th className="text-left font-semibold px-3 py-1.5">Voce</th>
+                                <th className="px-1.5 py-1.5 font-semibold text-center w-20">Gettone €</th>
+                                <th className="px-2 py-1.5 w-20"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {gettoni.map(r => <RigaRow key={r.id} r={r} nTiers={0} isDirty={dirty(r)} onUp={upRiga} onSalva={salvaRiga} onElimina={eliminaRiga} />)}
+                        </tbody>
+                    </table>
+                )}
+                {!gettoni.length && <div className="text-slate-500 text-sm px-4 pb-3">Nessun gettone.</div>}
             </div>
         </div>
     );
 }
 
-// Riga editabile — TOP-LEVEL, mai annidata (lezione CardVoce 10/08: il
-// rimontaggio a ogni tasto fa perdere il focus agli input).
-function RigaEd({ r, nTiers, isDirty, onUp, onSalva, onElimina }: {
+// Riga di TABELLA — top-level (lezione CardVoce: mai annidata). Aggancio e
+// note vivono nel tooltip della cella Offerta: la riga resta alta una riga.
+function RigaRow({ r, nTiers, isDirty, onUp, onSalva, onElimina }: {
     r: Riga; nTiers: number; isDirty: boolean;
     onUp: (id: string, patch: Partial<Riga>) => void;
     onSalva: (r: Riga) => void; onElimina: (r: Riga) => void;
 }) {
     const anchor = [r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") || "qualsiasi vendita";
+    const tip = anchor + (r.brand_vendita ? ` · [${r.brand_vendita}]` : "") + (r.note ? ` — ${r.note}` : "");
+    const cell = "w-full bg-transparent text-center text-sm text-white border-b border-transparent focus:border-indigo-400 outline-none py-0.5";
     return (
-        <div className="border-b border-white/5 py-2">
-            <div className="flex items-center gap-2 flex-wrap">
-                <button onClick={() => onUp(r.id, { attivo: !r.attivo })} title={r.attivo ? "Attiva — click per spegnere" : "Spenta"}
-                    className={`text-xs px-2 py-0.5 rounded-full border ${r.attivo ? "border-emerald-500/40 text-emerald-300" : "border-white/10 text-slate-500"}`}>
-                    {r.attivo ? "attiva" : "spenta"}
-                </button>
-                <input value={r.nome} onChange={e => onUp(r.id, { nome: e.target.value })}
-                    className="bg-transparent border-b border-white/10 text-sm text-white font-semibold flex-1 min-w-[160px] focus:outline-none focus:border-indigo-400" />
-                {r.brand_vendita && <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-slate-400">{r.brand_vendita}</span>}
-                {isDirty && <button onClick={() => onSalva(r)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva</button>}
-                <button onClick={() => onElimina(r)} className="text-slate-500 hover:text-red-400" title="Elimina riga"><Trash2 size={15} /></button>
-            </div>
-            <div className="text-[11px] text-slate-500 mt-0.5">{anchor}{r.note ? ` — ${r.note}` : ""}</div>
-            <div className="flex items-center gap-3 flex-wrap mt-1.5">
-                {!r.gettone && <label className="text-[11px] text-slate-400">punti <input value={r.punti} onChange={e => onUp(r.id, { punti: num(e.target.value) })} className={inputCls + " w-14"} /></label>}
-                <label className="text-[11px] text-slate-400">{r.gettone ? "gettone €" : "base €"} <input value={r.pay_base ?? ""} onChange={e => onUp(r.id, { pay_base: e.target.value === "" ? null : num(e.target.value) })} className={inputCls} /></label>
-                {!r.gettone && Array.from({ length: nTiers }, (_, i) => (
-                    <label key={i} className="text-[11px] text-slate-400">S{i + 1} €
-                        <input value={r.pay_tiers[i] ?? ""} onChange={e => {
-                            const t = [...r.pay_tiers]; t[i] = num(e.target.value); onUp(r.id, { pay_tiers: t });
-                        }} className={inputCls} />
-                    </label>
-                ))}
-            </div>
-        </div>
+        <tr className={`border-t border-white/5 hover:bg-white/[0.03] ${r.attivo ? "" : "opacity-40"}`}>
+            <td className="px-3 py-0.5 min-w-[170px]">
+                <div className="flex items-center gap-1">
+                    <input value={r.nome} title={tip} onChange={e => onUp(r.id, { nome: e.target.value })}
+                        className="bg-transparent text-sm text-white w-full border-b border-transparent focus:border-indigo-400 outline-none py-0.5" />
+                    {r.note && <span title={tip} className="text-slate-600 text-[11px] cursor-help shrink-0">ⓘ</span>}
+                </div>
+            </td>
+            {!r.gettone && <td className="px-1 py-0.5"><input value={r.punti} onChange={e => onUp(r.id, { punti: num(e.target.value) })} className={cell} /></td>}
+            <td className="px-1 py-0.5"><input value={r.pay_base ?? ""} onChange={e => onUp(r.id, { pay_base: e.target.value === "" ? null : num(e.target.value) })} className={cell} /></td>
+            {!r.gettone && Array.from({ length: nTiers }, (_, i) => (
+                <td key={i} className="px-1 py-0.5">
+                    <input value={r.pay_tiers[i] ?? ""} onChange={e => {
+                        const t = [...r.pay_tiers]; t[i] = num(e.target.value); onUp(r.id, { pay_tiers: t });
+                    }} className={cell} />
+                </td>
+            ))}
+            <td className="px-2 py-0.5 text-right whitespace-nowrap">
+                {isDirty && <button onClick={() => onSalva(r)} title="Salva" className="text-emerald-300 mr-1.5 align-middle"><Save size={14} /></button>}
+                <button onClick={() => onUp(r.id, { attivo: !r.attivo })} title={r.attivo ? "Attiva — click per spegnere" : "Spenta — click per accendere"}
+                    className={`mr-1.5 align-middle text-[13px] ${r.attivo ? "text-emerald-400" : "text-slate-600"}`}>●</button>
+                <button onClick={() => onElimina(r)} title="Elimina" className="text-slate-600 hover:text-red-400 align-middle"><Trash2 size={13} /></button>
+            </td>
+        </tr>
     );
 }
 
