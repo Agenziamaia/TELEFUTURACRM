@@ -236,10 +236,17 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
 const CTX_VF_T1 = ["acilia", "baleniere", "castani", "merulana"];
 const CTX_FW_T2 = ["donna", "magliana", "garbatella", "promontori"];
 
-export function contestoVfFw(brandId: string | null, codice: string | null, negozio?: string | null): string | null {
+export function contestoVfFw(brandId: string | null, codice: string | null, negozio?: string | null, categoria?: string | null): string | null {
     // LATO RAGAZZI (11/08): ogni brand paga col SUO tabellare — Vodafone
-    // sempre lettera A, Fastweb sempre tabellare Fastweb. Lo split T1/T2 coi
-    // codici (CTX_* qui sotto) servirà al lato AZIENDA, cantiere sui PDF.
+    // sempre lettera A, Fastweb sempre tabellare Fastweb — CON UNA ECCEZIONE
+    // (task Luca 11/08): l'ENERGIA Fastweb venduta coi codici dei Vodafone
+    // Store (T1) paga il tabellare a soglie della lettera A (pista luce/gas
+    // del contesto vodafone); l'energia T2 resta a gettone flat sul fastweb.
+    // Lo split T1/T2 completo coi codici servirà al lato AZIENDA (cantiere PDF).
+    if (brandId === "fastweb" && /energia/i.test(String(categoria || ""))) {
+        const ref = String(codice || "").trim().toLowerCase() || String(negozio || "").trim().toLowerCase();
+        if (CTX_VF_T1.some(x => ref.startsWith(x))) return "vodafone";
+    }
     return brandId;
 }
 export const CTX_CODICI_T1 = CTX_VF_T1;
@@ -260,8 +267,11 @@ export const CONTESTI_LABEL: Record<string, string> = {
 export async function caricaContrattiContesto(
     contesto: string, monthISO: string, prefixAltriBrand?: string,
 ): Promise<{ contratti: ContrattoPay[]; nonAllocate: number; escluseVodafone: number }> {
-    const prefix = contesto === "vodafone" ? "Vodafone" : contesto === "fastweb" ? "Fastweb" : (prefixAltriBrand || contesto);
-    const tutti = await caricaContrattiMese(prefix, monthISO);
+    // il contesto vodafone (lettera A) include anche l'ENERGIA Fastweb dei VS
+    const fonti: string[] =
+        contesto === "vodafone" ? ["Vodafone", "Fastweb"] :
+        contesto === "fastweb" ? ["Fastweb"] : [prefixAltriBrand || contesto];
+    const tutti = (await Promise.all(fonti.map(p => caricaContrattiMese(p, monthISO)))).flat();
     let escluseVodafone = 0;
     const contratti = tutti.filter(c => {
         // REGOLE LETTERE (agosto): Fastweb T2 — MNP/OLO di provenienza
@@ -270,7 +280,7 @@ export async function caricaContrattiContesto(
         const prov = String(c.provenienza || "");
         if (contesto === "fastweb" && /vodafone/i.test(prov)) { escluseVodafone++; return false; }
         if (contesto === "vodafone" && /mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(prov)) { escluseVodafone++; return false; }
-        return contestoVfFw(brandIdDaLabel(c.brand), c.cod_ins, c.negozio) === contesto;
+        return contestoVfFw(brandIdDaLabel(c.brand), c.cod_ins, c.negozio, c.categoria) === contesto;
     });
     return { contratti, nonAllocate: 0, escluseVodafone };
 }
