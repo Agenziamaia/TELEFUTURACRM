@@ -23,11 +23,6 @@ type Riga = {
 };
 
 const BRAND_VENDITA = ["windtre", "vodafone", "fastweb", "sky", "tim", "iliad", "very", "ho", "kena", "s4", "dojo", "kipoint"];
-const mesePrec = (m: string) => {
-    const [y, mm] = m.split("-").map(Number);
-    const d = new Date(y, mm - 2, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-};
 const inputCls = "bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-sm text-white w-20 text-right";
 const num = (v: string): number => {
     const n = Number(String(v).replace(",", "."));
@@ -137,20 +132,44 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto }
         setRighe(prev => prev.filter(x => x.id !== r.id));
     };
 
-    // ── COPIA dal mese precedente (tabellare vuoto)
+    // ── COPIA dall'ULTIMO mese che ha un tabellare (Luca 11/08: l'impostazione
+    //    di gara non deve mai sparire — a inizio mese si copia dall'ultimo mese
+    //    CON DATI, non per forza dal mese solare prima).
+    const [fonteCopia, setFonteCopia] = useState<string | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        supabase.from("pay_piste").select("month").eq("brand", ctx).eq("lato", lato).lt("month", monthISO)
+            .order("month", { ascending: false }).limit(1)
+            .then(({ data }) => { if (vivo) setFonteCopia(data?.[0]?.month ? String(data[0].month).slice(0, 7) : null); });
+        return () => { vivo = false; };
+    }, [ctx, monthISO, lato]);
     const copiaMese = async () => {
-        const prev = `${mesePrec(mese)}-01`;
+        if (!fonteCopia) { notify("Non c'è ancora nessun tabellare da copiare per questo operatore"); return; }
+        const prev = `${fonteCopia}-01`;
         const [p, s, r] = await Promise.all([
             supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
-        if (!p.data?.length) { notify(`Nessun tabellare (${lato}) su ${mesePrec(mese)}`); return; }
+        if (!p.data?.length) { notify(`Nessun tabellare (${lato}) su ${fonteCopia}`); return; }
         const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato })));
         const e2 = (s.data?.length ? await supabase.from("pay_soglie").insert(s.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
         const e3 = (r.data?.length ? await supabase.from("pay_righe").insert(r.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
         if (dbError("Copia mese", e1.error || e2.error || e3.error)) return;
-        notify(`Copiato da ${mesePrec(mese)} ✓ — ora ritocca soglie e importi`, "ok"); load();
+        notify(`Copiato da ${fonteCopia} ✓ — ora ritocca soglie e importi`, "ok"); load();
+    };
+
+    // ── CREA DA ZERO / nuova pista ("o andarle a ricostruire da zero" — Luca 11/08)
+    const nuovaPista = async () => {
+        const nome = prompt("Nome della pista (es. Mobile, Fisso, Energia):");
+        if (!nome || !nome.trim()) return;
+        const chiave = nome.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "pista";
+        if (piste.some(p => p.chiave === chiave)) { notify("Esiste già una pista con questo nome"); return; }
+        const e1 = await supabase.from("pay_piste").insert({ brand: ctx, month: monthISO, chiave, nome: nome.trim(), um: "punti", ordine: (piste[piste.length - 1]?.ordine || 0) + 1, lato });
+        if (dbError("Nuova pista", e1.error)) return;
+        const e2 = await supabase.from("pay_soglie").insert({ brand: ctx, month: monthISO, pista: chiave, tier: 1, soglia_da: 1, soglia_a: null, lato });
+        if (dbError("Nuova pista (soglia)", e2.error)) return;
+        notify("Pista creata ✓ — sistemale le soglie e aggiungi le righe", "ok"); load();
     };
 
     const righeDiPista = (chiave: string) => righe.filter(r => r.pista === chiave && !r.gettone);
@@ -165,11 +184,18 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto }
                 {vaiAzienda && <button onClick={vaiAzienda} className="px-4 py-2 rounded-xl text-sm font-semibold text-white" style={{ background: colore }}>🏢 Lavora sul lato azienda</button>}
             </div>
         ) : (
-            <div className="glass-panel rounded-2xl p-6 text-center">
-                <div className="text-slate-300 mb-3">Nessun tabellare ({lato}) su {mese}.</div>
-                <button onClick={copiaMese} className="px-4 py-2 rounded-xl text-sm font-semibold text-white inline-flex items-center gap-2" style={{ background: colore }}>
-                    <Copy size={15} /> Copia da {mesePrec(mese)} e ritocca
-                </button>
+            <div className="glass-panel rounded-2xl p-6 text-center space-y-3">
+                <div className="text-slate-300">Nessun tabellare ({lato}) su {mese}.</div>
+                <div className="flex gap-2 justify-center flex-wrap">
+                    {fonteCopia && (
+                        <button onClick={copiaMese} className="px-4 py-2 rounded-xl text-sm font-semibold text-white inline-flex items-center gap-2" style={{ background: colore }}>
+                            <Copy size={15} /> Copia da {fonteCopia} e ritocca
+                        </button>
+                    )}
+                    <button onClick={nuovaPista} className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-200 border border-white/15 inline-flex items-center gap-2">
+                        <Plus size={15} /> Crea da zero
+                    </button>
+                </div>
             </div>
         );
     }
@@ -183,7 +209,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto }
 
             {/* SOGLIE per pista */}
             <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
-                <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">Soglie — scrivi solo il &quot;da&quot;: il fino-a si sistema da solo</div>
+                <div className="flex items-center justify-between mb-3">
+                    <div className="text-[11px] uppercase tracking-wider text-slate-400">Soglie — scrivi solo il &quot;da&quot;: il fino-a si sistema da solo</div>
+                    <button onClick={nuovaPista} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Pista</button>
+                </div>
                 {piste.map(p => {
                     const scala = soglieDi(p.chiave);
                     return (

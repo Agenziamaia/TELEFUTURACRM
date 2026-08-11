@@ -169,12 +169,24 @@ export function sostituzioneSim(c: { categoria?: string | null; prodotto?: strin
     return /sostituzion/i.test(String(c.prodotto || "")) || /sostituzion/i.test(String(c.categoria || ""));
 }
 
+/**
+ * Vendite FUORI dalle gare per regola aziendale: sostituzioni SIM (tutti gli
+ * operatori) e le SIM Easy Control ("va considerata come una sostituzione" —
+ * Luca 11/08). Né commissioning né punti, e nel Calcolatore non sono
+ * "scoperture" ma escluse dichiarate.
+ */
+export function esclusaDalleGare(c: { categoria?: string | null; prodotto?: string | null; offerta?: string | null }): boolean {
+    if (sostituzioneSim(c)) return true;
+    if (/^easy control$/i.test(String(c.offerta || "").trim())) return true;
+    return false;
+}
+
 /** Perimetro v1 della produzione che conta per le gare. */
 export function produzioneValidaGare(c: ContrattoPay): boolean {
     if (!String(c.id || "").startsWith("CTR-")) return false;   // solo pratiche brand
     if (c.nascosta_gestione === true) return false;
     if (/annull/i.test(String(c.stato || ""))) return false;
-    if (sostituzioneSim(c)) return false;
+    if (esclusaDalleGare(c)) return false;
     return true;
 }
 
