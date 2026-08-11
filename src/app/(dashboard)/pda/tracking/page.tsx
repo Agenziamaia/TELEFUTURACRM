@@ -178,7 +178,7 @@ function StatoBadge({ id, set, categoria, brand }: { id: string; set: "admin" | 
   const s = set === "admin" ? getStatoA(id) : getStatoN(id, categoria, brand);
   return (
     <span
-      className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap border"
+      className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap border"
       style={{ color: s.color, background: s.bg, borderColor: s.color + "44" }}
     >
       {s.label}
@@ -190,8 +190,8 @@ function CatBadge({ id }: { id: string }) {
   const c = getCat(id);
   return (
     <span
-      className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap border"
-      style={{ color: c.color, background: c.color + "22", borderColor: c.color + "55" }}
+      className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap border"
+      style={{ color: c.color, background: c.color + "18", borderColor: c.color + "4d" }}
     >
       {c.label}
     </span>
@@ -249,30 +249,33 @@ function KpiBar({
   ];
 
   return (
-    <div className="mb-5">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-2.5">
+    <div>
+      {/* Card KPI in stile Gestione Usati (Luca 10/08): testo a sinistra,
+          attiva = colori dello stato + ring, spenta = velatura + opacita' */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
         {cards.map((c) => {
           const isActive = activeFilter === c.filter;
           return (
-            <div
+            <button
               key={c.label}
-              role="button"
-              tabIndex={0}
+              type="button"
               onClick={() => onFilter(isActive ? null : c.filter)}
-              onKeyDown={(e) => e.key === "Enter" && onFilter(isActive ? null : c.filter)}
-              className="rounded-xl border p-3.5 text-center cursor-pointer select-none transition-all"
-              style={{
-                background: isActive ? c.color + "1f" : "var(--tf-w30)",
-                borderColor: isActive ? c.color : "var(--tf-w80)",
-                boxShadow: isActive ? `0 0 0 3px ${c.color}22` : "none",
-              }}
+              className={"px-3 py-3 rounded-xl border transition-all text-left overflow-hidden " +
+                (isActive ? "ring-1 ring-white/10" : "bg-white/[0.02] border-white/5 opacity-70 hover:opacity-100 hover:border-white/10")}
+              style={isActive ? { background: c.color + "1a", borderColor: c.color + "66" } : undefined}
             >
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-xl" style={{ opacity: .85 }}>{c.emoji}</span>
-                <span className="text-2xl font-black" style={{ color: c.color }}>{c.val}</span>
-                {/* maturati + storico A DESTRA del numero (Luca 03/08): card bassa come le altre */}
+              <div className="flex items-center gap-1.5 mb-1 min-w-0">
+                <span className="text-base flex-shrink-0">{c.emoji}</span>
+                <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-wide truncate"
+                  style={{ color: isActive ? c.color : "var(--tf-64748b)" }}>
+                  {c.label}{isActive ? " ✓" : ""}
+                </span>
+              </div>
+              <div className="flex items-end gap-2">
+                <span className="text-xl sm:text-2xl font-bold" style={{ color: isActive ? c.color : "#fff" }}>{c.val}</span>
+                {/* maturati + storico accanto al numero (Luca 03/08): card bassa come le altre */}
                 {c.filter === "__malus__" && (
-                  <span className="ml-1.5 pl-2 text-left" style={{ borderLeft: "1px solid var(--tf-w100)" }}>
+                  <span className="pb-0.5 text-left min-w-0">
                     {malusTotale > 0 && <span className="block text-[10px] font-bold leading-tight" style={{ color: isActive ? "var(--tf-fca5a5)" : "var(--tf-94a3b8)" }}>€ {malusTotale.toFixed(0)} maturati</span>}
                     <span
                       role="button" tabIndex={0}
@@ -284,10 +287,7 @@ function KpiBar({
                   </span>
                 )}
               </div>
-              <div className="text-[11px] mt-1 font-bold uppercase tracking-wider" style={{ color: isActive ? c.color : "var(--tf-94a3b8)" }}>
-                {c.label}
-              </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -295,7 +295,7 @@ function KpiBar({
           uguali larga quanto la fila di card sopra. Tutti attivi all'ingresso;
           click = filtro esclusivo, riclick = di nuovo tutti (Ricerca Vendite). */}
       {brands.length > 0 && (
-        <div className="grid gap-2.5 mb-2.5" style={{ gridTemplateColumns: `repeat(${brands.length}, minmax(0, 1fr))` }}>
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${brands.length}, minmax(0, 1fr))` }}>
           {brands.map((b) => {
             const color = TRK_BRAND_COLORS[trkBrandKey(b)] || "var(--tf-94a3b8)";
             const logo = TRK_BRAND_LOGOS[trkBrandKey(b)];
@@ -320,9 +320,9 @@ function KpiBar({
                 className="relative rounded-xl border flex items-center justify-center transition-all cursor-pointer"
                 style={{
                   height: 72,
-                  borderColor: esclusivo ? color : "var(--tf-w100)",
-                  background: esclusivo ? color + "18" : "var(--tf-w30)",
-                  boxShadow: esclusivo ? `0 0 0 3px ${color}22` : "none",
+                  borderColor: esclusivo ? color + "99" : "var(--tf-w60)",
+                  background: esclusivo ? color + "18" : "var(--tf-w20)",
+                  boxShadow: esclusivo ? `0 0 0 1px rgba(255,255,255,.10)` : "none",
                   opacity: on ? 1 : .35,
                   filter: on ? "none" : "grayscale(1)",
                 }}>
@@ -359,6 +359,76 @@ function statoPraticaDi(row: TrackingRow): string {
   if (isAttenzioneRow(row)) return "⚠️ Warning";
   if (isDaLavorareRow(row)) return "⚡ Da Lavorare";
   return "— Nessuno";
+}
+
+// ─── FiltroTendina ───────────────────────────────────────────────────────────
+// Tendina filtri in stile Gestione Usati (Luca 10/08): label dentro il bottone,
+// pannello scuro con ricerca sopra le 12 voci, spunte indaco, pallino colore
+// per gli esiti. `single` = scelta singola con voce "Tutti" (vuoto = nessun filtro).
+function FiltroTendina({ label, options, selected, onChange, single = false }: {
+  label: string;
+  options: { id: string; label: string; color?: string }[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+  single?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [cerca, setCerca] = useState("");
+  const visibili = cerca.trim() ? options.filter((o) => o.label.toLowerCase().includes(cerca.trim().toLowerCase())) : options;
+  const mostrate = visibili.slice(0, 200);
+  const nascoste = visibili.length - mostrate.length;
+  const nomeDi = (id: string) => options.find((o) => o.id === id)?.label || id;
+  const testo = selected.length === 0 ? `${label} (Tutti)`
+    : selected.length <= 2 ? selected.map(nomeDi).join(", ")
+      : `${label} (${selected.length})`;
+  const chiudi = () => { setOpen(false); setCerca(""); };
+  const toggle = (id: string) => {
+    if (single) { onChange(selected[0] === id ? [] : [id]); chiudi(); return; }
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  };
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => (open ? chiudi() : setOpen(true))}
+        className="w-full sm:w-auto flex items-center gap-2 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-300 hover:bg-white/10 transition-all min-w-[140px]">
+        <span className="flex-1 text-left truncate">{testo}</span>
+        <span className="text-[10px] text-slate-500">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && <>
+        <div className="fixed inset-0 z-40" onClick={chiudi} />
+        <div className="absolute top-full mt-1 left-0 z-50 bg-[#12141f] border border-white/10 rounded-xl shadow-2xl w-64 max-h-80 overflow-auto py-1">
+          {options.length > 12 && (
+            <div className="px-2 pt-1.5 pb-2 border-b border-white/5 sticky top-0 bg-[#12141f] z-10">
+              <input value={cerca} onChange={(e) => setCerca(e.target.value)} autoFocus placeholder="Scrivi per filtrare…"
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-400/50" />
+            </div>
+          )}
+          <div className="px-3 py-2 text-[11px] font-bold uppercase text-indigo-400 border-b border-white/5 cursor-pointer hover:bg-white/5"
+            onClick={() => { onChange([]); if (single) chiudi(); }}>
+            {single || selected.length === 0 ? "Tutti" : "✕ Deseleziona tutto"}
+          </div>
+          {visibili.length === 0 && <div className="px-3 py-2.5 text-xs text-slate-500">Nessuna voce corrispondente</div>}
+          {mostrate.map((o) => {
+            const sel = selected.includes(o.id);
+            return (
+              <div key={o.id} onClick={() => toggle(o.id)}
+                className={"flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-white/5 transition-colors " + (sel ? "bg-indigo-500/10 text-indigo-300" : "text-slate-300")}>
+                <div className={"w-4 h-4 rounded flex items-center justify-center border text-[10px] flex-shrink-0 " + (sel ? "bg-indigo-500 border-indigo-500 text-white" : "border-white/20")}>
+                  {sel && "✓"}
+                </div>
+                {o.color && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: o.color }} />}
+                <span className="truncate">{o.label}</span>
+              </div>
+            );
+          })}
+          {nascoste > 0 && (
+            <div className="px-3 py-2 text-[11px] font-semibold text-amber-300/90 bg-amber-500/[0.06] border-t border-white/5">
+              … scrivi per vedere gli altri {nascoste}
+            </div>
+          )}
+        </div>
+      </>}
+    </div>
+  );
 }
 
 // ─── FilterBar ───────────────────────────────────────────────────────────────
@@ -411,21 +481,11 @@ function FilterBar({
   setNegozioSel: (v: string) => void;
   negozi: string[];
 }) {
-  const [statoOpen, setStatoOpen] = useState(false);
-  const [utentiOpen, setUtentiOpen] = useState(false);
-
-  const toggleCat = (id: string) => {
-    if (catSel.includes(id)) {
-      setCatSel(catSel.filter((c) => c !== id));
-      setStatoSel([]);
-    } else {
-      setCatSel([...catSel, id]);
-    }
-  };
-
-  const toggleBrand = (b: string) => {
-    if (brandSel.includes(b)) setBrandSel(brandSel.filter((x) => x !== b));
-    else setBrandSel([...brandSel, b]);
+  // Togliendo una categoria si azzera il filtro esiti (comportamento storico
+  // dei chip: gli esiti selezionati potrebbero non esistere piu' nel pool).
+  const cambiaCat = (v: string[]) => {
+    if (v.length < catSel.length) setStatoSel([]);
+    setCatSel(v);
   };
 
   let pools: { id: string; label: string; color: string }[] = [];
@@ -445,291 +505,59 @@ function FilterBar({
     return true;
   });
 
-  const inputStyle =
-    "bg-white/[0.05] border border-white/10 rounded-lg text-slate-100 text-[13px] py-2 px-3 outline-none box-border w-full";
+  // Stile campi in linea con Gestione Usati (Luca 10/08)
+  const inputCls = "px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm outline-none hover:bg-white/10 transition-all min-w-0";
+  const haFiltri = catSel.length > 0 || statoSel.length > 0 || utentiSel.length > 0
+    || !!negozioSel || !!venditoreSel || !!periodoDA || !!periodoA || !!search.trim();
+  const reset = () => {
+    setCatSel([]); setStatoSel([]); setUtentiSel([]); setNegozioSel("");
+    setVenditoreSel(""); setPeriodoDA(""); setPeriodoA(""); setSearch("");
+  };
 
   return (
-    <div className="bg-white/[0.03] border border-white/10 rounded-xl p-4 mb-4">
-      <div className="flex items-center gap-2 flex-wrap mb-3">
-        <span className="text-xs text-slate-400 font-semibold mr-1">CATEGORIA</span>
-        {categorie.map((cat) => {
-          const sel = catSel.includes(cat.id);
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => toggleCat(cat.id)}
-              className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
-              style={{
-                borderColor: sel ? cat.color : "var(--tf-w100)",
-                background: sel ? cat.color + "33" : "transparent",
-                color: sel ? cat.color : "var(--tf-94a3b8)",
-              }}
-            >
-              {cat.label}
-            </button>
-          );
-        })}
-        {catSel.length > 0 && (
-          <button
-            type="button"
-            onClick={() => { setCatSel([]); setStatoSel([]); }}
-            className="rounded-full px-3 py-1 text-[11px] cursor-pointer border border-white/15 bg-transparent text-slate-500"
-          >
-            ✕ Deseleziona tutto
+    <>
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 px-4 sm:px-6 pb-3">
+        <FiltroTendina label="Categoria" options={categorie} selected={catSel} onChange={cambiaCat} />
+        {negozi.length > 0 && (
+          <FiltroTendina label="Negozio" single options={negozi.map((n) => ({ id: n, label: n }))}
+            selected={negozioSel ? [negozioSel] : []} onChange={(v) => setNegozioSel(v[0] || "")} />
+        )}
+        {venditori.length > 0 && (
+          <FiltroTendina label="Venditore" single options={venditori.map((n) => ({ id: n, label: n }))}
+            selected={venditoreSel ? [venditoreSel] : []} onChange={(v) => setVenditoreSel(v[0] || "")} />
+        )}
+        {/* Segnalazione 77: questa tendina elenca gli ESITI NEGOZIO, non gli stati pratica. */}
+        <FiltroTendina label="Esito negozio" options={statiDisponibili} selected={statoSel} onChange={setStatoSel} />
+        {/* Filtro UTENTE multi (Luca 03/08): amministrazione in su; opzioni dalle
+            pratiche VISIBILI col negozio selezionato. */}
+        {utenti.length > 0 && (
+          <FiltroTendina label="Utente" options={utenti.map((n) => ({ id: n, label: n }))}
+            selected={utentiSel} onChange={setUtentiSel} />
+        )}
+        <input type="date" value={periodoDA} onChange={(e) => setPeriodoDA(e.target.value)}
+          title="Periodo: dal" className={inputCls + " w-full sm:w-36 text-slate-400"} />
+        <input type="date" value={periodoA} onChange={(e) => setPeriodoA(e.target.value)}
+          title="Periodo: al" className={inputCls + " w-full sm:w-36 text-slate-400"} />
+        {haFiltri && (
+          <button type="button" onClick={reset}
+            className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-400 hover:bg-white/10 transition-all">
+            ↺ Reset
           </button>
         )}
       </div>
-
-      {/* Filtro NEGOZIO (richiesta Luca 28/07): visibile dall'amministrativa in
-          su (chi vede tutti i negozi); stessi chip cliccabili degli altri filtri. */}
-      {negozi.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-          <span className="text-xs text-slate-400 font-semibold mr-1">NEGOZIO</span>
-          <button
-            type="button"
-            onClick={() => setNegozioSel("")}
-            className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
-            style={{
-              borderColor: negozioSel === "" ? "var(--tf-6366f1)" : "var(--tf-w100)",
-              background: negozioSel === "" ? "#6366f133" : "transparent",
-              color: negozioSel === "" ? "var(--tf-818cf8)" : "var(--tf-94a3b8)",
-            }}
-          >
-            Tutti
-          </button>
-          {negozi.map((n) => {
-            const sel = negozioSel === n;
-            return (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setNegozioSel(sel ? "" : n)}
-                className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
-                style={{
-                  borderColor: sel ? "var(--tf-6366f1)" : "var(--tf-w100)",
-                  background: sel ? "#6366f133" : "transparent",
-                  color: sel ? "var(--tf-818cf8)" : "var(--tf-94a3b8)",
-                }}
-              >
-                {n}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      {/* Segnalazione 54: filtro Venditore come ultimo, con pulsanti cliccabili
-          (come Categoria e Brand) invece della tendina. "Tutti" + i nomi dei
-          collaboratori del negozio, manager compreso. Visibile allo store manager. */}
-      {venditori.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap mb-3">
-          <span className="text-xs text-slate-400 font-semibold mr-1">VENDITORE</span>
-          <button
-            type="button"
-            onClick={() => setVenditoreSel("")}
-            className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
-            style={{
-              borderColor: venditoreSel === "" ? "var(--tf-6366f1)" : "var(--tf-w100)",
-              background: venditoreSel === "" ? "#6366f133" : "transparent",
-              color: venditoreSel === "" ? "var(--tf-818cf8)" : "var(--tf-94a3b8)",
-            }}
-          >
-            Tutti
-          </button>
-          {venditori.map((n) => {
-            const sel = venditoreSel === n;
-            return (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setVenditoreSel(sel ? "" : n)}
-                className="rounded-full px-3.5 py-1 text-xs font-semibold cursor-pointer border transition-all"
-                style={{
-                  borderColor: sel ? "var(--tf-6366f1)" : "var(--tf-w100)",
-                  background: sel ? "#6366f133" : "transparent",
-                  color: sel ? "var(--tf-818cf8)" : "var(--tf-94a3b8)",
-                }}
-              >
-                {n}
-              </button>
-            );
-          })}
-        </div>
-      )}
-      <div className="flex gap-2.5 items-center flex-wrap">
-        <div className="relative flex-[1.5] min-w-[180px]">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
+      <div className="px-4 sm:px-6 pb-5">
+        <div className="relative w-full">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm">🔍</span>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Cerca per nominativo, n° contratto, negozio…"
-            className={inputStyle + " pl-9"}
+            className="w-full bg-white/[0.03] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-base text-slate-300 outline-none focus:border-white/20 transition-all"
           />
         </div>
-        <div className="relative flex-1 min-w-[200px]">
-          <button
-            type="button"
-            onClick={() => setStatoOpen(!statoOpen)}
-            className={inputStyle + " text-left flex items-center justify-between cursor-pointer"}
-          >
-            {/* Segnalazione 77: questa tendina elenca gli ESITI NEGOZIO, non gli
-                stati pratica: rinominata di conseguenza. */}
-            <span className={statoSel.length === 0 ? "text-slate-500" : "text-slate-100"}>
-              {statoSel.length === 0
-                ? "Tutti gli esiti"
-                : statoSel.length === 1
-                  ? (statiDisponibili.find((s) => s.id === statoSel[0])?.label ?? statoSel[0])
-                  : `${statoSel.length} esiti selezionati`}
-            </span>
-            <span className="text-slate-500 text-[10px] ml-2">{statoOpen ? "▲" : "▼"}</span>
-          </button>
-          {statoOpen && (
-            <div
-              className="absolute top-full left-0 right-0 mt-1 bg-[#0e1526] border border-white/10 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
-              style={{ boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}
-            >
-              <div className="flex items-center justify-between py-2 px-3 border-b border-white/10">
-                <span className="text-[11px] text-slate-500 font-semibold">
-                  {statoSel.length > 0 ? `${statoSel.length} selezionati` : "Seleziona esiti"}
-                </span>
-                {statoSel.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setStatoSel([]); }}
-                    className="bg-transparent border-none text-slate-500 text-[11px] cursor-pointer p-0"
-                  >
-                    ✕ Tutti
-                  </button>
-                )}
-              </div>
-              {statiDisponibili.map((s) => {
-                const sel = statoSel.includes(s.id);
-                return (
-                  <div
-                    key={s.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (sel) setStatoSel(statoSel.filter((x) => x !== s.id));
-                      else setStatoSel([...statoSel, s.id]);
-                    }}
-                    className={`flex items-center gap-2.5 py-1.5 px-3 cursor-pointer ${sel ? "bg-indigo-900/40" : ""}`}
-                  >
-                    <div
-                      className="w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0"
-                      style={{ borderColor: sel ? s.color : "var(--tf-475569)", background: sel ? s.color : "transparent" }}
-                    >
-                      {sel && <span className="text-black text-[9px] font-black">✓</span>}
-                    </div>
-                    <span className="text-[13px]" style={{ color: s.color }}>{s.label}</span>
-                  </div>
-                );
-              })}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setStatoOpen(false)}
-                className="py-2 px-3 border-t border-white/10 text-center text-[11px] text-slate-500 cursor-pointer"
-              >
-                Chiudi ▲
-              </div>
-            </div>
-          )}
-        </div>
-        {/* Segnalazione 93: rimosso il filtro "Tutti gli stati" (era un doppione); resta "Tutti gli esiti". */}
-        {/* Filtro UTENTE multi-selezione (Luca 03/08): amministrazione in su.
-            Le opzioni vengono dalle pratiche VISIBILI col negozio selezionato:
-            filtro un punto vendita e vedo solo chi ci ha pratiche dentro. */}
-        {utenti.length > 0 && (
-          <div className="relative flex-1 min-w-[180px]">
-            <button
-              type="button"
-              onClick={() => setUtentiOpen(!utentiOpen)}
-              className={inputStyle + " text-left flex items-center justify-between cursor-pointer"}
-            >
-              <span className={utentiSel.length === 0 ? "text-slate-500" : "text-slate-100"}>
-                {utentiSel.length === 0
-                  ? "👥 Tutti gli utenti"
-                  : utentiSel.length === 1
-                    ? "👤 " + utentiSel[0]
-                    : `👥 ${utentiSel.length} utenti selezionati`}
-              </span>
-              <span className="text-slate-500 text-[10px] ml-2">{utentiOpen ? "▲" : "▼"}</span>
-            </button>
-            {utentiOpen && (
-              <div
-                className="absolute top-full left-0 right-0 mt-1 bg-[#0e1526] border border-white/10 rounded-lg z-[999] shadow-xl max-h-60 overflow-y-auto"
-                style={{ boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}
-              >
-                <div className="flex items-center justify-between py-2 px-3 border-b border-white/10">
-                  <span className="text-[11px] text-slate-500 font-semibold">
-                    {utentiSel.length > 0 ? `${utentiSel.length} selezionati` : "Seleziona utenti"}
-                  </span>
-                  {utentiSel.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setUtentiSel([]); }}
-                      className="bg-transparent border-none text-slate-500 text-[11px] cursor-pointer p-0"
-                    >
-                      ✕ Tutti
-                    </button>
-                  )}
-                </div>
-                {utenti.map((n) => {
-                  const sel = utentiSel.includes(n);
-                  return (
-                    <div
-                      key={n}
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (sel) setUtentiSel(utentiSel.filter((x) => x !== n));
-                        else setUtentiSel([...utentiSel, n]);
-                      }}
-                      className={`flex items-center gap-2.5 py-1.5 px-3 cursor-pointer ${sel ? "bg-indigo-900/40" : ""}`}
-                    >
-                      <div
-                        className="w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0"
-                        style={{ borderColor: sel ? "var(--tf-818cf8)" : "var(--tf-475569)", background: sel ? "var(--tf-818cf8)" : "transparent" }}
-                      >
-                        {sel && <span className="text-black text-[9px] font-black">✓</span>}
-                      </div>
-                      <span className="text-[13px]" style={{ color: sel ? "var(--tf-c7d2fe)" : "var(--tf-cbd5e1)" }}>{n}</span>
-                    </div>
-                  );
-                })}
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setUtentiOpen(false)}
-                  className="py-2 px-3 border-t border-white/10 text-center text-[11px] text-slate-500 cursor-pointer"
-                >
-                  Chiudi ▲
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-[11px] text-slate-500 font-semibold whitespace-nowrap">PERIODO</span>
-          <input type="date" value={periodoDA} onChange={(e) => setPeriodoDA(e.target.value)} className={inputStyle + " w-[138px]"} />
-          <span className="text-slate-500 text-xs">→</span>
-          <input type="date" value={periodoA} onChange={(e) => setPeriodoA(e.target.value)} className={inputStyle + " w-[138px]"} />
-          {(periodoDA || periodoA) && (
-            <button
-              type="button"
-              onClick={() => { setPeriodoDA(""); setPeriodoA(""); }}
-              className="py-1 px-2.5 rounded-md text-[11px] cursor-pointer border border-white/15 bg-transparent text-slate-500 whitespace-nowrap"
-            >
-              ✕
-            </button>
-          )}
-        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -744,8 +572,10 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
   canDelete?: boolean;
   onAskDelete?: (row: TrackingRow) => void;
 }) {
+  // th in stile Gestione Usati (Luca 10/08): sticky dentro la lista scrollabile
   const thStyle =
-    "py-2.5 px-3.5 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/10 whitespace-nowrap";
+    "px-4 py-3 text-left text-[11px] text-slate-500 uppercase font-semibold tracking-wide border-b border-white/5 bg-[#12141f] sticky top-0 whitespace-nowrap";
+  const tdStyle = "px-4 py-3";
   // Selezione multipla per delega rapida dalla dashboard.
   const [checked, setChecked] = useState<string[]>([]);
   const [bulkTo, setBulkTo] = useState("");
@@ -755,20 +585,20 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
 
   if (rows.length === 0) {
     return (
-      <div className="bg-[#0d1424] border border-white/10 rounded-xl py-12 px-12 text-center text-slate-500">
+      <div className="rounded-xl border border-white/5 py-16 px-12 text-center text-slate-600 text-sm">
         Nessuna pratica trovata con i filtri selezionati.
       </div>
     );
   }
 
   return (
-    <div className="bg-[#0d1424] border border-white/10 rounded-xl overflow-hidden">
+    <div className="rounded-xl border border-white/5 overflow-hidden">
       {/* Barra delega rapida: compare quando selezioni una o piu' pratiche */}
       {canDelegate && checked.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 py-2.5 px-3.5 bg-indigo-900/40 border-b border-indigo-700">
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 bg-indigo-500/10 border-b border-indigo-500/30">
           <span className="text-[13px] font-bold text-indigo-200">{checked.length} pratic{checked.length === 1 ? "a" : "he"} selezionat{checked.length === 1 ? "a" : "e"}</span>
           <select value={bulkTo} onChange={(e) => setBulkTo(e.target.value)}
-            className="bg-white/[0.05] border border-white/15 rounded-lg text-slate-100 text-[13px] p-1.5 outline-none">
+            className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-slate-200 outline-none hover:bg-white/10 transition-all">
             <option value="">— Delega a… —</option>
             {members.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
           </select>
@@ -784,80 +614,80 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
-            <tr className="bg-white/[0.04]">
+            <tr>
               {canDelegate && (
                 <th className={thStyle + " w-8"}>
                   <input type="checkbox" checked={allChecked}
                     onChange={() => setChecked(allChecked ? [] : allOnPage)} title="Seleziona tutte" />
                 </th>
               )}
-              <th className={thStyle}>CATEGORIA</th>
-              <th className={thStyle}>BRAND</th>
-              <th className={thStyle}>NOMINATIVO</th>
-              <th className={thStyle}>NEGOZIO</th>
-              <th className={thStyle}>VENDITORE</th>
-              <th className={thStyle}>DATA</th>
-              <th className={thStyle}>ESITO NEGOZIO</th>
-              <th className={thStyle}>ESITO ADMIN</th>
-              <th className={thStyle + " text-center"}>STATO PRATICA</th>
-              <th className={thStyle + " text-center"}>MALUS</th>
+              <th className={thStyle}>Categoria</th>
+              <th className={thStyle}>Brand</th>
+              <th className={thStyle}>Nominativo</th>
+              <th className={thStyle}>Negozio</th>
+              <th className={thStyle}>Venditore</th>
+              <th className={thStyle}>Data</th>
+              <th className={thStyle}>Esito negozio</th>
+              <th className={thStyle}>Esito admin</th>
+              <th className={thStyle + " text-center"}>Stato pratica</th>
+              <th className={thStyle + " text-center"}>Malus</th>
               {canDelete && <th className={thStyle + " w-10 text-center"}>🗑</th>}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => {
-              // RIGHE SFUMATE (Luca 03/08): la fase colora la riga con un
-              // gradiente che sfuma da sinistra + barretta colore — via il
-              // monocolore da foglio Excel
+            {rows.map((row) => {
+              // RIGHE SFUMATE (Luca 03/08, ammorbidite 10/08 sul look Usati):
+              // la fase colora la riga con un velo che sfuma da sinistra +
+              // barretta colore; niente zebra (come Gestione Usati).
               const fase = isMalusRow(row) ? "malus" : isAttenzioneRow(row) ? "warning" : isDaLavorareRow(row) ? "lavorare" : "";
               const cFase = fase === "malus" ? "var(--tf-ef4444)" : fase === "warning" ? "var(--tf-f97316)" : fase === "lavorare" ? "var(--tf-eab308)" : "";
               const bg = fase
-                ? `linear-gradient(90deg, ${cFase}24, ${cFase}08 45%, transparent 75%)`
-                : i % 2 === 0 ? "transparent" : "var(--tf-w20)";
+                ? `linear-gradient(90deg, ${cFase}1c, ${cFase}06 45%, transparent 70%)`
+                : "transparent";
               return (
                 <tr
                   key={row.rowKey || row.id}
-                  className="cursor-pointer transition-all hover:!bg-indigo-900/30"
+                  className="border-b border-white/[0.03] cursor-pointer transition-colors group hover:!bg-white/[0.04]"
                   style={{ background: bg, boxShadow: fase ? `inset 3px 0 0 ${cFase}` : "none" }}
                   onClick={() => onSelect(row)}
                 >
                   {canDelegate && (
-                    <td className="py-2.5 px-3.5 border-b border-white/5" onClick={(e) => e.stopPropagation()}>
+                    <td className={tdStyle} onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={checked.includes(row.id)} onChange={() => toggle(row.id)} />
                     </td>
                   )}
-                  <td className="py-2.5 px-3.5 border-b border-white/5">
+                  <td className={tdStyle}>
                     <CatBadge id={row.categoria} />
                   </td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-100 text-[13px] font-semibold">{row.brand}</td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-200 text-[13px]">{row.nominativo}</td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-400 text-xs">{row.negozio}</td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-400 text-xs">{row.venditore}</td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5 text-slate-500 text-xs">{row.dataInserimento}</td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5">
+                  <td className={tdStyle + " text-sm font-semibold text-slate-200 whitespace-nowrap"}>{row.brand}</td>
+                  <td className={tdStyle + " text-sm font-medium text-slate-200 group-hover:text-white transition-colors"}>{row.nominativo}</td>
+                  <td className={tdStyle + " text-sm text-slate-400 whitespace-nowrap"}>{row.negozio}</td>
+                  <td className={tdStyle + " text-sm text-slate-400 whitespace-nowrap"}>{row.venditore}</td>
+                  <td className={tdStyle + " text-xs text-slate-500 whitespace-nowrap"}>{row.dataInserimento}</td>
+                  <td className={tdStyle}>
                     <StatoBadge id={row.statoNegozio} set="negozio" categoria={row.categoria} brand={row.brand} />
                   </td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5">
+                  <td className={tdStyle}>
                     <StatoBadge id={row.statoAdmin} set="admin" />
                   </td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5 text-center">
+                  <td className={tdStyle + " text-center"}>
                     {isMalusRow(row) ? (
-                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-red-950 border border-red-600 text-red-200">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-red-500/10 text-red-400 border-red-500/30 whitespace-nowrap">
                         🔴 Malus
                       </span>
                     ) : isAttenzioneRow(row) ? (
-                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-orange-950 border border-orange-500 text-orange-200">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-orange-500/10 text-orange-400 border-orange-500/30 whitespace-nowrap">
                         ⚠️ Warning
                       </span>
                     ) : isDaLavorareRow(row) ? (
-                      <span className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold bg-amber-950 border border-amber-500 text-amber-200">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border bg-amber-500/10 text-amber-400 border-amber-500/30 whitespace-nowrap">
                         ⚡ Da Lavorare
                       </span>
                     ) : (
-                      <span className="text-slate-600 text-xs">—</span>
+                      <span className="text-slate-700 text-xs">—</span>
                     )}
                   </td>
-                  <td className="py-2.5 px-3.5 border-b border-white/5 text-center">
+                  <td className={tdStyle + " text-center"}>
                     {(() => {
                       // Oltre al malus che sta maturando ADESSO, la colonna dice
                       // quanto la pratica ha gia' generato in passato (episodi
@@ -867,7 +697,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                       if (isMalusRow(row)) {
                         return (
                           <div className="inline-flex flex-col items-center gap-0.5">
-                            <div className="bg-red-950 border border-red-600 rounded-md px-2.5 py-0.5 text-xs font-bold text-red-200">
+                            <div className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border bg-red-500/10 text-red-400 border-red-500/30 whitespace-nowrap">
                               € {calcolaMalus(row)}
                             </div>
                             <div className="text-[10px] text-slate-500">({MALUS_IMPORTO[row.categoria] ?? 0}€/gg)</div>
@@ -880,22 +710,22 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
                       if (totStorico > 0) {
                         return (
                           <div className="inline-flex flex-col items-center gap-0.5" title="Malus generato in passato, archiviato">
-                            <div className="bg-white/[0.05] border border-white/15 rounded-md px-2.5 py-0.5 text-[11px] font-bold text-slate-400">
+                            <div className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold border bg-white/5 text-slate-400 border-white/10 whitespace-nowrap">
                               € {Math.round(totStorico)} storico
                             </div>
                           </div>
                         );
                       }
-                      return <span className="text-slate-800 text-xs">—</span>;
+                      return <span className="text-slate-700 text-xs">—</span>;
                     })()}
                   </td>
                   {canDelete && (
-                    <td className="py-2.5 px-3.5 border-b border-white/5 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className={tdStyle + " text-center"} onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         onClick={() => onAskDelete?.(row)}
                         title="Togli dal Tracking (la vendita resta in Ricerca Vendite)…"
-                        className="bg-transparent border border-white/10 rounded-lg px-2 py-1 text-sm cursor-pointer hover:border-red-500 hover:bg-red-500/10 transition-colors"
+                        className="p-1.5 rounded-lg border border-transparent text-slate-500 cursor-pointer hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/10 transition-all"
                       >
                         🗑️
                       </button>
@@ -907,7 +737,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
           </tbody>
         </table>
       </div>
-      <div className="py-2.5 px-4 border-t border-white/10 text-slate-500 text-xs flex items-center gap-4">
+      <div className="px-4 py-3 border-t border-white/5 bg-[#12141f]/50 text-xs text-slate-600 flex items-center gap-4">
         <span>{rows.length} pratiche visualizzate</span>
         {(() => {
           const totMalus = rows.reduce((acc, r) => acc + calcolaMalus(r), 0);
@@ -915,7 +745,7 @@ function Tabella({ rows, onSelect, canDelegate = false, members = [], onBulkDele
           if (countMalus === 0) return null;
           return (
             <span
-              className="ml-4 py-0.5 px-2.5 bg-red-950 border border-red-600 rounded-md text-red-200 text-[11px] font-bold"
+              className="inline-flex items-center px-2.5 py-1 rounded-full border bg-red-500/10 text-red-400 border-red-500/30 text-[11px] font-bold"
             >
               {countMalus} in Malus — € {totMalus} maturati
             </span>
@@ -2056,39 +1886,37 @@ export default function TrackingPdaPage() {
   );
 
   return (
-    <div className="w-full">
-      <div className="p-0">
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="-m-4 sm:-m-6 md:-m-8 text-white flex flex-col min-h-0 overflow-x-hidden" style={{ height: "calc(100vh - 4rem)" }}>
+      {/* HEADER BLOCCATO in stile Gestione Usati (Luca 10/08): titolo, KPI,
+          tessere brand, filtri e ricerca non scrollano — scorre solo la lista.
+          relative z-20: senza, il backdrop-blur crea un contesto sotto la
+          tabella e le tendine dei filtri finiscono coperte (lezione Usati). */}
+      <div className="flex-shrink-0 bg-[#0f111a]/80 backdrop-blur-xl border-b border-white/5 relative z-20">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-4 sm:px-6 py-5 sm:py-6">
           <div>
-            <div className="flex items-center gap-3 mb-1 flex-wrap">
-              <h2 className="text-3xl font-bold text-white">📡 Tracking PDA</h2>
-              {/* Le completate (esito definitivo negozio) spariscono in automatico:
-                  questo le fa rivedere. Accanto al titolo (Luca 03/08). */}
-              <button
-                type="button"
-                onClick={() => setMostraCompletate((v) => !v)}
-                title="Le pratiche con esito definitivo del negozio spariscono da sole: attiva per rivederle"
-                className={"px-3 py-1.5 rounded-lg border text-[12px] font-bold transition-colors " + (mostraCompletate ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-400 hover:bg-white/5")}
-              >
-                {/* spento = casella VUOTA (10/08: la ✅ verde da spento sembrava
-                    un toggle acceso e ha ingannato tutti, me compreso) */}
-                {mostraCompletate ? "✓" : "☐"} Mostra completate
-              </button>
-            </div>
-            <p className="text-slate-400 text-sm">Monitoraggio pratiche: esito negozio, esito admin, storico e malus</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-white">📡 Tracking PDA</h1>
+            <p className="text-sm text-slate-500 mt-1">Monitoraggio pratiche: esito negozio, esito admin, storico e malus</p>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Filtri personali (Luca 03/08): chi riceve deleghe ha "📥 Delegate
-                a me"; chi puo' delegare ha "📤 Delegate da me"; l'amministrazione
-                al posto del primo ha "⚡ Da lavorare" = pratiche chiuse dal
-                negozio che aspettano la verifica admin. */}
+          {/* Bottoni in griglia compatta come Gestione Usati; toggle = formula
+              attivo bg-500/25 border-400/60 + " ✓". Filtri personali (Luca
+              03/08): chi riceve deleghe ha "📥 Delegate a me"; chi puo' delegare
+              "📤 Delegate da me"; l'amministrazione "⚡ Da lavorare". */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setMostraCompletate((v) => !v)}
+              title="Le pratiche con esito definitivo del negozio spariscono da sole: attiva per rivederle"
+              className={"flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all " + (mostraCompletate ? "bg-emerald-500/25 border-emerald-400/60 text-emerald-100" : "bg-emerald-500/10 border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/20")}
+            >
+              👁 Mostra completate{mostraCompletate ? " ✓" : ""}
+            </button>
             {!canEditAdmin && (
               <button
                 type="button"
                 onClick={() => setOnlyMine((v) => !v)}
-                className={"px-4 py-2 rounded-lg border text-[13px] font-bold transition-colors " + (onlyMine ? "border-emerald-500 bg-emerald-500/15 text-emerald-300" : "border-slate-600 text-slate-300 hover:bg-white/5")}
+                className={"flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all " + (onlyMine ? "bg-blue-500/25 border-blue-400/60 text-blue-100" : "bg-blue-500/10 border-blue-500/30 text-blue-200 hover:bg-blue-500/20")}
               >
-                📥 Delegate a me
+                📥 Delegate a me{onlyMine ? " ✓" : ""}
               </button>
             )}
             {canDelegate && (
@@ -2096,9 +1924,9 @@ export default function TrackingPdaPage() {
                 type="button"
                 onClick={() => setOnlyDelegate((v) => !v)}
                 title="Solo le pratiche che HAI delegato a qualcuno"
-                className={"px-4 py-2 rounded-lg border text-[13px] font-bold transition-colors " + (onlyDelegate ? "border-violet-500 bg-violet-500/15 text-violet-300" : "border-slate-600 text-slate-300 hover:bg-white/5")}
+                className={"flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all " + (onlyDelegate ? "bg-purple-500/25 border-purple-400/60 text-purple-100" : "bg-purple-500/10 border-purple-500/30 text-purple-200 hover:bg-purple-500/20")}
               >
-                📤 Delegate da me
+                📤 Delegate da me{onlyDelegate ? " ✓" : ""}
               </button>
             )}
             {canEditAdmin && (
@@ -2106,71 +1934,36 @@ export default function TrackingPdaPage() {
                 type="button"
                 onClick={() => setSoloDaLavorare((v) => !v)}
                 title="Pratiche chiuse dal negozio che aspettano la verifica dell'amministrazione"
-                className={"px-4 py-2 rounded-lg border text-[13px] font-bold transition-colors " + (soloDaLavorare ? "border-amber-500 bg-amber-500/15 text-amber-300" : "border-slate-600 text-slate-300 hover:bg-white/5")}
+                className={"flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all " + (soloDaLavorare ? "bg-amber-500/25 border-amber-400/60 text-amber-100" : "bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20")}
               >
-                ⚡ Da lavorare
+                ⚡ Da lavorare{soloDaLavorare ? " ✓" : ""}
               </button>
             )}
             <button
               type="button"
               onClick={() => setShowRegole(true)}
-              className="px-4 py-2 rounded-lg border border-indigo-500 text-indigo-200 text-[13px] font-bold hover:bg-indigo-500/10 transition-colors"
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 text-slate-300 border border-white/10 text-xs font-semibold hover:bg-white/10 transition-all"
             >
               📋 Regole
             </button>
           </div>
         </div>
 
-        {showRegole && (
-          <div
-            className="fixed inset-0 bg-black/60 z-[1100] flex items-center justify-center p-4"
-            onClick={() => setShowRegole(false)}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Regole di Ingaggio"
-          >
-            <div
-              className="bg-[#0e1526] border border-white/10 rounded-2xl w-full max-w-[980px] max-h-[88vh] overflow-y-auto shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between py-5 px-7 border-b border-white/10">
-                <div>
-                  <div className="text-lg font-extrabold text-slate-100">📋 Regole di Ingaggio — Tracking PDA</div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    Giorni LAVORATIVI (lun–sab) · fasce mutuamente esclusive: 🔴 Malus &gt; ⚠️ Warning &gt; ⚡ Da Lavorare
-                    {["admin", "dev"].includes(user?.role || "") ? " · clicca sui numeri per modificarli" : ""}
-                  </div>
-                </div>
-                <button type="button" onClick={() => setShowRegole(false)} className="bg-transparent border-none text-slate-500 text-xl cursor-pointer leading-none p-0">
-                  ✕
-                </button>
-              </div>
-              <RegoleTracking admin={["admin", "dev"].includes(user?.role || "")} onSalvate={() => setRegoleV((v) => v + 1)} />
-            </div>
-          </div>
-        )}
-
-        {loadError && (
-          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-            Errore: {loadError}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="py-12 text-center text-slate-400">Caricamento...</div>
-        ) : (
+        {!loading && (
           <>
-            <KpiBar
-              data={filteredPerKpi}
-              onFilter={setKpiFilter}
-              activeFilter={kpiFilter}
-              storicoTotale={storicoTotale}
-              onApriStorico={() => setShowArchivio(true)}
-              brands={ordinaBrandTracking([...new Set(data.filter((r) => !r.tracking_nascosto).map((r) => r.brand).filter(Boolean))])}
-              dataBrand={filteredPerBrand}
-              brandSel={brandSel}
-              setBrandSel={setBrandSel}
-            />
+            <div className="px-4 sm:px-6 pb-1">
+              <KpiBar
+                data={filteredPerKpi}
+                onFilter={setKpiFilter}
+                activeFilter={kpiFilter}
+                storicoTotale={storicoTotale}
+                onApriStorico={() => setShowArchivio(true)}
+                brands={ordinaBrandTracking([...new Set(data.filter((r) => !r.tracking_nascosto).map((r) => r.brand).filter(Boolean))])}
+                dataBrand={filteredPerBrand}
+                brandSel={brandSel}
+                setBrandSel={setBrandSel}
+              />
+            </div>
             <FilterBar
               categorie={categorieAttive}
               catSel={catSel}
@@ -2202,8 +1995,53 @@ export default function TrackingPdaPage() {
               utentiSel={utentiSel}
               setUtentiSel={setUtentiSel}
             />
-            <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} archivio={episodiPerRiga} canDelete={["admin", "dev"].includes(user?.role || "")} onAskDelete={setDaEliminare} />
           </>
+        )}
+      </div>
+
+      {/* LISTA: solo questa scrolla (come Gestione Usati) */}
+      <div className="flex-1 min-h-0 overflow-auto px-3 sm:px-6 py-4 pb-8">
+        {loadError && (
+          <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+            Errore: {loadError}
+          </div>
+        )}
+        {loading ? (
+          <div className="flex items-center justify-center py-24 text-slate-500 text-sm">Caricamento pratiche…</div>
+        ) : (
+          <Tabella rows={filtered} onSelect={setSelected} canDelegate={canDelegate} members={members} onBulkDelegate={handleBulkDelegate} archivio={episodiPerRiga} canDelete={["admin", "dev"].includes(user?.role || "")} onAskDelete={setDaEliminare} />
+        )}
+
+        {/* Modale Regole: FUORI dall'header sticky — il backdrop-blur di un
+            antenato diventa il containing block dei position:fixed e la modale
+            ne resterebbe intrappolata. */}
+        {showRegole && (
+          <div
+            className="fixed inset-0 bg-black/60 z-[1100] flex items-center justify-center p-4"
+            onClick={() => setShowRegole(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Regole di Ingaggio"
+          >
+            <div
+              className="bg-[#0e1526] border border-white/10 rounded-2xl w-full max-w-[980px] max-h-[88vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between py-5 px-7 border-b border-white/10">
+                <div>
+                  <div className="text-lg font-extrabold text-slate-100">📋 Regole di Ingaggio — Tracking PDA</div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    Giorni LAVORATIVI (lun–sab) · fasce mutuamente esclusive: 🔴 Malus &gt; ⚠️ Warning &gt; ⚡ Da Lavorare
+                    {["admin", "dev"].includes(user?.role || "") ? " · clicca sui numeri per modificarli" : ""}
+                  </div>
+                </div>
+                <button type="button" onClick={() => setShowRegole(false)} className="bg-transparent border-none text-slate-500 text-xl cursor-pointer leading-none p-0">
+                  ✕
+                </button>
+              </div>
+              <RegoleTracking admin={["admin", "dev"].includes(user?.role || "")} onSalvate={() => setRegoleV((v) => v + 1)} />
+            </div>
+          </div>
         )}
 
         {/* Popup cestino: NASCONDE dal Tracking, la vendita non si tocca
