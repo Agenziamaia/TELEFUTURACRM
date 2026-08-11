@@ -36,10 +36,11 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     // Contanti già incassati: evita il DOPPIO incasso se lo scontrino fallisce e si riprova.
     const [cashDone, setCashDone] = useState(false);
     const [paidAmount, setPaidAmount] = useState(0);
+    const [isTest, setIsTest] = useState(false);
     // reset a ogni apertura (nuova vendita) o chiusura del modale
     useEffect(() => {
         setMetodo("CONTANTI"); setFase("scelta"); setIncassato(0); setResto(0);
-        setMsg(""); setEsclusi([]); setCashDone(false); setPaidAmount(0);
+        setMsg(""); setEsclusi([]); setCashDone(false); setPaidAmount(0); setIsTest(false);
     }, [data]);
 
     // Incasso contanti via coda: enqueue → poll del job finché done/error.
@@ -115,6 +116,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                 });
                 chk = await res.json().catch(() => ({}));
                 if (!res.ok) chk.ok = false;
+                if (chk?.testMode) setIsTest(true);
             } catch (e: any) { chk = { ok: false, error: String(e?.message || e) }; }
             if (!chk.ok) {
                 setFase("errore");
@@ -140,8 +142,9 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             setMsg("Scontrino non emesso: " + (p.error || "errore"));
             return;
         }
+        if (p.testMode) setIsTest(true);
         setFase("fatto");
-        setMsg("Scontrino in stampa" + (p.esclusi?.length ? ` — ${p.esclusi.length} voci senza reparto NON stampate` : ""));
+        setMsg((p.testMode ? "Documento NON fiscale in stampa (prova)" : "Scontrino fiscale in stampa") + (p.esclusi?.length ? ` — ${p.esclusi.length} voci senza reparto NON stampate` : ""));
     };
 
     const btnMetodo = (m: MetodoPagamento, label: string, emoji: string) => (
@@ -163,7 +166,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             <div className="glass-panel w-full max-w-md p-5 space-y-4">
                 <div className="flex items-baseline justify-between">
                     <h3 className="text-lg font-bold text-white">🧾 Incasso &amp; Scontrino</h3>
-                    <span className="text-xs text-slate-400">{data.negozio || "—"}</span>
+                    <span className="text-xs text-slate-400">{data.negozio || "—"}{isTest ? " · PROVA (non fiscale)" : ""}</span>
                 </div>
 
                 <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 max-h-44 overflow-y-auto">

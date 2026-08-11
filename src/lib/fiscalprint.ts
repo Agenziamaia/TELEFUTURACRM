@@ -116,10 +116,16 @@ export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment = {
       ` department="${dept}"` +
       ` justification="1" />`;
   }).join("");
+  // Importo pagato: se ASSENTE si intende INCASSATO l'intero totale (RISCOSSO).
+  // Prima `money(payment.amount)` con amount assente dava "0.00" → l'RT segnava
+  // tutto "NON RISCOSSO / importo pagato 0" (bug visto sullo scontrino CARTA).
+  // Per un "non riscosso" reale (finanziamento/credito) il chiamante passa amount = 0.
+  const totaleItems = items.reduce((s, it) => s + Number(it.unitPrice) * Number(it.quantity ?? 1), 0);
+  const paid = payment.amount != null ? Number(payment.amount) : totaleItems;
   const total =
     `<printRecTotal operator="${esc(operator)}"` +
     ` description="${esc(payment.description || "CONTANTE")}"` +
-    ` payment="${money(payment.amount)}"` +
+    ` payment="${money(paid)}"` +
     ` paymentType="${Number(payment.paymentType ?? 0)}"` +
     ` index="0" justification="2" />`;
   return `<printerFiscalReceipt>` +
