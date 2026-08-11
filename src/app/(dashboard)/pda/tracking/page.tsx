@@ -1258,7 +1258,17 @@ function Drawer({
             <div className="relative">
               <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-slate-800" />
               {[...row.storia].reverse().map((ev, i) => {
-                const dotColor = tipoColor(ev.tipo);
+                // MODIFICA CONTRATTO (11/08, caso "[SISTEMA] —"): gli eventi di
+                // Ricerca Vendite hanno un formato diverso ({campo, da, a, at,
+                // user}) e uscivano come trattini — si traducono qui in chiaro
+                const mc = ev as unknown as { campo?: string; da?: string; a?: string; at?: string; user?: string };
+                const isModifica = !ev.testo && (mc.campo || mc.at);
+                const testo = isModifica
+                  ? `Modifica contratto — ${mc.campo || "campo"}: ${mc.da || "—"} → ${mc.a || "—"}`
+                  : ev.testo;
+                const quando = ev.data || (mc.at ? new Date(mc.at).toLocaleDateString("it-IT") : "—");
+                const chi = ev.utente || mc.user || "—";
+                const dotColor = isModifica ? "var(--tf-38bdf8)" : tipoColor(ev.tipo);
                 const isAdmin = ev.ruolo === "admin";
                 return (
                   <div key={i} className="flex gap-3.5 mb-4 relative">
@@ -1267,14 +1277,14 @@ function Drawer({
                       <div
                         className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-1 uppercase tracking-wider"
                         style={{
-                          color: isAdmin ? "var(--tf-a78bfa)" : "var(--tf-6366f1)",
-                          background: isAdmin ? "var(--tf-2e1065)" : "var(--tf-1e1b4b)",
+                          color: isModifica ? "var(--tf-38bdf8)" : isAdmin ? "var(--tf-a78bfa)" : "var(--tf-6366f1)",
+                          background: isModifica ? "var(--tf-0c2a3f)" : isAdmin ? "var(--tf-2e1065)" : "var(--tf-1e1b4b)",
                         }}
                       >
-                        {tipoLabel(ev.tipo)}
+                        {isModifica ? "Modifica" : tipoLabel(ev.tipo)}
                       </div>
-                      <div className="text-[13px] text-slate-200">{ev.testo}</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">{ev.data} — {ev.utente}</div>
+                      <div className="text-[13px] text-slate-200">{testo}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">{quando} — {chi}</div>
                     </div>
                   </div>
                 );
