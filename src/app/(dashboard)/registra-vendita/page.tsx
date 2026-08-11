@@ -9,6 +9,13 @@ import { MARG_PRODUCTS_LEGACY } from "@/lib/margMargini";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
+
+// POS scontrino/cassa: ATTIVO solo nei negozi elencati (env, separati da virgola,
+// es. "Donna Olimpia"). Vuoto/non impostato = SPENTO ovunque → il modale Incasso &
+// Scontrino NON compare e il flusso degli altri negozi resta identico. Si accende
+// impostando NEXT_PUBLIC_POS_SCONTRINO_STORES sul box e ridistribuendo.
+const POS_STORES = (process.env.NEXT_PUBLIC_POS_SCONTRINO_STORES || "").split(",").map((s) => s.trim()).filter(Boolean);
+const posScontrinoAbilitato = (neg) => POS_STORES.includes(String(neg || "").trim());
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { dataNascitaDaCF } from "@/lib/dataNascita";
 import { trovaDuplicati, liberaCellulare } from "@/lib/clientChecks";
@@ -5398,7 +5405,7 @@ function CRM() {
       // Il blocco resta attivo fino al reset: altrimenti il carrello e' ancora
       // pieno e un altro clic risalverebbe tutto.
       const _scRows = buildScontrinoItems(margList);
-      if (_scRows.length) {
+      if (_scRows.length && posScontrinoAbilitato(selNeg)) {
         setScontrino({ items: _scRows, negozio: selNeg });
         setSubmitting(false); // submitLock resta attivo finché il modale non chiude
       } else {
@@ -5517,9 +5524,9 @@ function CRM() {
       setMargCliCerca("");setMargCliHits([]);setMargCliSel(null);
       setShowMargSave(false);
       showToast(`Vendita salvata! ${rows.length} prodott${rows.length===1?"o":"i"} registrat${rows.length===1?"o":"i"}`);
-      // POS: apri Incasso & Scontrino sulle voci prezzate; fullReset alla chiusura.
+      // POS: apri Incasso & Scontrino sulle voci prezzate (solo negozi abilitati); fullReset alla chiusura.
       const _scRows = buildScontrinoItems(margItems);
-      if (_scRows.length) setScontrino({ items: _scRows, negozio: selNeg });
+      if (_scRows.length && posScontrinoAbilitato(selNeg)) setScontrino({ items: _scRows, negozio: selNeg });
       else fullReset();
     }catch(e){
       showToast("Errore salvataggio: "+(e?.message||"riprova"));
