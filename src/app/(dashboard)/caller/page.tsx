@@ -1089,8 +1089,18 @@ function CallerPageInner() {
         const existing = linked?.appointment_id as number | null | undefined;
         const { fascia: _fx, ...payloadLegacy } = payload;   // fallback pre-mig. 118
         if (existing) {
-            let { error } = await supabase.from("appointments").update(payload).eq("id", existing);
-            if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(payloadLegacy).eq("id", existing));
+            // NO SHOW RIPRESO (Luca 11/08, segnalazione dir. telefonico): se il
+            // caller ri-fissa l'appuntamento su un evento chiuso con esito
+            // NEGATIVO, il calendario deve tornare "In programma" — è un
+            // appuntamento nuovo a tutti gli effetti. Gli esiti positivi del
+            // negozio (attivato*) restano intoccabili (caso Greco, buco #5).
+            const { data: cur } = await supabase.from("appointments").select("status").eq("id", existing).maybeSingle();
+            const stCur = String((cur as { status?: string } | null)?.status || "");
+            const riapribili = ["no_show", "ko", "annullato", "da_rifissare", "da_richiamare"];
+            const pl = riapribili.includes(stCur) ? { ...payload, status: "scheduled" } : payload;
+            const plLegacy = riapribili.includes(stCur) ? { ...payloadLegacy, status: "scheduled" } : payloadLegacy;
+            let { error } = await supabase.from("appointments").update(pl).eq("id", existing);
+            if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(plLegacy).eq("id", existing));
             if (error) alert("Appuntamento in calendario NON aggiornato: " + error.message);
             return;
         }

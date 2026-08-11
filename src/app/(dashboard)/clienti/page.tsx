@@ -1284,11 +1284,11 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
                                     placeholder="IT60 X054 2811 1010 0000 0123 456"
                                 />
                             </div>
-                            {/* DOCUMENTI dal form (Luca 11/08): caricati sul cliente,
-                                anche senza alcuna vendita registrata */}
+                            {/* DOCUMENTO D'IDENTITÀ dal form (Luca 11/08): caricato sul
+                                cliente anche senza alcuna vendita registrata */}
                             {!cliente && (
                                 <div className="space-y-1.5 sm:col-span-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Documenti (facoltativi)</label>
+                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">🪪 Documento d&apos;identità <span className="normal-case font-normal">(facoltativo — fronte/retro, foto o PDF)</span></label>
                                     <input
                                         type="file"
                                         multiple
@@ -1297,7 +1297,7 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
                                         className="w-full text-sm text-slate-400 file:mr-3 file:px-3.5 file:py-2 file:rounded-lg file:border file:border-violet-500/40 file:bg-violet-500/15 file:text-violet-200 file:text-xs file:font-bold file:cursor-pointer hover:file:bg-violet-500/25 file:transition-all"
                                     />
                                     {docNuovi.length > 0 && (
-                                        <div className="text-[11px] text-slate-400">{docNuovi.length} file da caricare: {docNuovi.map((f) => f.name).join(" · ")}</div>
+                                        <div className="text-[11px] text-slate-400">🪪 {docNuovi.length} file da caricare: {docNuovi.map((f) => f.name).join(" · ")}</div>
                                     )}
                                 </div>
                             )}
