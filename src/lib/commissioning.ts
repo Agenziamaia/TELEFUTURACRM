@@ -107,21 +107,52 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
  * si aggiorna da solo.
  */
 export async function caricaTabellare(brand: string, monthISO: string): Promise<Tabellare | null> {
-    const ragazzi = await caricaTabellareLato(brand, monthISO, "ragazzi");
-    if (ragazzi) return ragazzi;
-    const azienda = await caricaTabellareLato(brand, monthISO, "azienda");
-    if (!azienda) return null;
+    const [ragazzi, azienda] = await Promise.all([
+        caricaTabellareLato(brand, monthISO, "ragazzi"),
+        caricaTabellareLato(brand, monthISO, "azienda"),
+    ]);
+    if (!azienda) return ragazzi;
     const percDi = new Map(azienda.piste.map(p => [p.chiave, p.perc_ragazzi == null ? 100 : Number(p.perc_ragazzi)]));
     const scala = (v: number | null, pista: string | null) =>
         v == null ? null : Math.round(v * ((pista ? percDi.get(pista) ?? 100 : 100) / 100) * 100) / 100;
+    const deriva = (r: PayRiga): PayRiga => ({
+        ...r,
+        pay_base: scala(r.pay_base, r.pista),
+        pay_tiers: r.pay_tiers.map(v => scala(v, r.pista) as number),
+    });
+    if (!ragazzi) {
+        // il ragazzi può avere SOLO gettoni senza piste (es. W3 dopo l'abbandono
+        // del vecchio tabellare): ripescali e affiancali al derivato.
+        const orfani = await caricaRigheOrfane(brand, monthISO);
+        return { ...azienda, derivato: true, righe: [...azienda.righe.map(deriva), ...orfani] };
+    }
+    // DERIVAZIONE PARZIALE (allineamento Luca 11/08): le piste azienda che il
+    // ragazzi NON ha si derivano (× perc_ragazzi, 100 se non impostata) — così
+    // il Calcolatore mostra mappato tutto ciò che l'azienda copre e le
+    // "scoperture" diventano la lista vera di ciò che manca su ogni brand.
+    const chiaviRag = new Set(ragazzi.piste.map(p => p.chiave));
+    const pisteApp = azienda.piste.filter(p => !chiaviRag.has(p.chiave));
+    if (!pisteApp.length) return ragazzi;
+    const chiaviApp = new Set(pisteApp.map(p => p.chiave));
     return {
-        ...azienda, derivato: true,
-        righe: azienda.righe.map(r => ({
-            ...r,
-            pay_base: scala(r.pay_base, r.pista),
-            pay_tiers: r.pay_tiers.map(v => scala(v, r.pista) as number),
-        })),
+        ...ragazzi, derivato: true,
+        piste: [...ragazzi.piste, ...pisteApp],
+        soglie: [...ragazzi.soglie, ...azienda.soglie.filter(sg => chiaviApp.has(sg.pista))],
+        righe: [...ragazzi.righe, ...azienda.righe.filter(r => r.pista && chiaviApp.has(r.pista)).map(deriva)],
     };
+}
+
+/** Righe ragazzi senza pista madre (gettoni orfani, normalizzate). */
+async function caricaRigheOrfane(brand: string, monthISO: string): Promise<PayRiga[]> {
+    const { data } = await supabase.from("pay_righe")
+        .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        .eq("brand", brand).eq("month", monthISO).eq("lato", "ragazzi").eq("attivo", true).order("ordine").limit(1000);
+    return ((data || []) as Record<string, unknown>[]).map(r => ({
+        ...(r as unknown as PayRiga),
+        punti: Number(r.punti || 0),
+        pay_base: r.pay_base == null ? null : Number(r.pay_base),
+        pay_tiers: Array.isArray(r.pay_tiers) ? (r.pay_tiers as unknown[]).map(Number) : [],
+    }));
 }
 
 /** Tabellare AZIENDA così com'è (per il pannello e le analisi lato azienda). */

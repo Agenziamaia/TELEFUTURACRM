@@ -253,7 +253,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             </div>
                         );
                     })}
-                    {derivato.righe.some(r => r.gettone || !r.pista) && (
+                    {(derivato.righe.some(r => r.gettone || !r.pista) || righe.length > 0) && (
                         <div className="glass-panel rounded-2xl overflow-hidden">
                             <div className="px-4 pt-3 pb-1.5 text-[11px] uppercase tracking-wider text-slate-400 font-semibold">💰 Gettoni — pagano sempre, senza soglia</div>
                             <table className="w-full text-sm border-collapse">
@@ -264,7 +264,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {derivato.righe.filter(r => r.gettone || !r.pista).map(r => (
+                                    {[...derivato.righe.filter(r => r.gettone || !r.pista), ...righe.filter(r => r.gettone || !r.pista)].map(r => (
                                         <tr key={r.id} className="border-t border-white/5">
                                             <td className="px-3 py-1" title={[r.tipo_cliente, r.categoria, r.prodotto, r.offerta].filter(Boolean).join(" · ") + (r.note ? ` — ${r.note}` : "")}>{r.nome}{r.note && <span className="text-slate-600 text-[11px] ml-1 cursor-help">ⓘ</span>}</td>
                                             <td className="px-1 py-1 text-center text-white font-medium">{r.pay_base ?? "—"}</td>

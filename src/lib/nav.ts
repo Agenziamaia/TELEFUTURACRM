@@ -154,6 +154,8 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Target", sez: "target", icon: ClipboardList, roles: ["admin", "dev"] },
             { name: "Obiettivi Home", sez: "obiettivi", icon: Target, roles: ["admin", "dev"] },
             { name: "Direzione Inserimento", sez: "direzione", icon: Compass, roles: ["admin", "dev"] },
+            // CALENDARIO GARE (Luca 11/08): giorni lavorativi/ora scatto/proiezione
+            { name: "Calendario gare", sez: "calendariogare", icon: CalendarDays, roles: ["admin", "dev"] },
         ],
     },
     // (il Calcolatore $$$ vive SOPRA, sotto il gruppo Negozio — il doppione
