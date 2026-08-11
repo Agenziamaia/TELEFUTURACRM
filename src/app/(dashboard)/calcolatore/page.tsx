@@ -72,21 +72,15 @@ export default function CalcolatorePage() {
     // PROSPECT (task Luca 11/08): giorni lavorativi del mese (lun-sab meno
     // festivi, override amministrabile) → la soglia si preseleziona sulla
     // PROIEZIONE a fine mese, col dato attuale sempre visibile.
-    const [gl, setGl] = useState<{ totali: number; trascorsi: number; override: boolean } | null>(null);
-    const [glDraft, setGlDraft] = useState<string>("");
+    const [gl, setGl] = useState<Awaited<ReturnType<typeof giorniLavorativiMese>> | null>(null);
     useEffect(() => {
         let vivo = true;
         setGl(null);
-        giorniLavorativiMese(monthISO).then(v => { if (vivo) { setGl(v); setGlDraft(String(v.totali)); } });
+        giorniLavorativiMese(monthISO).then(v => { if (vivo) setGl(v); });
         return () => { vivo = false; };
     }, [monthISO]);
-    const salvaGiorni = async () => {
-        const n = Number(glDraft);
-        if (!Number.isFinite(n) || n < 1 || n > 31) return;
-        await supabase.from("pay_giorni_lavorativi").upsert({ month: monthISO, giorni: n });
-        const v = await giorniLavorativiMese(monthISO);
-        setGl(v); setGlDraft(String(v.totali));
-    };
+    // proiezione visibile solo dal giorno impostato (Gare → Calendario gare)
+    const proiezioneOn = !!(gl && gl.trascorsi > 0 && gl.mostraProiezione);
     const proietta = (punti: number) =>
         gl && gl.trascorsi > 0 ? Math.round((punti / gl.trascorsi) * gl.totali * 100) / 100 : punti;
 
@@ -187,7 +181,7 @@ export default function CalcolatorePage() {
     let tierProj = 0;
     for (const sg of scalaRiga) if (puntiProj >= sg.soglia_da) tierProj = sg.tier;
     // preselezione sulla PROIEZIONE (a inizio mese, senza dati, vale la live)
-    const tier = tierSel == null ? (gl && gl.trascorsi > 0 && avz ? tierProj : tierLive) : tierSel;
+    const tier = tierSel == null ? (proiezioneOn && avz ? tierProj : tierLive) : tierSel;
     // modello W3: la riga a MOLTIPLICATORE paga canone x valore della soglia
     const canone = offSel?.canone_mensile == null ? null : Number(offSel.canone_mensile);
     const valore = riga ? payPerRiga(riga, riga.gettone ? 0 : tier) : null;
@@ -227,13 +221,10 @@ export default function CalcolatorePage() {
                 <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Calculator size={26} /> Calcolatore $$$</h1>
                 <div className="flex items-center gap-3 flex-wrap">
                     {gl && (
-                        <label className="text-[12px] text-slate-400 flex items-center gap-1.5" title="Giorni lavorativi del mese (lun-sab meno festivi). Modificalo se il mese va contato diversamente: guida la proiezione.">
-                            📅 lavorativi
-                            <input value={glDraft} onChange={e => setGlDraft(e.target.value)} onBlur={salvaGiorni}
-                                onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                                className="bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-sm text-white w-12 text-center" />
-                            <span className="text-slate-500">· trascorsi {gl.trascorsi}{gl.override ? " · ✎" : ""}</span>
-                        </label>
+                        <a href="/gare?brand=calendariogare" className="text-[12px] text-slate-400 hover:text-slate-200 transition-colors"
+                            title="Si imposta in Gare → Calendario gare (giorni lavorativi, ora di scatto, visibilità proiezione)">
+                            📅 lavorativi {gl.totali}{gl.override ? " ✎" : ""} · trascorsi {gl.trascorsi} · scatto h{gl.oraScatto}
+                        </a>
                     )}
                     <input type="month" value={mese} onChange={e => { setMese(e.target.value); setTierSel(null); }}
                         className="bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
@@ -377,8 +368,8 @@ export default function CalcolatorePage() {
                                     {!riga.gettone && scalaRiga.length > 0 && (
                                         <div className="mt-5">
                                             <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
-                                                Soglia — preselezionata sulla PROIEZIONE a fine mese
-                                                {avz && riga.pista ? ` (S${tierProj || "0"} · ${puntiProj} punti proiettati) — oggi S${tierLive || "0"} · ${puntiPista} punti` : ""}
+                                                {proiezioneOn ? "Soglia — preselezionata sulla PROIEZIONE a fine mese" : `Soglia — sul dato attuale (proiezione visibile dal giorno ${gl?.proiezioneDal ?? 1})`}
+                                                {avz && riga.pista ? (proiezioneOn ? ` (S${tierProj || "0"} · ${puntiProj} punti proiettati) — oggi S${tierLive || "0"} · ${puntiPista} punti` : ` (S${tierLive || "0"} · ${puntiPista} punti)`) : ""}
                                             </div>
                                             <div className="flex gap-2 flex-wrap">
                                                 <Pill on={tier === 0} onClick={() => setTierSel(0)}>Base</Pill>
@@ -418,13 +409,19 @@ export default function CalcolatorePage() {
                                 for (const sg of scalaP) if (projP >= sg.soglia_da) tierP = sg.tier;
                                 return (
                                     <div key={p.chiave} className="mb-4 last:mb-0">
-                                        <div className="flex justify-between text-sm mb-1">
+                                        {/* la PROIEZIONE è il dato principale (Luca 11/08); l'attuale sotto */}
+                                        <div className="flex justify-between text-sm mb-0.5">
                                             <span className="text-slate-200 font-semibold">{p.nome}</span>
-                                            <span className="text-slate-400">{a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</span>
+                                            {proiezioneOn ? (
+                                                <span className="text-white font-bold">📈 {projP} <span className="text-indigo-300">{tierP > 0 ? `S${tierP}` : "sotto soglia"}</span></span>
+                                            ) : (
+                                                <span className="text-slate-400">{a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</span>
+                                            )}
                                         </div>
-                                        {gl && gl.trascorsi > 0 && (
-                                            <div className="text-[11px] text-indigo-300/90 mb-1">📈 proiezione fine mese: {projP} punti · {tierP > 0 ? `S${tierP}` : "sotto soglia"}</div>
+                                        {proiezioneOn && (
+                                            <div className="text-[11px] text-slate-500 mb-1">oggi: {a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</div>
                                         )}
+                                        <div className="text-[11px] text-slate-500 mb-1">soglie: {scalaP.map(sg => sg.soglia_da).join(" · ")}</div>
                                         <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
                                             <div className="h-full rounded-full" style={{ width: `${perc}%`, background: meta?.color || "#6366f1" }} />
                                         </div>

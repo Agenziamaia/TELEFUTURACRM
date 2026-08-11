@@ -31,14 +31,15 @@ const BRAND = "vodafone";
 const MONTH = "2026-08-01";
 const LATO = "azienda";
 
+// ordine ALLINEATO al lato ragazzi (segnalazione Luca 11/08: stessi ordini sui due lati)
 const PISTE = [
-  { chiave: "fisso", nome: "Wireline Consumer", ordine: 1 },
-  { chiave: "mobile", nome: "Mobile Consumer", ordine: 2 },
-  { chiave: "luce", nome: "Energia Luce", ordine: 3 },
-  { chiave: "gas", nome: "Energia Gas", ordine: 4 },
-  { chiave: "business_fisso", nome: "Wireline Business", ordine: 5 },
-  { chiave: "business_mobile", nome: "Mobile Business", ordine: 6 },
-  { chiave: "vas", nome: "VAS Business", ordine: 7 },
+  { chiave: "mobile", nome: "Mobile Consumer", ordine: 1 },
+  { chiave: "fisso", nome: "Wireline Consumer", ordine: 2 },
+  { chiave: "business_mobile", nome: "Mobile Business", ordine: 3 },
+  { chiave: "business_fisso", nome: "Wireline Business", ordine: 4 },
+  { chiave: "vas", nome: "VAS Business", ordine: 5 },
+  { chiave: "luce", nome: "Energia Luce", ordine: 6 },
+  { chiave: "gas", nome: "Energia Gas", ordine: 7 },
 ];
 const SOGLIE = {
   fisso: [[91, 117], [118, 153], [154, 194], [195, 234], [235, 268], [269, null]],

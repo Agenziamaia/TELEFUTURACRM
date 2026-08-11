@@ -30,9 +30,11 @@ const PISTE = [
   { chiave: "lucegas", nome: "Luce & Gas", ordine: 3 },
 ];
 // soglie RETE = somma dei 5 PDV del foglio target agosto (le vere sono per PDV)
+// soglie RETE = quelle date da Luca (550/810/940 · 210/330/400); le soglie
+// oltre la 3ª valgono solo PER PDV (pay_target_pdv, foglio target mensile)
 const SOGLIE = {
-  mobile: [[258, 411], [412, 554], [555, 681], [682, null]],
-  fisso: [[123, 204], [205, 249], [250, 295], [296, 340], [341, null]],
+  mobile: [[550, 809], [810, 939], [940, null]],
+  fisso: [[210, 329], [330, 399], [400, null]],
   lucegas: [[10, 24], [25, 39], [40, 54], [55, 99], [100, null]],
 };
 

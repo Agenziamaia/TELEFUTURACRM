@@ -246,7 +246,9 @@ export function contestoVfFw(brandId: string | null, codice: string | null, nego
     // Store (T1) paga il tabellare a soglie della lettera A (pista luce/gas
     // del contesto vodafone); l'energia T2 resta a gettone flat sul fastweb.
     // Lo split T1/T2 completo coi codici servirà al lato AZIENDA (cantiere PDF).
-    if (brandId === "fastweb" && /energia/i.test(String(categoria || ""))) {
+    // FW T1 = calderone unico con Vodafone (task Luca 11/08): TUTTO il
+    // Fastweb venduto coi codici dei Vodafone Store paga la lettera A.
+    if (brandId === "fastweb") {
         const ref = String(codice || "").trim().toLowerCase() || String(negozio || "").trim().toLowerCase();
         if (CTX_VF_T1.some(x => ref.startsWith(x))) return "vodafone";
     }
@@ -343,15 +345,20 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
  * trascorsi = giorni lavorativi da inizio mese a OGGI incluso (0 se il mese
  * deve ancora iniziare, = totali se è finito).
  */
-export async function giorniLavorativiMese(monthISO: string): Promise<{ totali: number; trascorsi: number; override: boolean }> {
+export async function giorniLavorativiMese(monthISO: string): Promise<{
+    totali: number; trascorsi: number; override: boolean;
+    oraScatto: number; proiezioneDal: number; mostraProiezione: boolean;
+}> {
     const { primo, ultimo } = estremiMese(monthISO);
     const [ov, fest] = await Promise.all([
-        supabase.from("pay_giorni_lavorativi").select("giorni").eq("month", monthISO).maybeSingle(),
+        supabase.from("pay_giorni_lavorativi").select("giorni, ora_scatto, proiezione_dal").eq("month", monthISO).maybeSingle(),
         supabase.from("giorni_festivi").select("data").gte("data", primo).lte("data", ultimo),
     ]);
     const festivi = new Set((fest.data || []).map(f => String((f as { data: string }).data).slice(0, 10)));
     const [y, m] = monthISO.split("-").map(Number);
     const nGiorni = new Date(y, m, 0).getDate();
+    const oraScatto = ov.data?.ora_scatto == null ? 19 : Number(ov.data.ora_scatto);
+    const proiezioneDal = ov.data?.proiezione_dal == null ? 1 : Number(ov.data.proiezione_dal);
     const oggi = new Date();
     const oggiISO = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`;
     let totali = 0, trascorsi = 0;
@@ -360,15 +367,19 @@ export async function giorniLavorativiMese(monthISO: string): Promise<{ totali: 
         const dow = new Date(y, m - 1, g).getDay();
         if (dow === 0 || festivi.has(iso)) continue;   // domeniche e festivi fuori
         totali++;
-        if (iso <= oggiISO) trascorsi++;
+        // ORA DI SCATTO (Luca 11/08): il giorno corrente conta come trascorso
+        // solo dopo quell'ora — prima, le proiezioni non lo considerano.
+        if (iso < oggiISO || (iso === oggiISO && oggi.getHours() >= oraScatto)) trascorsi++;
     }
     const overrideGiorni = ov.data?.giorni == null ? null : Number(ov.data.giorni);
     if (overrideGiorni != null) {
-        // il totale lo comanda Luca; i trascorsi restano dal calendario, mai oltre
         trascorsi = Math.min(trascorsi, overrideGiorni);
         totali = overrideGiorni;
     }
-    return { totali, trascorsi, override: overrideGiorni != null };
+    // la proiezione si mostra solo dal giorno scelto del mese (mesi passati: sempre)
+    const meseCorrente = oggiISO.slice(0, 7) === monthISO.slice(0, 7);
+    const mostraProiezione = !meseCorrente ? true : oggi.getDate() >= proiezioneDal;
+    return { totali, trascorsi, override: overrideGiorni != null, oraScatto, proiezioneDal, mostraProiezione };
 }
 
 /** € per attivazione della riga alla soglia data (0 = sotto soglia → base). */
