@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
 import { arrotonda5, totaleRighe, PAGAMENTO, type RigaScontrino, type MetodoPagamento } from "@/lib/pos";
@@ -33,6 +33,14 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     const [resto, setResto] = useState(0);
     const [msg, setMsg] = useState("");
     const [esclusi, setEsclusi] = useState<{ description: string; motivo: string }[]>([]);
+    // Contanti già incassati: evita il DOPPIO incasso se lo scontrino fallisce e si riprova.
+    const [cashDone, setCashDone] = useState(false);
+    const [paidAmount, setPaidAmount] = useState(0);
+    // reset a ogni apertura (nuova vendita) o chiusura del modale
+    useEffect(() => {
+        setMetodo("CONTANTI"); setFase("scelta"); setIncassato(0); setResto(0);
+        setMsg(""); setEsclusi([]); setCashDone(false); setPaidAmount(0);
+    }, [data]);
 
     // Incasso contanti via coda: enqueue → poll del job finché done/error.
     const incassaContanti = useCallback(async (amount: number, negozio: string | null) => {
@@ -94,8 +102,8 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     const arrotondamento = +(daPagare - totale).toFixed(2);
 
     const conferma = async () => {
-        let paid: number | undefined;
-        if (metodo === "CONTANTI") {
+        let paid: number | undefined = cashDone ? paidAmount : undefined;
+        if (metodo === "CONTANTI" && !cashDone) {
             const r = await incassaContanti(daPagare, data.negozio);
             if (!r || !r.ok) {
                 setFase("errore");
@@ -104,6 +112,8 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             }
             setIncassato(r.incassato ?? daPagare);
             setResto(r.resto ?? 0);
+            setCashDone(true);
+            setPaidAmount(daPagare);
             paid = daPagare;
         }
         const p = await stampaScontrino(paid);
@@ -203,9 +213,10 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                     <div className="space-y-3 text-center py-1">
                         <div className="text-4xl">⚠️</div>
                         <p className="text-rose-300 text-sm">{msg}</p>
+                        {cashDone && <p className="text-[12px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">Contanti GIÀ incassati: {eur(incassato)} · Resto {eur(resto)}. NON reincassare — usa «Ristampa scontrino».</p>}
                         <div className="flex gap-2">
                             <button type="button" onClick={onDone} className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 text-sm">Chiudi</button>
-                            <button type="button" onClick={() => { setFase("scelta"); setMsg(""); }} className="flex-1 primary-btn py-2.5 text-sm font-semibold">Riprova</button>
+                            <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">{cashDone ? "Ristampa scontrino" : "Riprova"}</button>
                         </div>
                     </div>
                 )}

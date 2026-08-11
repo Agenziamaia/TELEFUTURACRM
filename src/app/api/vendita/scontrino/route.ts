@@ -21,27 +21,32 @@ export async function POST(req: Request) {
     const righe: any[] = Array.isArray(b.items) ? b.items : [];
     if (!righe.length) return NextResponse.json({ error: "carrello vuoto" }, { status: 400 });
 
-    // reparto + va_in_scontrino AUTORITATIVI da marg_items (per le voci con productId)
-    const ids = [...new Set(righe.map((r) => r.productId).filter(Boolean))];
-    const cat: Record<string, { reparto: number | null; va: boolean; name: string }> = {};
+    // reparto + va_in_scontrino AUTORITATIVI da marg_items. Il productId del carrello
+    // è "mi_<uuid>" (voce marg_items) oppure un id legacy/"auto"/"vendita_usato":
+    // risolviamo per UUID (togliendo il prefisso) o, in fallback, per NOME (=description).
+    const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+    const stripId = (pid: any) => { const s = String(pid || ""); return s.startsWith("mi_") ? s.slice(3) : s; };
+    const ids = [...new Set(righe.map((r) => stripId(r.productId)).filter(isUuid))];
+    const names = [...new Set(righe.map((r) => String(r.description || "").trim()).filter(Boolean))];
+    const byId: Record<string, { reparto: number | null; va: boolean }> = {};
+    const byName: Record<string, { reparto: number | null; va: boolean }> = {};
     if (ids.length) {
-        const { data, error } = await supabase
-            .from("marg_items")
-            .select("id, reparto, va_in_scontrino, name")
-            .in("id", ids as string[]);
+        const { data, error } = await supabase.from("marg_items").select("id, reparto, va_in_scontrino").in("id", ids);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-        (data || []).forEach((m: any) => {
-            cat[m.id] = { reparto: m.reparto ?? null, va: m.va_in_scontrino !== false, name: m.name };
-        });
+        (data || []).forEach((m: any) => { byId[m.id] = { reparto: m.reparto ?? null, va: m.va_in_scontrino !== false }; });
+    }
+    if (names.length) {
+        const { data } = await supabase.from("marg_items").select("name, reparto, va_in_scontrino").in("name", names);
+        (data || []).forEach((m: any) => { byName[String(m.name).trim()] = { reparto: m.reparto ?? null, va: m.va_in_scontrino !== false }; });
     }
 
     const items: { description: string; quantity: number; unitPrice: number; department: number }[] = [];
     const esclusi: { description: string; motivo: string }[] = [];
     for (const r of righe) {
-        const meta = r.productId ? cat[r.productId] : null;
-        const va = meta ? meta.va : true; // voci manuali senza productId: default sì
+        const meta = byId[stripId(r.productId)] || byName[String(r.description || "").trim()] || null;
+        const va = meta ? meta.va : true; // voci senza corrispondenza: default sì (poi serve il reparto)
         const reparto = meta && meta.reparto != null ? meta.reparto : (r.reparto ?? null);
-        const desc = String(r.description || meta?.name || "ARTICOLO").slice(0, 38);
+        const desc = String(r.description || "ARTICOLO").slice(0, 38);
         const price = Number(r.unitPrice);
         const qty = Number(r.qty) > 0 ? Number(r.qty) : 1;
         if (!va) { esclusi.push({ description: desc, motivo: "esclusa dallo scontrino" }); continue; }
