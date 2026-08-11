@@ -3389,6 +3389,10 @@ function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, on
     const [data, setData] = useState(t.date);
     const [ora, setOra] = useState(t.time || "");
     const [note, setNote] = useState(t.notes || "");
+    // CLIENTE della task (Luca 11/08): il campo si salvava alla creazione ma
+    // questo modale non lo MOSTRAVA — sembrava "sparito nel nulla" e Marta lo
+    // scriveva nel titolo. Ora si vede e si modifica come gli altri campi.
+    const [clienteRef, setClienteRef] = useState(t.clientRef || "");
     const [stato, setStato] = useState<TaskStatus>(t.status);
     const [addPersone, setAddPersone] = useState<string[]>([]);
     const [addNegozi, setAddNegozi] = useState<string[]>([]);
@@ -3403,6 +3407,7 @@ function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, on
             patch.date = data;
             patch.time = ora || null;
             patch.notes = note || null;
+            patch.client_ref = clienteRef.trim() || null;
         }
         const { data: upd, error } = await supabase.from("calendar_tasks").update(patch).eq("id", t.id).select().single();
         if (error) { setBusy(false); alert("Salvataggio non riuscito: " + error.message); return; }
@@ -3410,7 +3415,7 @@ function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, on
         if (puoGestire && (addPersone.length || addNegozi.length)) {
             const base = {
                 title: (patch.title as string) || t.title, date: data, time: ora || null, status: "da_fare",
-                notes: note || null, client_ref: t.clientRef || null, created_by: t.createdBy || "—",
+                notes: note || null, client_ref: clienteRef.trim() || t.clientRef || null, created_by: t.createdBy || "—",
                 is_demo: false, // il default DB storico era TRUE (mig. 160)
             };
             const rows = [
@@ -3438,6 +3443,11 @@ function TaskDettaglioModal({ t, puoGestire, persone, negozi, esiti, onClose, on
                     <div>
                         <label className="block text-xs font-medium text-slate-400 mb-1.5">Titolo</label>
                         <input className="glass-input w-full" value={titolo} onChange={(e) => setTitolo(e.target.value)} disabled={!puoGestire} />
+                    </div>
+                    {/* CLIENTE (Luca 11/08): prima si salvava ma qui non compariva */}
+                    <div>
+                        <label className="block text-xs font-medium text-slate-400 mb-1.5">👤 Cliente <span className="normal-case text-slate-500">(nome, CF o cellulare)</span></label>
+                        <input className="glass-input w-full" placeholder="—" value={clienteRef} onChange={(e) => setClienteRef(e.target.value)} disabled={!puoGestire} />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div>

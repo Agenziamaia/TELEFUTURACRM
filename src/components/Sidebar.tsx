@@ -162,8 +162,10 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
         const load = async () => {
             try { const rows = await getInbox(user.id); if (alive) setChatUnread(rows.reduce((s, r) => s + (r.unread || 0), 0)); } catch { }
             try {
-                const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio");
-                const mine = (insts || []).filter((i: any) => i.owner_user_id === user.id || (i.negozio && myStores.some((s) => sameStore(i.negozio, s)))).map((i: any) => i.id);
+                // SOLO utenze CONNESSE (caso Sheekel 11/08): l'inbox nasconde le
+                // chat delle utenze disconnesse — il badge non deve contarle
+                const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio, status");
+                const mine = (insts || []).filter((i: any) => (i.owner_user_id === user.id || (i.negozio && myStores.some((s) => sameStore(i.negozio, s)))) && i.status === "connessa").map((i: any) => i.id);
                 let n = 0;
                 if (mine.length) { const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine); n = (data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
                 if (alive) setWaUnread(n);
