@@ -324,6 +324,40 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
     return { piste, contati, scartati: [...scartatiMap.values()].sort((a, b) => b.n - a.n) };
 }
 
+/**
+ * GIORNI LAVORATIVI del mese (Prospect, Luca 11/08): lun-sab meno i
+ * giorni_festivi; pay_giorni_lavorativi tiene l'override manuale del totale.
+ * trascorsi = giorni lavorativi da inizio mese a OGGI incluso (0 se il mese
+ * deve ancora iniziare, = totali se è finito).
+ */
+export async function giorniLavorativiMese(monthISO: string): Promise<{ totali: number; trascorsi: number; override: boolean }> {
+    const { primo, ultimo } = estremiMese(monthISO);
+    const [ov, fest] = await Promise.all([
+        supabase.from("pay_giorni_lavorativi").select("giorni").eq("month", monthISO).maybeSingle(),
+        supabase.from("giorni_festivi").select("data").gte("data", primo).lte("data", ultimo),
+    ]);
+    const festivi = new Set((fest.data || []).map(f => String((f as { data: string }).data).slice(0, 10)));
+    const [y, m] = monthISO.split("-").map(Number);
+    const nGiorni = new Date(y, m, 0).getDate();
+    const oggi = new Date();
+    const oggiISO = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`;
+    let totali = 0, trascorsi = 0;
+    for (let g = 1; g <= nGiorni; g++) {
+        const iso = `${y}-${String(m).padStart(2, "0")}-${String(g).padStart(2, "0")}`;
+        const dow = new Date(y, m - 1, g).getDay();
+        if (dow === 0 || festivi.has(iso)) continue;   // domeniche e festivi fuori
+        totali++;
+        if (iso <= oggiISO) trascorsi++;
+    }
+    const overrideGiorni = ov.data?.giorni == null ? null : Number(ov.data.giorni);
+    if (overrideGiorni != null) {
+        // il totale lo comanda Luca; i trascorsi restano dal calendario, mai oltre
+        trascorsi = Math.min(trascorsi, overrideGiorni);
+        totali = overrideGiorni;
+    }
+    return { totali, trascorsi, override: overrideGiorni != null };
+}
+
 /** € per attivazione della riga alla soglia data (0 = sotto soglia → base). */
 export function payPerRiga(riga: PayRiga, tier: number): number | null {
     if (riga.gettone) return riga.pay_base;

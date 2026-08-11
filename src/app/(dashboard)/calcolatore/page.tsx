@@ -12,7 +12,7 @@ import { Calculator, ChevronDown, Loader2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import {
     Avanzamento, CONTESTI_LABEL, PayRiga, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, matchRigaTabellare, payPerRiga, esclusaDalleGare, sostituzioneSim,
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, matchRigaTabellare, giorniLavorativiMese, payPerRiga, esclusaDalleGare, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
@@ -68,6 +68,27 @@ export default function CalcolatorePage() {
     const [caricaTab, setCaricaTab] = useState(false);
     const [nonAlloc, setNonAlloc] = useState(0);
     const [escluseVf, setEscluseVf] = useState(0);
+
+    // PROSPECT (task Luca 11/08): giorni lavorativi del mese (lun-sab meno
+    // festivi, override amministrabile) → la soglia si preseleziona sulla
+    // PROIEZIONE a fine mese, col dato attuale sempre visibile.
+    const [gl, setGl] = useState<{ totali: number; trascorsi: number; override: boolean } | null>(null);
+    const [glDraft, setGlDraft] = useState<string>("");
+    useEffect(() => {
+        let vivo = true;
+        setGl(null);
+        giorniLavorativiMese(monthISO).then(v => { if (vivo) { setGl(v); setGlDraft(String(v.totali)); } });
+        return () => { vivo = false; };
+    }, [monthISO]);
+    const salvaGiorni = async () => {
+        const n = Number(glDraft);
+        if (!Number.isFinite(n) || n < 1 || n > 31) return;
+        await supabase.from("pay_giorni_lavorativi").upsert({ month: monthISO, giorni: n });
+        const v = await giorniLavorativiMese(monthISO);
+        setGl(v); setGlDraft(String(v.totali));
+    };
+    const proietta = (punti: number) =>
+        gl && gl.trascorsi > 0 ? Math.round((punti / gl.trascorsi) * gl.totali * 100) / 100 : punti;
 
     // contesto lettera di gara (solo VF/FW ne hanno due)
     const [ctx, setCtx] = useState<string | null>(null);
@@ -161,8 +182,14 @@ export default function CalcolatorePage() {
         (tab && riga?.pista) ? tab.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
     [tab, riga]);
     const tierLive = riga?.pista && avz ? (avz.piste[riga.pista]?.tier ?? 0) : 0;
-    const tier = tierSel == null ? tierLive : tierSel;
+    const puntiPista = riga?.pista && avz ? (avz.piste[riga.pista]?.punti ?? 0) : 0;
+    const puntiProj = proietta(puntiPista);
+    let tierProj = 0;
+    for (const sg of scalaRiga) if (puntiProj >= sg.soglia_da) tierProj = sg.tier;
+    // preselezione sulla PROIEZIONE (a inizio mese, senza dati, vale la live)
+    const tier = tierSel == null ? (gl && gl.trascorsi > 0 && avz ? tierProj : tierLive) : tierSel;
     const pay = riga ? payPerRiga(riga, riga.gettone ? 0 : tier) : null;
+    const payProssima = riga && !riga.gettone && tier < scalaRiga.length ? payPerRiga(riga, tier + 1) : null;
 
     // scoperture: offerte del catalogo senza riga pay
     const scoperte = useMemo(() => {
@@ -190,8 +217,19 @@ export default function CalcolatorePage() {
         <div className="p-6 max-w-[1500px]">
             <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Calculator size={26} /> Calcolatore $$$</h1>
-                <input type="month" value={mese} onChange={e => { setMese(e.target.value); setTierSel(null); }}
-                    className="bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+                <div className="flex items-center gap-3 flex-wrap">
+                    {gl && (
+                        <label className="text-[12px] text-slate-400 flex items-center gap-1.5" title="Giorni lavorativi del mese (lun-sab meno festivi). Modificalo se il mese va contato diversamente: guida la proiezione.">
+                            📅 lavorativi
+                            <input value={glDraft} onChange={e => setGlDraft(e.target.value)} onBlur={salvaGiorni}
+                                onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                className="bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-sm text-white w-12 text-center" />
+                            <span className="text-slate-500">· trascorsi {gl.trascorsi}{gl.override ? " · ✎" : ""}</span>
+                        </label>
+                    )}
+                    <input type="month" value={mese} onChange={e => { setMese(e.target.value); setTierSel(null); }}
+                        className="bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+                </div>
             </div>
 
             {/* ① BRAND a soli loghi */}
@@ -328,7 +366,8 @@ export default function CalcolatorePage() {
                                     {!riga.gettone && scalaRiga.length > 0 && (
                                         <div className="mt-5">
                                             <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
-                                                Soglia — preselezionata su quella attuale di rete{avz && riga.pista ? ` (S${tierLive || "0"} · ${avz.piste[riga.pista]?.punti ?? 0} punti)` : ""}
+                                                Soglia — preselezionata sulla PROIEZIONE a fine mese
+                                                {avz && riga.pista ? ` (S${tierProj || "0"} · ${puntiProj} punti proiettati) — oggi S${tierLive || "0"} · ${puntiPista} punti` : ""}
                                             </div>
                                             <div className="flex gap-2 flex-wrap">
                                                 <Pill on={tier === 0} onClick={() => setTierSel(0)}>Base</Pill>
@@ -338,6 +377,11 @@ export default function CalcolatorePage() {
                                                     </Pill>
                                                 ))}
                                             </div>
+                                        </div>
+                                    )}
+                                    {payProssima != null && pay != null && payProssima !== pay && (
+                                        <div className="text-emerald-300/90 text-sm mt-4">
+                                            🎯 Alla S{tier + 1} questa attivazione varrebbe <b>{euro(payProssima)}</b> ({payProssima > pay ? "+" : ""}{euro(Math.round((payProssima - pay) * 100) / 100)})
                                         </div>
                                     )}
                                     {riga.note && <div className="text-slate-500 text-xs mt-4">{riga.note}</div>}
@@ -357,12 +401,19 @@ export default function CalcolatorePage() {
                                 const a = avz.piste[p.chiave]; if (!a) return null;
                                 const target = a.prossima?.soglia_da ?? a.soglia?.soglia_da ?? 0;
                                 const perc = target > 0 ? Math.min(100, Math.round(a.punti / target * 100)) : 100;
+                                const scalaP = tab.soglie.filter(sg => sg.pista === p.chiave).sort((x, y) => x.tier - y.tier);
+                                const projP = proietta(a.punti);
+                                let tierP = 0;
+                                for (const sg of scalaP) if (projP >= sg.soglia_da) tierP = sg.tier;
                                 return (
                                     <div key={p.chiave} className="mb-4 last:mb-0">
                                         <div className="flex justify-between text-sm mb-1">
                                             <span className="text-slate-200 font-semibold">{p.nome}</span>
                                             <span className="text-slate-400">{a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</span>
                                         </div>
+                                        {gl && gl.trascorsi > 0 && (
+                                            <div className="text-[11px] text-indigo-300/90 mb-1">📈 proiezione fine mese: {projP} punti · {tierP > 0 ? `S${tierP}` : "sotto soglia"}</div>
+                                        )}
                                         <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
                                             <div className="h-full rounded-full" style={{ width: `${perc}%`, background: meta?.color || "#6366f1" }} />
                                         </div>
