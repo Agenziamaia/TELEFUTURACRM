@@ -70,12 +70,36 @@ export function aggiungiLavorativi(da: Date, n: number, operativi?: Set<string> 
     return d;
 }
 
+/** FERIE AZIENDALI del call center (caller_ferie, Luca 12/08): insieme dei
+ *  giorni "YYYY-MM-DD" in cui il countdown è congelato per tutti. */
+export async function caricaFerieCaller(): Promise<Set<string>> {
+    const out = new Set<string>();
+    try {
+        const { data, error } = await supabase.from("caller_ferie").select("dal, al");
+        if (error) return out;
+        ((data ?? []) as { dal: string; al: string }[]).forEach((r) => {
+            const d = new Date(r.dal + "T12:00");
+            const fine = new Date(r.al + "T12:00");
+            let guardia = 0;
+            while (d <= fine && ++guardia < 400) { out.add(ymdLoc(d)); d.setDate(d.getDate() + 1); }
+        });
+    } catch { /* rete assente */ }
+    return out;
+}
+
 /** Giorni in cui ogni collaboratore ha BADGIATO l'inizio turno (shifts):
- *  Map nome → insieme di giorni "YYYY-MM-DD". null = tabella non leggibile. */
+ *  Map nome → insieme di giorni "YYYY-MM-DD". null = tabella non leggibile.
+ *  DIRETTORE del telefonico (role direttore_cc — Luca 12/08: «dobbiamo dare
+ *  per assodato che badgia dal lunedì al sabato»): set presunto lun-sab al
+ *  posto del badge vero, MENO le ferie aziendali (caller_ferie). */
 export async function caricaGiorniBadge(finestraGiorni = 120): Promise<Map<string, Set<string>> | null> {
     try {
         const dal = new Date(); dal.setDate(dal.getDate() - finestraGiorni);
-        const { data, error } = await supabase.from("shifts").select("employee_name, started_at").gte("started_at", dal.toISOString()).limit(20000);
+        const [{ data, error }, dir, ferie] = await Promise.all([
+            supabase.from("shifts").select("employee_name, started_at").gte("started_at", dal.toISOString()).limit(20000),
+            supabase.from("app_users").select("full_name").eq("role", "direttore_cc").eq("active", true),
+            caricaFerieCaller(),
+        ]);
         if (error) return null;
         const m = new Map<string, Set<string>>();
         ((data ?? []) as { employee_name: string | null; started_at: string | null }[]).forEach((r) => {
@@ -86,6 +110,18 @@ export async function caricaGiorniBadge(finestraGiorni = 120): Promise<Map<strin
             set.add(ymdLoc(d));
             m.set(r.employee_name, set);
         });
+        // badge PRESUNTO del direttore: lun-sab su tutta la finestra, ferie escluse
+        for (const u of ((dir.data ?? []) as { full_name: string | null }[])) {
+            if (!u.full_name) continue;
+            const set = new Set<string>();
+            const d = new Date(dal.getFullYear(), dal.getMonth(), dal.getDate());
+            const oggi = new Date();
+            while (d <= oggi) {
+                if (d.getDay() !== 0 && !ferie.has(ymdLoc(d))) set.add(ymdLoc(d));
+                d.setDate(d.getDate() + 1);
+            }
+            m.set(u.full_name, set);
+        }
         return m;
     } catch { return null; }
 }
