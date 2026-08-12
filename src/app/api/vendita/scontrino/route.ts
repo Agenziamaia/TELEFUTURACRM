@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { buildRequestXml } from "@/lib/fiscalprint";
-import { formaPagamento } from "@/lib/pos";
+import { formaPagamento, altroSottotipo } from "@/lib/pos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,7 +104,9 @@ export async function POST(req: Request) {
                 .filter((p) => Number(p?.importo) > 0)
                 .map((p) => {
                     const f = formaPagamento(String(p.forma));
-                    return { description: (f?.short || "CONTANTE"), paymentType: f ? f.paymentType : 0, amount: Number(p.importo) };
+                    // "Altro" → la descrizione è il sotto-tipo scelto (Sconto Anticipo / Buono Usato / Buono).
+                    const desc = f?.hasSub ? (altroSottotipo(p.sub)?.short || "ALTRO") : (f?.short || "CONTANTE");
+                    return { description: desc, paymentType: f ? f.paymentType : 0, amount: Number(p.importo) };
                 });
         }
         const single: any = { description: paymentDescr, paymentType: Number.isFinite(Number(b.paymentType)) ? Number(b.paymentType) : 0 };

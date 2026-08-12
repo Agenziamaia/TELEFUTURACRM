@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
-import { arrotonda5, totaleRighe, FORME_PAGAMENTO, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
+import { arrotonda5, totaleRighe, FORME_PAGAMENTO, ALTRO_SOTTOTIPI, formaPagamento, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
 
 /* Modale "Incasso & Scontrino" — l'output fiscale di Registra Vendita.
    Si apre a vendita registrata: si compone il pagamento (fino a 3 forme, spec #2),
@@ -77,7 +77,11 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     // (la macchina lavora a ≥5c); le altre forme all'importo esatto.
     const pagamentiSend = (): RigaPagamento[] =>
         righe.filter((r) => Number(r.importo) > 0)
-            .map((r) => (isFormaCash(r.forma) ? { forma: r.forma, importo: arrotonda5(Number(r.importo)) } : { forma: r.forma, importo: +Number(r.importo).toFixed(2) }));
+            .map((r) => ({
+                forma: r.forma,
+                importo: isFormaCash(r.forma) ? arrotonda5(Number(r.importo)) : +Number(r.importo).toFixed(2),
+                ...(formaPagamento(r.forma)?.hasSub ? { sub: r.sub || ALTRO_SOTTOTIPI[0].code } : {}),
+            }));
 
     // Incasso contanti via coda: enqueue → poll del job finché done/error.
     const incassaContanti = useCallback(async (amount: number, negozio: string | null) => {
@@ -184,7 +188,13 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     };
 
     // ── gestione righe pagamento ──────────────────────────────────────────────
-    const setForma = (i: number, forma: string) => setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, forma } : r)));
+    const setForma = (i: number, forma: string) => setRighe((rs) => rs.map((r, k) => {
+        if (k !== i) return r;
+        // "Altro": preseleziona il primo sotto-tipo; altrimenti azzera sub.
+        const sub = formaPagamento(forma)?.hasSub ? (r.sub || ALTRO_SOTTOTIPI[0].code) : undefined;
+        return { ...r, forma, sub };
+    }));
+    const setSub = (i: number, sub: string) => setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, sub } : r)));
     const setImporto = (i: number, val: string) => {
         const n = Math.max(0, Number(String(val).replace(",", ".")) || 0);
         setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, importo: n } : r)));
@@ -239,20 +249,30 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                         <div className="space-y-2">
                             <p className="text-[11px] text-slate-500">Forme di pagamento (max 3)</p>
                             {righe.map((r, i) => (
-                                <div key={i} className="flex gap-2 items-center">
-                                    <select value={r.forma} onChange={(e) => setForma(i, e.target.value)}
-                                        className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm px-2.5 py-2 outline-none focus:border-violet-400/60">
-                                        {FORME_PAGAMENTO.map((f) => (
-                                            <option key={f.code} value={f.code} className="bg-slate-800">{f.label}</option>
-                                        ))}
-                                    </select>
-                                    <div className="relative w-28 shrink-0">
-                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-sm">€</span>
-                                        <input type="number" min={0} step={0.05} value={r.importo || ""} onChange={(e) => setImporto(i, e.target.value)}
-                                            className="w-full rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm text-right tabular-nums pl-5 pr-2 py-2 outline-none focus:border-violet-400/60" />
+                                <div key={i} className="space-y-1.5">
+                                    <div className="flex gap-2 items-center">
+                                        <select value={r.forma} onChange={(e) => setForma(i, e.target.value)}
+                                            className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm px-2.5 py-2 outline-none focus:border-violet-400/60">
+                                            {FORME_PAGAMENTO.map((f) => (
+                                                <option key={f.code} value={f.code} className="bg-slate-800">{f.label}</option>
+                                            ))}
+                                        </select>
+                                        <div className="relative w-28 shrink-0">
+                                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-sm">€</span>
+                                            <input type="number" min={0} step={0.05} value={r.importo || ""} onChange={(e) => setImporto(i, e.target.value)}
+                                                className="w-full rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm text-right tabular-nums pl-5 pr-2 py-2 outline-none focus:border-violet-400/60" />
+                                        </div>
+                                        <button type="button" onClick={() => removeRiga(i)} disabled={righe.length <= 1}
+                                            className="shrink-0 w-8 h-8 rounded-lg border border-white/10 text-slate-400 hover:text-rose-300 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-lg leading-none">×</button>
                                     </div>
-                                    <button type="button" onClick={() => removeRiga(i)} disabled={righe.length <= 1}
-                                        className="shrink-0 w-8 h-8 rounded-lg border border-white/10 text-slate-400 hover:text-rose-300 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-lg leading-none">×</button>
+                                    {formaPagamento(r.forma)?.hasSub && (
+                                        <select value={r.sub || ALTRO_SOTTOTIPI[0].code} onChange={(e) => setSub(i, e.target.value)}
+                                            className="w-full rounded-xl bg-white/5 border border-violet-400/30 text-slate-200 text-xs px-2.5 py-1.5 outline-none focus:border-violet-400/60">
+                                            {ALTRO_SOTTOTIPI.map((s) => (
+                                                <option key={s.code} value={s.code} className="bg-slate-800">↳ {s.label}</option>
+                                            ))}
+                                        </select>
+                                    )}
                                 </div>
                             ))}
                             <div className="flex items-center justify-between">
