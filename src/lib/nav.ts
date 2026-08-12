@@ -113,22 +113,20 @@ export const NAVIGATION: NavEntry[] = [
             { name: "Registro Chiamate", href: "/chiamate", icon: Phone, roles: EVERYONE },
         ],
     },
-    // HUB UTILITY (Luca 12/08): Documentazione + Password insieme, subito DOPO
-    // l'hub Negozio (non dentro). Password coi ruoli di sempre.
+    // HUB UTILITY (Luca 12/08): subito DOPO l'hub Negozio (non dentro).
+    // Dentro, in ordine: Calcolatore (primo — Luca 12/08 sera), Documentazione,
+    // Password coi ruoli di sempre. Calcolatore per ora admin/dev: si apre ai
+    // ragazzi quando arriva la vista gare.
     {
         type: "group",
         label: "Utility",
         icon: Wrench,
         children: [
+            { name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
             { name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
             { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
         ],
     },
-    // CALCOLATORE $$$ (cantiere GARE 10/08): registra-vendita riassunto che
-    // dice il commissioning di una vendita alla soglia scelta (pay tabellare).
-    // Link autonomo sotto l'area Negozio, prima di Calendario (Luca 10/08).
-    // Per ora admin/dev: si apre ai ragazzi quando arriva la vista gare.
-    { type: "link", name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: EVERYONE },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
     { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
