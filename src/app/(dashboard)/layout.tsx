@@ -3,6 +3,7 @@
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ChatToaster } from "@/components/ChatToaster";
+import { VerificaSpettro } from "@/components/VerificaSpettro";
 import { AircallPhoneDock } from "@/components/AircallPhoneDock";
 import { PageBackProvider } from "@/context/PageBackContext";
 import { PresenceProvider } from "@/context/PresenceContext";
@@ -52,6 +53,7 @@ export default function AuthLayout({
                     <Header onMenuClick={() => setIsSidebarOpen(v => !v)} autoHide={autoHide} />
                     <main className="flex-1 w-full min-w-0 p-4 sm:p-6 md:p-8">
                         {children}
+                        <VerificaSpettro />
                     </main>
                 </div>
                 <ChatToaster />
