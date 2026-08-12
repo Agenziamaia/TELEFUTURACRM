@@ -181,11 +181,44 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
         if (!p.data?.length) { notify(`Nessun tabellare (${lato}) su ${fonteCopia}`); return; }
-        const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato })));
-        const e2 = (s.data?.length ? await supabase.from("pay_soglie").insert(s.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
-        const e3 = (r.data?.length ? await supabase.from("pay_righe").insert(r.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
+        const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id");
+        const e2 = (s.data?.length ? await supabase.from("pay_soglie").insert(s.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id") : { data: [], error: null });
+        const e3 = (r.data?.length ? await supabase.from("pay_righe").insert(r.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id") : { data: [], error: null });
         if (dbError("Copia mese", e1.error || e2.error || e3.error)) return;
+        // log dell'import: l'annulla cancella ESATTAMENTE questi id (esito Luca
+        // 12/08: «deve riportarmi allo stato precedente, non cancellare tutto»)
+        await supabase.from("pay_import_log").insert({
+            brand: ctx, month: monthISO, lato, fonte: fonteCopia,
+            piste_ids: (e1.data || []).map(x => x.id),
+            soglie_ids: (e2.data || []).map(x => x.id),
+            righe_ids: (e3.data || []).map(x => x.id),
+        });
         notify(`Copiato da ${fonteCopia} ✓ — ora ritocca soglie e importi`, "ok"); load();
+    };
+
+    // ── ANNULLA l'ultimo import: torna allo stato di prima della copia. Cancella
+    //    solo ciò che quella copia aveva inserito — piste/righe/soglie aggiunte
+    //    prima o dopo (la "base del setting") restano al loro posto.
+    const [ultimoImport, setUltimoImport] = useState<{ id: string; fonte: string | null; piste_ids: string[]; soglie_ids: string[]; righe_ids: string[] } | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        supabase.from("pay_import_log").select("id, fonte, piste_ids, soglie_ids, righe_ids")
+            .eq("brand", ctx).eq("month", monthISO).eq("lato", lato).eq("annullato", false)
+            .order("creato_il", { ascending: false }).limit(1)
+            .then(({ data }) => { if (vivo) setUltimoImport(data?.[0] || null); });
+        return () => { vivo = false; };
+    }, [ctx, monthISO, lato, righe.length]);
+    const annullaImport = async () => {
+        if (!ultimoImport) return;
+        if (!window.confirm(`Annullo l'import${ultimoImport.fonte ? ` da ${ultimoImport.fonte}` : ""}? Sparisce solo quello che la copia aveva inserito, il resto rimane.`)) return;
+        const e3 = ultimoImport.righe_ids.length ? await supabase.from("pay_righe").delete().in("id", ultimoImport.righe_ids) : { error: null };
+        const e2 = ultimoImport.soglie_ids.length ? await supabase.from("pay_soglie").delete().in("id", ultimoImport.soglie_ids) : { error: null };
+        const e1 = ultimoImport.piste_ids.length ? await supabase.from("pay_piste").delete().in("id", ultimoImport.piste_ids) : { error: null };
+        if (dbError("Annulla import", e1.error || e2.error || e3.error)) return;
+        const eLog = await supabase.from("pay_import_log").update({ annullato: true }).eq("id", ultimoImport.id);
+        if (dbError("Annulla import", eLog.error)) return;
+        setUltimoImport(null);
+        notify("Import annullato ✓ — tornato com'era prima della copia", "ok"); load();
     };
 
     // ── CREA DA ZERO / nuova pista ("o andarle a ricostruire da zero" — Luca 11/08)
@@ -217,6 +250,26 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             🧮 Tabellare ragazzi <b>compilato dal lato azienda</b> — {derivato.piste.map(x => `${x.nome} ${x.perc_ragazzi ?? 100}%`).join(" · ")}. Sola lettura: per modificare si lavora sull&apos;azienda.
                         </div>
                         {vaiAzienda && <button onClick={vaiAzienda} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: colore }}>🏢 Lavora sul lato azienda</button>}
+                    </div>
+                    {/* SOGLIE in testa anche sul derivato (segnalazione Luca 11/08:
+                        "non ho la tabella delle soglie sopra sul lato ragazzi") —
+                        stesse soglie dell'azienda, in sola lettura */}
+                    <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
+                        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">Soglie — le stesse del lato azienda (si modificano da lì)</div>
+                        {derivato.piste.map(px => {
+                            const scala = soglieDer(px.chiave);
+                            if (!scala.length) return null;
+                            return (
+                                <div key={px.id} className="mb-3 last:mb-0 flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-semibold text-white min-w-[130px]">{px.nome} <span className="text-slate-500 font-normal">({px.um})</span></span>
+                                    {scala.map((s, i) => (
+                                        <span key={s.tier} className="text-[12px] text-slate-300 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1">
+                                            S{i + 1} da <b className="text-white">{s.soglia_da}</b>{i < scala.length - 1 ? ` a ${scala[i + 1].soglia_da - 1}` : "+"}
+                                        </span>
+                                    ))}
+                                </div>
+                            );
+                        })}
                     </div>
                     {derivato.piste.map(px => {
                         const scala = soglieDer(px.chiave);
@@ -307,7 +360,15 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
                 <div className="flex items-center justify-between mb-3">
                     <div className="text-[11px] uppercase tracking-wider text-slate-400">Soglie — scrivi solo il &quot;da&quot;: il fino-a si sistema da solo</div>
-                    <button onClick={nuovaPista} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Pista</button>
+                    <div className="flex items-center gap-2">
+                        {ultimoImport && (
+                            <button onClick={annullaImport} title="Torna a com'era prima della copia: sparisce solo quello che l'import aveva inserito"
+                                className="text-xs text-amber-300/90 border border-amber-500/30 rounded-lg px-2 py-1">
+                                ↩ Annulla l&apos;import{ultimoImport.fonte ? ` da ${ultimoImport.fonte}` : ""}
+                            </button>
+                        )}
+                        <button onClick={nuovaPista} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Pista</button>
+                    </div>
                 </div>
                 {piste.map(p => {
                     const scala = soglieDi(p.chiave);
