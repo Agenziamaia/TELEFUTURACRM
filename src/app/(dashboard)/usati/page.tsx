@@ -2078,6 +2078,19 @@ function GestioneUsatiInner() {
     }
     if (e) { alert("Registrazione non riuscita: " + e.message); return; }
     setDevices(p => [rowToDevice(inserted as UsatiRow), ...p]);
+    // ── DOCUMENTI DEL RITIRO anche sulla scheda cliente (Francesco 12/08):
+    // dichiarazione e documento entrano in contract_attachments col client_id
+    // → compaiono in Clienti → Documenti (e l'acquisizione in Timeline via
+    // usati.client_id). Best-effort: un errore qui non tocca il ritiro salvato.
+    if (clientId) {
+      try {
+        const pub = (p: string) => supabase.storage.from("usati_attachments").getPublicUrl(p).data.publicUrl;
+        const righeDoc: { contract_id: null; client_id: string; file_url: string; file_name: string; file_type: string }[] = [];
+        if (data.allegato_documento) righeDoc.push({ contract_id: null, client_id: clientId, file_url: pub(data.allegato_documento), file_name: `Documento identità — ritiro ${modelName}`, file_type: "documento" });
+        if (data.allegato_dichiarazione) righeDoc.push({ contract_id: null, client_id: clientId, file_url: pub(data.allegato_dichiarazione), file_name: `Dichiarazione di vendita — ${modelName}`, file_type: "dichiarazione_usato" });
+        if (righeDoc.length) await supabase.from("contract_attachments").insert(righeDoc);
+      } catch { /* best-effort */ }
+    }
     // ── NOTIFICHE INCARICHI (Luca 29/07) — best-effort, l'acquisto è già salvo ──
     if (data.metodoPagamento === "bonifico") {
       try {

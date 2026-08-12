@@ -119,11 +119,13 @@ const CATEGORIE_DOC = [
     { id: "contratti", label: "Contratti", color: "var(--tf-a78bfa)", match: (t: string | null) => (t || "").toLowerCase() === "contratti" },
     // Segnalazione 84: bollette del vecchio operatore sui contratti energia.
     { id: "fattura", label: "Fatture", color: "var(--tf-fbbf24)", match: (t: string | null) => (t || "").toLowerCase() === "fattura" },
+    // Dichiarazioni di vendita degli usati ritirati (Francesco 12/08)
+    { id: "dichiarazione_usato", label: "Dichiarazioni usato", color: "var(--tf-34d399)", match: (t: string | null) => (t || "").toLowerCase() === "dichiarazione_usato" },
     // MOD-14 (Luca 08/08): documenti smarriti e archiviati/scaduti — fuori dai
     // validi, visibili SOLO all'amministrazione (adminOnly) con etichetta chiara.
     { id: "smarrito", label: "🔴 Smarriti", color: "var(--tf-f87171)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_smarrito" },
     { id: "archiviato", label: "🗄️ Archiviati/scaduti", color: "var(--tf-94a3b8)", adminOnly: true, match: (t: string | null) => (t || "").toLowerCase() === "documento_archiviato" },
-    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura", "documento_smarrito", "documento_archiviato"].includes((t || "").toLowerCase()) },
+    { id: "altro", label: "Altro", color: "var(--tf-94a3b8)", match: (t: string | null) => !["documento", "contratti", "fattura", "dichiarazione_usato", "documento_smarrito", "documento_archiviato"].includes((t || "").toLowerCase()) },
 ];
 
 function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente; contratti: Contratto[]; onClose: () => void }) {
@@ -290,6 +292,19 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
                 }))));
         })();
     }, [cliente.id]);
+    // USATI RITIRATI dal cliente (segnalazione Francesco 12/08): l'acquisizione
+    // del telefono usato entra nella Timeline 360° — letta live da usati.client_id.
+    const [usatiCliente, setUsatiCliente] = useState<{ id: string; model: string | null; imei: string | null; purchase_price: number | null; purchase_date: string | null; store: string | null }[]>([]);
+    useEffect(() => {
+        (async () => {
+            const { data, error } = await supabase.from("usati")
+                .select("id, model, imei, purchase_price, purchase_date, store")
+                .eq("client_id", cliente.id);
+            setUsatiCliente(error ? [] : ((data ?? []) as typeof usatiCliente));
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cliente.id]);
+
     // ── TIMELINE INTERATTIVA (TML-01, Luca 04/08) ──
     // CHIAMATE del cliente (call_events, già agganciate per client_id): voce
     // compatta per giorno+direzione+interlocutore; il click porta allo storico
@@ -418,10 +433,18 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
         };
     });
 
-    // Timeline 360°: eventi REALI (contratti + chiamate + documenti + disdette), in ordine.
+    // Timeline 360°: eventi REALI (contratti + chiamate + usati + documenti + disdette), in ordine.
     const timeline: VoceTimeline[] = [
         ...vociContratti,
         ...vociChiamate,
+        // ritiri usato (Francesco 12/08): l'acquisizione si vede in timeline
+        ...usatiCliente.filter((u) => u.purchase_date).map((u) => ({
+            key: "us" + u.id, when: String(u.purchase_date),
+            color: "var(--tf-34d399)", icon: "♻️",
+            title: `Ritirato usato — ${u.model || "dispositivo"}`,
+            desc: [u.imei ? `IMEI ${u.imei}` : null, u.purchase_price != null ? `${Number(u.purchase_price).toLocaleString("it-IT")} €` : null, u.store].filter(Boolean).join(" · "),
+            stato: null as string | null,
+        })),
         // solo i caricamenti nei giorni SENZA visita: gli altri vivono dentro
         // la voce del negozio (esperienza unica del cliente, Luca 04/08)
         ...docs.filter((d) => d.created_at && !giorniVisita.has(String(d.created_at).slice(0, 10))
