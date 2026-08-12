@@ -20,6 +20,9 @@ export interface ScontrinoData {
     items: RigaScontrino[];
     negozio: string | null;
     deviceUrl?: string;
+    cliente?: string | null;   // per salvare/ritrovare il conto in sospeso
+    azienda?: string | null;   // ragione sociale preselezionata (es. ripresa da sospeso)
+    sospesoId?: string;        // se valorizzato: si sta COMPLETANDO un conto in sospeso
 }
 
 const eur = (n: number) => "€ " + (Number(n) || 0).toFixed(2).replace(".", ",");
@@ -60,7 +63,9 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         supabase.from("pos_rt").select("azienda, ragione_sociale, is_default").eq("negozio", neg).then(({ data: rows }) => {
             const list = (rows || []).map((r: any) => ({ code: r.azienda, label: r.ragione_sociale || r.azienda, isDef: !!r.is_default }));
             setAziende(list.map((x) => ({ code: x.code, label: x.label })));
-            const def = list.find((x) => x.isDef) || list[0];
+            // se si RIPRENDE un sospeso con azienda già scelta, rispettala; altrimenti default.
+            const preset = data?.azienda && list.find((x) => x.code === data.azienda);
+            const def = preset || list.find((x) => x.isDef) || list[0];
             setAziendaSel(def ? def.code : null);
         });
     }, [data]);
@@ -183,8 +188,29 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             return;
         }
         if (p.testMode) setIsTest(true);
+        // Se si stava COMPLETANDO un conto in sospeso, chiudilo.
+        if (data.sospesoId) {
+            try { await fetch("/api/vendita/sospendi", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: data.sospesoId, stato: "completata" }) }); } catch { /* non bloccare l'esito */ }
+        }
         setFase("fatto");
         setMsg((p.testMode ? "Documento NON fiscale in stampa (prova)" : "Scontrino fiscale in stampa") + (p.esclusi?.length ? ` — ${p.esclusi.length} voci senza reparto NON stampate` : ""));
+    };
+
+    // "Tieni in sospeso": salva il conto per completarlo dopo (il cliente torna a pagare).
+    const tieniInSospeso = async () => {
+        setFase("stampa"); setMsg("Salvo il conto in sospeso…");
+        try {
+            const res = await fetch("/api/vendita/sospendi", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ negozio: data.negozio, cliente: data.cliente ?? null, items: data.items, totale, azienda: aziendaSel }),
+            });
+            const j = await res.json().catch(() => ({}));
+            if (!res.ok || !j.ok) throw new Error(j.error || "salvataggio non riuscito");
+            setFase("fatto");
+            setMsg("Conto tenuto in sospeso — riprendilo dal pulsante «Conti in sospeso» in Registra Vendita.");
+        } catch (e: any) {
+            setFase("errore"); setMsg("Sospensione non riuscita: " + String(e?.message || e));
+        }
     };
 
     // ── gestione righe pagamento ──────────────────────────────────────────────
@@ -292,10 +318,19 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                             </p>
                         )}
 
-                        <div className="flex gap-2 pt-1">
-                            <button type="button" onClick={onDone} className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 text-sm">Salta scontrino</button>
-                            <button type="button" onClick={conferma} disabled={!bilanciato} className="flex-1 primary-btn py-2.5 text-sm font-semibold disabled:opacity-40">
-                                {cashRounded > 0 ? "Incassa ed emetti" : "Emetti scontrino"}
+                        <div className="space-y-2 pt-1">
+                            <div className="flex gap-2">
+                                {!data.sospesoId && (
+                                    <button type="button" onClick={tieniInSospeso} className="flex-1 py-2.5 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-200 hover:bg-amber-500/25 text-sm font-semibold">
+                                        Tieni in sospeso
+                                    </button>
+                                )}
+                                <button type="button" onClick={conferma} disabled={!bilanciato} className="flex-1 primary-btn py-2.5 text-sm font-semibold disabled:opacity-40">
+                                    {cashRounded > 0 ? "Incassa ed emetti" : "Emetti scontrino"}
+                                </button>
+                            </div>
+                            <button type="button" onClick={onDone} className="w-full text-[11px] text-slate-500 hover:text-slate-300">
+                                {data.sospesoId ? "Chiudi (resta in sospeso)" : "Chiudi senza scontrino"}
                             </button>
                         </div>
                     </>

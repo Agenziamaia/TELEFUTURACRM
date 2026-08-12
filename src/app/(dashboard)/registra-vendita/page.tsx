@@ -12,6 +12,7 @@ import { storeRoot as _storeRoot } from "@/lib/storeRoot";
 import { categoriaDi, controlliDi, CANONICA_BY_ID, categoriaDef, vaInTracking } from "@/lib/tassonomia";
 import { SLUG_CATALOGO, CAT_MACRO_ID } from "@/lib/catalogoVendita";
 import { ScontrinoCassa, type ScontrinoData } from "./ScontrinoCassa";
+import { ContiSospesi, type SospesoRow } from "./ContiSospesi";
 
 // POS scontrino/cassa: ATTIVO solo nei negozi in tabella pos_scontrino_negozi
 // (caricata nel componente) + eventuale override da env. Vuoto = SPENTO ovunque →
@@ -5210,6 +5211,8 @@ function CRM() {
   const [submitting, setSubmitting] = useState(false);
   // POS: dati per il modale Incasso & Scontrino (si apre a vendita registrata).
   const [scontrino, setScontrino] = useState<ScontrinoData | null>(null);
+  // Conti in sospeso: contatore per rinfrescare il pulsante rosso dopo salva/completa.
+  const [sospesoReload, setSospesoReload] = useState(0);
   // Negozi con POS attivo: caricati da DB (pos_scontrino_negozi) → interruttore
   // on/off per negozio senza toccare il box. Env resta come override.
   const posStoresRef = useRef<string[]>([]);
@@ -5232,7 +5235,11 @@ function CRM() {
       qty: mi.qty || 1,
     }))
     .filter((x) => x.unitPrice != null && x.unitPrice !== "" && Number(x.unitPrice) >= 0);
-  const chiudiScontrino = () => { setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); };
+  const chiudiScontrino = () => { setScontrino(null); fullReset(); submitLock.current = false; setSubmitting(false); setSospesoReload((x) => x + 1); };
+  // Chiusura quando si RIPRENDE un conto in sospeso: NON azzerare il carrello (l'operatore
+  // potrebbe avere una vendita in corso); rinfresca solo la lista dei sospesi.
+  const chiudiSospeso = () => { setScontrino(null); setSospesoReload((x) => x + 1); };
+  const riprendiSospeso = (s: SospesoRow) => setScontrino({ items: s.items, negozio: s.negozio, azienda: s.azienda, cliente: s.cliente, sospesoId: s.id });
   // Univocita' cellulare (regola Luca): se il numero e' di un ALTRO cliente si
   // sceglie se spostarlo qui o cambiarlo — stessa logica della sezione Clienti.
   const [dupCellCliente, setDupCellCliente] = useState<{ id: string; label: string } | null>(null);
@@ -6320,7 +6327,8 @@ function CRM() {
             title={_m.length?"Portami allo step mancante — completa: "+_m.join(" · "):""}
             style={{padding:"12px 36px",borderRadius:10,border:_m.length&&tp>0?"1.5px solid rgba(245,158,11,0.7)":"none",background:_ok?"linear-gradient(135deg,#28a745,#20c997)":(_m.length&&tp>0?"rgba(245,158,11,0.15)":"var(--tf-w100)"),color:_m.length&&tp>0?"var(--tf-fbbf24)":"#fff",fontSize:14,fontWeight:800,cursor:(tp>0&&!submitting)?"pointer":"not-allowed",marginLeft:"auto"}}>{submitting?"⏳ Salvataggio in corso…":_m.length?"🔒 Completa gli step per salvare →":`💾 Salva contratto (${tp})`}</button>;})()}
         </div>
-        <ScontrinoCassa data={scontrino} onDone={chiudiScontrino} />
+        <ScontrinoCassa data={scontrino} onDone={scontrino?.sospesoId ? chiudiSospeso : chiudiScontrino} />
+        {posScontrinoAbilitato(selNeg) && <ContiSospesi negozio={selNeg} onRiprendi={riprendiSospeso} reloadKey={sospesoReload} />}
         {showMargSave&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(4px)"}}>
           <div style={{background:"var(--tf-w20)",borderRadius:16,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,.25)",margin:"0 16px",maxHeight:"88vh",overflowY:"auto"}}>
             <div style={{fontWeight:800,fontSize:17,color:"var(--tf-f8fafc)",marginBottom:4}}>💾 Salva Vendita Prodotti</div>
