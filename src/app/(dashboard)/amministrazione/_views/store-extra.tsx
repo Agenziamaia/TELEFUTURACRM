@@ -245,7 +245,12 @@ export function OrariChiusureView() {
     // di agosto» — stavano solo nel pannello di Collaboratori, ora anche qui
     // dove vivono chiusure e orari; è la stessa tabella che legge il Tracking)
     const [festivi, setFestivi] = useState<{ giorno: string; nome: string }[]>([]);
+    const [festiviAperti, setFestiviAperti] = useState(false);
     const [nFestivo, setNFestivo] = useState({ data: "", nome: "" });
+    // toggle "sabato dedicato" per negozio (esito Luca 12/08: dev'essere un
+    // flag — senza flag il sabato segue l'orario della settimana, inutile
+    // mostrarne i campi vuoti)
+    const [sabatoUi, setSabatoUi] = useState<Record<string, boolean>>({});
     const [loading, setLoading] = useState(true);
     const [nuova, setNuova] = useState<Record<string, { dal: string; al: string; motivo: string }>>({});
     // toggle "spezzato" per negozio: acceso a mano oppure dedotto dalla pausa a DB
@@ -336,32 +341,49 @@ export function OrariChiusureView() {
                 vendita nel periodo indicato: la sezione Turni lo mostra 🔒 e blocca le assegnazioni.
             </p>
 
-            {/* FESTIVI NAZIONALI (esito Luca 12/08): la stessa tabella che
-                leggono Tracking e Calendario gare — mostrati e amministrabili
-                qui, dove stanno orari e chiusure. */}
+            {/* FESTIVI NAZIONALI (esiti Luca 12/08): la stessa tabella che
+                leggono Tracking e Calendario gare. COMPATTI: riga chiusa con
+                conteggio + prossimo festivo, il bottone apre l'elenco intero
+                («i festivi tutti esplosi così sono orrendi»). */}
             <div className="glass-card p-4">
-                <p className="text-sm font-bold text-white mb-2">🎄 Giorni festivi <span className="text-slate-500 font-normal text-xs">— valgono per tutti i negozi: Tracking e gare li saltano</span></p>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                    {festivi.filter(f => f.giorno >= new Date().getFullYear() + "-01-01" && f.giorno <= (new Date().getFullYear() + 1) + "-12-31").map(f => (
-                        <span key={f.giorno} className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/10 border border-indigo-500/40 text-indigo-300">
-                            {f.giorno.split("-").reverse().join("/")} · {f.nome}
-                            <button onClick={async () => { if (!window.confirm(`Togliere "${f.nome}" (${f.giorno.split("-").reverse().join("/")}) dai festivi?`)) return; await supabase.from("giorni_festivi").delete().eq("giorno", f.giorno); carica(); }}
-                                className="opacity-70 hover:opacity-100">✕</button>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                    <p className="text-sm font-bold text-white">🎄 Giorni festivi
+                        <span className="text-slate-500 font-normal text-xs ml-2">
+                            valgono per tutti i negozi{(() => {
+                                const oggi = new Date().toISOString().slice(0, 10);
+                                const prox = festivi.find(f => f.giorno >= oggi);
+                                return prox ? ` — prossimo: ${prox.giorno.split("-").reverse().join("/")} ${prox.nome}` : "";
+                            })()}
                         </span>
-                    ))}
-                    {festivi.length === 0 && <span className="text-xs text-slate-600 italic">Nessun festivo registrato.</span>}
+                    </p>
+                    <button onClick={() => setFestiviAperti(v => !v)}
+                        className="px-3 h-8 rounded-lg border border-white/15 text-slate-200 text-[11px] font-bold">
+                        {festiviAperti ? "Chiudi" : `Vedi tutti (${festivi.filter(f => f.giorno >= new Date().getFullYear() + "-01-01" && f.giorno <= (new Date().getFullYear() + 1) + "-12-31").length})`}
+                    </button>
                 </div>
-                <div className="flex items-center gap-1.5 flex-wrap pt-2">
-                    <input type="date" value={nFestivo.data} onChange={e => setNFestivo(p => ({ ...p, data: e.target.value }))} className="glass-input !h-8 text-[11px]" />
-                    <input value={nFestivo.nome} onChange={e => setNFestivo(p => ({ ...p, nome: e.target.value }))} placeholder="Nome (es. Patrono)" className="glass-input !h-8 text-[11px] w-44" />
-                    <button onClick={async () => {
-                        if (!nFestivo.data) return;
-                        const { error } = await supabase.from("giorni_festivi").upsert({ giorno: nFestivo.data, nome: nFestivo.nome.trim() || "Festivo" });
-                        if (dbError("Festivo", error)) return;
-                        setNFestivo({ data: "", nome: "" }); carica();
-                    }} disabled={!nFestivo.data}
-                        className="px-3 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold disabled:opacity-40">＋ Festivo</button>
-                </div>
+                {festiviAperti && (<>
+                    <div className="flex items-center gap-1.5 flex-wrap pt-3">
+                        {festivi.filter(f => f.giorno >= new Date().getFullYear() + "-01-01" && f.giorno <= (new Date().getFullYear() + 1) + "-12-31").map(f => (
+                            <span key={f.giorno} className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/10 border border-indigo-500/40 text-indigo-300">
+                                {f.giorno.split("-").reverse().join("/")} · {f.nome}
+                                <button onClick={async () => { if (!window.confirm(`Togliere "${f.nome}" (${f.giorno.split("-").reverse().join("/")}) dai festivi?`)) return; await supabase.from("giorni_festivi").delete().eq("giorno", f.giorno); carica(); }}
+                                    className="opacity-70 hover:opacity-100">✕</button>
+                            </span>
+                        ))}
+                        {festivi.length === 0 && <span className="text-xs text-slate-600 italic">Nessun festivo registrato.</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap pt-2">
+                        <input type="date" value={nFestivo.data} onChange={e => setNFestivo(p => ({ ...p, data: e.target.value }))} className="glass-input !h-8 text-[11px]" />
+                        <input value={nFestivo.nome} onChange={e => setNFestivo(p => ({ ...p, nome: e.target.value }))} placeholder="Nome (es. Patrono)" className="glass-input !h-8 text-[11px] w-44" />
+                        <button onClick={async () => {
+                            if (!nFestivo.data) return;
+                            const { error } = await supabase.from("giorni_festivi").upsert({ giorno: nFestivo.data, nome: nFestivo.nome.trim() || "Festivo" });
+                            if (dbError("Festivo", error)) return;
+                            setNFestivo({ data: "", nome: "" }); carica();
+                        }} disabled={!nFestivo.data}
+                            className="px-3 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold disabled:opacity-40">＋ Festivo</button>
+                    </div>
+                </>)}
             </div>
             {negozi.map(n => {
                 const mie = chiusure.filter(c => c.store === n.name);
@@ -404,22 +426,29 @@ export function OrariChiusureView() {
                                     ＋ Aggiungi 2° turno
                                 </button>
                             )}
-                            {/* SABATO dedicato (Luca 12/08): turno unico solo del sabato;
-                                vuoto = il sabato segue l'orario della settimana */}
-                            <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-400"
-                                title="Orario dedicato del sabato (turno unico). Vuoto = il sabato segue l'orario della settimana.">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-8 shrink-0">Sab</span>
-                                <input type="time" value={n.sabato_apertura ? hhmm(n.sabato_apertura, "") : ""} onChange={e => salvaOrario(n.name, "sabato_apertura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
-                                <span>–</span>
-                                <input type="time" value={n.sabato_chiusura ? hhmm(n.sabato_chiusura, "") : ""} onChange={e => salvaOrario(n.name, "sabato_chiusura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
-                                {(n.sabato_apertura || n.sabato_chiusura) && (
+                            {/* SABATO dedicato A FLAG (esito Luca 12/08): senza flag il
+                                sabato segue l'orario della settimana e non si vede nulla;
+                                il flag apre i due campi del turno unico del sabato */}
+                            {(sabatoUi[n.name] ?? !!(n.sabato_apertura || n.sabato_chiusura)) ? (
+                                <div className="flex items-center gap-1 mt-1 text-[11px] text-slate-400"
+                                    title="Orario dedicato del sabato (turno unico).">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 w-8 shrink-0">Sab</span>
+                                    <input type="time" value={n.sabato_apertura ? hhmm(n.sabato_apertura, "") : ""} onChange={e => salvaOrario(n.name, "sabato_apertura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
+                                    <span>–</span>
+                                    <input type="time" value={n.sabato_chiusura ? hhmm(n.sabato_chiusura, "") : ""} onChange={e => salvaOrario(n.name, "sabato_chiusura", e.target.value)} className="glass-input !h-7 !px-1.5 text-[11px] w-[76px]" />
                                     <button onClick={async () => {
                                         const { error } = await supabase.from("stores").update({ sabato_apertura: null, sabato_chiusura: null }).eq("name", n.name);
                                         if (dbError("Orario sabato", error)) return;
                                         setNegozi(p => p.map(x => x.name === n.name ? { ...x, sabato_apertura: null, sabato_chiusura: null } : x));
-                                    }} title="Torna all'orario della settimana anche di sabato" className="text-slate-500 hover:text-rose-400 font-bold shrink-0">✕</button>
-                                )}
-                            </div>
+                                        setSabatoUi(p => ({ ...p, [n.name]: false }));
+                                    }} title="Il sabato torna a seguire l'orario della settimana" className="text-slate-500 hover:text-rose-400 font-bold shrink-0">✕</button>
+                                </div>
+                            ) : (
+                                <button onClick={() => setSabatoUi(p => ({ ...p, [n.name]: true }))}
+                                    className="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 hover:text-amber-300 transition-colors block">
+                                    ＋ Orario sabato dedicato
+                                </button>
+                            )}
                             {/* DOMENICA (Luca 11/08): negozio operativo anche di domenica —
                                 per il Tracking quel giorno conta come lavorativo */}
                             <div className="flex items-center gap-2 mt-2"

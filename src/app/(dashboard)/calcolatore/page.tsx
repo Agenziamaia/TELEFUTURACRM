@@ -339,11 +339,16 @@ export default function CalcolatorePage() {
                 <div className="flex gap-2 flex-wrap items-center mb-5">
                     <span className="text-[11px] uppercase tracking-wider text-amber-300/80 mr-1">Punto vendita</span>
                     <Pill on={pdvSel == null} onClick={() => { setPdvSel(null); setTierSel(null); }}>🌐 Rete</Pill>
+                    {/* etichetta = negozio + CODICE GARA quando doppio (esito Luca
+                        12/08: i cluster «Strada» venivano dal suo foglio Target ma
+                        in etichetta confondevano — restano nel tooltip) */}
                     {pdvList.map(p => {
                         const doppio = pdvList.filter(x => x.negozio === p.negozio).length > 1;
                         return (
                             <Pill key={p.id} on={pdvSel === p.id} onClick={() => { setPdvSel(p.id); setTierSel(null); }}>
-                                {p.negozio}{doppio && p.cluster_mobile ? ` · ${p.cluster_mobile}` : ""}
+                                <span title={p.cluster_mobile ? `Cluster ${p.cluster_mobile} — colonna del foglio Target mensile W3` : undefined}>
+                                    {p.negozio}{doppio && p.cod_gara ? ` · ${p.cod_gara}` : ""}
+                                </span>
                             </Pill>
                         );
                     })}

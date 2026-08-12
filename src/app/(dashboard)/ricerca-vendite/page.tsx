@@ -791,8 +791,11 @@ export default function RicercaContratto() {
         if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
         if (filterProdotti !== null) query = query.in("prodotto", filterProdotti);
         if (filterOfferte !== null) query = query.in("offerta", filterOfferte);
-        // opzioni selezionate: la vendita deve contenerle TUTTE (@> sul jsonb)
-        if (filterOpzioni !== null && filterOpzioni.length > 0) query = query.contains("opzioni", filterOpzioni.map((o) => ({ nome: o })));
+        // opzioni selezionate: la vendita deve contenerle TUTTE (@> sul jsonb).
+        // NB serve la STRINGA JSON: con l'array JS supabase-js serializza un
+        // array Postgres (graffe) e il jsonb risponde "invalid input syntax
+        // for type json" — era l'errore alla selezione di un'opzione (12/08)
+        if (filterOpzioni !== null && filterOpzioni.length > 0) query = query.contains("opzioni", JSON.stringify(filterOpzioni.map((o) => ({ nome: o }))));
         // CATEGORIA = sempre quella FINE del catalogo, con uno o più brand
         // (Luca 28/07): dettagli->>categoria_catalogo copre il 100% dello
         // storico dopo il backfill (regola pagamento per i mobile vecchi).
