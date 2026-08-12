@@ -3,16 +3,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
-import { arrotonda5, totaleRighe, PAGAMENTO, type RigaScontrino, type MetodoPagamento } from "@/lib/pos";
+import { arrotonda5, totaleRighe, FORME_PAGAMENTO, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
 
 /* Modale "Incasso & Scontrino" — l'output fiscale di Registra Vendita.
-   Si apre a vendita registrata: sceglie il pagamento, per i CONTANTI mette in coda
-   un incasso sulla cassa automatica pagAmico (l'agente locale del negozio la comanda
-   e riporta incassato/resto), poi mette in coda lo scontrino fiscale sul RT.
+   Si apre a vendita registrata: si compone il pagamento (fino a 3 forme, spec #2),
+   per la quota CONTANTI mette in coda un incasso sulla cassa automatica pagAmico
+   (l'agente locale del negozio la comanda e riporta incassato/resto), poi mette in
+   coda lo scontrino fiscale sul RT con una riga di pagamento per forma.
    Tutto passa dalla coda cloud (print_jobs) → l'agente del negozio esegue sul LAN:
    funziona da qualsiasi dispositivo, nessun collegamento diretto dal browser.
-   Contanti = guida la macchina; Carta/Finanziamento = solo scontrino (il POS è a
-   parte). Il reset della vendita avviene alla chiusura (onDone). */
+   Solo la quota Contanti guida la macchina; Carta/Bonifico = solo scontrino (POS a
+   parte); Finanziamento/Non Riscosso = a credito, nessun incasso fisico.
+   Il reset della vendita avviene alla chiusura (onDone). */
 
 export interface ScontrinoData {
     items: RigaScontrino[];
@@ -27,7 +29,10 @@ const CASH_TIMEOUT_MS = 240000; // 4 min: il cliente inserisce i contanti
 type Fase = "scelta" | "incasso" | "stampa" | "fatto" | "errore";
 
 export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; onDone: () => void }) {
-    const [metodo, setMetodo] = useState<MetodoPagamento>("CONTANTI");
+    const totale = data ? totaleRighe(data.items) : 0;
+
+    // Pagamento come lista di forme (max 3). Default: tutto in contanti.
+    const [righe, setRighe] = useState<RigaPagamento[]>([{ forma: "CONTANTI", importo: 0 }]);
     const [fase, setFase] = useState<Fase>("scelta");
     const [incassato, setIncassato] = useState(0);
     const [resto, setResto] = useState(0);
@@ -35,17 +40,20 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     const [esclusi, setEsclusi] = useState<{ description: string; motivo: string }[]>([]);
     // Contanti già incassati: evita il DOPPIO incasso se lo scontrino fallisce e si riprova.
     const [cashDone, setCashDone] = useState(false);
-    const [paidAmount, setPaidAmount] = useState(0);
+    const [paidCash, setPaidCash] = useState(0);
     const [isTest, setIsTest] = useState(false);
     // Multi-societario: ragioni sociali/RT del negozio; se >1, l'operatore sceglie
     // quale EMETTE (default = azienda del negozio; i prodotti con azienda fissa
     // vanno comunque al loro RT).
     const [aziende, setAziende] = useState<{ code: string; label: string }[]>([]);
     const [aziendaSel, setAziendaSel] = useState<string | null>(null);
+
     // reset a ogni apertura (nuova vendita) o chiusura del modale
     useEffect(() => {
-        setMetodo("CONTANTI"); setFase("scelta"); setIncassato(0); setResto(0);
-        setMsg(""); setEsclusi([]); setCashDone(false); setPaidAmount(0); setIsTest(false);
+        const t = data ? totaleRighe(data.items) : 0;
+        setRighe([{ forma: "CONTANTI", importo: t }]);
+        setFase("scelta"); setIncassato(0); setResto(0);
+        setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false);
         setAziende([]); setAziendaSel(null);
         const neg = data?.negozio;
         if (!neg) return;
@@ -56,6 +64,20 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             setAziendaSel(def ? def.code : null);
         });
     }, [data]);
+
+    // Somme / bilancio del pagamento.
+    const sommaPag = +righe.reduce((s, r) => s + (Number(r.importo) || 0), 0).toFixed(2);
+    const rimanente = +(totale - sommaPag).toFixed(2);
+    const bilanciato = Math.abs(rimanente) < 0.005 && righe.every((r) => Number(r.importo) > 0);
+    const cashPortion = +righe.filter((r) => isFormaCash(r.forma)).reduce((s, r) => s + (Number(r.importo) || 0), 0).toFixed(2);
+    const cashRounded = arrotonda5(cashPortion);
+    const arrotondamento = +(cashRounded - cashPortion).toFixed(2);
+
+    // Forme di pagamento da inviare al RT: la quota contanti va arrotondata a 5 cent
+    // (la macchina lavora a ≥5c); le altre forme all'importo esatto.
+    const pagamentiSend = (): RigaPagamento[] =>
+        righe.filter((r) => Number(r.importo) > 0)
+            .map((r) => (isFormaCash(r.forma) ? { forma: r.forma, importo: arrotonda5(Number(r.importo)) } : { forma: r.forma, importo: +Number(r.importo).toFixed(2) }));
 
     // Incasso contanti via coda: enqueue → poll del job finché done/error.
     const incassaContanti = useCallback(async (amount: number, negozio: string | null) => {
@@ -87,10 +109,9 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         }
     }, []);
 
-    const stampaScontrino = useCallback(async (paidAmount?: number) => {
+    const stampaScontrino = useCallback(async (pagamenti: RigaPagamento[]) => {
         setFase("stampa");
         setMsg("Emissione scontrino fiscale…");
-        const pag = PAGAMENTO[metodo];
         try {
             const res = await fetch("/api/vendita/scontrino", {
                 method: "POST",
@@ -100,9 +121,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                     deviceUrl: data?.deviceUrl,
                     items: data?.items ?? [],
                     azienda: aziendaSel,
-                    paymentType: pag.paymentType,
-                    paymentDescription: pag.description,
-                    paidAmount,
+                    pagamenti,
                 }),
             });
             const j = await res.json().catch(() => ({}));
@@ -110,16 +129,19 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         } catch (e: any) {
             return { ok: false, error: String(e?.message || e) };
         }
-    }, [metodo, data, aziendaSel]);
+    }, [data, aziendaSel]);
 
     if (!data) return null;
-    const totale = totaleRighe(data.items);
-    const daPagare = metodo === "CONTANTI" ? arrotonda5(totale) : totale;
-    const arrotondamento = +(daPagare - totale).toFixed(2);
 
     const conferma = async () => {
-        let paid: number | undefined = cashDone ? paidAmount : undefined;
-        if (metodo === "CONTANTI" && !cashDone) {
+        if (!bilanciato) {
+            setFase("errore");
+            setMsg(rimanente > 0 ? `Manca ${eur(rimanente)} da assegnare a una forma di pagamento.` : `Pagamento eccedente di ${eur(-rimanente)}.`);
+            return;
+        }
+        const pagamenti = pagamentiSend();
+        // Incasso contanti (una sola volta) se c'è una quota contanti e non è già fatta.
+        if (cashRounded > 0 && !cashDone) {
             // PRE-CHECK: lo scontrino è emettibile? Se no, NON si incassa (mai prendere
             // contanti senza poter emettere lo scontrino).
             setFase("stampa"); setMsg("Verifico lo scontrino…");
@@ -138,19 +160,18 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                 setMsg("Scontrino non emettibile (" + (chk.error || "voci senza reparto") + "). Incasso NON avviato.");
                 return;
             }
-            const r = await incassaContanti(daPagare, data.negozio);
+            const r = await incassaContanti(cashRounded, data.negozio);
             if (!r || !r.ok) {
                 setFase("errore");
                 setMsg("Incasso non riuscito: " + (r?.erroreMsg || "annullato"));
                 return;
             }
-            setIncassato(r.incassato ?? daPagare);
+            setIncassato(r.incassato ?? cashRounded);
             setResto(r.resto ?? 0);
             setCashDone(true);
-            setPaidAmount(daPagare);
-            paid = daPagare;
+            setPaidCash(cashRounded);
         }
-        const p = await stampaScontrino(paid);
+        const p = await stampaScontrino(pagamenti);
         setEsclusi(Array.isArray(p.esclusi) ? p.esclusi : []);
         if (!p.ok) {
             setFase("errore");
@@ -162,19 +183,20 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         setMsg((p.testMode ? "Documento NON fiscale in stampa (prova)" : "Scontrino fiscale in stampa") + (p.esclusi?.length ? ` — ${p.esclusi.length} voci senza reparto NON stampate` : ""));
     };
 
-    const btnMetodo = (m: MetodoPagamento, label: string, emoji: string) => (
-        <button
-            key={m}
-            type="button"
-            onClick={() => setMetodo(m)}
-            className={
-                "flex-1 py-2.5 rounded-xl border text-sm font-semibold transition " +
-                (metodo === m ? "bg-violet-500/25 border-violet-400/60 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")
-            }
-        >
-            <span className="mr-1.5">{emoji}</span>{label}
-        </button>
-    );
+    // ── gestione righe pagamento ──────────────────────────────────────────────
+    const setForma = (i: number, forma: string) => setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, forma } : r)));
+    const setImporto = (i: number, val: string) => {
+        const n = Math.max(0, Number(String(val).replace(",", ".")) || 0);
+        setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, importo: n } : r)));
+    };
+    const addRiga = () => setRighe((rs) => {
+        if (rs.length >= 3) return rs;
+        const usate = new Set(rs.map((r) => r.forma));
+        const next = FORME_PAGAMENTO.find((f) => !usate.has(f.code)) || FORME_PAGAMENTO[1];
+        const manca = +(totale - rs.reduce((s, r) => s + (Number(r.importo) || 0), 0)).toFixed(2);
+        return [...rs, { forma: next.code, importo: manca > 0 ? manca : 0 }];
+    });
+    const removeRiga = (i: number) => setRighe((rs) => (rs.length <= 1 ? rs : rs.filter((_, k) => k !== i)));
 
     return createPortal(
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -184,7 +206,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                     <span className="text-xs text-slate-400">{data.negozio || "—"}{isTest ? " · PROVA (non fiscale)" : ""}</span>
                 </div>
 
-                <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 max-h-44 overflow-y-auto">
+                <div className="rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5 max-h-40 overflow-y-auto">
                     {data.items.map((r, i) => (
                         <div key={i} className="flex items-center justify-between px-3 py-1.5 text-sm">
                             <span className="text-slate-200 truncate mr-2">{r.description}{(r.qty ?? 1) > 1 ? ` ×${r.qty}` : ""}</span>
@@ -195,11 +217,8 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
 
                 <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">Totale</span>
-                    <span className="text-white font-bold text-xl tabular-nums">{eur(daPagare)}</span>
+                    <span className="text-white font-bold text-xl tabular-nums">{eur(totale)}</span>
                 </div>
-                {metodo === "CONTANTI" && arrotondamento !== 0 && (
-                    <p className="text-[11px] text-slate-500 -mt-2 text-right">arrotondamento contanti {arrotondamento > 0 ? "+" : ""}{eur(arrotondamento)} (su {eur(totale)})</p>
-                )}
 
                 {fase === "scelta" && (
                     <>
@@ -216,16 +235,47 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                                 </div>
                             </div>
                         )}
-                        <div className="flex gap-2">
-                            {btnMetodo("CONTANTI", "Contanti", "💶")}
-                            {btnMetodo("CARTA", "Carta", "💳")}
-                            {btnMetodo("FINANZIAMENTO", "Finanz.", "📄")}
+
+                        <div className="space-y-2">
+                            <p className="text-[11px] text-slate-500">Forme di pagamento (max 3)</p>
+                            {righe.map((r, i) => (
+                                <div key={i} className="flex gap-2 items-center">
+                                    <select value={r.forma} onChange={(e) => setForma(i, e.target.value)}
+                                        className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm px-2.5 py-2 outline-none focus:border-violet-400/60">
+                                        {FORME_PAGAMENTO.map((f) => (
+                                            <option key={f.code} value={f.code} className="bg-slate-800">{f.label}</option>
+                                        ))}
+                                    </select>
+                                    <div className="relative w-28 shrink-0">
+                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-sm">€</span>
+                                        <input type="number" min={0} step={0.05} value={r.importo || ""} onChange={(e) => setImporto(i, e.target.value)}
+                                            className="w-full rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm text-right tabular-nums pl-5 pr-2 py-2 outline-none focus:border-violet-400/60" />
+                                    </div>
+                                    <button type="button" onClick={() => removeRiga(i)} disabled={righe.length <= 1}
+                                        className="shrink-0 w-8 h-8 rounded-lg border border-white/10 text-slate-400 hover:text-rose-300 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-lg leading-none">×</button>
+                                </div>
+                            ))}
+                            <div className="flex items-center justify-between">
+                                {righe.length < 3 ? (
+                                    <button type="button" onClick={addRiga} className="text-xs text-violet-300 hover:text-violet-200">+ Aggiungi pagamento</button>
+                                ) : <span />}
+                                <span className={"text-xs tabular-nums " + (bilanciato ? "text-emerald-400" : "text-amber-300")}>
+                                    {bilanciato ? "✓ Bilanciato" : `Rimanente ${eur(rimanente)}`}
+                                </span>
+                            </div>
                         </div>
-                        {metodo === "CONTANTI" && <p className="text-[11px] text-slate-500 text-center">La cassa automatica chiederà {eur(daPagare)} ed erogherà il resto.</p>}
+
+                        {cashRounded > 0 && (
+                            <p className="text-[11px] text-slate-500 text-center">
+                                La cassa automatica chiederà {eur(cashRounded)} in contanti ed erogherà il resto.
+                                {arrotondamento !== 0 && <> Arrotondamento {arrotondamento > 0 ? "+" : ""}{eur(arrotondamento)}.</>}
+                            </p>
+                        )}
+
                         <div className="flex gap-2 pt-1">
                             <button type="button" onClick={onDone} className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 text-sm">Salta scontrino</button>
-                            <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">
-                                {metodo === "CONTANTI" ? "Incassa ed emetti" : "Emetti scontrino"}
+                            <button type="button" onClick={conferma} disabled={!bilanciato} className="flex-1 primary-btn py-2.5 text-sm font-semibold disabled:opacity-40">
+                                {cashRounded > 0 ? "Incassa ed emetti" : "Emetti scontrino"}
                             </button>
                         </div>
                     </>
@@ -247,7 +297,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                     <div className="space-y-3 text-center py-1">
                         <div className="text-4xl">✅</div>
                         <p className="text-emerald-300 font-semibold">{msg}</p>
-                        {metodo === "CONTANTI" && <p className="text-sm text-slate-300">Incassato {eur(incassato)} · Resto <span className="text-white font-bold">{eur(resto)}</span></p>}
+                        {cashPortion > 0 && <p className="text-sm text-slate-300">Incassato {eur(incassato)} · Resto <span className="text-white font-bold">{eur(resto)}</span></p>}
                         {!!esclusi.length && (
                             <div className="text-left text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">
                                 Voci NON stampate (reparto non assegnato in Catalogo): {esclusi.map((e) => e.description).join(", ")}
@@ -261,7 +311,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                     <div className="space-y-3 text-center py-1">
                         <div className="text-4xl">⚠️</div>
                         <p className="text-rose-300 text-sm">{msg}</p>
-                        {cashDone && <p className="text-[12px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">Contanti GIÀ incassati: {eur(incassato)} · Resto {eur(resto)}. NON reincassare — usa «Ristampa scontrino».</p>}
+                        {cashDone && <p className="text-[12px] text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">Contanti GIÀ incassati: {eur(incassato)} · Resto {eur(resto)} (quota {eur(paidCash)}). NON reincassare — usa «Ristampa scontrino».</p>}
                         <div className="flex gap-2">
                             <button type="button" onClick={onDone} className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10 text-sm">Chiudi</button>
                             <button type="button" onClick={conferma} className="flex-1 primary-btn py-2.5 text-sm font-semibold">{cashDone ? "Ristampa scontrino" : "Riprova"}</button>

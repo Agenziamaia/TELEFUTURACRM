@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { buildRequestXml } from "@/lib/fiscalprint";
+import { formaPagamento } from "@/lib/pos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -88,9 +89,28 @@ export async function POST(req: Request) {
     // Pre-check (dryRun): valida SENZA mettere in coda.
     if (b.dryRun) return NextResponse.json({ ok: true, stampabili: totalPrintable, aziende: Object.keys(gruppi).filter((a) => a !== "__def"), esclusi, testMode });
 
-    const paymentDescr = b.paymentDescription || (Number(b.paymentType) === 0 ? "CONTANTE" : "CARTA");
+    const paymentDescr = b.paymentDescription || (Number(b.paymentType) === 2 ? "CARTA" : "CONTANTE");
     const nGruppi = Object.keys(gruppi).length;
     const receipts: any[] = [];
+
+    // PAGAMENTI multipli (spec #2, max 3): [{forma, importo}]. I codici RT sono
+    // AUTORITATIVI lato server (formaPagamento), il client manda solo forma+importo.
+    // Applicabile solo con UN unico scontrino (un'unica azienda): con più aziende
+    // la ripartizione dei tender per società è ambigua → si torna al pagamento singolo.
+    const pagamentiIn: any[] = Array.isArray(b.pagamenti) ? b.pagamenti.slice(0, 3) : [];
+    const buildPayments = () => {
+        if (pagamentiIn.length && nGruppi === 1) {
+            return pagamentiIn
+                .filter((p) => Number(p?.importo) > 0)
+                .map((p) => {
+                    const f = formaPagamento(String(p.forma));
+                    return { description: (f?.short || "CONTANTE"), paymentType: f ? f.paymentType : 0, amount: Number(p.importo) };
+                });
+        }
+        const single: any = { description: paymentDescr, paymentType: Number.isFinite(Number(b.paymentType)) ? Number(b.paymentType) : 0 };
+        if (b.paidAmount != null && nGruppi === 1) single.amount = Number(b.paidAmount);
+        return [single];
+    };
 
     for (const [az, items] of Object.entries(gruppi)) {
         const totale = +(items.reduce((t, i) => t + i.unitPrice * i.quantity, 0)).toFixed(2);
@@ -113,10 +133,7 @@ export async function POST(req: Request) {
                 request_xml = buildRequestXml("non_fiscal", { lines });
                 kind = "non_fiscal";
             } else {
-                const payment: any = { description: paymentDescr, paymentType: Number.isFinite(Number(b.paymentType)) ? Number(b.paymentType) : 0 };
-                // paidAmount (contanti incassati) applicabile solo quando c'è UN unico scontrino.
-                if (b.paidAmount != null && nGruppi === 1) payment.amount = Number(b.paidAmount);
-                request_xml = buildRequestXml("fiscal_receipt", { items, payment });
+                request_xml = buildRequestXml("fiscal_receipt", { items, payment: buildPayments() });
                 kind = "fiscal_receipt";
             }
         } catch (e: any) {

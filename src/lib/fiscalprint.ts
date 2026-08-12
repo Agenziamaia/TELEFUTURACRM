@@ -103,7 +103,7 @@ export interface FiscalPayment {
 
 const money = (n: unknown) => Number(n || 0).toFixed(2);
 
-export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment = {}, operator = "1"): string {
+export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment | FiscalPayment[] = {}, operator = "1"): string {
   if (!items || !items.length) throw new Error("Scontrino fiscale senza righe.");
   const rows = items.map((it) => {
     // ⚠️ SICUREZZA IVA (richiamo di Luca 01/08/2026): il `department` e' il REPARTO
@@ -124,18 +124,25 @@ export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment = {
       ` department="${dept}"` +
       ` justification="1" />`;
   }).join("");
-  // Importo pagato: se ASSENTE si intende INCASSATO l'intero totale (RISCOSSO).
-  // Prima `money(payment.amount)` con amount assente dava "0.00" → l'RT segnava
-  // tutto "NON RISCOSSO / importo pagato 0" (bug visto sullo scontrino CARTA).
-  // Per un "non riscosso" reale (finanziamento/credito) il chiamante passa amount = 0.
+  // PAGAMENTI (spec #2): una riga printRecTotal per forma (max 3 lato UI). Ogni riga
+  // porta il suo importo + codice RT. Un tipo "non riscosso/finanziamento" ha un
+  // paymentType dedicato (4) e l'importo NON è incassato fisicamente.
+  // Importo pagato: se ASSENTE (pagamento singolo senza amount) si intende INCASSATO
+  // l'intero totale (RISCOSSO). Prima `money(payment.amount)` con amount assente dava
+  // "0.00" → l'RT segnava tutto "NON RISCOSSO / importo pagato 0" (bug scontrino CARTA).
   const totaleItems = items.reduce((s, it) => s + Number(it.unitPrice) * Number(it.quantity ?? 1), 0);
-  const paid = payment.amount != null ? Number(payment.amount) : totaleItems;
-  const total =
-    `<printRecTotal operator="${esc(operator)}"` +
-    ` description="${esc(payment.description || "CONTANTE")}"` +
-    ` payment="${money(paid)}"` +
-    ` paymentType="${Number(payment.paymentType ?? 0)}"` +
-    ` index="0" justification="2" />`;
+  const pays = (Array.isArray(payment) ? payment : [payment]).filter(Boolean);
+  const list: FiscalPayment[] = pays.length ? pays : [{}];
+  const singolo = list.length === 1;
+  const total = list.map((p) => {
+    // pagamento singolo senza amount → intero totale; altrimenti l'importo esplicito.
+    const paid = p.amount != null ? Number(p.amount) : (singolo ? totaleItems : 0);
+    return `<printRecTotal operator="${esc(operator)}"` +
+      ` description="${esc(p.description || "CONTANTE")}"` +
+      ` payment="${money(paid)}"` +
+      ` paymentType="${Number(p.paymentType ?? 0)}"` +
+      ` index="0" justification="2" />`;
+  }).join("");
   return `<printerFiscalReceipt>` +
     `<beginFiscalReceipt operator="${esc(operator)}" />` +
     rows + total +
@@ -146,7 +153,7 @@ export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment = {
 /** Costruisce l'XML ePOS per un job in coda, dato il suo kind. */
 export function buildRequestXml(
   kind: string,
-  opts: { lines?: string[]; requestXml?: string; items?: FiscalItem[]; payment?: FiscalPayment } = {},
+  opts: { lines?: string[]; requestXml?: string; items?: FiscalItem[]; payment?: FiscalPayment | FiscalPayment[] } = {},
 ): string | null {
   switch (kind) {
     case "status": return xmlQueryStatus();
