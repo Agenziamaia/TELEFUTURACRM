@@ -30,6 +30,7 @@ export type PayRiga = {
     tipo_cliente: string | null; categoria: string | null; prodotto: string | null;
     offerta: string | null; opzione: string | null;
     brand_vendita: string | null;               // NULL = qualsiasi brand di vendita
+    moltiplicatore?: boolean;                   // true = i tiers sono MOLTIPLICATORI del canone dell'offerta (modello W3)
     punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
 };
@@ -77,7 +78,7 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
         supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
         supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier"),
-        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
             .eq("brand", brand).eq("month", monthISO).eq("lato", lato).eq("attivo", true).order("ordine").limit(1000),
     ]);
     const piste = (pisteRes.data || []) as PayPista[];
@@ -106,21 +107,52 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
  * si aggiorna da solo.
  */
 export async function caricaTabellare(brand: string, monthISO: string): Promise<Tabellare | null> {
-    const ragazzi = await caricaTabellareLato(brand, monthISO, "ragazzi");
-    if (ragazzi) return ragazzi;
-    const azienda = await caricaTabellareLato(brand, monthISO, "azienda");
-    if (!azienda) return null;
+    const [ragazzi, azienda] = await Promise.all([
+        caricaTabellareLato(brand, monthISO, "ragazzi"),
+        caricaTabellareLato(brand, monthISO, "azienda"),
+    ]);
+    if (!azienda) return ragazzi;
     const percDi = new Map(azienda.piste.map(p => [p.chiave, p.perc_ragazzi == null ? 100 : Number(p.perc_ragazzi)]));
     const scala = (v: number | null, pista: string | null) =>
         v == null ? null : Math.round(v * ((pista ? percDi.get(pista) ?? 100 : 100) / 100) * 100) / 100;
+    const deriva = (r: PayRiga): PayRiga => ({
+        ...r,
+        pay_base: scala(r.pay_base, r.pista),
+        pay_tiers: r.pay_tiers.map(v => scala(v, r.pista) as number),
+    });
+    if (!ragazzi) {
+        // il ragazzi può avere SOLO gettoni senza piste (es. W3 dopo l'abbandono
+        // del vecchio tabellare): ripescali e affiancali al derivato.
+        const orfani = await caricaRigheOrfane(brand, monthISO);
+        return { ...azienda, derivato: true, righe: [...azienda.righe.map(deriva), ...orfani] };
+    }
+    // DERIVAZIONE PARZIALE (allineamento Luca 11/08): le piste azienda che il
+    // ragazzi NON ha si derivano (× perc_ragazzi, 100 se non impostata) — così
+    // il Calcolatore mostra mappato tutto ciò che l'azienda copre e le
+    // "scoperture" diventano la lista vera di ciò che manca su ogni brand.
+    const chiaviRag = new Set(ragazzi.piste.map(p => p.chiave));
+    const pisteApp = azienda.piste.filter(p => !chiaviRag.has(p.chiave));
+    if (!pisteApp.length) return ragazzi;
+    const chiaviApp = new Set(pisteApp.map(p => p.chiave));
     return {
-        ...azienda, derivato: true,
-        righe: azienda.righe.map(r => ({
-            ...r,
-            pay_base: scala(r.pay_base, r.pista),
-            pay_tiers: r.pay_tiers.map(v => scala(v, r.pista) as number),
-        })),
+        ...ragazzi, derivato: true,
+        piste: [...ragazzi.piste, ...pisteApp],
+        soglie: [...ragazzi.soglie, ...azienda.soglie.filter(sg => chiaviApp.has(sg.pista))],
+        righe: [...ragazzi.righe, ...azienda.righe.filter(r => r.pista && chiaviApp.has(r.pista)).map(deriva)],
     };
+}
+
+/** Righe ragazzi senza pista madre (gettoni orfani, normalizzate). */
+async function caricaRigheOrfane(brand: string, monthISO: string): Promise<PayRiga[]> {
+    const { data } = await supabase.from("pay_righe")
+        .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        .eq("brand", brand).eq("month", monthISO).eq("lato", "ragazzi").eq("attivo", true).order("ordine").limit(1000);
+    return ((data || []) as Record<string, unknown>[]).map(r => ({
+        ...(r as unknown as PayRiga),
+        punti: Number(r.punti || 0),
+        pay_base: r.pay_base == null ? null : Number(r.pay_base),
+        pay_tiers: Array.isArray(r.pay_tiers) ? (r.pay_tiers as unknown[]).map(Number) : [],
+    }));
 }
 
 /** Tabellare AZIENDA così com'è (per il pannello e le analisi lato azienda). */
@@ -169,12 +201,26 @@ export function sostituzioneSim(c: { categoria?: string | null; prodotto?: strin
     return /sostituzion/i.test(String(c.prodotto || "")) || /sostituzion/i.test(String(c.categoria || ""));
 }
 
+/**
+ * Vendite FUORI dalle gare per regola aziendale: sostituzioni SIM (tutti gli
+ * operatori) e le SIM Easy Control ("va considerata come una sostituzione" —
+ * Luca 11/08). Né commissioning né punti, e nel Calcolatore non sono
+ * "scoperture" ma escluse dichiarate.
+ */
+export function esclusaDalleGare(c: { categoria?: string | null; prodotto?: string | null; offerta?: string | null }): boolean {
+    if (sostituzioneSim(c)) return true;
+    // "vanno trattate come una sostituzione" (Luca 11/08): Easy Control (VF)
+    // e Smart Security (W3) — né commissioning né punti.
+    if (/^(easy control|smart security)$/i.test(String(c.offerta || "").trim())) return true;
+    return false;
+}
+
 /** Perimetro v1 della produzione che conta per le gare. */
 export function produzioneValidaGare(c: ContrattoPay): boolean {
     if (!String(c.id || "").startsWith("CTR-")) return false;   // solo pratiche brand
     if (c.nascosta_gestione === true) return false;
     if (/annull/i.test(String(c.stato || ""))) return false;
-    if (sostituzioneSim(c)) return false;
+    if (esclusaDalleGare(c)) return false;
     return true;
 }
 
@@ -224,10 +270,19 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
 const CTX_VF_T1 = ["acilia", "baleniere", "castani", "merulana"];
 const CTX_FW_T2 = ["donna", "magliana", "garbatella", "promontori"];
 
-export function contestoVfFw(brandId: string | null, codice: string | null, negozio?: string | null): string | null {
+export function contestoVfFw(brandId: string | null, codice: string | null, negozio?: string | null, categoria?: string | null): string | null {
     // LATO RAGAZZI (11/08): ogni brand paga col SUO tabellare — Vodafone
-    // sempre lettera A, Fastweb sempre tabellare Fastweb. Lo split T1/T2 coi
-    // codici (CTX_* qui sotto) servirà al lato AZIENDA, cantiere sui PDF.
+    // sempre lettera A, Fastweb sempre tabellare Fastweb — CON UNA ECCEZIONE
+    // (task Luca 11/08): l'ENERGIA Fastweb venduta coi codici dei Vodafone
+    // Store (T1) paga il tabellare a soglie della lettera A (pista luce/gas
+    // del contesto vodafone); l'energia T2 resta a gettone flat sul fastweb.
+    // Lo split T1/T2 completo coi codici servirà al lato AZIENDA (cantiere PDF).
+    // FW T1 = calderone unico con Vodafone (task Luca 11/08): TUTTO il
+    // Fastweb venduto coi codici dei Vodafone Store paga la lettera A.
+    if (brandId === "fastweb") {
+        const ref = String(codice || "").trim().toLowerCase() || String(negozio || "").trim().toLowerCase();
+        if (CTX_VF_T1.some(x => ref.startsWith(x))) return "vodafone";
+    }
     return brandId;
 }
 export const CTX_CODICI_T1 = CTX_VF_T1;
@@ -248,8 +303,11 @@ export const CONTESTI_LABEL: Record<string, string> = {
 export async function caricaContrattiContesto(
     contesto: string, monthISO: string, prefixAltriBrand?: string,
 ): Promise<{ contratti: ContrattoPay[]; nonAllocate: number; escluseVodafone: number }> {
-    const prefix = contesto === "vodafone" ? "Vodafone" : contesto === "fastweb" ? "Fastweb" : (prefixAltriBrand || contesto);
-    const tutti = await caricaContrattiMese(prefix, monthISO);
+    // il contesto vodafone (lettera A) include anche l'ENERGIA Fastweb dei VS
+    const fonti: string[] =
+        contesto === "vodafone" ? ["Vodafone", "Fastweb"] :
+        contesto === "fastweb" ? ["Fastweb"] : [prefixAltriBrand || contesto];
+    const tutti = (await Promise.all(fonti.map(p => caricaContrattiMese(p, monthISO)))).flat();
     let escluseVodafone = 0;
     const contratti = tutti.filter(c => {
         // REGOLE LETTERE (agosto): Fastweb T2 — MNP/OLO di provenienza
@@ -258,7 +316,7 @@ export async function caricaContrattiContesto(
         const prov = String(c.provenienza || "");
         if (contesto === "fastweb" && /vodafone/i.test(prov)) { escluseVodafone++; return false; }
         if (contesto === "vodafone" && /mnp/i.test(String(c.prodotto || "")) && /vodafone|fastweb|\bho\b|ho\./i.test(prov)) { escluseVodafone++; return false; }
-        return contestoVfFw(brandIdDaLabel(c.brand), c.cod_ins, c.negozio) === contesto;
+        return contestoVfFw(brandIdDaLabel(c.brand), c.cod_ins, c.negozio, c.categoria) === contesto;
     });
     return { contratti, nonAllocate: 0, escluseVodafone };
 }
@@ -310,6 +368,49 @@ export function calcolaAvanzamento(tab: Tabellare, contratti: ContrattoPay[]): A
         };
     }
     return { piste, contati, scartati: [...scartatiMap.values()].sort((a, b) => b.n - a.n) };
+}
+
+/**
+ * GIORNI LAVORATIVI del mese (Prospect, Luca 11/08): lun-sab meno i
+ * giorni_festivi; pay_giorni_lavorativi tiene l'override manuale del totale.
+ * trascorsi = giorni lavorativi da inizio mese a OGGI incluso (0 se il mese
+ * deve ancora iniziare, = totali se è finito).
+ */
+export async function giorniLavorativiMese(monthISO: string): Promise<{
+    totali: number; trascorsi: number; override: boolean;
+    oraScatto: number; proiezioneDal: number; mostraProiezione: boolean;
+}> {
+    const { primo, ultimo } = estremiMese(monthISO);
+    const [ov, fest] = await Promise.all([
+        supabase.from("pay_giorni_lavorativi").select("giorni, ora_scatto, proiezione_dal").eq("month", monthISO).maybeSingle(),
+        supabase.from("giorni_festivi").select("data").gte("data", primo).lte("data", ultimo),
+    ]);
+    const festivi = new Set((fest.data || []).map(f => String((f as { data: string }).data).slice(0, 10)));
+    const [y, m] = monthISO.split("-").map(Number);
+    const nGiorni = new Date(y, m, 0).getDate();
+    const oraScatto = ov.data?.ora_scatto == null ? 19 : Number(ov.data.ora_scatto);
+    const proiezioneDal = ov.data?.proiezione_dal == null ? 1 : Number(ov.data.proiezione_dal);
+    const oggi = new Date();
+    const oggiISO = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`;
+    let totali = 0, trascorsi = 0;
+    for (let g = 1; g <= nGiorni; g++) {
+        const iso = `${y}-${String(m).padStart(2, "0")}-${String(g).padStart(2, "0")}`;
+        const dow = new Date(y, m - 1, g).getDay();
+        if (dow === 0 || festivi.has(iso)) continue;   // domeniche e festivi fuori
+        totali++;
+        // ORA DI SCATTO (Luca 11/08): il giorno corrente conta come trascorso
+        // solo dopo quell'ora — prima, le proiezioni non lo considerano.
+        if (iso < oggiISO || (iso === oggiISO && oggi.getHours() >= oraScatto)) trascorsi++;
+    }
+    const overrideGiorni = ov.data?.giorni == null ? null : Number(ov.data.giorni);
+    if (overrideGiorni != null) {
+        trascorsi = Math.min(trascorsi, overrideGiorni);
+        totali = overrideGiorni;
+    }
+    // la proiezione si mostra solo dal giorno scelto del mese (mesi passati: sempre)
+    const meseCorrente = oggiISO.slice(0, 7) === monthISO.slice(0, 7);
+    const mostraProiezione = !meseCorrente ? true : oggi.getDate() >= proiezioneDal;
+    return { totali, trascorsi, override: overrideGiorni != null, oraScatto, proiezioneDal, mostraProiezione };
 }
 
 /** € per attivazione della riga alla soglia data (0 = sotto soglia → base). */

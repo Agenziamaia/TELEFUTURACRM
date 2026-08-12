@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { waScopeDi } from "@/lib/waVisibilita";
 import { MessageCircle, Plus, Phone, Send, X, RefreshCw, Check, CheckCheck, Loader2, QrCode, Users, Paperclip, FileText, LogOut, Trash2, ChevronLeft, Pencil, Ban } from "lucide-react";
 import { cn } from "@/utils";
 
@@ -64,12 +65,9 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
     // generico (un secondo admin non vedrebbe tutto), non il dev, non l'amministrativo.
     // I numeri WhatsApp possono essere personali. Legato all'ID reale, cosi' con il
     // "guarda come" Luca vede comunque la vista ristretta dell'utente simulato.
-    const LUCA_ID = "0355d28b-968f-4089-93b7-b8b5eeeda40c";
-    const waScope: "all" | "store" | "own" = useMemo(() => {
-        if (user?.id === LUCA_ID) return "all";
-        if (user?.role === "store_manager") return "store";
-        return "own";
-    }, [user?.id, user?.role]);
+    // regola estratta in lib condivisa (Sheekel 11/08): inbox e BADGE della
+    // voce Chat devono usare la stessa identica visibilità
+    const waScope: "all" | "store" | "own" = useMemo(() => waScopeDi(user?.id, user?.role), [user?.id, user?.role]);
     const visibleInstances = useMemo(() => {
         if (waScope === "all") return instances;
         if (waScope === "own") return instances.filter(i => i.owner_user_id === user?.id);
@@ -81,6 +79,26 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
         if (visibleInstances.length === 0) { if (selInst) setSelInst(null); return; }
         if (!selInst || !visibleInstances.some(i => i.id === selInst)) { setSelInst(visibleInstances[0].id); setSelConv(null); }
     }, [visibleInstances, selInst]);
+
+    // NON LETTI per NUMERO (Luca 11/08): il pallino della sidebar riguarda solo
+    // il numero personale — qui dentro ogni chip di numero mostra i SUOI non
+    // letti, così chi gestisce più utenze vede dove serve intervenire
+    const [unreadPerInst, setUnreadPerInst] = useState<Record<string, number>>({});
+    useEffect(() => {
+        const ids = visibleInstances.filter(i => i.status === "connessa").map(i => i.id);
+        if (!ids.length) { setUnreadPerInst({}); return; }
+        let alive = true;
+        const load = async () => {
+            const { data } = await supabase.from("wa_conversations").select("instance_id, unread").in("instance_id", ids);
+            if (!alive) return;
+            const m: Record<string, number> = {};
+            (data || []).forEach((c: any) => { m[c.instance_id] = (m[c.instance_id] || 0) + (c.unread || 0); });
+            setUnreadPerInst(m);
+        };
+        load();
+        const t = setInterval(load, 10000);
+        return () => { alive = false; clearInterval(t); };
+    }, [visibleInstances.map(i => i.id + i.status).join("|")]);
 
     // importa le conversazioni gia' esistenti dal telefono (history-sync).
     // silent=true -> in background dopo la connessione: niente spinner ne' avvisi
@@ -376,6 +394,12 @@ export function WhatsAppInbox({ embedded = false, apriNumero = null, testoInizia
                                     selInst === i.id ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-200" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
                                 <Phone className="w-3.5 h-3.5" />{etichettaIstanza(i)}
                                 <span className={cn("w-2 h-2 rounded-full", i.status === "connessa" ? "bg-emerald-400" : "bg-amber-400")} title={i.status} />
+                                {(unreadPerInst[i.id] || 0) > 0 && (
+                                    <span title={`${unreadPerInst[i.id]} chat da leggere su questo numero`}
+                                        className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center">
+                                        {unreadPerInst[i.id]}
+                                    </span>
+                                )}
                             </button>
                             {["admin", "dev", "direttore_generale", "amministrativo"].includes(user?.role || "") && (
                                 <button

@@ -24,7 +24,7 @@ import { effectiveAllowed, EVERYONE } from "@/lib/nav";
 import { BadgeAndDashboard, BadgeWidget } from "../collaboratori/_badge";
 import { IndirizzoAutocomplete, civicoMancante } from "@/components/IndirizzoAutocomplete";
 import { FASCE, eFascia, fasciaLabel, fasciaStart } from "@/lib/fasce";
-import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, faseDi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller, type MalusLive } from "@/lib/callerMalus";
+import { caricaRegoleCaller, dataRiferimento, lavorativiDopo, aggiungiLavorativi, sincronizzaMalusCaller, caricaGiorniBadge, giornoYmd, type RegolaCaller, type FaseCaller, type MalusLive } from "@/lib/callerMalus";
 import { CallerRegoleModal } from "@/components/CallerRegole";
 import { ModaleTemplateWa, type ScenarioWa } from "./_components/ModaleTemplateWa";
 import { ArchivioMalusCaller } from "./_components/ArchivioMalusCaller";
@@ -688,6 +688,9 @@ function CallerPageInner() {
     // o attivate a mano) escono dal "da lavorare" — un toggle default OFF le
     // rimostra. "Attivato", "Attivato Anomalia", "Attivato Altro Negozio".
     const [mostraAttivate, setMostraAttivate] = useState(false);
+    // ARCHIVIATE (Luca 11/08): gli stati col comportamento 🏁 Definitivo
+    // archiviano la pratica — fuori dal lavoro e dal malus, si rivedono qui
+    const [mostraArchiviate, setMostraArchiviate] = useState(false);
     // FACCETTE COERENTI (Luca 30/07): i contatori dei brand rispettano TUTTI
     // gli altri filtri attivi (caller, date, stato...) ignorando solo la
     // selezione brand stessa — prima erano fissi e non seguivano i filtri.
@@ -713,6 +716,9 @@ function CallerPageInner() {
         // sempre. Ora la fase e' ok → la sync li chiude in "attivo — da
         // scalare" con l'importo maturato fino all'assorbimento.
         if (c.assorbita_da) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
+        // 🏁 DEFINITIVO (Luca 11/08): pratica archiviata — mai in lavorazione,
+        // mai malus, qualunque regola abbia lo stato
+        if (comportamenti[String(c.stato || "")] === "definitivo") return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
         const r = regoleCaller.get(c.stato);
         if (!r || r.esente) return { fase: "ok", giorniMalus: 0, importo: 0, dalMalus: null };
         const rif = dataRiferimento(c, c.stato, RIC_STATI, APP_STATI);
@@ -731,11 +737,21 @@ function CallerPageInner() {
         const _ult = _st.length ? _st[_st.length - 1] : null;
         if (_ult && _ult.caller === "Import VDL") return { fase: "da_lavorare", giorniMalus: 0, importo: 0, dalMalus: null };
         const operativi = giorniBadge ? (giorniBadge.get(c.caller) || new Set<string>()) : null;
-        const fase = faseDi(lavorativiDopo(rif, oggi, operativi), r);
+        // GIORNI = GIORNI BADGIATI solo per la CORSA (Luca 11/08): "Da lavorare"
+        // segue il flusso NATURALE (lun-sab: la pratica ci deve andare comunque);
+        // warning e malus scorrono SOLO nei giorni in cui il caller ha timbrato —
+        // niente valanghe di malus al rientro da ferie/assenze.
+        const gNaturali = lavorativiDopo(rif, oggi, null);
+        const gBadge = lavorativiDopo(rif, oggi, operativi);
+        const fase: FaseCaller = r.esente ? "ok"
+            : (r.giorni_malus != null && gBadge >= r.giorni_malus) ? "malus"
+                : (r.giorni_warning != null && gBadge >= r.giorni_warning) ? "warning"
+                    : (r.giorni_lavorare != null && gNaturali >= r.giorni_lavorare) ? "da_lavorare"
+                        : "ok";
         const dalMalus = fase === "malus" && r.giorni_malus != null ? aggiungiLavorativi(rif, r.giorni_malus, operativi) : null;
         const giorniMalus = dalMalus ? lavorativiDopo(dalMalus, oggi, operativi) + 1 : 0;
         return { fase: dalMalus || fase !== "malus" ? fase : "warning", giorniMalus, importo: Math.round(giorniMalus * r.malus_giorno * 100) / 100, dalMalus };
-    }, [regoleCaller, RIC_STATI, APP_STATI, giorniBadge]);
+    }, [regoleCaller, RIC_STATI, APP_STATI, giorniBadge, comportamenti]);
 
     const puoRegoleCaller = ["admin", "dev"].includes(user?.role || "");
     const [showRegoleCaller, setShowRegoleCaller] = useState(false);
@@ -817,6 +833,12 @@ function CallerPageInner() {
             const isAtt = /^attivat/i.test(String(c.stato || ""));
             if (mostraAttivate ? !isAtt : isAtt) return false;
         }
+        // ARCHIVIATE (Luca 11/08): comportamento 🏁 Definitivo = la pratica è
+        // chiusa e archiviata — esce dal lavoro; col toggle vedo SOLO le archiviate
+        {
+            const isArch = comportamenti[String(c.stato || "")] === "definitivo";
+            if (mostraArchiviate ? !isArch : isArch) return false;
+        }
         if (soloDaEsitare && !c.da_esitare) return false;
         if (!ignoraFase && faseFilter && faseInfo(c).fase !== faseFilter) return false;
         if (fCf && !(c.cf.toLowerCase().includes(fCf.toLowerCase()) || c.piva.toLowerCase().includes(fCf.toLowerCase()))) return false;
@@ -863,7 +885,7 @@ function CallerPageInner() {
         return true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
+    const filtered = useMemo(() => calls.filter((c) => matchFiltri(c)), [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, mostraArchiviate, comportamenti, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const faseCounts = useMemo(() => {
         const cnt = { da_lavorare: 0, warning: 0, malus: 0, importo: 0 };
@@ -875,7 +897,7 @@ function CallerPageInner() {
             else if (fi.fase === "malus") { cnt.malus++; cnt.importo += fi.importo; }
         });
         return cnt;
-    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
+    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, mostraArchiviate, comportamenti, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, selBrands, fProvenienza, fTipologia, fObiettivo, fLista, faseInfo]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const brandCounts = useMemo(() => {
         const scoped = calls.filter((c) => matchFiltri(c, true));
@@ -883,7 +905,7 @@ function CallerPageInner() {
         // faseFilter + faseInfo NELLE DIPENDENZE (check profondo Luca 05/08):
         // mancavano — il memo restava congelato e i badge dei brand mostravano
         // sempre il totale, ignorando Da Lavorare/Warning/Malus.
-    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
+    }, [calls, isDirector, currentCaller, soloDaEsitare, mostraAttivate, mostraArchiviate, comportamenti, fCf, fNome, fCellulare, fNegozio, fDataAppDa, fDataAppA, fDataChiamataDa, fDataChiamataA, fStati, fCaller, fProvenienza, fTipologia, fObiettivo, fLista, faseFilter, faseInfo]);
 
     function listaBrandLabel(l: ListaAssegnata): string {
         if (l.provenienza === "Acquistato") return l.brandAcq || "—";
@@ -1077,8 +1099,18 @@ function CallerPageInner() {
         const existing = linked?.appointment_id as number | null | undefined;
         const { fascia: _fx, ...payloadLegacy } = payload;   // fallback pre-mig. 118
         if (existing) {
-            let { error } = await supabase.from("appointments").update(payload).eq("id", existing);
-            if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(payloadLegacy).eq("id", existing));
+            // NO SHOW RIPRESO (Luca 11/08, segnalazione dir. telefonico): se il
+            // caller ri-fissa l'appuntamento su un evento chiuso con esito
+            // NEGATIVO, il calendario deve tornare "In programma" — è un
+            // appuntamento nuovo a tutti gli effetti. Gli esiti positivi del
+            // negozio (attivato*) restano intoccabili (caso Greco, buco #5).
+            const { data: cur } = await supabase.from("appointments").select("status").eq("id", existing).maybeSingle();
+            const stCur = String((cur as { status?: string } | null)?.status || "");
+            const riapribili = ["no_show", "ko", "annullato", "da_rifissare", "da_richiamare"];
+            const pl = riapribili.includes(stCur) ? { ...payload, status: "scheduled" } : payload;
+            const plLegacy = riapribili.includes(stCur) ? { ...payloadLegacy, status: "scheduled" } : payloadLegacy;
+            let { error } = await supabase.from("appointments").update(pl).eq("id", existing);
+            if (error && /column/i.test(error.message || "")) ({ error } = await supabase.from("appointments").update(plLegacy).eq("id", existing));
             if (error) alert("Appuntamento in calendario NON aggiornato: " + error.message);
             return;
         }
@@ -1253,14 +1285,14 @@ function CallerPageInner() {
     // sui non-risposto spariscono dalla sezione caller — restano a database
     // (e nello storico del cliente: l'ho chiamato su tre numeri) ma non si
     // portano avanti righe doppie.
-    async function assorbiPraticheGemelle(c: Call, callId: string) {
+    async function assorbiPraticheGemelle(c: Call, callId: string, opts: { ancheTraDeboli?: boolean } = {}) {
         const statoRef = c.statoNew || c.stato;
         const idf = String((c.tipo_cliente === "business" ? c.piva : c.cf) || "").trim().toUpperCase();
         if (!statoRef || !idf) return;
         const eDebole = (s: string) => s === "Nuovo" || NRD_STATI.includes(s);
         try {
             const campoIdf = c.tipo_cliente === "business" ? "piva" : "cf";
-            const { data: gemelle } = await supabase.from("calls").select("id, stato, assorbita_da").ilike(campoIdf, idf).neq("id", callId);
+            const { data: gemelle } = await supabase.from("calls").select("id, stato, assorbita_da").ilike(campoIdf, idf).neq("id", callId).order("created_at", { ascending: true });
             const rows = (gemelle ?? []) as { id: string; stato: string; assorbita_da: string | null }[];
             if (!eDebole(statoRef)) {
                 // la riga corrente e' quella VINCENTE (il cliente ha risposto):
@@ -1272,8 +1304,14 @@ function CallerPageInner() {
             } else {
                 // la riga corrente e' DEBOLE (Nuovo/NR): se il cliente ha gia'
                 // una riga vincente — es. sto solo riportando il CF sulle
-                // chiamate fallite di stamattina — e' la CORRENTE a sparire
-                const vincente = rows.find((g) => !eDebole(g.stato) && !g.assorbita_da);
+                // chiamate fallite di stamattina — e' la CORRENTE a sparire.
+                // ASSOCIAZIONE A SCHEDA ESISTENTE (Sheekel 11/08, ok Luca): nel
+                // flusso "Aggiorna dati" la corrente sparisce anche se l'altra
+                // riga e' a sua volta debole (caso Cold NR1 + Cold NR1): il
+                // numero ormai sta sulla scheda cliente, la lavorazione vive
+                // sulla gemella piu' vecchia — niente righe doppie.
+                const vincente = rows.find((g) => !eDebole(g.stato) && !g.assorbita_da)
+                    || (opts.ancheTraDeboli ? rows.find((g) => !g.assorbita_da) : undefined);
                 if (!vincente) return;
                 const { error } = await supabase.from("calls").update({ assorbita_da: vincente.id }).eq("id", callId);
                 if (error && !/column/i.test(error.message || "")) console.warn("assorbimento non riuscito:", error.message);
@@ -1316,7 +1354,9 @@ function CallerPageInner() {
         }
         if (error) { alert("Dati NON aggiornati: " + error.message); return; }
         await creaAnagraficaSeManca(editCall);
-        await assorbiPraticheGemelle(editCall, editCall.id);
+        // "Aggiorna dati" = associazione alla scheda: le doppie spariscono
+        // anche tra righe deboli (Cold NR1 associata → assorbita, Sheekel 11/08)
+        await assorbiPraticheGemelle(editCall, editCall.id, { ancheTraDeboli: true });
         await fetchCalls();
         closeModal();
     }
@@ -1919,13 +1959,30 @@ function CallerPageInner() {
                         return (nAtt > 0 || mostraAttivate) ? (
                             <button
                                 type="button"
-                                onClick={() => setMostraAttivate((v) => !v)}
+                                onClick={() => { setMostraAttivate((v) => !v); setMostraArchiviate(false); }}
                                 title={mostraAttivate ? "Nascondi di nuovo le pratiche attivate" : "Mostra anche le pratiche attivate (di norma escono dal lavoro)"}
                                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors ${mostraAttivate
                                     ? "border-emerald-400 bg-emerald-500/25 text-emerald-200 shadow-lg shadow-emerald-500/20"
                                     : "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"}`}
                             >
                                 ✅ Attivate: {nAtt}{mostraAttivate ? " ✕" : ""}
+                            </button>
+                        ) : null;
+                    })()}
+                    {/* ARCHIVIATE (Luca 11/08): stati col comportamento 🏁 Definitivo —
+                        fuori dal lavoro e dal malus; il toggle le rimostra (solo loro) */}
+                    {(() => {
+                        const nArch = calls.filter((c) => comportamenti[String(c.stato || "")] === "definitivo" && (isDirector || c.caller === currentCaller) && !c.assorbita_da).length;
+                        return (nArch > 0 || mostraArchiviate) ? (
+                            <button
+                                type="button"
+                                onClick={() => { setMostraArchiviate((v) => !v); setMostraAttivate(false); }}
+                                title={mostraArchiviate ? "Nascondi di nuovo le pratiche archiviate" : "Mostra le pratiche archiviate (esito definitivo: fuori dal lavoro e dal malus)"}
+                                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-bold uppercase tracking-widest transition-colors ${mostraArchiviate
+                                    ? "border-slate-300 bg-slate-500/25 text-slate-100 shadow-lg shadow-slate-500/20"
+                                    : "border-slate-500/40 bg-slate-500/10 text-slate-300 hover:bg-slate-500/20"}`}
+                            >
+                                🗂 Archiviate: {nArch}{mostraArchiviate ? " ✕" : ""}
                             </button>
                         ) : null;
                     })()}

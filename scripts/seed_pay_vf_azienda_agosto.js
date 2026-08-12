@@ -31,14 +31,15 @@ const BRAND = "vodafone";
 const MONTH = "2026-08-01";
 const LATO = "azienda";
 
+// ordine ALLINEATO al lato ragazzi (segnalazione Luca 11/08: stessi ordini sui due lati)
 const PISTE = [
-  { chiave: "fisso", nome: "Wireline Consumer", ordine: 1 },
-  { chiave: "mobile", nome: "Mobile Consumer", ordine: 2 },
-  { chiave: "luce", nome: "Energia Luce", ordine: 3 },
-  { chiave: "gas", nome: "Energia Gas", ordine: 4 },
-  { chiave: "business_fisso", nome: "Wireline Business", ordine: 5 },
-  { chiave: "business_mobile", nome: "Mobile Business", ordine: 6 },
-  { chiave: "vas", nome: "VAS Business", ordine: 7 },
+  { chiave: "mobile", nome: "Mobile Consumer", ordine: 1 },
+  { chiave: "fisso", nome: "Wireline Consumer", ordine: 2 },
+  { chiave: "business_mobile", nome: "Mobile Business", ordine: 3 },
+  { chiave: "business_fisso", nome: "Wireline Business", ordine: 4 },
+  { chiave: "vas", nome: "VAS Business", ordine: 5 },
+  { chiave: "luce", nome: "Energia Luce", ordine: 6 },
+  { chiave: "gas", nome: "Energia Gas", ordine: 7 },
 ];
 const SOGLIE = {
   fisso: [[91, 117], [118, 153], [154, 194], [195, 234], [235, 268], [269, null]],
@@ -146,7 +147,18 @@ riga("business_mobile", "Dati Comfort", "Business", null, null, "Dati Comfort", 
 //    mapping alle offerte a catalogo (Backup Facile, Worry Free, Secure
 //    Drive, AI Essential/Standard) è sul portale rivenditori → righe NON
 //    ancorate (offerta jolly), da assegnare dal pannello quando Luca decide.
-riga("vas", "Soluzione Digitale Fascia A", "Business", "Multi-Servizi", "Soluzioni Digitali", null, "vodafone", 3, 50, [330, 370, 440], "fasce A-D da assegnare alle offerte (portale rivenditori); B 80/100/120 p2 b20 · C 30/40/50 p1 b10 · D 15/20/25 p0,5 b5; Easy Rent PLAT-BRONZE 65-45 p1,5-1; M2M 3/4/5 p0,25; Sol.Tel. smartphone 20/25/30 p0,5; Samsung extra 50-100€");
+// Fasce dallo schema di Luca (11/08, foto WhatsApp): a lettera ci sono ~100
+// piani, a catalogo teniamo SOLO i 5 caricati. C = p1 b10 30/40/50 · D =
+// p0,5 b5 15/20/25. Restano in nota lettera: fasce A/B senza offerte a
+// catalogo, Easy Rent PLAT-BRONZE, M2M, Sol.Tel., Samsung extra 50-100€.
+for (const [off, fascia, punti, base, tiers] of [
+  ["Backup Facile", "C", 1, 10, [30, 40, 50]],
+  ["Secure Drive", "C", 1, 10, [30, 40, 50]],
+  ["AI Essential", "C", 1, 10, [30, 40, 50]],
+  ["AI Standard", "C", 1, 10, [30, 40, 50]],
+  ["Worry Free", "D", 0.5, 5, [15, 20, 25]],
+])
+  riga("vas", `Sol. Digitale ${off} · Fascia ${fascia}`, "Business", "Multi-Servizi", "Soluzioni Digitali", off, "vodafone", punti, base, tiers, `fascia ${fascia} dallo schema di Luca 11/08`);
 
 (async () => {
   await client.connect();

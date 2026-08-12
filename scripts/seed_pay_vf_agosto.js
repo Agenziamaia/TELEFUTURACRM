@@ -33,6 +33,10 @@ const PISTE = [
   // Soluzioni Digitali: pista+soglie qui (prima nel seed energia FW, che il
   // rilancio di QUESTO seed cancellava); righe in attesa del mapping fasce A-D.
   { chiave: "soluzioni_digitali", nome: "Soluzioni Digitali", ordine: 5 },
+  // ENERGIA T1 (task Luca 11/08): il tabellare del deck — l'energia Fastweb
+  // venduta coi codici VS paga QUI (contestoVfFw la alloca alla lettera A).
+  { chiave: "luce", nome: "Energia Luce", ordine: 6 },
+  { chiave: "gas", nome: "Energia Gas", ordine: 7 },
 ];
 
 const SOGLIE = {
@@ -41,6 +45,8 @@ const SOGLIE = {
   business_mobile: [[53, 81], [82, 124], [125, 165], [166, 209], [210, 352], [353, null]],
   business_fisso: [[19, 25], [26, 37], [38, 54], [55, 75], [76, 96], [97, null]],
   soluzioni_digitali: [[19, 23], [24, 34], [35, null]],
+  luce: [[24, 30], [31, 37], [38, 45], [46, 53], [54, 64], [65, null]],
+  gas: [[1, null]],
 };
 
 // righe: [pista, nome, tipo_cliente, categoria, prodotto, offerte[], punti, base, tiers]
@@ -134,6 +140,26 @@ for (const b of BF)
 // (0,2 / 0,4 / 0,5 con cap 30 per POS — cap non modellato) e NON pagano.
 for (const [off, pDV] of [["Dolce Vita Start 14.95", 0.2], ["Dolce Vita Pro 19.95", 0.4], ["Dolce Vita Ultra 24.95", 0.5], ["Dolce Vita Plus 24.95", 0.5]])
   R.push(["mobile", "Dolce Vita (" + pDV + " pt, no pay)", "Consumer", null, null, off, pDV, 0, [0, 0, 0, 0, 0, 0]]);
+// ---------- SOLUZIONI DIGITALI (fasce dallo schema di Luca 11/08; deck =
+// valori lettera): a catalogo solo 5 offerte — C = p1 b10 30/40/50 · D = p0,5 b5 15/20/25.
+for (const [offSD, fasciaSD, pSD, bSD, tSD] of [
+  ["Backup Facile", "C", 1, 10, [30, 40, 50]],
+  ["Secure Drive", "C", 1, 10, [30, 40, 50]],
+  ["AI Essential", "C", 1, 10, [30, 40, 50]],
+  ["AI Standard", "C", 1, 10, [30, 40, 50]],
+  ["Worry Free", "D", 0.5, 5, [15, 20, 25]],
+])
+  R.push(["soluzioni_digitali", "Sol. Digitale " + offSD + " · Fascia " + fasciaSD, "Business", "Multi-Servizi", "Soluzioni Digitali", offSD, pSD, bSD, tSD]);
+// ---------- ENERGIA T1 (deck; brand di vendita FASTWEB → insert dedicato)
+const ENERGIA_T1 = [
+  ["luce", "Luce Fix", "Consumer", "Energia", "Luce", "Energy Fix", 1, 70, [70, 80, 90, 100, 110, 120]],
+  ["luce", "Luce Flex", "Consumer", "Energia", "Luce", "Energy Flex", 1, 70, [80, 90, 100, 110, 120, 130]],
+  ["luce", "Luce Core", "Consumer", "Energia", "Luce", "Energy Core", 1, 70, [95, 110, 125, 140, 155, 175]],
+  ["luce", "Luce Fix Business", "Business", "Energia", "Luce", "Energy Fix", 1, 80, [115, 125, 135, 145, 155, 165]],
+  ["luce", "Luce Flex Business", "Business", "Energia", "Luce", "Energy Flex", 1, 80, [115, 125, 135, 145, 155, 165]],
+  ["gas", "Gas Flex RES", "Consumer", "Energia", "Gas", "Gas", 1, 60, [90]],
+  ["gas", "Gas Flex BUS", "Business", "Energia", "Gas", null, 1, 70, [120]],
+];
 
 // ---------- GETTONI dalle Tabelle 2.1 + 3.1 (screenshot Luca 10/08 sera):
 // CB, opzioni e telefoni a rate — importi FLAT (gettone=true, fuori pista),
@@ -209,6 +235,12 @@ const G = [
                                 punti, pay_base, pay_tiers, gettone, note, ordine)
          values ($1,$2,null,$3,$4,$5,$6,$7,0,$8,'{}',true,$9,$10)`,
         [BRAND, MONTH, nome, tc, cat, prod, off, importo, note, ord++]);
+    for (const [pista, nome, tc, cat, prod, off, punti, base, tiers] of ENERGIA_T1)
+      await client.query(
+        `insert into pay_righe (brand, month, pista, nome, tipo_cliente, categoria, prodotto, offerta,
+                                punti, pay_base, pay_tiers, gettone, note, ordine, brand_vendita)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false,'energia T1 — tabellare deck (Luca 11/08)',$12,'fastweb')`,
+        [BRAND, MONTH, pista, nome, tc, cat, prod, off, punti, base, tiers, ord++]);
     // contesti VF/FW (mig 20260811110000): niente righe con brand_vendita NULL
     await client.query("update pay_righe set brand_vendita = brand where brand=$1 and month=$2 and brand_vendita is null", [BRAND, MONTH]);
     await client.query("commit");

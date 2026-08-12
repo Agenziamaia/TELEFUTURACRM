@@ -149,7 +149,23 @@ function CardVoce({ v, children }: { v: Voce; children?: React.ReactNode }) {
                     </a>
                 )}
             </div>
-            {v.dettaglio && <p className="text-[13px] text-slate-300 leading-relaxed">{v.dettaglio}</p>}
+            {/* LETTURA VELOCE (Luca 11/08): niente muro di testo — una riga per
+                punto, e le righe che iniziano con un'emoji diventano titoletti */}
+            {v.dettaglio && (
+                <div className="text-[13px] text-slate-300 leading-relaxed space-y-0.5">
+                    {v.dettaglio.split("\n").map((riga, i) => {
+                        const t = riga.trim();
+                        if (!t) return null;
+                        // grassetto SOLO per le righe corte (titoli veri): i paragrafi
+                        // lunghi con emoji restano testo normale, spaziato — sennò il
+                        // recap diventa un muro di bold che "sembra tutto maiuscolo"
+                        // (segnalazione Luca 11/08 sera)
+                        const conEmoji = /^\p{Extended_Pictographic}/u.test(t);
+                        const titolo = conEmoji && t.length <= 80;
+                        return <p key={i} className={titolo ? "font-semibold text-slate-100 mt-2 first:mt-0" : conEmoji ? "mt-2 first:mt-0" : ""}>{t}</p>;
+                    })}
+                </div>
+            )}
             {v.domanda && <p className="text-[13px] text-amber-200/90 leading-relaxed bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">❓ {v.domanda}</p>}
             {Array.isArray(v.allegati) && v.allegati.length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap">

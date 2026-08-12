@@ -12,12 +12,12 @@ import { Calculator, ChevronDown, Loader2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import {
     Avanzamento, CONTESTI_LABEL, PayRiga, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, matchRigaTabellare, payPerRiga, sostituzioneSim,
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, matchRigaTabellare, giorniLavorativiMese, payPerRiga, esclusaDalleGare, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
 type Prod = { id: string; categoria_id: string; tipo_cliente: string; nome: string; ordine: number; attivo: boolean | null };
-type Off = { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean | null };
+type Off = { id: string; prodotto_id: string; nome: string; ordine: number; attivo: boolean | null; canone_mensile: number | null };
 
 const BRANDS: { id: string; label: string; logo: string; color: string; zoom: number; prefix: string }[] = [
     { id: "windtre", label: "WindTre", logo: "/windtre.png", color: "#FF6B00", zoom: 2.0, prefix: "WindTre" },
@@ -69,6 +69,21 @@ export default function CalcolatorePage() {
     const [nonAlloc, setNonAlloc] = useState(0);
     const [escluseVf, setEscluseVf] = useState(0);
 
+    // PROSPECT (task Luca 11/08): giorni lavorativi del mese (lun-sab meno
+    // festivi, override amministrabile) → la soglia si preseleziona sulla
+    // PROIEZIONE a fine mese, col dato attuale sempre visibile.
+    const [gl, setGl] = useState<Awaited<ReturnType<typeof giorniLavorativiMese>> | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        setGl(null);
+        giorniLavorativiMese(monthISO).then(v => { if (vivo) setGl(v); });
+        return () => { vivo = false; };
+    }, [monthISO]);
+    // proiezione visibile solo dal giorno impostato (Gare → Calendario gare)
+    const proiezioneOn = !!(gl && gl.trascorsi > 0 && gl.mostraProiezione);
+    const proietta = (punti: number) =>
+        gl && gl.trascorsi > 0 ? Math.round((punti / gl.trascorsi) * gl.totali * 100) / 100 : punti;
+
     // contesto lettera di gara (solo VF/FW ne hanno due)
     const [ctx, setCtx] = useState<string | null>(null);
     const ctxOpzioni = brand ? CONTESTI_BRAND[brand] || null : null;
@@ -95,7 +110,7 @@ export default function CalcolatorePage() {
             const prodotti = ((pRes.data || []) as Prod[]).filter(p => p.attivo !== false);
             const ids = prodotti.map(p => p.id);
             const oRes = ids.length
-                ? await supabase.from("catalog_offerte").select("id, prodotto_id, nome, ordine, attivo").in("prodotto_id", ids).order("ordine").limit(2000)
+                ? await supabase.from("catalog_offerte").select("id, prodotto_id, nome, ordine, attivo, canone_mensile").in("prodotto_id", ids).order("ordine").limit(2000)
                 : { data: [] as Off[] };
             if (!vivo) return;
             setCats((cRes.data || []) as Cat[]);
@@ -145,8 +160,9 @@ export default function CalcolatorePage() {
     const catSel = cats.find(c => c.id === catId) || null;
     const prodSel = prods.find(p => p.id === prodId) || null;
     const offSel = offs.find(o => o.id === offId) || null;
-    // Sostituzioni SIM: mai commissioning né punti (regola generale, tutti i brand)
+    // Sostituzioni SIM ed Easy Control: mai commissioning né punti (regola aziendale)
     const esclusaProd = !!(prodSel && sostituzioneSim({ categoria: catSel?.nome, prodotto: prodSel.nome }));
+    const esclusaSel = esclusaProd || !!(offSel && esclusaDalleGare({ categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: offSel.nome }));
 
     // risoluzione riga pay
     const riga: PayRiga | null = useMemo(() => {
@@ -160,8 +176,22 @@ export default function CalcolatorePage() {
         (tab && riga?.pista) ? tab.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
     [tab, riga]);
     const tierLive = riga?.pista && avz ? (avz.piste[riga.pista]?.tier ?? 0) : 0;
-    const tier = tierSel == null ? tierLive : tierSel;
-    const pay = riga ? payPerRiga(riga, riga.gettone ? 0 : tier) : null;
+    const puntiPista = riga?.pista && avz ? (avz.piste[riga.pista]?.punti ?? 0) : 0;
+    const puntiProj = proietta(puntiPista);
+    let tierProj = 0;
+    for (const sg of scalaRiga) if (puntiProj >= sg.soglia_da) tierProj = sg.tier;
+    // preselezione sulla PROIEZIONE (a inizio mese, senza dati, vale la live)
+    const tier = tierSel == null ? (proiezioneOn && avz ? tierProj : tierLive) : tierSel;
+    // modello W3: la riga a MOLTIPLICATORE paga canone x valore della soglia
+    const canone = offSel?.canone_mensile == null ? null : Number(offSel.canone_mensile);
+    const valore = riga ? payPerRiga(riga, riga.gettone ? 0 : tier) : null;
+    const pay = riga?.moltiplicatore
+        ? (canone != null && valore != null ? Math.round(canone * valore * 100) / 100 : null)
+        : valore;
+    const valProssima = riga && !riga.gettone && tier < scalaRiga.length ? payPerRiga(riga, tier + 1) : null;
+    const payProssima = riga?.moltiplicatore
+        ? (canone != null && valProssima != null ? Math.round(canone * valProssima * 100) / 100 : null)
+        : valProssima;
 
     // scoperture: offerte del catalogo senza riga pay
     const scoperte = useMemo(() => {
@@ -170,7 +200,7 @@ export default function CalcolatorePage() {
         for (const o of offs) {
             const p = prods.find(x => x.id === o.prodotto_id); if (!p) continue;
             const c = cats.find(x => x.id === p.categoria_id); if (!c) continue;
-            if (sostituzioneSim({ categoria: c.nome, prodotto: p.nome })) continue;   // escluse per regola, non scoperture
+            if (esclusaDalleGare({ categoria: c.nome, prodotto: p.nome, offerta: o.nome })) continue;   // escluse per regola, non scoperture
             const r = matchRigaTabellare(tab.righe, { tipo_cliente: p.tipo_cliente, categoria: c.nome, prodotto: p.nome, offerta: o.nome }, brand);
             if (!r) out.push({ tipo: p.tipo_cliente, cat: c.nome, prod: p.nome, off: o.nome });
         }
@@ -189,8 +219,16 @@ export default function CalcolatorePage() {
         <div className="p-6 max-w-[1500px]">
             <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
                 <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Calculator size={26} /> Calcolatore $$$</h1>
-                <input type="month" value={mese} onChange={e => { setMese(e.target.value); setTierSel(null); }}
-                    className="bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+                <div className="flex items-center gap-3 flex-wrap">
+                    {gl && (
+                        <a href="/gare?brand=calendariogare" className="text-[12px] text-slate-400 hover:text-slate-200 transition-colors"
+                            title="Si imposta in Gare → Calendario gare (giorni lavorativi, ora di scatto, visibilità proiezione)">
+                            📅 lavorativi {gl.totali}{gl.override ? " ✎" : ""} · trascorsi {gl.trascorsi} · scatto h{gl.oraScatto}
+                        </a>
+                    )}
+                    <input type="month" value={mese} onChange={e => { setMese(e.target.value); setTierSel(null); }}
+                        className="bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 text-sm text-white" />
+                </div>
             </div>
 
             {/* ① BRAND a soli loghi */}
@@ -280,8 +318,8 @@ export default function CalcolatorePage() {
                                                     color: on ? "#fff" : "#cbd5e1",
                                                 }}>
                                                 {o.nome}
-                                                {esclusaProd && <span className="block text-[10px] font-normal mt-0.5 text-slate-400">➖ esclusa dalle gare</span>}
-                                                {!esclusaProd && tab && !r && <span className="block text-[10px] font-normal mt-0.5 text-amber-400">🚫 senza commissioning</span>}
+                                                {(esclusaProd || esclusaDalleGare({ categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: o.nome })) && <span className="block text-[10px] font-normal mt-0.5 text-slate-400">➖ esclusa dalle gare</span>}
+                                                {!esclusaProd && !esclusaDalleGare({ categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: o.nome }) && tab && !r && <span className="block text-[10px] font-normal mt-0.5 text-amber-400">🚫 senza commissioning</span>}
                                             </button>
                                         );
                                     })}
@@ -294,9 +332,9 @@ export default function CalcolatorePage() {
                     {/* ③ RISULTATO */}
                     {offSel && (
                         <div className="glass-panel rounded-2xl p-6" style={{ borderLeft: `4px solid ${meta?.color || "#6366f1"}` }}>
-                            {esclusaProd ? (
+                            {esclusaSel ? (
                                 <div className="text-slate-300 text-sm">
-                                    ➖ Le <b>sostituzioni SIM</b> non generano né commissioning né punti in gara — regola aziendale, vale per tutti gli operatori.
+                                    ➖ Questa vendita è <b>esclusa dalle gare</b> per regola aziendale (sostituzioni SIM di tutti gli operatori ed Easy Control): né commissioning né punti.
                                 </div>
                             ) : !tab ? (
                                 <div className="text-amber-300 text-sm">Tabellare non caricato per questo mese: nessun pay calcolabile.</div>
@@ -317,6 +355,9 @@ export default function CalcolatorePage() {
                                                     : tier <= 0
                                                         ? '"Di cui base" — sotto la 1ª soglia'
                                                         : `alla Soglia ${tier} · retroattivo dal 1° pezzo`}
+                                                {riga.moltiplicatore && (canone != null
+                                                    ? ` · ×${valore} sul canone di ${euro(canone)}`
+                                                    : " · ⚠️ manca il canone mensile a catalogo")}
                                             </div>
                                         </div>
                                         <div className="text-right">
@@ -327,7 +368,8 @@ export default function CalcolatorePage() {
                                     {!riga.gettone && scalaRiga.length > 0 && (
                                         <div className="mt-5">
                                             <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">
-                                                Soglia — preselezionata su quella attuale di rete{avz && riga.pista ? ` (S${tierLive || "0"} · ${avz.piste[riga.pista]?.punti ?? 0} punti)` : ""}
+                                                {proiezioneOn ? "Soglia — preselezionata sulla PROIEZIONE a fine mese" : `Soglia — sul dato attuale (proiezione visibile dal giorno ${gl?.proiezioneDal ?? 1})`}
+                                                {avz && riga.pista ? (proiezioneOn ? ` (S${tierProj || "0"} · ${puntiProj} punti proiettati) — oggi S${tierLive || "0"} · ${puntiPista} punti` : ` (S${tierLive || "0"} · ${puntiPista} punti)`) : ""}
                                             </div>
                                             <div className="flex gap-2 flex-wrap">
                                                 <Pill on={tier === 0} onClick={() => setTierSel(0)}>Base</Pill>
@@ -337,6 +379,11 @@ export default function CalcolatorePage() {
                                                     </Pill>
                                                 ))}
                                             </div>
+                                        </div>
+                                    )}
+                                    {payProssima != null && pay != null && payProssima !== pay && (
+                                        <div className="text-emerald-300/90 text-sm mt-4">
+                                            🎯 Alla S{tier + 1} questa attivazione varrebbe <b>{euro(payProssima)}</b> ({payProssima > pay ? "+" : ""}{euro(Math.round((payProssima - pay) * 100) / 100)})
                                         </div>
                                     )}
                                     {riga.note && <div className="text-slate-500 text-xs mt-4">{riga.note}</div>}
@@ -356,12 +403,25 @@ export default function CalcolatorePage() {
                                 const a = avz.piste[p.chiave]; if (!a) return null;
                                 const target = a.prossima?.soglia_da ?? a.soglia?.soglia_da ?? 0;
                                 const perc = target > 0 ? Math.min(100, Math.round(a.punti / target * 100)) : 100;
+                                const scalaP = tab.soglie.filter(sg => sg.pista === p.chiave).sort((x, y) => x.tier - y.tier);
+                                const projP = proietta(a.punti);
+                                let tierP = 0;
+                                for (const sg of scalaP) if (projP >= sg.soglia_da) tierP = sg.tier;
                                 return (
                                     <div key={p.chiave} className="mb-4 last:mb-0">
-                                        <div className="flex justify-between text-sm mb-1">
+                                        {/* la PROIEZIONE è il dato principale (Luca 11/08); l'attuale sotto */}
+                                        <div className="flex justify-between text-sm mb-0.5">
                                             <span className="text-slate-200 font-semibold">{p.nome}</span>
-                                            <span className="text-slate-400">{a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</span>
+                                            {proiezioneOn ? (
+                                                <span className="text-white font-bold">📈 {projP} <span className="text-indigo-300">{tierP > 0 ? `S${tierP}` : "sotto soglia"}</span></span>
+                                            ) : (
+                                                <span className="text-slate-400">{a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</span>
+                                            )}
                                         </div>
+                                        {proiezioneOn && (
+                                            <div className="text-[11px] text-slate-500 mb-1">oggi: {a.punti} punti · {a.tier > 0 ? `S${a.tier}` : "sotto soglia"}</div>
+                                        )}
+                                        <div className="text-[11px] text-slate-500 mb-1">soglie: {scalaP.map(sg => sg.soglia_da).join(" · ")}</div>
                                         <div className="h-2 rounded-full bg-white/[0.06] overflow-hidden">
                                             <div className="h-full rounded-full" style={{ width: `${perc}%`, background: meta?.color || "#6366f1" }} />
                                         </div>

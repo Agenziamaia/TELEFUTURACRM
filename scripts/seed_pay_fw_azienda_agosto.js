@@ -88,6 +88,7 @@ const R = [
 const G = [
   ["Gas", "Consumer", "Energia", "Gas", "Gas", 90, null],
   ["Energy Flex", "Consumer", "Energia", "Luce", "Energy Flex", 70, null],
+  ["Energy Fix", "Consumer", "Energia", "Luce", "Energy Fix", 70, "pay uguale alla Flex (Luca 11/08)"],
   ["Energy Core", "Consumer", "Energia", "Luce", "Energy Core", 150, null],
   ["TNP (Finanziamento)", "Consumer", null, "Finanziato", null, 0, "a 0€ sul tabellare ragazzi: non pagato, non è una scopertura"],
 ];

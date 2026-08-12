@@ -29,11 +29,13 @@ import {
   calcolaMalus,
   impostaRegoleTracking,
   impostaEsitiTracking,
+  impostaCalendarioChiusure,
   esitoCompletato,
   getStatiAdminPerCategoria,
   esitoAdminDefinitivo,
 } from "./trackingHelpers";
 import { RegoleTracking } from "./RegoleTracking";
+import { VoceAnnidata } from "@/components/VoceAnnidata";
 import { ArchivioMalus, StatoEpisodioBadge } from "./ArchivioMalus";
 import { type EpisodioMalus, sincronizzaMalusStorico, totaliEpisodi, formatDataIt } from "./malusStorico";
 
@@ -1082,11 +1084,11 @@ function Drawer({
                         </div>
                       </div>
                     ))}
+                    {/* Mai più JSON grezzo (segnalazione Francesco 11/08): i
+                        valori annidati (followup, units…) diventano righe
+                        leggibili e spariscono se vuoti. */}
                     {annidate.map(([k, v]) => (
-                      <div key={k} className="col-span-2">
-                        <div className={labelStyle}>{k}</div>
-                        <pre className="text-[11px] text-slate-300 bg-black/30 rounded-lg p-2 overflow-x-auto">{JSON.stringify(v, null, 2)}</pre>
-                      </div>
+                      <VoceAnnidata key={k} nome={k} valore={v} wrapperClassName="col-span-2" labelClassName={labelStyle} />
                     ))}
                   </div>
                 </div>
@@ -1257,7 +1259,17 @@ function Drawer({
             <div className="relative">
               <div className="absolute left-[7px] top-0 bottom-0 w-0.5 bg-slate-800" />
               {[...row.storia].reverse().map((ev, i) => {
-                const dotColor = tipoColor(ev.tipo);
+                // MODIFICA CONTRATTO (11/08, caso "[SISTEMA] —"): gli eventi di
+                // Ricerca Vendite hanno un formato diverso ({campo, da, a, at,
+                // user}) e uscivano come trattini — si traducono qui in chiaro
+                const mc = ev as unknown as { campo?: string; da?: string; a?: string; at?: string; user?: string };
+                const isModifica = !ev.testo && (mc.campo || mc.at);
+                const testo = isModifica
+                  ? `Modifica contratto — ${mc.campo || "campo"}: ${mc.da || "—"} → ${mc.a || "—"}`
+                  : ev.testo;
+                const quando = ev.data || (mc.at ? new Date(mc.at).toLocaleDateString("it-IT") : "—");
+                const chi = ev.utente || mc.user || "—";
+                const dotColor = isModifica ? "var(--tf-38bdf8)" : tipoColor(ev.tipo);
                 const isAdmin = ev.ruolo === "admin";
                 return (
                   <div key={i} className="flex gap-3.5 mb-4 relative">
@@ -1266,14 +1278,14 @@ function Drawer({
                       <div
                         className="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-1 uppercase tracking-wider"
                         style={{
-                          color: isAdmin ? "var(--tf-a78bfa)" : "var(--tf-6366f1)",
-                          background: isAdmin ? "var(--tf-2e1065)" : "var(--tf-1e1b4b)",
+                          color: isModifica ? "var(--tf-38bdf8)" : isAdmin ? "var(--tf-a78bfa)" : "var(--tf-6366f1)",
+                          background: isModifica ? "var(--tf-0c2a3f)" : isAdmin ? "var(--tf-2e1065)" : "var(--tf-1e1b4b)",
                         }}
                       >
-                        {tipoLabel(ev.tipo)}
+                        {isModifica ? "Modifica" : tipoLabel(ev.tipo)}
                       </div>
-                      <div className="text-[13px] text-slate-200">{ev.testo}</div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">{ev.data} — {ev.utente}</div>
+                      <div className="text-[13px] text-slate-200">{testo}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">{quando} — {chi}</div>
                     </div>
                   </div>
                 );
@@ -1369,6 +1381,22 @@ export default function TrackingPdaPage() {
       // senza tabella) valgono le liste hardcoded, il CRM non si rompe mai
       const { data: es } = await supabase.from("tracking_esiti").select("*").order("ordine");
       if (es && es.length) { impostaEsitiTracking(es as never); setRegoleV((v) => v + 1); }
+      // CHIUSURE (Luca 11/08): festivi globali + chiusure straordinarie per
+      // negozio (Amministrazione → Orari & Chiusure) — nei giorni chiusi
+      // warning/malus non corrono. Best-effort: senza dati vale il lun-sab.
+      try {
+        const [fest, chius, dom] = await Promise.all([
+          supabase.from("giorni_festivi").select("giorno"),
+          supabase.from("chiusure_negozio").select("store, dal, al"),
+          supabase.from("stores").select("name").eq("domenica_aperta", true),
+        ]);
+        impostaCalendarioChiusure(
+          (fest.data ?? []) as never,
+          (chius.data ?? []) as never,
+          ((dom.data ?? []) as { name: string }[]).map((s) => s.name),
+        );
+        setRegoleV((v) => v + 1);
+      } catch { /* calendario assente: comportamento storico */ }
     })();
   }, []);
 

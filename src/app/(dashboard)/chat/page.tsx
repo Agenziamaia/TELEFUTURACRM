@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { waIstanzeBadge } from "@/lib/waVisibilita";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useQrUpload, QrUploadModal } from "@/lib/useQrUpload";
@@ -420,8 +421,11 @@ function ChatPageInner() {
   const loadChannelCounts = useCallback(async () => {
     if (!meId) return;
     try {
-      const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio");
-      const mine = (insts || []).filter((i: any) => i.owner_user_id === meId || (i.negozio && myStores.some((s) => sameStore(i.negozio, s)))).map((i: any) => i.id);
+      // BADGE = SOLO il numero PERSONALE (Luca 11/08): chi vede tutto non deve
+      // avere il pallino per chat non sue; le notifiche degli altri numeri
+      // stanno sul chip di ogni numero dentro la scheda WhatsApp
+      const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, status");
+      const mine = waIstanzeBadge((insts || []) as never[], meId).map((i: any) => i.id);
       if (mine.length) {
         const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine);
         setWaUnread((data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0));

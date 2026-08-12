@@ -4708,6 +4708,9 @@ function CRM() {
         else det[cmp.nome]=raw||"";
       });
       items.push({macro:g.title,macroColor:g.color,macroIcon:g.icon,sub:sub.title,saleNum:si+1,details:det,
+        // coordinate dell'articolo nella selezione (Luca 11/08): servono al 🗑
+        // del carrello per togliere ESATTAMENTE questa voce da sales/sv
+        gId:g.id,saleIdx:si,subId:sub.id,
         catalogo:{tipo:sub.catTipo,categoria:sub.catCategoria,prodotto:sub.catProdotto,offerta:f["Offerta"]||null,
           opzioni:attive.map(k=>({nome:k,quantita:opz[k]===true?null:opz[k]})),macro:g.catMacro}});
     });});});
@@ -4774,6 +4777,28 @@ function CRM() {
     if(items.length>0&&bObj){const snap={sales:JSON.parse(JSON.stringify(sales)),sesCode,skyS:JSON.parse(JSON.stringify(skyS))};setCart(p=>[...p,{brandId:brand,brandLabel:bObj.label,brandIcon:bObj.icon,brandColor:bObj.color,items,sv:snap}]);setMargItems(p=>computeAutoMarg(p,brand,bObj.label,items));sT("✅ "+items.length+" prodotti "+bObj.label)}
     setSales({});setSesCode("");setSkyS([{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}]);setBrand(null);
     if(after)after();
+  };
+  // 🗑 ARTICOLO DAL CARRELLO (Luca 11/08 via Verifiche): via il singolo
+  // articolo/servizio messo per errore, senza rifare la vendita. Per il brand
+  // in corso si toglie dalla selezione viva (le P&M AUTO si riallineano da
+  // sole); per i gruppi gia' chiusi si aggiornano items + fotografia sv (cosi'
+  // ✏️ Modifica non lo fa rinascere) e le AUTO del gruppo si ricalcolano.
+  // Gli articoli senza coordinate (bozze di versioni vecchie, righe Sky del
+  // flusso dedicato) non mostrano il cestino: per quelli c'e' ✏️ Modifica.
+  const rimuoviItemCarrello=(g,gi,it,ii)=>{
+    if(!it||!it.subId)return;
+    if(g.isCurrent){
+      setSales(p=>{const arr=[...(p[it.gId]||[])];if(!arr[it.saleIdx])return p;const sale={...arr[it.saleIdx]};delete sale[it.subId];arr[it.saleIdx]=sale;return {...p,[it.gId]:arr};});
+      sT("🗑 "+it.sub+" tolto dal carrello");
+      return;
+    }
+    const cg=cart[gi];
+    if(!cg)return;
+    const itemsNuovi=cg.items.filter((_,k)=>k!==ii);
+    const sv=cg.sv?{...cg.sv,sales:(()=>{const s=JSON.parse(JSON.stringify(cg.sv.sales||{}));const arr=s[it.gId];if(Array.isArray(arr)&&arr[it.saleIdx])delete arr[it.saleIdx][it.subId];return s;})()}:cg.sv;
+    setCart(p=>p.map((x,i)=>i===gi?{...x,items:itemsNuovi,sv}:x).filter(x=>x.items.length>0));
+    setMargItems(p=>computeAutoMarg(p,cg.brandId,cg.brandLabel,itemsNuovi));
+    sT("🗑 "+it.sub+" tolto da "+cg.brandLabel);
   };
   const editCG=idx=>{const g=cart[idx];if(!g)return;setBrand(g.brandId);if(g.sv){setSales(g.sv.sales||{});setSesCode(g.sv.sesCode||"");setSkyS(g.sv.skyS||[{tvSel:null,tvCC:"",fibraSel:null,fibraCC:"",fibraGnp:null,fibraGnpBrand:"",fibraGnpNum:"",mobileSel:false,mobMnp:null,mobNumProv:"",mobNumDef:"",mobBrandMnp:"",mobIccid:"",mobNum:"",mobIccidNo:"",tvCodIns:"",fibraCodIns:"",mobCodIns:""}])}setCart(p=>p.filter((_,i)=>i!==idx));setShowCart(false);sT("✏️ Modifica "+g.brandLabel)};
   const rmCG=idx=>setCart(p=>p.filter((_,i)=>i!==idx));
@@ -5844,8 +5869,10 @@ function CRM() {
     &&(ana.cellulare||"").trim().length>0;
   // MOD-44c, rivisto su segnalazione Francesco (ok Luca 10/08): il minimo per
   // la marginalità è nome+cognome+CELLULARE (business: ragione sociale+cellulare)
-  // — o tutti i dati; con meno di così l'utente è obbligato a "Salta dati cliente"
-  const margMinOk=!!((ana.cellulare||"").trim()&&(((ana.nome||"").trim()&&(ana.cognome||"").trim())||(ana.ragioneSociale||"").trim()));
+  // — o tutti i dati; con meno di così l'utente è obbligato a "Salta dati cliente".
+  // Il cellulare deve essere VERO (11/08: un numero a caso passava): 9-13 cifre.
+  const _celMargOk=(()=>{const d=(ana.cellulare||"").replace(/\D/g,"");return d.length>=9&&d.length<=13;})();
+  const margMinOk=!!(_celMargOk&&(((ana.nome||"").trim()&&(ana.cognome||"").trim())||(ana.ragioneSociale||"").trim()));
   const saveMargOnly=async()=>{
     const _mm = margPriceMissing(margItems);
     if (_mm.length) { sT("⚠️ Inserisci il prezzo di vendita per: " + _mm.map(m => m.product).join(", ")); return; }
@@ -6441,9 +6468,14 @@ select.rvIn{cursor:pointer}
                   {!expR["g"+gi]&&<div style={{fontSize:10,color:"var(--tf-64748b)",marginTop:2}}>{g.items.map(it=>it.sub).join(", ")}</div>}
                   {expR["g"+gi]&&<div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
                     {g.items.map((it,ii)=>{const det=it.details||{};const off=det["Offerta Mobile"]||det.offerta||det["Offerta"]||"";return (
-                      <div key={ii} style={{background:"var(--tf-w30)",borderRadius:6,padding:"5px 8px"}}>
-                        <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{it.macroIcon} {it.sub}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> · vendita {it.saleNum}</span></div>
-                        {off&&<div style={{fontSize:10,color:"var(--tf-8892b0)",marginTop:1}}>{String(off)}</div>}
+                      <div key={ii} style={{background:"var(--tf-w30)",borderRadius:6,padding:"5px 8px",display:"flex",alignItems:"center",gap:6}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"var(--tf-e2e8f0)"}}>{it.macroIcon} {it.sub}<span style={{color:"var(--tf-64748b)",fontWeight:600}}> · vendita {it.saleNum}</span></div>
+                          {off&&<div style={{fontSize:10,color:"var(--tf-8892b0)",marginTop:1}}>{String(off)}</div>}
+                        </div>
+                        {/* 🗑 anche sugli articoli brand (Luca 11/08): via la voce messa per errore */}
+                        {it.subId&&<button onClick={e=>{e.stopPropagation();rimuoviItemCarrello(g,gi,it,ii);}} title="Elimina questo articolo dal carrello"
+                          style={{background:"none",border:"none",color:"var(--tf-dc3545)",cursor:"pointer",fontSize:13,lineHeight:1,padding:"2px 2px",flexShrink:0}}>🗑</button>}
                       </div>);})}
                   </div>}
                 </div>
@@ -6650,7 +6682,7 @@ select.rvIn{cursor:pointer}
             <button onClick={()=>setMargSkipPopup(true)} style={{padding:"9px 18px",borderRadius:8,border:"1px dashed rgba(245,158,11,0.6)",background:margSkipCli?"rgba(245,158,11,0.15)":"var(--tf-w20)",color:"var(--tf-fbbf24)",fontSize:12,fontWeight:700,cursor:"pointer"}}>🚫 Salta dati cliente{margSkipCli?" ✓":""}</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            {!margMinOk&&!margSkipCli&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e cellulare (o tutti i dati) — altrimenti salta</span>}
+            {!margMinOk&&!margSkipCli&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e un cellulare valido (9-13 cifre) — altrimenti salta</span>}
             <button disabled={!margMinOk&&!margSkipCli} onClick={()=>{if(margMinOk)setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:(!margMinOk&&!margSkipCli)?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:(!margMinOk&&!margSkipCli)?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:(!margMinOk&&!margSkipCli)?"not-allowed":"pointer"}}>Avanti → Prodotti</button>
           </div>
         </div>}
@@ -6703,7 +6735,7 @@ select.rvIn{cursor:pointer}
             {/* MOD-44c: in marginalità niente campi obbligatori — basta un dato */}
             {margFlow&&!brand
               ?<>
-                {!margMinOk&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e cellulare</span>}
+                {!margMinOk&&<span style={{fontSize:11,fontWeight:600,color:"var(--tf-f59e0b)"}}>Servono nome, cognome e un cellulare valido (9-13 cifre)</span>}
                 <button disabled={!margMinOk} onClick={()=>{if(!margMinOk)return;setMargSkipCli(false);setVistaStep("prodotti");setStepVisti(pv=>({...pv,prodotti:true}));}} style={{padding:"9px 22px",borderRadius:8,border:"none",background:!margMinOk?"var(--tf-w80)":"linear-gradient(135deg,#6f42c1,#59359c)",color:!margMinOk?"var(--tf-64748b)":"#fff",fontSize:13,fontWeight:700,cursor:!margMinOk?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6}}>Avanti → Prodotti</button>
               </>
               :<>

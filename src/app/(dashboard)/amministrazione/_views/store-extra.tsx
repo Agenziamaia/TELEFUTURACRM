@@ -235,7 +235,7 @@ export function StoreAttachments({ storeId }: { storeId: string }) {
 type ChiusuraRow = { id: number; store: string; dal: string; al: string; motivo: string };
 // pausa/is_ufficio opzionali = mig. 158/159: il fallback pre-migrazione
 // carica solo le colonne storiche
-type NegozioOrariRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null };
+type NegozioOrariRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; domenica_aperta?: boolean | null };
 type CampoOrario = "orario_apertura" | "orario_chiusura" | "orario_pausa_inizio" | "orario_pausa_fine";
 export function OrariChiusureView() {
     const { user } = useAuth();   // firma sulle chiusure (giallo del 06/08: righe senza autore)
@@ -247,7 +247,7 @@ export function OrariChiusureView() {
     const [spezzatoUi, setSpezzatoUi] = useState<Record<string, boolean>>({});
     const carica = useCallback(async () => {
         const [st0, ch] = await Promise.all([
-            supabase.from("stores").select("name, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio").order("name"),
+            supabase.from("stores").select("name, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, domenica_aperta").order("name"),
             supabase.from("chiusure_negozio").select("id, store, dal, al, motivo").order("dal"),
         ]);
         // mig. 158/159 non ancora applicate: si ripiega sulle colonne storiche
@@ -358,6 +358,21 @@ export function OrariChiusureView() {
                                     ＋ Aggiungi 2° turno
                                 </button>
                             )}
+                            {/* DOMENICA (Luca 11/08): negozio operativo anche di domenica —
+                                per il Tracking quel giorno conta come lavorativo */}
+                            <div className="flex items-center gap-2 mt-2"
+                                title="Acceso = il negozio è operativo anche la domenica: per il Tracking la domenica conta come giorno lavorativo (warning/malus corrono)">
+                                <button onClick={async () => {
+                                    const val = !n.domenica_aperta;
+                                    const { error } = await supabase.from("stores").update({ domenica_aperta: val }).eq("name", n.name);
+                                    if (dbError("Domenica", error)) return;
+                                    setNegozi(p => p.map(x => x.name === n.name ? { ...x, domenica_aperta: val } : x));
+                                }}
+                                    className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${n.domenica_aperta ? "bg-emerald-500/70" : "bg-white/10"}`}>
+                                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${n.domenica_aperta ? "left-[18px]" : "left-0.5"}`} />
+                                </button>
+                                <span className={`text-[11px] font-bold ${n.domenica_aperta ? "text-emerald-300" : "text-slate-500"}`}>🌞 Aperto la domenica</span>
+                            </div>
                         </div>
                         <div className="flex-1 min-w-[280px] space-y-1.5">
                             {mie.length === 0 && <p className="text-xs text-slate-600 italic mt-1.5">Nessuna chiusura straordinaria.</p>}

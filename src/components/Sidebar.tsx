@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getInbox, subscribeInbox } from "@/lib/chat";
 import { comunicazionePerMe, brandDelNegozio, negoziAssegnati } from "@/lib/comunicazioniTarget";
 import { useVisibleStores, sameStore } from "@/lib/visibleStores";
+import { waIstanzeBadge } from "@/lib/waVisibilita";
 import { designatiIncarico } from "@/lib/incarichi";
 import {
     Home,
@@ -162,8 +163,12 @@ function SidebarInner({ isOpen, setIsOpen, autoHide, setAutoHide }: SidebarProps
         const load = async () => {
             try { const rows = await getInbox(user.id); if (alive) setChatUnread(rows.reduce((s, r) => s + (r.unread || 0), 0)); } catch { }
             try {
-                const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, negozio");
-                const mine = (insts || []).filter((i: any) => i.owner_user_id === user.id || (i.negozio && myStores.some((s) => sameStore(i.negozio, s)))).map((i: any) => i.id);
+                // BADGE = SOLO il numero PERSONALE (Luca 11/08): chi vede tutto
+                // non deve avere il pallino per chat non sue; niente numero
+                // configurato = niente pallino. Le notifiche degli altri numeri
+                // vivono dentro la sezione, sul chip di ogni numero.
+                const { data: insts } = await supabase.from("wa_instances").select("id, owner_user_id, status");
+                const mine = waIstanzeBadge((insts || []) as never[], user.id).map((i: any) => i.id);
                 let n = 0;
                 if (mine.length) { const { data } = await supabase.from("wa_conversations").select("unread").in("instance_id", mine); n = (data || []).reduce((s: number, c: any) => s + (c.unread || 0), 0); }
                 if (alive) setWaUnread(n);
