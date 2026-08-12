@@ -10,7 +10,7 @@ import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
-import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
+import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, unisciCataloghi, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { useActiveStores } from "@/lib/org";
 import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
@@ -616,6 +616,23 @@ export default function RicercaContratto() {
         loadCatalogoBrand(soloSlug, { fresh: true }).then((t) => { if (alive) setCatalogoBrand(t); });
         return () => { alive = false; };
     }, [soloSlug]); // eslint-disable-line react-hooks/exhaustive-deps
+    // CASCATA SENZA TESSERA SINGOLA (esito Luca 12/08: "Consumer, Fisso, ma poi
+    // prodotto e offerta non sono selezionabili"): con più brand attivi si
+    // carica l'UNIONE dei cataloghi di tutti i brand visibili — tipo cliente e
+    // categoria tagliano le liste, la ricerca interna della tendina fa il resto.
+    const [catalogoUnione, setCatalogoUnione] = useState<CatFiltro | null>(null);
+    useEffect(() => {
+        if (soloSlug) { setCatalogoUnione(null); return; }
+        const slugs = Array.from(new Set(uniqueBrands.map((b) => LABEL_SLUG[b]).filter(Boolean)));
+        if (!slugs.length) { setCatalogoUnione(null); return; }
+        let alive = true;
+        Promise.all(slugs.map((s) => loadCatalogoBrand(s)))
+            .then((liste) => { if (alive) setCatalogoUnione(unisciCataloghi(liste)); })
+            .catch(() => { if (alive) setCatalogoUnione(null); });
+        return () => { alive = false; };
+    }, [soloSlug, uniqueBrands]); // eslint-disable-line react-hooks/exhaustive-deps
+    // il catalogo su cui lavora la cascata: quello del brand singolo, o l'unione
+    const catalogoAttivo = catalogoBrand ?? catalogoUnione;
     // CONSEGUENZIALITÀ (Luca 28/07): le offerte seguono i prodotti scelti; senza
     // prodotti ma con una categoria, seguono i prodotti di quella categoria —
     // e comunque si restringono alle offerte DELLA categoria (la stessa offerta
@@ -627,38 +644,38 @@ export default function RicercaContratto() {
         !filterTipoCliente?.length || (tipi || []).some((t) => filterTipoCliente.includes(t)),
         [filterTipoCliente]);
     const offerteDisponibili = useMemo(() => {
-        if (!catalogoBrand) return [];
+        if (!catalogoAttivo) return [];
         // RIC-06: categorie/prodotti sono insiemi (null = tutto selezionato =
         // nessuna restrizione); con piu' categorie scelte si fa l'UNIONE.
         const base = filterProdotti?.length ? filterProdotti
-            : filterCategorie?.length ? filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || [])
+            : filterCategorie?.length ? filterCategorie.flatMap((c) => catalogoAttivo.prodsByCat[c] || [])
             : null;
         // le SPENTE scendono in fondo (Luca 10/08): sopra restano le vive
-        const ordina = (arr: string[]) => arr.filter((o) => _tipoOk(catalogoBrand.offTipi?.[o])).sort((a, b) =>
-            (catalogoBrand.offSpenta?.[a] ? 1 : 0) - (catalogoBrand.offSpenta?.[b] ? 1 : 0) || a.localeCompare(b));
-        if (!base) return ordina([...catalogoBrand.offNames]);
+        const ordina = (arr: string[]) => arr.filter((o) => _tipoOk(catalogoAttivo.offTipi?.[o])).sort((a, b) =>
+            (catalogoAttivo.offSpenta?.[a] ? 1 : 0) - (catalogoAttivo.offSpenta?.[b] ? 1 : 0) || a.localeCompare(b));
+        if (!base) return ordina([...catalogoAttivo.offNames]);
         let set = new Set<string>();
-        base.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
+        base.forEach((pn) => (catalogoAttivo.offByProd[pn] || []).forEach((o) => set.add(o)));
         if (filterCategorie?.length) {
-            const s2 = new Set(filterCategorie.flatMap((c) => catalogoBrand.offsByCat[c] || []));
+            const s2 = new Set(filterCategorie.flatMap((c) => catalogoAttivo.offsByCat[c] || []));
             set = new Set(Array.from(set).filter((o) => s2.has(o)));
         }
         return ordina(Array.from(set));
-    }, [catalogoBrand, filterProdotti, filterCategorie, _tipoOk]);
+    }, [catalogoAttivo, filterProdotti, filterCategorie, _tipoOk]);
     // etichette ⛔ per le offerte spente nella tendina (il VALORE resta il nome
     // pulito: i filtri e lo storico non cambiano)
     const offEtichette = useMemo(() => {
         const out: Record<string, string> = {};
-        offerteDisponibili.forEach((o) => { if (catalogoBrand?.offSpenta?.[o]) out[o] = o + " · ⛔ spenta"; });
+        offerteDisponibili.forEach((o) => { if (catalogoAttivo?.offSpenta?.[o]) out[o] = o + " · ⛔ spenta"; });
         return out;
-    }, [offerteDisponibili, catalogoBrand]);
+    }, [offerteDisponibili, catalogoAttivo]);
     // le OPZIONI si sbloccano con almeno un'offerta scelta: unione delle loro
     const opzioniDisponibili = useMemo(() => {
-        if (!catalogoBrand || !filterOfferte?.length) return [];
+        if (!catalogoAttivo || !filterOfferte?.length) return [];
         const set = new Set<string>();
-        filterOfferte.forEach((on) => (catalogoBrand.opzByOff[on] || []).forEach((z) => set.add(z)));
+        filterOfferte.forEach((on) => (catalogoAttivo.opzByOff[on] || []).forEach((z) => set.add(z)));
         return Array.from(set).sort();
-    }, [catalogoBrand, filterOfferte]);
+    }, [catalogoAttivo, filterOfferte]);
     // Sola tessera Marginalità attiva → si accendono i due layer dedicati.
     const soloMarg = !!soloBrandLabel && ["marginalità", "marginalita"].includes(soloBrandLabel.toLowerCase());
     useEffect(() => {
@@ -698,9 +715,11 @@ export default function RicercaContratto() {
             // recenti e i filtri non offrivano i loro brand/prodotti/codici.
             const { data } = await caricaTutte<Record<string, unknown>>((from, to) => {
                 let q = supabase.from("contracts").select("venditore, brand, prodotto, negozio, dettagli");
+                // stesso RBAC di applicaFiltriRicerca (caso Veronica 12/08): il
+                // lock sul nome vince e copre TUTTE le proprie vendite, ovunque
                 if (!isGlobalView) {
-                    if (lockedStores) q = q.in("negozio", lockedStores);
                     if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
+                    else if (lockedStores) q = q.in("negozio", lockedStores);
                 }
                 if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
                 return q.order("id").range(from, to);
@@ -774,8 +793,11 @@ export default function RicercaContratto() {
         if (filterBrand && filterBrand !== "") query = query.ilike("brand", `%${filterBrand}%`);
         if (filterProdotti !== null) query = query.in("prodotto", filterProdotti);
         if (filterOfferte !== null) query = query.in("offerta", filterOfferte);
-        // opzioni selezionate: la vendita deve contenerle TUTTE (@> sul jsonb)
-        if (filterOpzioni !== null && filterOpzioni.length > 0) query = query.contains("opzioni", filterOpzioni.map((o) => ({ nome: o })));
+        // opzioni selezionate: la vendita deve contenerle TUTTE (@> sul jsonb).
+        // NB serve la STRINGA JSON: con l'array JS supabase-js serializza un
+        // array Postgres (graffe) e il jsonb risponde "invalid input syntax
+        // for type json" — era l'errore alla selezione di un'opzione (12/08)
+        if (filterOpzioni !== null && filterOpzioni.length > 0) query = query.contains("opzioni", JSON.stringify(filterOpzioni.map((o) => ({ nome: o }))));
         // CATEGORIA = sempre quella FINE del catalogo, con uno o più brand
         // (Luca 28/07): dettagli->>categoria_catalogo copre il 100% dello
         // storico dopo il backfill (regola pagamento per i mobile vecchi).
@@ -815,22 +837,36 @@ export default function RicercaContratto() {
             }
         }
 
+        // IMEI / SERIALE sul CONTRATTO: IMEI piatti (anche `imei` minuscolo —
+        // le vendite usato lo scrivono così, segnalazione 12/08), terminali
+        // `units` dell'usato (anche finanziato), codice attivazione. Usato dal
+        // campo IMEI dedicato E dal campo cliente quando digitano lì un numero.
+        const orSeriale = (grezzo: string) => {
+            const s = grezzo.trim().replace(/[",()]/g, "").replace(/[\s./-]/g, "");
+            if (!s) return null;
+            const t = `%${s}%`;
+            return [
+                `codice_attivazione.ilike.${t}`,
+                `dettagli->>IMEI.ilike.${t}`,
+                `dettagli->>imei.ilike.${t}`,
+                `dettagli->>"IMEI TNP".ilike.${t}`,
+                `dettagli->>"IMEI CB".ilike.${t}`,
+                `dettagli->units.cs."[{\\"imei\\":\\"${s}\\"}]"`,
+            ].join(",");
+        };
+        // Campo IMEI dedicato (esito Luca 12/08: l'input c'era ma non filtrava nulla)
+        if (filterImei) {
+            const o = orSeriale(filterImei);
+            if (o) query = query.or(o);
+        }
         if (filterCliente) {
             const safe = filterCliente.trim().replace(/[",()]/g, "");
-            // IMEI / SERIALE (Luca 11/08: l'IMEI di un usato venduto trovava zero
-            // perché il campo cerca solo sull'anagrafica): se la stringa è tutta
-            // cifre si cerca sul CONTRATTO — IMEI piatti, terminali `units`
-            // dell'usato (anche finanziato), codice attivazione.
+            // (Luca 11/08: l'IMEI di un usato venduto trovava zero perché il
+            // campo cerca solo sull'anagrafica): se la stringa è tutta cifre
+            // si cerca sul contratto con le condizioni seriale qui sopra.
             const soloCifre = safe.replace(/[\s./-]/g, "");
             if (/^\d{8,20}$/.test(soloCifre)) {
-                const t = `%${soloCifre}%`;
-                query = query.or([
-                    `codice_attivazione.ilike.${t}`,
-                    `dettagli->>IMEI.ilike.${t}`,
-                    `dettagli->>"IMEI TNP".ilike.${t}`,
-                    `dettagli->>"IMEI CB".ilike.${t}`,
-                    `dettagli->units.cs."[{\\"imei\\":\\"${soloCifre}\\"}]"`,
-                ].join(","));
+                query = query.or(orSeriale(soloCifre)!);
             } else if (safe) {
                 // Segnalazione 36. Prima: .or("clients.nome.ilike.…") — PostgREST
                 // legge "clients" come colonna e "nome" come operatore, e risponde
@@ -858,9 +894,13 @@ export default function RicercaContratto() {
 
         // RBAC: tutti i negozi visibili (negozioInValues include anche la radice
         // legacy: i contratti storici salvavano "Magliana" senza suffisso).
+        // CASO VERONICA (Luca 12/08): chi è bloccato sul PROPRIO nome vede le
+        // proprie vendite OVUNQUE le abbia fatte — il filtro negozio sopra il
+        // filtro venditore le nascondeva (le sue W3 stavano su un negozio fuori
+        // dalla sua visibilità e il brand WindTre spariva dalle tessere).
         if (!isGlobalView) {
-            if (lockedStores) query = query.in("negozio", lockedStores);
             if (lockedVenditore) query = query.eq("venditore", lockedVenditore);
+            else if (lockedStores) query = query.in("negozio", lockedStores);
         }
         return query;
     };
@@ -959,15 +999,33 @@ export default function RicercaContratto() {
     // La ricerca vera è nei filtri in alto, che interrogano il database.
     const visibleData = contractList;
 
-    // GLB-03: da CSV a vero .xlsx \u2014 via il quoting manuale, celle passate cos\u00ec come sono
-    const handleExportExcel = () => {
-        if (visibleData.length === 0) return;
-        // Segnalazione 76: anche nell'esport il Codice ins. e il nome corretto della colonna
-        const headers = ["Venditore", "Brand", "Categoria", "Prodotto", "Offerta", "Cliente", "Negozio", "Codice ins.", "Codice contratto", "Data Registrazione", "Data Attivazione", "Stato"];
-        const rows: CellaXlsx[][] = visibleData.map(r => [
-            r.venditore, r.brand, ((r.raw?.dettagli as Record<string, unknown>)?.categoria_catalogo as string) || (r.raw?.categoria as string) || "", r.prodotto, (r.raw?.offerta as string) || ((r.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "", r.cliente, r.negozio, codInsDi(r), r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato
-        ]);
-        void scaricaXlsx(`contratti_${new Date().toISOString().split('T')[0]}`, headers, rows, "Contratti");
+    // GLB-03: da CSV a vero .xlsx \u2014 via il quoting manuale, celle passate cos\u00ec come sono.
+    // EXPORT COMPLETO (esito Luca 12/08): la lista in memoria \u00e8 SOLO la pagina
+    // video da 25 righe \u2014 l'Excel rif\u00e0 la query filtrata intera via caricaTutte
+    // (tetto server 1000 superato a blocchi; tiebreaker .order(id) obbligatorio
+    // per non perdere/duplicare righe tra i blocchi).
+    const [exporting, setExporting] = useState(false);
+    const handleExportExcel = async () => {
+        if (exporting || filtroVuoto) return;
+        setExporting(true);
+        try {
+            const { data, error } = await caricaTutte<Record<string, unknown>>((from, to) =>
+                applicaFiltriRicerca(
+                    supabase.from("contracts").select("*, clients!inner(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)"),
+                    true
+                ).order("created_at", { ascending: false }).order("id").range(from, to));
+            if (error) throw new Error(String((error as { message?: string }).message || "export"));
+            const tutte = (data ?? []).map((row: any) => mapContractToRow(row, row.clients));
+            if (tutte.length === 0) return;
+            // Segnalazione 76: anche nell'esport il Codice ins. e il nome corretto della colonna
+            const headers = ["Venditore", "Brand", "Categoria", "Prodotto", "Offerta", "Cliente", "Negozio", "Codice ins.", "Codice contratto", "Data Registrazione", "Data Attivazione", "Stato"];
+            const rows: CellaXlsx[][] = tutte.map(r => [
+                r.venditore, r.brand, ((r.raw?.dettagli as Record<string, unknown>)?.categoria_catalogo as string) || (r.raw?.categoria as string) || "", r.prodotto, (r.raw?.offerta as string) || ((r.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "", r.cliente, r.negozio, codInsDi(r), r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato
+            ]);
+            await scaricaXlsx(`contratti_${new Date().toISOString().split('T')[0]}`, headers, rows, "Contratti");
+        } catch {
+            // errore gi\u00e0 visibile all'utente col bottone che si riattiva
+        } finally { setExporting(false); }
     };
 
     // NB: tutti gli hook devono stare PRIMA dei return anticipati di loading/errore.
@@ -1880,7 +1938,7 @@ export default function RicercaContratto() {
                             values={filterCategorie} disabled={soloMarg}
                             testoDisabilitato="Per la Marginalità: riga sotto"
                             onChange={(v) => { setFilterCategorie(v); setFilterProdotti(null); setFilterOfferte(null); setFilterOpzioni(null); }}
-                            opzioni={catalogoBrand ? catalogoBrand.catNames.filter((cn) => (catalogoBrand.prodsByCat[cn] || []).some((pn) => _tipoOk(catalogoBrand.prodTipi?.[pn]))) : catNomiAll}
+                            opzioni={catalogoAttivo ? catalogoAttivo.catNames.filter((cn) => (catalogoAttivo.prodsByCat[cn] || []).some((pn) => _tipoOk(catalogoAttivo.prodTipi?.[pn]))) : catNomiAll}
                             etichettaTutti="Tutte le categorie"
                             className="glass-input w-full text-sm"
                         />
@@ -1894,9 +1952,9 @@ export default function RicercaContratto() {
                             con checkbox, default tutto selezionato. */}
                         <FiltroMulti
                             values={filterProdotti} onChange={setFilterProdotti}
-                            opzioni={catalogoBrand ? (filterCategorie?.length ? Array.from(new Set(filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || []))) : catalogoBrand.prodNames).filter((pn) => _tipoOk(catalogoBrand.prodTipi?.[pn])) : []}
-                            disabled={!catalogoBrand}
-                            testoDisabilitato="Seleziona un solo brand dalle tessere"
+                            opzioni={catalogoAttivo ? (filterCategorie?.length ? Array.from(new Set(filterCategorie.flatMap((c) => catalogoAttivo.prodsByCat[c] || []))) : catalogoAttivo.prodNames).filter((pn) => _tipoOk(catalogoAttivo.prodTipi?.[pn])) : []}
+                            disabled={!catalogoAttivo}
+                            testoDisabilitato="Carico il catalogo…"
                             etichettaTutti="Tutti i prodotti"
                             className="glass-input w-full text-sm"
                         />
@@ -1910,8 +1968,8 @@ export default function RicercaContratto() {
                             values={filterOfferte} onChange={setFilterOfferte}
                             opzioni={offerteDisponibili}
                             etichette={offEtichette}
-                            disabled={!catalogoBrand}
-                            testoDisabilitato="Seleziona un solo brand dalle tessere"
+                            disabled={!catalogoAttivo}
+                            testoDisabilitato="Carico il catalogo…"
                             etichettaTutti="Tutte le offerte"
                             className="glass-input w-full text-sm"
                         />
@@ -1922,8 +1980,8 @@ export default function RicercaContratto() {
                         <FiltroMulti
                             values={filterOpzioni} onChange={setFilterOpzioni}
                             opzioni={opzioniDisponibili}
-                            disabled={!catalogoBrand || !filterOfferte?.length}
-                            testoDisabilitato={!catalogoBrand ? "Seleziona un solo brand dalle tessere" : "Prima scegli un'offerta"}
+                            disabled={!catalogoAttivo || !filterOfferte?.length}
+                            testoDisabilitato={!catalogoAttivo ? "Carico il catalogo…" : "Prima scegli un'offerta"}
                             etichettaTutti="Tutte le opzioni"
                             className="glass-input w-full text-sm"
                         />
@@ -1982,8 +2040,8 @@ export default function RicercaContratto() {
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
                     <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditori(null); setFilterCodice(""); setFilterBrand(""); setFilterProdotti(null); setFilterCategorie(null); setFilterTipoCliente(null); setFilterOfferte(null); setFilterOpzioni(null); setMargTipi(null); setMargArticoli(null); setFilterNegozi(null); setFilterCodiciIns(null); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
-                    <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportExcel}>
-                        Scarica Excel
+                    <button type="button" disabled={exporting} className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2 disabled:opacity-50" onClick={handleExportExcel}>
+                        {exporting ? "Esportazione…" : "Scarica Excel"}
                     </button>
                 </div>
             </div>
@@ -2001,7 +2059,9 @@ export default function RicercaContratto() {
                                     <th className="px-4 py-4 font-semibold">Brand</th>
                                     <th className="px-4 py-4 font-semibold">Categoria</th>
                                     <th className="px-4 py-4 font-semibold">Prodotto</th>
-                                    <th className="px-4 py-4 font-semibold">Offerta</th>
+                                    {/* Con la sola tessera Marginalità (esito Luca 12/08) la colonna
+                                        Offerta non dice nulla: diventa Importo, il € della vendita */}
+                                    <th className="px-4 py-4 font-semibold">{soloMarg ? "Importo" : "Offerta"}</th>
                                     <th className="px-4 py-4 font-semibold">Cliente</th>
                                     <th className="px-4 py-4 font-semibold">Negozio</th>
                                     {/* Segnalazione 76: "Codice Attivazione" si chiama Codice
@@ -2022,7 +2082,14 @@ export default function RicercaContratto() {
                                         {/* la categoria FINE del catalogo (Wallet ≠ Ric. Auto); colore della macro */}
                                         <td className="px-4 py-3">{(() => { const d = categoriaDef((row.raw?.categoria_macro as string) || categoriaDi(row.brand, row.raw?.categoria as string, row.prodotto)); const fine = ((row.raw?.dettagli as Record<string, unknown>)?.categoria_catalogo as string) || d.label; return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border whitespace-nowrap" style={{ color: d.color, borderColor: d.color + "55", backgroundColor: d.color + "18" }}>{fine}</span>; })()}</td>
                                         <td className="px-4 py-3 text-slate-300">{row.prodotto}</td>
-                                        <td className="px-4 py-3 text-slate-400 text-xs">{String((row.raw?.offerta as string) || ((row.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "—")}</td>
+                                        <td className="px-4 py-3 text-slate-400 text-xs">{(() => {
+                                            if (soloMarg) {
+                                                const det = (row.raw?.dettagli as Record<string, unknown>) || {};
+                                                const imp = Number(det.importo ?? det.price ?? NaN);
+                                                return isNaN(imp) ? "—" : <span className="text-emerald-300 font-semibold tabular-nums">{imp.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>;
+                                            }
+                                            return String((row.raw?.offerta as string) || ((row.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "—");
+                                        })()}</td>
                                         <td className="px-4 py-3 text-slate-300 font-medium">{row.cliente}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{row.negozio}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{codInsDi(row) || "—"}</td>
@@ -2327,7 +2394,7 @@ export default function RicercaContratto() {
                 // (falso positivo + rischio chiave doppia al ri-salvataggio).
                 const _RENAME_DET: Record<string, string> = { "Seriale SIM (ICCID)": "ICCID", "Codice Inserimento": "Cod.Ins." };
                 const _detNomi = new Set(det.map(([k]) => k));
-                const _presente = (n: string) => _detNomi.has(n) || _detNomi.has(_RENAME_DET[n] || " ");
+                const _presente = (n: string) => _detNomi.has(n) || _detNomi.has(_RENAME_DET[n] || "\u0000");
                 const campiMancanti = campiAttesi.filter(n => n && !_presente(n) && n !== "Codice Inserimento" && n !== "Offerta" && n !== "Seriale SIM (ICCID)");
 
                 const renderOpzioni = () => {

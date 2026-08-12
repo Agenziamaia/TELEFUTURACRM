@@ -15,9 +15,11 @@ const client = new Client({
   host: "aws-1-eu-central-2.pooler.supabase.com", port: 5432, database: "postgres",
   user: `postgres.${ref}`, password: env.SUPABASE_DB_PASSWORD, ssl: { rejectUnauthorized: false },
 });
+// mappa CORRETTA (Luca 12/08 — la prima associazione dell'11/08 era sbagliata:
+// niente doppio Mazzini, ogni codice è un negozio distinto, c'è anche Collatina)
 const NEGOZI = {
-  "9000721835": "Magliana", "9001154565": "Mazzini", "9001297833": "Mazzini",
-  "9001302496": "San Paolo", "9001426666": "Libia",
+  "9000721835": "Magliana", "9001154565": "Libia", "9001297833": "Mazzini",
+  "9001302496": "San Paolo", "9001426666": "Collatina",
 };
 const file = process.argv[2];
 const mese = process.argv[3] || new Date().toISOString().slice(0, 7);

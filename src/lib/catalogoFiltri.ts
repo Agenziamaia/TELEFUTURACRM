@@ -44,6 +44,31 @@ export type CatFiltro = {
 
 export type MargArticolo = { name: string; kind: string };
 
+/** UNIONE di più cataloghi brand (esito Luca 12/08 sulla cascata: senza una
+ *  tessera sola i dropdown prodotto/offerta restavano spenti — ora la cascata
+ *  tipo→categoria→prodotto→offerta lavora sull'unione di tutti i brand).
+ *  Un'offerta è "spenta" solo se lo è in OGNI brand in cui esiste. */
+export function unisciCataloghi(liste: CatFiltro[]): CatFiltro {
+    const u = (a?: string[], b?: string[]) => Array.from(new Set([...(a || []), ...(b || [])])).sort();
+    const out: CatFiltro = { slug: "__unione", offSpenta: {}, prodTipi: {}, offTipi: {}, prodNames: [], offByProd: {}, offNames: [], catNames: [], prodsByCat: {}, offsByCat: {}, opzByOff: {}, opzMetaByOff: {} };
+    for (const t of liste) {
+        out.prodNames = u(out.prodNames, t.prodNames);
+        out.offNames = u(out.offNames, t.offNames);
+        // catNames: dedup preservando l'ordine di catalogo del primo incontro
+        for (const cn of t.catNames) if (!out.catNames.includes(cn)) out.catNames.push(cn);
+        for (const rec of ["offByProd", "prodsByCat", "offsByCat", "opzByOff", "prodTipi", "offTipi"] as const) {
+            const src = t[rec] as Record<string, string[]>, dst = out[rec] as Record<string, string[]>;
+            for (const k of Object.keys(src)) dst[k] = u(dst[k], src[k]);
+        }
+        for (const k of Object.keys(t.offSpenta)) out.offSpenta[k] = (out.offSpenta[k] ?? true) && t.offSpenta[k];
+        for (const k of Object.keys(t.opzMetaByOff)) {
+            const meta = (out.opzMetaByOff[k] = out.opzMetaByOff[k] || []);
+            for (const m of t.opzMetaByOff[k]) if (!meta.some(x => x.nome === m.nome)) meta.push(m);
+        }
+    }
+    return out;
+}
+
 // Etichetta brand come scritta nei contratti → slug di catalog_brands.
 // Le tendine brand restano sui BRAND_CANONICI (i nomi di catalog_brands
 // "Very"/"Ho Mobile"/"Kena" creerebbero doppioni a DB): qui si traduce solo.

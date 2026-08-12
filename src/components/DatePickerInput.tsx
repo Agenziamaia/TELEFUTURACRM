@@ -36,6 +36,11 @@ export function DatePickerInput({
 
     useEffect(() => { setMounted(true); }, []);
 
+    // Il parent può resettare `value` dall'esterno (es. "Annulla filtri" in
+    // Ricerca Vendite, esito Luca 12/08): senza questa sync il campo
+    // continuava a MOSTRARE la data vecchia anche a filtro ormai svuotato.
+    useEffect(() => { setInputText(value ?? ""); }, [value]);
+
     useEffect(() => {
         if (!inputText) { setSelectedDay(undefined); return; }
         const parsed = parse(inputText, "dd/MM/yyyy", new Date());

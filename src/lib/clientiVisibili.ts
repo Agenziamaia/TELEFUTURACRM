@@ -44,6 +44,8 @@ export interface ClientiVisibili {
     accessPending: Set<string>;
     /** segna localmente una nuova richiesta appena inviata */
     segnaPending: (clientId: string) => void;
+    /** segna localmente un cliente appena creato come proprio (il ricalcolo vero avviene al prossimo mount) */
+    segnaMio: (clientId: string) => void;
     /** ricarica lo stato delle richieste di accesso */
     ricaricaAccessi: () => Promise<void>;
     scope: string;
@@ -167,6 +169,12 @@ export function useClientiVisibili(): ClientiVisibili {
     const segnaPending = useCallback((clientId: string) => {
         setAccessPending((p) => new Set([...p, clientId]));
     }, []);
+    // CLIENTE APPENA CREATO (caso Francesco 12/08): il set dei "miei" si carica
+    // una volta al mount — senza questo tocco locale il cliente appena
+    // acquisito nasceva lucchettato per chi l'aveva creato, fino al reload.
+    const segnaMio = useCallback((clientId: string) => {
+        setMieiClienti((p) => (p === null ? p : new Set([...p, clientId])));
+    }, []);
 
-    return { maskAttivo, pronta, visibile, mieiClienti, accessOk, accessPending, segnaPending, ricaricaAccessi, scope };
+    return { maskAttivo, pronta, visibile, mieiClienti, accessOk, accessPending, segnaPending, segnaMio, ricaricaAccessi, scope };
 }

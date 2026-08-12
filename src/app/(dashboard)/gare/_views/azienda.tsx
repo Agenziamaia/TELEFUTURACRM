@@ -94,6 +94,20 @@ export function AziendaTab({ brand, month }: { brand: string; month: string }) {
         setCopying(false);
     };
 
+    // ANNULLA L'IMPORT dello schema precedente (esito Luca 12/08: «su settembre
+    // ho importato e non c'è nessun tasto per cancellare e riportarmi alla
+    // base»): svuota il mese CORRENTE di questo brand — il mese sorgente resta
+    // intatto e si può ricopiare. Visibile solo se c'è una base a cui tornare.
+    const svuotaMese = async () => {
+        if (!window.confirm(`Cancello tutta l'impostazione ${monthLabel(month)} (lato azienda) di questo brand? ${monthLabel(prevMonth)} resta intatta: torni alla base e puoi ricopiare.`)) return;
+        for (const t of ["gare_azienda_regole", "gare_azienda_voci", "gare_azienda_soglie", "gare_azienda_negozi", "gare_azienda_piste"]) {
+            const { error } = await supabase.from(t).delete().eq("brand", brand).eq("month", month);
+            if (dbError("Svuota mese", error)) return;
+        }
+        notify(`${monthLabel(month)} svuotato — tornato alla base ✓`, "ok");
+        load();
+    };
+
     const slug = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
     const addPista = async () => {
         const nome = nPista.trim();
@@ -131,6 +145,16 @@ export function AziendaTab({ brand, month }: { brand: string; month: string }) {
                     <button onClick={copyPrev} disabled={copying} className={cn("primary-btn flex items-center gap-2 mx-auto", copying && "opacity-40")}>
                         {copying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
                         Copia da {monthLabel(prevMonth)}
+                    </button>
+                </div>
+            )}
+            {/* mese impostato con una base alle spalle: si può annullare l'import
+                (svuota SOLO questo mese, la base resta e si ricopia) */}
+            {!vuoto && prevHas && (
+                <div className="text-right">
+                    <button onClick={svuotaMese} title="Cancella l'impostazione di questo mese e torna alla base: il mese precedente resta intatto e puoi ricopiarlo"
+                        className="text-xs text-amber-300/90 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
+                        ↩ Annulla l&apos;import · svuota {monthLabel(month)}
                     </button>
                 </div>
             )}

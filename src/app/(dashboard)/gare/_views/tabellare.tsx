@@ -181,11 +181,89 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
         if (!p.data?.length) { notify(`Nessun tabellare (${lato}) su ${fonteCopia}`); return; }
-        const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato })));
-        const e2 = (s.data?.length ? await supabase.from("pay_soglie").insert(s.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
-        const e3 = (r.data?.length ? await supabase.from("pay_righe").insert(r.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))) : { error: null });
+        const e1 = await supabase.from("pay_piste").insert(p.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id");
+        const e2 = (s.data?.length ? await supabase.from("pay_soglie").insert(s.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id") : { data: [], error: null });
+        const e3 = (r.data?.length ? await supabase.from("pay_righe").insert(r.data.map(x => ({ ...x, brand: ctx, month: monthISO, lato }))).select("id") : { data: [], error: null });
         if (dbError("Copia mese", e1.error || e2.error || e3.error)) return;
+        // log dell'import: l'annulla cancella ESATTAMENTE questi id (esito Luca
+        // 12/08: «deve riportarmi allo stato precedente, non cancellare tutto»)
+        await supabase.from("pay_import_log").insert({
+            brand: ctx, month: monthISO, lato, fonte: fonteCopia,
+            piste_ids: (e1.data || []).map(x => x.id),
+            soglie_ids: (e2.data || []).map(x => x.id),
+            righe_ids: (e3.data || []).map(x => x.id),
+        });
         notify(`Copiato da ${fonteCopia} ✓ — ora ritocca soglie e importi`, "ok"); load();
+    };
+
+    // ── MAPPA SOGLIE loro↔nostre + % (esito Luca 12/08, modello W3): per ogni
+    //    soglia NOSTRA (ragazzi) si sceglie la soglia LORO corrispondente e la
+    //    % girata — per pista/categoria, mai per prodotto. Vive in
+    //    pay_mappa_soglie; il motore la usa al posto della % di pista.
+    type VoceMappa = { tier_loro: number; perc: string };
+    const [mappa, setMappa] = useState<Record<string, Record<number, VoceMappa>>>({});
+    const [mappaDirty, setMappaDirty] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        let vivo = true;
+        supabase.from("pay_mappa_soglie").select("pista, tier_nostro, tier_loro, perc")
+            .eq("brand", ctx).eq("month", monthISO)
+            .then(({ data }) => {
+                if (!vivo) return;
+                const out: Record<string, Record<number, VoceMappa>> = {};
+                ((data || []) as { pista: string; tier_nostro: number; tier_loro: number; perc: number }[]).forEach(r => {
+                    (out[r.pista] = out[r.pista] || {})[r.tier_nostro] = { tier_loro: r.tier_loro, perc: String(r.perc) };
+                });
+                setMappa(out); setMappaDirty(new Set());
+            });
+        return () => { vivo = false; };
+    }, [ctx, monthISO]);
+    const setVoceMappa = (pista: string, tn: number, patch: Partial<VoceMappa>) => {
+        setMappa(prev => {
+            const base: VoceMappa = (prev[pista] || {})[tn] || { tier_loro: tn, perc: "100" };
+            return { ...prev, [pista]: { ...(prev[pista] || {}), [tn]: { ...base, ...patch } } };
+        });
+        setMappaDirty(prev => new Set(prev).add(pista));
+    };
+    const salvaMappa = async (pista: string, nTiers: number) => {
+        const del = await supabase.from("pay_mappa_soglie").delete().eq("brand", ctx).eq("month", monthISO).eq("pista", pista);
+        if (dbError("Mappa soglie", del.error)) return;
+        const righeIns = [];
+        for (let tn = 1; tn <= nTiers; tn++) {
+            const v = (mappa[pista] || {})[tn];
+            if (!v) continue;
+            const perc = Number(String(v.perc).replace(",", "."));
+            if (!Number.isFinite(perc)) { notify(`S${tn}: percentuale non valida`); return; }
+            righeIns.push({ brand: ctx, month: monthISO, pista, tier_nostro: tn, tier_loro: v.tier_loro, perc });
+        }
+        const ins = righeIns.length ? await supabase.from("pay_mappa_soglie").insert(righeIns) : { error: null };
+        if (dbError("Mappa soglie", ins.error)) return;
+        setMappaDirty(prev => { const s = new Set(prev); s.delete(pista); return s; });
+        notify("Mappa soglie salvata ✓ — il derivato ora la usa", "ok"); load();
+    };
+
+    // ── ANNULLA l'ultimo import: torna allo stato di prima della copia. Cancella
+    //    solo ciò che quella copia aveva inserito — piste/righe/soglie aggiunte
+    //    prima o dopo (la "base del setting") restano al loro posto.
+    const [ultimoImport, setUltimoImport] = useState<{ id: string; fonte: string | null; piste_ids: string[]; soglie_ids: string[]; righe_ids: string[] } | null>(null);
+    useEffect(() => {
+        let vivo = true;
+        supabase.from("pay_import_log").select("id, fonte, piste_ids, soglie_ids, righe_ids")
+            .eq("brand", ctx).eq("month", monthISO).eq("lato", lato).eq("annullato", false)
+            .order("creato_il", { ascending: false }).limit(1)
+            .then(({ data }) => { if (vivo) setUltimoImport(data?.[0] || null); });
+        return () => { vivo = false; };
+    }, [ctx, monthISO, lato, righe.length]);
+    const annullaImport = async () => {
+        if (!ultimoImport) return;
+        if (!window.confirm(`Annullo l'import${ultimoImport.fonte ? ` da ${ultimoImport.fonte}` : ""}? Sparisce solo quello che la copia aveva inserito, il resto rimane.`)) return;
+        const e3 = ultimoImport.righe_ids.length ? await supabase.from("pay_righe").delete().in("id", ultimoImport.righe_ids) : { error: null };
+        const e2 = ultimoImport.soglie_ids.length ? await supabase.from("pay_soglie").delete().in("id", ultimoImport.soglie_ids) : { error: null };
+        const e1 = ultimoImport.piste_ids.length ? await supabase.from("pay_piste").delete().in("id", ultimoImport.piste_ids) : { error: null };
+        if (dbError("Annulla import", e1.error || e2.error || e3.error)) return;
+        const eLog = await supabase.from("pay_import_log").update({ annullato: true }).eq("id", ultimoImport.id);
+        if (dbError("Annulla import", eLog.error)) return;
+        setUltimoImport(null);
+        notify("Import annullato ✓ — tornato com'era prima della copia", "ok"); load();
     };
 
     // ── CREA DA ZERO / nuova pista ("o andarle a ricostruire da zero" — Luca 11/08)
@@ -217,6 +295,84 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                             🧮 Tabellare ragazzi <b>compilato dal lato azienda</b> — {derivato.piste.map(x => `${x.nome} ${x.perc_ragazzi ?? 100}%`).join(" · ")}. Sola lettura: per modificare si lavora sull&apos;azienda.
                         </div>
                         {vaiAzienda && <button onClick={vaiAzienda} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white" style={{ background: colore }}>🏢 Lavora sul lato azienda</button>}
+                    </div>
+                    {/* SOGLIE in testa anche sul derivato — e MANUALI dove serve
+                        (esito Luca 12/08: la % dei ragazzi scala solo i pay, le
+                        soglie ragazzi si settano a mano pista per pista; senza
+                        soglie manuali valgono quelle del lato azienda) */}
+                    <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
+                        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">Soglie — di serie quelle del lato azienda; «Imposta a mano» le sgancia per i ragazzi (la % scala solo i pay)</div>
+                        {derivato.piste.map(px => {
+                            const mie = soglieDi(px.chiave);          // soglie manuali ragazzi
+                            const scalaAz = soglieDer(px.chiave);
+                            if (!mie.length && !scalaAz.length) return null;
+                            return (
+                                <div key={px.id} className="mb-3 last:mb-0 flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-semibold text-white min-w-[130px]">{px.nome} <span className="text-slate-500 font-normal">({px.um})</span></span>
+                                    {mie.length ? (
+                                        <>
+                                            {mie.map((s, i) => (
+                                                <label key={s.tier} className="text-[11px] text-slate-400">S{i + 1} da
+                                                    <input value={s.soglia_da} onChange={e => setDa(px.chiave, s.tier, e.target.value)} className={inputCls + " ml-1"} />
+                                                </label>
+                                            ))}
+                                            <button onClick={() => addSoglia(px.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
+                                            <button onClick={() => dropSoglia(px.chiave)} className="text-slate-500 hover:text-red-400" title="Togli l'ultima soglia"><Trash2 size={14} /></button>
+                                            {soglieDirty.has(px.chiave) && (
+                                                <button onClick={() => salvaSoglie(px.chiave)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva soglie</button>
+                                            )}
+                                            <button onClick={async () => {
+                                                if (!window.confirm(`Le soglie manuali di ${px.nome} tornano a quelle del lato azienda?`)) return;
+                                                const { error } = await supabase.from("pay_soglie").delete().eq("brand", ctx).eq("month", monthISO).eq("pista", px.chiave).eq("lato", "ragazzi");
+                                                if (dbError("Soglie ragazzi", error)) return;
+                                                notify("Soglie riallineate a quelle azienda ✓", "ok"); load();
+                                            }} className="text-[11px] text-slate-500 hover:text-slate-300" title="Cancella le soglie manuali: tornano quelle del lato azienda">↺ come azienda</button>
+                                            {/* MAPPA loro↔nostre + % per soglia (esito Luca 12/08):
+                                                ogni soglia nostra pesca il pay azienda della soglia
+                                                loro scelta e applica la % — per pista, non per prodotto */}
+                                            <div className="w-full flex items-center gap-2 flex-wrap mt-1 ml-[130px]">
+                                                <span className="text-[11px] text-slate-500">↘ pay girato:</span>
+                                                {mie.map((_, i) => {
+                                                    const tn = i + 1;
+                                                    const v = (mappa[px.chiave] || {})[tn];
+                                                    return (
+                                                        <span key={tn} className="text-[11px] text-slate-400 bg-white/[0.04] border border-white/10 rounded-lg px-2 py-1 inline-flex items-center gap-1">
+                                                            S{tn} ← loro
+                                                            <select value={v?.tier_loro ?? tn} onChange={e => setVoceMappa(px.chiave, tn, { tier_loro: Number(e.target.value) })}
+                                                                className="bg-transparent border border-white/10 rounded px-1 py-0.5 text-[11px] text-white">
+                                                                {[1, 2, 3, 4, 5, 6].map(t => <option key={t} value={t} className="bg-slate-800">S{t}</option>)}
+                                                            </select>
+                                                            ×
+                                                            <input value={v?.perc ?? ""} placeholder="%" onChange={e => setVoceMappa(px.chiave, tn, { perc: e.target.value })}
+                                                                className="bg-transparent border border-white/10 rounded px-1 py-0.5 text-[11px] text-white w-12 text-center" />%
+                                                        </span>
+                                                    );
+                                                })}
+                                                {mappaDirty.has(px.chiave) && (
+                                                    <button onClick={() => salvaMappa(px.chiave, mie.length)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva mappa</button>
+                                                )}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {scalaAz.map((s, i) => (
+                                                <span key={s.tier} className="text-[12px] text-slate-300 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1">
+                                                    S{i + 1} da <b className="text-white">{s.soglia_da}</b>{i < scalaAz.length - 1 ? ` a ${scalaAz[i + 1].soglia_da - 1}` : "+"}
+                                                </span>
+                                            ))}
+                                            <button onClick={async () => {
+                                                const { error } = await supabase.from("pay_soglie").insert(scalaAz.map((s, i) => ({
+                                                    brand: ctx, month: monthISO, pista: px.chiave, tier: i + 1,
+                                                    soglia_da: s.soglia_da, soglia_a: s.soglia_a, lato: "ragazzi",
+                                                })));
+                                                if (dbError("Soglie ragazzi", error)) return;
+                                                notify(`Soglie di ${px.nome} sganciate: ora si modificano qui ✓`, "ok"); load();
+                                            }} className="text-[11px] text-amber-300/90 border border-amber-500/30 rounded-lg px-2 py-1" title="Copia le soglie azienda come base e le rende modificabili per i ragazzi">✎ Imposta a mano</button>
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                     {derivato.piste.map(px => {
                         const scala = soglieDer(px.chiave);
@@ -307,7 +463,15 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
                 <div className="flex items-center justify-between mb-3">
                     <div className="text-[11px] uppercase tracking-wider text-slate-400">Soglie — scrivi solo il &quot;da&quot;: il fino-a si sistema da solo</div>
-                    <button onClick={nuovaPista} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Pista</button>
+                    <div className="flex items-center gap-2">
+                        {ultimoImport && (
+                            <button onClick={annullaImport} title="Torna a com'era prima della copia: sparisce solo quello che l'import aveva inserito"
+                                className="text-xs text-amber-300/90 border border-amber-500/30 rounded-lg px-2 py-1">
+                                ↩ Annulla l&apos;import{ultimoImport.fonte ? ` da ${ultimoImport.fonte}` : ""}
+                            </button>
+                        )}
+                        <button onClick={nuovaPista} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Pista</button>
+                    </div>
                 </div>
                 {piste.map(p => {
                     const scala = soglieDi(p.chiave);

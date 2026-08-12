@@ -10,9 +10,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Calculator, ChevronDown, Loader2, TriangleAlert } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
 import {
-    Avanzamento, CONTESTI_LABEL, PayRiga, Tabellare,
-    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, matchRigaTabellare, giorniLavorativiMese, payPerRiga, esclusaDalleGare, sostituzioneSim,
+    CONTESTI_LABEL, ContrattoPay, PayRiga, PaySoglia, Tabellare,
+    calcolaAvanzamento, caricaContrattiContesto, caricaTabellare, caricaTabellareAzienda, matchRigaTabellare, giorniLavorativiMese, payPerRiga, esclusaDalleGare, sostituzioneSim,
 } from "@/lib/commissioning";
 
 type Cat = { id: string; nome: string; ordine: number };
@@ -64,10 +65,21 @@ export default function CalcolatorePage() {
 
     // tabellare + avanzamento live
     const [tab, setTab] = useState<Tabellare | null>(null);
-    const [avz, setAvz] = useState<Avanzamento | null>(null);
+    const [contrattiCtx, setContrattiCtx] = useState<ContrattoPay[] | null>(null);
     const [caricaTab, setCaricaTab] = useState(false);
     const [nonAlloc, setNonAlloc] = useState(0);
     const [escluseVf, setEscluseVf] = useState(0);
+
+    // ── VISTA AZIENDA (Luca 12/08): doppio click sul titolo, solo admin — il
+    // Calcolatore passa a soglie e pay del lato azienda. Su WindTre il pay
+    // varia per punto vendita: selettore PDV con le soglie del Target mensile
+    // (pay_target_pdv) e la produzione allocata col codice di inserimento.
+    const { user } = useAuth();
+    const isAdmin = user?.role === "admin" || user?.role === "dev";
+    const [latoAzienda, setLatoAzienda] = useState(false);
+    type PdvRow = { id: string; cod_gara: string | null; negozio: string; cluster_mobile: string | null; soglie_mobile: number[] | null; soglie_fisso: number[] | null; soglie_piva: number[] | null };
+    const [pdvList, setPdvList] = useState<PdvRow[]>([]);
+    const [pdvSel, setPdvSel] = useState<string | null>(null);     // id riga pay_target_pdv, null = rete
 
     // PROSPECT (task Luca 11/08): giorni lavorativi del mese (lun-sab meno
     // festivi, override amministrabile) → la soglia si preseleziona sulla
@@ -95,13 +107,16 @@ export default function CalcolatorePage() {
     const [prodId, setProdId] = useState<string | null>(null);
     const [offId, setOffId] = useState<string | null>(null);
     const [tierSel, setTierSel] = useState<number | null>(null);   // null = non ancora toccata (usa live)
+    // PROVENIENZA (Luca 12/08): alcune righe pay valgono solo per certe
+    // provenienze (TIM +10 da Iliad/Coop/Poste, Kena STAR) — null = standard
+    const [provSel, setProvSel] = useState<string | null>(null);
     const [mostraScoperte, setMostraScoperte] = useState(false);
 
     useEffect(() => {
         if (!brand) return;
         let vivo = true;
         setCaricaCat(true); setCtx(null);
-        setTipoCli(null); setCatId(null); setProdId(null); setOffId(null); setTierSel(null);
+        setTipoCli(null); setCatId(null); setProdId(null); setOffId(null); setTierSel(null); setProvSel(null);
         (async () => {
             const [cRes, pRes] = await Promise.all([
                 supabase.from("catalog_categorie").select("id, nome, ordine").order("ordine").limit(500),
@@ -125,9 +140,13 @@ export default function CalcolatorePage() {
     useEffect(() => {
         if (!brand || !ctxKey) return;
         let vivo = true;
-        setCaricaTab(true); setTab(null); setAvz(null); setNonAlloc(0); setTierSel(null);
+        setCaricaTab(true); setTab(null); setContrattiCtx(null); setNonAlloc(0); setTierSel(null); setPdvSel(null);
         (async () => {
-            const t = await caricaTabellare(ctxKey, monthISO);
+            // vista azienda: tabellare azienda; se non esiste (TIM/Kena: la
+            // lettera vale per entrambi i lati) si ricade su quello ragazzi
+            const t = latoAzienda
+                ? (await caricaTabellareAzienda(ctxKey, monthISO)) ?? await caricaTabellare(ctxKey, monthISO)
+                : await caricaTabellare(ctxKey, monthISO);
             if (!vivo) return;
             setTab(t);
             if (t) {
@@ -135,12 +154,52 @@ export default function CalcolatorePage() {
                 const { contratti, nonAllocate, escluseVodafone } = await caricaContrattiContesto(ctxKey, monthISO, bm?.prefix);
                 if (!vivo) return;
                 setNonAlloc(nonAllocate); setEscluseVf(escluseVodafone);
-                setAvz(calcolaAvanzamento(t, contratti));
+                setContrattiCtx(contratti);
             }
             setCaricaTab(false);
         })();
         return () => { vivo = false; };
-    }, [brand, ctxKey, monthISO]);
+    }, [brand, ctxKey, monthISO, latoAzienda]);
+
+    // target per punto vendita (solo vista azienda WindTre)
+    useEffect(() => {
+        if (!latoAzienda || ctxKey !== "windtre") { setPdvList([]); return; }
+        let vivo = true;
+        supabase.from("pay_target_pdv").select("id, cod_gara, negozio, cluster_mobile, soglie_mobile, soglie_fisso, soglie_piva")
+            .eq("brand", "windtre").eq("month", monthISO).order("negozio")
+            .then(({ data }) => { if (vivo) setPdvList((data || []) as PdvRow[]); });
+        return () => { vivo = false; };
+    }, [latoAzienda, ctxKey, monthISO]);
+    const pdvRow = pdvSel ? pdvList.find(p => p.id === pdvSel) || null : null;
+
+    // tabellare EFFETTIVO: col PDV scelto le soglie di mobile/fisso diventano
+    // quelle del suo Target mensile (la scala si ricostruisce dagli importi)
+    const tabEff = useMemo(() => {
+        if (!tab || !pdvRow) return tab;
+        const scala = (pista: string, arr: number[] | null | undefined): PaySoglia[] =>
+            (arr || []).map((v, i) => ({ pista, tier: i + 1, soglia_da: Number(v), soglia_a: i < (arr as number[]).length - 1 ? Number((arr as number[])[i + 1]) - 1 : null }));
+        const override: Record<string, PaySoglia[]> = {};
+        if (pdvRow.soglie_mobile?.length) override.mobile = scala("mobile", pdvRow.soglie_mobile);
+        if (pdvRow.soglie_fisso?.length) override.fisso = scala("fisso", pdvRow.soglie_fisso);
+        const soglie = [
+            ...tab.soglie.filter(s => !override[s.pista]),
+            ...Object.values(override).flat(),
+        ];
+        return { ...tab, soglie };
+    }, [tab, pdvRow]);
+
+    // produzione del PDV: le vendite si allocano col CODICE DI INSERIMENTO
+    // (regola W3: i codici portano il nome del punto vendita della gara)
+    const contrattiEff = useMemo(() => {
+        if (!contrattiCtx) return null;
+        if (!pdvRow) return contrattiCtx;
+        const nk = String(pdvRow.negozio || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        return contrattiCtx.filter(c => String(c.cod_ins || "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith(nk));
+    }, [contrattiCtx, pdvRow]);
+
+    const avz = useMemo(
+        () => (tabEff && contrattiEff ? calcolaAvanzamento(tabEff, contrattiEff) : null),
+        [tabEff, contrattiEff]);
 
     // albero derivato
     // ordine FISSO: prima Consumer poi Business (segnalazione Luca 10/08 — l'ordine
@@ -164,17 +223,27 @@ export default function CalcolatorePage() {
     const esclusaProd = !!(prodSel && sostituzioneSim({ categoria: catSel?.nome, prodotto: prodSel.nome }));
     const esclusaSel = esclusaProd || !!(offSel && esclusaDalleGare({ categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: offSel.nome }));
 
+    // le provenienze che questo tabellare distingue (token → etichetta leggibile)
+    const provOpzioni = useMemo(() => {
+        if (!tab) return [];
+        const set = new Set<string>();
+        tab.righe.forEach(r => String(r.provenienza || "").split(",").forEach(t => { const x = t.trim(); if (x) set.add(x); }));
+        const LABEL: Record<string, string> = { iliad: "Iliad", coop: "CoopVoce", poste: "PosteMobile", fastweb: "Fastweb" };
+        return Array.from(set).map(t => ({ token: t, label: LABEL[t] || t }));
+    }, [tab]);
+
     // risoluzione riga pay
     const riga: PayRiga | null = useMemo(() => {
         if (!tab || !offSel || !prodSel || !catSel) return null;
         return matchRigaTabellare(tab.righe, {
             tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: offSel.nome,
+            provenienza: provSel,
         }, brand);
-    }, [tab, offSel, prodSel, catSel, brand]);
+    }, [tab, offSel, prodSel, catSel, brand, provSel]);
 
     const scalaRiga = useMemo(() =>
-        (tab && riga?.pista) ? tab.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
-    [tab, riga]);
+        (tabEff && riga?.pista) ? tabEff.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
+    [tabEff, riga]);
     const tierLive = riga?.pista && avz ? (avz.piste[riga.pista]?.tier ?? 0) : 0;
     const puntiPista = riga?.pista && avz ? (avz.piste[riga.pista]?.punti ?? 0) : 0;
     const puntiProj = proietta(puntiPista);
@@ -218,7 +287,13 @@ export default function CalcolatorePage() {
     return (
         <div className="p-6 max-w-[1500px]">
             <div className="flex items-center justify-between flex-wrap gap-3 mb-5">
-                <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Calculator size={26} /> Calcolatore $$$</h1>
+                {/* VISTA AZIENDA (Luca 12/08): doppio click sul titolo, solo admin —
+                    nessun bottone visibile. Il puntino discreto dice che è attiva. */}
+                <h1 className="text-2xl font-bold text-white flex items-center gap-2 select-none"
+                    onDoubleClick={() => { if (isAdmin) { setLatoAzienda(v => !v); setTierSel(null); setPdvSel(null); } }}>
+                    <Calculator size={26} /> Calcolatore $$$
+                    {latoAzienda && <span className="text-[11px] font-semibold text-amber-300/90 border border-amber-500/30 rounded-lg px-2 py-0.5">azienda</span>}
+                </h1>
                 <div className="flex items-center gap-3 flex-wrap">
                     {gl && (
                         <a href="/gare?brand=calendariogare" className="text-[12px] text-slate-400 hover:text-slate-200 transition-colors"
@@ -255,6 +330,31 @@ export default function CalcolatorePage() {
                         <Pill key={o.key} on={ctxKey === o.key} onClick={() => setCtx(o.key)}>{o.label}</Pill>
                     ))}
                     <span className="text-[11px] text-slate-500">l&apos;attivazione si alloca col codice di inserimento</span>
+                </div>
+            )}
+
+            {/* ①-ter PUNTO VENDITA (vista azienda WindTre): soglie del Target
+                mensile del PDV, produzione allocata col codice di inserimento */}
+            {latoAzienda && ctxKey === "windtre" && pdvList.length > 0 && (
+                <div className="flex gap-2 flex-wrap items-center mb-5">
+                    <span className="text-[11px] uppercase tracking-wider text-amber-300/80 mr-1">Punto vendita</span>
+                    <Pill on={pdvSel == null} onClick={() => { setPdvSel(null); setTierSel(null); }}>🌐 Rete</Pill>
+                    {/* etichetta = negozio + CODICE GARA quando doppio (esito Luca
+                        12/08: i cluster «Strada» venivano dal suo foglio Target ma
+                        in etichetta confondevano — restano nel tooltip) */}
+                    {pdvList.map(p => {
+                        const doppio = pdvList.filter(x => x.negozio === p.negozio).length > 1;
+                        return (
+                            <Pill key={p.id} on={pdvSel === p.id} onClick={() => { setPdvSel(p.id); setTierSel(null); }}>
+                                <span title={p.cluster_mobile ? `Cluster ${p.cluster_mobile} — colonna del foglio Target mensile W3` : undefined}>
+                                    {p.negozio}{doppio && p.cod_gara ? ` · ${p.cod_gara}` : ""}
+                                </span>
+                            </Pill>
+                        );
+                    })}
+                    {pdvRow && pdvList.filter(x => x.negozio === pdvRow.negozio).length > 1 && (
+                        <span className="text-[11px] text-slate-500">i due codici {pdvRow.negozio} condividono lo stesso codice di inserimento: produzione unica, soglie diverse</span>
+                    )}
                 </div>
             )}
 
@@ -299,7 +399,7 @@ export default function CalcolatorePage() {
                                 <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Prodotto</div>
                                 <div className="flex gap-2 flex-wrap mb-4">
                                     {prodsCat.map(p => (
-                                        <Pill key={p.id} on={prodId === p.id} onClick={() => { setProdId(p.id); setOffId(null); setTierSel(null); }}>{p.nome}</Pill>
+                                        <Pill key={p.id} on={prodId === p.id} onClick={() => { setProdId(p.id); setOffId(null); setTierSel(null); setProvSel(null); }}>{p.nome}</Pill>
                                     ))}
                                 </div>
                             </>}
@@ -325,6 +425,20 @@ export default function CalcolatorePage() {
                                     })}
                                     {!offsProd.length && <div className="text-slate-500 text-sm">Nessuna offerta per questo prodotto.</div>}
                                 </div>
+                                {/* PROVENIENZA (Luca 12/08): dove il tabellare la distingue
+                                    (TIM +10 · Kena STAR) si può scegliere da che operatore
+                                    arriva la MNP — Standard = nessuna maggiorazione */}
+                                {provOpzioni.length > 0 && (
+                                    <div className="mt-4">
+                                        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Operatore di provenienza</div>
+                                        <div className="flex gap-2 flex-wrap">
+                                            <Pill on={provSel == null} onClick={() => { setProvSel(null); setTierSel(null); }}>Standard</Pill>
+                                            {provOpzioni.map(p => (
+                                                <Pill key={p.token} on={provSel === p.token} onClick={() => { setProvSel(p.token); setTierSel(null); }}>{p.label}</Pill>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </>}
                         </div>
                     )}
@@ -397,13 +511,13 @@ export default function CalcolatorePage() {
                 <div className="space-y-4">
                     {tab && (
                         <div className="glass-panel rounded-2xl p-5">
-                            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Avanzamento rete · {mese}</div>
+                            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Avanzamento {pdvRow ? `${pdvRow.negozio}` : "rete"} · {mese}</div>
                             {ctxKey && CONTESTI_LABEL[ctxKey] && <div className="text-[11px] text-slate-500 mb-3">{CONTESTI_LABEL[ctxKey]}</div>}
                             {!avz ? <div className="text-slate-500 text-sm">Calcolo…</div> : tab.piste.map(p => {
                                 const a = avz.piste[p.chiave]; if (!a) return null;
                                 const target = a.prossima?.soglia_da ?? a.soglia?.soglia_da ?? 0;
                                 const perc = target > 0 ? Math.min(100, Math.round(a.punti / target * 100)) : 100;
-                                const scalaP = tab.soglie.filter(sg => sg.pista === p.chiave).sort((x, y) => x.tier - y.tier);
+                                const scalaP = (tabEff || tab).soglie.filter(sg => sg.pista === p.chiave).sort((x, y) => x.tier - y.tier);
                                 const projP = proietta(a.punti);
                                 let tierP = 0;
                                 for (const sg of scalaP) if (projP >= sg.soglia_da) tierP = sg.tier;

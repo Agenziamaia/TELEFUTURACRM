@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
-import { codaNumero, soloCifre, eventoAnyTime, trovaClientePerNumero } from "@/lib/aircall";
+import { codaNumero, soloCifre, eventoAnyTime, eventoHeySuite, trovaClientePerNumero } from "@/lib/aircall";
 import { numeroNazionale } from "@/lib/telefono";
 import { areaOf } from "@/lib/roles";
 
@@ -33,6 +33,14 @@ export async function POST(request: Request) {
         // Ci interessano solo gli eventi chiamata (call.*). Gli altri li ignoriamo ok.
         if (!event.startsWith("call.") || !d?.id) {
             return NextResponse.json({ ok: true, ignored: event });
+        }
+
+        // HEYSUITE (Luca 12/08): chiamate del direttore — linea "Ext Hey Suite"
+        // o i suoi due numeri come controparte. Fuori dal registro: niente
+        // insert, niente coda, niente ponte Caller. La guardia sta PRIMA del
+        // handler IVR: il suo upsert creerebbe righe parziali anche per escluse.
+        if (eventoHeySuite(d.number?.id ?? null, d.raw_digits || d.to || d.from || null)) {
+            return NextResponse.json({ ok: true, ignored: "heysuite" });
         }
 
         // ── AIR-04 (Luca 05/08): la SCELTA IVR del cliente ───────────────────

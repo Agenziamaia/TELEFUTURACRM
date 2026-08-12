@@ -1864,7 +1864,7 @@ function RitardiSection() {
 type TurnoRow = { id: number; store: string; data: string; persona: string; inizio: string; fine: string; tipo: string; creato_da: string | null };
 // campi opzionali = mig. 158/159 (pausa pranzo, flag ufficio, brand): il
 // fallback pre-migrazione carica solo le colonne storiche
-type StoreRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; brand_negozio?: string | null };
+type StoreRow = { name: string; orario_apertura: string | null; orario_chiusura: string | null; orario_pausa_inizio?: string | null; orario_pausa_fine?: string | null; is_ufficio?: boolean | null; brand_negozio?: string | null; sabato_apertura?: string | null; sabato_chiusura?: string | null };
 // loghi brand del punto vendita (mig. 159): per i multibrand la "donnina"
 // /logo-crm.png, che sul tema chiaro ha gia' la chip scura automatica
 // (globals.css). Brand NULL → icona generica 🏬.
@@ -1886,7 +1886,7 @@ function TurniSection() {
 
     const caricaBase = useCallback(async () => {
         const [st0, us, links, ch] = await Promise.all([
-            supabase.from("stores").select("name, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, brand_negozio").order("name"),
+            supabase.from("stores").select("name, orario_apertura, orario_chiusura, orario_pausa_inizio, orario_pausa_fine, is_ufficio, brand_negozio, sabato_apertura, sabato_chiusura").order("name"),
             supabase.from("app_users").select("full_name, primary_store").eq("active", true).order("full_name"),
             supabase.from("user_stores").select("user_id, store_name, app_users!inner(full_name, active)"),
             supabase.from("chiusure_negozio").select("store, dal, al, motivo"),
@@ -1959,12 +1959,18 @@ function TurniSection() {
                 Amministrazione → Orari & Chiusure; qui solo si leggono. */}
             <div className="glass-card overflow-hidden divide-y divide-white/5">
                 {negozi.map(n => {
-                    const ap = hhmm(n.orario_apertura, "09:30"), ch = hhmm(n.orario_chiusura, "19:30");
+                    // SABATO dedicato (Luca 12/08): se il negozio ha l'orario del
+                    // sabato e la data selezionata È un sabato, vale quello (turno
+                    // unico: la pausa non si applica)
+                    const eSabato = new Date(dataSel + "T12:00").getDay() === 6;
+                    const sabDedicato = eSabato && !!(n.sabato_apertura && n.sabato_chiusura);
+                    const ap = sabDedicato ? hhmm(n.sabato_apertura!, "09:30") : hhmm(n.orario_apertura, "09:30");
+                    const ch = sabDedicato ? hhmm(n.sabato_chiusura!, "19:30") : hhmm(n.orario_chiusura, "19:30");
                     // orario SPEZZATO (mig. 158): con la pausa valorizzata le
                     // coperture M/P seguono le due fasce; senza pausa resta lo
                     // spartiacque storico delle 14:00
-                    const pi = n.orario_pausa_inizio ? hhmm(n.orario_pausa_inizio, "") : "";
-                    const pf = n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : "";
+                    const pi = !sabDedicato && n.orario_pausa_inizio ? hhmm(n.orario_pausa_inizio, "") : "";
+                    const pf = !sabDedicato && n.orario_pausa_fine ? hhmm(n.orario_pausa_fine, "") : "";
                     const spezzato = !!(pi && pf);
                     const chiusura = chiusure.find(c => c.store === n.name && c.dal <= dataSel && c.al >= dataSel);
                     const turniStore = turni.filter(t => t.store === n.name);

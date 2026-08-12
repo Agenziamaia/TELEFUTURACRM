@@ -19,7 +19,7 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator,
+    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator, Boxes, Wrench,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -99,6 +99,9 @@ export const NAVIGATION: NavEntry[] = [
         icon: Store,
         children: [
             { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: EVERYONE },
+            // MAGAZZINO (Luca 12/08): consultazione giacenze/seriali per tutto
+            // il negozio; carico e trasferimenti restano dei ruoli di gestione
+            { name: "Magazzino", href: "/magazzino", icon: Boxes, roles: EVERYONE },
             { name: "Ordine Merce", href: "/ordine-merce", icon: Package, roles: MANAGERS },
             { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: EVERYONE },
             // CHIUSURA LINEA (Luca 01/08): ticketing disdette operatori
@@ -108,16 +111,25 @@ export const NAVIGATION: NavEntry[] = [
             // gestito a parte per ruolo (store manager in su, gate in pagina e
             // sul proxy). La voce resta amministrabile dal pannello Permessi.
             { name: "Registro Chiamate", href: "/chiamate", icon: Phone, roles: EVERYONE },
+        ],
+    },
+    // HUB UTILITY (Luca 12/08): Documentazione + Password insieme, subito DOPO
+    // l'hub Negozio (non dentro). Password coi ruoli di sempre.
+    {
+        type: "group",
+        label: "Utility",
+        icon: Wrench,
+        children: [
+            { name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
             { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
         ],
     },
     // CALCOLATORE $$$ (cantiere GARE 10/08): registra-vendita riassunto che
     // dice il commissioning di una vendita alla soglia scelta (pay tabellare).
-    // Link autonomo SOTTO il gruppo Negozio, prima di Calendario (Luca 10/08).
+    // Link autonomo sotto l'area Negozio, prima di Calendario (Luca 10/08).
     // Per ora admin/dev: si apre ai ragazzi quando arriva la vista gare.
     { type: "link", name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: EVERYONE },
-    { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
     { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
     { type: "link", name: "Assistente AI", href: "/assistente", icon: Sparkles, roles: MANAGERS },

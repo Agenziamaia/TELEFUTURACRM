@@ -39,10 +39,14 @@ const TIM = {
     mnp: [[1, 6], [7, 29], [30, null]],      // S3 = Extra Gara 30 MNP (+5€ già nei tiers)
     fisso: [[1, 5], [6, null]],
   },
-  // [pista, nome, tc, categoria, prodotto, offerta, punti, tiers, note]
+  // [pista, nome, tc, categoria, prodotto, offerta, punti, tiers, note, provenienza]
   righe: [
     ["mnp", "MNP con opzione", "Consumer", null, "Mobile MNP", null, 1, [17, 35, 40],
-      "fascia canone <9,99€; le offerte ≥9,99€ valgono 20/40/45 (quali sono? vedi Verifiche); +10€ se MNP da Iliad/Coop/Poste (provenienza non automatizzata); tetto lettera 50/55€"],
+      "fascia canone <9,99€; le offerte ≥9,99€ valgono 20/40/45 (quali sono? vedi Verifiche); tetto lettera 50/55€"],
+    // PROVENIENZA (Luca 12/08): il motore ora la legge — riga dedicata che
+    // vince sulla generica quando la MNP arriva da Iliad/CoopVoce/PosteMobile
+    ["mnp", "MNP con opzione · da Iliad/Coop/Poste (+10€)", "Consumer", null, "Mobile MNP", null, 1, [27, 45, 50],
+      "maggiorazione lettera +10€ sulla fascia <9,99€; tetto 50/55€", "iliad,coop,poste"],
     ["fisso", "NIP/ULL senza contenuto", "Consumer", "Fisso", "Fisso", "Tim Wifi Casa", 1, [50, 90],
       "con contenuto TV = 75/115 (aggancio da definire); Telepass primario ≥5 = +20€ su NIP/ULL; mancata domiciliazione −10€"],
   ],
@@ -70,15 +74,22 @@ const KENA = {
   soglie: { mnp: [[1, 5], [6, 20], [21, 40]] },   // oltre 40: pagate a fascia 1 (nota lettera)
   righe: [
     ...K_BASSA.map(off => ["mnp", `MNP ≤6,99 · ${off}`, "Consumer", null, "Mobile MNP", off, 1, [35, 41, 65],
-      "STD; STAR (da Iliad/FW/Coop/Poste) = 45/56/80; senza ric. automatica −15€"]),
+      "STD; senza ric. automatica −15€"]),
     ...K_ALTA.map(off => ["mnp", `MNP >6,99 · ${off}`, "Consumer", null, "Mobile MNP", off, 1, [40, 51, 70],
-      "STD; STAR (da Iliad/FW/Coop/Poste) = 50/66/90; senza ric. automatica −15€"]),
+      "STD; senza ric. automatica −15€"]),
+    // STAR (Luca 12/08, provenienza letta dal motore): MNP da Iliad/Fastweb/
+    // CoopVoce/PosteMobile — vince sulla riga STD della stessa offerta
+    ...K_BASSA.map(off => ["mnp", `MNP ≤6,99 STAR · ${off}`, "Consumer", null, "Mobile MNP", off, 1, [45, 56, 80],
+      "STAR da Iliad/FW/Coop/Poste; senza ric. automatica −15€", "iliad,fastweb,coop,poste"]),
+    ...K_ALTA.map(off => ["mnp", `MNP >6,99 STAR · ${off}`, "Consumer", null, "Mobile MNP", off, 1, [50, 66, 90],
+      "STAR da Iliad/FW/Coop/Poste; senza ric. automatica −15€", "iliad,fastweb,coop,poste"]),
     ["mnp", "AL (GA)", "Consumer", null, "Mobile GA", null, 0, [8, 10, 12],
       "segue gli scaglioni MNP senza portare pezzi; con MNP≥2 = 10/12/14 (non automatizzato)"],
   ],
   gettoni: [
     // Kena Pack: conta nei target, gettone fisso (riga con pista+punti e gettone=true)
-    ["Kena Pack · MNP", "Consumer", null, "Mobile MNP", "Kena Pack", 20, "conta nei target; STAR = 25€; storno 50% se non rinnovata entro il 7° mese", "mnp", 1],
+    ["Kena Pack · MNP", "Consumer", null, "Mobile MNP", "Kena Pack", 20, "conta nei target; storno 50% se non rinnovata entro il 7° mese", "mnp", 1],
+    ["Kena Pack · MNP STAR (da Iliad/FW/Coop/Poste)", "Consumer", null, "Mobile MNP", "Kena Pack", 25, "conta nei target; storno 50% se non rinnovata entro il 7° mese", "mnp", 1, "iliad,fastweb,coop,poste"],
     ["Kena Pack · AL", "Consumer", null, "Mobile GA", "Kena Pack", 10, "conta nel target AL", null, 0],
     ["Kena Easy Europe", "Consumer", null, "Mobile GA", "Kena Easy Europe", 5, "fuori target"],
     ["Kena Easy Europe Plus", "Consumer", null, "Mobile GA", "Kena Easy Europe Plus", 10, "fuori target"],
@@ -103,18 +114,18 @@ const KENA = {
             `insert into pay_soglie (brand, month, pista, tier, soglia_da, soglia_a) values ($1,$2,$3,$4,$5,$6)`,
             [T.brand, MONTH, pista, i + 1, scala[i][0], scala[i][1]]);
       let ord = 0;
-      for (const [pista, nome, tc, cat, prod, off, punti, tiers, note] of T.righe)
+      for (const [pista, nome, tc, cat, prod, off, punti, tiers, note, prov] of T.righe)
         await client.query(
           `insert into pay_righe (brand, month, pista, nome, tipo_cliente, categoria, prodotto, offerta,
-                                  punti, pay_base, pay_tiers, gettone, note, ordine, brand_vendita)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,null,$10,false,$11,$12,$1)`,
-          [T.brand, MONTH, pista, nome, tc, cat, prod, off, punti, tiers, note, ord++]);
-      for (const [nome, tc, cat, prod, off, importo, note, pista, punti] of T.gettoni)
+                                  punti, pay_base, pay_tiers, gettone, note, ordine, brand_vendita, provenienza)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,null,$10,false,$11,$12,$1,$13)`,
+          [T.brand, MONTH, pista, nome, tc, cat, prod, off, punti, tiers, note, ord++, prov || null]);
+      for (const [nome, tc, cat, prod, off, importo, note, pista, punti, prov] of T.gettoni)
         await client.query(
           `insert into pay_righe (brand, month, pista, nome, tipo_cliente, categoria, prodotto, offerta,
-                                  punti, pay_base, pay_tiers, gettone, note, ordine, brand_vendita)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'{}',true,$11,$12,$1)`,
-          [T.brand, MONTH, pista || null, nome, tc, cat, prod, off, punti || 0, importo, note, ord++]);
+                                  punti, pay_base, pay_tiers, gettone, note, ordine, brand_vendita, provenienza)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'{}',true,$11,$12,$1,$13)`,
+          [T.brand, MONTH, pista || null, nome, tc, cat, prod, off, punti || 0, importo, note, ord++, prov || null]);
       await client.query("commit");
     } catch (e) { await client.query("rollback"); console.error(`FAIL ${T.brand}:`, e.message); process.exit(1); }
     const n = async (t) => (await client.query(`select count(*) n from ${t} where brand=$1 and month=$2`, [T.brand, MONTH])).rows[0].n;
