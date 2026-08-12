@@ -19,7 +19,7 @@ import {
     Home, Send, Navigation, FolderOpen, MessageSquare, MessagesSquare, Sparkles,
     Database, FilePlus, CalendarDays, Clock, Clock3, Users, UsersRound, Smartphone, Store,
     Package, UserCog, FileText, KeyRound, Shield, Phone, Building2, Tag,
-    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator,
+    ClipboardList, Trophy, Layers, Compass, Target, Euro, Scissors, Radar, Calculator, Boxes,
 } from "lucide-react";
 
 export type NavIcon = React.ComponentType<{ className?: string }>;
@@ -99,6 +99,9 @@ export const NAVIGATION: NavEntry[] = [
         icon: Store,
         children: [
             { name: "Gestione Usati", href: "/usati", icon: Smartphone, roles: EVERYONE },
+            // MAGAZZINO (Luca 12/08): consultazione giacenze/seriali per tutto
+            // il negozio; carico e trasferimenti restano dei ruoli di gestione
+            { name: "Magazzino", href: "/magazzino", icon: Boxes, roles: EVERYONE },
             { name: "Ordine Merce", href: "/ordine-merce", icon: Package, roles: MANAGERS },
             { name: "Chiusura Negozio", href: "/chiusura", icon: Store, roles: EVERYONE },
             // CHIUSURA LINEA (Luca 01/08): ticketing disdette operatori
