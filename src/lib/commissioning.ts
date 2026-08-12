@@ -111,24 +111,54 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
  * si aggiorna da solo.
  */
 export async function caricaTabellare(brand: string, monthISO: string): Promise<Tabellare | null> {
-    const [ragazzi, azienda] = await Promise.all([
+    const [ragazzi, azienda, mappa] = await Promise.all([
         caricaTabellareLato(brand, monthISO, "ragazzi"),
         caricaTabellareLato(brand, monthISO, "azienda"),
+        caricaMappaSoglie(brand, monthISO),
     ]);
     if (!azienda) return ragazzi;
     const percDi = new Map(azienda.piste.map(p => [p.chiave, p.perc_ragazzi == null ? 100 : Number(p.perc_ragazzi)]));
     const scala = (v: number | null, pista: string | null) =>
         v == null ? null : Math.round(v * ((pista ? percDi.get(pista) ?? 100 : 100) / 100) * 100) / 100;
-    const deriva = (r: PayRiga): PayRiga => ({
-        ...r,
-        pay_base: scala(r.pay_base, r.pista),
-        pay_tiers: r.pay_tiers.map(v => scala(v, r.pista) as number),
-    });
+    const deriva = (r: PayRiga): PayRiga => {
+        // MAPPA SOGLIE (Luca 12/08, modello W3): dove esiste, ogni soglia
+        // NOSTRA pesca il valore azienda della soglia LORO mappata e applica
+        // la % di quella soglia (settata per pista, mai per prodotto) —
+        // la perc_ragazzi di pista non si somma, la mappa la sostituisce.
+        const m = r.pista ? mappa.get(r.pista) : undefined;
+        if (m && m.size && !r.gettone) {
+            const tiers: number[] = [];
+            const nMax = Math.max(...Array.from(m.keys()));
+            for (let tn = 1; tn <= nMax; tn++) {
+                const voce = m.get(tn);
+                const az = voce ? r.pay_tiers[voce.tier_loro - 1] : undefined;
+                tiers.push(voce == null || az == null ? (null as unknown as number)
+                    : Math.round(az * (voce.perc / 100) * 100) / 100);
+            }
+            return { ...r, pay_base: scala(r.pay_base, r.pista), pay_tiers: tiers };
+        }
+        return {
+            ...r,
+            pay_base: scala(r.pay_base, r.pista),
+            pay_tiers: r.pay_tiers.map(v => scala(v, r.pista) as number),
+        };
+    };
     if (!ragazzi) {
         // il ragazzi può avere SOLO gettoni senza piste (es. W3 dopo l'abbandono
-        // del vecchio tabellare): ripescali e affiancali al derivato.
-        const orfani = await caricaRigheOrfane(brand, monthISO);
-        return { ...azienda, derivato: true, righe: [...azienda.righe.map(deriva), ...orfani] };
+        // del vecchio tabellare): ripescali e affiancali al derivato. E può avere
+        // SOGLIE PROPRIE senza piste (esito Luca 12/08: la % di derivazione
+        // scala solo i pay, le soglie ragazzi si settano a mano) — dove ci sono,
+        // vincono su quelle azienda della stessa pista.
+        const [orfani, soglieRag] = await Promise.all([
+            caricaRigheOrfane(brand, monthISO),
+            caricaSoglieLato(brand, monthISO, "ragazzi"),
+        ]);
+        const manuali = new Set(soglieRag.map(s => s.pista));
+        return {
+            ...azienda, derivato: true,
+            soglie: [...azienda.soglie.filter(s => !manuali.has(s.pista)), ...soglieRag],
+            righe: [...azienda.righe.map(deriva), ...orfani],
+        };
     }
     // DERIVAZIONE PARZIALE (allineamento Luca 11/08): le piste azienda che il
     // ragazzi NON ha si derivano (× perc_ragazzi, 100 se non impostata) — così
@@ -138,12 +168,38 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
     const pisteApp = azienda.piste.filter(p => !chiaviRag.has(p.chiave));
     if (!pisteApp.length) return ragazzi;
     const chiaviApp = new Set(pisteApp.map(p => p.chiave));
+    // le soglie ragazzi (anche manuali, sulle piste derivate) vincono sempre
+    const pisteSoglieRag = new Set(ragazzi.soglie.map(s => s.pista));
     return {
         ...ragazzi, derivato: true,
         piste: [...ragazzi.piste, ...pisteApp],
-        soglie: [...ragazzi.soglie, ...azienda.soglie.filter(sg => chiaviApp.has(sg.pista))],
+        soglie: [...ragazzi.soglie, ...azienda.soglie.filter(sg => chiaviApp.has(sg.pista) && !pisteSoglieRag.has(sg.pista))],
         righe: [...ragazzi.righe, ...azienda.righe.filter(r => r.pista && chiaviApp.has(r.pista)).map(deriva)],
     };
+}
+
+/** Mappa soglie loro↔nostre + % (pay_mappa_soglie): pista → (tier_nostro → voce). */
+export type VoceMappaSoglie = { tier_loro: number; perc: number };
+export async function caricaMappaSoglie(brand: string, monthISO: string): Promise<Map<string, Map<number, VoceMappaSoglie>>> {
+    const out = new Map<string, Map<number, VoceMappaSoglie>>();
+    const { data } = await supabase.from("pay_mappa_soglie").select("pista, tier_nostro, tier_loro, perc")
+        .eq("brand", brand).eq("month", monthISO);
+    ((data || []) as Record<string, unknown>[]).forEach(r => {
+        const pista = String(r.pista);
+        if (!out.has(pista)) out.set(pista, new Map());
+        out.get(pista)!.set(Number(r.tier_nostro), { tier_loro: Number(r.tier_loro), perc: Number(r.perc) });
+    });
+    return out;
+}
+
+/** Solo le soglie di un lato (per il ragazzi con soglie manuali senza piste). */
+async function caricaSoglieLato(brand: string, monthISO: string, lato: string): Promise<PaySoglia[]> {
+    const { data } = await supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a")
+        .eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier");
+    return ((data || []) as Record<string, unknown>[]).map(s => ({
+        pista: String(s.pista), tier: Number(s.tier),
+        soglia_da: Number(s.soglia_da), soglia_a: s.soglia_a == null ? null : Number(s.soglia_a),
+    }));
 }
 
 /** Righe ragazzi senza pista madre (gettoni orfani, normalizzate). */
@@ -245,9 +301,26 @@ export function produzioneValidaGare(c: ContrattoPay): boolean {
     return true;
 }
 
-/** Contratti del brand nel mese (demo escluse in query, tetto 1000 superato). */
+/** CUTOFF dell'ora di scatto (esito Luca 12/08 sul Calendario gare): prima
+ *  dell'ora di scatto le vendite di OGGI non esistono per il perimetro gare —
+ *  niente commissioning, niente proiezioni: la produzione resta ferma al
+ *  giorno precedente e allo scatto la giornata entra tutta insieme (coerente
+ *  con "trascorsi" di giorniLavorativiMese, che conta oggi solo dopo l'ora).
+ *  Ritorna il giorno da escludere ("YYYY-MM-DD") o null se si conta tutto. */
+export async function cutoffProduzione(monthISO: string): Promise<string | null> {
+    const oggi = new Date();
+    const ymdOggi = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`;
+    if (!ymdOggi.startsWith(monthISO.slice(0, 7))) return null;    // mese diverso da oggi: niente da tagliare
+    const { data } = await supabase.from("pay_giorni_lavorativi").select("ora_scatto").eq("month", monthISO).maybeSingle();
+    const ora = data?.ora_scatto == null ? 19 : Number(data.ora_scatto);
+    return oggi.getHours() < ora ? ymdOggi : null;
+}
+
+/** Contratti del brand nel mese (demo escluse in query, tetto 1000 superato).
+ *  Le vendite di oggi entrano solo dopo l'ora di scatto (cutoffProduzione). */
 export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: string): Promise<ContrattoPay[]> {
     const { primo, ultimo } = estremiMese(monthISO);
+    const escludiOggi = await cutoffProduzione(monthISO);
     type Raw = ContrattoPay & { dettagli?: Record<string, unknown> | null };
     const { data } = await caricaTutte<Raw>((from, to) =>
         supabase.from("contracts")
@@ -271,7 +344,7 @@ export async function caricaContrattiMese(brandLabelPrefix: string, monthISO: st
             cod_ins: cod == null ? null : String(cod),
             provenienza: prov == null ? null : String(prov),
         };
-    }).filter(produzioneValidaGare);
+    }).filter(c => produzioneValidaGare(c) && (!escludiOggi || String(c.data || "").slice(0, 10) !== escludiOggi));
 }
 
 /**
