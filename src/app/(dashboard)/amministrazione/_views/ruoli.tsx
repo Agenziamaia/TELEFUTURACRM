@@ -21,7 +21,7 @@ import { useRoles, type RoleMerged } from "@/lib/useRoles";
 import { useAuth } from "@/context/AuthContext";
 import { notify, dbError } from "./toast";
 
-interface Persona { id: string; full_name: string; role: string; grade: string | null; primary_store: string | null; active: boolean }
+interface Persona { id: string; full_name: string; role: string; grade: string | null; primary_store: string | null; active: boolean; back_office_id?: string | null }
 
 const AREA_COLORS: Record<string, string> = { pv: "var(--tf-6366f1)", cc: "var(--tf-0ea5e9)", ob: "var(--tf-f59e0b)", sede: "var(--tf-a855f7)" };
 const slug = (s: string) => s.trim().toLowerCase()
@@ -41,7 +41,7 @@ export function RuoliView() {
     const [msg, setMsg] = useState("");
 
     const loadPersone = () => {
-        supabase.from("app_users").select("id,full_name,role,grade,primary_store,active").order("full_name")
+        supabase.from("app_users").select("id,full_name,role,grade,primary_store,active,back_office_id").order("full_name")
             .then(({ data, error }) => { if (error) dbError("utenti", error); else setPersone((data ?? []) as Persona[]); });
     };
     useEffect(loadPersone, []);
@@ -216,6 +216,22 @@ export function RuoliView() {
                                                 {!p.active && <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 font-bold">non attivo</span>}
                                                 <span className="ml-auto text-slate-500">{gradeLabelOf(r, p.grade)}</span>
                                                 {p.primary_store && <span className="text-slate-600">· {p.primary_store}</span>}
+                                                {/* BO RESPONSABILE (Luca 12/08, mondo agenzia): le pratiche di
+                                                    questo utente in Tracking PDA sono in carico al back office
+                                                    scelto — visibilità e malus a lui, mai all'agente */}
+                                                <select value={p.back_office_id || ""} title="Back office responsabile in Tracking PDA delle pratiche di questo utente"
+                                                    onChange={async (e) => {
+                                                        const v = e.target.value || null;
+                                                        const { error } = await supabase.from("app_users").update({ back_office_id: v }).eq("id", p.id);
+                                                        if (error) { alert("Non salvato: " + error.message); return; }
+                                                        setPersone((prev) => prev.map((x) => x.id === p.id ? { ...x, back_office_id: v } : x));
+                                                    }}
+                                                    className="bg-white/[0.05] border border-white/10 rounded px-1 py-0.5 text-[10px] text-slate-300 max-w-[130px]">
+                                                    <option value="">BO: —</option>
+                                                    {persone.filter((b) => b.active && /back_office|amministrativo/.test(b.role)).map((b) => (
+                                                        <option key={b.id} value={b.id} className="bg-slate-800">BO: {b.full_name}</option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         ))}
                                     </div>
