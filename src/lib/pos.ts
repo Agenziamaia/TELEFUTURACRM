@@ -34,32 +34,24 @@ export interface FormaPagamento {
     paymentType: number;
     riscosso: boolean;
     cash?: boolean;
-    hasSub?: boolean;   // "Altro": richiede la scelta di un sotto-tipo (vedi ALTRO_SOTTOTIPI)
     autoRate?: "finanziato" | "rate";
 }
+// "Altro" è stato SOSTITUITO dal Coupon (spec Francesco 12/08): il coupon non è una
+// forma di pagamento ma uno SCONTO che abbassa l'imponibile (vedi ScontrinoCassa +
+// /api/vendita/coupon + lib/coupons). Le forme qui sono i tender veri.
 export const FORME_PAGAMENTO: FormaPagamento[] = [
     { code: "CONTANTI", label: "Contanti", short: "CONTANTE", paymentType: 0, riscosso: true, cash: true },
     { code: "CARTA", label: "Carta", short: "CARTA", paymentType: 2, riscosso: true },
     { code: "NON_RISCOSSO", label: "Non Riscosso / Credito", short: "NON RISCOSSO", paymentType: 4, riscosso: false, autoRate: "rate" },
     { code: "BONIFICO", label: "Bonifico", short: "BONIFICO", paymentType: 2, riscosso: true },
     { code: "FINANZIAMENTO", label: "Finanziamento", short: "FINANZIAMENTO", paymentType: 4, riscosso: false, autoRate: "finanziato" },
-    { code: "ALTRO", label: "Altro", short: "ALTRO", paymentType: 0, riscosso: true, hasSub: true },
 ];
 export const formaPagamento = (code: string): FormaPagamento | undefined =>
     FORME_PAGAMENTO.find((f) => f.code === code);
 export const isFormaCash = (code: string): boolean => !!formaPagamento(code)?.cash;
 
-/** Sotto-tipi della forma "Altro" (spec Francesco): scegliendo Altro l'operatore
- *  seleziona uno di questi tre. Vanno sullo scontrino come descrizione del pagamento. */
-export const ALTRO_SOTTOTIPI = [
-    { code: "SCONTO_ANTICIPO", label: "Sconto Anticipo Ritiro Telefono", short: "SCONTO ANTICIPO" },
-    { code: "BUONO_USATO", label: "Buono Ritiro Telefono Usato", short: "BUONO USATO" },
-    { code: "BUONO", label: "Buono", short: "BUONO" },
-] as const;
-export const altroSottotipo = (code?: string) => ALTRO_SOTTOTIPI.find((s) => s.code === code);
-
-/** Una riga di pagamento scelta al POS. `sub` = sotto-tipo quando forma = "Altro". */
-export interface RigaPagamento { forma: string; importo: number; sub?: string; }
+/** Una riga di pagamento scelta al POS. */
+export interface RigaPagamento { forma: string; importo: number; }
 
 /** Una riga del carrello candidata allo scontrino. reparto/va_in_scontrino
  *  arrivano da marg_items (autoritativo lato server); qui il fallback per le

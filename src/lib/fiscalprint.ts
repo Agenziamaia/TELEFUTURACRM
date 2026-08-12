@@ -103,7 +103,7 @@ export interface FiscalPayment {
 
 const money = (n: unknown) => Number(n || 0).toFixed(2);
 
-export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment | FiscalPayment[] = {}, operator = "1"): string {
+export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment | FiscalPayment[] = {}, operator = "1", sconto = 0): string {
   if (!items || !items.length) throw new Error("Scontrino fiscale senza righe.");
   const rows = items.map((it) => {
     // ⚠️ SICUREZZA IVA (richiamo di Luca 01/08/2026): il `department` e' il REPARTO
@@ -143,9 +143,16 @@ export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment | F
       ` paymentType="${Number(p.paymentType ?? 0)}"` +
       ` index="0" justification="2" />`;
   }).join("");
+  // SCONTO COUPON (spec Francesco): abbassa l'IMPONIBILE. Sconto a valore sul
+  // subtotale (ripartito sulle aliquote dal RT) → va DOPO le righe e PRIMA del totale.
+  // adjustmentType da CONFERMARE sul RT reale (Epson RT: 1 = sconto valore su subtotale).
+  const scontoNum = +Number(sconto || 0).toFixed(2);
+  const adj = scontoNum > 0
+    ? `<printRecSubtotalAdjustment operator="${esc(operator)}" description="SCONTO COUPON" amount="${money(scontoNum)}" adjustmentType="1" justification="1" />`
+    : "";
   return `<printerFiscalReceipt>` +
     `<beginFiscalReceipt operator="${esc(operator)}" />` +
-    rows + total +
+    rows + adj + total +
     `<endFiscalReceipt operator="${esc(operator)}" />` +
     `</printerFiscalReceipt>`;
 }
@@ -153,14 +160,14 @@ export function xmlFiscalReceipt(items: FiscalItem[], payment: FiscalPayment | F
 /** Costruisce l'XML ePOS per un job in coda, dato il suo kind. */
 export function buildRequestXml(
   kind: string,
-  opts: { lines?: string[]; requestXml?: string; items?: FiscalItem[]; payment?: FiscalPayment | FiscalPayment[] } = {},
+  opts: { lines?: string[]; requestXml?: string; items?: FiscalItem[]; payment?: FiscalPayment | FiscalPayment[]; sconto?: number } = {},
 ): string | null {
   switch (kind) {
     case "status": return xmlQueryStatus();
     case "rt_status": return xmlQueryRtStatus();
     case "test": return xmlTestSlip();
     case "non_fiscal": return Array.isArray(opts.lines) ? xmlNonFiscal(opts.lines) : null;
-    case "fiscal_receipt": return Array.isArray(opts.items) && opts.items.length ? xmlFiscalReceipt(opts.items, opts.payment || {}) : null;
+    case "fiscal_receipt": return Array.isArray(opts.items) && opts.items.length ? xmlFiscalReceipt(opts.items, opts.payment || {}, "1", opts.sconto || 0) : null;
     case "z_report": return xmlZReport();
     case "raw": return typeof opts.requestXml === "string" && opts.requestXml.trim() ? opts.requestXml : null;
     default: return null;

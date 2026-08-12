@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabaseClient";
-import { arrotonda5, totaleRighe, FORME_PAGAMENTO, ALTRO_SOTTOTIPI, formaPagamento, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
+import { arrotonda5, totaleRighe, FORME_PAGAMENTO, isFormaCash, type RigaScontrino, type RigaPagamento } from "@/lib/pos";
 
 /* Modale "Incasso & Scontrino" — l'output fiscale di Registra Vendita.
    Si apre a vendita registrata: si compone il pagamento (fino a 3 forme, spec #2),
@@ -50,6 +50,11 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     // vanno comunque al loro RT).
     const [aziende, setAziende] = useState<{ code: string; label: string }[]>([]);
     const [aziendaSel, setAziendaSel] = useState<string | null>(null);
+    // Coupon sconto (spec Francesco): abbassa l'imponibile. Il residuo rigenera un nuovo coupon.
+    const [couponInput, setCouponInput] = useState("");
+    const [coupon, setCoupon] = useState<{ code: string; valore: number; sconto: number } | null>(null);
+    const [couponMsg, setCouponMsg] = useState("");
+    const [nuovoCoupon, setNuovoCoupon] = useState<{ code: string; valore: number } | null>(null);
 
     // reset a ogni apertura (nuova vendita) o chiusura del modale
     useEffect(() => {
@@ -58,6 +63,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         setFase("scelta"); setIncassato(0); setResto(0);
         setMsg(""); setEsclusi([]); setCashDone(false); setPaidCash(0); setIsTest(false);
         setAziende([]); setAziendaSel(null);
+        setCouponInput(""); setCoupon(null); setCouponMsg(""); setNuovoCoupon(null);
         const neg = data?.negozio;
         if (!neg) return;
         supabase.from("pos_rt").select("azienda, ragione_sociale, is_default").eq("negozio", neg).then(({ data: rows }) => {
@@ -70,22 +76,27 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         });
     }, [data]);
 
-    // Somme / bilancio del pagamento.
+    // Sconto coupon (capato al totale) → quanto resta DA PAGARE con le forme.
+    const scontoCoupon = coupon ? Math.min(coupon.sconto, totale) : 0;
+    const totaleDaPagare = +(totale - scontoCoupon).toFixed(2);
+    const coperto = totaleDaPagare <= 0.005; // coupon copre tutto: niente pagamento
+
+    // Somme / bilancio del pagamento (sul netto da pagare).
     const sommaPag = +righe.reduce((s, r) => s + (Number(r.importo) || 0), 0).toFixed(2);
-    const rimanente = +(totale - sommaPag).toFixed(2);
-    const bilanciato = Math.abs(rimanente) < 0.005 && righe.every((r) => Number(r.importo) > 0);
-    const cashPortion = +righe.filter((r) => isFormaCash(r.forma)).reduce((s, r) => s + (Number(r.importo) || 0), 0).toFixed(2);
+    const rimanente = +(totaleDaPagare - sommaPag).toFixed(2);
+    const bilanciato = coperto || (Math.abs(rimanente) < 0.005 && righe.every((r) => Number(r.importo) > 0));
+    const cashPortion = coperto ? 0 : +righe.filter((r) => isFormaCash(r.forma)).reduce((s, r) => s + (Number(r.importo) || 0), 0).toFixed(2);
     const cashRounded = arrotonda5(cashPortion);
     const arrotondamento = +(cashRounded - cashPortion).toFixed(2);
 
     // Forme di pagamento da inviare al RT: la quota contanti va arrotondata a 5 cent
-    // (la macchina lavora a ≥5c); le altre forme all'importo esatto.
+    // (la macchina lavora a ≥5c); le altre forme all'importo esatto. Se il coupon copre
+    // tutto, nessun tender (lo sconto azzera il netto).
     const pagamentiSend = (): RigaPagamento[] =>
-        righe.filter((r) => Number(r.importo) > 0)
+        coperto ? [] : righe.filter((r) => Number(r.importo) > 0)
             .map((r) => ({
                 forma: r.forma,
                 importo: isFormaCash(r.forma) ? arrotonda5(Number(r.importo)) : +Number(r.importo).toFixed(2),
-                ...(formaPagamento(r.forma)?.hasSub ? { sub: r.sub || ALTRO_SOTTOTIPI[0].code } : {}),
             }));
 
     // Incasso contanti via coda: enqueue → poll del job finché done/error.
@@ -118,7 +129,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         }
     }, []);
 
-    const stampaScontrino = useCallback(async (pagamenti: RigaPagamento[]) => {
+    const stampaScontrino = useCallback(async (pagamenti: RigaPagamento[], couponPayload?: { code: string; sconto: number }) => {
         setFase("stampa");
         setMsg("Emissione scontrino fiscale…");
         try {
@@ -131,6 +142,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                     items: data?.items ?? [],
                     azienda: aziendaSel,
                     pagamenti,
+                    coupon: couponPayload,
                 }),
             });
             const j = await res.json().catch(() => ({}));
@@ -180,7 +192,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             setCashDone(true);
             setPaidCash(cashRounded);
         }
-        const p = await stampaScontrino(pagamenti);
+        const p = await stampaScontrino(pagamenti, coupon ? { code: coupon.code, sconto: scontoCoupon } : undefined);
         setEsclusi(Array.isArray(p.esclusi) ? p.esclusi : []);
         if (!p.ok) {
             setFase("errore");
@@ -188,6 +200,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             return;
         }
         if (p.testMode) setIsTest(true);
+        if (p.nuovoCoupon) setNuovoCoupon(p.nuovoCoupon);
         // Se si stava COMPLETANDO un conto in sospeso, chiudilo.
         if (data.sospesoId) {
             try { await fetch("/api/vendita/sospendi", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: data.sospesoId, stato: "completata" }) }); } catch { /* non bloccare l'esito */ }
@@ -213,14 +226,26 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         }
     };
 
+    // ── coupon ────────────────────────────────────────────────────────────────
+    const applyCoupon = async () => {
+        setCouponMsg("");
+        const code = couponInput.trim().toUpperCase();
+        if (!code) return;
+        try {
+            const res = await fetch("/api/vendita/coupon", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "valida", code }) });
+            const j = await res.json().catch(() => ({}));
+            if (!j.valido) { setCouponMsg("Coupon non valido: " + (j.motivo || "sconosciuto")); return; }
+            const valore = Number(j.valore_residuo) || 0;
+            const sconto = +Math.min(valore, totale).toFixed(2);
+            setCoupon({ code: j.code || code, valore, sconto });
+            setRighe([{ forma: "CONTANTI", importo: +(totale - sconto).toFixed(2) }]);
+            setCouponInput("");
+        } catch { setCouponMsg("Errore nella verifica del coupon."); }
+    };
+    const removeCoupon = () => { setCoupon(null); setCouponMsg(""); setRighe([{ forma: "CONTANTI", importo: totale }]); };
+
     // ── gestione righe pagamento ──────────────────────────────────────────────
-    const setForma = (i: number, forma: string) => setRighe((rs) => rs.map((r, k) => {
-        if (k !== i) return r;
-        // "Altro": preseleziona il primo sotto-tipo; altrimenti azzera sub.
-        const sub = formaPagamento(forma)?.hasSub ? (r.sub || ALTRO_SOTTOTIPI[0].code) : undefined;
-        return { ...r, forma, sub };
-    }));
-    const setSub = (i: number, sub: string) => setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, sub } : r)));
+    const setForma = (i: number, forma: string) => setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, forma } : r)));
     const setImporto = (i: number, val: string) => {
         const n = Math.max(0, Number(String(val).replace(",", ".")) || 0);
         setRighe((rs) => rs.map((r, k) => (k === i ? { ...r, importo: n } : r)));
@@ -229,7 +254,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         if (rs.length >= 3) return rs;
         const usate = new Set(rs.map((r) => r.forma));
         const next = FORME_PAGAMENTO.find((f) => !usate.has(f.code)) || FORME_PAGAMENTO[1];
-        const manca = +(totale - rs.reduce((s, r) => s + (Number(r.importo) || 0), 0)).toFixed(2);
+        const manca = +(totaleDaPagare - rs.reduce((s, r) => s + (Number(r.importo) || 0), 0)).toFixed(2);
         return [...rs, { forma: next.code, importo: manca > 0 ? manca : 0 }];
     });
     const removeRiga = (i: number) => setRighe((rs) => (rs.length <= 1 ? rs : rs.filter((_, k) => k !== i)));
@@ -253,8 +278,14 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
 
                 <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">Totale</span>
-                    <span className="text-white font-bold text-xl tabular-nums">{eur(totale)}</span>
+                    <span className={"font-bold tabular-nums " + (scontoCoupon > 0 ? "text-slate-500 line-through text-base" : "text-white text-xl")}>{eur(totale)}</span>
                 </div>
+                {scontoCoupon > 0 && (
+                    <div className="flex items-center justify-between text-sm -mt-2">
+                        <span className="text-emerald-300">🎟️ Sconto coupon {eur(-scontoCoupon)} · da pagare</span>
+                        <span className="text-white font-bold text-xl tabular-nums">{eur(totaleDaPagare)}</span>
+                    </div>
+                )}
 
                 {fase === "scelta" && (
                     <>
@@ -272,33 +303,46 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                             </div>
                         )}
 
+                        {/* Coupon: sconto che abbassa l'imponibile (sostituisce "Altro") */}
+                        <div className="space-y-1.5">
+                            <p className="text-[11px] text-slate-500">Coupon sconto (dal ritiro usato)</p>
+                            {!coupon ? (
+                                <div className="flex gap-2">
+                                    <input value={couponInput} onChange={(e) => setCouponInput(e.target.value.toUpperCase())} onKeyDown={(e) => { if (e.key === "Enter") applyCoupon(); }}
+                                        placeholder="CPN-XXX-XXXX" spellCheck={false}
+                                        className="flex-1 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm px-3 py-2 outline-none focus:border-emerald-400/60 uppercase tracking-wide" />
+                                    <button type="button" onClick={applyCoupon} disabled={!couponInput.trim()}
+                                        className="shrink-0 px-4 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-sm font-semibold hover:bg-emerald-500/30 disabled:opacity-40">Applica</button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-between rounded-xl bg-emerald-500/10 border border-emerald-400/30 px-3 py-2">
+                                    <span className="text-sm text-emerald-200">🎟️ {coupon.code} — sconto {eur(scontoCoupon)}{coupon.valore > scontoCoupon ? ` (di ${eur(coupon.valore)})` : ""}</span>
+                                    <button type="button" onClick={removeCoupon} className="text-emerald-300/70 hover:text-rose-300 text-lg leading-none">×</button>
+                                </div>
+                            )}
+                            {couponMsg && <p className="text-[11px] text-rose-300">{couponMsg}</p>}
+                        </div>
+
+                        {coperto ? (
+                            <p className="text-sm text-emerald-300 text-center py-1">Coperto interamente dal coupon — nessun pagamento da incassare.</p>
+                        ) : (
                         <div className="space-y-2">
                             <p className="text-[11px] text-slate-500">Forme di pagamento (max 3)</p>
                             {righe.map((r, i) => (
-                                <div key={i} className="space-y-1.5">
-                                    <div className="flex gap-2 items-center">
-                                        <select value={r.forma} onChange={(e) => setForma(i, e.target.value)}
-                                            className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm px-2.5 py-2 outline-none focus:border-violet-400/60">
-                                            {FORME_PAGAMENTO.map((f) => (
-                                                <option key={f.code} value={f.code} className="bg-slate-800">{f.label}</option>
-                                            ))}
-                                        </select>
-                                        <div className="relative w-28 shrink-0">
-                                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-sm">€</span>
-                                            <input type="number" min={0} step={0.05} value={r.importo || ""} onChange={(e) => setImporto(i, e.target.value)}
-                                                className="w-full rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm text-right tabular-nums pl-5 pr-2 py-2 outline-none focus:border-violet-400/60" />
-                                        </div>
-                                        <button type="button" onClick={() => removeRiga(i)} disabled={righe.length <= 1}
-                                            className="shrink-0 w-8 h-8 rounded-lg border border-white/10 text-slate-400 hover:text-rose-300 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-lg leading-none">×</button>
+                                <div key={i} className="flex gap-2 items-center">
+                                    <select value={r.forma} onChange={(e) => setForma(i, e.target.value)}
+                                        className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm px-2.5 py-2 outline-none focus:border-violet-400/60">
+                                        {FORME_PAGAMENTO.map((f) => (
+                                            <option key={f.code} value={f.code} className="bg-slate-800">{f.label}</option>
+                                        ))}
+                                    </select>
+                                    <div className="relative w-28 shrink-0">
+                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 text-sm">€</span>
+                                        <input type="number" min={0} step={0.05} value={r.importo || ""} onChange={(e) => setImporto(i, e.target.value)}
+                                            className="w-full rounded-xl bg-white/5 border border-white/10 text-slate-100 text-sm text-right tabular-nums pl-5 pr-2 py-2 outline-none focus:border-violet-400/60" />
                                     </div>
-                                    {formaPagamento(r.forma)?.hasSub && (
-                                        <select value={r.sub || ALTRO_SOTTOTIPI[0].code} onChange={(e) => setSub(i, e.target.value)}
-                                            className="w-full rounded-xl bg-white/5 border border-violet-400/30 text-slate-200 text-xs px-2.5 py-1.5 outline-none focus:border-violet-400/60">
-                                            {ALTRO_SOTTOTIPI.map((s) => (
-                                                <option key={s.code} value={s.code} className="bg-slate-800">↳ {s.label}</option>
-                                            ))}
-                                        </select>
-                                    )}
+                                    <button type="button" onClick={() => removeRiga(i)} disabled={righe.length <= 1}
+                                        className="shrink-0 w-8 h-8 rounded-lg border border-white/10 text-slate-400 hover:text-rose-300 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent text-lg leading-none">×</button>
                                 </div>
                             ))}
                             <div className="flex items-center justify-between">
@@ -310,6 +354,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                                 </span>
                             </div>
                         </div>
+                        )}
 
                         {cashRounded > 0 && (
                             <p className="text-[11px] text-slate-500 text-center">
@@ -353,6 +398,11 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                         <div className="text-4xl">✅</div>
                         <p className="text-emerald-300 font-semibold">{msg}</p>
                         {cashPortion > 0 && <p className="text-sm text-slate-300">Incassato {eur(incassato)} · Resto <span className="text-white font-bold">{eur(resto)}</span></p>}
+                        {nuovoCoupon && (
+                            <div className="text-left text-[12px] text-emerald-100 bg-emerald-500/10 border border-emerald-400/30 rounded-lg p-2">
+                                🎟️ Nuovo coupon resto: <b className="tracking-wide">{nuovoCoupon.code}</b> ({eur(nuovoCoupon.valore)}) — consegnalo al cliente.
+                            </div>
+                        )}
                         {!!esclusi.length && (
                             <div className="text-left text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-lg p-2">
                                 Voci NON stampate (reparto non assegnato in Catalogo): {esclusi.map((e) => e.description).join(", ")}

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 import { buildRequestXml } from "@/lib/fiscalprint";
-import { formaPagamento, altroSottotipo } from "@/lib/pos";
+import { formaPagamento } from "@/lib/pos";
+import { validaCoupon, redimiCoupon } from "@/lib/coupons";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,24 +99,42 @@ export async function POST(req: Request) {
     // Applicabile solo con UN unico scontrino (un'unica azienda): con più aziende
     // la ripartizione dei tender per società è ambigua → si torna al pagamento singolo.
     const pagamentiIn: any[] = Array.isArray(b.pagamenti) ? b.pagamenti.slice(0, 3) : [];
-    const buildPayments = () => {
+    const buildPayments = (defaultAmount?: number) => {
         if (pagamentiIn.length && nGruppi === 1) {
             return pagamentiIn
                 .filter((p) => Number(p?.importo) > 0)
                 .map((p) => {
                     const f = formaPagamento(String(p.forma));
-                    // "Altro" → la descrizione è il sotto-tipo scelto (Sconto Anticipo / Buono Usato / Buono).
-                    const desc = f?.hasSub ? (altroSottotipo(p.sub)?.short || "ALTRO") : (f?.short || "CONTANTE");
-                    return { description: desc, paymentType: f ? f.paymentType : 0, amount: Number(p.importo) };
+                    return { description: (f?.short || "CONTANTE"), paymentType: f ? f.paymentType : 0, amount: Number(p.importo) };
                 });
         }
         const single: any = { description: paymentDescr, paymentType: Number.isFinite(Number(b.paymentType)) ? Number(b.paymentType) : 0 };
-        if (b.paidAmount != null && nGruppi === 1) single.amount = Number(b.paidAmount);
+        if (defaultAmount != null) single.amount = defaultAmount;
+        else if (b.paidAmount != null && nGruppi === 1) single.amount = Number(b.paidAmount);
         return [single];
     };
 
+    // COUPON (spec Francesco): sconto che ABBASSA l'imponibile. Solo con UN unico
+    // scontrino (una società). Si VALIDA qui (senza consumare); si CONSUMA solo DOPO
+    // aver messo in coda lo scontrino, così un errore non brucia il coupon. Monouso:
+    // il residuo (valore - sconto) rigenera un nuovo coupon da dare al cliente.
+    let couponSconto = 0;
+    let couponCode: string | null = null;
+    let nuovoCoupon: { code: string; valore: number } | null = null;
+    if (b.coupon && b.coupon.code && nGruppi === 1 && Number(b.coupon.sconto) > 0) {
+        const scontoReq = +Number(b.coupon.sconto).toFixed(2);
+        const v = await validaCoupon(String(b.coupon.code));
+        if (!v.valido) return NextResponse.json({ error: "Coupon: " + (v.motivo || "non valido") }, { status: 400 });
+        if ((v.valore_residuo || 0) + 0.001 < scontoReq) return NextResponse.json({ error: `Coupon: valore cambiato (residuo ${(v.valore_residuo || 0).toFixed(2)}€), riprova` }, { status: 400 });
+        couponSconto = scontoReq;
+        couponCode = v.code || String(b.coupon.code);
+    }
+
     for (const [az, items] of Object.entries(gruppi)) {
         const totale = +(items.reduce((t, i) => t + i.unitPrice * i.quantity, 0)).toFixed(2);
+        // lo sconto coupon vale solo col singolo scontrino (nGruppi===1 → un solo giro).
+        const scontoGruppo = nGruppi === 1 ? Math.min(couponSconto, totale) : 0;
+        const netTotale = +(totale - scontoGruppo).toFixed(2);
         let request_xml: string | null;
         let kind: string;
         try {
@@ -127,7 +146,8 @@ export async function POST(req: Request) {
                     "",
                     ...items.map((i) => `${i.description}  x${i.quantity}   EUR ${(i.unitPrice * i.quantity).toFixed(2)}`),
                     "--------------------------------",
-                    `TOTALE        EUR ${totale.toFixed(2)}`,
+                    ...(scontoGruppo > 0 ? [`SCONTO COUPON  -EUR ${scontoGruppo.toFixed(2)}`] : []),
+                    `TOTALE        EUR ${netTotale.toFixed(2)}`,
                     `Pagamento: ${paymentDescr}`,
                     "",
                     "Non valido ai fini fiscali",
@@ -135,7 +155,7 @@ export async function POST(req: Request) {
                 request_xml = buildRequestXml("non_fiscal", { lines });
                 kind = "non_fiscal";
             } else {
-                request_xml = buildRequestXml("fiscal_receipt", { items, payment: buildPayments() });
+                request_xml = buildRequestXml("fiscal_receipt", { items, payment: buildPayments(netTotale), sconto: scontoGruppo });
                 kind = "fiscal_receipt";
             }
         } catch (e: any) {
@@ -151,8 +171,16 @@ export async function POST(req: Request) {
             status: "pending",
         }).select("id").single();
         if (error) return NextResponse.json({ error: error.message, receipts }, { status: 500 });
-        receipts.push({ azienda: az === "__def" ? null : az, rt: rtFor(az), jobId: data.id, stampate: items.length, totale });
+        receipts.push({ azienda: az === "__def" ? null : az, rt: rtFor(az), jobId: data.id, stampate: items.length, totale: netTotale, sconto: scontoGruppo });
     }
 
-    return NextResponse.json({ ok: true, testMode, receipts, stampate: totalPrintable, esclusi });
+    // Ora che lo scontrino è in coda, CONSUMA il coupon (monouso) e rigenera il residuo.
+    let couponWarning: string | undefined;
+    if (couponCode && couponSconto > 0) {
+        const c = await redimiCoupon(couponCode, couponSconto, `scontrino:${negozio || ""}`, negozio, b.createdBy || null);
+        if (c.ok) nuovoCoupon = c.nuovoCoupon || null;
+        else couponWarning = c.error || "coupon non consumato";
+    }
+
+    return NextResponse.json({ ok: true, testMode, receipts, stampate: totalPrintable, esclusi, scontoCoupon: couponSconto, nuovoCoupon, couponWarning });
 }

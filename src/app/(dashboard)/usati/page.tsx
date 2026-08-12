@@ -1484,7 +1484,7 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
       <div className="space-y-5">
         <div className="text-sm font-bold text-white mb-2"> Metodo di Pagamento</div>
         <div className="grid grid-cols-3 gap-3">
-          {([{ key: "contanti", label: "Contanti", icon: "" }, { key: "buono", label: "Buono", icon: "" }, { key: "bonifico", label: "Bonifico", icon: "" }] as const).map(m => (
+          {([{ key: "contanti", label: "Contanti", icon: "" }, { key: "buono", label: "Codice Sconto", icon: "" }, { key: "bonifico", label: "Bonifico", icon: "" }] as const).map(m => (
             <div key={m.key} onClick={() => setMetodoPagamento(m.key)}
               className={`p-5 rounded-xl border cursor-pointer text-center transition-all ${metodoPagamento === m.key ? "bg-purple-500/10 border-purple-500/40" : "bg-white/[0.02] border-white/5 hover:border-white/10"}`}>
               <div className="text-3xl mb-2">{m.icon}</div>
@@ -1492,6 +1492,11 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
             </div>
           ))}
         </div>
+        {metodoPagamento === "buono" && (
+          <p className="text-[12px] text-emerald-300 bg-emerald-500/10 border border-emerald-400/30 rounded-lg px-3 py-2">
+            🎟️ Alla registrazione il sistema genera un <b>codice sconto univoco</b> del valore del ritiro: consegnalo al cliente, lo userà in cassa come sconto su un acquisto.
+          </p>
+        )}
         {metodoPagamento === "bonifico" && (
           <div className="space-y-2">
             <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tipologia bonifico</div>
@@ -1747,6 +1752,8 @@ function GestioneUsatiInner() {
   const [prezzoA, setPrezzoA] = useState("");
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [showRegistra, setShowRegistra] = useState(false);
+  // Codice sconto generato dal ritiro (pagamento "Codice Sconto"): da consegnare al cliente.
+  const [couponGenerato, setCouponGenerato] = useState<{ code: string; valore: number } | null>(null);
   const [sortKey, setSortKey] = useState<keyof Device | "">("");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [ricambiFilter, setRicambiFilter] = useState<string[]>([]);
@@ -2050,6 +2057,22 @@ function GestioneUsatiInner() {
     }
     if (e) { alert("Registrazione non riuscita: " + e.message); return; }
     setDevices(p => [rowToDevice(inserted as UsatiRow), ...p]);
+    // ── CODICE SCONTO (spec Francesco): pagando il cliente col coupon si genera UN
+    // codice unico di valore = prezzo di ritiro, da consegnare al cliente (si spende
+    // in cassa come sconto). Best-effort: l'acquisto è già salvo.
+    if (data.metodoPagamento === "buono") {
+      try {
+        const anaD = (data.anagrafica ?? {}) as Record<string, string>;
+        const nomeCliente = [anaD.nome, anaD.cognome].filter(Boolean).join(" ").trim() || anaD.ragioneSociale || null;
+        const res = await fetch("/api/vendita/coupon", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "genera", valore: Number(data.prezzoAcquisto) || 0, negozio: data.negozio, cliente: nomeCliente, usato_id: (inserted as { id: number }).id, origine: "usato", createdBy: data.venditore }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (j?.ok && j.code) setCouponGenerato({ code: j.code, valore: Number(j.valore) || 0 });
+        else alert("Attenzione: codice sconto NON generato (" + (j?.error || "errore") + "). Il ritiro è salvato.");
+      } catch { alert("Attenzione: codice sconto NON generato (rete). Il ritiro è salvato."); }
+    }
     // ── NOTIFICHE INCARICHI (Luca 29/07) — best-effort, l'acquisto è già salvo ──
     if (data.metodoPagamento === "bonifico") {
       try {
@@ -2362,6 +2385,22 @@ function GestioneUsatiInner() {
       {/* Modals */}
       {selectedDevice && <DevicePanel device={selectedDevice} onClose={() => setSelectedDevice(null)} onSave={u => { handleSaveDevice(u); setSelectedDevice(u); }} onDeleted={(id) => { setDevices(p => p.filter(d => d.id !== id)); setSelectedDevice(null); }} />}
       {showRegistra && <RegistraUsatoPanel onClose={() => setShowRegistra(false)} onSave={handleRegistra} />}
+      {couponGenerato && createPortal(
+        <div onClick={() => setCouponGenerato(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", zIndex: 3200, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--tf-w20, #1e2130)", border: "1px solid rgba(255,255,255,.1)", borderRadius: 16, maxWidth: 420, width: "100%", padding: 24, textAlign: "center", boxShadow: "0 8px 40px rgba(0,0,0,.4)" }}>
+            <div style={{ fontSize: 40 }}>🎟️</div>
+            <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800, color: "#fff" }}>Codice sconto generato</div>
+            <p style={{ marginTop: 4, fontSize: 13, color: "#94a3b8" }}>Consegnalo al cliente: lo userà in cassa come sconto su un acquisto.</p>
+            <div style={{ margin: "16px 0", fontSize: 24, fontWeight: 800, color: "#6ee7b7", letterSpacing: 3, fontFamily: "monospace", userSelect: "all" }}>{couponGenerato.code}</div>
+            <div style={{ fontSize: 14, color: "#cbd5e1" }}>Valore: <b style={{ color: "#fff" }}>€ {couponGenerato.valore.toFixed(2).replace(".", ",")}</b></div>
+            <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+              <button onClick={() => { try { navigator.clipboard?.writeText(couponGenerato.code); } catch { /* noop */ } }} style={{ flex: 1, padding: "10px", borderRadius: 12, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)", color: "#e2e8f0", fontSize: 13, cursor: "pointer" }}>Copia codice</button>
+              <button onClick={() => setCouponGenerato(null)} className="primary-btn" style={{ flex: 1, padding: "10px", fontSize: 13, fontWeight: 600 }}>Chiudi</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* ── REGOLE del laboratorio (Luca 31/07): dentro la sezione, come il
           tracking PDA — solo admin ── */}
