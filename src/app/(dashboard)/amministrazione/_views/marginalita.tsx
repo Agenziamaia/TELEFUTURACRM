@@ -35,6 +35,14 @@ const REPARTI: { n: number; label: string }[] = [
     ...Array.from({ length: 30 }, (_, k) => ({ n: k + 11, label: `Reparto ${k + 11}` })),
 ];
 
+/* AZIENDA / RAGIONE SOCIALE che emette il prodotto (multi-societario, spec Francesco #1):
+   nello stesso negozio si fattura con P.IVA diverse su RT diversi. "default" = azienda
+   principale del negozio (mappa pos_rt). Es.: "PLX" va assegnato a T1. */
+const AZIENDE: { code: string; label: string }[] = [
+    { code: "T1", label: "T1 · Telefutura 1" },
+    { code: "T2", label: "T2 · Telefutura 2" },
+];
+
 /* CAT-03: set curato di emoji per le icone di voci e categorie (le storiche di
    Registra Vendita + generiche); in piu' campo libero per qualsiasi emoji. */
 const EMOJI_SET = [
@@ -110,6 +118,7 @@ interface MargItem {
     icon: string | null;
     va_in_scontrino: boolean;
     reparto: number | null;
+    azienda: string | null;
 }
 
 export function MarginalitaView() {
@@ -293,6 +302,7 @@ function CatItems({ catId, items, onChange }: { catId: string; items: MargItem[]
                 <span className="w-32">Brand</span>
                 <span className="w-16 text-center">IVA</span>
                 <span className="w-36 text-center">Reparto</span>
+                <span className="w-28 text-center">Azienda</span>
                 <span className="w-28">Regime</span>
                 <span className="w-28 text-right">Costo / %</span>
                 <span className="w-28 text-right">Prezzo default</span>
@@ -325,7 +335,7 @@ function ItemRow({ r, onChange }: { r: MargItem; onChange: () => void }) {
             company_cost: x.company_cost, margin_percent: x.margin_percent,
             default_price: x.default_price, visible_value: x.visible_value,
             auto_link: x.auto_link, active: x.active, icon: x.icon,
-            va_in_scontrino: x.va_in_scontrino, reparto: x.reparto,
+            va_in_scontrino: x.va_in_scontrino, reparto: x.reparto, azienda: x.azienda,
         }).eq("id", r.id);
         if (!dbError("Salvataggio voce", error)) onChange();
     };
@@ -355,6 +365,15 @@ function ItemRow({ r, onChange }: { r: MargItem; onChange: () => void }) {
             >
                 <option value="">— reparto —</option>
                 {REPARTI.map((rp) => <option key={rp.n} value={rp.n}>{rp.n} · {rp.label}</option>)}
+            </select>
+            <select
+                value={f.azienda ?? ""}
+                onChange={(e) => { const v = e.target.value || null; setF({ ...f, azienda: v }); save({ azienda: v }); }}
+                className="glass-input w-28 py-1 text-[11px]"
+                title="Ragione sociale/RT che emette questo prodotto (multi-societario). Vuoto = azienda di default del negozio."
+            >
+                <option value="">— default —</option>
+                {AZIENDE.map((a) => <option key={a.code} value={a.code}>{a.label}</option>)}
             </select>
             <select value={f.cost_mode} onChange={(e) => { setF({ ...f, cost_mode: e.target.value }); save({ cost_mode: e.target.value }); }} className="glass-input w-28 py-1 text-[11px]" title="Regime margine">
                 <option value="costo_fisso">costo fisso</option>
