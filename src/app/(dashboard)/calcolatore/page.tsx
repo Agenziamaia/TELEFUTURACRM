@@ -95,13 +95,16 @@ export default function CalcolatorePage() {
     const [prodId, setProdId] = useState<string | null>(null);
     const [offId, setOffId] = useState<string | null>(null);
     const [tierSel, setTierSel] = useState<number | null>(null);   // null = non ancora toccata (usa live)
+    // PROVENIENZA (Luca 12/08): alcune righe pay valgono solo per certe
+    // provenienze (TIM +10 da Iliad/Coop/Poste, Kena STAR) — null = standard
+    const [provSel, setProvSel] = useState<string | null>(null);
     const [mostraScoperte, setMostraScoperte] = useState(false);
 
     useEffect(() => {
         if (!brand) return;
         let vivo = true;
         setCaricaCat(true); setCtx(null);
-        setTipoCli(null); setCatId(null); setProdId(null); setOffId(null); setTierSel(null);
+        setTipoCli(null); setCatId(null); setProdId(null); setOffId(null); setTierSel(null); setProvSel(null);
         (async () => {
             const [cRes, pRes] = await Promise.all([
                 supabase.from("catalog_categorie").select("id, nome, ordine").order("ordine").limit(500),
@@ -164,13 +167,23 @@ export default function CalcolatorePage() {
     const esclusaProd = !!(prodSel && sostituzioneSim({ categoria: catSel?.nome, prodotto: prodSel.nome }));
     const esclusaSel = esclusaProd || !!(offSel && esclusaDalleGare({ categoria: catSel?.nome, prodotto: prodSel?.nome, offerta: offSel.nome }));
 
+    // le provenienze che questo tabellare distingue (token → etichetta leggibile)
+    const provOpzioni = useMemo(() => {
+        if (!tab) return [];
+        const set = new Set<string>();
+        tab.righe.forEach(r => String(r.provenienza || "").split(",").forEach(t => { const x = t.trim(); if (x) set.add(x); }));
+        const LABEL: Record<string, string> = { iliad: "Iliad", coop: "CoopVoce", poste: "PosteMobile", fastweb: "Fastweb" };
+        return Array.from(set).map(t => ({ token: t, label: LABEL[t] || t }));
+    }, [tab]);
+
     // risoluzione riga pay
     const riga: PayRiga | null = useMemo(() => {
         if (!tab || !offSel || !prodSel || !catSel) return null;
         return matchRigaTabellare(tab.righe, {
             tipo_cliente: prodSel.tipo_cliente, categoria: catSel.nome, prodotto: prodSel.nome, offerta: offSel.nome,
+            provenienza: provSel,
         }, brand);
-    }, [tab, offSel, prodSel, catSel, brand]);
+    }, [tab, offSel, prodSel, catSel, brand, provSel]);
 
     const scalaRiga = useMemo(() =>
         (tab && riga?.pista) ? tab.soglie.filter(s => s.pista === riga.pista).sort((a, b) => a.tier - b.tier) : [],
@@ -299,7 +312,7 @@ export default function CalcolatorePage() {
                                 <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Prodotto</div>
                                 <div className="flex gap-2 flex-wrap mb-4">
                                     {prodsCat.map(p => (
-                                        <Pill key={p.id} on={prodId === p.id} onClick={() => { setProdId(p.id); setOffId(null); setTierSel(null); }}>{p.nome}</Pill>
+                                        <Pill key={p.id} on={prodId === p.id} onClick={() => { setProdId(p.id); setOffId(null); setTierSel(null); setProvSel(null); }}>{p.nome}</Pill>
                                     ))}
                                 </div>
                             </>}
@@ -325,6 +338,20 @@ export default function CalcolatorePage() {
                                     })}
                                     {!offsProd.length && <div className="text-slate-500 text-sm">Nessuna offerta per questo prodotto.</div>}
                                 </div>
+                                {/* PROVENIENZA (Luca 12/08): dove il tabellare la distingue
+                                    (TIM +10 · Kena STAR) si può scegliere da che operatore
+                                    arriva la MNP — Standard = nessuna maggiorazione */}
+                                {provOpzioni.length > 0 && (
+                                    <div className="mt-4">
+                                        <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Operatore di provenienza</div>
+                                        <div className="flex gap-2 flex-wrap">
+                                            <Pill on={provSel == null} onClick={() => { setProvSel(null); setTierSel(null); }}>Standard</Pill>
+                                            {provOpzioni.map(p => (
+                                                <Pill key={p.token} on={provSel === p.token} onClick={() => { setProvSel(p.token); setTierSel(null); }}>{p.label}</Pill>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </>}
                         </div>
                     )}

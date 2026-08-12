@@ -30,6 +30,10 @@ export type PayRiga = {
     tipo_cliente: string | null; categoria: string | null; prodotto: string | null;
     offerta: string | null; opzione: string | null;
     brand_vendita: string | null;               // NULL = qualsiasi brand di vendita
+    // token di provenienza separati da virgola ("iliad,coop,poste"): la riga
+    // vale SOLO per le vendite con quell'Operatore di Provenienza (prefisso
+    // normalizzato). NULL = qualsiasi. Es. TIM MNP +10€, Kena STAR (Luca 12/08).
+    provenienza?: string | null;
     moltiplicatore?: boolean;                   // true = i tiers sono MOLTIPLICATORI del canone dell'offerta (modello W3)
     punti: number; pay_base: number | null; pay_tiers: number[];
     gettone: boolean; attivo: boolean; note: string | null; ordine: number;
@@ -78,7 +82,7 @@ async function caricaTabellareLato(brand: string, monthISO: string, lato: string
     const [pisteRes, soglieRes, righeRes] = await Promise.all([
         supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("ordine"),
         supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", brand).eq("month", monthISO).eq("lato", lato).order("tier"),
-        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
             .eq("brand", brand).eq("month", monthISO).eq("lato", lato).eq("attivo", true).order("ordine").limit(1000),
     ]);
     const piste = (pisteRes.data || []) as PayPista[];
@@ -145,7 +149,7 @@ export async function caricaTabellare(brand: string, monthISO: string): Promise<
 /** Righe ragazzi senza pista madre (gettoni orfani, normalizzate). */
 async function caricaRigheOrfane(brand: string, monthISO: string): Promise<PayRiga[]> {
     const { data } = await supabase.from("pay_righe")
-        .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
+        .select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, opzione, brand_vendita, provenienza, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine")
         .eq("brand", brand).eq("month", monthISO).eq("lato", "ragazzi").eq("attivo", true).order("ordine").limit(1000);
     return ((data || []) as Record<string, unknown>[]).map(r => ({
         ...(r as unknown as PayRiga),
@@ -169,9 +173,19 @@ const eq = (a: unknown, b: unknown) =>
  * (lettera A VS che paga anche i pezzi Fastweb) le righe con brand_vendita
  * valorizzato valgono SOLO per quel brand (VF e FW condividono nomi offerta).
  */
+/** normalizza un operatore di provenienza per il confronto ("CoopVoce" → "coopvoce") */
+const normProv = (v: unknown) => String(v || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+/** la riga con provenienza vale solo se la vendita arriva da uno dei suoi token
+ *  (prefisso normalizzato: "coop" prende "CoopVoce", "poste" prende "PosteMobile") */
+function provenienzaOk(tokens: string, vendita: unknown): boolean {
+    const pv = normProv(vendita);
+    if (!pv) return false;
+    return tokens.split(",").map(normProv).filter(Boolean).some(t => pv.startsWith(t));
+}
+
 export function matchRigaTabellare(
     righe: PayRiga[],
-    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null },
+    c: { tipo_cliente?: string | null; categoria?: string | null; prodotto?: string | null; offerta?: string | null; provenienza?: string | null },
     brandVendita?: string | null,
 ): PayRiga | null {
     let best: PayRiga | null = null;
@@ -184,6 +198,13 @@ export function matchRigaTabellare(
         if (r.categoria != null) { if (!eq(r.categoria, c.categoria)) continue; score++; }
         if (r.prodotto != null) { if (!eq(r.prodotto, c.prodotto)) continue; score++; }
         if (r.offerta != null) { if (!eq(r.offerta, c.offerta)) continue; score += 2; }   // l'offerta pesa di più
+        // PROVENIENZA (Luca 12/08): la riga vincolata alla provenienza vale solo
+        // per quelle vendite, e a parità di ancora vince sulla riga generica
+        // (TIM MNP +10€ da Iliad/Coop/Poste, Kena STAR da Iliad/FW/Coop/Poste)
+        if (r.provenienza != null && r.provenienza.trim() !== "") {
+            if (!provenienzaOk(r.provenienza, c.provenienza)) continue;
+            score += 2;
+        }
         if (score > bestScore || (score === bestScore && best && r.ordine < best.ordine)) {
             best = r; bestScore = score;
         }
