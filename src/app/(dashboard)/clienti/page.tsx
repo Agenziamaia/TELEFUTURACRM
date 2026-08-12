@@ -910,7 +910,8 @@ function ClienteDetailModal({ cliente, contratti, onClose }: { cliente: Cliente;
 
 // cellularePrecompilato (AIR-01e): dal Registro Chiamate si arriva qui con
 // /clienti?nuovo=<numero> e il campo Cellulare è già compilato (senza +39).
-function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: { cliente?: Cliente | null; cellularePrecompilato?: string | null; onClose: () => void; onSave: () => void }) {
+function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: { cliente?: Cliente | null; cellularePrecompilato?: string | null; onClose: () => void; onSave: (nuovoId?: string) => void }) {
+    const { user } = useAuth();   // creato_da sul nuovo cliente (come caller/usati)
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -1029,16 +1030,20 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
             iban: iban.trim().toUpperCase().replace(/\s+/g, " ") || null,
         };
 
+        let nuovoId: string | undefined;
         try {
             if (cliente) {
                 const { error: err } = await supabase.from("clients").update(basePayload).eq("id", cliente.id);
                 if (err) throw err;
             } else {
                 const idBase = cfPiva.trim() || cellulare.replace(/\D/g, "") || "ND";
-                // is_demo esplicito: il default del DB e' true e marchiava "demo" i clienti veri
-                const insertPayload = { id: `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`, ...basePayload, acquisito_da: acquisito || null, is_demo: false };
+                // is_demo esplicito: il default del DB e' true e marchiava "demo" i clienti veri.
+                // creato_da come negli altri flussi (caller/usati/chiusura-linea): senza,
+                // il creatore con scope "appuntamenti" non vedeva il SUO cliente (12/08)
+                const insertPayload = { id: `CL-${idBase.replace(/\s/g, "")}-${Date.now()}`, ...basePayload, acquisito_da: acquisito || null, creato_da: user?.name || "", is_demo: false };
                 const { error: err } = await supabase.from("clients").insert([insertPayload]);
                 if (err) throw err;
+                nuovoId = insertPayload.id;
                 // DOCUMENTI dal form (Luca 11/08): caricati sul cliente appena
                 // creato, senza vendita (contract_id NULL). Best-effort: un
                 // errore sull'upload non butta via l'anagrafica salvata.
@@ -1067,7 +1072,7 @@ function ClienteFormModal({ cliente, cellularePrecompilato, onClose, onSave }: {
                         .ilike("cliente_num", "%" + codaCell.split("").join("%") + "%");
                 }
             }
-            onSave();
+            onSave(nuovoId);
             onClose();
         } catch (err: any) {
             setError(err.message);
@@ -2267,7 +2272,13 @@ export default function ClientiPage() {
                         // un "Nuovo Cliente" successivo riparte pulito
                         setNumeroPrecompilato(null);
                     }}
-                    onSave={fetchClientList}
+                    onSave={(nuovoId) => {
+                        fetchClientList();
+                        // il cliente appena creato entra SUBITO nel perimetro
+                        // visibile di chi l'ha acquisito (caso Francesco 12/08:
+                        // nasceva lucchettato fino al reload)
+                        if (nuovoId) visCli.segnaMio(nuovoId);
+                    }}
                 />
             )}
         </div>

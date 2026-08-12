@@ -57,6 +57,9 @@ interface Pagamento {
   bonifico_tipo?: "ordinario" | "istantaneo" | null;
   bonifico_stato?: "da_fare" | "stampato" | "fatto" | null;
   iban: string;
+  // IBAN estero (Luca 12/08): fuori dalla validazione IT, con SWIFT obbligatorio
+  iban_estero?: boolean;
+  swift?: string | null;
   bonifico_effettuato: boolean | null;
   bonifico_operatore: string | null;
   bonifico_date: Date | null;
@@ -939,6 +942,7 @@ function DevicePanel({ device, onClose, onSave, onDeleted }: { device: Device; o
                     </div>
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-xs font-mono text-slate-400">{dev.pagamento.iban}</span>
+                      {dev.pagamento.swift && <span className="text-xs font-mono text-amber-300 ml-2" title="IBAN estero: bonifico con codice SWIFT/BIC">SWIFT {dev.pagamento.swift}</span>}
                       <button onClick={copyIban} className="text-blue-400 hover:text-blue-300 transition-colors" title="Copia IBAN">
                         <Copy size={13} /> {ibanCopied && <span className="text-[10px] text-emerald-400 ml-1"></span>}
                       </button>
@@ -1158,6 +1162,10 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
   const [metodoPagamento, setMetodoPagamento] = useState<"contanti" | "buono" | "bonifico" | "">("");
   const [ibanPag, setIbanPag] = useState("");
   const [tipoBonifico, setTipoBonifico] = useState<"ordinario" | "istantaneo">("ordinario");
+  // IBAN ESTERO (Luca 12/08): flag che disattiva la validazione IT e chiede lo SWIFT
+  const [ibanEstero, setIbanEstero] = useState(false);
+  const [swiftPag, setSwiftPag] = useState("");
+  const swiftOk = /^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(swiftPag);
   const [allegDoc, setAllegDoc] = useState<File | null>(null);
   const [allegDich, setAllegDich] = useState<File | null>(null);
   // ── Carica dal telefono via QR (Luca 01/08): STESSO meccanismo di Registra
@@ -1263,8 +1271,13 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
     // Portatili e watch hanno un seriale alfanumerico, anche piu' corto.
     if (step === 3) return !!(tipoProdotto && brand && model && capacita && colore && imeiValido && prezzoAcquisto && gradoUsura && (!hasExtraMargine || extraMargineImporto));
     // IBAN del bonifico VALIDATO (Luca 01/08): struttura IT+2 cifre+CIN e
-    // 27 caratteri con verifica mod-97 — prima bastava che non fosse vuoto
-    if (step === 4) return !!(metodoPagamento && (metodoPagamento !== "bonifico" || (ibanPag && !erroreIbanIT(ibanPag))));
+    // 27 caratteri con verifica mod-97 — prima bastava che non fosse vuoto.
+    // IBAN ESTERO (Luca 12/08): col flag la verifica IT si spegne — basta la
+    // forma ISO generica (2 lettere paese + 2 cifre) e lo SWIFT valido.
+    if (step === 4) return !!(metodoPagamento && (metodoPagamento !== "bonifico" ||
+        (ibanEstero
+            ? (/^[A-Z]{2}[0-9]{2}[0-9A-Z]{11,30}$/.test(ibanPag) && swiftOk)
+            : (ibanPag && !erroreIbanIT(ibanPag)))));
     if (step === 5) return !!(allegDoc && allegDich);
     return false;
   };
@@ -1298,6 +1311,8 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
         extraMargine: hasExtraMargine ? { importo: parseFloat(extraMargineImporto) || 0, venditore } : null,
         metodoPagamento, iban: metodoPagamento === "bonifico" ? ibanPag : null,
         tipoBonifico: metodoPagamento === "bonifico" ? tipoBonifico : null,
+        ibanEstero: metodoPagamento === "bonifico" ? ibanEstero : false,
+        swift: metodoPagamento === "bonifico" && ibanEstero ? swiftPag : null,
         allegato_documento: docPath,
         allegato_dichiarazione: dichPath
       });
@@ -1512,12 +1527,25 @@ function RegistraUsatoPanel({ onClose, onSave }: { onClose: () => void; onSave: 
           </div>
         )}
         {metodoPagamento === "bonifico" && <div>
-          <label className={lbl}>IBAN * <span className="normal-case font-normal text-slate-500">(IT + 2 cifre + lettera, 27 caratteri)</span></label>
-          <div className="flex gap-2">
-            <input value={ibanPag} onChange={e => setIbanPag(normalizzaIban(e.target.value))} placeholder="IT60X0542811101000000123456" className={inp + " flex-1 font-mono"} />
-            {ana.iban && <button onClick={() => setIbanPag(normalizzaIban(ana.iban))} className="px-3 py-2 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 text-xs font-semibold hover:bg-blue-500/25 transition-all whitespace-nowrap"> Copia IBAN da anagrafica</button>}
+          {/* IBAN ESTERO (Luca 12/08): il flag spegne la validazione IT e chiede lo SWIFT */}
+          <div className="flex items-center gap-2 mb-2">
+            <button type="button" onClick={() => { setIbanEstero(v => !v); setSwiftPag(""); }}
+              className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${ibanEstero ? "bg-amber-500/70" : "bg-white/10"}`}>
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${ibanEstero ? "left-[18px]" : "left-0.5"}`} />
+            </button>
+            <span className={`text-[11px] font-bold ${ibanEstero ? "text-amber-300" : "text-slate-500"}`}>🌍 IBAN straniero (estero)</span>
           </div>
-          {!!ibanPag && !!erroreIbanIT(ibanPag) && <p className="text-[11px] text-rose-400 font-semibold mt-1.5">⚠ {erroreIbanIT(ibanPag)}</p>}
+          <label className={lbl}>IBAN * <span className="normal-case font-normal text-slate-500">{ibanEstero ? "(estero: 2 lettere paese + 2 cifre)" : "(IT + 2 cifre + lettera, 27 caratteri)"}</span></label>
+          <div className="flex gap-2">
+            <input value={ibanPag} onChange={e => setIbanPag(normalizzaIban(e.target.value))} placeholder={ibanEstero ? "DE89370400440532013000" : "IT60X0542811101000000123456"} className={inp + " flex-1 font-mono"} />
+            {ana.iban && !ibanEstero && <button onClick={() => setIbanPag(normalizzaIban(ana.iban))} className="px-3 py-2 rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30 text-xs font-semibold hover:bg-blue-500/25 transition-all whitespace-nowrap"> Copia IBAN da anagrafica</button>}
+          </div>
+          {!ibanEstero && !!ibanPag && !!erroreIbanIT(ibanPag) && <p className="text-[11px] text-rose-400 font-semibold mt-1.5">⚠ {erroreIbanIT(ibanPag)}</p>}
+          {ibanEstero && <div className="mt-3">
+            <label className={lbl}>Codice SWIFT/BIC * <span className="normal-case font-normal text-slate-500">(8 o 11 caratteri)</span></label>
+            <input value={swiftPag} onChange={e => setSwiftPag(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11))} placeholder="DEUTDEFF" className={inp + " font-mono"} />
+            {!!swiftPag && !swiftOk && <p className="text-[11px] text-rose-400 font-semibold mt-1.5">⚠ SWIFT non valido: 8 o 11 caratteri, i primi 6 lettere</p>}
+          </div>}
         </div>}
       </div>
     );
@@ -1972,7 +2000,7 @@ function GestioneUsatiInner() {
     venditore: string; negozio: string; tipoCliente?: string; anagrafica?: unknown; clientId?: string | null;
     tipoProdotto?: string; brand?: string; model?: string; capacita?: string; colore?: string;
     imei: string; prezzoAcquisto: number; gradoUsura: string; perRicambi?: boolean; extraMargine?: { importo: number; venditore: string };
-    metodoPagamento: "contanti" | "buono" | "bonifico"; iban?: string; tipoBonifico?: "ordinario" | "istantaneo" | null; provenienzaSubito?: boolean;
+    metodoPagamento: "contanti" | "buono" | "bonifico"; iban?: string; tipoBonifico?: "ordinario" | "istantaneo" | null; ibanEstero?: boolean; swift?: string | null; provenienzaSubito?: boolean;
     allegato_documento?: string | null; allegato_dichiarazione?: string | null;
   }) => {
     const modelName = [data.brand, data.model].filter(Boolean).join(" ") || "Modello non specificato";
@@ -2034,7 +2062,7 @@ function GestioneUsatiInner() {
       status_history: { acquistato: { date: now.toISOString(), operatore: data.venditore } },
       provenienza_subito: !!data.provenienzaSubito,
       extra_margine: data.extraMargine ? { importo: data.extraMargine.importo, venditore: data.extraMargine.venditore, confermato: false, conferma_operatore: null, conferma_date: null } : null,
-      pagamento: { metodo: data.metodoPagamento, iban: data.iban || "", bonifico_effettuato: data.metodoPagamento === "bonifico" ? false : null, bonifico_operatore: null, bonifico_date: null, bonifico_tipo: data.metodoPagamento === "bonifico" ? (data.tipoBonifico || "ordinario") : null, bonifico_stato: data.metodoPagamento === "bonifico" ? "da_fare" : null },
+      pagamento: { metodo: data.metodoPagamento, iban: data.iban || "", iban_estero: data.metodoPagamento === "bonifico" ? !!data.ibanEstero : false, swift: data.metodoPagamento === "bonifico" && data.ibanEstero ? (data.swift || "") : null, bonifico_effettuato: data.metodoPagamento === "bonifico" ? false : null, bonifico_operatore: null, bonifico_date: null, bonifico_tipo: data.metodoPagamento === "bonifico" ? (data.tipoBonifico || "ordinario") : null, bonifico_stato: data.metodoPagamento === "bonifico" ? "da_fare" : null },
       grado_usura: data.gradoUsura || "",
       acquisto_per_ricambi: !!data.perRicambi,
       allegato_documento: data.allegato_documento || null,
@@ -2477,12 +2505,12 @@ function GestioneUsatiInner() {
         // EXPORT sui filtrati (stesso formato leggibile dei report presenze)
         // GLB-03: da CSV a vero .xlsx — importo come cella numerica
         const esporta = (lista: Device[], nome: string) => {
-          const intestazioni = ["Data acquisto", "Modello", "IMEI", "Negozio", "Cliente", "Email", "IBAN", "Importo", "Tipo", "Stato", "Eseguito il", "Eseguito da"];
+          const intestazioni = ["Data acquisto", "Modello", "IMEI", "Negozio", "Cliente", "Email", "IBAN", "SWIFT", "Importo", "Tipo", "Stato", "Eseguito il", "Eseguito da"];
           const righe: CellaXlsx[][] = lista.map((d) => {
             const cli = cliDi(d);
             return [
               fmtDate(d.purchase_date), d.model, d.imei, d.store, cli.nome, cli.email,
-              d.pagamento.iban || "", d.purchase_price,
+              d.pagamento.iban || "", d.pagamento.swift || "", d.purchase_price,
               d.pagamento.bonifico_tipo === "istantaneo" ? "istantaneo" : "ordinario",
               conStato(d),
               d.pagamento.bonifico_date ? fmtDate(d.pagamento.bonifico_date) : "",

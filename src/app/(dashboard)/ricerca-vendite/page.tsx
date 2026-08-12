@@ -999,15 +999,33 @@ export default function RicercaContratto() {
     // La ricerca vera è nei filtri in alto, che interrogano il database.
     const visibleData = contractList;
 
-    // GLB-03: da CSV a vero .xlsx \u2014 via il quoting manuale, celle passate cos\u00ec come sono
-    const handleExportExcel = () => {
-        if (visibleData.length === 0) return;
-        // Segnalazione 76: anche nell'esport il Codice ins. e il nome corretto della colonna
-        const headers = ["Venditore", "Brand", "Categoria", "Prodotto", "Offerta", "Cliente", "Negozio", "Codice ins.", "Codice contratto", "Data Registrazione", "Data Attivazione", "Stato"];
-        const rows: CellaXlsx[][] = visibleData.map(r => [
-            r.venditore, r.brand, ((r.raw?.dettagli as Record<string, unknown>)?.categoria_catalogo as string) || (r.raw?.categoria as string) || "", r.prodotto, (r.raw?.offerta as string) || ((r.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "", r.cliente, r.negozio, codInsDi(r), r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato
-        ]);
-        void scaricaXlsx(`contratti_${new Date().toISOString().split('T')[0]}`, headers, rows, "Contratti");
+    // GLB-03: da CSV a vero .xlsx \u2014 via il quoting manuale, celle passate cos\u00ec come sono.
+    // EXPORT COMPLETO (esito Luca 12/08): la lista in memoria \u00e8 SOLO la pagina
+    // video da 25 righe \u2014 l'Excel rif\u00e0 la query filtrata intera via caricaTutte
+    // (tetto server 1000 superato a blocchi; tiebreaker .order(id) obbligatorio
+    // per non perdere/duplicare righe tra i blocchi).
+    const [exporting, setExporting] = useState(false);
+    const handleExportExcel = async () => {
+        if (exporting || filtroVuoto) return;
+        setExporting(true);
+        try {
+            const { data, error } = await caricaTutte<Record<string, unknown>>((from, to) =>
+                applicaFiltriRicerca(
+                    supabase.from("contracts").select("*, clients!inner(nome, cognome, ragione_sociale, cellulare, telefono_fisso, email, cf_piva, indirizzo, cap, citta, tipo, nome_ref, cognome_ref)"),
+                    true
+                ).order("created_at", { ascending: false }).order("id").range(from, to));
+            if (error) throw new Error(String((error as { message?: string }).message || "export"));
+            const tutte = (data ?? []).map((row: any) => mapContractToRow(row, row.clients));
+            if (tutte.length === 0) return;
+            // Segnalazione 76: anche nell'esport il Codice ins. e il nome corretto della colonna
+            const headers = ["Venditore", "Brand", "Categoria", "Prodotto", "Offerta", "Cliente", "Negozio", "Codice ins.", "Codice contratto", "Data Registrazione", "Data Attivazione", "Stato"];
+            const rows: CellaXlsx[][] = tutte.map(r => [
+                r.venditore, r.brand, ((r.raw?.dettagli as Record<string, unknown>)?.categoria_catalogo as string) || (r.raw?.categoria as string) || "", r.prodotto, (r.raw?.offerta as string) || ((r.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "", r.cliente, r.negozio, codInsDi(r), r.codice_attivazione, r.data_registrazione, r.data_attivazione, r.stato
+            ]);
+            await scaricaXlsx(`contratti_${new Date().toISOString().split('T')[0]}`, headers, rows, "Contratti");
+        } catch {
+            // errore gi\u00e0 visibile all'utente col bottone che si riattiva
+        } finally { setExporting(false); }
     };
 
     // NB: tutti gli hook devono stare PRIMA dei return anticipati di loading/errore.
@@ -2022,8 +2040,8 @@ export default function RicercaContratto() {
                 {/* CTA Buttons */}
                 <div className="mt-8 flex gap-3">
                     <button type="button" className="primary-btn h-10 px-8 text-sm" onClick={() => { setFilterVenditori(null); setFilterCodice(""); setFilterBrand(""); setFilterProdotti(null); setFilterCategorie(null); setFilterTipoCliente(null); setFilterOfferte(null); setFilterOpzioni(null); setMargTipi(null); setMargArticoli(null); setFilterNegozi(null); setFilterCodiciIns(null); setFilterCliente(""); setFilterCellulare(""); setFilterImei(""); setDaDataAttivazione(""); setADataAttivazione(""); }}>Annulla filtri</button>
-                    <button type="button" className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2" onClick={handleExportExcel}>
-                        Scarica Excel
+                    <button type="button" disabled={exporting} className="px-8 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/20 transition-all flex items-center gap-2 disabled:opacity-50" onClick={handleExportExcel}>
+                        {exporting ? "Esportazione…" : "Scarica Excel"}
                     </button>
                 </div>
             </div>

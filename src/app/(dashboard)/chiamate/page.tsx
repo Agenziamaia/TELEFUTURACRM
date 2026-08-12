@@ -20,7 +20,7 @@ import { useStores } from "@/lib/org";
 import { SelectOpzioni } from "@/components/SelectPersona";
 import { RicercaCliente, etichettaCliente, type ClienteTrovato } from "@/components/RicercaCliente";
 import { numeroNazionale } from "@/lib/telefono";
-import { puoAscoltareRegistrazioni, ANYTIME_NUMBER_IDS, ANYTIME_USER_RANGE } from "@/lib/aircall";
+import { puoAscoltareRegistrazioni, ANYTIME_NUMBER_IDS, ANYTIME_USER_RANGE, HEYSUITE_NUMBER_IDS, HEYSUITE_CODE9 } from "@/lib/aircall";
 import { useRolePermissions } from "@/lib/usePermissions";
 
 // GO-LIVE della coda di anagrafizzazione (Luca 04/08): le 1100+ inbound
@@ -79,9 +79,10 @@ export default function RegistroChiamatePage() {
         const campi = "id, aircall_call_id, direction, cliente_num, agente_nome, negozio, missed, duration_sec, started_at, client_id, archiviato, risposta_cc"
             + (puoAudio ? ", recording_url" : "");
         let q = supabase.from("call_events").select(campi)
-            // righe storiche AnyTime Fitness fuori (stesso account Aircall,
-            // altra azienda — il webhook ora le scarta all'ingresso)
-            .or(`aircall_number_id.is.null,aircall_number_id.not.in.(${ANYTIME_NUMBER_IDS.join(",")})`)
+            // righe storiche AnyTime Fitness E linea heysuite fuori (stesso
+            // account Aircall, non attività Telefutura — il webhook ora le
+            // scarta all'ingresso; Luca 12/08 per heysuite)
+            .or(`aircall_number_id.is.null,aircall_number_id.not.in.(${[...ANYTIME_NUMBER_IDS, ...HEYSUITE_NUMBER_IDS].join(",")})`)
             .or(`aircall_user_id.is.null,aircall_user_id.lt.${ANYTIME_USER_RANGE[0]},aircall_user_id.gt.${ANYTIME_USER_RANGE[1]}`)
             .order("started_at", { ascending: false, nullsFirst: false })
             .limit(500);
@@ -97,7 +98,10 @@ export default function RegistroChiamatePage() {
         }
         const { data, error } = await q;
         if (error) { setErrore(error.message); setEventi([]); }
-        else setEventi((data ?? []) as unknown as EventoChiamata[]);
+        // cintura per le righe-controparte heysuite arrivate prima del filtro
+        // nel webhook (il numero sta in cliente_num, non nella linea)
+        else setEventi(((data ?? []) as unknown as EventoChiamata[])
+            .filter((e) => !(HEYSUITE_CODE9 as readonly string[]).includes(String(e.cliente_num || "").replace(/\D/g, "").slice(-9))));
         setCarico(false);
     };
     // nomi dei clienti agganciati (Luca 04/08): il nome cliccabile in riga

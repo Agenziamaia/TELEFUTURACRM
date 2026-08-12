@@ -58,6 +58,17 @@ export function eventoAnyTime(aircallUserId?: number | null, aircallNumberId?: n
     return false;
 }
 
+/** HEYSUITE (Luca 12/08): le chiamate del direttore via heysuite non sono
+ *  attività del telefonico. Due volti: la LINEA Aircall "Ext Hey Suite"
+ *  (number_id 1196851, +39 06 6051 3569) e i due numeri come CONTROPARTE
+ *  (fisso 06 6051 3569, mobile 327 484 7809) — confronto sulla coda 9 cifre. */
+export const HEYSUITE_NUMBER_IDS = [1196851] as const;
+export const HEYSUITE_CODE9 = ["660513569", "274847809"] as const;
+export function eventoHeySuite(aircallNumberId?: number | null, clienteNum?: string | null): boolean {
+    if (aircallNumberId != null && (HEYSUITE_NUMBER_IDS as readonly number[]).includes(aircallNumberId)) return true;
+    return (HEYSUITE_CODE9 as readonly string[]).includes(codaNumero(clienteNum));
+}
+
 /** AUDIO delle registrazioni = CAPABILITY (Luca 04/08, seconda passata):
  *  cap:/clienti:ascolta_registrazioni (CAP_CLIENTI_REGISTRAZIONI), amministrabile
  *  dalla rotellina Clienti in Permessi. Il default della capability replica la
