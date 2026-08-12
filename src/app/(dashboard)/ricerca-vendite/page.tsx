@@ -715,9 +715,11 @@ export default function RicercaContratto() {
             // recenti e i filtri non offrivano i loro brand/prodotti/codici.
             const { data } = await caricaTutte<Record<string, unknown>>((from, to) => {
                 let q = supabase.from("contracts").select("venditore, brand, prodotto, negozio, dettagli");
+                // stesso RBAC di applicaFiltriRicerca (caso Veronica 12/08): il
+                // lock sul nome vince e copre TUTTE le proprie vendite, ovunque
                 if (!isGlobalView) {
-                    if (lockedStores) q = q.in("negozio", lockedStores);
                     if (lockedVenditore) q = q.eq("venditore", lockedVenditore);
+                    else if (lockedStores) q = q.in("negozio", lockedStores);
                 }
                 if (isTecnico) q = q.or("brand.ilike.%extra%,brand.ilike.%marginal%,prodotto.ilike.%sost%");
                 return q.order("id").range(from, to);
@@ -892,9 +894,13 @@ export default function RicercaContratto() {
 
         // RBAC: tutti i negozi visibili (negozioInValues include anche la radice
         // legacy: i contratti storici salvavano "Magliana" senza suffisso).
+        // CASO VERONICA (Luca 12/08): chi è bloccato sul PROPRIO nome vede le
+        // proprie vendite OVUNQUE le abbia fatte — il filtro negozio sopra il
+        // filtro venditore le nascondeva (le sue W3 stavano su un negozio fuori
+        // dalla sua visibilità e il brand WindTre spariva dalle tessere).
         if (!isGlobalView) {
-            if (lockedStores) query = query.in("negozio", lockedStores);
             if (lockedVenditore) query = query.eq("venditore", lockedVenditore);
+            else if (lockedStores) query = query.in("negozio", lockedStores);
         }
         return query;
     };

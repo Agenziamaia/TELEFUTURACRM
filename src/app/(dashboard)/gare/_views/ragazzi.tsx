@@ -126,6 +126,22 @@ export function RagazziTab({ garaId, month, nota }: { garaId: string; month: str
                     </button>
                 </div>
             )}
+            {/* ANNULLA L'IMPORT (esito Luca 12/08): svuota SOLO questo mese —
+                la base del mese precedente resta e si può ricopiare */}
+            {(soglie.length > 0 || pay.length > 0) && prevHas && (
+                <div className="text-right">
+                    <button onClick={async () => {
+                        if (!window.confirm(`Cancello la gara ragazzi di ${monthLabel(month)} per questo brand? ${monthLabel(prevMonth)} resta intatta: torni alla base e puoi ricopiare.`)) return;
+                        const e1 = await supabase.from("gare_ragazzi_pay").delete().eq("brand", garaId).eq("month", month);
+                        const e2 = await supabase.from("gare_ragazzi_soglie").delete().eq("brand", garaId).eq("month", month);
+                        if (dbError("Svuota mese", e1.error || e2.error)) return;
+                        notify(`${monthLabel(month)} svuotato — tornato alla base ✓`, "ok"); load();
+                    }} title="Cancella l'impostazione di questo mese e torna alla base: il mese precedente resta intatto"
+                        className="text-xs text-amber-300/90 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
+                        ↩ Annulla l&apos;import · svuota {monthLabel(month)}
+                    </button>
+                </div>
+            )}
 
             {/* Soglie di gruppo */}
             <div className="space-y-2">
