@@ -126,7 +126,9 @@ while ($true) {
           $resp = ($cash | ConvertTo-Json -Compress)
           if ($ok) { Write-Host ("   incassato {0} resto {1}" -f $cash.incassato, $cash.resto) -ForegroundColor Green }
         } else {
-          $base = if ($FiscalUrl) { $FiscalUrl } else { $job.device_url }
+          # Multi-societario: usa il RT indicato dal CRM per QUESTO job (azienda giusta);
+          # -FiscalUrl resta solo come fallback se il job non specifica il device.
+          $base = if ($job.device_url) { $job.device_url } else { $FiscalUrl }
           $resp = Invoke-Epson -BaseUrl $base -RequestXml $job.request_xml
           # la stampante risponde 200 anche sugli errori: l'esito VERO e' success="true|false"
           if ($resp -match 'success="true"')      { $ok = $true }

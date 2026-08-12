@@ -39,6 +39,14 @@ export function xmlQueryRtStatus(): string {
   return '<printerCommand><queryPrinterStatus statusType="1" /></printerCommand>';
 }
 
+/** Chiusura fiscale giornaliera — Report Z (spec Francesco #4): stampa la chiusura
+ *  e trasmette i corrispettivi all'Agenzia delle Entrate. ⚠️ azione FISCALE
+ *  IRREVERSIBILE. Schema ePOS da CONFERMARE sul RT reale (Epson RT: printerFiscalReport
+ *  con zReport). L'agente lo esegue via fpmate come gli altri comandi Epson. */
+export function xmlZReport(operator = "1"): string {
+  return `<printerFiscalReport><zReport operator="${esc(operator)}" /></printerFiscalReport>`;
+}
+
 // ── Documento NON fiscale (di cortesia) ─────────────────────────────────────
 // Usa i comandi ePOS beginNonFiscal / printNormal / endNonFiscal: NON incide sul
 // fiscale né sulle chiusure giornaliere. Schema da confermare alla prima prova
@@ -146,6 +154,7 @@ export function buildRequestXml(
     case "test": return xmlTestSlip();
     case "non_fiscal": return Array.isArray(opts.lines) ? xmlNonFiscal(opts.lines) : null;
     case "fiscal_receipt": return Array.isArray(opts.items) && opts.items.length ? xmlFiscalReceipt(opts.items, opts.payment || {}) : null;
+    case "z_report": return xmlZReport();
     case "raw": return typeof opts.requestXml === "string" && opts.requestXml.trim() ? opts.requestXml : null;
     default: return null;
   }
