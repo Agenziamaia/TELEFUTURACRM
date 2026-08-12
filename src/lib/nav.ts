@@ -108,7 +108,6 @@ export const NAVIGATION: NavEntry[] = [
             // gestito a parte per ruolo (store manager in su, gate in pagina e
             // sul proxy). La voce resta amministrabile dal pannello Permessi.
             { name: "Registro Chiamate", href: "/chiamate", icon: Phone, roles: EVERYONE },
-            { name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
         ],
     },
     // CALCOLATORE $$$ (cantiere GARE 10/08): registra-vendita riassunto che
@@ -118,6 +117,9 @@ export const NAVIGATION: NavEntry[] = [
     { type: "link", name: "Calcolatore $$$", href: "/calcolatore", icon: Calculator, roles: ["admin", "dev"] },
     { type: "link", name: "Calendario", href: "/calendario", icon: CalendarDays, roles: EVERYONE },
     { type: "link", name: "Documentazione", href: "/documentazione", icon: FolderOpen, roles: EVERYONE },
+    // PASSWORD fuori dall'hub Negozio (Luca 12/08): dopo Documentazione,
+    // prima di Comunicazioni — stessi ruoli di prima.
+    { type: "link", name: "Password", href: "/password-v2", icon: KeyRound, roles: ["admin", "direttore_generale", "store_manager"] },
     { type: "link", name: "Comunicazioni", href: "/comunicazioni", icon: MessageSquare, roles: EVERYONE },
     { type: "link", name: "Chat", href: "/chat", icon: MessagesSquare, roles: EVERYONE },
     { type: "link", name: "Assistente AI", href: "/assistente", icon: Sparkles, roles: MANAGERS },
