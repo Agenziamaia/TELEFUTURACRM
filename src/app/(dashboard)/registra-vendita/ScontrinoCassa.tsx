@@ -37,10 +37,24 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
     const [cashDone, setCashDone] = useState(false);
     const [paidAmount, setPaidAmount] = useState(0);
     const [isTest, setIsTest] = useState(false);
+    // Multi-societario: ragioni sociali/RT del negozio; se >1, l'operatore sceglie
+    // quale EMETTE (default = azienda del negozio; i prodotti con azienda fissa
+    // vanno comunque al loro RT).
+    const [aziende, setAziende] = useState<{ code: string; label: string }[]>([]);
+    const [aziendaSel, setAziendaSel] = useState<string | null>(null);
     // reset a ogni apertura (nuova vendita) o chiusura del modale
     useEffect(() => {
         setMetodo("CONTANTI"); setFase("scelta"); setIncassato(0); setResto(0);
         setMsg(""); setEsclusi([]); setCashDone(false); setPaidAmount(0); setIsTest(false);
+        setAziende([]); setAziendaSel(null);
+        const neg = data?.negozio;
+        if (!neg) return;
+        supabase.from("pos_rt").select("azienda, ragione_sociale, is_default").eq("negozio", neg).then(({ data: rows }) => {
+            const list = (rows || []).map((r: any) => ({ code: r.azienda, label: r.ragione_sociale || r.azienda, isDef: !!r.is_default }));
+            setAziende(list.map((x) => ({ code: x.code, label: x.label })));
+            const def = list.find((x) => x.isDef) || list[0];
+            setAziendaSel(def ? def.code : null);
+        });
     }, [data]);
 
     // Incasso contanti via coda: enqueue → poll del job finché done/error.
@@ -85,6 +99,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
                     negozio: data?.negozio ?? null,
                     deviceUrl: data?.deviceUrl,
                     items: data?.items ?? [],
+                    azienda: aziendaSel,
                     paymentType: pag.paymentType,
                     paymentDescription: pag.description,
                     paidAmount,
@@ -95,7 +110,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
         } catch (e: any) {
             return { ok: false, error: String(e?.message || e) };
         }
-    }, [metodo, data]);
+    }, [metodo, data, aziendaSel]);
 
     if (!data) return null;
     const totale = totaleRighe(data.items);
@@ -112,7 +127,7 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
             try {
                 const res = await fetch("/api/vendita/scontrino", {
                     method: "POST", headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ negozio: data.negozio, items: data.items, dryRun: true }),
+                    body: JSON.stringify({ negozio: data.negozio, items: data.items, azienda: aziendaSel, dryRun: true }),
                 });
                 chk = await res.json().catch(() => ({}));
                 if (!res.ok) chk.ok = false;
@@ -188,6 +203,19 @@ export function ScontrinoCassa({ data, onDone }: { data: ScontrinoData | null; o
 
                 {fase === "scelta" && (
                     <>
+                        {aziende.length > 1 && (
+                            <div>
+                                <p className="text-[11px] text-slate-500 mb-1">Ragione sociale (chi emette lo scontrino)</p>
+                                <div className="flex gap-2">
+                                    {aziende.map((a) => (
+                                        <button key={a.code} type="button" onClick={() => setAziendaSel(a.code)}
+                                            className={"flex-1 py-2 rounded-xl border text-xs font-semibold transition " + (aziendaSel === a.code ? "bg-sky-500/25 border-sky-400/60 text-white" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10")}>
+                                            {a.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         <div className="flex gap-2">
                             {btnMetodo("CONTANTI", "Contanti", "💶")}
                             {btnMetodo("CARTA", "Carta", "💳")}

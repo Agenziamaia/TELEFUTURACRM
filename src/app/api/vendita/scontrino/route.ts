@@ -66,7 +66,8 @@ export async function POST(req: Request) {
         const meta = byId[stripId(r.productId)] || byName[String(r.description || "").trim()] || null;
         const va = meta ? meta.va : true;
         const reparto = meta && meta.reparto != null ? meta.reparto : (r.reparto ?? null);
-        const az = (meta && meta.azienda) || defaultAzienda || "__def";
+        // azienda della riga: prodotto (se fissato) > scelta dell'operatore (b.azienda) > default negozio.
+        const az = (meta && meta.azienda) || b.azienda || defaultAzienda || "__def";
         const desc = String(r.description || "ARTICOLO").slice(0, 38);
         const price = Number(r.unitPrice);
         const qty = Number(r.qty) > 0 ? Number(r.qty) : 1;
