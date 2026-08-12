@@ -10,7 +10,7 @@ import { DatePickerInput } from "@/components/DatePickerInput";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabaseClient";
 import { CATEGORIE_CANONICHE, CANONICA_BY_ID, BRAND_CANONICI, MACRO_BY_CATALOGO, categoriaDef, categoriaDi, controlliDi, vaInTracking } from "@/lib/tassonomia";
-import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
+import { LABEL_SLUG, loadCatalogoBrand, loadCatalogoCategorie, loadMargListino, unisciCataloghi, type CatFiltro, type MargArticolo } from "@/lib/catalogoFiltri";
 import { risolviCampi, impostaRegoleCampi } from "@/lib/campiRegole";
 import { useActiveStores } from "@/lib/org";
 import { trkBrandKey, TRK_BRAND_LOGOS, TRK_LOGO_SCALE } from "@/lib/brandAssets";
@@ -616,6 +616,23 @@ export default function RicercaContratto() {
         loadCatalogoBrand(soloSlug, { fresh: true }).then((t) => { if (alive) setCatalogoBrand(t); });
         return () => { alive = false; };
     }, [soloSlug]); // eslint-disable-line react-hooks/exhaustive-deps
+    // CASCATA SENZA TESSERA SINGOLA (esito Luca 12/08: "Consumer, Fisso, ma poi
+    // prodotto e offerta non sono selezionabili"): con più brand attivi si
+    // carica l'UNIONE dei cataloghi di tutti i brand visibili — tipo cliente e
+    // categoria tagliano le liste, la ricerca interna della tendina fa il resto.
+    const [catalogoUnione, setCatalogoUnione] = useState<CatFiltro | null>(null);
+    useEffect(() => {
+        if (soloSlug) { setCatalogoUnione(null); return; }
+        const slugs = Array.from(new Set(uniqueBrands.map((b) => LABEL_SLUG[b]).filter(Boolean)));
+        if (!slugs.length) { setCatalogoUnione(null); return; }
+        let alive = true;
+        Promise.all(slugs.map((s) => loadCatalogoBrand(s)))
+            .then((liste) => { if (alive) setCatalogoUnione(unisciCataloghi(liste)); })
+            .catch(() => { if (alive) setCatalogoUnione(null); });
+        return () => { alive = false; };
+    }, [soloSlug, uniqueBrands]); // eslint-disable-line react-hooks/exhaustive-deps
+    // il catalogo su cui lavora la cascata: quello del brand singolo, o l'unione
+    const catalogoAttivo = catalogoBrand ?? catalogoUnione;
     // CONSEGUENZIALITÀ (Luca 28/07): le offerte seguono i prodotti scelti; senza
     // prodotti ma con una categoria, seguono i prodotti di quella categoria —
     // e comunque si restringono alle offerte DELLA categoria (la stessa offerta
@@ -627,38 +644,38 @@ export default function RicercaContratto() {
         !filterTipoCliente?.length || (tipi || []).some((t) => filterTipoCliente.includes(t)),
         [filterTipoCliente]);
     const offerteDisponibili = useMemo(() => {
-        if (!catalogoBrand) return [];
+        if (!catalogoAttivo) return [];
         // RIC-06: categorie/prodotti sono insiemi (null = tutto selezionato =
         // nessuna restrizione); con piu' categorie scelte si fa l'UNIONE.
         const base = filterProdotti?.length ? filterProdotti
-            : filterCategorie?.length ? filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || [])
+            : filterCategorie?.length ? filterCategorie.flatMap((c) => catalogoAttivo.prodsByCat[c] || [])
             : null;
         // le SPENTE scendono in fondo (Luca 10/08): sopra restano le vive
-        const ordina = (arr: string[]) => arr.filter((o) => _tipoOk(catalogoBrand.offTipi?.[o])).sort((a, b) =>
-            (catalogoBrand.offSpenta?.[a] ? 1 : 0) - (catalogoBrand.offSpenta?.[b] ? 1 : 0) || a.localeCompare(b));
-        if (!base) return ordina([...catalogoBrand.offNames]);
+        const ordina = (arr: string[]) => arr.filter((o) => _tipoOk(catalogoAttivo.offTipi?.[o])).sort((a, b) =>
+            (catalogoAttivo.offSpenta?.[a] ? 1 : 0) - (catalogoAttivo.offSpenta?.[b] ? 1 : 0) || a.localeCompare(b));
+        if (!base) return ordina([...catalogoAttivo.offNames]);
         let set = new Set<string>();
-        base.forEach((pn) => (catalogoBrand.offByProd[pn] || []).forEach((o) => set.add(o)));
+        base.forEach((pn) => (catalogoAttivo.offByProd[pn] || []).forEach((o) => set.add(o)));
         if (filterCategorie?.length) {
-            const s2 = new Set(filterCategorie.flatMap((c) => catalogoBrand.offsByCat[c] || []));
+            const s2 = new Set(filterCategorie.flatMap((c) => catalogoAttivo.offsByCat[c] || []));
             set = new Set(Array.from(set).filter((o) => s2.has(o)));
         }
         return ordina(Array.from(set));
-    }, [catalogoBrand, filterProdotti, filterCategorie, _tipoOk]);
+    }, [catalogoAttivo, filterProdotti, filterCategorie, _tipoOk]);
     // etichette ⛔ per le offerte spente nella tendina (il VALORE resta il nome
     // pulito: i filtri e lo storico non cambiano)
     const offEtichette = useMemo(() => {
         const out: Record<string, string> = {};
-        offerteDisponibili.forEach((o) => { if (catalogoBrand?.offSpenta?.[o]) out[o] = o + " · ⛔ spenta"; });
+        offerteDisponibili.forEach((o) => { if (catalogoAttivo?.offSpenta?.[o]) out[o] = o + " · ⛔ spenta"; });
         return out;
-    }, [offerteDisponibili, catalogoBrand]);
+    }, [offerteDisponibili, catalogoAttivo]);
     // le OPZIONI si sbloccano con almeno un'offerta scelta: unione delle loro
     const opzioniDisponibili = useMemo(() => {
-        if (!catalogoBrand || !filterOfferte?.length) return [];
+        if (!catalogoAttivo || !filterOfferte?.length) return [];
         const set = new Set<string>();
-        filterOfferte.forEach((on) => (catalogoBrand.opzByOff[on] || []).forEach((z) => set.add(z)));
+        filterOfferte.forEach((on) => (catalogoAttivo.opzByOff[on] || []).forEach((z) => set.add(z)));
         return Array.from(set).sort();
-    }, [catalogoBrand, filterOfferte]);
+    }, [catalogoAttivo, filterOfferte]);
     // Sola tessera Marginalità attiva → si accendono i due layer dedicati.
     const soloMarg = !!soloBrandLabel && ["marginalità", "marginalita"].includes(soloBrandLabel.toLowerCase());
     useEffect(() => {
@@ -815,22 +832,36 @@ export default function RicercaContratto() {
             }
         }
 
+        // IMEI / SERIALE sul CONTRATTO: IMEI piatti (anche `imei` minuscolo —
+        // le vendite usato lo scrivono così, segnalazione 12/08), terminali
+        // `units` dell'usato (anche finanziato), codice attivazione. Usato dal
+        // campo IMEI dedicato E dal campo cliente quando digitano lì un numero.
+        const orSeriale = (grezzo: string) => {
+            const s = grezzo.trim().replace(/[",()]/g, "").replace(/[\s./-]/g, "");
+            if (!s) return null;
+            const t = `%${s}%`;
+            return [
+                `codice_attivazione.ilike.${t}`,
+                `dettagli->>IMEI.ilike.${t}`,
+                `dettagli->>imei.ilike.${t}`,
+                `dettagli->>"IMEI TNP".ilike.${t}`,
+                `dettagli->>"IMEI CB".ilike.${t}`,
+                `dettagli->units.cs."[{\\"imei\\":\\"${s}\\"}]"`,
+            ].join(",");
+        };
+        // Campo IMEI dedicato (esito Luca 12/08: l'input c'era ma non filtrava nulla)
+        if (filterImei) {
+            const o = orSeriale(filterImei);
+            if (o) query = query.or(o);
+        }
         if (filterCliente) {
             const safe = filterCliente.trim().replace(/[",()]/g, "");
-            // IMEI / SERIALE (Luca 11/08: l'IMEI di un usato venduto trovava zero
-            // perché il campo cerca solo sull'anagrafica): se la stringa è tutta
-            // cifre si cerca sul CONTRATTO — IMEI piatti, terminali `units`
-            // dell'usato (anche finanziato), codice attivazione.
+            // (Luca 11/08: l'IMEI di un usato venduto trovava zero perché il
+            // campo cerca solo sull'anagrafica): se la stringa è tutta cifre
+            // si cerca sul contratto con le condizioni seriale qui sopra.
             const soloCifre = safe.replace(/[\s./-]/g, "");
             if (/^\d{8,20}$/.test(soloCifre)) {
-                const t = `%${soloCifre}%`;
-                query = query.or([
-                    `codice_attivazione.ilike.${t}`,
-                    `dettagli->>IMEI.ilike.${t}`,
-                    `dettagli->>"IMEI TNP".ilike.${t}`,
-                    `dettagli->>"IMEI CB".ilike.${t}`,
-                    `dettagli->units.cs."[{\\"imei\\":\\"${soloCifre}\\"}]"`,
-                ].join(","));
+                query = query.or(orSeriale(soloCifre)!);
             } else if (safe) {
                 // Segnalazione 36. Prima: .or("clients.nome.ilike.…") — PostgREST
                 // legge "clients" come colonna e "nome" come operatore, e risponde
@@ -1880,7 +1911,7 @@ export default function RicercaContratto() {
                             values={filterCategorie} disabled={soloMarg}
                             testoDisabilitato="Per la Marginalità: riga sotto"
                             onChange={(v) => { setFilterCategorie(v); setFilterProdotti(null); setFilterOfferte(null); setFilterOpzioni(null); }}
-                            opzioni={catalogoBrand ? catalogoBrand.catNames.filter((cn) => (catalogoBrand.prodsByCat[cn] || []).some((pn) => _tipoOk(catalogoBrand.prodTipi?.[pn]))) : catNomiAll}
+                            opzioni={catalogoAttivo ? catalogoAttivo.catNames.filter((cn) => (catalogoAttivo.prodsByCat[cn] || []).some((pn) => _tipoOk(catalogoAttivo.prodTipi?.[pn]))) : catNomiAll}
                             etichettaTutti="Tutte le categorie"
                             className="glass-input w-full text-sm"
                         />
@@ -1894,9 +1925,9 @@ export default function RicercaContratto() {
                             con checkbox, default tutto selezionato. */}
                         <FiltroMulti
                             values={filterProdotti} onChange={setFilterProdotti}
-                            opzioni={catalogoBrand ? (filterCategorie?.length ? Array.from(new Set(filterCategorie.flatMap((c) => catalogoBrand.prodsByCat[c] || []))) : catalogoBrand.prodNames).filter((pn) => _tipoOk(catalogoBrand.prodTipi?.[pn])) : []}
-                            disabled={!catalogoBrand}
-                            testoDisabilitato="Seleziona un solo brand dalle tessere"
+                            opzioni={catalogoAttivo ? (filterCategorie?.length ? Array.from(new Set(filterCategorie.flatMap((c) => catalogoAttivo.prodsByCat[c] || []))) : catalogoAttivo.prodNames).filter((pn) => _tipoOk(catalogoAttivo.prodTipi?.[pn])) : []}
+                            disabled={!catalogoAttivo}
+                            testoDisabilitato="Carico il catalogo…"
                             etichettaTutti="Tutti i prodotti"
                             className="glass-input w-full text-sm"
                         />
@@ -1910,8 +1941,8 @@ export default function RicercaContratto() {
                             values={filterOfferte} onChange={setFilterOfferte}
                             opzioni={offerteDisponibili}
                             etichette={offEtichette}
-                            disabled={!catalogoBrand}
-                            testoDisabilitato="Seleziona un solo brand dalle tessere"
+                            disabled={!catalogoAttivo}
+                            testoDisabilitato="Carico il catalogo…"
                             etichettaTutti="Tutte le offerte"
                             className="glass-input w-full text-sm"
                         />
@@ -1922,8 +1953,8 @@ export default function RicercaContratto() {
                         <FiltroMulti
                             values={filterOpzioni} onChange={setFilterOpzioni}
                             opzioni={opzioniDisponibili}
-                            disabled={!catalogoBrand || !filterOfferte?.length}
-                            testoDisabilitato={!catalogoBrand ? "Seleziona un solo brand dalle tessere" : "Prima scegli un'offerta"}
+                            disabled={!catalogoAttivo || !filterOfferte?.length}
+                            testoDisabilitato={!catalogoAttivo ? "Carico il catalogo…" : "Prima scegli un'offerta"}
                             etichettaTutti="Tutte le opzioni"
                             className="glass-input w-full text-sm"
                         />
@@ -2001,7 +2032,9 @@ export default function RicercaContratto() {
                                     <th className="px-4 py-4 font-semibold">Brand</th>
                                     <th className="px-4 py-4 font-semibold">Categoria</th>
                                     <th className="px-4 py-4 font-semibold">Prodotto</th>
-                                    <th className="px-4 py-4 font-semibold">Offerta</th>
+                                    {/* Con la sola tessera Marginalità (esito Luca 12/08) la colonna
+                                        Offerta non dice nulla: diventa Importo, il € della vendita */}
+                                    <th className="px-4 py-4 font-semibold">{soloMarg ? "Importo" : "Offerta"}</th>
                                     <th className="px-4 py-4 font-semibold">Cliente</th>
                                     <th className="px-4 py-4 font-semibold">Negozio</th>
                                     {/* Segnalazione 76: "Codice Attivazione" si chiama Codice
@@ -2022,7 +2055,14 @@ export default function RicercaContratto() {
                                         {/* la categoria FINE del catalogo (Wallet ≠ Ric. Auto); colore della macro */}
                                         <td className="px-4 py-3">{(() => { const d = categoriaDef((row.raw?.categoria_macro as string) || categoriaDi(row.brand, row.raw?.categoria as string, row.prodotto)); const fine = ((row.raw?.dettagli as Record<string, unknown>)?.categoria_catalogo as string) || d.label; return <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold border whitespace-nowrap" style={{ color: d.color, borderColor: d.color + "55", backgroundColor: d.color + "18" }}>{fine}</span>; })()}</td>
                                         <td className="px-4 py-3 text-slate-300">{row.prodotto}</td>
-                                        <td className="px-4 py-3 text-slate-400 text-xs">{String((row.raw?.offerta as string) || ((row.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "—")}</td>
+                                        <td className="px-4 py-3 text-slate-400 text-xs">{(() => {
+                                            if (soloMarg) {
+                                                const det = (row.raw?.dettagli as Record<string, unknown>) || {};
+                                                const imp = Number(det.importo ?? det.price ?? NaN);
+                                                return isNaN(imp) ? "—" : <span className="text-emerald-300 font-semibold tabular-nums">{imp.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>;
+                                            }
+                                            return String((row.raw?.offerta as string) || ((row.raw?.dettagli as Record<string, unknown>)?.Offerta as string) || "—");
+                                        })()}</td>
                                         <td className="px-4 py-3 text-slate-300 font-medium">{row.cliente}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{row.negozio}</td>
                                         <td className="px-4 py-3 text-slate-400 text-xs">{codInsDi(row) || "—"}</td>
@@ -2327,7 +2367,7 @@ export default function RicercaContratto() {
                 // (falso positivo + rischio chiave doppia al ri-salvataggio).
                 const _RENAME_DET: Record<string, string> = { "Seriale SIM (ICCID)": "ICCID", "Codice Inserimento": "Cod.Ins." };
                 const _detNomi = new Set(det.map(([k]) => k));
-                const _presente = (n: string) => _detNomi.has(n) || _detNomi.has(_RENAME_DET[n] || " ");
+                const _presente = (n: string) => _detNomi.has(n) || _detNomi.has(_RENAME_DET[n] || "\u0000");
                 const campiMancanti = campiAttesi.filter(n => n && !_presente(n) && n !== "Codice Inserimento" && n !== "Offerta" && n !== "Seriale SIM (ICCID)");
 
                 const renderOpzioni = () => {
