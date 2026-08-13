@@ -485,9 +485,12 @@ export async function giorniLavorativiMese(monthISO: string): Promise<{
     const { primo, ultimo } = estremiMese(monthISO);
     const [ov, fest] = await Promise.all([
         supabase.from("pay_giorni_lavorativi").select("giorni, ora_scatto, proiezione_dal, congelati").eq("month", monthISO).maybeSingle(),
-        supabase.from("giorni_festivi").select("data").gte("data", primo).lte("data", ultimo),
+        // ⚠️ la colonna è "giorno", NON "data" (bug del Prospect 11/08 trovato
+        // da Luca il 13/08: la query falliva in silenzio e i festivi erano
+        // ZERO — Ferragosto contato come giorno lavorativo)
+        supabase.from("giorni_festivi").select("giorno").gte("giorno", primo).lte("giorno", ultimo),
     ]);
-    const festivi = new Set((fest.data || []).map(f => String((f as { data: string }).data).slice(0, 10)));
+    const festivi = new Set((fest.data || []).map(f => String((f as { giorno: string }).giorno).slice(0, 10)));
     const [y, m] = monthISO.split("-").map(Number);
     const nGiorni = new Date(y, m, 0).getDate();
     const oraScatto = ov.data?.ora_scatto == null ? 19 : Number(ov.data.ora_scatto);
