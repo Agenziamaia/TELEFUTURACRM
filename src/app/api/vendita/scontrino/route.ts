@@ -169,6 +169,7 @@ export async function POST(req: Request) {
             kind,
             request_xml,
             status: "pending",
+            meta: { total: netTotale, sconto: scontoGruppo || 0, azienda: az === "__def" ? null : az, items: items.length, testMode, coupon: couponCode || null },
         }).select("id").single();
         if (error) return NextResponse.json({ error: error.message, receipts }, { status: 500 });
         receipts.push({ azienda: az === "__def" ? null : az, rt: rtFor(az), jobId: data.id, stampate: items.length, totale: netTotale, sconto: scontoGruppo });

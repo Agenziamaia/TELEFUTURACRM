@@ -41,6 +41,7 @@ export async function POST(req: Request) {
             kind: "z_report",
             request_xml: xml,
             status: "pending",
+            meta: { azienda: t.azienda },
         }).select("id").single();
         if (error) return NextResponse.json({ error: error.message, chiusure }, { status: 500 });
         chiusure.push({ azienda: t.azienda, rt: t.rt_url, jobId: data.id });

@@ -21,6 +21,7 @@ export async function POST(req: Request) {
     kind: "cash_collect",
     request_xml: JSON.stringify({ amount }),
     status: "pending",
+    meta: { amount },
   }).select("id, status").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
