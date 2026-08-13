@@ -231,19 +231,19 @@ function GareInner() {
                     {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && (
                         <W3PdvPanel key={`w3pdv|${month}`} mese={month.slice(0, 7)} colore={brand.color} seg={segW3} onSeg={setSegW3} />
                     )}
-                    {/* COMMISSIONING € del franchising (Luca 13/08): la parte che
-                        NON cambia col PDV — ogni offerta col suo pay in euro per
-                        soglia (canone × moltiplicatore): l'analytics farà solo
-                        il match soglia raggiunta → colonna */}
-                    {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && segW3 === "franchising" && (
-                        <W3CommissioningPanel key={`w3comm|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
-                    )}
                     {PAY_CTX[brand.id] && !(PAY_CTX[brand.id] === "windtre" && lato === "azienda" && segW3 !== "franchising") ? (
                         <>
                             <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
                                 ctx={PAY_CTX[brand.id]} mese={month.slice(0, 7)} lato={lato} colore={brand.color}
                                 vaiAzienda={() => go(brand.id, "azienda")} onVuoto={setTabVuoto}
                                 nascondiVuoto={!mostraCreazione} />
+                            {/* COMMISSIONING € del franchising (Luca 13/08): la parte
+                                che NON cambia col PDV — ogni offerta col suo pay in
+                                euro per soglia (canone × moltiplicatore). L'ordine è
+                                suo: PDV → soglie di rete → commissioning */}
+                            {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && segW3 === "franchising" && (
+                                <W3CommissioningPanel key={`w3comm|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                            )}
                             {!tabVuoto && (
                                 <button onClick={() => setVecchioSchema(v => !v)}
                                     className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
