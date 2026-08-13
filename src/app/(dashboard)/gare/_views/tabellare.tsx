@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { dbError, notify } from "../../amministrazione/_views/toast";
 
 type Pista = { id: string; chiave: string; nome: string; um: string; ordine: number; perc_ragazzi: number | null; soglie_pct?: number | null };
-type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; soglia_a: number | null };
+type Soglia = { id?: string; pista: string; tier: number; soglia_da: number; soglia_a: number | null; bonus?: number | null };
 type Riga = {
     id: string; pista: string | null; nome: string;
     tipo_cliente: string | null; categoria: string | null; prodotto: string | null; offerta: string | null;
@@ -62,7 +62,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         setCarico(true); setSoglieDirty(new Set()); setNuovaRigaPer(null);
         const [p, s, r, az] = await Promise.all([
             supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine"),
-            supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("tier"),
+            supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("tier"),
             supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", lato).order("ordine").limit(1000),
             supabase.from("pay_piste").select("id", { count: "exact", head: true }).eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda"),
         ]);
@@ -72,7 +72,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         if (lato === "ragazzi" && !(p.data || []).length && (az.count || 0) > 0) {
             const [ap, as, ar] = await Promise.all([
                 supabase.from("pay_piste").select("id, chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
-                supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
+                supabase.from("pay_soglie").select("id, pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
                 supabase.from("pay_righe").select("id, pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, moltiplicatore, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").eq("attivo", true).order("ordine").limit(1000),
             ]);
             // PISTE SOLO AZIENDA (Luca 13/08: gara business/assicurazioni W3
@@ -113,7 +113,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
             if (lato === "ragazzi" && (az.count || 0) > 0) {
                 const [ap2, as2] = await Promise.all([
                     supabase.from("pay_piste").select("chiave, ordine, soglie_pct").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("ordine"),
-                    supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
+                    supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", monthISO).eq("lato", "azienda").order("tier"),
                 ]);
                 setAziendaRef({
                     piste: ((ap2.data || []) as { chiave: string; ordine: number; soglie_pct: number | null }[]),
@@ -162,6 +162,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const ins = await supabase.from("pay_soglie").insert(scala.map((s, i) => ({
             brand: ctx, month: monthISO, pista, tier: i + 1, lato,
             soglia_da: s.soglia_da, soglia_a: i < scala.length - 1 ? scala[i + 1].soglia_da - 1 : null,
+            bonus: s.bonus ?? null,
         })));
         if (dbError("Salvataggio soglie", ins.error)) return;
         notify("Soglie salvate ✓", "ok"); load();
@@ -203,6 +204,25 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         for (let i = 0; i < out.length - 1; i++) out[i].soglia_a = out[i + 1].soglia_da - 1;
         return { scala: out, pct: Number(pct) };
     };
+    // PAY SOTTO LA SOGLIA (Luca 13/08, W3 rete): per ogni soglia della pista
+    // si mostra il pay per pezzo/evento (unico se le righe coincidono, min–max
+    // altrimenti; i moltiplicatori restano fuori — lì il pay dipende dal
+    // canone). Le assicurazioni mostrano invece il BONUS a volume, che vive
+    // sulla soglia stessa (pay_soglie.bonus) ed è editabile.
+    const payPerSoglia = (chiave: string, nTiers: number): (string | null)[] => {
+        const rr = righe.filter(r => r.pista === chiave && !r.gettone && r.attivo && !r.moltiplicatore);
+        if (!rr.length) return Array(nTiers).fill(null);
+        return Array.from({ length: nTiers }, (_, i) => {
+            const vals = rr.map(r => r.pay_tiers[i]).filter((v): v is number => v != null && Number.isFinite(v));
+            if (!vals.length) return null;
+            const mn = Math.min(...vals), mx = Math.max(...vals);
+            return mn === mx ? `${mn} €` : `${mn}–${mx} €`;
+        });
+    };
+    const setBonusVal = (pista: string, tier: number, v: string) => {
+        setSoglie(prev => prev.map(s => s.pista === pista && s.tier === tier ? { ...s, bonus: v.trim() === "" ? null : num(v) } : s));
+        setSoglieDirty(prev => new Set(prev).add(pista));
+    };
 
     // ── RIGHE
     const dirty = (r: Riga) => orig.get(r.id) !== JSON.stringify(r);
@@ -240,7 +260,7 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
         const prev = `${fonteCopia}-01`;
         const [p, s, r] = await Promise.all([
             supabase.from("pay_piste").select("chiave, nome, um, ordine, perc_ragazzi, soglie_pct").eq("brand", ctx).eq("month", prev).eq("lato", lato),
-            supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a").eq("brand", ctx).eq("month", prev).eq("lato", lato),
+            supabase.from("pay_soglie").select("pista, tier, soglia_da, soglia_a, bonus").eq("brand", ctx).eq("month", prev).eq("lato", lato),
             supabase.from("pay_righe").select("pista, nome, tipo_cliente, categoria, prodotto, offerta, brand_vendita, punti, pay_base, pay_tiers, gettone, attivo, note, ordine").eq("brand", ctx).eq("month", prev).eq("lato", lato).limit(1000),
         ]);
         if (!p.data?.length) { notify(`Nessun tabellare (${lato}) su ${fonteCopia}`); return; }
@@ -371,90 +391,117 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         soglie manuali valgono quelle del lato azienda) */}
                     <div className="glass-panel rounded-2xl p-5" style={{ borderLeft: `4px solid ${colore}` }}>
                         <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-3">Soglie — di serie quelle del lato azienda; «Imposta a mano» le sgancia per i ragazzi (la % scala solo i pay)</div>
-                        {derivato.piste.map(px => {
-                            const mie = soglieDi(px.chiave);          // soglie manuali ragazzi
-                            const scalaAz = soglieDer(px.chiave);
-                            if (!mie.length && !scalaAz.length) return null;
-                            return (
-                                <div key={px.id} className="mb-3 last:mb-0 flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm font-semibold text-white min-w-[130px]">{px.nome} <span className="text-slate-500 font-normal">({px.um})</span></span>
-                                    {mie.length ? (
-                                        <>
-                                            {mie.map((s, i) => (
-                                                <label key={s.tier} className="text-[11px] text-slate-400">S{i + 1} da
-                                                    <input value={s.soglia_da} onChange={e => setDa(px.chiave, s.tier, e.target.value)} className={inputCls + " ml-1"} />
-                                                </label>
-                                            ))}
-                                            <button onClick={() => addSoglia(px.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
-                                            <button onClick={() => dropSoglia(px.chiave)} className="text-slate-500 hover:text-red-400" title="Togli l'ultima soglia"><Trash2 size={14} /></button>
-                                            {soglieDirty.has(px.chiave) && (
-                                                <button onClick={() => salvaSoglie(px.chiave)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva soglie</button>
-                                            )}
-                                            <button onClick={async () => {
-                                                if (!window.confirm(`Le soglie manuali di ${px.nome} tornano a quelle del lato azienda?`)) return;
-                                                const { error } = await supabase.from("pay_soglie").delete().eq("brand", ctx).eq("month", monthISO).eq("pista", px.chiave).eq("lato", "ragazzi");
-                                                if (dbError("Soglie ragazzi", error)) return;
-                                                notify("Soglie riallineate a quelle azienda ✓", "ok"); load();
-                                            }} className="text-[11px] text-slate-500 hover:text-slate-300" title="Cancella le soglie manuali: tornano quelle del lato azienda">↺ come azienda</button>
-                                            {/* MAPPA loro↔nostre + % per soglia (esito Luca 12/08):
-                                                ogni soglia nostra pesca il pay azienda della soglia
-                                                loro scelta e applica la % — per pista, non per prodotto */}
-                                            <div className="w-full flex items-center gap-2 flex-wrap mt-1 ml-[130px]">
-                                                <span className="text-[11px] text-slate-500">↘ pay girato:</span>
-                                                {/* % unica: vale per tutte le soglie, poi ritocchi le singole */}
-                                                {(() => {
-                                                    const percs = mie.map((_, i) => (mappa[px.chiave] || {})[i + 1]?.perc ?? "");
-                                                    const unica = percs.length && percs.every(p => p === percs[0]) ? percs[0] : "";
-                                                    return (
-                                                        <span className="text-[11px] text-amber-200/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1 inline-flex items-center gap-1"
-                                                            title="Scrivi qui e la stessa % va su tutte le soglie della pista; le caselle a fianco restano per ritoccare le singole">
-                                                            tutte ×
-                                                            <input value={unica} placeholder="%" onChange={e => setPercTutte(px.chiave, mie.length, e.target.value)}
-                                                                className="bg-transparent border border-amber-500/30 rounded px-1 py-0.5 text-[11px] text-white w-12 text-center" />%
-                                                        </span>
-                                                    );
-                                                })()}
-                                                {mie.map((_, i) => {
-                                                    const tn = i + 1;
-                                                    const v = (mappa[px.chiave] || {})[tn];
-                                                    return (
-                                                        <span key={tn} className="text-[11px] text-slate-400 bg-white/[0.04] border border-white/10 rounded-lg px-2 py-1 inline-flex items-center gap-1">
-                                                            S{tn} ← loro
-                                                            <select value={v?.tier_loro ?? tn} onChange={e => setVoceMappa(px.chiave, tn, { tier_loro: Number(e.target.value) })}
-                                                                className="bg-transparent border border-white/10 rounded px-1 py-0.5 text-[11px] text-white">
-                                                                {[1, 2, 3, 4, 5, 6].map(t => <option key={t} value={t} className="bg-slate-800">S{t}</option>)}
-                                                            </select>
-                                                            ×
-                                                            <input value={v?.perc ?? ""} placeholder="%" onChange={e => setVoceMappa(px.chiave, tn, { perc: e.target.value })}
-                                                                className="bg-transparent border border-white/10 rounded px-1 py-0.5 text-[11px] text-white w-12 text-center" />%
-                                                        </span>
-                                                    );
-                                                })}
-                                                {mappaDirty.has(px.chiave) && (
-                                                    <button onClick={() => salvaMappa(px.chiave, mie.length)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva mappa</button>
-                                                )}
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <>
-                                            {scalaAz.map((s, i) => (
-                                                <span key={s.tier} className="text-[12px] text-slate-300 bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1">
-                                                    S{i + 1} da <b className="text-white">{s.soglia_da}</b>{i < scalaAz.length - 1 ? ` a ${scalaAz[i + 1].soglia_da - 1}` : "+"}
-                                                </span>
-                                            ))}
-                                            <button onClick={async () => {
-                                                const { error } = await supabase.from("pay_soglie").insert(scalaAz.map((s, i) => ({
-                                                    brand: ctx, month: monthISO, pista: px.chiave, tier: i + 1,
-                                                    soglia_da: s.soglia_da, soglia_a: s.soglia_a, lato: "ragazzi",
-                                                })));
-                                                if (dbError("Soglie ragazzi", error)) return;
-                                                notify(`Soglie di ${px.nome} sganciate: ora si modificano qui ✓`, "ok"); load();
-                                            }} className="text-[11px] text-amber-300/90 border border-amber-500/30 rounded-lg px-2 py-1" title="Copia le soglie azienda come base e le rende modificabili per i ragazzi">✎ Imposta a mano</button>
-                                        </>
-                                    )}
+                        {/* TABELLA (Luca 13/08: soglie «precise e ben organizzate,
+                            come le tabelle del pay») — righe = piste; manuali =
+                            input, dall'azienda = valori in sola lettura */}
+                        {(() => {
+                            const righeS = derivato.piste
+                                .map(px => ({ px, mie: soglieDi(px.chiave), scalaAz: soglieDer(px.chiave) }))
+                                .filter(x => x.mie.length || x.scalaAz.length);
+                            if (!righeS.length) return null;
+                            const maxT = Math.max(...righeS.map(x => Math.max(x.mie.length, x.scalaAz.length)));
+                            return (<>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm border-collapse">
+                                        <thead>
+                                            <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                                <th className="text-left font-semibold px-3 py-1.5">Pista</th>
+                                                {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                                <th className="px-2 py-1.5 w-40"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {righeS.map(({ px, mie, scalaAz }) => {
+                                                const manuali = mie.length > 0;
+                                                const mostra = manuali ? mie : scalaAz;
+                                                return (
+                                                    <tr key={px.id} className="border-t border-white/5">
+                                                        <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{px.nome} <span className="text-slate-500 font-normal text-xs">({px.um})</span>{!manuali && <span className="text-slate-500 text-[10px] font-normal ml-1.5">= azienda</span>}</td>
+                                                        {Array.from({ length: maxT }, (_, i) => {
+                                                            const s = mostra[i];
+                                                            if (!s) return <td key={i} className="px-1.5 py-1.5 text-center text-slate-700">—</td>;
+                                                            const fino = i < mostra.length - 1 ? mostra[i + 1].soglia_da - 1 : null;
+                                                            return (
+                                                                <td key={i} className="px-1.5 py-1.5 text-center" title={fino != null ? `da ${s.soglia_da} a ${fino}` : `da ${s.soglia_da} in su`}>
+                                                                    {manuali ? (
+                                                                        <input value={mie[i].soglia_da} onChange={e => setDa(px.chiave, mie[i].tier, e.target.value)}
+                                                                            className="bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1 text-sm text-white w-16 text-center tabular-nums" />
+                                                                    ) : (
+                                                                        <span className="text-[13px] text-slate-200 font-semibold tabular-nums">{s.soglia_da}</span>
+                                                                    )}
+                                                                </td>
+                                                            );
+                                                        })}
+                                                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                                                            {manuali ? (<>
+                                                                <button onClick={() => addSoglia(px.chiave)} className="text-slate-400 hover:text-white align-middle" title="Aggiungi soglia"><Plus size={14} /></button>
+                                                                <button onClick={() => dropSoglia(px.chiave)} className="text-slate-500 hover:text-red-400 align-middle ml-1" title="Togli l'ultima soglia"><Trash2 size={13} /></button>
+                                                                {soglieDirty.has(px.chiave) && (
+                                                                    <button onClick={() => salvaSoglie(px.chiave)} className="text-emerald-300 text-xs font-semibold ml-1.5" title="Salva le soglie della pista">💾</button>
+                                                                )}
+                                                                <button onClick={async () => {
+                                                                    if (!window.confirm(`Le soglie manuali di ${px.nome} tornano a quelle del lato azienda?`)) return;
+                                                                    const { error } = await supabase.from("pay_soglie").delete().eq("brand", ctx).eq("month", monthISO).eq("pista", px.chiave).eq("lato", "ragazzi");
+                                                                    if (dbError("Soglie ragazzi", error)) return;
+                                                                    notify("Soglie riallineate a quelle azienda ✓", "ok"); load();
+                                                                }} className="text-[11px] text-slate-500 hover:text-slate-300 ml-1.5" title="Cancella le soglie manuali: tornano quelle del lato azienda">↺</button>
+                                                            </>) : (
+                                                                <button onClick={async () => {
+                                                                    const { error } = await supabase.from("pay_soglie").insert(scalaAz.map((s, i) => ({
+                                                                        brand: ctx, month: monthISO, pista: px.chiave, tier: i + 1,
+                                                                        soglia_da: s.soglia_da, soglia_a: s.soglia_a, lato: "ragazzi",
+                                                                    })));
+                                                                    if (dbError("Soglie ragazzi", error)) return;
+                                                                    notify(`Soglie di ${px.nome} sganciate: ora si modificano qui ✓`, "ok"); load();
+                                                                }} className="text-[11px] text-amber-300/90 border border-amber-500/30 rounded-lg px-2 py-1" title="Copia le soglie azienda come base e le rende modificabili per i ragazzi">✎ Imposta a mano</button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
-                            );
-                        })}
+                                {/* MAPPA loro↔nostre + % per soglia (pay girato), per le
+                                    piste con soglie manuali — sotto la tabella */}
+                                {righeS.filter(x => x.mie.length).map(({ px, mie }) => (
+                                    <div key={px.id} className="flex items-center gap-2 flex-wrap mt-2">
+                                        <span className="text-[11px] text-slate-500">↘ pay girato · <b className="text-slate-300">{px.nome}</b>:</span>
+                                        {(() => {
+                                            const percs = mie.map((_, i) => (mappa[px.chiave] || {})[i + 1]?.perc ?? "");
+                                            const unica = percs.length && percs.every(p => p === percs[0]) ? percs[0] : "";
+                                            return (
+                                                <span className="text-[11px] text-amber-200/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 py-1 inline-flex items-center gap-1"
+                                                    title="Scrivi qui e la stessa % va su tutte le soglie della pista; le caselle a fianco restano per ritoccare le singole">
+                                                    tutte ×
+                                                    <input value={unica} placeholder="%" onChange={e => setPercTutte(px.chiave, mie.length, e.target.value)}
+                                                        className="bg-transparent border border-amber-500/30 rounded px-1 py-0.5 text-[11px] text-white w-12 text-center" />%
+                                                </span>
+                                            );
+                                        })()}
+                                        {mie.map((_, i) => {
+                                            const tn = i + 1;
+                                            const v = (mappa[px.chiave] || {})[tn];
+                                            return (
+                                                <span key={tn} className="text-[11px] text-slate-400 bg-white/[0.04] border border-white/10 rounded-lg px-2 py-1 inline-flex items-center gap-1">
+                                                    S{tn} ← loro
+                                                    <select value={v?.tier_loro ?? tn} onChange={e => setVoceMappa(px.chiave, tn, { tier_loro: Number(e.target.value) })}
+                                                        className="bg-transparent border border-white/10 rounded px-1 py-0.5 text-[11px] text-white">
+                                                        {[1, 2, 3, 4, 5, 6].map(t => <option key={t} value={t} className="bg-slate-800">S{t}</option>)}
+                                                    </select>
+                                                    ×
+                                                    <input value={v?.perc ?? ""} placeholder="%" onChange={e => setVoceMappa(px.chiave, tn, { perc: e.target.value })}
+                                                        className="bg-transparent border border-white/10 rounded px-1 py-0.5 text-[11px] text-white w-12 text-center" />%
+                                                </span>
+                                            );
+                                        })}
+                                        {mappaDirty.has(px.chiave) && (
+                                            <button onClick={() => salvaMappa(px.chiave, mie.length)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva mappa</button>
+                                        )}
+                                    </div>
+                                ))}
+                            </>);
+                        })()}
                     </div>
                     {derivato.piste.map(px => {
                         const scala = soglieDer(px.chiave);
@@ -555,59 +602,93 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                         <button onClick={nuovaPista} className="text-xs text-slate-300 border border-white/10 rounded-lg px-2 py-1 flex items-center gap-1"><Plus size={13} /> Pista</button>
                     </div>
                 </div>
-                {piste.map(p => {
-                    const scala = soglieDi(p.chiave);
-                    // SOGLIE DERIVATE (Luca 13/08, % unificata sul lato azienda):
-                    // con la % impostata sull'azienda i valori ragazzi arrivano
-                    // da lì e qui sono in sola lettura
-                    const der = lato === "ragazzi" ? soglieDerivateDi(p) : null;
-                    const mostra = der?.scala ?? scala;
-                    // PISTE SENZA SOGLIE fuori dalla card (Luca 13/08, W3 azienda:
-                    // mobile/fisso vivono di soglie per PDV nel Target — la voce
-                    // vuota con la % era solo rumore). Le righe pay restano sotto.
-                    if (!mostra.length) return null;
+                {/* TABELLA delle soglie (Luca 13/08: «precise e ben organizzate,
+                    come le tabelle del pay») — righe = piste, colonne S1..Sn;
+                    lato azienda anche la colonna «% soglie ragazzi». Le piste
+                    senza soglie restano fuori (W3 mobile/fisso: per PDV nel
+                    Target); le righe pay restano sotto. */}
+                {(() => {
+                    const visibili = piste
+                        .map(p => {
+                            const scala = soglieDi(p.chiave);
+                            const der = lato === "ragazzi" ? soglieDerivateDi(p) : null;
+                            return { p, scala, der, mostra: der?.scala ?? scala };
+                        })
+                        .filter(x => x.mostra.length > 0);
+                    if (!visibili.length) return <div className="text-sm text-slate-500">Nessuna pista con soglie proprie.</div>;
+                    const maxT = Math.max(...visibili.map(x => x.mostra.length));
                     return (
-                        <div key={p.id} className="mb-4 last:mb-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-sm font-semibold text-white min-w-[130px]">{p.nome} <span className="text-slate-500 font-normal">({p.um})</span></span>
-                                {der ? der.scala.map((s, i) => (
-                                    <span key={s.tier} className="text-[12px] text-sky-200 bg-sky-500/10 border border-sky-500/30 rounded-lg px-2 py-1"
-                                        title={`Derivata: soglia azienda × ${der.pct}%`}>
-                                        S{i + 1} da <b className="text-white">{s.soglia_da}</b>
-                                    </span>
-                                )) : scala.map((s, i) => (
-                                    <label key={s.tier} className="text-[11px] text-slate-400">S{i + 1} da
-                                        <input value={s.soglia_da} onChange={e => setDa(p.chiave, s.tier, e.target.value)} className={inputCls + " ml-1"} />
-                                    </label>
-                                ))}
-                                {/* UNA % PER POSTO (Luca 13/08): qui sulle SOGLIE vive solo
-                                    la % delle soglie; la % dei pay sta giù, sulla tabella
-                                    della pista dove i pay si vedono */}
-                                {lato === "azienda" && (
-                                    <label className="text-[11px] text-sky-300/90 ml-2" title="Scostamento delle soglie ragazzi da queste: es. 135 = azienda × 1,35 arrotondato. Cambi queste soglie (nuova lettera) e i ragazzi si aggiornano da soli. Vuota = soglie ragazzi manuali.">
-                                        % soglie ai ragazzi
-                                        <input value={pctDraft[p.id] ?? (p.soglie_pct == null ? "" : String(p.soglie_pct))}
-                                            onChange={e => setPctDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
-                                            className={inputCls + " ml-1 w-16"} placeholder="manuali" />
-                                        {pctDraft[p.id] != null && pctDraft[p.id] !== (p.soglie_pct == null ? "" : String(p.soglie_pct)) &&
-                                            <button onClick={() => salvaSogliePct(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
-                                    </label>
-                                )}
-                                {!der && <>
-                                    <button onClick={() => addSoglia(p.chiave)} className="text-slate-400 hover:text-white" title="Aggiungi soglia"><Plus size={15} /></button>
-                                    <button onClick={() => dropSoglia(p.chiave)} className="text-slate-500 hover:text-red-400" title="Togli l'ultima soglia"><Trash2 size={14} /></button>
-                                    {soglieDirty.has(p.chiave) && (
-                                        <button onClick={() => salvaSoglie(p.chiave)} className="text-emerald-300 text-xs font-semibold flex items-center gap-1 px-2 py-1 rounded-lg border border-emerald-500/40"><Save size={13} /> Salva soglie</button>
-                                    )}
-                                </>}
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-1 ml-[130px]">
-                                {mostra.map((s, i) => `S${i + 1}: ${s.soglia_da}${i < mostra.length - 1 ? `–${mostra[i + 1].soglia_da - 1}` : "+"}`).join(" · ")}
-                                {der && <span className="text-sky-400/80"> — derivate dall&apos;azienda × {der.pct}%</span>}
-                            </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm border-collapse">
+                                <thead>
+                                    <tr className="text-[10px] uppercase tracking-wider text-slate-500 bg-white/[0.04]">
+                                        <th className="text-left font-semibold px-3 py-1.5">Pista</th>
+                                        {Array.from({ length: maxT }, (_, i) => <th key={i} className="px-1.5 py-1.5 font-semibold text-center w-20">S{i + 1}</th>)}
+                                        {lato === "azienda" && <th className="px-1.5 py-1.5 font-semibold text-center w-32" title="Scostamento delle soglie ragazzi da queste: es. 135 = azienda × 1,35 arrotondato. Vuota = soglie ragazzi manuali.">% soglie ragazzi</th>}
+                                        <th className="px-2 py-1.5 w-24"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {visibili.map(({ p, scala, der, mostra }) => {
+                                        // sotto la soglia il suo pay (W3 rete): bonus dove c'è,
+                                        // altrimenti pay per pezzo/evento derivato dalle righe
+                                        const conBonus = lato === "azienda" && scala.some(s => s.bonus != null);
+                                        const pays = lato === "azienda" && !conBonus ? payPerSoglia(p.chiave, maxT) : [];
+                                        return (
+                                        <tr key={p.id} className="border-t border-white/5">
+                                            <td className="px-3 py-1.5 font-semibold text-white whitespace-nowrap">{p.nome} <span className="text-slate-500 font-normal text-xs">({p.um})</span>{der && <span className="text-sky-400/80 text-[10px] font-normal ml-1.5">× {der.pct}%</span>}{conBonus && <div className="text-[10px] text-emerald-400/80 font-normal">🎁 bonus a soglia</div>}</td>
+                                            {Array.from({ length: maxT }, (_, i) => {
+                                                const s = mostra[i];
+                                                if (!s) return <td key={i} className="px-1.5 py-1.5 text-center text-slate-700">—</td>;
+                                                const fino = i < mostra.length - 1 ? mostra[i + 1].soglia_da - 1 : null;
+                                                return (
+                                                    <td key={i} className="px-1.5 py-1.5 text-center align-top" title={fino != null ? `da ${s.soglia_da} a ${fino}` : `da ${s.soglia_da} in su`}>
+                                                        {der ? (
+                                                            <span className="text-[13px] text-sky-200 font-semibold tabular-nums">{s.soglia_da}</span>
+                                                        ) : (
+                                                            <input value={scala[i].soglia_da} onChange={e => setDa(p.chiave, scala[i].tier, e.target.value)}
+                                                                className="bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1 text-sm text-white w-16 text-center tabular-nums" />
+                                                        )}
+                                                        {!der && conBonus && (
+                                                            <div className="mt-1">
+                                                                <input value={scala[i].bonus == null ? "" : String(scala[i].bonus)}
+                                                                    onChange={e => setBonusVal(p.chiave, scala[i].tier, e.target.value)}
+                                                                    title="Bonus a volume al raggiungimento della soglia (per PDV) — si salva col 💾 della riga"
+                                                                    className="bg-emerald-500/10 border border-emerald-500/30 rounded px-1.5 py-0.5 text-[11px] text-emerald-200 w-16 text-center tabular-nums" placeholder="🎁 —" />
+                                                            </div>
+                                                        )}
+                                                        {!der && !conBonus && pays[i] && (
+                                                            <div className="mt-0.5 text-[10px] text-emerald-300/90 tabular-nums" title="Pay per pezzo/evento alla soglia (min–max delle righe della pista)">{pays[i]}</div>
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                            {lato === "azienda" && (
+                                                <td className="px-1.5 py-1.5 text-center whitespace-nowrap">
+                                                    <input value={pctDraft[p.id] ?? (p.soglie_pct == null ? "" : String(p.soglie_pct))}
+                                                        onChange={e => setPctDraft(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                                        className="bg-white/[0.05] border border-sky-500/30 rounded-lg px-1.5 py-1 text-sm text-sky-100 w-16 text-center" placeholder="man." />
+                                                    {pctDraft[p.id] != null && pctDraft[p.id] !== (p.soglie_pct == null ? "" : String(p.soglie_pct)) &&
+                                                        <button onClick={() => salvaSogliePct(p)} className="text-emerald-300 text-xs font-semibold ml-1">💾</button>}
+                                                </td>
+                                            )}
+                                            <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                                                {!der && <>
+                                                    <button onClick={() => addSoglia(p.chiave)} className="text-slate-400 hover:text-white align-middle" title="Aggiungi soglia"><Plus size={14} /></button>
+                                                    <button onClick={() => dropSoglia(p.chiave)} className="text-slate-500 hover:text-red-400 align-middle ml-1" title="Togli l'ultima soglia"><Trash2 size={13} /></button>
+                                                    {soglieDirty.has(p.chiave) && (
+                                                        <button onClick={() => salvaSoglie(p.chiave)} className="text-emerald-300 text-xs font-semibold ml-1.5" title="Salva le soglie della pista"><Save size={14} className="inline" /> 💾</button>
+                                                    )}
+                                                </>}
+                                            </td>
+                                        </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     );
-                })}
+                })()}
             </div>
 
             {/* RIGHE per pista — TABELLE compatte (segnalazione Luca 11/08: numeri

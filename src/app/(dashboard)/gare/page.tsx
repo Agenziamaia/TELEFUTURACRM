@@ -14,6 +14,7 @@ import { TargetSection } from "../amministrazione/_views/target";
 import { DashboardTargetAdmin } from "@/components/DashboardTargetAdmin";
 import { DirezioneInserimentoAdmin } from "@/components/DirezioneInserimento";
 import { TabellareEditor } from "./_views/tabellare";
+import { W3PdvPanel } from "./_views/w3_pdv";
 import { CalendarioGareView } from "./_views/calendario_gare";
 
 /* GARE — le condizioni degli operatori (lato AZIENDA) e la gara interna della squadra
@@ -218,6 +219,12 @@ function GareInner() {
                     {/* TABELLARE PAY (Luca 11/08): il tabellare vive QUI, dentro il suo
                         operatore, pilotato dalla barra mese e dalle tab Azienda/Ragazzi.
                         Lo schema gare precedente resta consultabile dal bottone in fondo. */}
+                    {/* W3 azienda (Luca 13/08): la struttura di luglio — Franchising
+                        (gara per PDV) · Multibrand · Multibrand T2 — con le soglie
+                        Mobile/Fisso del singolo negozio dal foglio Target */}
+                    {PAY_CTX[brand.id] === "windtre" && lato === "azienda" && (
+                        <W3PdvPanel key={`w3pdv|${month}`} mese={month.slice(0, 7)} colore={brand.color} />
+                    )}
                     {PAY_CTX[brand.id] ? (
                         <>
                             <TabellareEditor key={`${PAY_CTX[brand.id]}|${month}|${lato}|tab`}
