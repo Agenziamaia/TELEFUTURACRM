@@ -637,11 +637,13 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                                                                 className="bg-white/[0.05] border border-white/10 rounded-lg px-1.5 py-1 text-sm text-white w-16 text-center tabular-nums" />
                                                         )}
                                                         {!der && conBonus && (
-                                                            <div className="mt-1">
+                                                            <div className="mt-1 inline-flex items-center gap-0.5 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-1.5 py-0.5"
+                                                                title={`Bonus al raggiungimento della soglia${scala[i].bonus != null ? `: ${Number(scala[i].bonus).toLocaleString("it-IT")} €` : ""} — si salva col 💾 della riga`}>
+                                                                <span className="text-[10px]">🎁</span>
                                                                 <input value={scala[i].bonus == null ? "" : String(scala[i].bonus)}
                                                                     onChange={e => setBonusVal(p.chiave, scala[i].tier, e.target.value)}
-                                                                    title="Bonus a volume al raggiungimento della soglia (per PDV) — si salva col 💾 della riga"
-                                                                    className="bg-emerald-500/10 border border-emerald-500/30 rounded px-1.5 py-0.5 text-[11px] text-emerald-200 w-16 text-center tabular-nums" placeholder="🎁 —" />
+                                                                    className="bg-transparent border-none outline-none text-[11px] font-semibold text-emerald-200 w-12 text-right tabular-nums" placeholder="—" />
+                                                                <span className="text-[10px] font-bold text-emerald-300/90">€</span>
                                                             </div>
                                                         )}
                                                     </td>
