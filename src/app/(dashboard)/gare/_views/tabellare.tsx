@@ -544,6 +544,10 @@ export function TabellareEditor({ ctx, mese, lato, colore, vaiAzienda, onVuoto, 
                     // arrivano dall'azienda e qui sono in sola lettura
                     const der = lato === "ragazzi" ? soglieDerivateDi(p) : null;
                     const mostra = der ?? scala;
+                    // PISTE SENZA SOGLIE fuori dalla card (Luca 13/08, W3 azienda:
+                    // mobile/fisso vivono di soglie per PDV nel Target — la voce
+                    // vuota con la % era solo rumore). Le righe pay restano sotto.
+                    if (!mostra.length) return null;
                     return (
                         <div key={p.id} className="mb-4 last:mb-0">
                             <div className="flex items-center gap-2 flex-wrap">
